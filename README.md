@@ -1,5 +1,7 @@
 # Dodging Infinity v0.3.0
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 > **Bounding the infinite to the finite.**
 
 **Any problem. Any repo. Any issue.**
@@ -404,3 +406,6 @@ herdctl prompt ROLE "..." --repo NAME
 herdctl heartbeat --once --repo NAME
 herdctl restart-heartbeat --repo NAME
 ```
+## License
+
+Dodging Infinity is licensed under the [Apache License 2.0](LICENSE).
