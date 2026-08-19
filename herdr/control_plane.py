@@ -21,6 +21,7 @@ from .heartbeat import (
 from .initialize import initialize_herd
 from .instance import HerdrInstance
 from .lifecycle import start_herd
+from .mission_control import repository_snapshot
 from .policy import HerdrPolicy
 from .tasks import dispatch_task
 
@@ -34,6 +35,15 @@ class HerdrControlPlane:
 
     def instance(self, repo: str | Path) -> HerdrInstance:
         return HerdrInstance(repo)
+
+    def snapshot(
+        self,
+        repo: str | Path,
+    ) -> dict[str, Any]:
+        """Return the canonical Mission Control snapshot for one Herdr."""
+        return repository_snapshot(
+            self.instance(repo)
+        )
 
     def initialize(
         self,
