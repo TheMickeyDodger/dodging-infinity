@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Local environment
+.env
+.env.*
+
+# Temporary files
+*.tmp
+*.swp
+*~

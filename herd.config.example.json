@@ -1,0 +1,95 @@
+{
+  "version": 4,
+  "preset": "max-quality",
+  "project": {
+    "name": "example",
+    "test_command": "npm test && npm run build",
+    "allow_auto_merge": false,
+    "allow_push": false,
+    "allow_deploy": false,
+    "commit_confirmation": true,
+    "push_confirmation": true
+  },
+  "orchestration": {
+    "heartbeat_seconds": 900,
+    "leads": 1,
+    "pods": 1,
+    "agent_start_timeout_ms": 60000,
+    "shell_ready_timeout_ms": 30000,
+    "agent_task_timeout_ms": 600000,
+    "heartbeat_autostart": true
+  },
+  "policy": {
+    "rules": [],
+    "git": {
+      "commit": "require-human",
+      "push": "require-human"
+    },
+    "review": {
+      "required": true,
+      "max_rounds": 5
+    },
+    "scope": {
+      "allowed": [],
+      "blocked": []
+    }
+  },
+  "context": {
+    "clear_before_new_task": true,
+    "clear_roles": [
+      "supervisor",
+      "lead",
+      "executor",
+      "reviewer"
+    ],
+    "checkpoint_history": true,
+    "task_history_max_chars": 60000,
+    "show_context_hint": true,
+    "reset_commands": {
+      "claude": "/clear",
+      "codex": "/new"
+    }
+  },
+  "roles": {
+    "supervisor": {
+      "kind": "claude",
+      "args": [
+        "--model",
+        "fable",
+        "--permission-mode",
+        "auto"
+      ]
+    },
+    "lead": {
+      "kind": "claude",
+      "args": [
+        "--model",
+        "opus",
+        "--permission-mode",
+        "auto"
+      ]
+    },
+    "executor": {
+      "kind": "claude",
+      "args": [
+        "--model",
+        "fable",
+        "--permission-mode",
+        "auto"
+      ]
+    },
+    "reviewer": {
+      "kind": "codex",
+      "args": [
+        "-m",
+        "gpt-5.6-sol",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "-c",
+        "sandbox_mode=\"read-only\"",
+        "-c",
+        "approval_policy=\"never\""
+      ]
+    }
+  }
+}
