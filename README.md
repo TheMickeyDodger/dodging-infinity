@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/mark.svg" alt="Dodging Infinity" width="180">
+</p>
+
 # Dodging Infinity v0.3.0
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
