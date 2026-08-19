@@ -236,6 +236,8 @@ class MissionControlServerTests(unittest.TestCase):
         self.assertIn("Mission Control", body)
         self.assertIn('id="objective"', body)
         self.assertIn("/api/v1/task", body)
+        self.assertIn('class="topology-graph"', body)
+        self.assertIn("Solve + Challenge", body)
 
 
 if __name__ == "__main__":
