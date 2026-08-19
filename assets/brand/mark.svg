@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Dodging Infinity</title>
+  <desc id="desc">An infinite path passes through a bounded gate and resolves into finite nodes.</desc>
+  <defs>
+    <linearGradient id="signal" x1="48" y1="72" x2="208" y2="184" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#45E6FF"/>
+      <stop offset="1" stop-color="#A56CFF"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="256" height="256" rx="48" fill="#0B0E14"/>
+  <rect x="22" y="22" width="212" height="212" rx="42" fill="none" stroke="#20283A" stroke-width="2"/>
+
+  <path d="M52 128 C52 94 86 78 111 104 L146 151 C166 177 204 162 204 128 C204 94 166 79 146 105 L111 152 C86 178 52 162 52 128"
+        fill="none" stroke="#526078" stroke-opacity=".26" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M52 128 C52 94 86 78 111 104 L132 128 L111 152 C86 178 52 162 52 128"
+        fill="none" stroke="url(#signal)" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+
+  <path d="M148 69 V109 M148 147 V187"
+        fill="none" stroke="#7C879B" stroke-width="5" stroke-linecap="round"/>
+
+  <path d="M132 128 H170 M170 128 L190 103 M170 128 H196 M170 128 L190 153"
+        fill="none" stroke="url(#signal)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+
+  <circle cx="194" cy="100" r="9" fill="#0B0E14" stroke="#8D7CFF" stroke-width="6"/>
+  <circle cx="201" cy="128" r="9" fill="#0B0E14" stroke="#956FFF" stroke-width="6"/>
+  <circle cx="194" cy="156" r="9" fill="#0B0E14" stroke="#A56CFF" stroke-width="6"/>
+</svg>
