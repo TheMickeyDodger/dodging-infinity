@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/TheMickeyDodger/dodging-infinity)](https://github.com/TheMickeyDodger/dodging-infinity/releases/latest)
 
 > **Bounding the infinite to the finite.**
 
@@ -12,6 +13,34 @@ Dodging Infinity is a model/runtime-agnostic orchestration system built on Herdr
 It recursively decomposes objectives across specialized Herdrs, repositories, agents, simulations, and review loops; gives each unit a finite scope and explicit rules; then challenges, validates, and composes the results back into a verified outcome.
 
 The goal is not merely multi-agent coding. Dodging Infinity is designed as a general orchestration layer for problems that require decomposition, implementation, simulation, adversarial review, and validation across technical domains.
+
+## Why Dodging Infinity?
+
+Most agent systems ask a model to do more.
+
+Dodging Infinity does something different: it makes the problem smaller.
+
+Instead of giving one model an expanding context and hoping it can reason across everything, Dodging Infinity recursively turns a large objective into bounded units with explicit scope, rules, ownership, dependencies, and validation.
+
+That means the system can scale outward without silently expanding the authority of any individual agent.
+
+The intelligence is replaceable. The orchestration contract is not.
+
+```mermaid
+flowchart TD
+    A[Unbounded objective] --> B[Control Plane]
+    B --> C[Bounded Herdr A]
+    B --> D[Bounded Herdr B]
+    C --> E[Execute]
+    C --> F[Review]
+    D --> G[Simulate]
+    D --> H[Validate]
+    E --> I[Evidence]
+    F --> I
+    G --> I
+    H --> I
+    I --> J[Verified outcome]
+```
 
 ## What v0.3.0 adds
 
