@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/mark.svg" alt="Dodging Infinity" width="180">
+  <img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">
 </p>
 
 # Dodging Infinity v0.3.0
