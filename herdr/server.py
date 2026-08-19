@@ -17,6 +17,8 @@ API_VERSION = 1
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 
+UI_ROOT = Path(__file__).with_name("ui")
+
 
 class MissionControlHTTPServer(ThreadingHTTPServer):
     """Threaded local server carrying Mission Control dependencies."""
@@ -194,6 +196,26 @@ class MissionControlHandler(BaseHTTPRequestHandler):
         )
 
         try:
+            if parsed.path in {"/", "/index.html"}:
+                body = (UI_ROOT / "index.html").read_bytes()
+
+                self.send_response(int(HTTPStatus.OK))
+                self.send_header(
+                    "Content-Type",
+                    "text/html; charset=utf-8",
+                )
+                self.send_header(
+                    "Content-Length",
+                    str(len(body)),
+                )
+                self.send_header(
+                    "Cache-Control",
+                    "no-store",
+                )
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
             if parsed.path == "/api/v1/health":
                 self._write_json(
                     HTTPStatus.OK,

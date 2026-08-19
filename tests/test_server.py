@@ -219,6 +219,24 @@ class MissionControlServerTests(unittest.TestCase):
         )
 
 
+    def test_ui_shell_is_served(self):
+        base = self.start_server()
+
+        with urlopen(base + "/", timeout=2) as response:
+            body = response.read().decode("utf-8")
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(
+                response.headers.get("Content-Type", "").startswith(
+                    "text/html"
+                )
+            )
+
+        self.assertIn("Dodging Infinity", body)
+        self.assertIn("Mission Control", body)
+        self.assertIn('id="objective"', body)
+        self.assertIn("/api/v1/task", body)
+
 
 if __name__ == "__main__":
     unittest.main()
