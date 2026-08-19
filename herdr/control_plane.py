@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .events import append_event, read_events
 from .dependencies import (
     assert_child_dependencies_complete as enforce_child_dependencies_complete,
     child_dependencies as inspect_child_dependencies,
@@ -45,6 +46,34 @@ class HerdrControlPlane:
             self.instance(repo)
         )
 
+    def emit_event(
+        self,
+        repo: str | Path,
+        event_type: str,
+        *,
+        actor: str = "control-plane",
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Append one durable Mission Control event."""
+        return append_event(
+            self.instance(repo),
+            event_type,
+            actor=actor,
+            data=data,
+        )
+
+    def events(
+        self,
+        repo: str | Path,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return recent Mission Control events in chronological order."""
+        return read_events(
+            self.instance(repo),
+            limit=limit,
+        )
+
     def initialize(
         self,
         repo: str | Path,
@@ -55,13 +84,24 @@ class HerdrControlPlane:
         policy: dict[str, Any] | None = None,
     ) -> dict:
         """Initialize or update a Herdr without invoking herdctl init."""
-        return initialize_herd(
+        result = initialize_herd(
             repo,
             preset=preset,
             test_command=test_command,
             alias=alias,
             policy=policy,
         )
+
+        self.emit_event(
+            repo,
+            "herd.initialized",
+            data={
+                "preset": preset,
+                "alias": alias,
+            },
+        )
+
+        return result
 
     def start(
         self,
@@ -70,10 +110,23 @@ class HerdrControlPlane:
         force: bool = False,
     ) -> dict:
         """Start a complete Herdr without invoking herdctl bootstrap."""
-        return start_herd(
+        result = start_herd(
             self.instance(repo),
             force=force,
         )
+
+        self.emit_event(
+            repo,
+            "runtime.started",
+            data={
+                "workspace_id": result.get("workspace_id"),
+                "agents": sorted(
+                    result.get("agents", {}).keys()
+                ),
+            },
+        )
+
+        return result
 
     def dispatch_task(
         self,
@@ -84,12 +137,24 @@ class HerdrControlPlane:
         task_policy: dict[str, Any] | None = None,
     ) -> dict:
         """Dispatch a top-level task without invoking herdctl task."""
-        return dispatch_task(
+        result = dispatch_task(
             self.instance(repo),
             text,
             rejection_drill=rejection_drill,
             task_policy=task_policy,
         )
+
+        self.emit_event(
+            repo,
+            "task.dispatched",
+            data={
+                "task_id": result.get("id"),
+                "status": result.get("status"),
+                "description": result.get("description", text),
+            },
+        )
+
+        return result
 
     def heartbeat(
         self,
@@ -360,6 +425,22 @@ class HerdrControlPlane:
         )
 
         result["child_record"] = record
+
+        self.emit_event(
+            parent.repo,
+            "child.spawned",
+            data={
+                "child_repo": record.get("repo"),
+                "task_id": record.get("task_id"),
+                "task_status": record.get("task_status"),
+                "workspace_id": record.get("workspace_id"),
+                "dependency": record.get("dependency"),
+                "parent_task_id": record.get("parent_task_id"),
+                "agents": sorted(
+                    record.get("agents", {}).keys()
+                ),
+            },
+        )
 
         return result
 
