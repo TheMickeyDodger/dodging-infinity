@@ -1,0 +1,38 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Dodging Infinity
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping make Dodging Infinity more reliable.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the behavior you observed and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: Include the smallest reliable reproduction you can.
+      placeholder: |
+        1. Initialize...
+        2. Dispatch...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Python version, Herdr version, model/runtime configuration, and relevant preset.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or evidence
+      description: Include relevant output with secrets and private data removed.
