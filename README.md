@@ -192,7 +192,26 @@ Successful executions and normal nonzero command failures are treated as resolve
 
 Mission Control also refuses to close a Herd while an execution remains unresolved. The lifecycle and audit path has been validated against real Ghostty sessions for successful execution, resolved command failure, terminal close, and unresolved interactive-prompt timeout behavior.
 
-Natural-language intake, operator-model review, the global approval queue, Git-gate translation, full handoff-context assembly, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
+#### Full handoff context assembly
+
+Mission Control can now assemble a complete structured handoff record for operator review without changing Herdr's orchestration contracts.
+
+The handoff context includes:
+
+- the current objective, task state, repository and task-specific rules, and configured verification command;
+- the canonical Herdr Mission Control snapshot, including runtime state, agents, children, and policy;
+- current agent output using Herdr's existing `visible` and `recent-unwrapped` read semantics;
+- the durable Herdr event journal;
+- current-task reviewer artifacts, Supervisor status, task checkpoint, and shared repository/Herd memory;
+- durable Mission Control Herd state and audit history;
+- the latest execution state, including exact commands, exit codes, deterministic handoff markers, failures, timeouts, or unresolved execution state;
+- exact Git HEAD, branch, status, staged diff, unstaged diff, and the contents or metadata of new untracked files.
+
+The assembler filters stale task artifacts so a previous task's checkpoint or Supervisor status is not presented as evidence for the current objective. It also preserves unresolved executions as the latest execution state rather than incorrectly falling back to an older completed run.
+
+The context assembler has been validated against a disposable real Git/Herdr repository and the full test suite.
+
+Natural-language intake, operator-model review, the global approval queue, Git-gate translation, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
 
 ## Model and runtime agnosticity
 
