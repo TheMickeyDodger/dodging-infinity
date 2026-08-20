@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
+import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,6 +73,65 @@ on run argv
 end run
 """
         self._run(script, session.terminal_id, text)
+
+    def wait_until_ready(
+        self,
+        session: GhosttySession,
+        *,
+        timeout: float = 10.0,
+        retry_interval: float = 0.25,
+    ) -> None:
+        """Prove the Herd shell accepts commands before execution begins."""
+
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        if retry_interval <= 0:
+            raise ValueError("retry_interval must be positive")
+
+        ready_dir = (
+            session.repo_path
+            / ".herd"
+            / "state"
+            / "mission-control"
+            / "sessions"
+        )
+        ready_dir.mkdir(parents=True, exist_ok=True)
+
+        nonce = uuid.uuid4().hex
+        marker_path = ready_dir / f"{nonce}.ready"
+        marker_text = f"HERDR_SESSION_READY:{nonce}"
+
+        probe = " ".join([
+            "printf '%s\\n'",
+            shlex.quote(marker_text),
+            ">",
+            shlex.quote(str(marker_path)),
+        ])
+
+        deadline = time.monotonic() + timeout
+
+        try:
+            while time.monotonic() < deadline:
+                self.send_text(session, probe)
+
+                attempt_deadline = min(
+                    deadline,
+                    time.monotonic() + retry_interval,
+                )
+
+                while time.monotonic() < attempt_deadline:
+                    if marker_path.exists():
+                        observed = marker_path.read_text().strip()
+                        if observed == marker_text:
+                            return
+                    time.sleep(0.02)
+
+            raise RuntimeError(
+                f"Ghostty terminal {session.terminal_id} "
+                "did not become shell-ready before timeout"
+            )
+        finally:
+            marker_path.unlink(missing_ok=True)
 
     def reconnect(
         self,

@@ -1,4 +1,5 @@
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -53,6 +54,78 @@ class GhosttySessionDriverTests(unittest.TestCase):
         argv = run.call_args.args[0]
         self.assertIn(self.terminal_id, argv)
         self.assertIn("echo hello", argv)
+
+
+    @patch("mission_control.session.uuid.uuid4")
+    def test_wait_until_ready_requires_observed_shell_marker(self, uuid4):
+        uuid4.return_value.hex = "ready123"
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo = Path(tempdir).resolve()
+            session = GhosttySession(
+                herd_id="herd-1",
+                terminal_id=self.terminal_id,
+                repo_path=repo,
+            )
+            marker = (
+                repo
+                / ".herd"
+                / "state"
+                / "mission-control"
+                / "sessions"
+                / "ready123.ready"
+            )
+            calls = []
+
+            def send_text(_session, text):
+                calls.append(text)
+                marker.write_text(
+                    "HERDR_SESSION_READY:ready123\n"
+                )
+
+            with patch.object(
+                self.driver,
+                "send_text",
+                side_effect=send_text,
+            ):
+                self.driver.wait_until_ready(
+                    session,
+                    timeout=0.5,
+                    retry_interval=0.05,
+                )
+
+            self.assertEqual(len(calls), 1)
+            self.assertIn(
+                "HERDR_SESSION_READY:ready123",
+                calls[0],
+            )
+            self.assertIn(str(marker), calls[0])
+            self.assertFalse(marker.exists())
+
+    def test_wait_until_ready_rejects_invalid_timing(self):
+        session = GhosttySession(
+            herd_id="herd-1",
+            terminal_id=self.terminal_id,
+            repo_path=self.repo,
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "timeout must be positive",
+        ):
+            self.driver.wait_until_ready(
+                session,
+                timeout=0,
+            )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "retry_interval must be positive",
+        ):
+            self.driver.wait_until_ready(
+                session,
+                retry_interval=0,
+            )
 
     @patch("mission_control.session.subprocess.run")
     def test_reconnect_verifies_terminal_and_working_directory(self, run):
