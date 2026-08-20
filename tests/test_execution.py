@@ -281,3 +281,232 @@ class CommandExecutionEngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissionControlExecutionServiceTests(unittest.TestCase):
+    def setUp(self):
+        from mission_control.audit import MissionControlAuditLog
+        from mission_control.execution import (
+            CommandOutcome,
+            ExecutionResult,
+            MissionControlExecutionService,
+        )
+        from mission_control.handoff import HandoffMarker
+        from mission_control.state import MissionControlStateStore
+
+        self.CommandOutcome = CommandOutcome
+        self.ExecutionResult = ExecutionResult
+        self.HandoffMarker = HandoffMarker
+        self.MissionControlExecutionService = MissionControlExecutionService
+
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tempdir.name).resolve()
+        self.session = GhosttySession(
+            herd_id="herd-1",
+            terminal_id="terminal-1",
+            repo_path=self.repo,
+        )
+
+        self.store = MissionControlStateStore(self.repo)
+        self.store.create("herd-1")
+        self.store.attach_session("terminal-1")
+
+        self.audit = MissionControlAuditLog(self.repo)
+        self.engine_mock = Mock(spec=CommandExecutionEngine)
+        self.service = MissionControlExecutionService(
+            self.engine_mock
+        )
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def test_success_is_audited_and_clears_active_execution(self):
+        execution_id = "exec-success"
+        command = "echo ok"
+
+        self.engine_mock.execute.return_value = self.ExecutionResult(
+            execution_id=execution_id,
+            outcomes=(
+                self.CommandOutcome(
+                    command_index=0,
+                    command=command,
+                    exit_code=0,
+                ),
+            ),
+            handoff=self.HandoffMarker(
+                execution_id=execution_id,
+                exit_code=0,
+                raw=f"HERDR_HANDOFF:{execution_id}:0",
+            ),
+        )
+
+        result = self.service.execute(
+            self.session,
+            execution_id,
+            (command,),
+        )
+
+        self.assertTrue(result.succeeded)
+        self.assertIsNone(
+            self.store.load().active_execution_id
+        )
+
+        records = self.audit.read()
+        self.assertEqual(
+            [record.event_type for record in records],
+            [
+                "execution.started",
+                "execution.completed",
+            ],
+        )
+        self.assertEqual(
+            records[0].data["commands"],
+            [command],
+        )
+        self.assertEqual(
+            records[1].data["handoff"],
+            f"HERDR_HANDOFF:{execution_id}:0",
+        )
+
+    def test_command_failure_is_audited_and_clears_active_execution(self):
+        execution_id = "exec-failure"
+
+        self.engine_mock.execute.return_value = self.ExecutionResult(
+            execution_id=execution_id,
+            outcomes=(
+                self.CommandOutcome(
+                    command_index=0,
+                    command="false",
+                    exit_code=1,
+                ),
+            ),
+            handoff=self.HandoffMarker(
+                execution_id=execution_id,
+                exit_code=1,
+                raw=f"HERDR_HANDOFF:{execution_id}:1",
+            ),
+        )
+
+        result = self.service.execute(
+            self.session,
+            execution_id,
+            ("false",),
+        )
+
+        self.assertFalse(result.succeeded)
+        self.assertIsNone(
+            self.store.load().active_execution_id
+        )
+
+        records = self.audit.read()
+        self.assertEqual(
+            records[-1].event_type,
+            "execution.failed",
+        )
+        self.assertEqual(
+            records[-1].data["exit_code"],
+            1,
+        )
+
+    def test_timeout_is_audited_and_leaves_execution_active(self):
+        execution_id = "exec-timeout"
+
+        self.engine_mock.execute.side_effect = ExecutionTimeout(
+            execution_id,
+            "command completion marker",
+            0,
+        )
+
+        with self.assertRaises(ExecutionTimeout):
+            self.service.execute(
+                self.session,
+                execution_id,
+                ("read -r reply",),
+            )
+
+        state = self.store.load()
+        self.assertEqual(
+            state.active_execution_id,
+            execution_id,
+        )
+
+        records = self.audit.read()
+        self.assertEqual(
+            records[-1].event_type,
+            "execution.timeout",
+        )
+        self.assertEqual(
+            records[-1].data["command_index"],
+            0,
+        )
+
+    def test_unknown_error_is_audited_and_leaves_execution_active(self):
+        execution_id = "exec-error"
+
+        self.engine_mock.execute.side_effect = RuntimeError(
+            "unexpected terminal state"
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "unexpected terminal state",
+        ):
+            self.service.execute(
+                self.session,
+                execution_id,
+                ("echo test",),
+            )
+
+        state = self.store.load()
+        self.assertEqual(
+            state.active_execution_id,
+            execution_id,
+        )
+
+        records = self.audit.read()
+        self.assertEqual(
+            records[-1].event_type,
+            "execution.error",
+        )
+        self.assertEqual(
+            records[-1].data["error_type"],
+            "RuntimeError",
+        )
+
+    def test_session_must_match_durable_herd_identity(self):
+        wrong_session = GhosttySession(
+            herd_id="herd-other",
+            terminal_id="terminal-1",
+            repo_path=self.repo,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "different Herd",
+        ):
+            self.service.execute(
+                wrong_session,
+                "exec-1",
+                ("echo test",),
+            )
+
+        self.engine_mock.execute.assert_not_called()
+
+    def test_terminal_must_match_durable_state(self):
+        wrong_session = GhosttySession(
+            herd_id="herd-1",
+            terminal_id="terminal-other",
+            repo_path=self.repo,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "does not match durable Herd state",
+        ):
+            self.service.execute(
+                wrong_session,
+                "exec-1",
+                ("echo test",),
+            )
+
+        self.engine_mock.execute.assert_not_called()

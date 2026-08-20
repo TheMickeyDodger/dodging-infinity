@@ -153,9 +153,11 @@ Herdr remains responsible for planning, delegation, execution, review, task life
 
 The dedicated Ghostty session driver introduced in v0.4.0 provides the terminal foundation for the next Mission Control stages. It can create, target, reconnect to, and close an exact terminal session using a stable terminal identifier.
 
-### v0.5.0 development: deterministic command handoff
+### v0.5.0 development
 
-The current v0.5.0 development branch adds the first execution layer on top of that Ghostty foundation.
+#### Deterministic command handoff
+
+The v0.5.0 development line adds the first execution layer on top of that Ghostty foundation.
 
 Mission Control can now:
 
@@ -173,7 +175,24 @@ The handoff channel is machine-readable and does not depend on scraping terminal
 
 This execution engine has been validated against real Ghostty sessions for successful commands, ordered multi-command sequences, failures, and interactive-prompt timeouts.
 
-Natural-language intake, operator-model review, the global approval queue, Git-gate translation, durable Mission Control audit state, and crash recovery remain later Mission Control phases and are **not yet implemented**.
+#### Durable Herd state and audit
+
+Mission Control now also maintains its own durable per-Herd control state under `.herd/state/mission-control/`, separate from Herdr's live runtime snapshot and event journal.
+
+The durable control layer records:
+
+- the Mission Control Herd identity and repository binding;
+- lifecycle state including `STARTING`, `ACTIVE`, `DISCONNECTED`, and `CLOSED`;
+- the exact dedicated Ghostty terminal identity;
+- the currently active execution, enforcing one serialized execution per Herd;
+- disconnect and reconnect state without silently recreating a missing session;
+- append-only audit records for Herd/session lifecycle, exact command executions, deterministic handoffs, failures, timeouts, and errors.
+
+Successful executions and normal nonzero command failures are treated as resolved handoffs and clear the active execution slot. Uncertain states such as an interactive-prompt timeout remain durably locked as the active execution so Mission Control cannot inject later commands into a shell whose state is unknown.
+
+Mission Control also refuses to close a Herd while an execution remains unresolved. The lifecycle and audit path has been validated against real Ghostty sessions for successful execution, resolved command failure, terminal close, and unresolved interactive-prompt timeout behavior.
+
+Natural-language intake, operator-model review, the global approval queue, Git-gate translation, full handoff-context assembly, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
 
 ## Model and runtime agnosticity
 

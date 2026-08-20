@@ -207,3 +207,125 @@ class CommandExecutionEngine:
         raise RuntimeError(
             "Execution ended without a deterministic handoff"
         )
+
+
+class MissionControlExecutionService:
+    """Bind deterministic execution to durable Herd state and audit."""
+
+    def __init__(
+        self,
+        engine: CommandExecutionEngine,
+    ):
+        self.engine = engine
+
+    def execute(
+        self,
+        session: GhosttySession,
+        execution_id: str,
+        commands: Sequence[str],
+    ) -> ExecutionResult:
+        from .audit import MissionControlAuditLog
+        from .state import (
+            LIFECYCLE_ACTIVE,
+            MissionControlStateStore,
+        )
+
+        exact_commands = tuple(commands)
+        store = MissionControlStateStore(session.repo_path)
+        audit = MissionControlAuditLog(session.repo_path)
+
+        state = store.load()
+
+        if state is None:
+            raise RuntimeError(
+                "No durable Mission Control Herd state exists"
+            )
+
+        if state.herd_id != session.herd_id:
+            raise RuntimeError(
+                "Ghostty session belongs to a different Herd"
+            )
+
+        if state.lifecycle != LIFECYCLE_ACTIVE:
+            raise RuntimeError(
+                "Mission Control Herd is not active"
+            )
+
+        if state.terminal_id != session.terminal_id:
+            raise RuntimeError(
+                "Ghostty terminal does not match durable Herd state"
+            )
+
+        store.begin_execution(execution_id)
+
+        audit.append(
+            session.herd_id,
+            "execution.started",
+            data={
+                "execution_id": execution_id,
+                "terminal_id": session.terminal_id,
+                "commands": list(exact_commands),
+            },
+        )
+
+        try:
+            result = self.engine.execute(
+                session,
+                execution_id,
+                exact_commands,
+            )
+        except ExecutionTimeout as exc:
+            audit.append(
+                session.herd_id,
+                "execution.timeout",
+                data={
+                    "execution_id": execution_id,
+                    "stage": exc.stage,
+                    "command_index": exc.command_index,
+                },
+            )
+
+            # Fail closed. The shell may still be blocked on an
+            # interactive prompt, so the active execution remains
+            # durable until a later recovery/resolution flow handles it.
+            raise
+        except Exception as exc:
+            audit.append(
+                session.herd_id,
+                "execution.error",
+                data={
+                    "execution_id": execution_id,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+
+            # Unknown execution failures also remain active so another
+            # command cannot be injected into an uncertain shell state.
+            raise
+
+        audit.append(
+            session.herd_id,
+            (
+                "execution.completed"
+                if result.succeeded
+                else "execution.failed"
+            ),
+            data={
+                "execution_id": execution_id,
+                "exit_code": result.exit_code,
+                "handoff": result.handoff.raw,
+                "outcomes": [
+                    {
+                        "command_index": outcome.command_index,
+                        "command": outcome.command,
+                        "exit_code": outcome.exit_code,
+                    }
+                    for outcome in result.outcomes
+                ],
+            },
+        )
+
+        store.finish_execution(execution_id)
+
+        return result
