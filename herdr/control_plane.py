@@ -25,6 +25,7 @@ from .lifecycle import start_herd
 from .mission_control import repository_snapshot
 from .policy import HerdrPolicy
 from .tasks import dispatch_task
+from .registry import unregister_repo
 
 
 class HerdrControlPlane:
@@ -174,6 +175,23 @@ class HerdrControlPlane:
         return stop_heartbeat_runtime(
             self.instance(repo)
         )
+
+    def shutdown(
+        self,
+        repo: str | Path,
+    ) -> None:
+        """Shutdown active Herdr runtime cleanly."""
+        self.stop_heartbeat(repo)
+
+        self.emit_event(
+            repo,
+            "runtime.stopped",
+            data={
+                "reason": "mission-control",
+            },
+        )
+
+        unregister_repo(repo)
 
     def restart_heartbeat(
         self,

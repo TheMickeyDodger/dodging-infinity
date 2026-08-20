@@ -132,3 +132,28 @@ def register_repo(
     )
 
     return base
+
+
+def unregister_repo(
+    repo: str | Path,
+) -> None:
+    repo = Path(repo).resolve()
+
+    data = registry_load()
+    repos = data.setdefault(
+        "repos",
+        {},
+    )
+
+    remove = [
+        alias
+        for alias, value in repos.items()
+        if Path(value["path"]).resolve() == repo
+    ]
+
+    for alias in remove:
+        del repos[alias]
+
+    registry_save(
+        data
+    )
