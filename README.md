@@ -151,7 +151,29 @@ Supervisor → Lead → Executor → Reviewer
 
 Herdr remains responsible for planning, delegation, execution, review, task lifecycle, child-Herd orchestration, and the protected Git gates.
 
-The dedicated Ghostty session driver introduced in v0.4.0 is infrastructure for the next Mission Control stage. It can create, target, reconnect to, and close an exact terminal session using a stable terminal identifier. Automated natural-language intake, operator-model review, approval queues, and approved command execution are planned on top of that foundation and are **not yet part of v0.4.0**.
+The dedicated Ghostty session driver introduced in v0.4.0 provides the terminal foundation for the next Mission Control stages. It can create, target, reconnect to, and close an exact terminal session using a stable terminal identifier.
+
+### v0.5.0 development: deterministic command handoff
+
+The current v0.5.0 development branch adds the first execution layer on top of that Ghostty foundation.
+
+Mission Control can now:
+
+- actively prove a newly created Ghostty shell is ready before sending work;
+- arm a deterministic one-shot zsh handoff hook before a command is entered;
+- send the supplied command to Ghostty **verbatim**, without wrapping, rewriting, chaining, or silently modifying it;
+- execute a supplied multi-command sequence serially, advancing only after the previous command returns successfully;
+- emit per-command completion markers with exact exit codes;
+- emit the canonical `HERDR_HANDOFF:<execution-id>:<exit-code>` marker when control returns to Mission Control;
+- stop immediately on a failed command;
+- time out and stop the sequence when an unexpected interactive prompt prevents shell handoff, rather than guessing an answer or continuing;
+- prevent later commands in the sequence from running after a failure or timeout.
+
+The handoff channel is machine-readable and does not depend on scraping terminal contents.
+
+This execution engine has been validated against real Ghostty sessions for successful commands, ordered multi-command sequences, failures, and interactive-prompt timeouts.
+
+Natural-language intake, operator-model review, the global approval queue, Git-gate translation, durable Mission Control audit state, and crash recovery remain later Mission Control phases and are **not yet implemented**.
 
 ## Model and runtime agnosticity
 
