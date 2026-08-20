@@ -2,7 +2,7 @@
   <img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">
 </p>
 
-# Dodging Infinity v0.3.0
+# Dodging Infinity v0.4.0
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -46,19 +46,21 @@ flowchart TD
     I --> J[Verified outcome]
 ```
 
-## What v0.3.0 adds
+## What v0.4.0 adds
 
-- **Programmatic Control Plane** — `HerdrControlPlane` is now the primary orchestration API instead of putting system behavior inside the CLI.
-- **Hierarchical child Herdrs** — a Supervisor can delegate work in another repository to a separately scoped Herdr without directly implementing inside that repository.
-- **Recursive orchestration** — child Herdrs can be initialized, configured, started, tasked, tracked, and composed into a larger objective.
-- **Parent/child dependency tracking** — every child spawned for a task is durably associated with that parent task.
-- **Deterministic completion gating** — a parent cannot complete while a required child task remains unresolved.
-- **Repository-scoped rules** — `herdctl rules`, `rules add`, and `rules remove` provide a simple durable rule interface.
-- **Task-scoped rules** — repeatable `herdctl task --rule ...` constraints apply only to that task and never leak into durable repository configuration.
-- **Package-owned runtime services** — initialization, lifecycle, heartbeat, task dispatch, Git guards, policy, orchestration, dependencies, registry, and runtime primitives now live under `herdr/`.
-- **Harness-owned prompt settlement** — Dodging Infinity no longer relies on Herdr's short initial prompt-settlement window.
-- **Bootstrap delivery recovery** — an unobserved bootstrap is retried once, while normal engineering task prompts retain single-delivery semantics.
-- Existing workforce presets, deterministic Reviewer protocol, bounded context, human commit/push gates, and multi-repo isolation remain intact.
+- **Terminal Mission Control** — running `infinity` now opens a full-screen terminal control surface for observing and managing Herds without living inside individual `herdctl` commands.
+- **Multi-Herd navigation** — Mission Control can display registered Herds side-by-side, switch the active view, and keep repository/runtime context visible from one place.
+- **Live orchestration view** — the selected Herd shows its repository, runtime state, full active objective, configured role/model assignments, and current agent topology.
+- **Activity journal** — Mission Control surfaces append-only control-plane events so runtime initialization, task dispatch, child-Herd activity, and lifecycle changes are visible in one place.
+- **Non-destructive Close Herd** — a Herd can be removed from the active Mission Control fleet without deleting its repository, working tree, or preserved `.herd` state.
+- **Mission Control snapshot API** — canonical repository, runtime, task, agent, child-Herd, and policy state is exposed through a JSON-serializable observation layer rather than duplicated inside the UI.
+- **Browser mode remains available** — `infinity web` starts the HTTP Mission Control interface for users who prefer a browser view.
+- **Dedicated Ghostty session foundation** — Mission Control now has a tested macOS session driver capable of creating, targeting, reconnecting to, and closing a specific Ghostty terminal by stable terminal UUID.
+- **Deterministic handoff foundation** — the Ghostty session work proves a machine-readable completion marker can be emitted through a side channel without screen-scraping the terminal. This is groundwork for the next Mission Control operator layer; automated intake/review/execution is not yet part of v0.4.0.
+- **`infinity` installer support** — `scripts/install.sh` now installs both the lower-level `herdctl` CLI and the human-facing `infinity` launcher.
+- **Existing Herdr behavior remains canonical** — Supervisor planning, Lead delegation, Executor work, Reviewer loops, child Herdrs, task lifecycle, and human commit/push gates are unchanged. Mission Control observes and wraps Herdr rather than replacing its orchestration logic.
+
+The recursive orchestration, child-Herdr dependency model, repository/task-scoped rules, deterministic Reviewer protocol, bounded context, human commit/push gates, and model/runtime-agnostic role system introduced in the v0.3 line remain the foundation underneath Mission Control.
 
 ## How Dodging Infinity works
 
@@ -73,6 +75,83 @@ The core loop is:
 **decompose -> isolate -> solve -> challenge -> validate -> compose**
 
 The same orchestration model can apply beyond conventional software work wherever a problem can be decomposed into bounded units with observable evidence and explicit validation.
+
+## Mission Control
+
+`herdctl` remains the canonical lower-level CLI. `infinity` is the human-facing Mission Control entry point built around it.
+
+After installing Dodging Infinity:
+
+```bash
+./scripts/install.sh
+```
+
+Launch Mission Control from any repository with:
+
+```bash
+infinity
+```
+
+Or explicitly choose a repository:
+
+```bash
+infinity --repo /path/to/repository
+```
+
+The terminal interface provides three live views:
+
+```text
+HERDS                  ACTIVE ORCHESTRATION              ACTIVITY
+-----                  --------------------              --------
+registered Herds       repository / runtime              control-plane events
+current selection      active objective                  task dispatch
+runtime state          role/model assignments            lifecycle changes
+                       current agent topology             child-Herd activity
+```
+
+Keyboard controls:
+
+```text
+TAB       switch pane
+↑ / ↓     select or scroll the focused pane
+R         refresh
+X         close the selected Herd
+Q         quit Mission Control
+```
+
+Closing a Herd is intentionally non-destructive. It removes that active Herd from Mission Control without deleting the repository, working tree, commits, or preserved `.herd` state.
+
+The browser interface remains available:
+
+```bash
+infinity web
+```
+
+and can be pointed at another repository with:
+
+```bash
+infinity web --repo /path/to/repository
+```
+
+### Mission Control and Herdr
+
+Mission Control does not replace Herdr.
+
+```text
+Mission Control
+      ↓
+human-facing observation / lifecycle controls
+      ↓
+herdctl
+      ↓
+Herdr
+      ↓
+Supervisor → Lead → Executor → Reviewer
+```
+
+Herdr remains responsible for planning, delegation, execution, review, task lifecycle, child-Herd orchestration, and the protected Git gates.
+
+The dedicated Ghostty session driver introduced in v0.4.0 is infrastructure for the next Mission Control stage. It can create, target, reconnect to, and close an exact terminal session using a stable terminal identifier. Automated natural-language intake, operator-model review, approval queues, and approved command execution are planned on top of that foundation and are **not yet part of v0.4.0**.
 
 ## Model and runtime agnosticity
 
@@ -137,11 +216,13 @@ Remote
 
 The Reviewer remains read-only. The deterministic harness/Lead persists its review transcript; GPT does not need write access to `.herd/state/`.
 
-## Upgrade an existing v0.2.x repo to v0.3.0
+## Upgrade an existing repo to v0.4.0
 
-After updating Dodging Infinity and reinstalling the `herdctl` wrapper:
+After updating Dodging Infinity, reinstall the command wrappers:
 
 ```bash
+./scripts/install.sh
+
 cd ~/code/internal
 
 herdctl upgrade --repo example-repo --preset max-quality
@@ -414,6 +495,9 @@ Every repo has its own Herdr workspace, task state, context, memory and Git appr
 ## Main commands
 
 ```text
+infinity [mission-control] [--repo PATH]
+infinity web [--repo PATH] [--port PORT] [--no-open]
+
 herdctl init [--alias NAME] [--preset PRESET] [--test-command COMMAND]
 herdctl presets
 herdctl preset PRESET --repo NAME
@@ -440,6 +524,7 @@ herdctl prompt ROLE "..." --repo NAME
 herdctl heartbeat --once --repo NAME
 herdctl restart-heartbeat --repo NAME
 ```
+
 ## License
 
 Dodging Infinity is licensed under the [Apache License 2.0](LICENSE).
