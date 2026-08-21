@@ -211,7 +211,26 @@ The assembler filters stale task artifacts so a previous task's checkpoint or Su
 
 The context assembler has been validated against a disposable real Git/Herdr repository and the full test suite.
 
-Natural-language intake, operator-model review, the global approval queue, Git-gate translation, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
+#### Model provider and operator review
+
+Mission Control now has a provider abstraction for one-shot operator reasoning that remains separate from Herdr's persistent Supervisor, Lead, Executor, and Reviewer roles.
+
+The default operator provider uses GPT-5.6 Sol through a non-interactive Codex invocation with a read-only sandbox, no model-side approval authority, an ephemeral session, and a schema-constrained structured response.
+
+After a handoff, the operator-review service can:
+
+- assemble the complete Phase 4 handoff context;
+- invoke the configured operator model without granting it permission to modify the repository;
+- return a human-readable explanation plus an exact ordered list of proposed terminal commands;
+- return an empty command list when no additional terminal action is needed;
+- preserve every proposed command exactly as model output rather than executing, wrapping, chaining, or rewriting it;
+- durably audit the provider, model, recommendation, exact proposed commands, and provider failures.
+
+Operator review is proposal-only. Mission Control does **not** execute the returned command sequence in this phase. Human approval and deterministic execution of an approved proposal belong to the later approval-queue phase.
+
+The operator path has been validated end-to-end with GPT-5.6 Sol against a disposable Git/Herdr repository. The model correctly reviewed the full handoff context, returned no commands when no action was needed, and made no repository changes.
+
+Natural-language intake, the global approval queue and Approve & Execute flow, Git-gate translation, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
 
 ## Model and runtime agnosticity
 
