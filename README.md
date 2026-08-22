@@ -98,15 +98,15 @@ Or explicitly choose a repository:
 infinity --repo /path/to/repository
 ```
 
-The terminal interface provides three live views:
+The terminal interface provides four live areas:
 
 ```text
-HERDS                  ACTIVE ORCHESTRATION              ACTIVITY
------                  --------------------              --------
-registered Herds       repository / runtime              control-plane events
-current selection      active objective                  task dispatch
-runtime state          role/model assignments            lifecycle changes
-                       current agent topology             child-Herd activity
+HERDS              ACTIVE ORCHESTRATION       APPROVAL QUEUE        ACTIVITY
+-----              --------------------       --------------        --------
+registered Herds   repository / runtime       pending actions       control-plane events
+current selection  active objective           exact commands        task dispatch
+runtime state      role/model assignments      human approval        lifecycle changes
+                   current agent topology                           child-Herd activity
 ```
 
 Keyboard controls:
@@ -114,6 +114,7 @@ Keyboard controls:
 ```text
 TAB       switch pane
 ↑ / ↓     select or scroll the focused pane
+A         approve and execute the selected approval
 R         refresh
 X         close the selected Herd
 Q         quit Mission Control
@@ -226,11 +227,34 @@ After a handoff, the operator-review service can:
 - preserve every proposed command exactly as model output rather than executing, wrapping, chaining, or rewriting it;
 - durably audit the provider, model, recommendation, exact proposed commands, and provider failures.
 
-Operator review is proposal-only. Mission Control does **not** execute the returned command sequence in this phase. Human approval and deterministic execution of an approved proposal belong to the later approval-queue phase.
+Operator review itself remains proposal-only. The model has no authority to execute its recommendation. Execution requires a separate human approval through Mission Control.
 
 The operator path has been validated end-to-end with GPT-5.6 Sol against a disposable Git/Herdr repository. The model correctly reviewed the full handoff context, returned no commands when no action was needed, and made no repository changes.
 
-Natural-language intake, the global approval queue and Approve & Execute flow, Git-gate translation, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
+#### Approval queue and Approve & Execute
+
+Mission Control now connects operator review to a global human approval queue without granting the operator model execution authority.
+
+After a completed or failed deterministic handoff, Mission Control can automatically:
+
+- detect the newest execution that still needs operator review;
+- assemble the full handoff context and invoke the configured operator model in the background;
+- correlate the review to the exact source execution so the same handoff is not reviewed twice;
+- place a recommendation into the global approval queue when terminal action is proposed;
+- record `approval.not_required` instead of creating a queue item when the operator returns no commands;
+- show operator-review progress and completion directly in the terminal Mission Control interface.
+
+Each pending approval preserves the operator explanation and exact ordered command sequence. Mission Control does not regenerate, rewrite, wrap, chain, or improvise commands after the human approves them.
+
+When the Approval Queue pane is focused, pressing `A` performs **Approve & Execute** for the selected item. Mission Control verifies the durable Herd and dedicated Ghostty terminal, records the human approval, applies the command safety policy, and only then passes the exact approved sequence to the deterministic execution engine.
+
+The Phase 6 safety floor is fail-closed and separate from model reasoning. It blocks shell control operators, privilege-escalation and shell-command wrappers, destructive root or home filesystem wipes, destructive Git reset and clean operations, and attempts to cross the separate commit or push gates. User-configured blocked executables can only add restrictions. Additional safety hardening remains part of the later hardening phase.
+
+Approval proposals are intentionally ephemeral in memory while approval, execution, safety-block, and no-action outcomes are written to the durable per-Herd audit log.
+
+The full path has been validated against a real dedicated Ghostty session: a human-approved two-command sequence executed exactly as displayed, produced per-command completion markers and the canonical `HERDR_HANDOFF` marker, and then triggered an automatic GPT-5.6 Sol review. The operator correctly determined that no further terminal action was required, leaving the approval queue empty. The live proof also exposed and fixed support for valid Git repositories with an unborn `HEAD`.
+
+Natural-language intake, Git-gate translation, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
 
 ## Model and runtime agnosticity
 

@@ -492,12 +492,47 @@ class HandoffContextAssemblerTests(unittest.TestCase):
                 herd_id="different-herd",
             )
 
+    def test_unborn_git_head_is_valid_context(self):
+        self.snapshot["runtime"]["agents"] = []
+
+        responses = dict(self.git_responses)
+        responses[
+            ("git", "rev-parse", "HEAD")
+        ] = result(
+            stderr="fatal: ambiguous argument 'HEAD'",
+            returncode=128,
+        )
+        responses[
+            ("git", "symbolic-ref", "--quiet", "HEAD")
+        ] = result("refs/heads/main\n")
+
+        assembler = HandoffContextAssembler(
+            control_plane=FakeControlPlane(
+                self.snapshot
+            ),
+            command_runner=FakeRunner(responses),
+        )
+
+        context = assembler.assemble(self.repo)
+
+        self.assertIsNone(context.git["head"])
+        self.assertEqual(
+            context.git["branch"],
+            "main",
+        )
+
     def test_git_collection_fails_closed(self):
         self.snapshot["runtime"]["agents"] = []
 
         responses = dict(self.git_responses)
         responses[
             ("git", "rev-parse", "HEAD")
+        ] = result(
+            stderr="not a repository",
+            returncode=128,
+        )
+        responses[
+            ("git", "symbolic-ref", "--quiet", "HEAD")
         ] = result(
             stderr="not a repository",
             returncode=128,

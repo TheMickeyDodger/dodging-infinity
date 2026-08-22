@@ -492,6 +492,57 @@ class MissionControlExecutionServiceTests(unittest.TestCase):
 
         self.engine_mock.execute.assert_not_called()
 
+    def test_invalid_execution_id_does_not_lock_herd(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "execution_id may contain only",
+        ):
+            self.service.execute(
+                self.session,
+                "../escape",
+                ("echo test",),
+            )
+
+        self.assertIsNone(
+            self.store.load().active_execution_id
+        )
+        self.engine_mock.execute.assert_not_called()
+        self.assertEqual(self.audit.read(), [])
+
+    def test_empty_commands_do_not_lock_herd(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "commands must contain at least one command",
+        ):
+            self.service.execute(
+                self.session,
+                "exec-empty",
+                (),
+            )
+
+        self.assertIsNone(
+            self.store.load().active_execution_id
+        )
+        self.engine_mock.execute.assert_not_called()
+        self.assertEqual(self.audit.read(), [])
+
+    def test_invalid_command_does_not_lock_herd(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "every command must be a non-empty string",
+        ):
+            self.service.execute(
+                self.session,
+                "exec-invalid-command",
+                ("",),
+            )
+
+        self.assertIsNone(
+            self.store.load().active_execution_id
+        )
+        self.engine_mock.execute.assert_not_called()
+        self.assertEqual(self.audit.read(), [])
+
     def test_terminal_must_match_durable_state(self):
         wrong_session = GhosttySession(
             herd_id="herd-1",

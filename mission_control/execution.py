@@ -231,6 +231,27 @@ class MissionControlExecutionService:
         )
 
         exact_commands = tuple(commands)
+
+        if not exact_commands:
+            raise ValueError(
+                "commands must contain at least one command"
+            )
+
+        if any(
+            not isinstance(command, str) or not command
+            for command in exact_commands
+        ):
+            raise ValueError(
+                "every command must be a non-empty string"
+            )
+
+        # Validate the canonical execution ID before durable state is
+        # mutated. execution_dir() performs validation without creating
+        # anything; prepare() remains the engine's execution-time step.
+        HandoffChannel(
+            session.repo_path
+        ).execution_dir(execution_id)
+
         store = MissionControlStateStore(session.repo_path)
         audit = MissionControlAuditLog(session.repo_path)
 

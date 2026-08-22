@@ -116,12 +116,44 @@ class HandoffContextAssembler:
 
         return result.stdout or ""
 
-    def _git_context(self, repo: Path) -> dict[str, Any]:
-        head = self._git_text(
+    def _git_head(
+        self,
+        repo: Path,
+    ) -> str | None:
+        result = self._run(
             repo,
             ("git", "rev-parse", "HEAD"),
-            "HEAD",
-        ).strip()
+        )
+
+        if result.returncode == 0:
+            return (result.stdout or "").strip()
+
+        symbolic = self._run(
+            repo,
+            ("git", "symbolic-ref", "--quiet", "HEAD"),
+        )
+
+        symbolic_ref = (
+            (symbolic.stdout or "").strip()
+            if symbolic.returncode == 0
+            else ""
+        )
+
+        if symbolic_ref.startswith("refs/heads/"):
+            return None
+
+        detail = (
+            (result.stderr or "").strip()
+            or (result.stdout or "").strip()
+            or f"exit {result.returncode}"
+        )
+
+        raise RuntimeError(
+            f"Unable to collect Git HEAD: {detail}"
+        )
+
+    def _git_context(self, repo: Path) -> dict[str, Any]:
+        head = self._git_head(repo)
 
         branch = self._git_text(
             repo,

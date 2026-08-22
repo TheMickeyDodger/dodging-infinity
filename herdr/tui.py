@@ -4,9 +4,32 @@ import curses
 import json
 import math
 import random
+import threading
 import time
 import textwrap
+import uuid
 from pathlib import Path
+
+from mission_control.approvals import (
+    ApprovalExecutionService,
+    ApprovalQueue,
+    OperatorApprovalService,
+)
+from mission_control.execution import (
+    CommandExecutionEngine,
+    MissionControlExecutionService,
+)
+from mission_control.models import (
+    OperatorReviewService,
+    create_operator_provider,
+)
+from mission_control.session import (
+    GhosttySessionDriver,
+)
+from mission_control.state import (
+    LIFECYCLE_ACTIVE,
+    MissionControlStateStore,
+)
 
 from .control_plane import HerdrControlPlane
 from .registry import registry_load
@@ -96,19 +119,51 @@ class MissionControl:
     def __init__(self, repo):
         self.current = Path(repo).expanduser().resolve()
         self.control = HerdrControlPlane()
+
+        self.session_driver = GhosttySessionDriver()
+        self.approvals = ApprovalQueue()
+
+        self.execution_engine = CommandExecutionEngine(
+            self.session_driver
+        )
+        self.execution_service = MissionControlExecutionService(
+            self.execution_engine
+        )
+
+        self.operator_review = OperatorReviewService(
+            create_operator_provider()
+        )
+        self.operator_approval = OperatorApprovalService(
+            self.approvals,
+            self.operator_review,
+        )
+        self.approval_execution = ApprovalExecutionService(
+            self.approvals,
+            self.execution_service,
+        )
+
         self.items = repos(self.current)
         self.selected = next((i for i, item in enumerate(self.items) if item["path"] == str(self.current)), 0)
         self.snapshot = {}
         self.events = []
         self.error = ""
+        self.refresh_error = ""
+        self.notice = ""
         self.last_refresh = 0.0
         self.frame = 0
         self.rng = random.Random(42)
+
+        self.approval_selected = 0
+        self.review_threads = {}
+        self.execution_threads = {}
+        self.ui_lock = threading.RLock()
+
         self.focus = "herds"
         self.scroll = {
             "herds": 0,
             "orchestration": 0,
             "activity": 0,
+            "approvals": 0,
         }
 
     @property
@@ -120,12 +175,193 @@ class MissionControl:
         try:
             self.snapshot = self.control.snapshot(self.path)
             self.events = self.control.events(self.path, limit=20)
-            self.error = ""
+            self.refresh_error = ""
         except Exception as exc:
             self.snapshot = {}
             self.events = []
-            self.error = str(exc)
+            self.refresh_error = str(exc)
         self.last_refresh = time.monotonic()
+
+    def _review_worker(
+        self,
+        repo_path,
+        herd_id,
+    ):
+        review_started = False
+
+        def on_started(execution_id):
+            nonlocal review_started
+            review_started = True
+
+            with self.ui_lock:
+                self.notice = (
+                    f"{herd_id}: operator reviewing "
+                    f"{execution_id}..."
+                )
+                self.error = ""
+
+        try:
+            item = self.operator_approval.review_latest_handoff(
+                repo_path,
+                herd_id=herd_id,
+                on_started=on_started,
+            )
+
+            if item is not None:
+                with self.ui_lock:
+                    self.notice = (
+                        f"{herd_id}: approval ready "
+                        f"({len(item.commands)} commands)"
+                    )
+                    self.error = ""
+            elif review_started:
+                with self.ui_lock:
+                    self.notice = (
+                        f"{herd_id}: review complete — "
+                        "no action required"
+                    )
+                    self.error = ""
+        except Exception as exc:
+            with self.ui_lock:
+                self.error = (
+                    f"{herd_id} operator review failed: {exc}"
+                )
+
+    def _poll_operator_reviews(self):
+        for item in self.items:
+            repo = Path(item["path"]).resolve()
+
+            try:
+                state = MissionControlStateStore(repo).load()
+            except Exception:
+                continue
+
+            if (
+                state is None
+                or state.lifecycle != LIFECYCLE_ACTIVE
+            ):
+                continue
+
+            herd_id = state.herd_id
+            thread = self.review_threads.get(herd_id)
+
+            if thread is not None and thread.is_alive():
+                continue
+
+            thread = threading.Thread(
+                target=self._review_worker,
+                args=(repo, herd_id),
+                daemon=True,
+                name=f"mc-review-{herd_id}",
+            )
+            self.review_threads[herd_id] = thread
+            thread.start()
+
+    def _pending_approvals(self):
+        pending = self.approvals.pending()
+
+        if not pending:
+            self.approval_selected = 0
+            self.scroll["approvals"] = 0
+            return pending
+
+        self.approval_selected = min(
+            self.approval_selected,
+            len(pending) - 1,
+        )
+
+        return pending
+
+    def _selected_approval(self):
+        pending = self._pending_approvals()
+
+        if not pending:
+            return None
+
+        return pending[self.approval_selected]
+
+    def _execution_worker(
+        self,
+        approval_id,
+    ):
+        try:
+            item = self.approvals.get(
+                approval_id
+            )
+            store = MissionControlStateStore(
+                item.repo_path
+            )
+            state = store.load()
+
+            if state is None:
+                raise RuntimeError(
+                    "No durable Mission Control Herd state exists"
+                )
+
+            if state.lifecycle != LIFECYCLE_ACTIVE:
+                raise RuntimeError(
+                    "Mission Control Herd is not active"
+                )
+
+            if not state.terminal_id:
+                raise RuntimeError(
+                    "Active Herd has no recorded Ghostty terminal"
+                )
+
+            session = self.session_driver.reconnect(
+                herd_id=state.herd_id,
+                terminal_id=state.terminal_id,
+                repo_path=item.repo_path,
+            )
+
+            execution_id = (
+                "mc-" + uuid.uuid4().hex
+            )
+
+            result = self.approval_execution.approve_and_execute(
+                approval_id,
+                session,
+                execution_id=execution_id,
+            )
+
+            with self.ui_lock:
+                self.notice = (
+                    f"{item.herd_id}: execution "
+                    f"{'completed' if result.succeeded else 'failed'} "
+                    f"(exit {result.exit_code})"
+                )
+                self.error = ""
+        except Exception as exc:
+            with self.ui_lock:
+                self.error = (
+                    f"Approve & Execute failed: {exc}"
+                )
+
+    def _start_approval_execution(
+        self,
+        approval_id,
+    ):
+        item = self.approvals.get(
+            approval_id
+        )
+        thread = self.execution_threads.get(
+            item.herd_id
+        )
+
+        if thread is not None and thread.is_alive():
+            raise RuntimeError(
+                f"Herd {item.herd_id} already has "
+                "an execution in progress"
+            )
+
+        thread = threading.Thread(
+            target=self._execution_worker,
+            args=(approval_id,),
+            daemon=True,
+            name=f"mc-execute-{item.herd_id}",
+        )
+        self.execution_threads[item.herd_id] = thread
+        thread.start()
 
     def draw(self, screen):
         screen.erase()
@@ -168,7 +404,7 @@ class MissionControl:
         pulse = "●" if self.frame % 8 < 4 else "◉"
         put(screen, 1, 2, "∞  DODGING INFINITY", curses.A_BOLD)
         put(screen, 2, 5, "MISSION CONTROL", curses.A_DIM)
-        put(screen, 1, w - 19, pulse + "  READ-ONLY LIVE")
+        put(screen, 1, w - 19, pulse + "  CONTROL LIVE")
 
         top = 4
         bottom = h - 3
@@ -272,32 +508,200 @@ class MissionControl:
             for y in range(top + 1, bottom):
                 put(screen, y, split, "│", curses.A_DIM)
 
-            put(screen, top + 2, split + 2, "ACTIVITY" + (" ●" if self.focus == "activity" else ""), curses.A_BOLD)
+            right_x = split + 2
+            right_edge = w - 2
+            pending = self._pending_approvals()
 
-            row = top + 4
+            approval_title = (
+                f"APPROVAL QUEUE [{len(pending)}]"
+                + (" ●" if self.focus == "approvals" else "")
+            )
+            put(
+                screen,
+                top + 2,
+                right_x,
+                approval_title,
+                curses.A_BOLD,
+            )
+
+            approval_top = top + 4
+            activity_top = max(
+                approval_top + 6,
+                top + ((bottom - top) // 2),
+            )
+
+            if pending:
+                selected_approval = pending[
+                    self.approval_selected
+                ]
+
+                put_clipped(
+                    screen,
+                    approval_top,
+                    right_x,
+                    right_edge,
+                    "› " + selected_approval.herd_id,
+                    curses.A_BOLD,
+                )
+
+                approval_lines = []
+
+                for line in wrap_lines(
+                    selected_approval.explanation,
+                    max(1, right_edge - right_x),
+                ):
+                    approval_lines.append(
+                        (line, curses.A_DIM)
+                    )
+
+                approval_lines.append(("", 0))
+
+                for index, command in enumerate(
+                    selected_approval.commands,
+                    start=1,
+                ):
+                    approval_lines.append(
+                        (
+                            f"{index}. {command}",
+                            0,
+                        )
+                    )
+
+                visible_approvals = approval_lines[
+                    self.scroll["approvals"]:
+                ]
+
+                row = approval_top + 1
+
+                for line, attr in visible_approvals:
+                    if row >= activity_top - 1:
+                        break
+
+                    put_clipped(
+                        screen,
+                        row,
+                        right_x,
+                        right_edge,
+                        line,
+                        attr,
+                    )
+                    row += 1
+            else:
+                put(
+                    screen,
+                    approval_top,
+                    right_x,
+                    "∞  No actions need you.",
+                    curses.A_DIM,
+                )
+
+            for x in range(split + 1, w - 1):
+                put(
+                    screen,
+                    activity_top - 1,
+                    x,
+                    "─",
+                    curses.A_DIM,
+                )
+
+            put(
+                screen,
+                activity_top,
+                right_x,
+                "ACTIVITY"
+                + (
+                    " ●"
+                    if self.focus == "activity"
+                    else ""
+                ),
+                curses.A_BOLD,
+            )
+
+            row = activity_top + 2
 
             events = list(reversed(self.events))
-            events = events[self.scroll["activity"]:]
+            events = events[
+                self.scroll["activity"]:
+            ]
 
-            for event in events[: max(1, (bottom - row) // 2)]:
+            for event in events[
+                : max(1, (bottom - row) // 2)
+            ]:
                 when = event.get("timestamp_ms")
-                stamp = time.strftime("%H:%M:%S", time.localtime(when / 1000)) if isinstance(when, int) else "--:--:--"
+                stamp = (
+                    time.strftime(
+                        "%H:%M:%S",
+                        time.localtime(when / 1000),
+                    )
+                    if isinstance(when, int)
+                    else "--:--:--"
+                )
 
-                put(screen, row, split + 2, stamp + "  " + str(event.get("type") or "event"))
-                put(screen, row + 1, split + 4, str(event.get("actor") or ""), curses.A_DIM)
+                put_clipped(
+                    screen,
+                    row,
+                    right_x,
+                    right_edge,
+                    stamp
+                    + "  "
+                    + str(event.get("type") or "event"),
+                )
+                put_clipped(
+                    screen,
+                    row + 1,
+                    right_x + 2,
+                    right_edge,
+                    str(event.get("actor") or ""),
+                    curses.A_DIM,
+                )
 
                 row += 2
 
-        if self.error:
-            put(screen, bottom - 1, left + 3, "ERROR: " + self.error, curses.A_BOLD)
+        visible_error = self.error or self.refresh_error
+
+        if visible_error:
+            put(
+                screen,
+                bottom - 1,
+                left + 3,
+                "ERROR: " + visible_error,
+                curses.A_BOLD,
+            )
+        elif self.notice:
+            put_clipped(
+                screen,
+                bottom - 1,
+                left + 3,
+                w - 2,
+                self.notice,
+                curses.A_DIM,
+            )
 
         focus_hint = {
             "herds": "[↑/↓] Select Herd",
             "orchestration": "[↑/↓] Scroll Agents",
+            "approvals": "[↑/↓] Select Approval",
             "activity": "[↑/↓] Scroll Events",
         }.get(self.focus, "[↑/↓] Navigate")
 
-        put(screen, h - 2, 2, focus_hint + "   [TAB] Switch Pane   [X] Shutdown   [R] Refresh   [Q] Quit", curses.A_DIM)
+        action_hint = (
+            "   [A] Approve & Execute"
+            if self.focus == "approvals"
+            else ""
+        )
+
+        put(
+            screen,
+            h - 2,
+            2,
+            focus_hint
+            + action_hint
+            + "   [TAB] Switch Pane"
+            + "   [X] Shutdown"
+            + "   [R] Refresh"
+            + "   [Q] Quit",
+            curses.A_DIM,
+        )
 
         screen.refresh()
 
@@ -313,6 +717,7 @@ class MissionControl:
         while True:
             if time.monotonic() - self.last_refresh >= 1.0:
                 self.refresh()
+                self._poll_operator_reviews()
 
             self.draw(screen)
             self.frame += 1
@@ -327,25 +732,79 @@ class MissionControl:
                 self.refresh()
 
             if key == ord("\t"):
-                panes = ("herds", "orchestration", "activity")
+                panes = (
+                    "herds",
+                    "orchestration",
+                    "approvals",
+                    "activity",
+                )
                 self.focus = panes[(panes.index(self.focus) + 1) % len(panes)]
 
             elif key in (ord("r"), ord("R")):
                 self.refresh()
 
+            elif (
+                key in (ord("a"), ord("A"))
+                and self.focus == "approvals"
+            ):
+                approval = self._selected_approval()
+
+                if approval is None:
+                    self.notice = "No pending approval selected."
+                else:
+                    try:
+                        self._start_approval_execution(
+                            approval.approval_id
+                        )
+                        self.notice = (
+                            f"{approval.herd_id}: "
+                            "Approve & Execute started"
+                        )
+                        self.error = ""
+                    except Exception as exc:
+                        self.error = (
+                            f"Approve & Execute failed: {exc}"
+                        )
+
             elif key == curses.KEY_UP:
                 if self.focus == "herds" and self.items:
-                    self.selected = (self.selected - 1) % len(self.items)
+                    self.selected = (
+                        self.selected - 1
+                    ) % len(self.items)
                     self.refresh()
+                elif self.focus == "approvals":
+                    pending = self._pending_approvals()
+
+                    if pending:
+                        self.approval_selected = (
+                            self.approval_selected - 1
+                        ) % len(pending)
+                        self.scroll["approvals"] = 0
                 else:
-                    self.scroll[self.focus] = max(0, self.scroll[self.focus] - 1)
+                    self.scroll[self.focus] = max(
+                        0,
+                        self.scroll[self.focus] - 1,
+                    )
 
             elif key == curses.KEY_DOWN:
                 if self.focus == "herds" and self.items:
-                    self.selected = (self.selected + 1) % len(self.items)
+                    self.selected = (
+                        self.selected + 1
+                    ) % len(self.items)
                     self.refresh()
+                elif self.focus == "approvals":
+                    pending = self._pending_approvals()
+
+                    if pending:
+                        self.approval_selected = (
+                            self.approval_selected + 1
+                        ) % len(pending)
+                        self.scroll["approvals"] = 0
                 else:
-                    self.scroll[self.focus] = min(self.scroll[self.focus] + 1, 999)
+                    self.scroll[self.focus] = min(
+                        self.scroll[self.focus] + 1,
+                        999,
+                    )
 
 
 def run(repo="."):

@@ -332,6 +332,61 @@ class MissionControlModelTests(unittest.TestCase):
             ["git status --short"],
         )
 
+    def test_review_carries_source_execution_id(self):
+        context = HandoffContext(
+            herd_id=self.context.herd_id,
+            repo_path=self.context.repo_path,
+            generated_at_ms=self.context.generated_at_ms,
+            objective=self.context.objective,
+            herdr=self.context.herdr,
+            mission_control={
+                **self.context.mission_control,
+                "latest_execution": {
+                    "event_type": "execution.completed",
+                    "data": {
+                        "execution_id": "exec-source-1",
+                    },
+                },
+            },
+            git=self.context.git,
+            artifacts=self.context.artifacts,
+        )
+
+        recommendation = OperatorRecommendation(
+            explanation="Inspect status.",
+            commands=("git status --short",),
+        )
+
+        service = OperatorReviewService(
+            FakeProvider(
+                recommendation=recommendation
+            ),
+            context_assembler=FakeAssembler(
+                context
+            ),
+        )
+
+        review = service.review(
+            self.repo,
+            herd_id="herd-1",
+        )
+
+        self.assertEqual(
+            review.source_execution_id,
+            "exec-source-1",
+        )
+
+        records = MissionControlAuditLog(
+            self.repo
+        ).read(
+            herd_id="herd-1",
+        )
+
+        self.assertEqual(
+            records[-1].data["source_execution_id"],
+            "exec-source-1",
+        )
+
     def test_review_service_audits_provider_error(self):
         provider = FakeProvider(
             error=RuntimeError("model unavailable")

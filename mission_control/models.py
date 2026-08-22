@@ -308,6 +308,7 @@ class OperatorReview:
     model: str
     generated_at_ms: int
     recommendation: OperatorRecommendation
+    source_execution_id: str | None = None
     schema_version: int = OPERATOR_REVIEW_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -317,6 +318,7 @@ class OperatorReview:
             "provider": self.provider,
             "model": self.model,
             "generated_at_ms": self.generated_at_ms,
+            "source_execution_id": self.source_execution_id,
             "recommendation": (
                 self.recommendation.to_dict()
             ),
@@ -353,12 +355,27 @@ class OperatorReviewService:
             context.repo_path
         )
 
+        latest_execution = context.mission_control.get(
+            "latest_execution"
+        )
+        source_execution_id = None
+
+        if isinstance(latest_execution, dict):
+            execution_data = latest_execution.get("data")
+
+            if isinstance(execution_data, dict):
+                candidate = execution_data.get("execution_id")
+
+                if isinstance(candidate, str) and candidate:
+                    source_execution_id = candidate
+
         audit.append(
             context.herd_id,
             "operator.review.started",
             data={
                 "provider": self.provider.provider_name,
                 "model": self.provider.model_name,
+                "source_execution_id": source_execution_id,
             },
         )
 
@@ -373,6 +390,7 @@ class OperatorReviewService:
                 data={
                     "provider": self.provider.provider_name,
                     "model": self.provider.model_name,
+                    "source_execution_id": source_execution_id,
                     "error_type": type(exc).__name__,
                     "message": str(exc),
                 },
@@ -387,6 +405,7 @@ class OperatorReviewService:
                 time.time_ns() // 1_000_000
             ),
             recommendation=recommendation,
+            source_execution_id=source_execution_id,
         )
 
         audit.append(
@@ -395,6 +414,7 @@ class OperatorReviewService:
             data={
                 "provider": review.provider,
                 "model": review.model,
+                "source_execution_id": review.source_execution_id,
                 "explanation": (
                     recommendation.explanation
                 ),
