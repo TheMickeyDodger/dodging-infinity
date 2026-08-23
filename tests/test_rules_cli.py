@@ -192,6 +192,56 @@ class HerdrRulesCliTests(unittest.TestCase):
 
     @patch.object(
         herdctl,
+        "load_mission",
+        return_value={
+            "objective": "Fix authentication bug",
+            "rules": [
+                "Do not change database schema",
+            ],
+        },
+    )
+    @patch.object(
+        herdctl,
+        "resolve_repo_ref",
+        return_value=Path("/tmp/demo"),
+    )
+    @patch.object(
+        herdctl,
+        "HerdrControlPlane",
+    )
+    def test_task_mission_dispatches_objective_and_rules(
+        self,
+        mock_cp_type,
+        mock_resolve,
+        mock_mission,
+    ):
+        cp = Mock()
+        mock_cp_type.return_value = cp
+
+        herdctl.task(
+            SimpleNamespace(
+                repo=None,
+                text=None,
+                mission=True,
+                rejection_drill=False,
+                rule=[],
+            )
+        )
+
+        cp.dispatch_task.assert_called_once_with(
+            Path("/tmp/demo"),
+            "Fix authentication bug",
+            rejection_drill=False,
+            task_policy={
+                "rules": [
+                    "Do not change database schema",
+                ],
+            },
+        )
+
+
+    @patch.object(
+        herdctl,
         "resolve_repo_ref",
         return_value=Path("/tmp/demo"),
     )
