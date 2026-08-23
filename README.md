@@ -2,7 +2,7 @@
   <img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">
 </p>
 
-# Dodging Infinity v0.3.0
+# Dodging Infinity v0.6.0
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -12,11 +12,11 @@
 
 **Any problem. Any repo. Any issue.**
 
-Dodging Infinity is a model/runtime-agnostic orchestration system built on Herdr for turning seemingly unbounded problems into bounded, isolated, solvable units of work.
+Dodging Infinity is a Codex-powered engineering operator built around Herdr for turning human intent into bounded, isolated, and verifiable engineering work.
 
-It recursively decomposes objectives across specialized Herdrs, repositories, agents, simulations, and review loops; gives each unit a finite scope and explicit rules; then challenges, validates, and composes the results back into a verified outcome.
+Codex investigates the problem, gathers context, asks clarifying questions, and creates a precise Herdr mission. Herdr then decomposes, executes, reviews, and validates the work through specialized roles with explicit scope, rules, and completion criteria.
 
-The goal is not merely multi-agent coding. Dodging Infinity is designed as a general orchestration layer for problems that require decomposition, implementation, simulation, adversarial review, and validation across technical domains.
+The goal is not merely multi-agent coding. Dodging Infinity creates a reliable boundary between human intent, model reasoning, autonomous execution, adversarial review, and verified outcomes.
 
 ## Why Dodging Infinity?
 
@@ -32,55 +32,53 @@ The intelligence is replaceable. The orchestration contract is not.
 
 ```mermaid
 flowchart TD
-    A[Unbounded objective] --> B[Control Plane]
-    B --> C[Bounded Herdr A]
-    B --> D[Bounded Herdr B]
-    C --> E[Execute]
-    C --> F[Review]
-    D --> G[Simulate]
-    D --> H[Validate]
-    E --> I[Evidence]
-    F --> I
-    G --> I
-    H --> I
-    I --> J[Verified outcome]
+    A[Human intent] --> B[Codex CLI Operator]
+    B --> C[Herdr Mission]
+    C --> D[Supervisor]
+    D --> E[Lead]
+    E --> F[Executor]
+    E --> G[Reviewer]
+    F --> H[Implementation]
+    G --> I[Validation]
+    H --> J[Verified outcome]
+    I --> J
+    J --> K[Human commit and push gates]
 ```
 
-## What v0.3.0 adds
+## What v0.6.0 adds
 
-- **Programmatic Control Plane** — `HerdrControlPlane` is now the primary orchestration API instead of putting system behavior inside the CLI.
-- **Hierarchical child Herdrs** — a Supervisor can delegate work in another repository to a separately scoped Herdr without directly implementing inside that repository.
-- **Recursive orchestration** — child Herdrs can be initialized, configured, started, tasked, tracked, and composed into a larger objective.
-- **Parent/child dependency tracking** — every child spawned for a task is durably associated with that parent task.
-- **Deterministic completion gating** — a parent cannot complete while a required child task remains unresolved.
-- **Repository-scoped rules** — `herdctl rules`, `rules add`, and `rules remove` provide a simple durable rule interface.
-- **Task-scoped rules** — repeatable `herdctl task --rule ...` constraints apply only to that task and never leak into durable repository configuration.
-- **Package-owned runtime services** — initialization, lifecycle, heartbeat, task dispatch, Git guards, policy, orchestration, dependencies, registry, and runtime primitives now live under `herdr/`.
-- **Harness-owned prompt settlement** — Dodging Infinity no longer relies on Herdr's short initial prompt-settlement window.
-- **Bootstrap delivery recovery** — an unobserved bootstrap is retried once, while normal engineering task prompts retain single-delivery semantics.
-- Existing workforce presets, deterministic Reviewer protocol, bounded context, human commit/push gates, and multi-repo isolation remain intact.
+- **Codex CLI operator workflow** — Codex becomes the human-facing reasoning layer for understanding objectives, gathering context, asking clarifying questions, and preparing precise Herdr missions.
+- **Herdr execution boundary** — Herdr owns bounded engineering execution through Supervisor, Lead, Executor, and Reviewer roles with explicit scope and validation.
+- **Simplified orchestration model** — Removed the experimental Mission Control layer and returned orchestration ownership to Herdr.
+- **Structured mission handoff** — Engineering intent is converted into a durable objective, rules, constraints, and verification expectations before autonomous execution begins.
+- **Deterministic review protocol** — Reviewer decisions remain canonical, persisted, and validated through Herdr's existing review gates.
+- **Human-controlled delivery** — Commit and push operations remain protected behind deterministic human authorization gates.
+- **Repository isolation** — Agents remain bounded to their assigned repository and task scope.
+- **Model/runtime flexibility** — Codex, Herdr roles, and supported runtimes remain replaceable components behind stable orchestration contracts.
 
 ## How Dodging Infinity works
 
-Dodging Infinity treats an unbounded objective as a hierarchy of bounded problems.
+Dodging Infinity starts with an unbounded human objective and turns it into a bounded engineering mission.
+
+Codex acts as the operator layer. It investigates the repository, understands the problem, gathers relevant context, asks questions when requirements are unclear, and creates a precise Herdr mission containing objectives, constraints, rules, and verification expectations.
+
+Herdr then executes that mission through bounded roles. The Supervisor coordinates, the Lead owns acceptance, Executors implement changes, and Reviewers challenge the result before completion.
 
 Each Herdr owns a finite scope: one repository, one task, one rule set, one runtime state, and explicit completion criteria.
 
-If an objective exceeds that boundary, the Supervisor does not silently expand its authority. It delegates the new bounded problem to another Herdr through the Control Plane. That child becomes a tracked dependency of the parent, and the parent cannot complete until required child work is resolved.
-
 The core loop is:
 
-**decompose -> isolate -> solve -> challenge -> validate -> compose**
+**understand -> define -> decompose -> solve -> challenge -> validate -> deliver**
 
-The same orchestration model can apply beyond conventional software work wherever a problem can be decomposed into bounded units with observable evidence and explicit validation.
+The same bounded-work model can apply beyond conventional software engineering wherever complex objectives can be decomposed into isolated units with observable evidence and explicit validation.
 
 ## Model and runtime agnosticity
 
-Dodging Infinity separates **roles from models**.
+Dodging Infinity separates **responsibilities from models**.
 
-Supervisor, Lead, Executor, and Reviewer are logical responsibilities inside an orchestration graph. They are not tied to Claude, Codex, OpenAI, Anthropic, or any particular model family.
+Codex serves as the operator layer for human intent discovery and mission preparation. Herdr roles such as Supervisor, Lead, Executor, and Reviewer remain logical engineering responsibilities rather than fixed model assignments.
 
-Any model/runtime supported by Herdr can be assigned to any layer:
+Any model/runtime supported by Herdr can be assigned to any execution layer:
 
 ```text
 Supervisor  -> Model A
@@ -111,9 +109,13 @@ This allows Dodging Infinity to select different forms of intelligence for diffe
 ```text
 You
  |
-Claude Fable 5 — Supervisor (auto)
+Codex CLI Operator
  |
-Claude Opus 5 — Lead (auto)
+Herdr Mission
+ |
+Claude Fable 5 — Supervisor
+ |
+Claude Opus 5 — Lead
  |
  +---------------------------------+
  | Adversarial Executor Pod        |
@@ -121,7 +123,7 @@ Claude Opus 5 — Lead (auto)
  | Claude Fable 5 — Executor       |
  |              ↕                  |
  | GPT-5.6 Sol High — Reviewer     |
- | Codex / read-only / never ask   |
+ | Read-only validation role       |
  +---------------------------------+
  |
 Lead verification
@@ -137,43 +139,67 @@ Remote
 
 The Reviewer remains read-only. The deterministic harness/Lead persists its review transcript; GPT does not need write access to `.herd/state/`.
 
-## Upgrade an existing v0.2.x repo to v0.3.0
+## Upgrade an existing Herdr repo to v0.6.0
 
 After updating Dodging Infinity and reinstalling the `herdctl` wrapper:
 
 ```bash
 cd ~/code/internal
 
-herdctl upgrade --repo example-repo --preset max-quality
-herdctl safety-install
-herdctl integrations --repo example-repo
+herdctl upgrade --repo example-repo
 herdctl doctor --repo example-repo
 ```
 
-If a live herd is running, refresh all role contracts/runtimes with:
+v0.6.0 changes the operating model:
 
-```bash
-herdctl bootstrap --repo example-repo --force
-```
+1. Start with a human objective in Codex CLI.
+2. Codex investigates the repository and gathers the required context.
+3. Codex creates a structured Herdr mission containing the objective, constraints, repository rules, acceptance criteria, and verification expectations.
+4. Herdr executes the mission through its Supervisor, Lead, Executor, and Reviewer workflow.
+5. Human commit and push gates remain required for delivery.
 
-If you only changed role contracts and the currently running runtimes already match the preset, you can instead clear completed-task contexts and re-seed:
-
-```bash
-herdctl clear-contexts --repo example-repo
-```
-
-Runtime-aware reset defaults:
-
-```json
-"reset_commands": {
-  "claude": "/clear",
-  "codex": "/new"
-}
-```
+Existing Herdr safety boundaries, repository isolation, review validation, and Git authorization controls remain intact.
 
 ## New repo in essentially one command
 
-Clone/go to the repo, then:
+For a new repository, the recommended workflow is:
+
+1. Open the repository in Codex CLI.
+2. Describe the objective in natural language.
+3. Codex investigates the codebase and gathers the required context.
+4. Codex creates the Herdr mission.
+5. Herdr executes the bounded engineering workflow.
+
+Example human objective:
+
+```text
+I want to fix the authentication bug in this repository.
+Investigate the cause, implement the correct fix, add verification,
+and prepare the change for review.
+```
+
+Codex converts that intent into a structured Herdr mission containing:
+
+- objective
+- constraints
+- repository rules
+- acceptance criteria
+- verification requirements
+
+Herdr then manages execution through:
+
+```text
+Supervisor
+    |
+Lead
+    |
++-----------+
+| Executor  |
+| Reviewer  |
++-----------+
+```
+
+The underlying repository setup remains:
 
 ```bash
 herdctl init \
@@ -182,15 +208,7 @@ herdctl init \
   --test-command 'npm test && npm run build'
 ```
 
-Then:
-
-```bash
-herdctl integrations --repo my-repo
-herdctl doctor --repo my-repo
-herdctl bootstrap --repo my-repo
-```
-
-That creates a separate Herdr workspace, task state, memory, role set, commit authorization and push authorization for that repo.
+That creates the isolated Herdr workspace, repository state, runtime configuration, and Git authorization boundaries required for execution.
 
 If you do not yet know the verification command:
 
@@ -201,7 +219,9 @@ herdctl set-test 'npm test && npm run build' --repo my-repo
 
 ## Presets
 
-List them:
+Presets configure the runtime assignments, models, and permissions used by Herdr roles. They do not change the orchestration model.
+
+List available presets:
 
 ```bash
 herdctl presets
@@ -210,19 +230,18 @@ herdctl presets
 Current built-ins:
 
 ```text
-max-quality   Claude Fable supervisor/executor + Opus lead + GPT-5.6 Sol high reviewer
-all-claude    Fable/Opus herd using Claude Auto Mode
-conservative  Claude-only herd retaining explicit edit approvals
+max-quality   Multi-model configuration optimized for adversarial execution and review
+all-claude    Claude-based runtime configuration
+conservative  Explicit approval-focused configuration
 ```
 
-Apply to an existing initialized repo:
+Apply a preset to an existing repository:
 
 ```bash
 herdctl preset max-quality --repo example-repo
-herdctl bootstrap --repo example-repo --force
 ```
 
-The orchestration hierarchy is independent of the preset; presets only assign runtimes/models/permissions to seats.
+The orchestration hierarchy remains independent from the preset. Presets only determine which runtimes, models, and permission profiles are assigned to each role.
 
 ## Strict Reviewer protocol
 
