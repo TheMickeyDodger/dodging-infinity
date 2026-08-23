@@ -7,7 +7,10 @@ from mission_control.models import (
     OperatorRecommendation,
     OperatorReview,
 )
-from mission_control.approvals import ApprovalQueue
+from mission_control.approvals import (
+    ApprovalItem,
+    ApprovalQueue,
+)
 
 
 class ApprovalQueueTests(unittest.TestCase):
@@ -458,10 +461,23 @@ class ApprovalExecutionServiceTests(unittest.TestCase):
         )
 
     def test_next_action_commit_cannot_reach_execution(self):
-        item = self.queue.enqueue(
-            self.repo,
-            self.review(("git commit -m test",)),
+        from mission_control.approvals import (
+            APPROVAL_TYPE_NEXT_ACTION,
         )
+
+        item = ApprovalItem(
+            approval_id="next-action-commit",
+            herd_id="herd-1",
+            repo_path=self.repo,
+            approval_type=APPROVAL_TYPE_NEXT_ACTION,
+            explanation="This must not cross the commit gate.",
+            commands=("git commit -m test",),
+            provider="fake",
+            model="fake-model",
+            created_at_ms=123456789,
+        )
+        self.queue._items[item.approval_id] = item
+        self.queue._order.append(item.approval_id)
 
         with self.assertRaisesRegex(
             SafetyViolation,
@@ -474,76 +490,6 @@ class ApprovalExecutionServiceTests(unittest.TestCase):
             )
 
         self.execution.execute.assert_not_called()
-
-from mission_control.approvals import OperatorApprovalService
-
-
-class OperatorApprovalServiceTests(unittest.TestCase):
-    def setUp(self):
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.repo = Path(self.tempdir.name).resolve()
-        self.queue = ApprovalQueue()
-        self.review_service = Mock()
-        self.service = OperatorApprovalService(
-            self.queue,
-            self.review_service,
-        )
-
-    def tearDown(self):
-        self.tempdir.cleanup()
-
-    def test_review_and_queue_connects_operator_review_to_global_queue(self):
-        review = OperatorReview(
-            herd_id="herd-1",
-            provider="fake",
-            model="fake-model",
-            generated_at_ms=123456789,
-            recommendation=OperatorRecommendation(
-                explanation="Inspect status.",
-                commands=("git status --short",),
-            ),
-        )
-        self.review_service.review.return_value = review
-
-        item = self.service.review_and_queue(
-            self.repo,
-            herd_id="herd-1",
-        )
-
-        self.review_service.review.assert_called_once_with(
-            self.repo,
-            herd_id="herd-1",
-        )
-        self.assertEqual(item.herd_id, "herd-1")
-        self.assertEqual(
-            item.commands,
-            ("git status --short",),
-        )
-        self.assertEqual(
-            self.queue.pending(),
-            (item,),
-        )
-
-    def test_no_action_review_creates_no_pending_approval(self):
-        review = OperatorReview(
-            herd_id="herd-1",
-            provider="fake",
-            model="fake-model",
-            generated_at_ms=123456789,
-            recommendation=OperatorRecommendation(
-                explanation="No action required.",
-                commands=(),
-            ),
-        )
-        self.review_service.review.return_value = review
-
-        item = self.service.review_and_queue(
-            self.repo,
-            herd_id="herd-1",
-        )
-
-        self.assertIsNone(item)
-        self.assertEqual(self.queue.pending(), ())
 
 from mission_control.approvals import OperatorApprovalService
 
@@ -849,3 +795,273 @@ class OperatorApprovalHandoffTests(unittest.TestCase):
         self.assertIsNone(item)
         self.review_service.review.assert_not_called()
         self.assertEqual(self.queue.pending(), ())
+
+
+class GitGateTranslationTests(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tempdir.name).resolve()
+        self.queue = ApprovalQueue()
+        self.execution = Mock(spec=MissionControlExecutionService)
+        self.session = GhosttySession(
+            herd_id="herd-1",
+            terminal_id="terminal-1",
+            repo_path=self.repo,
+        )
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def test_commit_gate_translates_to_existing_herdctl_approval_then_exact_commit(self):
+        from mission_control.approvals import (
+            APPROVAL_TYPE_COMMIT,
+            GitGateApprovalService,
+        )
+
+        item = ApprovalItem(
+            approval_id="commit-approval",
+            herd_id="herd-1",
+            repo_path=self.repo,
+            approval_type=APPROVAL_TYPE_COMMIT,
+            explanation="Commit the validated work.",
+            commands=("git commit -m 'validated change'",),
+            provider="fake",
+            model="fake-model",
+            created_at_ms=123456789,
+        )
+        self.queue._items[item.approval_id] = item
+        self.queue._order.append(item.approval_id)
+
+        service = GitGateApprovalService(
+            self.queue,
+            self.execution,
+            safety_policy=CommandSafetyPolicy(),
+        )
+
+        service.approve_and_execute(
+            item.approval_id,
+            self.session,
+            execution_id="exec-commit",
+        )
+
+        self.execution.execute.assert_called_once_with(
+            self.session,
+            "exec-commit",
+            (
+                f"herdctl approve-commit --repo {self.repo} --yes",
+                "git commit -m 'validated change'",
+            ),
+        )
+
+    def test_push_gate_translates_to_existing_herdctl_approval_then_exact_push(self):
+        from mission_control.approvals import (
+            APPROVAL_TYPE_PUSH,
+            GitGateApprovalService,
+        )
+
+        item = ApprovalItem(
+            approval_id="push-approval",
+            herd_id="herd-1",
+            repo_path=self.repo,
+            approval_type=APPROVAL_TYPE_PUSH,
+            explanation="Push the validated commit.",
+            commands=("git push origin main",),
+            provider="fake",
+            model="fake-model",
+            created_at_ms=123456789,
+        )
+        self.queue._items[item.approval_id] = item
+        self.queue._order.append(item.approval_id)
+
+        service = GitGateApprovalService(
+            self.queue,
+            self.execution,
+            safety_policy=CommandSafetyPolicy(),
+        )
+
+        service.approve_and_execute(
+            item.approval_id,
+            self.session,
+            execution_id="exec-push",
+        )
+
+        self.execution.execute.assert_called_once_with(
+            self.session,
+            "exec-push",
+            (
+                f"herdctl approve-push --repo {self.repo} "
+                "--remote origin --target-branch main --yes",
+                "git push origin main",
+            ),
+        )
+
+
+class GitGateQueueClassificationTests(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tempdir.name).resolve()
+        self.queue = ApprovalQueue()
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def review(self, commands):
+        return OperatorReview(
+            herd_id="herd-1",
+            provider="fake",
+            model="fake-model",
+            generated_at_ms=123456789,
+            recommendation=OperatorRecommendation(
+                explanation="Perform the validated Git action.",
+                commands=tuple(commands),
+            ),
+        )
+
+    def test_standalone_commit_becomes_commit_approval(self):
+        from mission_control.approvals import APPROVAL_TYPE_COMMIT
+
+        item = self.queue.enqueue(
+            self.repo,
+            self.review(("git commit -m 'validated change'",)),
+        )
+
+        self.assertEqual(
+            item.approval_type,
+            APPROVAL_TYPE_COMMIT,
+        )
+
+    def test_standalone_push_becomes_push_approval(self):
+        from mission_control.approvals import APPROVAL_TYPE_PUSH
+
+        item = self.queue.enqueue(
+            self.repo,
+            self.review(("git push origin main",)),
+        )
+
+        self.assertEqual(
+            item.approval_type,
+            APPROVAL_TYPE_PUSH,
+        )
+
+    def test_mixed_sequence_with_commit_remains_next_action(self):
+        from mission_control.approvals import APPROVAL_TYPE_NEXT_ACTION
+
+        item = self.queue.enqueue(
+            self.repo,
+            self.review(
+                (
+                    "git status --short",
+                    "git commit -m 'validated change'",
+                )
+            ),
+        )
+
+        self.assertEqual(
+            item.approval_type,
+            APPROVAL_TYPE_NEXT_ACTION,
+        )
+
+
+class GenericExecutionRejectsGitGateTests(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tempdir.name).resolve()
+        self.queue = ApprovalQueue()
+        self.execution = Mock(spec=MissionControlExecutionService)
+        self.service = ApprovalExecutionService(
+            self.queue,
+            self.execution,
+            safety_policy=CommandSafetyPolicy(),
+        )
+        self.session = GhosttySession(
+            herd_id="herd-1",
+            terminal_id="terminal-1",
+            repo_path=self.repo,
+        )
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def test_generic_execution_service_rejects_git_gate_approvals(self):
+        from mission_control.approvals import (
+            APPROVAL_TYPE_COMMIT,
+            APPROVAL_TYPE_PUSH,
+        )
+
+        for approval_type, command in (
+            (
+                APPROVAL_TYPE_COMMIT,
+                "git commit -m 'validated change'",
+            ),
+            (
+                APPROVAL_TYPE_PUSH,
+                "git push origin main",
+            ),
+        ):
+            with self.subTest(approval_type=approval_type):
+                item = ApprovalItem(
+                    approval_id=f"gate-{approval_type.lower()}",
+                    herd_id="herd-1",
+                    repo_path=self.repo,
+                    approval_type=approval_type,
+                    explanation="Use the dedicated Git gate.",
+                    commands=(command,),
+                    provider="fake",
+                    model="fake-model",
+                    created_at_ms=123456789,
+                )
+                self.queue._items[item.approval_id] = item
+                self.queue._order.append(item.approval_id)
+
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Git gate",
+                ):
+                    self.service.approve_and_execute(
+                        item.approval_id,
+                        self.session,
+                        execution_id=f"exec-{approval_type.lower()}",
+                    )
+
+                self.assertEqual(
+                    self.queue.get(item.approval_id),
+                    item,
+                )
+
+        self.execution.execute.assert_not_called()
+
+
+class GitGatePushAmbiguityTests(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tempdir.name).resolve()
+        self.queue = ApprovalQueue()
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def test_bare_push_does_not_become_push_approval(self):
+        from mission_control.approvals import (
+            APPROVAL_TYPE_NEXT_ACTION,
+        )
+
+        review = OperatorReview(
+            herd_id="herd-1",
+            provider="fake",
+            model="fake-model",
+            generated_at_ms=123456789,
+            recommendation=OperatorRecommendation(
+                explanation="Push the validated commit.",
+                commands=("git push",),
+            ),
+        )
+
+        item = self.queue.enqueue(
+            self.repo,
+            review,
+        )
+
+        self.assertEqual(
+            item.approval_type,
+            APPROVAL_TYPE_NEXT_ACTION,
+        )

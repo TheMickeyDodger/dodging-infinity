@@ -11,8 +11,11 @@ import uuid
 from pathlib import Path
 
 from mission_control.approvals import (
+    APPROVAL_TYPE_COMMIT,
+    APPROVAL_TYPE_PUSH,
     ApprovalExecutionService,
     ApprovalQueue,
+    GitGateApprovalService,
     OperatorApprovalService,
 )
 from mission_control.execution import (
@@ -138,6 +141,10 @@ class MissionControl:
             self.operator_review,
         )
         self.approval_execution = ApprovalExecutionService(
+            self.approvals,
+            self.execution_service,
+        )
+        self.git_gate_execution = GitGateApprovalService(
             self.approvals,
             self.execution_service,
         )
@@ -318,7 +325,16 @@ class MissionControl:
                 "mc-" + uuid.uuid4().hex
             )
 
-            result = self.approval_execution.approve_and_execute(
+            execution_service = (
+                self.git_gate_execution
+                if item.approval_type in {
+                    APPROVAL_TYPE_COMMIT,
+                    APPROVAL_TYPE_PUSH,
+                }
+                else self.approval_execution
+            )
+
+            result = execution_service.approve_and_execute(
                 approval_id,
                 session,
                 execution_id=execution_id,
@@ -540,7 +556,13 @@ class MissionControl:
                     approval_top,
                     right_x,
                     right_edge,
-                    "› " + selected_approval.herd_id,
+                    (
+                        "› "
+                        + selected_approval.herd_id
+                        + " ["
+                        + selected_approval.approval_type
+                        + "]"
+                    ),
                     curses.A_BOLD,
                 )
 
@@ -684,11 +706,25 @@ class MissionControl:
             "activity": "[↑/↓] Scroll Events",
         }.get(self.focus, "[↑/↓] Navigate")
 
-        action_hint = (
-            "   [A] Approve & Execute"
-            if self.focus == "approvals"
-            else ""
-        )
+        action_hint = ""
+
+        if self.focus == "approvals":
+            selected_action = self._selected_approval()
+
+            if selected_action is None:
+                action_hint = ""
+            elif (
+                selected_action.approval_type
+                == APPROVAL_TYPE_COMMIT
+            ):
+                action_hint = "   [A] Approve Commit"
+            elif (
+                selected_action.approval_type
+                == APPROVAL_TYPE_PUSH
+            ):
+                action_hint = "   [A] Approve Push"
+            else:
+                action_hint = "   [A] Approve & Execute"
 
         put(
             screen,

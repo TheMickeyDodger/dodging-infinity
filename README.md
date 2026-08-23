@@ -114,7 +114,7 @@ Keyboard controls:
 ```text
 TAB       switch pane
 ↑ / ↓     select or scroll the focused pane
-A         approve and execute the selected approval
+A         approve the selected action, commit, or push
 R         refresh
 X         close the selected Herd
 Q         quit Mission Control
@@ -254,7 +254,31 @@ Approval proposals are intentionally ephemeral in memory while approval, executi
 
 The full path has been validated against a real dedicated Ghostty session: a human-approved two-command sequence executed exactly as displayed, produced per-command completion markers and the canonical `HERDR_HANDOFF` marker, and then triggered an automatic GPT-5.6 Sol review. The operator correctly determined that no further terminal action was required, leaving the approval queue empty. The live proof also exposed and fixed support for valid Git repositories with an unborn `HEAD`.
 
-Natural-language intake, Git-gate translation, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
+#### Git gate translation
+
+Mission Control now preserves Herdr's existing human commit and push protections instead of creating a second Git authorization system.
+
+A standalone operator recommendation containing a valid `git commit ...` is classified as a **COMMIT** approval. A standalone explicit `git push <remote> <branch>` is classified as a **PUSH** approval. Mixed command sequences remain ordinary next-action approvals and cannot cross either Git gate.
+
+When a COMMIT approval is authorized, Mission Control executes:
+
+1. the existing `herdctl approve-commit --repo <repo> --yes` authorization path;
+2. the exact human-approved `git commit ...` command.
+
+When a PUSH approval is authorized, Mission Control executes:
+
+1. the existing `herdctl approve-push --repo <repo> --remote <remote> --target-branch <branch> --yes` authorization path;
+2. the exact human-approved `git push <remote> <branch>` command.
+
+The `--yes` path is used only after the external human confirmation has already occurred in Mission Control. Herdr remains responsible for generating and validating the one-shot commit or push token, including repository, branch, HEAD, staged-diff, remote, target-ref, expiry, and Git-hook enforcement.
+
+Mission Control refuses to guess an ambiguous push destination. Bare `git push`, unsupported options, and refspec forms that cannot be mapped deterministically to one remote and one target branch do not become PUSH approvals.
+
+The terminal Approval Queue labels Git approvals as `COMMIT` or `PUSH` and changes the human action to **Approve Commit** or **Approve Push**. Ordinary Approve & Execute cannot consume a Git-gate approval.
+
+Both paths have been validated end-to-end against the real Herdr Git guards in a disposable repository. An unapproved commit and push were first blocked by Herdr. Mission Control then translated explicit human approval through the existing `herdctl` gates, the guarded commit completed successfully, and the guarded push delivered that exact commit to a disposable bare remote. The durable Mission Control audit recorded the human approval, generated Herdr gate command, exact Git command, per-command exit codes, and canonical handoff.
+
+Natural-language intake, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
 
 ## Model and runtime agnosticity
 

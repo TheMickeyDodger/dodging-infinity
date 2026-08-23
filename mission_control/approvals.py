@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import threading
 import time
 import uuid
@@ -9,11 +10,83 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from herdr.guards import (
+    simple_git_commit,
+    simple_git_push,
+)
+
 from .audit import MissionControlAuditLog
 from .models import OperatorReview
 
 
 APPROVAL_TYPE_NEXT_ACTION = "NEXT_ACTION"
+APPROVAL_TYPE_COMMIT = "COMMIT"
+APPROVAL_TYPE_PUSH = "PUSH"
+
+
+def _explicit_push_target(
+    command: str,
+) -> tuple[str, str]:
+    try:
+        tokens = shlex.split(
+            command,
+            posix=True,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not safely parse approved push command"
+        ) from exc
+
+    if (
+        len(tokens) < 4
+        or Path(tokens[0]).name != "git"
+        or tokens[1] != "push"
+    ):
+        raise RuntimeError(
+            "Mission Control push approval requires "
+            "`git push <remote> <branch>`"
+        )
+
+    positional = []
+
+    for token in tokens[2:]:
+        if token in {
+            "-u",
+            "--set-upstream",
+        }:
+            continue
+
+        if token.startswith("-"):
+            raise RuntimeError(
+                "Mission Control cannot derive an exact push "
+                "approval target from this push option"
+            )
+
+        positional.append(token)
+
+    if len(positional) != 2:
+        raise RuntimeError(
+            "Mission Control push approval requires exactly "
+            "one remote and one target branch"
+        )
+
+    remote, target = positional
+
+    if ":" in target:
+        raise RuntimeError(
+            "Mission Control does not guess push refspec targets"
+        )
+
+    target_branch = target.removeprefix(
+        "refs/heads/"
+    )
+
+    if not target_branch:
+        raise RuntimeError(
+            "Push target branch cannot be empty"
+        )
+
+    return remote, target_branch
 
 
 @dataclass(frozen=True)
@@ -93,11 +166,15 @@ class ApprovalQueue:
                     f"Herd {review.herd_id} already has a pending approval"
                 )
 
+            approval_type = self._classify_approval_type(
+                commands
+            )
+
             item = ApprovalItem(
                 approval_id=uuid.uuid4().hex,
                 herd_id=review.herd_id,
                 repo_path=repo,
-                approval_type=APPROVAL_TYPE_NEXT_ACTION,
+                approval_type=approval_type,
                 explanation=review.recommendation.explanation,
                 commands=commands,
                 provider=review.provider,
@@ -124,6 +201,36 @@ class ApprovalQueue:
         )
 
         return item
+
+    def _classify_approval_type(
+        self,
+        commands: tuple[str, ...],
+    ) -> str:
+        if len(commands) != 1:
+            return APPROVAL_TYPE_NEXT_ACTION
+
+        command = commands[0]
+
+        commit_ok, _commit_reason = simple_git_commit(
+            command
+        )
+
+        if commit_ok:
+            return APPROVAL_TYPE_COMMIT
+
+        push_ok, push_reason = simple_git_push(
+            command
+        )
+
+        if push_ok and push_reason != "dry-run":
+            try:
+                _explicit_push_target(command)
+            except RuntimeError:
+                return APPROVAL_TYPE_NEXT_ACTION
+
+            return APPROVAL_TYPE_PUSH
+
+        return APPROVAL_TYPE_NEXT_ACTION
 
     def approve(
         self,
@@ -226,6 +333,14 @@ class ApprovalExecutionService:
                 "Approval belongs to a different repository"
             )
 
+        if item.approval_type in {
+            APPROVAL_TYPE_COMMIT,
+            APPROVAL_TYPE_PUSH,
+        }:
+            raise RuntimeError(
+                "Git gate approvals require GitGateApprovalService"
+            )
+
         approved = self.queue.approve(
             approval_id
         )
@@ -258,6 +373,150 @@ class ApprovalExecutionService:
             execution_id,
             approved.commands,
         )
+
+class GitGateApprovalService:
+    """Translate human Git approval through existing Herdr guard gates."""
+
+    def __init__(
+        self,
+        queue: ApprovalQueue,
+        execution_service,
+        *,
+        safety_policy=None,
+    ):
+        from .safety import CommandSafetyPolicy
+
+        self.queue = queue
+        self.execution_service = execution_service
+        self.safety_policy = (
+            safety_policy
+            or CommandSafetyPolicy()
+        )
+
+    def approve_and_execute(
+        self,
+        approval_id: str,
+        session,
+        *,
+        execution_id: str,
+    ):
+        item = self.queue.get(approval_id)
+
+        if item.herd_id != session.herd_id:
+            raise RuntimeError(
+                "Approval belongs to a different Herd"
+            )
+
+        if (
+            item.repo_path
+            != Path(session.repo_path).resolve()
+        ):
+            raise RuntimeError(
+                "Approval belongs to a different repository"
+            )
+
+        if item.approval_type not in {
+            APPROVAL_TYPE_COMMIT,
+            APPROVAL_TYPE_PUSH,
+        }:
+            raise RuntimeError(
+                "Git gate service requires a COMMIT or PUSH approval"
+            )
+
+        if len(item.commands) != 1:
+            raise RuntimeError(
+                "Git gate approval must contain exactly one Git command"
+            )
+
+        approved = self.queue.approve(approval_id)
+
+        try:
+            self.safety_policy.validate(
+                approved.commands,
+                approval_type=approved.approval_type,
+            )
+            translated = self._translate(
+                approved.repo_path,
+                approved.approval_type,
+                approved.commands[0],
+            )
+        except Exception as exc:
+            MissionControlAuditLog(
+                approved.repo_path
+            ).append(
+                approved.herd_id,
+                "approval.safety_blocked",
+                data={
+                    "approval_id": approved.approval_id,
+                    "approval_type": approved.approval_type,
+                    "commands": list(approved.commands),
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+            raise
+
+        MissionControlAuditLog(
+            approved.repo_path
+        ).append(
+            approved.herd_id,
+            "approval.git_gate_translated",
+            data={
+                "approval_id": approved.approval_id,
+                "approval_type": approved.approval_type,
+                "approved_command": approved.commands[0],
+                "execution_commands": list(translated),
+            },
+        )
+
+        return self.execution_service.execute(
+            session,
+            execution_id,
+            translated,
+        )
+
+    def _translate(
+        self,
+        repo: Path,
+        approval_type: str,
+        command: str,
+    ) -> tuple[str, str]:
+        if approval_type == APPROVAL_TYPE_COMMIT:
+            gate = shlex.join(
+                (
+                    "herdctl",
+                    "approve-commit",
+                    "--repo",
+                    str(repo),
+                    "--yes",
+                )
+            )
+            return gate, command
+
+        remote, target_branch = self._push_target(command)
+
+        gate = shlex.join(
+            (
+                "herdctl",
+                "approve-push",
+                "--repo",
+                str(repo),
+                "--remote",
+                remote,
+                "--target-branch",
+                target_branch,
+                "--yes",
+            )
+        )
+
+        return gate, command
+
+    def _push_target(
+        self,
+        command: str,
+    ) -> tuple[str, str]:
+        return _explicit_push_target(command)
+
 
 class OperatorApprovalService:
     """Turn deterministic handoffs into pending global approvals."""
