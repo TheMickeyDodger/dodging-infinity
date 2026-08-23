@@ -2,7 +2,7 @@
   <img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">
 </p>
 
-# Dodging Infinity v0.4.0
+# Dodging Infinity v0.3.0
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -46,21 +46,19 @@ flowchart TD
     I --> J[Verified outcome]
 ```
 
-## What v0.4.0 adds
+## What v0.3.0 adds
 
-- **Terminal Mission Control** — running `infinity` now opens a full-screen terminal control surface for observing and managing Herds without living inside individual `herdctl` commands.
-- **Multi-Herd navigation** — Mission Control can display registered Herds side-by-side, switch the active view, and keep repository/runtime context visible from one place.
-- **Live orchestration view** — the selected Herd shows its repository, runtime state, full active objective, configured role/model assignments, and current agent topology.
-- **Activity journal** — Mission Control surfaces append-only control-plane events so runtime initialization, task dispatch, child-Herd activity, and lifecycle changes are visible in one place.
-- **Non-destructive Close Herd** — a Herd can be removed from the active Mission Control fleet without deleting its repository, working tree, or preserved `.herd` state.
-- **Mission Control snapshot API** — canonical repository, runtime, task, agent, child-Herd, and policy state is exposed through a JSON-serializable observation layer rather than duplicated inside the UI.
-- **Browser mode remains available** — `infinity web` starts the HTTP Mission Control interface for users who prefer a browser view.
-- **Dedicated Ghostty session foundation** — Mission Control now has a tested macOS session driver capable of creating, targeting, reconnecting to, and closing a specific Ghostty terminal by stable terminal UUID.
-- **Deterministic handoff foundation** — the Ghostty session work proves a machine-readable completion marker can be emitted through a side channel without screen-scraping the terminal. This is groundwork for the next Mission Control operator layer; automated intake/review/execution is not yet part of v0.4.0.
-- **`infinity` installer support** — `scripts/install.sh` now installs both the lower-level `herdctl` CLI and the human-facing `infinity` launcher.
-- **Existing Herdr behavior remains canonical** — Supervisor planning, Lead delegation, Executor work, Reviewer loops, child Herdrs, task lifecycle, and human commit/push gates are unchanged. Mission Control observes and wraps Herdr rather than replacing its orchestration logic.
-
-The recursive orchestration, child-Herdr dependency model, repository/task-scoped rules, deterministic Reviewer protocol, bounded context, human commit/push gates, and model/runtime-agnostic role system introduced in the v0.3 line remain the foundation underneath Mission Control.
+- **Programmatic Control Plane** — `HerdrControlPlane` is now the primary orchestration API instead of putting system behavior inside the CLI.
+- **Hierarchical child Herdrs** — a Supervisor can delegate work in another repository to a separately scoped Herdr without directly implementing inside that repository.
+- **Recursive orchestration** — child Herdrs can be initialized, configured, started, tasked, tracked, and composed into a larger objective.
+- **Parent/child dependency tracking** — every child spawned for a task is durably associated with that parent task.
+- **Deterministic completion gating** — a parent cannot complete while a required child task remains unresolved.
+- **Repository-scoped rules** — `herdctl rules`, `rules add`, and `rules remove` provide a simple durable rule interface.
+- **Task-scoped rules** — repeatable `herdctl task --rule ...` constraints apply only to that task and never leak into durable repository configuration.
+- **Package-owned runtime services** — initialization, lifecycle, heartbeat, task dispatch, Git guards, policy, orchestration, dependencies, registry, and runtime primitives now live under `herdr/`.
+- **Harness-owned prompt settlement** — Dodging Infinity no longer relies on Herdr's short initial prompt-settlement window.
+- **Bootstrap delivery recovery** — an unobserved bootstrap is retried once, while normal engineering task prompts retain single-delivery semantics.
+- Existing workforce presets, deterministic Reviewer protocol, bounded context, human commit/push gates, and multi-repo isolation remain intact.
 
 ## How Dodging Infinity works
 
@@ -75,210 +73,6 @@ The core loop is:
 **decompose -> isolate -> solve -> challenge -> validate -> compose**
 
 The same orchestration model can apply beyond conventional software work wherever a problem can be decomposed into bounded units with observable evidence and explicit validation.
-
-## Mission Control
-
-`herdctl` remains the canonical lower-level CLI. `infinity` is the human-facing Mission Control entry point built around it.
-
-After installing Dodging Infinity:
-
-```bash
-./scripts/install.sh
-```
-
-Launch Mission Control from any repository with:
-
-```bash
-infinity
-```
-
-Or explicitly choose a repository:
-
-```bash
-infinity --repo /path/to/repository
-```
-
-The terminal interface provides four live areas:
-
-```text
-HERDS              ACTIVE ORCHESTRATION       APPROVAL QUEUE        ACTIVITY
------              --------------------       --------------        --------
-registered Herds   repository / runtime       pending actions       control-plane events
-current selection  active objective           exact commands        task dispatch
-runtime state      role/model assignments      human approval        lifecycle changes
-                   current agent topology                           child-Herd activity
-```
-
-Keyboard controls:
-
-```text
-TAB       switch pane
-↑ / ↓     select or scroll the focused pane
-A         approve the selected action, commit, or push
-R         refresh
-X         close the selected Herd
-Q         quit Mission Control
-```
-
-Closing a Herd is intentionally non-destructive. It removes that active Herd from Mission Control without deleting the repository, working tree, commits, or preserved `.herd` state.
-
-The browser interface remains available:
-
-```bash
-infinity web
-```
-
-and can be pointed at another repository with:
-
-```bash
-infinity web --repo /path/to/repository
-```
-
-### Mission Control and Herdr
-
-Mission Control does not replace Herdr.
-
-```text
-Mission Control
-      ↓
-human-facing observation / lifecycle controls
-      ↓
-herdctl
-      ↓
-Herdr
-      ↓
-Supervisor → Lead → Executor → Reviewer
-```
-
-Herdr remains responsible for planning, delegation, execution, review, task lifecycle, child-Herd orchestration, and the protected Git gates.
-
-The dedicated Ghostty session driver introduced in v0.4.0 provides the terminal foundation for the next Mission Control stages. It can create, target, reconnect to, and close an exact terminal session using a stable terminal identifier.
-
-### v0.5.0 development
-
-#### Deterministic command handoff
-
-The v0.5.0 development line adds the first execution layer on top of that Ghostty foundation.
-
-Mission Control can now:
-
-- actively prove a newly created Ghostty shell is ready before sending work;
-- arm a deterministic one-shot zsh handoff hook before a command is entered;
-- send the supplied command to Ghostty **verbatim**, without wrapping, rewriting, chaining, or silently modifying it;
-- execute a supplied multi-command sequence serially, advancing only after the previous command returns successfully;
-- emit per-command completion markers with exact exit codes;
-- emit the canonical `HERDR_HANDOFF:<execution-id>:<exit-code>` marker when control returns to Mission Control;
-- stop immediately on a failed command;
-- time out and stop the sequence when an unexpected interactive prompt prevents shell handoff, rather than guessing an answer or continuing;
-- prevent later commands in the sequence from running after a failure or timeout.
-
-The handoff channel is machine-readable and does not depend on scraping terminal contents.
-
-This execution engine has been validated against real Ghostty sessions for successful commands, ordered multi-command sequences, failures, and interactive-prompt timeouts.
-
-#### Durable Herd state and audit
-
-Mission Control now also maintains its own durable per-Herd control state under `.herd/state/mission-control/`, separate from Herdr's live runtime snapshot and event journal.
-
-The durable control layer records:
-
-- the Mission Control Herd identity and repository binding;
-- lifecycle state including `STARTING`, `ACTIVE`, `DISCONNECTED`, and `CLOSED`;
-- the exact dedicated Ghostty terminal identity;
-- the currently active execution, enforcing one serialized execution per Herd;
-- disconnect and reconnect state without silently recreating a missing session;
-- append-only audit records for Herd/session lifecycle, exact command executions, deterministic handoffs, failures, timeouts, and errors.
-
-Successful executions and normal nonzero command failures are treated as resolved handoffs and clear the active execution slot. Uncertain states such as an interactive-prompt timeout remain durably locked as the active execution so Mission Control cannot inject later commands into a shell whose state is unknown.
-
-Mission Control also refuses to close a Herd while an execution remains unresolved. The lifecycle and audit path has been validated against real Ghostty sessions for successful execution, resolved command failure, terminal close, and unresolved interactive-prompt timeout behavior.
-
-#### Full handoff context assembly
-
-Mission Control can now assemble a complete structured handoff record for operator review without changing Herdr's orchestration contracts.
-
-The handoff context includes:
-
-- the current objective, task state, repository and task-specific rules, and configured verification command;
-- the canonical Herdr Mission Control snapshot, including runtime state, agents, children, and policy;
-- current agent output using Herdr's existing `visible` and `recent-unwrapped` read semantics;
-- the durable Herdr event journal;
-- current-task reviewer artifacts, Supervisor status, task checkpoint, and shared repository/Herd memory;
-- durable Mission Control Herd state and audit history;
-- the latest execution state, including exact commands, exit codes, deterministic handoff markers, failures, timeouts, or unresolved execution state;
-- exact Git HEAD, branch, status, staged diff, unstaged diff, and the contents or metadata of new untracked files.
-
-The assembler filters stale task artifacts so a previous task's checkpoint or Supervisor status is not presented as evidence for the current objective. It also preserves unresolved executions as the latest execution state rather than incorrectly falling back to an older completed run.
-
-The context assembler has been validated against a disposable real Git/Herdr repository and the full test suite.
-
-#### Model provider and operator review
-
-Mission Control now has a provider abstraction for one-shot operator reasoning that remains separate from Herdr's persistent Supervisor, Lead, Executor, and Reviewer roles.
-
-The default operator provider uses GPT-5.6 Sol through a non-interactive Codex invocation with a read-only sandbox, no model-side approval authority, an ephemeral session, and a schema-constrained structured response.
-
-After a handoff, the operator-review service can:
-
-- assemble the complete Phase 4 handoff context;
-- invoke the configured operator model without granting it permission to modify the repository;
-- return a human-readable explanation plus an exact ordered list of proposed terminal commands;
-- return an empty command list when no additional terminal action is needed;
-- preserve every proposed command exactly as model output rather than executing, wrapping, chaining, or rewriting it;
-- durably audit the provider, model, recommendation, exact proposed commands, and provider failures.
-
-Operator review itself remains proposal-only. The model has no authority to execute its recommendation. Execution requires a separate human approval through Mission Control.
-
-The operator path has been validated end-to-end with GPT-5.6 Sol against a disposable Git/Herdr repository. The model correctly reviewed the full handoff context, returned no commands when no action was needed, and made no repository changes.
-
-#### Approval queue and Approve & Execute
-
-Mission Control now connects operator review to a global human approval queue without granting the operator model execution authority.
-
-After a completed or failed deterministic handoff, Mission Control can automatically:
-
-- detect the newest execution that still needs operator review;
-- assemble the full handoff context and invoke the configured operator model in the background;
-- correlate the review to the exact source execution so the same handoff is not reviewed twice;
-- place a recommendation into the global approval queue when terminal action is proposed;
-- record `approval.not_required` instead of creating a queue item when the operator returns no commands;
-- show operator-review progress and completion directly in the terminal Mission Control interface.
-
-Each pending approval preserves the operator explanation and exact ordered command sequence. Mission Control does not regenerate, rewrite, wrap, chain, or improvise commands after the human approves them.
-
-When the Approval Queue pane is focused, pressing `A` performs **Approve & Execute** for the selected item. Mission Control verifies the durable Herd and dedicated Ghostty terminal, records the human approval, applies the command safety policy, and only then passes the exact approved sequence to the deterministic execution engine.
-
-The Phase 6 safety floor is fail-closed and separate from model reasoning. It blocks shell control operators, privilege-escalation and shell-command wrappers, destructive root or home filesystem wipes, destructive Git reset and clean operations, and attempts to cross the separate commit or push gates. User-configured blocked executables can only add restrictions. Additional safety hardening remains part of the later hardening phase.
-
-Approval proposals are intentionally ephemeral in memory while approval, execution, safety-block, and no-action outcomes are written to the durable per-Herd audit log.
-
-The full path has been validated against a real dedicated Ghostty session: a human-approved two-command sequence executed exactly as displayed, produced per-command completion markers and the canonical `HERDR_HANDOFF` marker, and then triggered an automatic GPT-5.6 Sol review. The operator correctly determined that no further terminal action was required, leaving the approval queue empty. The live proof also exposed and fixed support for valid Git repositories with an unborn `HEAD`.
-
-#### Git gate translation
-
-Mission Control now preserves Herdr's existing human commit and push protections instead of creating a second Git authorization system.
-
-A standalone operator recommendation containing a valid `git commit ...` is classified as a **COMMIT** approval. A standalone explicit `git push <remote> <branch>` is classified as a **PUSH** approval. Mixed command sequences remain ordinary next-action approvals and cannot cross either Git gate.
-
-When a COMMIT approval is authorized, Mission Control executes:
-
-1. the existing `herdctl approve-commit --repo <repo> --yes` authorization path;
-2. the exact human-approved `git commit ...` command.
-
-When a PUSH approval is authorized, Mission Control executes:
-
-1. the existing `herdctl approve-push --repo <repo> --remote <remote> --target-branch <branch> --yes` authorization path;
-2. the exact human-approved `git push <remote> <branch>` command.
-
-The `--yes` path is used only after the external human confirmation has already occurred in Mission Control. Herdr remains responsible for generating and validating the one-shot commit or push token, including repository, branch, HEAD, staged-diff, remote, target-ref, expiry, and Git-hook enforcement.
-
-Mission Control refuses to guess an ambiguous push destination. Bare `git push`, unsupported options, and refspec forms that cannot be mapped deterministically to one remote and one target branch do not become PUSH approvals.
-
-The terminal Approval Queue labels Git approvals as `COMMIT` or `PUSH` and changes the human action to **Approve Commit** or **Approve Push**. Ordinary Approve & Execute cannot consume a Git-gate approval.
-
-Both paths have been validated end-to-end against the real Herdr Git guards in a disposable repository. An unapproved commit and push were first blocked by Herdr. Mission Control then translated explicit human approval through the existing `herdctl` gates, the guarded commit completed successfully, and the guarded push delivered that exact commit to a disposable bare remote. The durable Mission Control audit recorded the human approval, generated Herdr gate command, exact Git command, per-command exit codes, and canonical handoff.
-
-Natural-language intake, exact current-agent prompt display, and crash-recovery orchestration remain later Mission Control phases and are **not yet implemented**.
 
 ## Model and runtime agnosticity
 
@@ -343,13 +137,11 @@ Remote
 
 The Reviewer remains read-only. The deterministic harness/Lead persists its review transcript; GPT does not need write access to `.herd/state/`.
 
-## Upgrade an existing repo to v0.4.0
+## Upgrade an existing v0.2.x repo to v0.3.0
 
-After updating Dodging Infinity, reinstall the command wrappers:
+After updating Dodging Infinity and reinstalling the `herdctl` wrapper:
 
 ```bash
-./scripts/install.sh
-
 cd ~/code/internal
 
 herdctl upgrade --repo example-repo --preset max-quality
@@ -622,9 +414,6 @@ Every repo has its own Herdr workspace, task state, context, memory and Git appr
 ## Main commands
 
 ```text
-infinity [mission-control] [--repo PATH]
-infinity web [--repo PATH] [--port PORT] [--no-open]
-
 herdctl init [--alias NAME] [--preset PRESET] [--test-command COMMAND]
 herdctl presets
 herdctl preset PRESET --repo NAME
@@ -651,7 +440,6 @@ herdctl prompt ROLE "..." --repo NAME
 herdctl heartbeat --once --repo NAME
 herdctl restart-heartbeat --repo NAME
 ```
-
 ## License
 
 Dodging Infinity is licensed under the [Apache License 2.0](LICENSE).

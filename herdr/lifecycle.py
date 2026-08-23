@@ -200,6 +200,15 @@ IMPORTANT REPOSITORY PIN:
 - All commits require the deterministic human commit-confirmation gate. Never bypass it or use `--no-verify`.
 - All pushes require the deterministic human push-confirmation gate. Never force push or use `git push --no-verify`.
 
+## Bootstrap task boundary
+No engineering task is active during bootstrap.
+
+Bootstrap establishes only your persistent role, repository boundary, topology, policy, and verification context.
+
+- Do not infer or begin work from the verification command, shared memory, repository state, filenames, prior task history, or any other bootstrap context.
+- Do not delegate, implement, review, verify, or complete engineering work merely because bootstrap context suggests an objective.
+- Wait for an explicit task or delegation prompt delivered through Herdr before beginning substantive engineering work.
+
 ## Deterministic review protocol
 After a Reviewer finishes, the Lead must validate and persist the decision with:
 `herdctl review-decision --repo "{repo_ref}" --reviewer <reviewer-logical-name>`

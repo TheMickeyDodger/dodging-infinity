@@ -70,6 +70,50 @@ class SupervisorOrchestrationContractTests(unittest.TestCase):
             config,
         )
 
+    def test_bootstrap_forbids_inference_of_undispatched_task(self):
+        temp, herd, config = self.make_herd()
+        self.addCleanup(
+            temp.cleanup
+        )
+
+        config["project"]["test_command"] = (
+            "test -f phase8-proof.txt"
+        )
+
+        agents = {
+            "supervisor": "sup1",
+            "lead1": "lead1",
+            "executor1": "exec1",
+            "reviewer1": "rev1",
+        }
+
+        for logical, role_type in (
+            ("supervisor", "supervisor"),
+            ("lead1", "lead"),
+            ("executor1", "executor"),
+            ("reviewer1", "reviewer"),
+        ):
+            text = bootstrap_text(
+                herd,
+                logical,
+                role_type,
+                agents,
+                config,
+            )
+
+            self.assertIn(
+                "No engineering task is active during bootstrap.",
+                text,
+            )
+            self.assertIn(
+                "Do not infer or begin work from the verification command",
+                text,
+            )
+            self.assertIn(
+                "Wait for an explicit task or delegation prompt",
+                text,
+            )
+
     def test_supervisor_receives_child_spawn_bridge(self):
         temp, herd, config = self.make_herd()
         self.addCleanup(

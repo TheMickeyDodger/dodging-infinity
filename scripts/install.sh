@@ -9,17 +9,7 @@ cat > "$BIN_DIR/herdctl" <<EOF
 exec python3 "$ROOT/herdctl.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/herdctl"
-cat > "$BIN_DIR/infinity" <<EOF
-#!/usr/bin/env bash
-PY="$ROOT/.venv/bin/python"
-if [ ! -x "\$PY" ]; then
-  PY=python3
-fi
-exec "\$PY" "$ROOT/infinity.py" "\$@"
-EOF
-chmod +x "$BIN_DIR/infinity"
 echo "Installed: $BIN_DIR/herdctl"
-echo "Installed: $BIN_DIR/infinity"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo 'Add to your shell profile: export PATH="$HOME/.local/bin:$PATH"'
 fi

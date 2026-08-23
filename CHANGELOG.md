@@ -1,22 +1,5 @@
 # Changelog
 
-## v0.4.0
-
-- Added full-screen terminal **Mission Control** launched with `infinity`.
-- Added multi-Herd navigation with live repository, runtime, objective, role/model, and agent-topology visibility.
-- Added append-only Mission Control activity/event journaling.
-- Added canonical Mission Control snapshot API for repository, runtime, task, agent, child-Herd, and policy state.
-- Added optional browser Mission Control mode with `infinity web`.
-- Added non-destructive Herd close/unregister behavior that preserves repository work and `.herd` history.
-- Added the `infinity` launcher to `scripts/install.sh` alongside `herdctl`.
-- Added the initial `mission_control` service package.
-- Added a tested Ghostty session driver capable of creating, targeting, reconnecting to, and closing a specific terminal by stable terminal UUID.
-- Proved deterministic machine-readable handoff signaling through a side channel without terminal screen scraping.
-- Preserved existing Herdr orchestration semantics: Supervisor planning, Lead delegation, Executor work, Reviewer loops, child-Herd behavior, task lifecycle, and human commit/push gates remain canonical.
-- Removed the rejected Textual/constellation UI experiment in favor of the terminal-native curses Mission Control.
-- Expanded regression coverage for Mission Control state/events, HTTP server behavior, Control Plane events, and Ghostty session management.
-- The upcoming natural-language intake, Operator/Review Model, global approval queue, approved command execution, and crash recovery layers are **not yet part of v0.4.0**.
-
 ## v0.3.0
 
 - Renamed the project to **Dodging Infinity**: an orchestration system for bounding unbounded objectives into finite, isolated, verifiable work.
