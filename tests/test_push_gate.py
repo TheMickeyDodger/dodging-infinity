@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import herdctl
 from herdr import guards
@@ -155,6 +156,85 @@ class PushGateTests(unittest.TestCase):
             "once the approved commit is observed on the remote-tracking ref "
             "the approval is spent (fail closed)",
         )
+
+    def test_tag_push_identity_binds_exact_tag_object(self):
+        tag = "v-test"
+        sh(
+            ["git", "tag", "-a", tag, "-m", "test release"],
+            cwd=self.work,
+        )
+        tag_oid = self.head(self.work, f"refs/tags/{tag}")
+
+        cli_ident = herdctl.push_identity(
+            self.work,
+            target_tag=tag,
+        )
+        guard_ident = guards.push_identity(
+            self.work,
+            target_tag=tag,
+        )
+
+        for ident in (cli_ident, guard_ident):
+            self.assertEqual(
+                ident["source_ref"],
+                f"refs/tags/{tag}",
+            )
+            self.assertEqual(
+                ident["source_oid"],
+                tag_oid,
+            )
+            self.assertEqual(
+                ident["target_ref"],
+                f"refs/tags/{tag}",
+            )
+
+
+    def test_tag_push_dry_run_then_real_push_succeeds(self):
+        tag = "v-test"
+        sh(
+            ["git", "tag", "-a", tag, "-m", "test release"],
+            cwd=self.work,
+        )
+        ident = herdctl.push_identity(
+            self.work,
+            target_tag=tag,
+        )
+        token = dict(
+            ident,
+            alias="t",
+            approved_at=1,
+            expires_at=2**31,
+        )
+        path = guards.push_approval_path(self.work)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(token))
+
+        refspec = f"refs/tags/{tag}:refs/tags/{tag}"
+
+        p = sh(
+            ["git", "push", "--dry-run", "origin", refspec],
+            cwd=self.work,
+            check=False,
+        )
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("HERD PUSH AUTHORIZED", p.stderr)
+        self.assertTrue(path.exists())
+
+        herdctl.push_tag_cmd(
+            SimpleNamespace(
+                repo=str(self.work),
+                tag=tag,
+            )
+        )
+        self.assertEqual(
+            self.head(self.bare, f"refs/tags/{tag}"),
+            self.head(self.work, f"refs/tags/{tag}"),
+        )
+        self.assertFalse(
+            path.exists(),
+            "tag push approval must be consumed once the approved tag lands",
+        )
+
 
     def test_push_approval_valid_exception_contract(self):
         # Pins the internally-consistent exception dialects of both duplicated
