@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added `herdctl health [--repo NAME]`: a repository-scoped, strictly read-only operational readiness probe. It checks herd configuration, Herdr server reachability, runtime state, that every expected agent resolves to a live Herdr agent, and task-state readability. Agent workflow states (idle/working/done/blocked) are reported as information, not failures; missing, unreachable, malformed, or unknown infrastructure fails with an actionable remedy and a nonzero exit. Complements `doctor` (environment/tooling probe) and `status` (task + agent state display).
+- `herdctl health` bounds live-agent probing to a hard cap of 512 runtime entries per run (expected roles probed first), so a corrupt runtime map can never fan out unbounded `herdr agent get` subprocesses. A map exceeding the cap fails health with a count of the unprobed entries instead of reporting READY on unverified agents.
+- `herdctl health` remedies no longer advertise `herdctl bootstrap --force` for the runtime states bootstrap cannot read past — invalid JSON, a non-object payload, a non-object `agents` value, or a corrupt recorded supervisor name — since bootstrap re-reads `.herd/state/runtime.json` before its force check and tracebacks on those states with or without `--force`. Those remedies now say to move the file aside or restore a valid JSON object first, then run plain `herdctl bootstrap`; `--force` is still advertised where it genuinely works, such as a corrupt non-supervisor agent name.
+
 ## v0.6.0
 
 - Replaced the abandoned Mission Control architecture with a simpler Codex-as-operator model: human intent flows through Codex into Herdr's existing Supervisor, Lead, Executor, and Reviewer hierarchy.

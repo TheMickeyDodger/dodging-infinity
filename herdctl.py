@@ -1231,6 +1231,401 @@ def status(args):
         print(f"{logical:12} {agent:32} {st}{extra}")
 
 
+def _health_report(checks):
+    """Render health rows in doctor's aligned style and set the exit code."""
+    width = max(len(label) for label, _, _, _ in checks)
+    failed = False
+    for label, ok, detail, remedy in checks:
+        print(f"{label:<{width}}  {'OK' if ok else 'FAIL':<4}  {detail}")
+        if not ok:
+            failed = True
+            if remedy:
+                print(f"{'':<{width}}        remedy: {remedy}")
+    if failed:
+        print("Health: NOT READY")
+        raise SystemExit(1)
+    print("Health: READY")
+
+
+def _health_config_row(r):
+    """Herd config check. Returns (row, config-dict-or-None)."""
+    path = hroot(r) / CFG
+    try:
+        config = cfg(r)
+    except SystemExit as exc:
+        return ("Herd config", False, str(exc), "run `herdctl init` in the repository"), None
+    except ValueError:
+        return (
+            "Herd config",
+            False,
+            f"{path} is not valid JSON",
+            "repair the file or re-run `herdctl init`",
+        ), None
+    except OSError as exc:
+        return (
+            "Herd config",
+            False,
+            f"could not read {path}: {exc}",
+            "fix the file (permissions, not a directory) or re-run `herdctl init`",
+        ), None
+    if not isinstance(config, dict):
+        return (
+            "Herd config",
+            False,
+            f"{path} does not contain a JSON object",
+            "repair the file or re-run `herdctl init`",
+        ), None
+    roles = config.get("roles")
+    if not (isinstance(roles, dict) and roles):
+        return (
+            "Herd config",
+            False,
+            f"no roles defined in {path}",
+            "apply a preset: `herdctl preset PRESET --repo ...`",
+        ), config
+    row = ("Herd config", True, f"{len(roles)} role(s): {', '.join(sorted(roles))}", None)
+    return row, config
+
+
+def _health_server_row():
+    """Herdr server reachability check. Returns (row, reachable-bool).
+
+    Read-only query; the (enormous) list output is intentionally never
+    printed — only the exit code matters.
+    """
+    if shutil.which("herdr") is None:
+        return (
+            "Herdr server",
+            False,
+            "`herdr` binary not found on PATH",
+            "install Herdr; `herdctl doctor` checks environment tooling",
+        ), False
+    try:
+        p = run(["herdr", "agent", "list"])
+    except OSError as exc:
+        return (
+            "Herdr server",
+            False,
+            f"could not execute `herdr`: {exc}",
+            "reinstall Herdr; `herdctl doctor` checks environment tooling",
+        ), False
+    if p.returncode == 0:
+        return ("Herdr server", True, "control plane answered a read-only query", None), True
+    return (
+        "Herdr server",
+        False,
+        f"`herdr agent list` exited {p.returncode}",
+        "start the Herdr server, then re-run `herdctl health`",
+    ), False
+
+
+# Remedy for runtime state that `start_herd` cannot read past: it
+# re-reads the old state file BEFORE its force check, so `herdctl
+# bootstrap` — forced or not — tracebacks until the file is repaired or
+# moved aside (pinned executable by StartHerdCorruptStateContractTests
+# in tests/test_health.py). Moving the file aside is preferred over
+# deleting it so it stays inspectable and its old `workspace_id` can be
+# recovered for manual workspace cleanup.
+_HEALTH_RUNTIME_REPAIR_REMEDY = (
+    "move the file aside (keeping it for inspection) or restore a valid "
+    "JSON object, then re-run `herdctl bootstrap`"
+)
+
+
+def _health_runtime_row(r):
+    """Runtime state check. Returns (row, agents-mapping-or-None)."""
+    path = hroot(r) / STATE
+    try:
+        runtime = state(r)
+    except SystemExit as exc:
+        return ("Runtime state", False, str(exc), "run `herdctl bootstrap --repo ...`"), None
+    except ValueError:
+        return (
+            "Runtime state",
+            False,
+            f"{path} is not valid JSON",
+            _HEALTH_RUNTIME_REPAIR_REMEDY,
+        ), None
+    except OSError as exc:
+        return (
+            "Runtime state",
+            False,
+            f"could not read {path}: {exc}",
+            "fix the file's permissions, then re-run `herdctl bootstrap`",
+        ), None
+    if not isinstance(runtime, dict):
+        return (
+            "Runtime state",
+            False,
+            f"{path} does not contain a JSON object",
+            _HEALTH_RUNTIME_REPAIR_REMEDY,
+        ), None
+    agents = runtime.get("agents")
+    if "agents" in runtime and not isinstance(agents, dict):
+        # A present-but-non-mapping `agents` value makes `start_herd`
+        # traceback, unlike the empty/absent mapping below which
+        # bootstraps normally — the two states need different remedies.
+        return (
+            "Runtime state",
+            False,
+            f"`agents` in {path} is not a JSON object",
+            _HEALTH_RUNTIME_REPAIR_REMEDY,
+        ), None
+    if not agents:
+        return (
+            "Runtime state",
+            False,
+            f"no `agents` mapping in {path}",
+            "re-run `herdctl bootstrap` to rebuild runtime state",
+        ), None
+    return ("Runtime state", True, f"{len(agents)} agent(s) recorded", None), agents
+
+
+# Sanity ceiling for orchestration counts, applied BEFORE any role-set
+# expansion so a corrupt count can never make the diagnostic hang. Real
+# herds are a handful of interactive agents; 1000 is orders of magnitude
+# above any plausible topology while expansion stays sub-millisecond.
+_HEALTH_MAX_ROLE_COUNT = 1000
+
+# Cap for enumerated names in one diagnostic line ("... and N more").
+_HEALTH_MAX_LISTED = 10
+
+# Hard ceiling on live-agent probes (one `herdr agent get` subprocess
+# each) per health run, applied BEFORE any probing so a hand-corrupted
+# runtime map with millions of keys can never fan out unbounded
+# subprocesses. 512 comfortably exceeds any plausible interactive herd
+# (and the largest information-only topology pinned in tests, 304
+# entries), so extra agents beyond config remain information rather
+# than failure in every realistic case; entries beyond the cap are
+# unverified and fail closed. Deliberately a constant — never derived
+# from config or runtime input, which is exactly what may be corrupt.
+_HEALTH_MAX_AGENT_PROBES = 512
+
+
+def _health_truncate(items, sep=", "):
+    """Bound an enumerated diagnostic list so no output line is unbounded."""
+    items = list(items)
+    if len(items) <= _HEALTH_MAX_LISTED:
+        return sep.join(items)
+    shown = sep.join(items[:_HEALTH_MAX_LISTED])
+    return f"{shown}{sep}... and {len(items) - _HEALTH_MAX_LISTED} more"
+
+
+def _health_expected_roles(config):
+    """Logical roles this config bootstraps (mirrors herdr/lifecycle.py).
+
+    Raises ValueError with an actionable message on a malformed
+    `orchestration` block instead of letting int()/get() tracebacks escape.
+    """
+    orchestration = config.get("orchestration", {})
+    if orchestration is None:
+        orchestration = {}
+    if not isinstance(orchestration, dict):
+        raise ValueError(f"`orchestration` in {CFG} is not a JSON object")
+    try:
+        # OverflowError: json.loads accepts `Infinity`, and int(inf) raises it.
+        leads = max(1, int(orchestration.get("leads", 1)))
+        pods = max(1, int(orchestration.get("pods", 1)))
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(
+            f"`orchestration.leads`/`orchestration.pods` in {CFG} must be integers"
+        )
+    if leads > _HEALTH_MAX_ROLE_COUNT or pods > _HEALTH_MAX_ROLE_COUNT:
+        raise ValueError(
+            f"`orchestration.leads`/`orchestration.pods` in {CFG} "
+            f"must be at most {_HEALTH_MAX_ROLE_COUNT}"
+        )
+    expected = {"supervisor"}
+    expected |= {f"lead{i}" for i in range(1, leads + 1)}
+    for i in range(1, pods + 1):
+        expected.add(f"executor{i}")
+        expected.add(f"reviewer{i}")
+    return expected
+
+
+def _health_agents_row(config, agents, herdr_reachable):
+    """Expected-agents check. Returns one row.
+
+    Workflow states (idle/working/done/blocked) are state information,
+    not failures. Failures are infrastructure we cannot account for:
+    an expected logical role absent from runtime state, a non-string
+    agent name, an agent whose real state cannot be established
+    (`missing`/`unknown`), or runtime entries left unprobed by the
+    _HEALTH_MAX_AGENT_PROBES ceiling (unverified is not healthy).
+    """
+    if agents is None:
+        return (
+            "Agents",
+            False,
+            "not checked: runtime state unavailable",
+            "restore runtime state first (see `Runtime state` above)",
+        )
+    if not herdr_reachable:
+        return (
+            "Agents",
+            False,
+            "not checked: Herdr server unreachable",
+            "restore the Herdr server first (see `Herdr server` above)",
+        )
+
+    problems = []
+    notes = []
+
+    # `start_herd`'s live-supervisor probe passes agents["supervisor"]
+    # straight to subprocess BEFORE its force check, so a truthy
+    # non-string value makes `herdctl bootstrap` traceback with or
+    # without --force, while any falsy value (including "") merely
+    # short-circuits the probe and bootstraps fine. When that corrupt
+    # state is present, --force is a false remedy for the whole row and
+    # the repair-first remedy must win. Pinned executable by
+    # StartHerdCorruptStateContractTests in tests/test_health.py.
+    supervisor_name = agents.get("supervisor")
+    supervisor_corrupt = bool(supervisor_name) and not isinstance(
+        supervisor_name, str
+    )
+
+    expected = None
+    if isinstance(config, dict):
+        try:
+            expected = _health_expected_roles(config)
+        except ValueError as exc:
+            return (
+                "Agents",
+                False,
+                f"cannot derive expected roles: {exc}",
+                "fix the `orchestration` block in `.herd/herd.config.json`",
+            )
+        # Keys parsed from JSON are always str; the isinstance guard is
+        # kept as cheap defensiveness for direct callers that hand this
+        # function a non-JSON-shaped mapping (as tests do).
+        missing_roles = sorted(expected - {k for k in agents if isinstance(k, str)})
+        if missing_roles:
+            problems.append(
+                "expected role(s) absent from runtime state: "
+                f"{_health_truncate(missing_roles)}"
+            )
+        extras = sorted({str(k) for k in agents} - expected)
+        if extras:
+            notes.append(
+                f"extra agent(s) beyond config: {_health_truncate(extras)}"
+            )
+    else:
+        notes.append("expected roles not verified: config unavailable")
+
+    # Bound the probe fan-out before doing any per-agent work: expected
+    # (config-derived) roles are ordered first so a required role is
+    # still always probed even when a pathological runtime map hits
+    # _HEALTH_MAX_AGENT_PROBES, then anything left unprobed fails closed
+    # below — truncation must never manufacture a READY verdict.
+    ordered = sorted(agents, key=str)
+    if expected:
+        ordered = [
+            k for k in ordered if isinstance(k, str) and k in expected
+        ] + [
+            k for k in ordered if not (isinstance(k, str) and k in expected)
+        ]
+    to_probe = ordered[:_HEALTH_MAX_AGENT_PROBES]
+    unprobed = len(ordered) - len(to_probe)
+    if unprobed:
+        problems.append(
+            f"{unprobed} agent(s) not probed "
+            f"(probe cap {_HEALTH_MAX_AGENT_PROBES}) and so not verified"
+        )
+
+    states = []
+    for logical in to_probe:
+        agent = agents[logical]
+        if not isinstance(agent, str) or not agent:
+            states.append(f"{logical}=invalid")
+            problems.append(f"{logical} has a non-string agent name in runtime state")
+            continue
+        try:
+            st = agent_info(agent)["status"]
+        except (OSError, TypeError):
+            st = "missing"
+        states.append(f"{logical}={st}")
+        if st in ("missing", "unknown"):
+            problems.append(f"{logical} ({agent}) is {st}")
+
+    detail = _health_truncate(states, sep=" ")
+    if notes:
+        detail += f" ({'; '.join(notes)})"
+    if problems:
+        # --force stays the remedy for every other problem on this row
+        # (missing role, missing/unknown status, probe-cap truncation,
+        # corrupt NON-supervisor name): bootstrap reads only the
+        # supervisor entry from old state, so --force genuinely works
+        # there and must not regress to the heavier repair-first path.
+        remedy_tail = (
+            _HEALTH_RUNTIME_REPAIR_REMEDY
+            if supervisor_corrupt
+            else "re-run `herdctl bootstrap --force` to relaunch"
+        )
+        return (
+            "Agents",
+            False,
+            detail,
+            _health_truncate(problems, sep="; ") + "; " + remedy_tail,
+        )
+    return ("Agents", True, detail, None)
+
+
+def _health_task_row(r):
+    """Task-state readability check. Returns one row.
+
+    Absent task.json is fine (IDLE); any parseable status — including a
+    persisted ERROR outcome — is state information, not a readiness
+    failure. Only an unreadable file (the load_task sentinel) or a
+    payload that is not a JSON object fails.
+    """
+    t = load_task(r)
+    unreadable = not isinstance(t, dict) or (
+        t.get("status") == "ERROR" and t.get("error") == "unreadable task state"
+    )
+    if unreadable:
+        return (
+            "Task state",
+            False,
+            f"{task_path(r)} is not valid JSON",
+            "inspect the file; restore valid JSON or remove it to reset to IDLE",
+        )
+    return ("Task state", True, str(t.get("status", "IDLE")), None)
+
+
+def health(args):
+    """Read-only operational readiness probe for one repository's herd.
+
+    Complements `doctor` (environment/tooling probe: binaries, runtime
+    kinds, git guard hooks) and `status` (task + agent state display).
+    `health` answers one question: is THIS repository's herd configured,
+    reachable, and usable right now? It never writes state, never
+    prompts an agent, and only issues read-only Herdr queries.
+
+    Exactly one row per category is emitted on every code path — the
+    row list below is built structurally, never conditionally — so a
+    destroyed input can never silently vanish from the report.
+    """
+    try:
+        r = resolve_repo_ref(args.repo)
+    except SystemExit as exc:
+        _health_report([
+            (
+                "Repository",
+                False,
+                str(exc),
+                "pass a registered alias (see `herdctl repos`) or a git repository path",
+            ),
+        ])
+        return
+
+    config_row, config = _health_config_row(r)
+    server_row, herdr_reachable = _health_server_row()
+    runtime_row, agents = _health_runtime_row(r)
+    agents_row = _health_agents_row(config, agents, herdr_reachable)
+    task_row = _health_task_row(r)
+    _health_report([config_row, server_row, runtime_row, agents_row, task_row])
+
+
 def send_runtime_reset(agent, command, timeout_ms=30000):
     """Reset one interactive runtime without destroying its Herdr pane/session process."""
     p = prompt(agent, command, timeout_ms, False)
@@ -1723,6 +2118,13 @@ def main():
     q = sp.add_parser("status")
     q.add_argument("--repo")
     q.set_defaults(fn=status)
+
+    q = sp.add_parser(
+        "health",
+        help="read-only operational readiness probe for one repository's herd",
+    )
+    q.add_argument("--repo")
+    q.set_defaults(fn=health)
 
     q = sp.add_parser("mission")
     msp = q.add_subparsers(dest="mission_cmd", required=True)

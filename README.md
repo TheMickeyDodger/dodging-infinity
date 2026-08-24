@@ -950,6 +950,7 @@ herdctl repos [--prune]
 
 herdctl safety-install
 herdctl doctor --repo NAME
+herdctl health --repo NAME
 herdctl integrations --repo NAME
 
 herdctl bootstrap --repo NAME [--force]
@@ -1007,6 +1008,29 @@ herdctl prompt ROLE "..." --repo NAME
 herdctl heartbeat --once --repo NAME
 herdctl restart-heartbeat --repo NAME
 ```
+
+## Inspecting a herd: doctor vs status vs health
+
+- `doctor` — environment/tooling probe: are the binaries, runtime kinds, and git guard hooks installed here?
+- `status` — task + agent state display: what is this herd currently doing?
+- `health` — operational readiness probe: is THIS repository's herd configured, reachable, and usable right now?
+
+`herdctl health [--repo NAME]` is strictly read-only. It checks the herd
+configuration, Herdr server reachability, runtime state, the herd's agents,
+and that task state is readable. The agent check derives the expected logical
+roles from the config's `orchestration` counts, fails if any expected role is
+absent from runtime state, and fails if any recorded agent cannot be resolved
+to a live Herdr agent; extra agents beyond the config are reported as
+information. Agent workflow states (idle, working, done, blocked) are also
+information — a blocked agent alone does not fail health. Missing,
+unreachable, malformed, or unknown infrastructure fails with an actionable
+remedy and a nonzero exit; a healthy herd exits 0.
+
+Live-agent probing is bounded: at most 512 recorded agents are probed per
+run (a hard constant, far above any realistic topology), with expected
+roles probed first. If a runtime map exceeds the bound, health fails with
+a count of the unprobed entries rather than reporting READY on the
+strength of agents it never verified.
 
 ## Roadmap
 
