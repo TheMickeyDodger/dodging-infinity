@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.0
+
+- Replaced the abandoned Mission Control architecture with a simpler Codex-as-operator model: human intent flows through Codex into Herdr's existing Supervisor, Lead, Executor, and Reviewer hierarchy.
+- Added a durable mission contract under `.herd/state/mission.json`.
+- Added `herdctl mission create` and `herdctl mission show`.
+- Added `herdctl task --mission` to dispatch Codex-prepared missions through the existing Herdr Control Plane.
+- Mission dispatch now carries the full objective, constraints, rules, acceptance criteria, and verification plan into the Supervisor task payload.
+- Mission rules continue to flow through Herdr task policy for enforcement.
+- Strengthened bootstrap boundaries so agents do not infer engineering work from repository state, verification commands, or shared memory before receiving an explicit task or delegation.
+- Fixed one-shot push approval lifecycle so `git push --dry-run` does not consume authorization; approval is consumed only after the approved commit is observed on the approved remote-tracking ref.
+- Added regression coverage for mission dispatch, push dry-runs, real pushes, fetch behavior, approval invalidation, and the updated operator workflow.
+- Removed the abandoned Mission Control implementation while preserving Herdr's canonical CLI, orchestration engine, repository isolation, and human commit/push gates.
+
 ## v0.3.0
 
 - Renamed the project to **Dodging Infinity**: an orchestration system for bounding unbounded objectives into finite, isolated, verifiable work.
