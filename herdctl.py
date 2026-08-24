@@ -336,7 +336,7 @@ def push_approval_path(r):
     return hroot(r) / PUSH_APPROVAL
 
 
-def push_identity(r, remote_name="origin", target_branch=None):
+def push_identity(r, remote_name="origin", target_branch=None, target_tag=None):
     root = Path(gitout(r, "rev-parse", "--show-toplevel")).resolve()
     branch = gitout(root, "branch", "--show-current", allow_fail=True) or "(detached HEAD)"
     head = gitout(root, "rev-parse", "HEAD", allow_fail=True) or "(unborn)"
@@ -345,14 +345,26 @@ def push_identity(r, remote_name="origin", target_branch=None):
     remote_url = gitout(root, "remote", "get-url", remote_name, allow_fail=True)
     if not remote_url:
         raise SystemExit(f"Remote `{remote_name}` not found.")
-    target_branch = target_branch or branch
+    if target_tag:
+        source_ref = f"refs/tags/{target_tag}"
+        source_oid = gitout(root, "rev-parse", source_ref, allow_fail=True)
+        if not source_oid:
+            raise SystemExit(f"Tag `{target_tag}` not found.")
+        target_ref = source_ref
+    else:
+        target_branch = target_branch or branch
+        source_ref = f"refs/heads/{branch}"
+        source_oid = head
+        target_ref = f"refs/heads/{target_branch}"
     return {
         "repo_root": str(root),
         "branch": branch,
         "head": head,
         "remote_name": remote_name,
         "remote_url": remote_url,
-        "target_ref": f"refs/heads/{target_branch}",
+        "source_ref": source_ref,
+        "source_oid": source_oid,
+        "target_ref": target_ref,
     }
 
 
@@ -367,8 +379,20 @@ def push_approval_valid(r, remote_name=None, remote_url=None, updates=None, cons
     if int(tok.get("expires_at", 0)) < int(time.time()):
         p.unlink(missing_ok=True)
         return False, "Push approval expired. Re-authorize."
+    target_ref = str(tok.get("target_ref") or "")
     try:
-        now = push_identity(r, tok.get("remote_name", "origin"), tok.get("target_ref", "").removeprefix("refs/heads/") or None)
+        if target_ref.startswith("refs/tags/"):
+            now = push_identity(
+                r,
+                tok.get("remote_name", "origin"),
+                target_tag=target_ref.removeprefix("refs/tags/"),
+            )
+        else:
+            now = push_identity(
+                r,
+                tok.get("remote_name", "origin"),
+                target_ref.removeprefix("refs/heads/") or None,
+            )
     except SystemExit as e:
         p.unlink(missing_ok=True)
         return False, str(e)
@@ -382,13 +406,14 @@ def push_approval_valid(r, remote_name=None, remote_url=None, updates=None, cons
         return False, "Push approval is for a different remote URL."
     if updates is not None:
         if len(updates) != 1:
-            return False, "Push approval permits exactly one branch ref update."
+            return False, "Push approval permits exactly one ref update."
         local_ref, local_oid, remote_ref, _remote_oid = updates[0]
-        expected_local = f"refs/heads/{tok.get('branch')}"
+        expected_local = tok.get("source_ref") or f"refs/heads/{tok.get('branch')}"
+        expected_oid = tok.get("source_oid") or tok.get("head")
         if local_ref != expected_local:
             return False, f"Push local ref `{local_ref}` does not match approved `{expected_local}`."
-        if local_oid != tok.get("head"):
-            return False, "Local HEAD changed after push approval."
+        if local_oid != expected_oid:
+            return False, "Push source changed after approval."
         if remote_ref != tok.get("target_ref"):
             return False, f"Push target `{remote_ref}` does not match approved `{tok.get('target_ref')}`."
     if consume:
@@ -998,11 +1023,19 @@ def approve_commit(args):
 def approve_push(args):
     r = resolve_repo_ref(args.repo)
     alias = repo_alias(r)
-    ident = push_identity(r, args.remote, args.target_branch)
+    ident = push_identity(
+        r,
+        args.remote,
+        args.target_branch,
+        getattr(args, "tag", None),
+    )
     target_branch = args.target_branch or ident["branch"]
     upstream = gitout(r, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", allow_fail=True) or "(no upstream)"
-    ahead = gitout(r, "rev-list", "--count", f"{args.remote}/{target_branch}..HEAD", allow_fail=True) or "?"
-    log = gitout(r, "log", "--oneline", f"{args.remote}/{target_branch}..HEAD", allow_fail=True)
+    ahead = "?"
+    log = ""
+    if not getattr(args, "tag", None):
+        ahead = gitout(r, "rev-list", "--count", f"{args.remote}/{target_branch}..HEAD", allow_fail=True) or "?"
+        log = gitout(r, "log", "--oneline", f"{args.remote}/{target_branch}..HEAD", allow_fail=True)
     print("\nPUSH AUTHORIZATION REQUEST")
     print("--------------------------")
     print(f"Repo alias : {alias}")
@@ -1028,7 +1061,47 @@ def approve_push(args):
     pp.parent.mkdir(parents=True, exist_ok=True)
     pp.write_text(json.dumps(tok, indent=2) + "\n")
     print(f"Authorized ONE push for {args.ttl}s, bound to this repo/branch/HEAD/remote/target ref.")
-    print("Consumed when the approved commit is observed on the remote-tracking ref; `git push --dry-run` does not consume it. Unused approvals expire at the TTL.")
+    if getattr(args, "tag", None):
+        print("Tag approvals are consumed only after `herdctl push-tag` confirms a successful transfer; `git push --dry-run` does not consume them.")
+    else:
+        print("Consumed when the approved commit is observed on the remote-tracking ref; `git push --dry-run` does not consume it. Unused approvals expire at the TTL.")
+
+
+def push_tag_cmd(args):
+    r = resolve_repo_ref(args.repo)
+    tag_ref = f"refs/tags/{args.tag}"
+    pp = push_approval_path(r)
+
+    valid, msg = push_approval_valid(r)
+    if not valid:
+        raise SystemExit(msg)
+
+    try:
+        tok = json.loads(pp.read_text())
+    except Exception:
+        raise SystemExit("Push approval token is unreadable. Re-authorize.")
+
+    if tok.get("source_ref") != tag_ref or tok.get("target_ref") != tag_ref:
+        raise SystemExit(
+            f"Push approval is not for tag `{args.tag}`. Re-authorize with `herdctl approve-push --tag {args.tag}`."
+        )
+
+    remote = tok.get("remote_name", "origin")
+    result = run(
+        ["git", "push", remote, f"{tag_ref}:{tag_ref}"],
+        cwd=r,
+    )
+
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+
+    if result.returncode:
+        raise SystemExit(result.returncode)
+
+    pp.unlink(missing_ok=True)
+    print(f"Tag `{args.tag}` pushed to `{remote}`; one-shot push approval consumed.")
 
 
 
@@ -1622,10 +1695,17 @@ def main():
     q = sp.add_parser("approve-push")
     q.add_argument("--repo")
     q.add_argument("--remote", default="origin")
-    q.add_argument("--target-branch")
+    target = q.add_mutually_exclusive_group()
+    target.add_argument("--target-branch")
+    target.add_argument("--tag")
     q.add_argument("--ttl", type=int, default=600)
     q.add_argument("--yes", action="store_true", help="non-interactive; use only after an external human confirmation")
     q.set_defaults(fn=approve_push)
+
+    q = sp.add_parser("push-tag")
+    q.add_argument("tag")
+    q.add_argument("--repo")
+    q.set_defaults(fn=push_tag_cmd)
 
     q = sp.add_parser("doctor")
     q.add_argument("--repo")

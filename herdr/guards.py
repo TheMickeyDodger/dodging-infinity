@@ -196,6 +196,7 @@ def push_identity(
     repo: str | Path,
     remote_name: str = "origin",
     target_branch: str | None = None,
+    target_tag: str | None = None,
 ) -> dict:
     root = Path(
         gitout(
@@ -243,10 +244,33 @@ def push_identity(
             f"Remote `{remote_name}` not found."
         )
 
-    target_branch = (
-        target_branch
-        or branch
-    )
+    if target_tag:
+        source_ref = (
+            f"refs/tags/{target_tag}"
+        )
+        source_oid = gitout(
+            root,
+            "rev-parse",
+            source_ref,
+            allow_fail=True,
+        )
+        if not source_oid:
+            raise RuntimeError(
+                f"Tag `{target_tag}` not found."
+            )
+        target_ref = source_ref
+    else:
+        target_branch = (
+            target_branch
+            or branch
+        )
+        source_ref = (
+            f"refs/heads/{branch}"
+        )
+        source_oid = head
+        target_ref = (
+            f"refs/heads/{target_branch}"
+        )
 
     return {
         "repo_root": str(root),
@@ -254,9 +278,9 @@ def push_identity(
         "head": head,
         "remote_name": remote_name,
         "remote_url": remote_url,
-        "target_ref": (
-            f"refs/heads/{target_branch}"
-        ),
+        "source_ref": source_ref,
+        "source_oid": source_oid,
+        "target_ref": target_ref,
     }
 
 
@@ -298,21 +322,37 @@ def push_approval_valid(
             "Push approval expired. Re-authorize.",
         )
 
+    target_ref = str(
+        token.get("target_ref")
+        or ""
+    )
+
     try:
-        current = push_identity(
-            repo,
-            token.get(
-                "remote_name",
-                "origin",
-            ),
-            token.get(
-                "target_ref",
-                "",
-            ).removeprefix(
-                "refs/heads/"
+        if target_ref.startswith(
+            "refs/tags/"
+        ):
+            current = push_identity(
+                repo,
+                token.get(
+                    "remote_name",
+                    "origin",
+                ),
+                target_tag=target_ref.removeprefix(
+                    "refs/tags/"
+                ),
             )
-            or None,
-        )
+        else:
+            current = push_identity(
+                repo,
+                token.get(
+                    "remote_name",
+                    "origin",
+                ),
+                target_ref.removeprefix(
+                    "refs/heads/"
+                )
+                or None,
+            )
     except RuntimeError as exc:
         path.unlink(
             missing_ok=True
@@ -361,7 +401,7 @@ def push_approval_valid(
         if len(updates) != 1:
             return (
                 False,
-                "Push approval permits exactly one branch ref update.",
+                "Push approval permits exactly one ref update.",
             )
 
         (
@@ -372,8 +412,12 @@ def push_approval_valid(
         ) = updates[0]
 
         expected_local = (
-            f"refs/heads/"
-            f"{token.get('branch')}"
+            token.get("source_ref")
+            or f"refs/heads/{token.get('branch')}"
+        )
+        expected_oid = (
+            token.get("source_oid")
+            or token.get("head")
         )
 
         if local_ref != expected_local:
@@ -384,10 +428,10 @@ def push_approval_valid(
                 f"`{expected_local}`.",
             )
 
-        if local_oid != token.get("head"):
+        if local_oid != expected_oid:
             return (
                 False,
-                "Local HEAD changed after push approval.",
+                "Push source changed after approval.",
             )
 
         if remote_ref != token.get(
