@@ -2,7 +2,7 @@
   <img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">
 </p>
 
-# Dodging Infinity v0.6.0
+# Dodging Infinity v0.6.1
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -14,9 +14,9 @@
 
 Dodging Infinity is an engineering orchestration system built around Herdr for turning human intent into bounded, isolated, and verifiable engineering work.
 
-v0.6.0 establishes the durable boundary between an outer operator and Herdr execution. Structured missions can carry an objective, constraints, rules, acceptance criteria, and verification requirements into Herdr's Supervisor, Lead, Executor, and Reviewer workflow.
+[v0.6.1](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.1) builds on the durable mission boundary established in v0.6.0 with a repository-level Codex Operator contract, an explicit operating protocol, and strictly read-only health and observability surfaces. Structured missions carry an objective, constraints, rules, acceptance criteria, and verification requirements into Herdr's Supervisor, Lead, Executor, and Reviewer workflow.
 
-The next milestone completes the natural Codex CLI operator loop: a human speaks to Codex normally, Codex investigates and formulates the mission automatically, Herdr performs the bounded engineering work, control returns to the same Codex session, and Codex inspects the result before driving the terminal toward the existing human-gated commit and push flow.
+The operating contract makes the natural Codex CLI loop explicit: a human speaks to Codex normally, Codex investigates and formulates a bounded mission, Herdr performs the engineering work, and Codex inspects the result before approaching the existing human-gated commit, push, and release boundaries.
 
 The goal is not merely multi-agent coding. Dodging Infinity creates a reliable boundary between human intent, model reasoning, autonomous execution, adversarial review, and verified outcomes.
 
@@ -66,8 +66,13 @@ The architecture deliberately separates responsibilities:
 - **Reviewer** challenges the result independently.
 - **Git gates** enforce human authorization at delivery boundaries.
 
-## What v0.6.0 adds
+## What v0.6.1 provides
 
+- **Operational readiness** — `herdctl health [--repo NAME]` checks configuration, server reachability, runtime state, expected live agents, and task-state readability without repairing or mutating the repository.
+- **Read-only observability** — `herdctl observe [--repo NAME] [--json]` projects repository identity, workforce configuration, mission and task state, runtime topology, child dependencies, reviews, artifacts, and recent task summaries through a schema-versioned snapshot.
+- **Bounded diagnostics** — Health and observation probes cap reads, scans, and live-agent queries; missing or malformed inputs become actionable diagnostics instead of unbounded work or tracebacks.
+- **Codex Operator contract** — Repository-level `AGENTS.md` defines Codex as the persistent human-facing operator and Herdr as the engineering execution layer.
+- **Operator protocol** — `OPERATOR_PROTOCOL.md` defines bounded handoffs, plan-scoped autonomy, completion review, recovery, and separate human delivery authorization.
 - **Operator-to-Herdr mission boundary** — Added a durable mission contract that carries objective, constraints, rules, acceptance criteria, and verification requirements into Herdr.
 - **Mission CLI** — Added `herdctl mission create`, `herdctl mission show`, and `herdctl task --mission`.
 - **Herdr execution ownership** — Herdr remains the canonical engineering engine through Supervisor, Lead, Executor, and Reviewer roles.
@@ -81,9 +86,9 @@ The architecture deliberately separates responsibilities:
 - **Repository isolation** — Agents remain bounded to their assigned repository and task scope.
 - **Model/runtime flexibility** — Operator and Herdr runtimes remain replaceable components behind stable orchestration contracts.
 
-## What v0.6.0 does today
+## What v0.6.1 does today
 
-v0.6.0 provides the durable mission representation and the dispatch path into Herdr.
+v0.6.1 provides the durable mission representation and dispatch path into Herdr, a documented Codex Operator workflow around that boundary, and read-only commands for checking readiness and observing current state.
 
 A mission can be created explicitly:
 
@@ -344,11 +349,11 @@ The required technical primitives for this architecture have been validated. The
 
 Dodging Infinity starts with an unbounded human objective and turns it into a bounded engineering mission.
 
-Today, v0.6.0 provides the durable mission representation and Herdr dispatch boundary.
+Today, v0.6.1 provides the durable mission representation, Herdr dispatch boundary, Codex Operator contract, and read-only operational visibility.
 
-The next operator-loop milestone moves that translation behind Codex CLI.
+The repository-level operator contract places that translation behind Codex CLI.
 
-Codex becomes responsible for:
+Codex is responsible for:
 
 1. understanding the objective
 2. investigating the repository
@@ -459,7 +464,7 @@ The Reviewer remains read-only.
 
 The deterministic harness/Lead persists its review transcript; the Reviewer does not need write access to `.herd/state/`.
 
-## Upgrade an existing Herdr repo to v0.6.0
+## Upgrade an existing Herdr repo to v0.6.1
 
 After updating Dodging Infinity and reinstalling the `herdctl` wrapper:
 
@@ -470,15 +475,17 @@ herdctl upgrade --repo example-repo
 herdctl doctor --repo example-repo
 ```
 
-v0.6.0 establishes the mission boundary:
+v0.6.1 preserves the mission boundary and adds operator-facing visibility:
 
 1. Define a bounded mission containing the objective, constraints, repository rules, acceptance criteria, and verification expectations.
 2. Persist it through `herdctl mission create`.
 3. Dispatch it through `herdctl task --mission`.
 4. Herdr executes the mission through its Supervisor, Lead, Executor, and Reviewer workflow.
-5. Human commit and push gates remain required for delivery.
+5. Codex inspects task, checkpoint, diff, verification, and Reviewer evidence before delivery.
+6. `herdctl health` reports operational readiness and `herdctl observe` reports a bounded point-in-time snapshot without changing workflow state.
+7. Human commit, push, and release gates remain required for delivery.
 
-The next milestone moves steps 1 through 3 behind the Codex CLI operator so the normal human interface becomes natural-language conversation rather than direct mission CLI usage.
+The Codex Operator translates normal human conversation into the bounded handoff described by steps 1 through 3; the mission CLI remains available as the deterministic persistence and dispatch boundary.
 
 Existing Herdr safety boundaries, repository isolation, review validation, and Git authorization controls remain intact.
 
@@ -769,13 +776,13 @@ Release tags use their own exact-ref authorization path.
 Create an annotated tag:
 
 ```bash
-git tag -a v0.6.0 -m "Dodging Infinity v0.6.0"
+git tag -a vX.Y.Z -m "Dodging Infinity vX.Y.Z"
 ```
 
 Authorize exactly that tag:
 
 ```bash
-herdctl approve-push --tag v0.6.0
+herdctl approve-push --tag vX.Y.Z
 ```
 
 The approval binds to:
@@ -784,14 +791,14 @@ The approval binds to:
 - current branch
 - HEAD
 - remote
-- `refs/tags/v0.6.0`
+- `refs/tags/vX.Y.Z`
 - exact annotated tag-object SHA
 - short TTL
 
 Push through the Herdr-owned tag path:
 
 ```bash
-herdctl push-tag v0.6.0
+herdctl push-tag vX.Y.Z
 ```
 
 The one-shot tag approval is consumed only after the real tag transfer succeeds.
@@ -1134,19 +1141,11 @@ control, no event stream, no TUI, and no server.
 
 ## Roadmap
 
-The immediate next release focuses on making the outer operator loop feel native rather than scripted.
+v0.6.1 establishes the operator contract and makes Herdr readiness and state visible without changing execution semantics. The next milestone focuses on closing the remaining operator-loop gaps:
 
-### v0.6.1 target
-
-- repository-level `AGENTS.md` operator contract
-- Codex established as the persistent human-facing outer operator
-- automatic mission formulation from natural-language objectives
-- repository-level Codex operator guardrails
 - blocking `herdctl wait`
 - deterministic Herdr-to-Codex handback
-- Codex result inspection and follow-up mission routing
-- human-confirmed Codex commit execution
-- human-confirmed Codex push execution
+- tighter result-inspection and follow-up mission routing
 - full end-to-end real-world operator-loop validation
 
 The design constraint remains the same:
