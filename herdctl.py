@@ -502,6 +502,8 @@ def guard_reference_transaction(r, phase):
         parts = line.split()
         if len(parts) >= 3:
             updates.append((parts[0], parts[1], parts[2]))
+    if phase == "committed":
+        _consume_push_approval_on_transfer(r, updates)
     head_ref = gitout(r, "symbolic-ref", "-q", "HEAD", allow_fail=True)
     touches_head = bool(head_ref and any(ref == head_ref for _, _, ref in updates))
     if not touches_head:
@@ -529,10 +531,43 @@ def guard_prepush(r, remote_name, remote_url):
     if not valid:
         print(f"HERD PUSH BLOCKED: {msg}", file=sys.stderr)
         return 1
-    # Consume at the push boundary. If network transfer fails, re-approve.
-    push_approval_path(r).unlink(missing_ok=True)
+    # Do not consume here: git also runs pre-push for `git push --dry-run`
+    # and gives this hook no way to tell a rehearsal from a real transfer.
+    # _consume_push_approval_on_transfer (reference-transaction, committed
+    # phase) consumes the token once the approved commit is observed on the
+    # approved remote-tracking ref.
     print(f"HERD PUSH AUTHORIZED: {r} -> {remote_name}", file=sys.stderr)
     return 0
+
+
+def _consume_push_approval_on_transfer(r, updates):
+    """Consume the push approval once the approved commit is observed on the
+    approved remote-tracking ref, which is evidence that a transfer completed.
+
+    `git push --dry-run` never updates the tracking ref, so it cannot consume.
+    `git fetch` moves the tracking ref to the approved head only when that
+    commit is already on the remote, so consuming is correct there as well.
+    Unreadable or malformed tokens are consumed: fail closed.
+    """
+    p = push_approval_path(r)
+    if not p.exists():
+        return
+    try:
+        tok = json.loads(p.read_text())
+    except Exception:
+        p.unlink(missing_ok=True)
+        return
+    remote_name = tok.get("remote_name")
+    branch = str(tok.get("target_ref", "")).removeprefix("refs/heads/")
+    head = tok.get("head")
+    if not remote_name or not branch or not head:
+        p.unlink(missing_ok=True)
+        return
+    tracking_ref = f"refs/remotes/{remote_name}/{branch}"
+    for _old_oid, new_oid, ref in updates:
+        if ref == tracking_ref and new_oid == head:
+            p.unlink(missing_ok=True)
+            return
 
 
 def _install_pre_push_hook(r):
@@ -993,6 +1028,7 @@ def approve_push(args):
     pp.parent.mkdir(parents=True, exist_ok=True)
     pp.write_text(json.dumps(tok, indent=2) + "\n")
     print(f"Authorized ONE push for {args.ttl}s, bound to this repo/branch/HEAD/remote/target ref.")
+    print("Consumed when the approved commit is observed on the remote-tracking ref; `git push --dry-run` does not consume it. Unused approvals expire at the TTL.")
 
 
 

@@ -743,6 +743,12 @@ def guard_reference_transaction(
                 )
             )
 
+    if phase == "committed":
+        _consume_push_approval_on_transfer(
+            repo,
+            updates,
+        )
+
     head_ref = gitout(
         repo,
         "symbolic-ref",
@@ -824,11 +830,11 @@ def guard_prepush(
         )
         return 1
 
-    push_approval_path(
-        repo
-    ).unlink(
-        missing_ok=True
-    )
+    # Do not consume here: git also runs pre-push for `git push --dry-run`
+    # and gives this hook no way to tell a rehearsal from a real transfer.
+    # _consume_push_approval_on_transfer (reference-transaction, committed
+    # phase) consumes the token once the approved commit is observed on the
+    # approved remote-tracking ref.
 
     print(
         f"HERD PUSH AUTHORIZED: "
@@ -837,6 +843,55 @@ def guard_prepush(
     )
 
     return 0
+
+
+def _consume_push_approval_on_transfer(
+    repo: str | Path,
+    updates,
+) -> None:
+    """Consume the push approval once the approved commit is observed on the
+    approved remote-tracking ref, which is evidence that a transfer completed.
+
+    `git push --dry-run` never updates the tracking ref, so it cannot consume.
+    `git fetch` moves the tracking ref to the approved head only when that
+    commit is already on the remote, so consuming is correct there as well.
+    Unreadable or malformed tokens are consumed: fail closed.
+    """
+    path = push_approval_path(repo)
+
+    if not path.exists():
+        return
+
+    try:
+        token = json.loads(
+            path.read_text()
+        )
+    except Exception:
+        path.unlink(
+            missing_ok=True
+        )
+        return
+
+    remote_name = token.get("remote_name")
+    branch = str(
+        token.get("target_ref", "")
+    ).removeprefix("refs/heads/")
+    head = token.get("head")
+
+    if not remote_name or not branch or not head:
+        path.unlink(
+            missing_ok=True
+        )
+        return
+
+    tracking_ref = f"refs/remotes/{remote_name}/{branch}"
+
+    for _old_oid, new_oid, ref in updates:
+        if ref == tracking_ref and new_oid == head:
+            path.unlink(
+                missing_ok=True
+            )
+            return
 
 
 def guard_cli_prefix() -> str:
