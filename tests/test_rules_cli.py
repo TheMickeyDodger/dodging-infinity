@@ -195,8 +195,17 @@ class HerdrRulesCliTests(unittest.TestCase):
         "load_mission",
         return_value={
             "objective": "Fix authentication bug",
-            "rules": [
+            "constraints": [
                 "Do not change database schema",
+            ],
+            "rules": [
+                "Preserve backward compatibility",
+            ],
+            "acceptance_criteria": [
+                "Authentication tests pass",
+            ],
+            "verification": [
+                "python3 -m unittest discover -s tests",
             ],
         },
     )
@@ -230,11 +239,24 @@ class HerdrRulesCliTests(unittest.TestCase):
 
         cp.dispatch_task.assert_called_once_with(
             Path("/tmp/demo"),
-            "Fix authentication bug",
+            """OBJECTIVE
+Fix authentication bug
+
+CONSTRAINTS
+- Do not change database schema
+
+RULES
+- Preserve backward compatibility
+
+ACCEPTANCE CRITERIA
+- Authentication tests pass
+
+VERIFICATION
+- python3 -m unittest discover -s tests""",
             rejection_drill=False,
             task_policy={
                 "rules": [
-                    "Do not change database schema",
+                    "Preserve backward compatibility",
                 ],
             },
         )

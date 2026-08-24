@@ -1286,7 +1286,26 @@ def task(args):
         mission = load_mission(r)
         if mission is None:
             raise SystemExit("No mission exists.")
-        args.text = mission.get("objective", "")
+        sections = [
+            f"OBJECTIVE\n{str(mission.get('objective') or '').strip()}",
+        ]
+
+        for key, heading in (
+            ("constraints", "CONSTRAINTS"),
+            ("rules", "RULES"),
+            ("acceptance_criteria", "ACCEPTANCE CRITERIA"),
+            ("verification", "VERIFICATION"),
+        ):
+            values = mission.get(key) or []
+            if values:
+                sections.append(
+                    heading + "\n" + "\n".join(
+                        f"- {value}" for value in values
+                    )
+                )
+
+        args.text = "\n\n".join(sections)
+
         if mission.get("rules"):
             args.rule = list(args.rule or []) + list(mission.get("rules", []))
 
