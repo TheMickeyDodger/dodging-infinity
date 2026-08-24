@@ -30,6 +30,7 @@ from herdr.policy import DEFAULT_POLICY, HerdrPolicy
 
 STATE = "state/runtime.json"
 TASK_STATE = "state/task.json"
+MISSION_STATE = "state/mission.json"
 TASK_ARCHIVE = "state/tasks"
 APPROVAL = "state/commit-approval.json"
 PUSH_APPROVAL = "state/push-approval.json"
@@ -176,6 +177,26 @@ def load_task(r):
 
 def save_task(r, data):
     p = task_path(r)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def mission_path(r):
+    return hroot(r) / MISSION_STATE
+
+
+def load_mission(r):
+    p = mission_path(r)
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+
+def save_mission(r, data):
+    p = mission_path(r)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -1261,6 +1282,14 @@ def task(args):
     r = resolve_repo_ref(args.repo)
     cp = HerdrControlPlane()
 
+    if getattr(args, "mission", False):
+        mission = load_mission(r)
+        if mission is None:
+            raise SystemExit("No mission exists.")
+        args.text = mission.get("objective", "")
+        if mission.get("rules"):
+            args.rule = list(args.rule or []) + list(mission.get("rules", []))
+
     try:
         task_policy = None
 
@@ -1423,6 +1452,28 @@ def guard_prepush_cmd(args):
     raise SystemExit(guard_prepush(Path(args.repo_path).resolve(), args.remote_name, args.remote_url))
 
 
+
+def mission_create_cmd(args):
+    r = resolve_repo_ref(args.repo)
+    mission = {
+        "version": 1,
+        "objective": args.objective,
+        "constraints": args.constraint or [],
+        "rules": args.rule or [],
+        "acceptance_criteria": args.acceptance or [],
+        "verification": args.verification or [],
+    }
+    save_mission(r, mission)
+    print(json.dumps(mission, indent=2))
+
+
+def mission_show_cmd(args):
+    r = resolve_repo_ref(args.repo)
+    mission = load_mission(r)
+    if mission is None:
+        raise SystemExit("No mission exists.")
+    print(json.dumps(mission, indent=2))
+
 def main():
     p = argparse.ArgumentParser(prog="herdctl")
     sp = p.add_subparsers(dest="cmd", required=True)
@@ -1538,9 +1589,26 @@ def main():
     q.add_argument("--repo")
     q.set_defaults(fn=status)
 
+    q = sp.add_parser("mission")
+    msp = q.add_subparsers(dest="mission_cmd", required=True)
+
+    m = msp.add_parser("create")
+    m.add_argument("objective")
+    m.add_argument("--repo")
+    m.add_argument("--constraint", action="append")
+    m.add_argument("--rule", action="append")
+    m.add_argument("--acceptance", action="append")
+    m.add_argument("--verification", action="append")
+    m.set_defaults(fn=mission_create_cmd)
+
+    m = msp.add_parser("show")
+    m.add_argument("--repo")
+    m.set_defaults(fn=mission_show_cmd)
+
     q = sp.add_parser("task")
-    q.add_argument("text")
+    q.add_argument("text", nargs="?")
     q.add_argument("--repo")
+    q.add_argument("--mission", action="store_true", help="dispatch the current Herdr mission")
     q.add_argument(
         "--rule",
         action="append",
@@ -1577,7 +1645,7 @@ def main():
 
     q = sp.add_parser("prompt")
     q.add_argument("role")
-    q.add_argument("text")
+    q.add_argument("text", nargs="?")
     q.add_argument("--repo")
     q.add_argument("--no-wait", action="store_true")
     q.set_defaults(fn=prompt_cmd)
