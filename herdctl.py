@@ -25,6 +25,7 @@ from herdr.control_plane import HerdrControlPlane
 from herdr.registry import REGISTRY
 from herdr.guards import install_git_guard as install_git_guard_runtime
 from herdr.instance import HerdrInstance
+from herdr.observe import observe as observe_projection, render_observation
 from herdr.runtime import agent_info, jrun, prompt, run, split, start_agent
 from herdr.policy import DEFAULT_POLICY, HerdrPolicy
 
@@ -1626,6 +1627,25 @@ def health(args):
     _health_report([config_row, server_row, runtime_row, agents_row, task_row])
 
 
+def observe(args):
+    """Read-only point-in-time observation of one repository's herd.
+
+    Exit 0 whenever an observation is produced, including a fully PARTIAL
+    one — observe is a reporting command, not a gate. The single exception
+    is an unresolvable `--repo` reference, which is a usage error (exit 2).
+    """
+    try:
+        r = resolve_repo_ref(args.repo)
+    except SystemExit as exc:
+        print(str(exc) or "Could not resolve --repo reference.", file=sys.stderr)
+        raise SystemExit(2)
+    obs = observe_projection(r)
+    if args.json:
+        print(json.dumps(obs, indent=2))
+    else:
+        print(render_observation(obs))
+
+
 def send_runtime_reset(agent, command, timeout_ms=30000):
     """Reset one interactive runtime without destroying its Herdr pane/session process."""
     p = prompt(agent, command, timeout_ms, False)
@@ -2125,6 +2145,14 @@ def main():
     )
     q.add_argument("--repo")
     q.set_defaults(fn=health)
+
+    q = sp.add_parser(
+        "observe",
+        help="read-only point-in-time observation of one repository's herd",
+    )
+    q.add_argument("--repo")
+    q.add_argument("--json", action="store_true", help="emit the canonical JSON projection")
+    q.set_defaults(fn=observe)
 
     q = sp.add_parser("mission")
     msp = q.add_subparsers(dest="mission_cmd", required=True)

@@ -1002,6 +1002,7 @@ herdctl approve-push \
 herdctl push-tag TAG --repo NAME
 
 herdctl status --repo NAME
+herdctl observe --repo NAME [--json]
 herdctl read ROLE --repo NAME
 herdctl prompt ROLE "..." --repo NAME
 
@@ -1009,11 +1010,12 @@ herdctl heartbeat --once --repo NAME
 herdctl restart-heartbeat --repo NAME
 ```
 
-## Inspecting a herd: doctor vs status vs health
+## Inspecting a herd: doctor vs status vs health vs observe
 
 - `doctor` — environment/tooling probe: are the binaries, runtime kinds, and git guard hooks installed here?
 - `status` — task + agent state display: what is this herd currently doing?
 - `health` — operational readiness probe: is THIS repository's herd configured, reachable, and usable right now?
+- `observe` — full read-only projection: one bounded, schema-versioned snapshot of everything the herd's persisted and live-queryable state says right now, as concise human text or canonical JSON.
 
 `herdctl health [--repo NAME]` is strictly read-only. It checks the herd
 configuration, Herdr server reachability, runtime state, the herd's agents,
@@ -1031,6 +1033,104 @@ run (a hard constant, far above any realistic topology), with expected
 roles probed first. If a runtime map exceeds the bound, health fails with
 a count of the unprobed entries rather than reporting READY on the
 strength of agents it never verified.
+
+## Observability layer: herdctl observe
+
+```text
+herdctl observe [--repo NAME] [--json]
+```
+
+`observe` builds one strictly read-only, point-in-time projection of a
+repository's herd. Human mode prints a concise summary; `--json` prints the
+canonical projection (`json.dumps(obs, indent=2)`) and nothing else on
+stdout. It always exits 0 when an observation is produced — including a
+fully PARTIAL one — because observe is a reporting command, not a gate. The
+single exception is an unresolvable `--repo` reference, which is a usage
+error (exit 2).
+
+### JSON contract (schema_version 1)
+
+The top-level key set is fixed and built structurally — a destroyed input
+can never make a section vanish:
+
+```text
+schema_version, generated_at, completeness, repository, config, mission,
+task, runtime, agents, children, reviews, artifacts, recent_tasks, legacy,
+diagnostics
+```
+
+Every section carries a `state` field from a closed vocabulary:
+`available | missing | malformed | unreadable | unavailable | empty`.
+`diagnostics` is a list of `{source, state, detail}` — one entry per source
+that is not cleanly available, plus one per applied listing truncation,
+exhausted directory-scan budget, or capped dirty-path count (string
+truncation is indicated in place by a visible ellipsis rather than by a
+diagnostic).
+`completeness` is `"PARTIAL"` when any diagnostic records a `malformed`,
+`unreadable`, or `unavailable` source (truth exists that could not be
+seen) and `"COMPLETE"` otherwise; cleanly observed absences (`missing`,
+`empty`) do not demote it. A listing truncation whose total is exact
+(listed agents, children, review files, recent tasks) is disclosed as an
+`available` diagnostic and does not demote; an exhausted directory-scan
+budget or a capped dirty-path count makes the derived numbers lower
+bounds, so those are disclosed as `unavailable` diagnostics and do demote. Completeness is visibility
+only — it never affects the exit code and never gates, repairs, or
+controls anything.
+
+Live-agent state is allowlisted: each listed agent is exactly
+`{logical, agent, status, probe}` with `probe` in
+`ok | missing | unknown | unprobed`; raw runtime payloads are never
+emitted. Review files are referenced through bounded metadata only
+(`file, round, decision, size, mtime`). `decision` comes from the
+canonical `Protocol token:` header that `herdctl review-decision` writes
+into each persisted round artifact: when the artifact's `## Transcript`
+marker exists and a header line precedes it, that header is authoritative —
+`APPROVE`/`REJECT` resolve to that value and any other recorded token
+(`MISSING`, `ACCEPT`, ...) yields `null` without consulting the transcript,
+so prose quoting the protocol can never override the canonical record. An
+exact contiguous `HERD_DECISION: APPROVE` / `HERD_DECISION: REJECT` token
+scan is the fallback only when no `Protocol token:` line of any shape
+exists in the preamble — a malformed (e.g. indented) preamble header is
+authoritative-but-invalid, yielding `null` and suppressing the fallback so
+transcript text can never decide over an unparseable record. Header-shaped
+lines are never honoured outside a canonical preamble, and a pane-wrapped
+token with no header yields `null`. Transcripts are never parsed into
+findings and never re-emitted.
+
+### Hard bounds
+
+All bounds are module constants in `herdr/observe.py`, never derived from
+repository input: state files larger than 1 MiB are refused; at most 64
+live `herdr agent get` probes per run (config-expected roles probed
+first); at most 32 listed agents, 10 recent tasks, 40 review files, 32
+listed children, and 16 artifacts; every projected string is truncated to
+200 characters total including a visible ellipsis; directory scans spend
+at most 2000 entries of budget before sorting, and an exhausted budget is
+always disclosed as an `unavailable` diagnostic; `dirty_file_count` is
+capped at 2000 porcelain status lines — when the cap applies the
+`dirty_file_count_capped` flag is set, an `unavailable` diagnostic
+discloses that the true count is higher, and the human render labels the
+number as capped. `children.count` is the
+exact matched-record count (the record list is memory-bounded by the
+1 MiB file limit); only its listing is truncated. The `*brief-*.md`
+artifact glob is newest-first over scanned entries — best-effort when the
+scan budget is exhausted, which the diagnostic states. Artifact
+`freshness` (`fresh`/`stale` at 24 h) is a label only.
+
+### Point-in-time limitations and non-goals
+
+An observation is a snapshot, not a stream: nothing is watched, tailed, or
+subscribed to. Child status under `children` is the recorded child record
+from this repository's `.herd/state/children.json`, not resolved child
+liveness — observe never reads another repository's filesystem. The legacy
+`events.jsonl` is reported only under `legacy` as a stale journal from the
+removed Mission Control stack; it never feeds any activity or "current"
+field.
+
+Non-goals, explicitly: no mutation (observe leaves `.herd/`, the worktree,
+and `.git` — including `.git/index`, via `--no-optional-locks` —
+byte-for-byte unchanged), no repair, no agent prompting, no gating, no
+control, no event stream, no TUI, and no server.
 
 ## Roadmap
 
