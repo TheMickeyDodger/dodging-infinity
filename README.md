@@ -1667,23 +1667,23 @@ Verified engineering result
 - resumed Codex sessions, status, meaningful errors, and verified-result delivery
 - optional per-user macOS LaunchAgent baseline
 
+Real Telegram setup and traffic validation shipped in v0.6.3. The
+adapter was exercised from an allowlisted private Telegram user against
+the trusted MacBook with:
+
+- real outbound Bot API traffic
+- new and resumed Codex sessions
+- bounded Codex plan generation
+- the live Approve / Reject callback path
+- live `editMessageReplyMarkup` approval attachment after complete plan
+  delivery and durable binding
+- status and verified-result delivery
+- the fail-closed Telegram → Codex Gateway → Codex Operator boundary,
+  with no direct Telegram path to Herdr or `herdctl`
+
 Remote commit, push, PR, tag, release, deployment, and merge authorization are not part of v0.1.
 
-## 1. Real Telegram setup and traffic validation
-
-Validate the shipped adapter with a real bot, allowlisted Telegram account, installed Codex CLI, and trusted MacBook.
-
-Validate:
-
-- Bot API setup and token handling
-- outbound long-poll behavior with real Telegram traffic
-- allowlisted and rejected-user behavior
-- new and resumed Codex sessions
-- plan approval and rejection callbacks
-- status, result, and meaningful-error delivery
-- fail-closed behavior without any direct Herdr path
-
-## 2. Always-on Mac reliability
+## 1. Always-on Mac reliability
 
 Exercise and harden the shipped LaunchAgent model while the trusted Mac is powered on.
 
@@ -1697,7 +1697,7 @@ Validate:
 
 Do not move engineering execution out of the trusted Mac.
 
-## 3. External-repository validation
+## 2. External-repository validation
 
 Run the complete remote workflow against unrelated repositories and real issues.
 
@@ -1719,7 +1719,7 @@ PR
 
 without manually operating the terminal.
 
-## 4. Distribution / productization
+## 3. Distribution / productization
 
 Package the entire system into an installable, dependency-aware distribution.
 
@@ -1727,7 +1727,7 @@ The end goal:
 
 > Install once. Connect Telegram. Point Dodging Infinity at a repository. Start engineering.
 
-## 5. Desktop app later
+## 4. Desktop app later
 
 After the remote workflow and distribution model are proven, consider a desktop app for local setup, health, configuration, and status. It must remain a client of the same operator boundaries, not a replacement execution path around Codex or Herdr.
 
