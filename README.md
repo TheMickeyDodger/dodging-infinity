@@ -16,11 +16,11 @@ Dodging Infinity is an engineering orchestration system built around Herdr for t
 
 [v0.6.1](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.1) established the repository-level Codex Operator contract, explicit operating protocol, and strictly read-only health and observability surfaces.
 
-Current `main` extends that foundation with **Codex Gateway v0.1**, a local, transport-neutral front door for routing human intent into the Codex Operator without giving the gateway any direct path to Herdr.
+The current system extends that foundation with **Codex Gateway v0.1** and the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
 
 The operating model is deliberate:
 
-**Human intent → Codex Operator → Herdr → adversarial verification → Codex inspection → human-controlled delivery**
+**Phone → Telegram → Telegram Adapter → Codex Gateway → Codex Operator → Herdr → verified result → human-gated delivery**
 
 The goal is not merely multi-agent coding.
 
@@ -59,29 +59,32 @@ The intelligence is replaceable.
 flowchart TD
     A[Human intent] --> B{Entry point}
     B --> C[Direct Codex CLI]
-    B --> D[Codex Gateway]
-    D --> C
-    C --> E[Herdr Handoff]
-    E --> F[Supervisor]
-    F --> G[Lead]
-    G --> H[Executor]
-    G --> I[Reviewer]
-    H --> J[Implementation]
-    I --> K[Validation]
-    J --> L[Verified outcome]
-    K --> L
-    L --> C
-    C --> M{Result complete?}
-    M -- No --> E
-    M -- Yes --> N[Human commit approval]
-    N --> O[Codex executes commit]
-    O --> P[Human push approval]
-    P --> Q[Codex executes push]
+    B --> D[Telegram]
+    D --> E[Telegram Adapter]
+    E --> F[Codex Gateway]
+    F --> C
+    C --> G[Herdr Handoff]
+    G --> H[Supervisor]
+    H --> I[Lead]
+    I --> J[Executor]
+    I --> K[Reviewer]
+    J --> L[Implementation]
+    K --> M[Validation]
+    L --> N[Verified outcome]
+    M --> N
+    N --> C
+    C --> O{Result complete?}
+    O -- No --> G
+    O -- Yes --> P[Human commit approval]
+    P --> Q[Codex executes commit]
+    Q --> R[Human push approval]
+    R --> S[Codex executes push]
 ```
 
 The architecture deliberately separates responsibilities:
 
 - **Human** defines intent and retains delivery authority.
+- **Telegram Adapter** authenticates allowlisted users and transports intent, plans, status, and results.
 - **Codex Gateway** accepts and normalizes human intent but has no direct Herdr authority.
 - **Codex** is the persistent outer operator.
 - **Herdr** owns bounded engineering execution.
@@ -94,19 +97,25 @@ The architecture deliberately separates responsibilities:
 The gateway boundary is intentionally strict:
 
 ```text
-Human interface
-      |
-      v
-Codex Gateway
-      |
-      v
-Codex Operator
-      |
-      v
-Herdr Handoff
-      |
-      v
-Herdr
+Phone / human interface
+        |
+        v
+     Telegram
+        |
+        v
+Telegram Adapter
+        |
+        v
+ Codex Gateway
+        |
+        v
+ Codex Operator
+        |
+        v
+ Herdr Handoff
+        |
+        v
+      Herdr
 ```
 
 The gateway must never become an alternate execution path around Codex.
@@ -119,7 +128,7 @@ The destination for Dodging Infinity is a remotely accessible autonomous enginee
 
 The phone does not run Herdr.
 
-Telegram does not run Herdr.
+Telegram and the Telegram Adapter never invoke Herdr or `herdctl` directly.
 
 The gateway does not run Herdr.
 
@@ -130,58 +139,19 @@ Codex remains the operator.
 Herdr remains the engineering organization underneath it.
 
 ```text
-                               HUMAN
-                                 |
-                                 |
-                              iPhone
-                                 |
-                                 v
-                             Telegram
-                                 |
-                                 v
-                        Telegram Adapter
-                                 |
-                                 v
-                          Codex Gateway
-                                 |
-                                 v
-                          Codex Operator
-                                 |
-              +------------------+------------------+
-              |                                     |
-              |                              Read-only status
-              |                                     |
-              |                              herdctl observe
-              |                                     |
-              v                                     |
-                         Herdr Handoff               |
-                              |                      |
-                              v                      |
-                         Supervisor                  |
-                              |                      |
-                              v                      |
-                            Lead                     |
-                         /        \                   |
-                        v          v                  |
-                   Executor     Reviewer              |
-                        \          /                  |
-                         \        /                   |
-                          v      v                    |
-                       Verified Result ---------------+
-                              |
-                              v
-                         Codex Operator
-                              |
-                              v
-                         Human Approval
-                        /              \
-                       v                v
-                    Commit         Push / PR
-                       \                /
-                        \              /
-                              v
-                            GitHub
+Phone
+  -> Telegram
+  -> Telegram Adapter
+  -> Codex Gateway
+  -> Codex Operator
+  -> Herdr
+       Supervisor -> Lead -> Executor / Reviewer
+  -> verified result
+  -> Codex Operator
+  -> human-gated delivery
 ```
+
+Every component from the adapter onward runs on the trusted MacBook. Telegram is a remote control surface, not an execution node. In v0.1, the remote surface stops at plan decisions, status, and verified-result delivery; commit, push, PR, tag, release, deployment, and merge authority remain outside the Telegram protocol.
 
 ## Trust boundaries
 
@@ -194,10 +164,10 @@ It may:
 - submit human intent
 - receive Codex plans
 - approve bounded execution plans
+- reject bounded execution plans
 - query mission status
 - receive progress summaries
 - receive verification results
-- authorize protected delivery actions
 
 It must not:
 
@@ -207,6 +177,7 @@ It must not:
 - bypass Codex reasoning
 - silently broaden permissions
 - expose Mac credentials or repository secrets
+- authorize commits, pushes, PRs, tags, releases, deployments, or merges in v0.1
 
 ### MacBook
 
@@ -576,9 +547,9 @@ The core loop is:
 
 ---
 
-# Target remote operator experience
+# Telegram remote operator experience
 
-The end-state interaction should feel dramatically simpler than the machinery underneath it.
+The implemented v0.1 interaction is deliberately simpler than the machinery underneath it.
 
 You are away from the Mac.
 
@@ -618,10 +589,9 @@ Proceed?
 
 [Approve]
 [Reject]
-[Modify]
 ```
 
-You approve once.
+You approve once. That one-shot decision authorizes only the exact plan presented for that Telegram user, private chat, repository, Gateway request, Codex session, Telegram message, and plan digest. Ordinary Telegram text grants no authority.
 
 Then you can put the phone away.
 
@@ -660,7 +630,7 @@ Reviewer found:
 No action required.
 ```
 
-Eventually:
+Eventually your phone receives the verified result:
 
 ```text
 MISSION COMPLETE
@@ -674,35 +644,15 @@ Passed
 Changed files:
 4
 
-Proposed commit:
-Fix issue #702
-
-Authorize commit?
-
-[Approve]
-[Reject]
+Delivery:
+Awaiting a separate human-controlled local Git authorization
 ```
 
-You approve.
-
-Codex performs the exact one-shot authorized commit.
-
-Then:
-
-```text
-Authorize push / PR?
-
-[Approve]
-[Reject]
-```
-
-You approve.
-
-Codex delivers the result.
+Telegram v0.1 does not authorize or perform a commit, push, PR, tag, release, deployment, or merge. Those actions remain behind the existing explicit human gates outside the Telegram adapter.
 
 Your Mac did the engineering.
 
-Your phone was the control surface.
+Your phone was the intent, plan, status, and result control surface.
 
 ---
 
@@ -853,7 +803,11 @@ The adapter enforces, with static and behavioral regression tests:
 
 Remote operation requires the trusted Mac to remain available.
 
-The eventual host layer should make the required local components reliably available while preserving existing execution semantics.
+The MVP includes an optional per-user macOS LaunchAgent installed by `tgop install-agent`. It runs the outbound long-polling adapter at login, uses `RunAtLoad` and `KeepAlive` with restart throttling, stores logs and durable state in the protected configuration directory, embeds the validated Codex executable path, and refuses concurrent adapter instances. `tgop uninstall-agent` unloads and removes that exact job.
+
+This is the current always-on process model, not a cloud service: Telegram sends updates to the Bot API, and the adapter on the MacBook polls outbound for them. There is no webhook, public listener, or inbound port. The MacBook remains the trusted execution node and must be awake, online, authenticated, and able to access the configured repository.
+
+The remaining always-on work is operational reliability validation and productization while preserving existing execution semantics.
 
 The Mac should:
 
@@ -863,7 +817,7 @@ The Mac should:
 - retain Codex authentication
 - retain Git authentication
 - retain Herdr runtime access
-- start the remote adapter automatically after reboot
+- start the remote adapter automatically at user login
 - expose health/status locally
 - recover the adapter process if it exits
 
@@ -1679,55 +1633,44 @@ Verified engineering result
 - `herdctl observe`
 - schema-versioned observation model
 - Codex Gateway v0.1 local intent boundary
+- live Codex Gateway compatibility validation
+- Telegram Remote Operator MVP
+- trusted Telegram identity allowlist and private-chat enforcement
+- one-shot, fully bound plan approval and rejection
+- resumed Codex sessions, status, meaningful errors, and verified-result delivery
+- optional per-user macOS LaunchAgent baseline
 
-## Next: Live Gateway validation
+Remote commit, push, PR, tag, release, deployment, and merge authorization are not part of v0.1.
 
-Before remote operation, prove the gateway against the installed real Codex CLI.
+## 1. Real Telegram setup and traffic validation
+
+Validate the shipped adapter with a real bot, allowlisted Telegram account, installed Codex CLI, and trusted MacBook.
 
 Validate:
 
-- new Codex session
-- resumed Codex session
-- repository Operator contract loading
-- clarification round trip
-- approval round trip
-- real structured event compatibility
-- fail-closed malformed-event handling
-- no direct Herdr execution path
+- Bot API setup and token handling
+- outbound long-poll behavior with real Telegram traffic
+- allowlisted and rejected-user behavior
+- new and resumed Codex sessions
+- plan approval and rejection callbacks
+- status, result, and meaningful-error delivery
+- fail-closed behavior without any direct Herdr path
 
-## Then: Telegram Remote Operator MVP
+## 2. Always-on Mac reliability
 
-Shipped in this MVP:
+Exercise and harden the shipped LaunchAgent model while the trusted Mac is powered on.
 
-- trusted Telegram identity allowlist
-- human-intent submission
-- Codex session routing
-- bounded-plan delivery
-- execution approval (one-shot, fully bound)
-- progress/status
-- verified-result delivery
+Validate:
 
-Explicitly DEFERRED beyond this MVP (no remote path exists for them):
-
-- commit authorization
-- push / PR authorization
-- tag / release / deploy authorization
-
-## Then: Always-on Mac host
-
-Make the local remote interface reliably available while the trusted Mac is powered on.
-
-Add:
-
-- automatic startup
-- restart-on-failure
-- local health
-- secure local configuration
-- durable Telegram ↔ Codex session mapping
+- login startup and restart-on-failure behavior
+- sleep, wake, reboot, network loss, and recovery
+- protected configuration, logs, lock, and durable state over long runtimes
+- Telegram ↔ Codex session continuity and crash ambiguity reporting
+- actionable local health and diagnostics
 
 Do not move engineering execution out of the trusted Mac.
 
-## Then: External-repository validation
+## 3. External-repository validation
 
 Run the complete remote workflow against unrelated repositories and real issues.
 
@@ -1749,13 +1692,17 @@ PR
 
 without manually operating the terminal.
 
-## Then: Distribution / productization
+## 4. Distribution / productization
 
 Package the entire system into an installable, dependency-aware distribution.
 
 The end goal:
 
 > Install once. Connect Telegram. Point Dodging Infinity at a repository. Start engineering.
+
+## 5. Desktop app later
+
+After the remote workflow and distribution model are proven, consider a desktop app for local setup, health, configuration, and status. It must remain a client of the same operator boundaries, not a replacement execution path around Codex or Herdr.
 
 ---
 
