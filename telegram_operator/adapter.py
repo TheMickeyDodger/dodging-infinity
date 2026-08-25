@@ -11,10 +11,24 @@ Ordering and durability rules enforced here:
 - Authority-bearing state (approval creation, one-shot consumption,
   in-flight dispatch markers) is durably persisted BEFORE any external
   action that depends on it.
+- PERSISTED and ACTIONABLE are distinct states for a plan approval:
+  the record is persisted before the plan message is sent, but its
+  ``plan_message_id`` is None — refused by the explicit
+  unbound-plan-message guard in ``approval.evaluate_callback`` (a
+  None/None comparison against a callback that omits its message id
+  would pass tautologically) — until the send outcome proves the
+  COMPLETE plan text was displayed (every expected chunk delivered,
+  zero characters truncated). An actionable approval therefore binds exactly the
+  complete plan content actually displayed and nothing undisplayed;
+  truncated, partial, failed, or unverifiable delivery voids the
+  record with a user-facing explanation, and a plan too long to
+  display completely is refused before any record exists.
 - The Telegram update offset advances ONLY AFTER the state accepted
-  from that update is durably persisted (for a denied update the
-  accepted state is the offset itself: nothing from the sender is
-  parsed or stored).
+  from that update is durably persisted. For a DENIED update the only
+  accepted — and only persisted — state is the transport update
+  offset itself (intended, so a hostile update cannot wedge the poll
+  loop); no content, intent, approval, work, or session state from an
+  unauthorized sender is ever parsed or stored.
 - Worker shutdown uses a queue sentinel with a blocking get — pacing
   comes from Telegram long polling, and poll-failure recovery uses
   capped exponential backoff (hard constants below).
@@ -37,6 +51,7 @@ from codex_gateway.contract import STATUS_COMPLETED
 
 from telegram_operator import approval as approval_module
 from telegram_operator import authz, protocol, state as state_module
+from telegram_operator import telegram_api
 
 # --- Hard constants, never derived from input ---------------------------
 # Capped exponential backoff between FAILED polls (a deadline firing on
@@ -46,6 +61,14 @@ POLL_FAILURE_BACKOFF_CEILING_SECONDS = 60
 
 CALLBACK_APPROVE_PREFIX = "a:"
 CALLBACK_REJECT_PREFIX = "r:"
+
+# The exact header prepended to every displayed plan. It consumes
+# characters against the Telegram chunk cap alongside the plan body, so
+# display-completeness is always computed over the FULL sent text.
+PLAN_MESSAGE_HEADER = (
+    "PLAN (approve or reject with the buttons; typed"
+    " text cannot approve):\n"
+)
 
 _WORKER_SENTINEL = object()
 
@@ -207,9 +230,11 @@ class Adapter(object):
                 # advanced); processing it again could double-queue.
                 return
         if not decision.allowed:
-            # Nothing from the sender is parsed or persisted; the
-            # accepted state is the offset alone, and no reply is sent
-            # (an unknown sender learns nothing).
+            # Authorization precedes ALL content handling: nothing the
+            # sender supplied is parsed or persisted, and no reply is
+            # sent (an unknown sender learns nothing). The ONLY durable
+            # effect is the transport update-offset advance below —
+            # intended, so a denied update cannot wedge the poll loop.
             if decision.update_id is not None:
                 with self._state_lock:
                     self._advance_offset(decision.update_id)
@@ -542,7 +567,28 @@ class Adapter(object):
             )
 
     def _offer_plan(self, item, result, parsed, prefix):
-        """Show a plan and arm its one-shot, fully bound approval."""
+        """Show a plan and arm its one-shot, fully bound approval.
+
+        Invariant: an ACTIONABLE approval binds exactly the complete
+        plan content actually displayed, and nothing undisplayed — and
+        no approval CONTROL exists anywhere before that is proven. The
+        ordering is load-bearing: the record is persisted before the
+        send but stays non-actionable (``plan_message_id`` is None,
+        refused by the explicit unbound-plan-message guard in
+        ``approval.evaluate_callback``); the plan text is sent with NO
+        inline keyboard; only after the send outcome proves complete
+        delivery AND the exact message binding has been durably saved
+        is the keyboard offered, via ``edit_message_reply_markup`` on
+        the very message the binding names. A plan whose full message
+        text cannot be displayed within the chunk cap is refused
+        BEFORE any record exists; truncated, partial, failed, or
+        unverifiable delivery voids the record and tells the user why
+        (no control was ever offered on those paths); a failed or
+        unverifiable keyboard offer voids the record too. The stored
+        digest covers ``parsed.body``, which is acceptable exactly
+        because the body is proven to have been displayed complete and
+        verbatim inside the sent text.
+        """
         chat_id = item["chat_id"]
         if not isinstance(result.session_id, str) or not result.session_id:
             # Binding operator instruction (round-4 finding R4-B1): a
@@ -561,6 +607,27 @@ class Adapter(object):
                 " plan). No approval was armed and no buttons are"
                 " offered. Re-send your intent to get a bindable"
                 " plan.",
+            )
+            return
+        plan_text = prefix + PLAN_MESSAGE_HEADER + parsed.body
+        if telegram_api.would_truncate(plan_text):
+            # Refuse-before-send: the FULL text to display (prefix and
+            # header included) exceeds what the chunk cap can deliver,
+            # so an approval could only bind text the human never saw.
+            # No approval record is created at all; the preview below
+            # carries no buttons and send_message labels its own cut
+            # inline.
+            self.api.send_message(
+                chat_id,
+                prefix + "The Operator returned a plan too long to"
+                " display completely (%d characters; at most %d can be"
+                " shown). An approval must bind exactly the complete"
+                " plan you saw, so NO approval was armed and no"
+                " buttons are offered. Re-send your intent asking for"
+                " a more concise plan.\n"
+                "Undeliverable plan preview (NOT approvable):\n%s"
+                % (len(plan_text), telegram_api.MAX_DELIVERABLE_CHARS,
+                   parsed.body),
             )
             return
         now = self._clock()
@@ -587,44 +654,144 @@ class Adapter(object):
                 " approvals first." % problem,
             )
             return
-        keyboard = {
-            "inline_keyboard": [[
-                {
-                    "text": "Approve plan",
-                    "callback_data": CALLBACK_APPROVE_PREFIX
-                    + record["approval_id"],
-                },
-                {
-                    "text": "Reject plan",
-                    "callback_data": CALLBACK_REJECT_PREFIX
-                    + record["approval_id"],
-                },
-            ]]
-        }
-        outcome = self.api.send_message(
-            chat_id,
-            prefix + "PLAN (approve or reject with the buttons; typed"
-            " text cannot approve):\n" + parsed.body,
-            reply_markup=keyboard,
+        # The plan text goes out with NO reply_markup: at this instant
+        # no actionable control exists anywhere — not on the phone, not
+        # in the record (plan_message_id is still None).
+        outcome = self.api.send_message(chat_id, plan_text)
+        expected_chunks = telegram_api.chunk_count(plan_text)
+        complete = (
+            outcome.ok
+            and outcome.truncated_chars == 0
+            and len(outcome.message_ids) == expected_chunks
         )
+        if complete:
+            plan_message_id = outcome.message_ids[-1]
+            armed = False
+            with self._state_lock:
+                stored = self._document["approvals"].get(
+                    record["approval_id"]
+                )
+                if stored is not None:
+                    # Complete display proven: every expected chunk
+                    # delivered, nothing truncated. Durably persist the
+                    # exact message binding — the LAST chunk, the very
+                    # message the keyboard will be offered on — BEFORE
+                    # any control exists.
+                    stored["plan_message_id"] = plan_message_id
+                    self._save()
+                    armed = True
+            if not armed:
+                # Belt: the record vanished between creation and
+                # arming. No binding was persisted, so no control may
+                # be offered.
+                self.api.send_message(
+                    chat_id,
+                    "The plan was displayed, but its approval record"
+                    " vanished before it could be armed, so no"
+                    " approval buttons were offered and no decision"
+                    " can be accepted. Re-send your intent for a"
+                    " fresh plan.",
+                )
+                return
+            keyboard = {
+                "inline_keyboard": [[
+                    {
+                        "text": "Approve plan",
+                        "callback_data": CALLBACK_APPROVE_PREFIX
+                        + record["approval_id"],
+                    },
+                    {
+                        "text": "Reject plan",
+                        "callback_data": CALLBACK_REJECT_PREFIX
+                        + record["approval_id"],
+                    },
+                ]]
+            }
+            offered, offer_problem = self.api.edit_message_reply_markup(
+                chat_id, plan_message_id, keyboard
+            )
+            if offered is True:
+                return
+            # The keyboard offer failed or came back unverifiable: the
+            # armed record must not remain actionable, because the
+            # human may or may not be looking at usable buttons.
+            with self._state_lock:
+                stored = self._document["approvals"].get(
+                    record["approval_id"]
+                )
+                if stored is not None:
+                    stored["superseded"] = True
+                    self._save()
+            if not isinstance(offer_problem, str) or not offer_problem:
+                offer_problem = (
+                    "the keyboard offer outcome could not be verified"
+                )
+            self.api.send_message(
+                chat_id,
+                "The plan was displayed completely, but its approval"
+                " buttons could not be attached (%s). Its approval was"
+                " voided and cannot be decided; any buttons that may"
+                " be visible under the plan are disarmed. Re-send your"
+                " intent for a fresh plan." % offer_problem,
+            )
+            return
         with self._state_lock:
             stored = self._document["approvals"].get(record["approval_id"])
             if stored is not None:
-                if outcome.ok and outcome.message_ids:
-                    # The approval binds to the message carrying the
-                    # buttons: the LAST chunk.
-                    stored["plan_message_id"] = outcome.message_ids[-1]
-                else:
-                    # The human never saw the plan; the record must not
-                    # remain approvable.
-                    stored["superseded"] = True
+                # Complete display was NOT proven; the record must not
+                # remain approvable. No control was ever offered.
+                stored["superseded"] = True
                 self._save()
-        if not outcome.ok:
-            self.api.send_message(
-                chat_id,
-                "Plan delivery failed (%s); its approval was voided."
-                " Re-send your intent." % outcome.problem,
+        # chunks_sent — not len(message_ids) — is the DISPLAY truth:
+        # send_message reports ok=False with chunks_sent=index+1 when a
+        # chunk WAS delivered but its message id was unusable, so the
+        # id count understates what the human is looking at (round-1
+        # review finding F-2; mistakes.md "silent truncation presented
+        # as fact" — the rendered text must not misreport the case).
+        delivered = outcome.chunks_sent
+        if not outcome.ok and delivered >= expected_chunks:
+            # Every chunk was displayed; only the delivery could not
+            # be verified/bound (e.g. an unusable message id). This is
+            # the one missing-binding shape the real client can emit.
+            explanation = (
+                "The plan text was displayed, but its delivery could"
+                " not be verified (%s), so no decision can be accepted"
+                " on it; no approval buttons were offered."
+                % outcome.problem
             )
+        elif not outcome.ok and delivered > 0:
+            explanation = (
+                "Plan delivery failed partway (%s): only %d of %d"
+                " message chunks were delivered, so the plan you can"
+                " see is INCOMPLETE." % (
+                    outcome.problem, delivered, expected_chunks,
+                )
+            )
+        elif not outcome.ok:
+            explanation = (
+                "Plan delivery failed (%s); the plan was not"
+                " displayed." % outcome.problem
+            )
+        elif outcome.truncated_chars:
+            explanation = (
+                "The plan was delivered TRUNCATED (%d characters"
+                " omitted), so what you see is not the complete plan."
+                % outcome.truncated_chars
+            )
+        else:
+            # Belt against a lying transport: ok=True with a chunk/id
+            # count mismatch cannot be produced by the real client
+            # (its ok=True path appends exactly one id per chunk).
+            # Kept so even an impossible outcome shape fails closed.
+            explanation = (
+                "Plan delivery could not be verified as complete (no"
+                " usable message binding was returned)."
+            )
+        self.api.send_message(
+            chat_id,
+            explanation + " Its approval was voided and cannot be"
+            " decided. Re-send your intent for a fresh plan.",
+        )
 
     def _work_decision(self, item):
         chat_id = item["chat_id"]

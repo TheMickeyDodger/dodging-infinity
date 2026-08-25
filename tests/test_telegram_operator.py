@@ -11,9 +11,11 @@ import json
 import os
 import socket
 import stat
+import subprocess
 import tempfile
 import unittest
 import urllib.error
+from unittest import mock
 
 from telegram_operator import (
     approval,
@@ -935,6 +937,37 @@ class ApprovalTests(unittest.TestCase):
             self.assertIsNone(found, expected)
             self.assertEqual(problem, expected)
 
+    def test_unarmed_record_never_matches_any_callback_message(self):
+        # Round-1 review finding F-1 (twin of R4-B1): a record whose
+        # plan_message_id was never armed (still None) must be refused
+        # by an EXPLICIT guard — authz tolerates a callback envelope
+        # that OMITS message_id, so the plain comparison would pass
+        # None-to-None tautologically.
+        document = state.default_state()
+        record = self.make_approval(document, message_id=None)
+        found, problem = self.evaluate(document, record, message_id=None)
+        self.assertIsNone(found)
+        self.assertEqual(
+            problem, approval.PROBLEM_UNBOUND_PLAN_MESSAGE
+        )
+        # A boolean is not an exact int binding either.
+        document["approvals"][record["approval_id"]][
+            "plan_message_id"
+        ] = True
+        found, problem = self.evaluate(document, record, message_id=True)
+        self.assertIsNone(found)
+        self.assertEqual(
+            problem, approval.PROBLEM_UNBOUND_PLAN_MESSAGE
+        )
+        # An ARMED record still refuses a message_id-less callback via
+        # the ordinary message-binding mismatch.
+        document["approvals"][record["approval_id"]][
+            "plan_message_id"
+        ] = 9
+        found, problem = self.evaluate(document, record, message_id=None)
+        self.assertIsNone(found)
+        self.assertEqual(problem, approval.PROBLEM_MESSAGE_MISMATCH)
+
     def test_unknown_approval_id_fails_closed(self):
         document = state.default_state()
         self.make_approval(document)
@@ -1382,6 +1415,39 @@ class TelegramSendTests(unittest.TestCase):
                 len(part), telegram_api.MAX_MESSAGE_CHARS
             )
 
+    def test_would_truncate_matches_send_message_at_the_boundary(self):
+        # Differential guarantee for the F1 pre-send refusal: the
+        # helpers the adapter consults BEFORE sending must agree with
+        # what send_message actually does, or a refusal decision could
+        # diverge from real delivery behavior. Exercised at the exact
+        # cap boundary on the REAL client.
+        at_cap = "x" * telegram_api.MAX_DELIVERABLE_CHARS
+        over_cap = at_cap + "y"
+        for text, expect_truncated in ((at_cap, False), (over_cap, True)):
+            api, transport, _ = make_api([api_ok({"message_id": 9})])
+            outcome = api.send_message(42, text)
+            self.assertTrue(outcome.ok)
+            self.assertEqual(
+                telegram_api.would_truncate(text), expect_truncated,
+                len(text),
+            )
+            self.assertEqual(
+                outcome.truncated_chars > 0, expect_truncated, len(text)
+            )
+            self.assertEqual(
+                outcome.chunks_sent,
+                min(
+                    telegram_api.chunk_count(text),
+                    telegram_api.MAX_MESSAGE_CHUNKS,
+                ),
+            )
+        # The constant the refusal message quotes is the real product.
+        self.assertEqual(
+            telegram_api.MAX_DELIVERABLE_CHARS,
+            telegram_api.MAX_MESSAGE_CHARS
+            * telegram_api.MAX_MESSAGE_CHUNKS,
+        )
+
     def test_retry_is_bounded_with_capped_backoff(self):
         error = urllib.error.HTTPError("u", 502, "bad", {}, None)
         api, transport, sleeper = make_api([error])
@@ -1489,6 +1555,18 @@ class TimelineApi(object):
         self.poll_script = list(poll_script or [])
         self.next_message_id = 100
         self.send_ok = True
+        # Scripted outcomes consumed ONLY by PLAN sends (recognized by
+        # PLAN_MESSAGE_HEADER in the text — plan sends no longer carry
+        # a keyboard, so anchoring on reply_markup would silently stop
+        # exercising the plan send; mistakes.md "tests that pass for
+        # the wrong reason"), for delivery-failure-shape tests
+        # (truncated / partial / missing-binding); ordinary notice
+        # sends are unaffected.
+        self.plan_send_script = []
+        # Scripted (ok, problem) returns consumed by
+        # edit_message_reply_markup, so keyboard-offer failure can be
+        # driven.
+        self.edit_markup_script = []
         self.stop_adapter = None
 
     def poll_updates(self, offset):
@@ -1506,20 +1584,31 @@ class TimelineApi(object):
                 "reply_markup": reply_markup,
             })
         )
+        from telegram_operator import adapter as adapter_module
+        if (
+            adapter_module.PLAN_MESSAGE_HEADER in text
+            and self.plan_send_script
+        ):
+            return self.plan_send_script.pop(0)
         if not self.send_ok:
             return telegram_api.SendOutcome(False, (), 0, 0, "send down")
         # Mirror the real client's chunking contract: one message id
-        # per MAX_MESSAGE_CHARS chunk, keyboard on the last chunk.
-        chunk_count = max(
-            1,
-            -(-len(text) // telegram_api.MAX_MESSAGE_CHARS),
-        )
+        # per MAX_MESSAGE_CHARS chunk, keyboard on the last chunk, and
+        # the same chunk cap with its exact omission count.
+        chunk_count = telegram_api.chunk_count(text)
+        truncated = 0
+        if chunk_count > telegram_api.MAX_MESSAGE_CHUNKS:
+            chunk_count = telegram_api.MAX_MESSAGE_CHUNKS
+            truncated = len(text) - (
+                telegram_api.MAX_DELIVERABLE_CHARS
+                - telegram_api.TRUNCATION_NOTICE_RESERVE
+            )
         identifiers = tuple(
             self.next_message_id + index for index in range(chunk_count)
         )
         self.next_message_id += chunk_count
         return telegram_api.SendOutcome(
-            True, identifiers, chunk_count, 0, None
+            True, identifiers, chunk_count, truncated, None
         )
 
     def answer_callback_query(self, callback_id, text):
@@ -1535,6 +1624,8 @@ class TimelineApi(object):
                 "reply_markup": reply_markup,
             })
         )
+        if self.edit_markup_script:
+            return self.edit_markup_script.pop(0)
         return True, None
 
 
@@ -1680,6 +1771,20 @@ class AdapterHarness(object):
             if entry[0] == "sendMessage"
         ]
 
+    def plan_sends(self):
+        # Plan sends are recognized by their exact header, NOT by a
+        # keyboard: the plan message itself never carries one.
+        header = self.adapter_module.PLAN_MESSAGE_HEADER
+        return [
+            send for send in self.sends() if header in send["text"]
+        ]
+
+    def keyboard_edits(self):
+        return [
+            entry[1] for entry in self.timeline
+            if entry[0] == "editMessageReplyMarkup"
+        ]
+
     def first_index(self, kind, predicate=lambda detail: True):
         for index, entry in enumerate(self.timeline):
             if entry[0] == kind and predicate(entry[1]):
@@ -1802,29 +1907,35 @@ class AdapterIntentTests(unittest.TestCase):
         self.assertEqual(request.source, "telegram")
         self.assertIn("fix the bug", request.text)
         self.assertIn("remote protocol version", request.text)
-        # The plan message carries approve/reject buttons whose
-        # callback_data is ONLY the opaque approval id.
-        plan_sends = [
-            send for send in harness.sends()
-            if send["reply_markup"] is not None
-        ]
+        # The plan send itself carries NO keyboard; the approve/reject
+        # buttons (callback_data ONLY the opaque approval id) arrive
+        # afterwards via editMessageReplyMarkup on the plan message.
+        plan_sends = harness.plan_sends()
         self.assertEqual(len(plan_sends), 1)
-        buttons = plan_sends[0]["reply_markup"]["inline_keyboard"][0]
+        self.assertIsNone(plan_sends[0]["reply_markup"])
+        (edit,) = harness.keyboard_edits()
+        buttons = edit["reply_markup"]["inline_keyboard"][0]
         document = harness.adapter._document
         (approval_id,) = document["approvals"].keys()
         record = document["approvals"][approval_id]
         self.assertEqual(buttons[0]["callback_data"], "a:" + approval_id)
         self.assertEqual(buttons[1]["callback_data"], "r:" + approval_id)
-        # The adapter-held nonce NEVER reaches the phone.
+        # The adapter-held nonce NEVER reaches the phone — not in any
+        # send, not in the keyboard offer.
         self.assertNotIn(record["nonce"], json.dumps(harness.sends()))
-        # Binding: the approval is pinned to the message that carries
-        # the buttons, and to the turn's request/session.
-        # The ack message took id 100; the plan (keyboard) message is
-        # the SECOND send, id 101 — the approval binds to that one.
+        self.assertNotIn(
+            record["nonce"], json.dumps(harness.keyboard_edits())
+        )
+        # Binding: the approval is pinned to the message the keyboard
+        # was offered on, and to the turn's request/session.
+        # The ack message took id 100; the plan message is the SECOND
+        # send, id 101 — the approval binds to that one, and the
+        # keyboard edit targets exactly that id.
         plan_send_position = harness.sends().index(plan_sends[0])
         self.assertEqual(
             record["plan_message_id"], 100 + plan_send_position
         )
+        self.assertEqual(edit["message_id"], record["plan_message_id"])
         self.assertEqual(record["request_id"], request.request_id)
         self.assertEqual(record["session_id"], "sess-1")
         self.assertEqual(
@@ -1835,8 +1946,9 @@ class AdapterIntentTests(unittest.TestCase):
         save_index = harness.first_index(
             "save", lambda snapshot: len(snapshot["approvals"]) == 1
         )
+        header = harness.adapter_module.PLAN_MESSAGE_HEADER
         plan_send_index = harness.first_index(
-            "sendMessage", lambda detail: detail["reply_markup"] is not None
+            "sendMessage", lambda detail: header in detail["text"]
         )
         self.assertLess(save_index, plan_send_index)
         # Session recorded for resume.
@@ -1873,6 +1985,8 @@ class AdapterIntentTests(unittest.TestCase):
         self.assertTrue(
             all(send["reply_markup"] is None for send in harness.sends())
         )
+        # No keyboard is offered by the after-send path either.
+        self.assertEqual(harness.keyboard_edits(), [])
 
     def test_gateway_failure_is_reported_and_bounded(self):
         harness = self.harness(gateway_script=[
@@ -1968,20 +2082,20 @@ class AdapterIntentTests(unittest.TestCase):
         ])
         harness.adapter.process_update(msg_update(5, "big plan"))
         harness.drain_worker()
-        plan_send = [
-            send for send in harness.sends()
-            if send["reply_markup"] is not None
-        ][0]
+        plan_send = harness.plan_sends()[0]
         self.assertGreater(
             len(plan_send["text"]), telegram_api.MAX_MESSAGE_CHARS
         )
         (approval_id,) = harness.adapter._document["approvals"].keys()
         record = harness.adapter._document["approvals"][approval_id]
         # The approval binds the LAST id the fake allocated — the
-        # keyboard-carrying final chunk of the plan send.
+        # final chunk of the plan send — and the keyboard offer edit
+        # targets exactly that id.
         self.assertEqual(
             record["plan_message_id"], harness.api.next_message_id - 1
         )
+        (edit,) = harness.keyboard_edits()
+        self.assertEqual(edit["message_id"], record["plan_message_id"])
         harness.adapter.process_update(
             cb_update(
                 6, "a:" + approval_id,
@@ -2021,6 +2135,7 @@ class AdapterIntentTests(unittest.TestCase):
                 all(send["reply_markup"] is None
                     for send in harness.sends())
             )
+            self.assertEqual(harness.keyboard_edits(), [])
             replies = [send["text"] for send in harness.sends()]
             self.assertTrue(
                 any("cannot be approved" in text
@@ -2075,6 +2190,837 @@ class AdapterIntentTests(unittest.TestCase):
         self.assertIsNotNone(in_flight_save)
         self.assertLess(in_flight_save, gateway_index)
         self.assertIsNone(harness.adapter._document["in_flight"])
+
+
+class AdapterPlanDisplayBindingTests(unittest.TestCase):
+    """F1: an ACTIONABLE approval binds exactly the complete plan
+    content actually displayed, and nothing undisplayed. Truncated,
+    partial, failed, and unverifiable deliveries fail closed with a
+    user-facing explanation and no decidable approval."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._cases = 0
+
+    def harness(self, **kwargs):
+        self._cases += 1
+        subdir = os.path.join(self.tmp.name, "case%d" % self._cases)
+        os.makedirs(subdir)
+        return AdapterHarness(subdir, **kwargs)
+
+    def offer_with_scripted_outcome(self, outcome, body="Step 1. Do X."):
+        """Full plan flow whose PLAN send returns ``outcome``.
+
+        The script is anchored to the plan send itself (via
+        PLAN_MESSAGE_HEADER in the sent text), not to a keyboard
+        argument — the plan send no longer carries one.
+        """
+        harness = self.harness(gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message(body)),
+        ])
+        harness.adapter.process_update(msg_update(5, "plan it"))
+        harness.api.plan_send_script = [outcome]
+        harness.drain_worker()
+        # The scripted outcome must actually have been consumed by the
+        # plan send — otherwise this helper stopped exercising the
+        # path under test and every caller is green for the wrong
+        # reason.
+        self.assertEqual(harness.api.plan_send_script, [])
+        return harness
+
+    def assert_voided_with_explanation(self, harness, expected_fragment):
+        (record,) = harness.adapter._document["approvals"].values()
+        self.assertTrue(record["superseded"])
+        self.assertIsNone(record["plan_message_id"])
+        # A non-complete delivery must never reach the keyboard-offer
+        # step: no controls existed at any point.
+        self.assertEqual(harness.keyboard_edits(), [])
+        # Round-1 review F-4: the void must be DURABLE. Some
+        # TimelineStore snapshot — re-read from the state file — shows
+        # this approval superseded. Asserted before any follow-up
+        # callback, whose own offset save would flush the in-memory
+        # document and mask a missing voiding save. (Defense in depth:
+        # even without it the reloaded record stays unbound and is
+        # refused via unbound_plan_message.)
+        self.assertIsNotNone(
+            harness.first_index(
+                "save",
+                lambda snapshot: snapshot["approvals"].get(
+                    record["approval_id"], {}
+                ).get("superseded") is True,
+            )
+        )
+        replies = [send["text"] for send in harness.sends()]
+        self.assertTrue(
+            any(
+                expected_fragment in text
+                and "approval was voided" in text
+                for text in replies
+            ),
+            replies,
+        )
+        return record
+
+    def assert_callback_refused_not_dispatched(self, harness, message_id):
+        before = len(harness.gateway_requests)
+        for approval_id in list(harness.adapter._document["approvals"]):
+            harness.adapter.process_update(
+                cb_update(90, "a:" + approval_id, message_id=message_id)
+            )
+        harness.drain_worker()
+        self.assertEqual(len(harness.gateway_requests), before)
+        answers = [
+            entry[1]["text"] for entry in harness.timeline
+            if entry[0] == "answerCallbackQuery"
+        ]
+        self.assertTrue(
+            any("refused" in text for text in answers), answers
+        )
+
+    def test_actionable_approval_binds_exactly_the_displayed_text(self):
+        body = "Step 1. Do X.\nStep 2. Do Y."
+        harness = self.harness(gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message(body)),
+        ])
+        harness.adapter.process_update(msg_update(5, "plan it"))
+        harness.drain_worker()
+        (plan_send,) = harness.plan_sends()
+        header = harness.adapter_module.PLAN_MESSAGE_HEADER
+        # The bound message text IS header + body: the full plan body
+        # verbatim, nothing reworded or cut — and the send itself
+        # carried no keyboard.
+        self.assertEqual(plan_send["text"], header + body)
+        self.assertIsNone(plan_send["reply_markup"])
+        (record,) = harness.adapter._document["approvals"].values()
+        self.assertEqual(record["plan_body"], body)
+        self.assertEqual(
+            record["plan_digest_sha256"], approval.plan_digest(body)
+        )
+        self.assertEqual(
+            record["plan_message_id"], harness.api.next_message_id - 1
+        )
+        self.assertFalse(record["superseded"])
+        # The keyboard was offered on exactly the bound message, in
+        # exactly the bound chat (round-1 review F-2).
+        (edit,) = harness.keyboard_edits()
+        self.assertEqual(edit["message_id"], record["plan_message_id"])
+        self.assertEqual(edit["chat_id"], record["chat_id"])
+
+    def test_header_straddling_chunk_boundary_counts_full_sent_text(self):
+        # Round-1 review F-3: display-completeness must be computed
+        # over the FULL sent text, header included, as the
+        # PLAN_MESSAGE_HEADER comment claims. A body of exactly
+        # MAX_MESSAGE_CHARS is one chunk alone but TWO chunks once the
+        # header is prepended; counting only the body would void this
+        # correctly and completely displayed plan.
+        body = "P" * telegram_api.MAX_MESSAGE_CHARS
+        harness = self.harness(gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message(body)),
+        ])
+        header = harness.adapter_module.PLAN_MESSAGE_HEADER
+        self.assertEqual(telegram_api.chunk_count(body), 1)
+        self.assertEqual(telegram_api.chunk_count(header + body), 2)
+        harness.adapter.process_update(msg_update(5, "plan it"))
+        harness.drain_worker()
+        (record,) = harness.adapter._document["approvals"].values()
+        self.assertFalse(record["superseded"])
+        self.assertEqual(
+            record["plan_message_id"], harness.api.next_message_id - 1
+        )
+        (edit,) = harness.keyboard_edits()
+        self.assertEqual(edit["message_id"], record["plan_message_id"])
+
+    def test_display_cap_boundary_is_exact(self):
+        # The refusal guard sits in _offer_plan; it is exercised at
+        # its unit seam because the protocol envelope bound
+        # (MAX_ENVELOPE_CHARS=16384) keeps every parseable plan body
+        # below MAX_DELIVERABLE_CHARS today — the guard is the
+        # defense-in-depth enforcement of an invariant that previously
+        # held only by that constant coincidence.
+        item = {"kind": "intent", "chat_id": 42, "user_id": 42,
+                "update_id": 5}
+        harness = self.harness()
+        header_len = len(harness.adapter_module.PLAN_MESSAGE_HEADER)
+        at_cap_body = "P" * (
+            telegram_api.MAX_DELIVERABLE_CHARS - header_len
+        )
+        # Exactly at the cap: complete display is possible; the
+        # approval arms and binds the keyboard chunk.
+        harness.adapter._offer_plan(
+            item,
+            FakeGatewayResult("req-at", session_id="sess-1"),
+            protocol.OperatorResponse(
+                True, protocol.KIND_PLAN, at_cap_body, None
+            ),
+            "",
+        )
+        (record,) = harness.adapter._document["approvals"].values()
+        self.assertFalse(record["superseded"])
+        self.assertEqual(
+            record["plan_message_id"], harness.api.next_message_id - 1
+        )
+        (edit,) = harness.keyboard_edits()
+        self.assertEqual(edit["message_id"], record["plan_message_id"])
+        # One character past the cap: refused BEFORE any authority
+        # exists — no record at all, no keyboard, plain explanation
+        # with the exact numbers, and the preview is labelled.
+        over_cap_body = at_cap_body + "Q"
+        harness2 = self.harness()
+        harness2.adapter._offer_plan(
+            item,
+            FakeGatewayResult("req-over", session_id="sess-1"),
+            protocol.OperatorResponse(
+                True, protocol.KIND_PLAN, over_cap_body, None
+            ),
+            "",
+        )
+        self.assertEqual(harness2.adapter._document["approvals"], {})
+        self.assertTrue(
+            all(send["reply_markup"] is None
+                for send in harness2.sends())
+        )
+        self.assertEqual(harness2.keyboard_edits(), [])
+        (refusal,) = [send["text"] for send in harness2.sends()]
+        self.assertIn("NO approval was armed", refusal)
+        self.assertIn(
+            "%d characters" % (telegram_api.MAX_DELIVERABLE_CHARS + 1),
+            refusal,
+        )
+        self.assertIn(
+            "at most %d" % telegram_api.MAX_DELIVERABLE_CHARS, refusal
+        )
+        self.assertIn(
+            "Undeliverable plan preview (NOT approvable):", refusal
+        )
+        # With no record armed, a forged callback dispatches nothing.
+        harness2.adapter.process_update(
+            cb_update(90, "a:deadbeef", message_id=500)
+        )
+        harness2.drain_worker()
+        self.assertEqual(harness2.gateway_requests, [])
+
+    def test_truncated_delivery_outcome_fails_closed(self):
+        # Post-send belt: even if a keyboard send comes back ok=True
+        # WITH truncation (constant drift, transport bug), the record
+        # must not stay approvable.
+        harness = self.offer_with_scripted_outcome(
+            telegram_api.SendOutcome(True, (200,), 1, 7, None)
+        )
+        self.assert_voided_with_explanation(
+            harness, "TRUNCATED (7 characters omitted)"
+        )
+        self.assert_callback_refused_not_dispatched(harness, 200)
+
+    def test_partial_send_fails_closed(self):
+        body = "P" * (telegram_api.MAX_MESSAGE_CHARS + 10)
+        harness = self.offer_with_scripted_outcome(
+            telegram_api.SendOutcome(False, (200,), 1, 0, "boom"),
+            body=body,
+        )
+        header = harness.adapter_module.PLAN_MESSAGE_HEADER
+        expected = telegram_api.chunk_count(header + body)
+        self.assertGreater(expected, 1)
+        record = self.assert_voided_with_explanation(
+            harness, "only 1 of %d" % expected
+        )
+        replies = [send["text"] for send in harness.sends()]
+        self.assertTrue(
+            any("INCOMPLETE" in text for text in replies), replies
+        )
+        self.assertEqual(record["plan_body"], body)
+        self.assert_callback_refused_not_dispatched(harness, 200)
+
+    def test_failed_send_nothing_landed_fails_closed(self):
+        harness = self.offer_with_scripted_outcome(
+            telegram_api.SendOutcome(False, (), 0, 0, "boom")
+        )
+        self.assert_voided_with_explanation(
+            harness, "the plan was not displayed"
+        )
+        self.assert_callback_refused_not_dispatched(harness, 999)
+
+    def test_missing_binding_fails_closed_and_reports_truthfully(self):
+        # The one missing-binding shape the REAL client can emit
+        # (send_message: ok=False with chunks_sent=index+1 when a
+        # chunk WAS delivered but its message id was unusable). The
+        # explanation must say the plan WAS displayed — not "not
+        # displayed" or "INCOMPLETE" (round-1 review finding F-2;
+        # mistakes.md "silent truncation presented as fact").
+        problem = "telegram api sendMessage returned no usable message_id"
+        cases = [
+            # (body, scripted outcome): single-chunk unusable id;
+            # multi-chunk with the LAST chunk's id unusable.
+            ("Step 1. Do X.",
+             telegram_api.SendOutcome(False, (), 1, 0, problem)),
+            ("P" * (telegram_api.MAX_MESSAGE_CHARS + 10),
+             telegram_api.SendOutcome(False, (100,), 2, 0, problem)),
+        ]
+        for body, outcome in cases:
+            harness = self.offer_with_scripted_outcome(outcome, body=body)
+            self.assert_voided_with_explanation(
+                harness,
+                "The plan text was displayed, but its delivery could"
+                " not be verified",
+            )
+            replies = [send["text"] for send in harness.sends()]
+            # No keyboard was ever offered on this path, and the text
+            # must say so instead of implying buttons exist.
+            self.assertTrue(
+                any("no approval buttons were offered" in text
+                    for text in replies),
+                replies,
+            )
+            # No false claims about what the human is looking at.
+            self.assertFalse(
+                any("INCOMPLETE" in text or "not displayed" in text
+                    for text in replies),
+                replies,
+            )
+            self.assert_callback_refused_not_dispatched(harness, 999)
+
+    def test_lying_transport_count_mismatch_fails_closed(self):
+        # Belt shape the REAL client cannot emit (its ok=True path
+        # appends exactly one id per chunk): ok=True with no ids.
+        # Disclosed as a belt; it must still fail closed.
+        harness = self.offer_with_scripted_outcome(
+            telegram_api.SendOutcome(True, (), 0, 0, None)
+        )
+        self.assert_voided_with_explanation(
+            harness, "could not be verified as complete"
+        )
+        self.assert_callback_refused_not_dispatched(harness, 999)
+
+    def test_callback_omitting_message_id_cannot_decide_unarmed_record(self):
+        # Round-1 review finding F-1: authz tolerates a callback whose
+        # message dict OMITS message_id (decision.message_id becomes
+        # None); against a persisted-but-unarmed record
+        # (plan_message_id None) the plain comparison would pass
+        # None-to-None. The explicit unbound-plan-message guard must
+        # refuse it: nothing consumed, nothing queued, nothing
+        # dispatched. An int-message_id callback would be green for
+        # the wrong reason, so this update genuinely omits the key.
+        harness = self.harness(gateway_script=[])
+        record = harness.seed_approval(plan_message_id=None)
+        update = {
+            "update_id": 7,
+            "callback_query": {
+                "id": "cb7",
+                "from": {"id": 42},
+                "data": "a:" + record["approval_id"],
+                "message": {"chat": {"id": 42, "type": "private"}},
+            },
+        }
+        self.assertNotIn("message_id", update["callback_query"]["message"])
+        harness.adapter.process_update(update)
+        harness.drain_worker()
+        stored = harness.adapter._document["approvals"][
+            record["approval_id"]
+        ]
+        self.assertIsNone(stored["consumed_at"])
+        self.assertEqual(harness.adapter._document["queue"], [])
+        self.assertEqual(harness.gateway_requests, [])
+        answers = [
+            entry[1]["text"] for entry in harness.timeline
+            if entry[0] == "answerCallbackQuery"
+        ]
+        self.assertEqual(len(answers), 1)
+        self.assertIn("refused (unbound_plan_message)", answers[0])
+        # The same message_id-less callback against an ARMED record is
+        # refused too, via the ordinary message-binding mismatch.
+        armed = self.harness(gateway_script=[])
+        armed_record = armed.seed_approval(plan_message_id=9)
+        armed_update = {
+            "update_id": 8,
+            "callback_query": {
+                "id": "cb8",
+                "from": {"id": 42},
+                "data": "a:" + armed_record["approval_id"],
+                "message": {"chat": {"id": 42, "type": "private"}},
+            },
+        }
+        armed.adapter.process_update(armed_update)
+        armed.drain_worker()
+        self.assertIsNone(
+            armed.adapter._document["approvals"][
+                armed_record["approval_id"]
+            ]["consumed_at"]
+        )
+        self.assertEqual(armed.gateway_requests, [])
+        armed_answers = [
+            entry[1]["text"] for entry in armed.timeline
+            if entry[0] == "answerCallbackQuery"
+        ]
+        self.assertEqual(len(armed_answers), 1)
+        self.assertIn("refused (message_mismatch)", armed_answers[0])
+
+    def test_complete_multichunk_display_dispatches_replay_refused(self):
+        body = "P" * (telegram_api.MAX_MESSAGE_CHARS * 3 + 50)
+        harness = self.harness(gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message(body)),
+            FakeGatewayResult(
+                None, message=envelope_line(kind="result", body="done")
+            ),
+        ])
+        harness.adapter.process_update(msg_update(5, "big plan"))
+        harness.drain_worker()
+        (record,) = harness.adapter._document["approvals"].values()
+        self.assertFalse(record["superseded"])
+        self.assertEqual(
+            record["plan_message_id"], harness.api.next_message_id - 1
+        )
+        harness.adapter.process_update(
+            cb_update(
+                6, "a:" + record["approval_id"],
+                message_id=record["plan_message_id"],
+            )
+        )
+        harness.drain_worker()
+        self.assertEqual(len(harness.gateway_requests), 2)
+        # Replaying the same button press dispatches nothing more.
+        harness.adapter.process_update(
+            cb_update(
+                7, "a:" + record["approval_id"],
+                message_id=record["plan_message_id"],
+            )
+        )
+        harness.drain_worker()
+        self.assertEqual(len(harness.gateway_requests), 2)
+        answers = [
+            entry[1]["text"] for entry in harness.timeline
+            if entry[0] == "answerCallbackQuery"
+        ]
+        self.assertTrue(
+            any("refused (already_consumed)" in text
+                for text in answers),
+            answers,
+        )
+
+
+class AdapterKeyboardOfferOrderingTests(unittest.TestCase):
+    """Follow-up GAP A (task 20260825-102938): no approval CONTROL may
+    exist anywhere before complete delivery is proven AND the exact
+    message binding is durably on disk. The keyboard is offered only
+    afterwards, via editMessageReplyMarkup on the bound message; a
+    failed or unverifiable offer voids the record fail-closed."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._cases = 0
+
+    def harness(self, **kwargs):
+        self._cases += 1
+        subdir = os.path.join(self.tmp.name, "kbd%d" % self._cases)
+        os.makedirs(subdir)
+        # Remembered so a test can build a FRESH adapter over the same
+        # state directory (a restart probe).
+        self._last_dir = subdir
+        return AdapterHarness(subdir, **kwargs)
+
+    def plan_flow(self, gateway_script=None):
+        harness = self.harness(gateway_script=gateway_script or [
+            FakeGatewayResult(None, message=plan_result_message()),
+        ])
+        harness.adapter.process_update(msg_update(5, "plan it"))
+        harness.drain_worker()
+        return harness
+
+    def test_no_keyboard_rides_any_send_message(self):
+        # R1: assert on the ACTUAL reply_markup argument the fake
+        # transport recorded for every sendMessage — the plan send
+        # included — never on source text. The only control in the
+        # whole timeline is the post-arming editMessageReplyMarkup.
+        harness = self.plan_flow()
+        self.assertTrue(harness.plan_sends())
+        for send in harness.sends():
+            self.assertIsNone(send["reply_markup"], send)
+        (edit,) = harness.keyboard_edits()
+        (approval_id,) = harness.adapter._document["approvals"].keys()
+        record = harness.adapter._document["approvals"][approval_id]
+        # Round-1 review F-2: a message id is only meaningful together
+        # with its chat — the offer must target the chat the plan was
+        # displayed in and the record is bound to.
+        self.assertEqual(edit["chat_id"], record["chat_id"])
+        self.assertEqual(
+            edit["chat_id"], harness.plan_sends()[0]["chat_id"]
+        )
+        buttons = edit["reply_markup"]["inline_keyboard"][0]
+        self.assertEqual(
+            [button["callback_data"] for button in buttons],
+            ["a:" + approval_id, "r:" + approval_id],
+        )
+
+    def test_keyboard_offered_only_after_binding_durably_on_disk(self):
+        # R2: the save whose ON-DISK snapshot (TimelineStore re-reads
+        # the state file) carries the non-null plan_message_id strictly
+        # precedes the editMessageReplyMarkup entry, and the plan send
+        # strictly precedes that save.
+        harness = self.plan_flow()
+        header = harness.adapter_module.PLAN_MESSAGE_HEADER
+        plan_send_index = harness.first_index(
+            "sendMessage", lambda detail: header in detail["text"]
+        )
+        armed_save_index = harness.first_index(
+            "save",
+            lambda snapshot: any(
+                isinstance(stored.get("plan_message_id"), int)
+                for stored in snapshot["approvals"].values()
+            ),
+        )
+        edit_index = harness.first_index("editMessageReplyMarkup")
+        self.assertIsNotNone(plan_send_index)
+        self.assertIsNotNone(armed_save_index)
+        self.assertIsNotNone(edit_index)
+        self.assertLess(plan_send_index, armed_save_index)
+        self.assertLess(armed_save_index, edit_index)
+
+    def assert_offer_failure_fails_closed(self, scripted_return):
+        harness = self.harness(gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message()),
+        ])
+        harness.adapter.process_update(msg_update(5, "plan it"))
+        harness.api.edit_markup_script = [scripted_return]
+        harness.drain_worker()
+        self.assertEqual(harness.api.edit_markup_script, [])
+        (record,) = harness.adapter._document["approvals"].values()
+        self.assertTrue(record["superseded"])
+        # Round-1 review F-1: the void must be DURABLE, not a mutation
+        # of the in-memory dict. A TimelineStore snapshot — re-read
+        # from the state file, so a skipped disk write cannot produce
+        # it — showing this approval superseded must exist strictly
+        # AFTER the editMessageReplyMarkup entry. Asserted BEFORE any
+        # follow-up callback below, whose own offset save would flush
+        # the in-memory document and mask a missing voiding save.
+        edit_index = harness.first_index("editMessageReplyMarkup")
+        voided_save_index = harness.first_index(
+            "save",
+            lambda snapshot: snapshot["approvals"].get(
+                record["approval_id"], {}
+            ).get("superseded") is True,
+        )
+        self.assertIsNotNone(edit_index)
+        self.assertIsNotNone(voided_save_index)
+        self.assertGreater(voided_save_index, edit_index)
+        replies = [send["text"] for send in harness.sends()]
+        self.assertTrue(
+            any(
+                "buttons could not be attached" in text
+                and "voided and cannot be decided" in text
+                and "disarmed" in text
+                for text in replies
+            ),
+            replies,
+        )
+        # Round-1 review F-1 (restart probe), positioned BEFORE the
+        # first follow-up callback on the original adapter — that
+        # callback's own offset save would flush the already-voided
+        # in-memory document to disk and mask a missing voiding save
+        # (round-2 review O-1). Here the probe is load-bearing: a
+        # FRESH adapter reloaded from the same state directory sees
+        # exactly what the voiding save left on disk. On this path the
+        # keyboard offer may have SUCCEEDED with a lost response, so
+        # the approval id may be live on the phone; a non-durable void
+        # would reload the record ARMED and this exact callback would
+        # dispatch.
+        restarted = AdapterHarness(self._last_dir, gateway_script=[
+            FakeGatewayResult(
+                None,
+                message=envelope_line(
+                    kind="result", body="must never dispatch"
+                ),
+            ),
+        ])
+        restarted.adapter.process_update(
+            cb_update(
+                11, "a:" + record["approval_id"],
+                message_id=record["plan_message_id"],
+            )
+        )
+        restarted.drain_worker()
+        self.assertEqual(restarted.gateway_requests, [])
+        restarted_answers = [
+            entry[1]["text"] for entry in restarted.timeline
+            if entry[0] == "answerCallbackQuery"
+        ]
+        self.assertTrue(
+            any(
+                "refused (%s)" % approval.PROBLEM_SUPERSEDED in text
+                for text in restarted_answers
+            ),
+            restarted_answers,
+        )
+        # A subsequent callback on the ORIGINAL in-process adapter,
+        # carrying the EXACT bound message id, is refused (superseded)
+        # and dispatches nothing.
+        dispatched_before = len(harness.gateway_requests)
+        harness.adapter.process_update(
+            cb_update(
+                9, "a:" + record["approval_id"],
+                message_id=record["plan_message_id"],
+            )
+        )
+        harness.drain_worker()
+        self.assertEqual(len(harness.gateway_requests), dispatched_before)
+        answers = [
+            entry[1]["text"] for entry in harness.timeline
+            if entry[0] == "answerCallbackQuery"
+        ]
+        self.assertTrue(
+            any(
+                "refused (%s)" % approval.PROBLEM_SUPERSEDED in text
+                for text in answers
+            ),
+            answers,
+        )
+        return harness, record
+
+    def test_keyboard_offer_failure_voids_record_and_refuses(self):
+        # R3 (offer-step failure): a not-ok editMessageReplyMarkup
+        # voids the armed record; no decision is accepted.
+        harness, _ = self.assert_offer_failure_fails_closed(
+            (False, "edit down")
+        )
+        replies = [send["text"] for send in harness.sends()]
+        self.assertTrue(
+            any("(edit down)" in text for text in replies), replies
+        )
+
+    def test_keyboard_offer_unverifiable_outcome_fails_closed(self):
+        # Belt: a lying transport returning a non-True ok — falsy
+        # (None) or truthy-but-not-True ("unexpected") — with no
+        # problem string must still fail closed, with an honest
+        # fallback reason. The truthy shape pins the exact `is True`
+        # verification: a truthiness check would pass it.
+        for lying_ok in (None, "unexpected"):
+            harness, _ = self.assert_offer_failure_fails_closed(
+                (lying_ok, None)
+            )
+            replies = [send["text"] for send in harness.sends()]
+            self.assertTrue(
+                any(
+                    "keyboard offer outcome could not be verified"
+                    in text
+                    for text in replies
+                ),
+                (repr(lying_ok), replies),
+            )
+
+    def test_vanished_record_before_arming_offers_no_keyboard(self):
+        # Belt for an impossible-in-practice shape: the record
+        # vanishing between creation and arming. No binding was
+        # persisted, so no control may be offered.
+        harness = self.harness(gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message()),
+        ])
+        harness.adapter.process_update(msg_update(5, "plan it"))
+        original = harness.api.send_message
+        header = harness.adapter_module.PLAN_MESSAGE_HEADER
+
+        def vanishing_send(chat_id, text, reply_markup=None):
+            outcome = original(chat_id, text, reply_markup)
+            if header in text:
+                harness.adapter._document["approvals"].clear()
+            return outcome
+
+        harness.api.send_message = vanishing_send
+        harness.drain_worker()
+        self.assertEqual(harness.keyboard_edits(), [])
+        replies = [send["text"] for send in harness.sends()]
+        self.assertTrue(
+            any("vanished before it could be armed" in text
+                for text in replies),
+            replies,
+        )
+        self.assertEqual(harness.adapter._document["approvals"], {})
+
+    def test_single_chunk_plan_approves_end_to_end(self):
+        # R4 (single-chunk): the corrected ordering still yields a
+        # usable approval — approve -> dispatch -> reply. (The
+        # multi-chunk twin lives in AdapterPlanDisplayBindingTests.)
+        harness = self.plan_flow(gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message()),
+            FakeGatewayResult(
+                None, message=envelope_line(kind="result", body="done")
+            ),
+        ])
+        (record,) = harness.adapter._document["approvals"].values()
+        self.assertFalse(record["superseded"])
+        harness.adapter.process_update(
+            cb_update(
+                6, "a:" + record["approval_id"],
+                message_id=record["plan_message_id"],
+            )
+        )
+        harness.drain_worker()
+        self.assertEqual(len(harness.gateway_requests), 2)
+        self.assertTrue(
+            any("done" in send["text"] for send in harness.sends())
+        )
+
+
+class AdapterUnauthorizedPersistenceTests(unittest.TestCase):
+    """F2: durable transport update-offset advancement for an
+    unauthorized update is PERMITTED (poll-loop bookkeeping so a
+    hostile update cannot wedge the poller); persistence of any
+    unauthorized content, intent, approval, work, or session state is
+    FORBIDDEN. These two tests distinguish the two bounds."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_unauthorized_update_advances_offset_durably(self):
+        harness = AdapterHarness(self.tmp.name)
+        harness.adapter.process_update(
+            msg_update(9, "hello", user=666, chat=666)
+        )
+        saves = harness.saves()
+        self.assertTrue(saves)
+        # The offset advance IS persisted — and an independent store
+        # handle re-reading the durable file proves it reached disk.
+        self.assertEqual(saves[-1]["update_offset"], 10)
+        self.assertEqual(
+            state.StateStore(self.tmp.name).load()["update_offset"], 10
+        )
+        # No reply of any kind reached the unknown sender.
+        self.assertEqual(harness.sends(), [])
+
+    def test_unauthorized_update_persists_nothing_but_the_offset(self):
+        harness = AdapterHarness(self.tmp.name, gateway_script=[
+            FakeGatewayResult(None, message=plan_result_message()),
+        ])
+        # Seed real content-bearing durable state FIRST so the
+        # nothing-else-changed comparison cannot be vacuous
+        # (mistakes.md: the fixture must contain the condition the
+        # guard protects against): a session, an armed approval, and
+        # a still-queued second intent.
+        harness.adapter.process_update(msg_update(5, "fix the bug"))
+        harness.drain_worker()
+        harness.adapter.process_update(msg_update(6, "second intent"))
+        before = state.StateStore(self.tmp.name).load()
+        self.assertTrue(before["approvals"])
+        self.assertTrue(before["sessions"])
+        self.assertEqual(len(before["queue"]), 1)
+        (approval_id,) = before["approvals"].keys()
+        plan_message_id = before["approvals"][approval_id][
+            "plan_message_id"
+        ]
+        sends_before = len(harness.sends())
+        answers_before = len([
+            entry for entry in harness.timeline
+            if entry[0] == "answerCallbackQuery"
+        ])
+        # Unauthorized traffic carrying BOTH juicy content and a
+        # callback aimed at the real armed approval.
+        harness.adapter.process_update(msg_update(
+            30, "commit and push everything now", user=666, chat=666
+        ))
+        harness.adapter.process_update(cb_update(
+            31, "a:" + approval_id, message_id=plan_message_id,
+            user=666, chat=666,
+        ))
+        after = state.StateStore(self.tmp.name).load()
+        # The transport offset DID advance, durably…
+        self.assertEqual(after["update_offset"], 32)
+        self.assertNotEqual(
+            before["update_offset"], after["update_offset"]
+        )
+        # …and the persisted document differs in the offset field and
+        # in NO other field: identical serialization once the offset
+        # alone is normalized.
+        normalized = dict(before)
+        normalized["update_offset"] = after["update_offset"]
+        self.assertEqual(
+            json.dumps(normalized, sort_keys=True),
+            json.dumps(after, sort_keys=True),
+        )
+        # The targeted approval is untouched and the attacker's
+        # callback consumed nothing and dispatched nothing.
+        self.assertIsNone(after["approvals"][approval_id]["consumed_at"])
+        self.assertFalse(after["approvals"][approval_id]["superseded"])
+        self.assertEqual(len(after["queue"]), 1)
+        self.assertEqual(len(harness.gateway_requests), 1)
+        # No reply of any kind (message or callback answer) was sent.
+        self.assertEqual(len(harness.sends()), sends_before)
+        self.assertEqual(
+            len([
+                entry for entry in harness.timeline
+                if entry[0] == "answerCallbackQuery"
+            ]),
+            answers_before,
+        )
+
+
+class AdapterSerializedStatusTests(unittest.TestCase):
+    """F3: /status is acknowledged immediately but ANSWERED through
+    the same single worker that serializes Gateway turns — behind any
+    active work, with no proactive progress streaming."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_status_ack_precedes_answer_which_waits_for_active_turn(self):
+        harness = AdapterHarness(self.tmp.name, gateway_script=[
+            FakeGatewayResult(
+                None,
+                message=envelope_line(
+                    kind="result", body="engineering done"
+                ),
+            ),
+            FakeGatewayResult(
+                None,
+                message=envelope_line(kind="status", body="all quiet"),
+            ),
+        ])
+        harness.adapter.process_update(msg_update(5, "fix the bug"))
+        harness.adapter.process_update(msg_update(6, "/status"))
+        # Both items sit in the durable serialized queue, intent first.
+        self.assertEqual(
+            [item["kind"] for item in harness.adapter._document["queue"]],
+            ["intent", "status"],
+        )
+        # The acknowledgement went out BEFORE any gateway work ran.
+        ack_index = harness.first_index(
+            "sendMessage",
+            lambda detail: detail["text"] == "Gathering status…",
+        )
+        self.assertIsNotNone(ack_index)
+        self.assertIsNone(harness.first_index("gateway.submit"))
+        harness.drain_worker()
+        submit_indexes = [
+            index for index, entry in enumerate(harness.timeline)
+            if entry[0] == "gateway.submit"
+        ]
+        self.assertEqual(len(submit_indexes), 2)
+        answer_index = harness.first_index(
+            "sendMessage",
+            lambda detail: detail["text"].startswith("Adapter state"),
+        )
+        intent_reply_index = harness.first_index(
+            "sendMessage",
+            lambda detail: "engineering done" in detail["text"],
+        )
+        self.assertIsNotNone(answer_index)
+        self.assertIsNotNone(intent_reply_index)
+        # Ack strictly precedes the active turn's dispatch; the status
+        # ANSWER lands only after that turn fully completed (both its
+        # gateway call and its user-facing reply).
+        self.assertLess(ack_index, submit_indexes[0])
+        self.assertLess(submit_indexes[0], answer_index)
+        self.assertLess(intent_reply_index, answer_index)
+        # The separately constrained read-only status gateway turn
+        # follows the durable-state answer.
+        self.assertLess(answer_index, submit_indexes[1])
+        # No proactive progress streaming: between the ack and the
+        # answer, the ONLY send is the active turn's own reply.
+        between = [
+            entry[1]["text"]
+            for entry in harness.timeline[ack_index + 1:answer_index]
+            if entry[0] == "sendMessage"
+        ]
+        self.assertEqual(between, ["[result]\nengineering done"])
 
 
 class AdapterCallbackTests(unittest.TestCase):
@@ -2809,6 +3755,174 @@ class OrchestrationStateNonAccessTests(unittest.TestCase):
         )
         offenders = [event for event in observed if ".herd" in event]
         self.assertEqual(offenders, [])
+
+
+class RecordingSubprocessRun(object):
+    """``subprocess.run`` stand-in recording every argv executed.
+
+    Answers the gateway's read-only git worktree probe and scripted
+    codex turns; any other executable is an immediate failure — so the
+    assertion runs against the argv ACTUALLY executed, never against
+    source text (mistakes.md, "tests that pass for the wrong reason").
+    """
+
+    def __init__(self, codex_stdout_scripts):
+        self.calls = []
+        self.codex_stdout_scripts = list(codex_stdout_scripts)
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append(
+            {"argv": [str(element) for element in argv],
+             "kwargs": kwargs}
+        )
+        if argv[0] == "git":
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=b"true\n", stderr=b""
+            )
+        if argv[0] == "codex":
+            lines = self.codex_stdout_scripts.pop(0)
+            return subprocess.CompletedProcess(
+                argv, 0,
+                stdout=("\n".join(lines) + "\n").encode("utf-8"),
+                stderr=b"",
+            )
+        raise AssertionError("unexpected subprocess argv: %r" % (argv,))
+
+
+class TelegramAuthorityBoundaryTests(unittest.TestCase):
+    """F4: realistic Telegram traffic — explicitly including messages
+    that ASK for commit/push/PR/tag/release/deploy — driven through
+    the REAL Codex Gateway submit path with the subprocess entrypoints
+    patched. Proves on executed argv that no Telegram path invokes
+    Herdr or herdctl, that ordinary text grants no Git/release/deploy/
+    merge authority, and that the Gateway is not an orchestration
+    execution surface."""
+
+    def test_delivery_demand_traffic_executes_only_codex_turns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "repo")
+            os.makedirs(repo)
+            for name in ("AGENTS.md", "OPERATOR_PROTOCOL.md"):
+                with open(os.path.join(repo, name), "w",
+                          encoding="utf-8") as handle:
+                    handle.write("operator contract\n")
+            state_dir = os.path.join(tmp, "state")
+            os.makedirs(state_dir)
+            from telegram_operator import adapter as adapter_module
+            timeline = []
+            api = TimelineApi(timeline)
+            store = TimelineStore(state_dir, timeline)
+            adapter_config = config.AdapterConfig(
+                bot_token="T", allowed_user_ids=(42,), repository=repo
+            )
+            # REAL gateway build_request/submit — no injected fakes.
+            adapter_obj = adapter_module.Adapter(
+                adapter_config, store, api, clock=lambda: NOW
+            )
+            recorder = RecordingSubprocessRun([
+                [
+                    json.dumps({"session_id": "sess-real"}),
+                    json.dumps({"last_agent_message": envelope_line(
+                        kind="plan",
+                        body="Bounded plan: inspect and report only."
+                             " No commit, push, tag, release, or"
+                             " deploy is performed.",
+                    )}),
+                ],
+                [
+                    json.dumps({"session_id": "sess-real"}),
+                    json.dumps({"last_agent_message": envelope_line(
+                        kind="result",
+                        body="Analysis recorded. Nothing delivered.",
+                    )}),
+                ],
+                [
+                    json.dumps({"session_id": "sess-real"}),
+                    json.dumps({"last_agent_message": envelope_line(
+                        kind="status",
+                        body="Idle; no remote delivery authority.",
+                    )}),
+                ],
+            ])
+
+            def drain():
+                while True:
+                    try:
+                        item = adapter_obj._work_signals.get_nowait()
+                    except Exception:
+                        return
+                    if item is adapter_module._WORKER_SENTINEL:
+                        return
+                    adapter_obj.process_work_item(item)
+
+            with mock.patch("subprocess.run", recorder), \
+                    mock.patch("subprocess.Popen") as popen:
+                adapter_obj.process_update(msg_update(
+                    5,
+                    "Commit this, push to main, open a PR, tag"
+                    " v9.9.9, publish the release, merge it, and"
+                    " deploy to production right now.",
+                ))
+                drain()
+                (record,) = adapter_obj._document["approvals"].values()
+                adapter_obj.process_update(cb_update(
+                    6, "a:" + record["approval_id"],
+                    message_id=record["plan_message_id"],
+                ))
+                drain()
+                adapter_obj.process_update(msg_update(7, "/status"))
+                drain()
+            popen.assert_not_called()
+            argvs = [call["argv"] for call in recorder.calls]
+            self.assertTrue(
+                argvs, "no subprocess executed; test would be vacuous"
+            )
+            git_calls = [argv for argv in argvs if argv[0] == "git"]
+            codex_calls = [
+                argv for argv in argvs if argv[0] == "codex"
+            ]
+            # Every executed subprocess is either the gateway's
+            # read-only worktree probe or a codex Operator turn.
+            self.assertEqual(
+                len(git_calls) + len(codex_calls), len(argvs)
+            )
+            for argv in git_calls:
+                self.assertEqual(
+                    argv, ["git", "rev-parse", "--is-inside-work-tree"]
+                )
+            # Bounded: exactly one Operator turn per interaction
+            # (intent, decision, status) — a delivery demand fans out
+            # into no additional execution.
+            self.assertEqual(len(codex_calls), 3)
+            # No executed argv element names Herdr, herdctl, or the
+            # orchestration state directory.
+            for argv in argvs:
+                for element in argv:
+                    self.assertNotIn("herd", element.lower(), argv)
+            # No shell, ever.
+            for call in recorder.calls:
+                self.assertFalse(call["kwargs"].get("shell", False))
+            # The turns' ACTUAL stdin carries the authority bound.
+            codex_inputs = [
+                call["kwargs"]["input"].decode("utf-8")
+                for call in recorder.calls
+                if call["argv"][0] == "codex"
+            ]
+            self.assertIn(
+                "No remote message grants commit, push, PR, tag,"
+                " release, or deploy",
+                codex_inputs[0],
+            )
+            self.assertIn("Commit this, push to main", codex_inputs[0])
+            self.assertIn(
+                '"delivery_authority":"none"', codex_inputs[1]
+            )
+            self.assertIn(
+                "grants NO commit, push, PR, tag, release, or deploy"
+                " authority",
+                codex_inputs[1],
+            )
+            self.assertIn("READ-ONLY status turn", codex_inputs[2])
 
 
 def fake_which(name):
