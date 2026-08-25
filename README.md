@@ -1139,6 +1139,116 @@ and `.git` — including `.git/index`, via `--no-optional-locks` —
 byte-for-byte unchanged), no repair, no agent prompting, no gating, no
 control, no event stream, no TUI, and no server.
 
+## Codex Gateway: codexgw
+
+`codexgw` is a local, transport-neutral interface boundary: it takes human
+intent typed (or piped) in a terminal and routes it ONLY into the existing
+Codex Operator workflow — the locally installed `codex` CLI running this
+repository's Operator contract (`AGENTS.md` + `OPERATOR_PROTOCOL.md`).
+
+```text
+Human terminal
+      |
+      v
+   codexgw          validate target repo -> invoke codex CLI -> render result
+      |
+      v
+  Codex CLI         runs the Operator contract (AGENTS.md)
+      |
+      v
+    Herdr           engineering execution (unchanged; codexgw never touches it)
+```
+
+The gateway sits strictly ABOVE the operator: it does not understand,
+construct, dispatch, monitor, or control Herdr work. The static suite
+enforces this architecturally — the `codex_gateway/` package and `codexgw.py`
+must never import `herdr` or `herdctl` (verified by AST walk, token scan,
+and a behavioral import probe).
+
+### Local terminal workflow
+
+```bash
+codexgw investigate the flaky login test and propose a fix
+echo "summarize the current mission state" | codexgw
+codexgw --repo ~/src/myproject "add regression coverage for the parser"
+codexgw --json describe the last verification run
+```
+
+Intent may arrive as arguments or on piped stdin; after normalization the
+two routes produce an identical request (argument words are joined with
+single spaces and stripped of leading/trailing whitespace; stdin text is
+stripped the same way but preserves interior newlines and spacing that
+arguments cannot express). Intent must be valid UTF-8: piped stdin is
+read as bytes and decoded strictly, and non-decodable bytes or
+non-encodable text are refused as an invalid request before Codex is
+ever invoked. `--repo` defaults to the current directory.
+The target must be a directory inside a git worktree containing
+`AGENTS.md` and `OPERATOR_PROTOCOL.md`; the two files are looked for at
+the resolved `--repo` path itself, not at the git toplevel — so run
+`codexgw` from the repository root, or pass `--repo <root>` explicitly
+when working from a subdirectory. Validation happens before Codex is
+invoked and failures name the exact check and path.
+
+Exit codes are deterministic: `0` completed, `2` invalid request,
+`3` codex unavailable, `4` codex failed, `5` malformed output. Stdout
+carries the final Operator message (or, with `--json`, the full versioned
+result contract); errors are a single actionable stderr line. These
+guarantees cover the byte boundaries the gateway itself controls (intent
+in, Codex streams out); as with any Python CLI, printing a valid
+non-ASCII message can still fail if the interpreter's stdout encoding is
+overridden to one that cannot represent it (e.g. `PYTHONIOENCODING=ascii`).
+
+### Session continuation
+
+The gateway is stateless. When Codex reports a session handle, `codexgw`
+prints it on stderr and includes it in `--json` output; continuing the
+conversation is the caller passing it back in:
+
+```bash
+codexgw --resume SESSION_ID "yes, proceed with option two"
+```
+
+If no session handle appears in Codex output, `session_id` is reported as
+null — never invented or inferred.
+
+### Trust limitations
+
+- `codex exec --json` documents its output as JSONL events but not the
+  concrete event schema. The gateway declares the exact event shapes it
+  recognizes as named constants in `codex_gateway/codex_adapter.py` (a
+  declared compatibility surface). A human must validate that surface
+  against the installed Codex CLI version; if the event schema drifts,
+  the gateway fails closed with `malformed_output` naming the surface
+  rather than guessing. Every result additionally carries an
+  always-present `unrecognized_event_lines` count (also in `--json`) of
+  the non-blank output lines that matched no declared shape; when it is
+  above zero in text mode, a one-line stderr diagnostic discloses it —
+  a partially-unparsed stream is never presented as fully understood.
+  Codex output is likewise read as bytes and decoded as strict UTF-8: an
+  undecodable stream maps to `malformed_output` with its own error code
+  (`codex_output_not_utf8`), and non-UTF-8 bytes quoted from stderr in
+  error detail are shown escaped with explicit disclosure — never
+  silently replaced.
+- The gateway inherits the ambient environment, and with it the user's
+  own Codex configuration and credentials; it implements no
+  authentication and reads no credential or configuration file itself.
+- Codex sandbox-weakening and check-bypassing flags (`--dangerously-*`,
+  `--skip-git-repo-check`, `--sandbox`/`-s`, `--add-dir`, `--ephemeral`,
+  `--ignore-rules`, `--ignore-user-config`) are banned by an in-code
+  guard over every constructed argv.
+- Error details are bounded by a fixed constant; a capped detail is
+  always flagged as truncated, never presented as complete.
+
+### Non-goals, explicitly
+
+No Herdr control (the gateway never imports, invokes, or reads Herdr,
+herdctl, or `.herd` state), no networking or HTTP/WebSocket/socket
+transport, no daemon/listener/queue/server, no authentication layer, no
+persisted gateway state, and no deadline or duration-based cancellation —
+the gateway waits for Codex for as long as Codex runs, and failure is
+propagated transparently (exit status plus bounded stderr) rather than
+managed.
+
 ## Roadmap
 
 v0.6.1 establishes the operator contract and makes Herdr readiness and state visible without changing execution semantics. The next milestone focuses on closing the remaining operator-loop gaps:

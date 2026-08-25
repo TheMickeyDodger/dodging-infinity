@@ -1,9 +1,12 @@
 import ast
 import importlib.util
+import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
+import tokenize
 from pathlib import Path
 
 from herdr.guards import (
@@ -146,5 +149,88 @@ with tempfile.TemporaryDirectory() as td:
     subprocess.run(['git', '-C', str(repo), 'commit', '-qm', 'two'], check=True)
     ok, msg = push_approval_valid(repo)
     assert not ok and 'head' in msg.lower()
+
+# --- Codex Gateway architectural isolation -------------------------------
+# The gateway must never import or invoke Herdr in any form. Three
+# independent checks, all required: an AST walk, a token scan, and a
+# behavioral import probe.
+
+gateway_files = sorted((R / 'codex_gateway').glob('*.py')) + [R / 'codexgw.py']
+assert gateway_files, 'codex_gateway sources not found'
+FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
+
+# 1. AST: no Import/ImportFrom naming herdr/herdctl, and no dynamic-import
+# machinery at all (stricter than forbidding only herdr-valued arguments:
+# a dynamic import with a computed argument cannot be proven safe
+# statically, so the gateway is not allowed any).
+for path in gateway_files:
+    tree = ast.parse(path.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.name.split('.')[0] not in FORBIDDEN_ROOTS, (path, alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or '').split('.')[0]
+            assert root not in FORBIDDEN_ROOTS, (path, node.module)
+        elif isinstance(node, ast.Call):
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            assert name not in {'__import__', 'import_module'}, (path, name)
+        elif isinstance(node, ast.Name):
+            assert node.id != '__import__', path
+
+# 2. Token scan: outside comments and docstrings, no identifier token and
+# no string literal may reference herdr/herdctl — matched as a
+# case-insensitive SUBSTRING, so embedded occurrences (for example a
+# HerdrControlPlane-style identifier) are caught too. Docstring prose
+# explaining the boundary is allowed and expected.
+FORBIDDEN_SUBSTRINGS = ('herdr', 'herdctl')
+
+
+def _contains_forbidden(token_text):
+    lowered = token_text.lower()
+    return any(word in lowered for word in FORBIDDEN_SUBSTRINGS)
+
+
+for path in gateway_files:
+    source = path.read_text()
+    docstring_positions = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, 'body', [])
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                docstring_positions.add((body[0].value.lineno, body[0].value.col_offset))
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME:
+            assert not _contains_forbidden(token.string), (path, token.start, token.string)
+        elif token.type == tokenize.STRING and token.start not in docstring_positions:
+            assert not _contains_forbidden(token.string), (path, token.start, token.string)
+
+# 3. Behavioral: importing the gateway and its entry script must not load
+# any herdr/herdctl module.
+probe = subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            'import sys\n'
+            'import codex_gateway, codexgw\n'
+            'bad = sorted(\n'
+            '    name for name in sys.modules\n'
+            '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
+            ')\n'
+            'print("\\n".join(bad))\n'
+            'sys.exit(1 if bad else 0)\n'
+        ),
+    ],
+    cwd=str(R),
+    capture_output=True,
+    text=True,
+)
+assert probe.returncode == 0, (probe.returncode, probe.stdout, probe.stderr)
 
 print('static tests: OK')

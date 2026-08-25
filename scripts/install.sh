@@ -10,6 +10,13 @@ exec python3 "$ROOT/herdctl.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/herdctl"
 echo "Installed: $BIN_DIR/herdctl"
+chmod +x "$ROOT/codexgw.py"
+cat > "$BIN_DIR/codexgw" <<EOF
+#!/usr/bin/env bash
+exec python3 "$ROOT/codexgw.py" "\$@"
+EOF
+chmod +x "$BIN_DIR/codexgw"
+echo "Installed: $BIN_DIR/codexgw"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo 'Add to your shell profile: export PATH="$HOME/.local/bin:$PATH"'
 fi

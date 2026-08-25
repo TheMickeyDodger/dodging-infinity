@@ -27,6 +27,8 @@ Key components include:
 - `herdr/lifecycle.py` — role bootstrap and lifecycle behavior
 - `herdr/guards.py` — Git and runtime safety boundaries
 - `herdctl.py` — human-facing compatibility and administration CLI
+- `codex_gateway/` — local terminal gateway that routes human intent into the Codex CLI operator workflow (never into Herdr directly)
+- `codexgw.py` — repository-root entry script for the Codex Gateway CLI
 - `roles/` — logical role contracts
 - `tests/` — regression coverage
 
@@ -64,7 +66,7 @@ PYTHONPATH="$PWD" python3 tests/test_static.py
 Compile-check the Python sources:
 
 ```bash
-python3 -m py_compile herdctl.py herdr/*.py tests/*.py
+python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py
 ```
 
 ## Model and runtime contributions
