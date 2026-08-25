@@ -48,6 +48,9 @@ MAX_MESSAGE_CHARS = 4096
 # At most this many chunks per logical message; text beyond it is cut
 # with an explicit, labelled omission notice (never silently).
 MAX_MESSAGE_CHUNKS = 5
+# Longest text send_message can deliver COMPLETELY (chunk cap times
+# chunk size); any longer text is cut with the labelled notice.
+MAX_DELIVERABLE_CHARS = MAX_MESSAGE_CHARS * MAX_MESSAGE_CHUNKS
 # Bounded retry for send-side calls: total attempts per request.
 MAX_SEND_ATTEMPTS = 3
 # Exponential backoff between retries, bounded by a hard ceiling.
@@ -107,6 +110,30 @@ def _bounded(text):
     if len(text) > MAX_PROBLEM_CHARS:
         return text[:MAX_PROBLEM_CHARS] + " [problem text capped]"
     return text
+
+
+def chunk_count(text):
+    """Chunks ``send_message`` would need for ``text``, BEFORE the cap.
+
+    Mirrors ``send_message``'s chunking exactly (including its
+    empty-text placeholder), so callers can decide before sending
+    whether a text can be displayed completely, and can verify after
+    sending that every expected chunk was delivered.
+    """
+    full_text = text if isinstance(text, str) else str(text)
+    if not full_text:
+        full_text = "(empty message)"
+    return -(-len(full_text) // MAX_MESSAGE_CHARS)
+
+
+def would_truncate(text):
+    """True when ``send_message`` would omit any part of ``text``.
+
+    Truncation happens exactly when the chunk count exceeds
+    ``MAX_MESSAGE_CHUNKS`` — equivalently, when the text is longer
+    than ``MAX_DELIVERABLE_CHARS``.
+    """
+    return chunk_count(text) > MAX_MESSAGE_CHUNKS
 
 
 def default_transport(url, payload_bytes, deadline_seconds):

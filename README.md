@@ -167,8 +167,10 @@ It may:
 - receive Codex plans
 - approve bounded execution plans
 - reject bounded execution plans
-- query mission status
-- receive progress summaries
+- query mission status with `/status` (each answer is explicitly
+  requested and queued behind active Gateway work — never streamed)
+- receive restart and recovery notices about work it sent that was
+  interrupted
 - receive verification results
 
 It must not:
@@ -616,21 +618,23 @@ Herdr:
 - re-reviews
 - produces evidence
 
-Your phone may receive occasional meaningful updates:
+While the mission runs, your phone receives no unsolicited progress
+delivery: v0.1 has no proactive progress streaming. (The one
+unsolicited message class is a restart/recovery notice about work you
+sent that was interrupted, if the adapter restarts mid-mission.) If
+you want to know how things are going, you send:
 
 ```text
-Mission update
-
-State:
-Reviewer remediation
-
-Reviewer found:
-2 correctness issues
-
-No action required.
+/status
 ```
 
-Eventually your phone receives the verified result:
+The adapter acknowledges immediately, and the answer — durable
+lifecycle state plus a read-only Operator status snapshot — arrives
+when it reaches the front of the queue behind the active engineering
+work.
+
+When the engineering turn you approved completes, its reply is the
+verified result:
 
 ```text
 MISSION COMPLETE
@@ -737,8 +741,10 @@ subprocess keeps its no-deadline behavior unchanged.
 - The Operator answers through a versioned remote protocol envelope
   (plan / status / result / error). A free-form model message is never
   reinterpreted as an approved plan or a verified result.
-- A `plan` reply is delivered with one-shot **Approve / Reject** inline
-  buttons.
+- A `plan` reply is displayed first, with no controls; its one-shot
+  **Approve / Reject** inline buttons are attached to the plan message
+  only after complete delivery is proven and the exact message binding
+  has been durably persisted.
 - `/status` reports durable adapter lifecycle state first — the last
   gateway turn, queued items besides the status request itself,
   in-flight dispatch, approvable plans awaiting decision (counted
@@ -746,6 +752,13 @@ subprocess keeps its no-deadline behavior unchanged.
   excluded), and session-map evictions since first run, each an exact
   labelled count — then fetches engineering status through a
   separately constrained READ-ONLY Operator turn.
+- `/status` is acknowledged immediately ("Gathering status…") but is
+  ANSWERED through the same single worker that serializes every
+  Gateway turn: a status request queues behind any active or
+  already-queued Gateway work and is answered only when it reaches
+  the front. Visibility is polled and lifecycle-based — there is no
+  proactive progress streaming; send `/status` again for a fresh
+  snapshot.
 - `/help` (or `/start`) describes the commands.
 
 ## Approval binding
@@ -754,7 +767,17 @@ Plan approval is ONE-SHOT and bound to ALL of: the exact Telegram user
 id, the private chat, the configured repository realpath, the Gateway
 request, the Codex session, the Telegram plan message, the sha256
 digest of the exact plan text, a random adapter-held nonce, and an
-`expires_at` validity bound. A revised plan invalidates every prior
+`expires_at` validity bound. No approval CONTROL exists before proof:
+the plan text is sent with no keyboard, and the Approve / Reject
+buttons are offered — on exactly the bound plan message — only after
+the send outcome proves the complete plan text was displayed and the
+message binding has been durably persisted. A plan too long to display
+within the Telegram chunk cap is refused with no approval armed; a
+truncated, partial, failed, or unverifiable plan delivery voids the
+approval with an explanation and offers no buttons; and a failed or
+unverifiable button offer voids the approval too — an actionable
+approval binds exactly what was displayed, never undisplayed text. A
+revised plan invalidates every prior
 approval in the thread, and any intervening engineering turn in the
 chat invalidates a still-pending approval at dispatch time (checking
 /status does not). Replays, mismatches, expiry, and duplicates
@@ -786,7 +809,11 @@ The adapter enforces, with static and behavioral regression tests:
 
 - allowlist trusted NUMERIC Telegram user IDs, private chats only
 - authenticate every update BEFORE parsing or persisting content
-- reject unknown senders silently (no reply, nothing persisted)
+- reject unknown senders with no reply; nothing they send is parsed
+  or persisted — no content, intent, approval, work, or session
+  state. The only durable effect of a denied update is the transport
+  update-offset advance (intended poll-loop bookkeeping, so a denied
+  update is not re-fetched and cannot wedge the poller)
 - never expose arbitrary shell execution
 - never forward raw shell commands directly
 - never invoke Herdr, never read orchestration state — not even a

@@ -6,8 +6,8 @@ Security fixes are currently provided for the latest Dodging Infinity release li
 
 | Version | Supported |
 | --- | --- |
-| 0.3.x | Yes |
-| < 0.3 | No |
+| 0.6.x | Yes |
+| < 0.6 | No |
 
 ## Reporting a vulnerability
 
@@ -70,11 +70,24 @@ by regression tests:
 - **Authentication before content.** Every update is authenticated on
   its identity envelope (exact numeric user id, private chat, chat/user
   consistency) before any content is parsed or persisted. Unknown
-  senders get no reply and leave no trace in adapter state.
+  senders get no reply, and nothing they send is parsed or persisted —
+  no content, intent, approval, work, or session state. The only
+  durable effect of a denied update is the transport update-offset
+  advance that stops the poller re-fetching it (intended, so a hostile
+  update cannot wedge the poll loop).
 - **Approval binding.** Plan approval is one-shot and bound to user,
   chat, repository realpath, gateway request, Codex session, plan
   message, exact plan digest, an adapter-held nonce, and an
-  `expires_at` validity bound. The nonce never reaches the phone;
+  `expires_at` validity bound. No approval control exists before
+  proof: the plan is sent with no keyboard, and the Approve/Reject
+  buttons are attached to the bound plan message only after the send
+  outcome proves the complete plan text was displayed and the message
+  binding is durably persisted. A plan too long for the Telegram chunk
+  cap is refused with no approval armed; truncated, partial, failed,
+  or unverifiable delivery voids the approval with no buttons ever
+  offered; and a failed or unverifiable button offer voids the
+  approval too — an actionable approval never covers undisplayed
+  text. The nonce never reaches the phone;
   callback buttons carry only an opaque id. Typed text containing the
   protocol marker is visibly quoted so a hand-typed decision envelope
   can never be accepted. Replay, mismatch, expiry, revision,

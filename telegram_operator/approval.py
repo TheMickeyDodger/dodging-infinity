@@ -46,6 +46,7 @@ PROBLEM_USER_MISMATCH = "user_mismatch"
 PROBLEM_CHAT_MISMATCH = "chat_mismatch"
 PROBLEM_REPOSITORY_MISMATCH = "repository_mismatch"
 PROBLEM_MESSAGE_MISMATCH = "message_mismatch"
+PROBLEM_UNBOUND_PLAN_MESSAGE = "unbound_plan_message"
 PROBLEM_EXPIRED = "expired"
 PROBLEM_REQUEST_MISMATCH = "request_mismatch"
 PROBLEM_SESSION_MISMATCH = "session_mismatch"
@@ -186,6 +187,17 @@ def evaluate_callback(document, approval_id, user_id, chat_id,
         return None, PROBLEM_CHAT_MISMATCH
     if record["repository"] != repository:
         return None, PROBLEM_REPOSITORY_MISMATCH
+    if not isinstance(record["plan_message_id"], int) or isinstance(
+        record["plan_message_id"], bool
+    ):
+        # Twin of PROBLEM_UNBINDABLE_SESSION (R4-B1): a record whose
+        # plan-message binding was never armed (plan_message_id still
+        # None — persisted but not actionable) must never validate.
+        # Without this guard, a callback envelope that OMITS its
+        # message_id (tolerated by authz) would compare None to None
+        # and pass tautologically (round-1 review finding F-1, task
+        # 20260825-091033).
+        return None, PROBLEM_UNBOUND_PLAN_MESSAGE
     if record["plan_message_id"] != message_id:
         return None, PROBLEM_MESSAGE_MISMATCH
     if now >= record["expires_at"]:
