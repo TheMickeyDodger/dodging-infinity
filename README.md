@@ -708,7 +708,8 @@ Your phone was the control surface.
 
 # Telegram Remote Operator
 
-Telegram is the planned first remote client.
+Telegram is the first remote client, shipped as an MVP adapter
+(`telegram_operator/` package, `tgop` entry script).
 
 It is an adapter, not an execution system.
 
@@ -716,7 +717,7 @@ It is an adapter, not an execution system.
 Telegram
     |
     v
-Telegram Adapter
+Telegram Adapter (tgop)
     |
     v
 Codex Gateway
@@ -725,68 +726,126 @@ Codex Gateway
 Codex Operator
 ```
 
-The first Telegram MVP should support:
+## Setup
 
-## Submit intent
+Configuration lives OUTSIDE any repository, in
+`~/Library/Application Support/DodgingInfinity/telegram/config.json`
+(directory mode `700`, file mode `600` — the adapter refuses to load a
+group/other-readable config because it holds the bot token):
 
-Example:
-
-```text
-/mission Fix issue #702 in Mitiq
+```json
+{
+  "bot_token": "<token from @BotFather>",
+  "allowed_user_ids": [123456789],
+  "repository": "/path/to/one/repository"
+}
 ```
 
-or simply natural-language intent.
+- `allowed_user_ids` is an exact NUMERIC Telegram user-id allowlist.
+- One repository per adapter instance.
+- Durable adapter state (`state.json`) sits next to the config, also
+  outside the repository, written atomically.
 
-## Receive plan
+Run in the foreground with `tgop run`, or install the optional
+per-user LaunchAgent with `tgop install-agent` (absolute paths,
+RunAtLoad, KeepAlive with a restart throttle; logs in the protected
+state directory, which the installer creates at mode `700`). An
+explicit `--config PATH` given to `install-agent` is propagated into
+the installed job as an absolute path, so the agent runs exactly the
+named configuration, and the job's logs, state, and lock all live in
+that config's directory (the default protected state directory
+otherwise) — never split across two locations. Because launchd does
+not inherit your shell PATH, the installer resolves the `codex`
+binary at INSTALL time and bakes its directory into the job's PATH
+FIRST, ahead of a fixed constant list — never your ambient PATH — so
+the exact validated binary always wins; installation refuses
+with an actionable message when `codex` cannot be resolved, and the
+agent must be reinstalled if the `codex` binary later moves. Disable
+with `tgop uninstall-agent` — it unloads and removes exactly the
+per-user plist the installer created. A single-instance lock refuses
+a second concurrent adapter.
 
-Codex returns:
+## Transport
 
-- objective
-- repository
-- constraints
-- meaningful risks
-- requested execution scope
+The adapter uses genuine outbound Telegram Bot API long polling:
+`getUpdates` with a positive server-side long-poll duration, and a
+client socket deadline that is strictly LONGER than the long poll by a
+hard constant margin (so the server always answers an idle poll before
+the client gives up; a deadline firing on an idle poll is treated as a
+normal empty poll, never an error and never a reason to disturb the
+update offset). Failed polls recover with capped exponential backoff.
+There is no webhook, no public listener, and no inbound port. These
+deadlines exist ONLY in the Telegram transport; the Codex Gateway's
+subprocess keeps its no-deadline behavior unchanged.
 
-## Approve plan
+## Interaction
 
-The trusted user can approve the bounded plan.
+- Send natural-language intent (or `/mission <intent>`). The adapter
+  authenticates the sender BEFORE parsing any content, then routes the
+  intent through the Codex Gateway into a new or resumed Codex
+  Operator session.
+- The Operator answers through a versioned remote protocol envelope
+  (plan / status / result / error). A free-form model message is never
+  reinterpreted as an approved plan or a verified result.
+- A `plan` reply is delivered with one-shot **Approve / Reject** inline
+  buttons.
+- `/status` reports durable adapter lifecycle state first — the last
+  gateway turn, queued items besides the status request itself,
+  in-flight dispatch, approvable plans awaiting decision (counted
+  across all chats; expired, consumed, and superseded approvals are
+  excluded), and session-map evictions since first run, each an exact
+  labelled count — then fetches engineering status through a
+  separately constrained READ-ONLY Operator turn.
+- `/help` (or `/start`) describes the commands.
 
-## Query status
+## Approval binding
 
-Example:
+Plan approval is ONE-SHOT and bound to ALL of: the exact Telegram user
+id, the private chat, the configured repository realpath, the Gateway
+request, the Codex session, the Telegram plan message, the sha256
+digest of the exact plan text, a random adapter-held nonce, and an
+`expires_at` validity bound. A revised plan invalidates every prior
+approval in the thread, and any intervening engineering turn in the
+chat invalidates a still-pending approval at dispatch time (checking
+/status does not). Replays, mismatches, expiry, and duplicates
+all fail closed. The nonce never leaves the Mac: inline buttons carry
+only an opaque approval id, and typed chat text can never forge the
+adapter's decision envelope (marker-bearing user lines are visibly
+quoted before forwarding).
 
-```text
-/status
-```
+## Recovery
 
-The status should come from Codex plus the existing read-only Herdr observation surface.
+Authority-bearing state is persisted before any external action, and
+the Telegram offset advances only after accepted state is durably
+stored. After a crash or restart the adapter reports
+queued-but-undispatched work as dropped (re-send it) and
+dispatched-but-unconfirmed work as AMBIGUOUS — it is never replayed
+automatically.
 
-## Receive result
+## Delivery authority — deferred
 
-Codex returns:
-
-- mission outcome
-- files changed
-- verification evidence
-- Reviewer result
-- delivery state
-
-## Authorize delivery
-
-Commit, push, PR, tag, and release remain separate protected actions.
+Remote delivery authority is OUT OF SCOPE for this MVP. No Telegram
+message — plain text or approval callback — can commit, push, open a
+PR, tag, release, or deploy. The adapter's decision envelope states
+explicitly that it grants no delivery authority. Commit, push, PR,
+tag, and release remain separate, human-authorized, local actions.
 
 ## Telegram security requirements
 
-The adapter must:
+The adapter enforces, with static and behavioral regression tests:
 
-- allowlist trusted Telegram user IDs
-- reject unknown senders
+- allowlist trusted NUMERIC Telegram user IDs, private chats only
+- authenticate every update BEFORE parsing or persisting content
+- reject unknown senders silently (no reply, nothing persisted)
 - never expose arbitrary shell execution
 - never forward raw shell commands directly
-- never invoke Herdr
+- never invoke Herdr, never read orchestration state — not even a
+  path string (isolation is enforced by the static suite)
 - never bypass Codex
 - never silently interpret chat text as Git authorization
-- bind approval actions to a known Codex request/session and bounded plan
+- bind approval actions to a known Codex request/session and the
+  exact bounded plan
+- redact the bot token from every error and diagnostic surface
 
 ---
 
@@ -1638,17 +1697,21 @@ Validate:
 
 ## Then: Telegram Remote Operator MVP
 
-Build:
+Shipped in this MVP:
 
 - trusted Telegram identity allowlist
 - human-intent submission
 - Codex session routing
 - bounded-plan delivery
-- execution approval
+- execution approval (one-shot, fully bound)
 - progress/status
 - verified-result delivery
+
+Explicitly DEFERRED beyond this MVP (no remote path exists for them):
+
 - commit authorization
 - push / PR authorization
+- tag / release / deploy authorization
 
 ## Then: Always-on Mac host
 

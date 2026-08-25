@@ -17,6 +17,13 @@ exec python3 "$ROOT/codexgw.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/codexgw"
 echo "Installed: $BIN_DIR/codexgw"
+chmod +x "$ROOT/tgop.py"
+cat > "$BIN_DIR/tgop" <<EOF
+#!/usr/bin/env bash
+exec python3 "$ROOT/tgop.py" "\$@"
+EOF
+chmod +x "$BIN_DIR/tgop"
+echo "Installed: $BIN_DIR/tgop"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo 'Add to your shell profile: export PATH="$HOME/.local/bin:$PATH"'
 fi
