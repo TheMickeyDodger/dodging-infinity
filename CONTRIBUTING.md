@@ -29,6 +29,8 @@ Key components include:
 - `herdctl.py` — human-facing compatibility and administration CLI
 - `codex_gateway/` — local terminal gateway that routes human intent into the Codex CLI operator workflow (never into Herdr directly)
 - `codexgw.py` — repository-root entry script for the Codex Gateway CLI
+- `telegram_operator/` — Telegram Remote Operator adapter: allowlisted private-chat intent routed exclusively through the Codex Gateway (never into Herdr directly)
+- `tgop.py` — repository-root entry script for the Telegram adapter CLI
 - `roles/` — logical role contracts
 - `tests/` — regression coverage
 
@@ -63,10 +65,17 @@ Run the static/integration suite:
 PYTHONPATH="$PWD" python3 tests/test_static.py
 ```
 
+Test termination rule: no test may depend on the code path under test
+for its own termination. A test that can reach a loop, a blocking
+call, or a real transport must carry an independent bound — a patched
+entry point asserted not-called, a self-terminating fake, or an
+exhaustion stop — so that a mutated or broken guard makes the test
+fail fast instead of hanging the suite (or escaping to the network).
+
 Compile-check the Python sources:
 
 ```bash
-python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py
+python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py
 ```
 
 ## Model and runtime contributions

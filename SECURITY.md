@@ -29,5 +29,61 @@ Changes involving the following areas deserve additional scrutiny:
 - dependency and completion gating
 - prompt delivery and runtime settlement
 - handling of local configuration, tokens, and credentials
+- the Telegram Remote Operator adapter (remote input surface, bot
+  token handling, approval binding)
 
 Security fixes should include regression coverage whenever practical.
+
+## Telegram Remote Operator surface
+
+The Telegram adapter (`telegram_operator/`, `tgop`) is a
+security-sensitive remote input surface. Its properties, all covered
+by regression tests:
+
+- **Outbound-only transport.** Genuine Bot API long polling; no
+  webhook, no listener, no inbound port. The client socket deadline is
+  a hard constant strictly greater than the server-side long-poll
+  duration, so an idle poll is answered by the server, never aborted
+  by the client; a deadline firing is handled as a normal empty poll.
+  Failed polls recover with capped exponential backoff. These
+  deadlines apply only to the Telegram transport — the Codex Gateway
+  subprocess keeps its no-deadline behavior.
+- **LaunchAgent KeepAlive limits.** KeepAlive restarts a process that
+  exits; it cannot rescue a process that is alive but wedged. The
+  restart throttle bounds relaunch frequency.
+- **LaunchAgent executable resolution.** launchd does not inherit the
+  interactive shell PATH, so the installed job's PATH is composed at
+  install time from the directory the `codex` binary resolves to,
+  placed FIRST so the validated binary cannot be shadowed by a
+  different `codex` in a base directory, followed by a fixed
+  hard-coded directory list — the ambient PATH is never passed
+  through. Installation fails closed when `codex` is not resolvable,
+  and the agent must be reinstalled if the binary moves.
+  An explicit `--config` is propagated into the job absolutely;
+  installing against a silently different default configuration is
+  refused by construction.
+- **Bot token handling.** The token sits in the URL path of every Bot
+  API request, so every error, diagnostic, and exception string that
+  can carry a URL is redacted before leaving the transport module. The
+  config file must be mode `600` in a mode `700` directory; a
+  group/other-readable config is refused, never repaired.
+- **Authentication before content.** Every update is authenticated on
+  its identity envelope (exact numeric user id, private chat, chat/user
+  consistency) before any content is parsed or persisted. Unknown
+  senders get no reply and leave no trace in adapter state.
+- **Approval binding.** Plan approval is one-shot and bound to user,
+  chat, repository realpath, gateway request, Codex session, plan
+  message, exact plan digest, an adapter-held nonce, and an
+  `expires_at` validity bound. The nonce never reaches the phone;
+  callback buttons carry only an opaque id. Typed text containing the
+  protocol marker is visibly quoted so a hand-typed decision envelope
+  can never be accepted. Replay, mismatch, expiry, revision,
+  duplicate-update, and crash-ambiguity paths all fail closed, and
+  interrupted dispatches are reported and never replayed.
+- **No delivery authority.** No remote message can commit, push, open
+  a PR, tag, release, or deploy; the adapter's decision envelope says
+  so explicitly. Delivery remains local and human-authorized.
+- **Isolation.** Adapter and gateway sources never import, invoke, or
+  reference the orchestration layer or its state directory — enforced
+  statically (AST walk, token scan) and behaviorally (import probe and
+  an audited end-to-end filesystem check).

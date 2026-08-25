@@ -150,13 +150,21 @@ with tempfile.TemporaryDirectory() as td:
     ok, msg = push_approval_valid(repo)
     assert not ok and 'head' in msg.lower()
 
-# --- Codex Gateway architectural isolation -------------------------------
-# The gateway must never import or invoke Herdr in any form. Three
-# independent checks, all required: an AST walk, a token scan, and a
-# behavioral import probe.
+# --- Codex Gateway / Telegram adapter architectural isolation ------------
+# The gateway and the Telegram Remote Operator adapter must never import
+# or invoke Herdr in any form. Three independent checks, all required:
+# an AST walk, a token scan, and a behavioral import probe.
 
-gateway_files = sorted((R / 'codex_gateway').glob('*.py')) + [R / 'codexgw.py']
+gateway_files = (
+    sorted((R / 'codex_gateway').glob('*.py'))
+    + [R / 'codexgw.py']
+    + sorted((R / 'telegram_operator').glob('*.py'))
+    + [R / 'tgop.py']
+)
 assert gateway_files, 'codex_gateway sources not found'
+assert any('telegram_operator' in str(p) for p in gateway_files), (
+    'telegram_operator sources not found'
+)
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
 # 1. AST: no Import/ImportFrom naming herdr/herdctl, and no dynamic-import
@@ -182,13 +190,17 @@ for path in gateway_files:
 # no string literal may reference herdr/herdctl — matched as a
 # case-insensitive SUBSTRING, so embedded occurrences (for example a
 # HerdrControlPlane-style identifier) are caught too. Docstring prose
-# explaining the boundary is allowed and expected.
+# explaining the boundary is allowed and expected. String literals also
+# must never name the repository-scoped orchestration-state directory
+# ('.herd'): the adapter and gateway may not hold even a path string
+# into it (its behavioral counterpart lives in the adapter test suite).
 FORBIDDEN_SUBSTRINGS = ('herdr', 'herdctl')
+FORBIDDEN_STRING_SUBSTRINGS = FORBIDDEN_SUBSTRINGS + ('.herd',)
 
 
-def _contains_forbidden(token_text):
+def _contains_forbidden(token_text, words=FORBIDDEN_SUBSTRINGS):
     lowered = token_text.lower()
-    return any(word in lowered for word in FORBIDDEN_SUBSTRINGS)
+    return any(word in lowered for word in words)
 
 
 for path in gateway_files:
@@ -208,10 +220,12 @@ for path in gateway_files:
         if token.type == tokenize.NAME:
             assert not _contains_forbidden(token.string), (path, token.start, token.string)
         elif token.type == tokenize.STRING and token.start not in docstring_positions:
-            assert not _contains_forbidden(token.string), (path, token.start, token.string)
+            assert not _contains_forbidden(
+                token.string, FORBIDDEN_STRING_SUBSTRINGS
+            ), (path, token.start, token.string)
 
-# 3. Behavioral: importing the gateway and its entry script must not load
-# any herdr/herdctl module.
+# 3. Behavioral: importing the gateway, the Telegram adapter, and their
+# entry scripts must not load any herdr/herdctl module.
 probe = subprocess.run(
     [
         sys.executable,
@@ -219,6 +233,9 @@ probe = subprocess.run(
         (
             'import sys\n'
             'import codex_gateway, codexgw\n'
+            'import telegram_operator, tgop\n'
+            'import telegram_operator.adapter, telegram_operator.cli\n'
+            'import telegram_operator.launchagent\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
