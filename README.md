@@ -2,7 +2,7 @@
   <img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">
 </p>
 
-# Dodging Infinity v0.6.2
+# Dodging Infinity v0.6.3
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -14,9 +14,11 @@
 
 Dodging Infinity is an engineering orchestration system built around Herdr for turning human intent into bounded, isolated, and verifiable engineering work.
 
-[v0.6.2](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.1) established the repository-level Codex Operator contract, explicit operating protocol, and strictly read-only health and observability surfaces.
+[v0.6.1](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.1) established the repository-level Codex Operator contract, explicit operating protocol, and strictly read-only health and observability surfaces.
 
-The current system extends that foundation with **Codex Gateway v0.1** and the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
+[v0.6.2](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.2) added **Codex Gateway v0.1**.
+
+[v0.6.3](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.3) adds the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
 
 The operating model is deliberate:
 
@@ -310,7 +312,7 @@ The intended operating principle is:
 
 ---
 
-# What v0.6.1 provides
+# Foundation available by v0.6.1
 
 - **Operational readiness** — `herdctl health [--repo NAME]` checks configuration, server reachability, runtime state, expected live agents, and task-state readability without repairing or mutating the repository.
 - **Read-only observability** — `herdctl observe [--repo NAME] [--json]` projects repository identity, workforce configuration, mission and task state, runtime topology, child dependencies, reviews, artifacts, and recent task summaries through a schema-versioned snapshot.
@@ -332,7 +334,7 @@ The intended operating principle is:
 
 ---
 
-# Current main: Codex Gateway v0.1
+# Codex Gateway v0.1 (released in v0.6.2)
 
 Codex Gateway v0.1 adds a local, transport-neutral interface boundary in front of the existing Codex Operator workflow.
 
@@ -409,13 +411,13 @@ Gateway v0.1 intentionally does not provide:
 - Herdr lifecycle management
 - commit/push/tag/release authority
 
-Those are intentionally deferred.
+Those responsibilities remain outside the Gateway itself. The Telegram adapter supplies Telegram transport, allowlist authentication, and the optional long-running LaunchAgent process as a client of the Gateway; it does not add those capabilities to the Gateway. Mission construction, Herdr dispatch and lifecycle management, and delivery authority remain downstream or separately deferred.
 
-## Live compatibility boundary
+## Live compatibility validation
 
-Gateway tests mock Codex rather than intentionally consuming a real Codex engineering turn.
+Gateway tests remain hermetic and mock Codex rather than consuming a real Codex engineering turn.
 
-Before enabling remote adapters, the gateway should undergo a deliberate live compatibility test proving:
+Before the Telegram adapter was enabled, the installed Codex CLI was separately checked against the declared compatibility boundary. That validation covered:
 
 - new Codex sessions work
 - resumed Codex sessions work
@@ -429,7 +431,7 @@ Before enabling remote adapters, the gateway should undergo a deliberate live co
 
 ---
 
-# What v0.6.1 does today
+# Direct Herdr mission workflow
 
 A mission can still be explicitly created through the deterministic Herdr primitives:
 
@@ -485,19 +487,17 @@ Codex handles the translation from human intent into the Herdr handoff.
 
 Dodging Infinity starts with an unbounded human objective and turns it into bounded, independently reviewed engineering work.
 
-The human can enter through:
+The human can enter through any of these paths:
 
 ```text
 Direct Codex CLI
+
+Local codexgw -> Codex Gateway
+
+Phone -> Telegram -> Telegram Adapter -> Codex Gateway
 ```
 
-or:
-
-```text
-Codex Gateway
-```
-
-Both terminate at the same authority boundary:
+All three paths terminate at the same authority boundary:
 
 **Codex Operator.**
 
@@ -1302,7 +1302,7 @@ Every repository receives isolated:
 - runtime configuration
 - Git approval tokens
 
-The future remote operator should preserve this same isolation.
+The Telegram Remote Operator preserves this same isolation: one configured repository per adapter instance, with session and approval state bound to that repository's resolved path.
 
 ---
 
