@@ -397,6 +397,7 @@ class BannedFlagGuardTests(GatewayCase):
         "--add-dir",
         "--add-dir=/anywhere",
         "--ephemeral",
+        "--approve-for-me",
     ]
 
     def test_guard_rejects_every_banned_flag(self):
@@ -409,6 +410,57 @@ class BannedFlagGuardTests(GatewayCase):
             codex_adapter.build_new_session_argv("/some/repo")
         )
         codex_adapter.assert_argv_allowed(codex_adapter.build_resume_argv("sess-1"))
+
+    def test_v1_builders_are_byte_identical_literal_pins(self):
+        # I2 acceptance 5: the v1 argv builders stay behaviorally
+        # byte-identical. Pinned against independent literals (never
+        # derived from the builders themselves), so ANY change to a v1
+        # argv — including adding a role-turn posture flag — dies here.
+        self.assertEqual(
+            codex_adapter.build_new_session_argv("/some/repo"),
+            ["codex", "exec", "--json", "-C", "/some/repo", "-"],
+        )
+        self.assertEqual(
+            codex_adapter.build_resume_argv("sess-1"),
+            ["codex", "exec", "resume", "--json", "sess-1", "-"],
+        )
+
+    def test_v1_guard_still_refuses_the_carved_pair(self):
+        # E-2 path-bound condition: the carve-out exists ONLY behind
+        # the role-turn guard. The v1 guard refuses even the exact
+        # read-only pair, so no v1 path can ever carry a sandbox flag.
+        with self.assertRaises(codex_adapter.BannedFlagError):
+            codex_adapter.assert_argv_allowed(
+                ["codex", "exec", "--sandbox", "read-only", "-"]
+            )
+        with self.assertRaises(codex_adapter.BannedFlagError):
+            codex_adapter.assert_argv_allowed(
+                ["codex", "exec", "-s", "read-only", "-"]
+            )
+        with self.assertRaises(codex_adapter.BannedFlagError):
+            codex_adapter.assert_argv_allowed(
+                ["codex", "exec", "--ignore-user-config", "-"]
+            )
+        with self.assertRaises(codex_adapter.BannedFlagError):
+            codex_adapter.assert_argv_allowed(
+                ["codex", "exec", "--ignore-rules", "-"]
+            )
+
+    def test_gateway_seam_refuses_role_carved_argv(self):
+        # Kills the call-site-widening mutant: if the gateway's own
+        # invocation path were rerouted through the role-turn guard,
+        # a --sandbox read-only argv would slip through; it must be
+        # refused at the v1 seam with no subprocess call.
+        carved_argv = ["codex", "exec", "--sandbox", "read-only", "-"]
+        with intercept_codex() as calls:
+            with patch.object(
+                codex_adapter, "build_new_session_argv",
+                return_value=carved_argv,
+            ):
+                result = gateway.submit(self.request())
+        self.assertEqual(result.status, contract.STATUS_INVALID_REQUEST)
+        self.assertEqual(result.error.code, contract.ERROR_BANNED_FLAG)
+        self.assertEqual(calls, [], "carved argv must never reach subprocess")
 
     def test_builders_guard_at_build_time(self):
         # The guard must fire when the argv is CONSTRUCTED, not only at

@@ -93,6 +93,7 @@ BANNED_FLAGS = (
     "-s",
     "--add-dir",
     "--ephemeral",
+    "--approve-for-me",
 )
 
 
@@ -112,6 +113,94 @@ def assert_argv_allowed(argv):
         ):
             raise BannedFlagError("banned Codex flag in constructed argv: %s" % text)
     return list(argv)
+
+
+# --- DI-REMOTE-2 role-turn carve-out (supervisor ruling E-2) ---------------
+
+# The carve-out is VALUE-bound and PATH-bound. Value-bound: the sandbox
+# flag is permitted ONLY as the exact two-token pair
+# ("-s"|"--sandbox", "read-only") — in the v2 role-turn context that pair
+# IS the protection, making the posture deterministic instead of
+# inherited from ambient user config. Path-bound: the ONLY permitted
+# caller of ``assert_role_turn_argv_allowed`` is the role-turn builder in
+# ``codex_gateway.role_turn``; every other code path keeps the
+# unconditional ``assert_argv_allowed`` ban (which still refuses even
+# ``--sandbox read-only``). ``workspace-write``, ``danger-full-access``,
+# ``--add-dir``, ``--ephemeral``, ``--approve-for-me``,
+# ``--skip-git-repo-check``, and every ``--dangerously-*`` stay banned
+# unconditionally on every path, including this one.
+ROLE_TURN_SANDBOX_VALUE = "read-only"
+ROLE_TURN_ALLOWED_LONE_FLAGS = (
+    "--ignore-user-config",
+    "--ignore-rules",
+    "--strict-config",
+)
+UNCONDITIONALLY_BANNED_FLAGS = (
+    "--skip-git-repo-check",
+    "--add-dir",
+    "--ephemeral",
+    "--approve-for-me",
+)
+UNCONDITIONALLY_BANNED_VALUES = ("workspace-write", "danger-full-access")
+
+
+def assert_role_turn_argv_allowed(argv):
+    """The E-2 carve-out guard for DI-REMOTE-2 role-turn argvs ONLY.
+
+    Permits exactly: the two-token pair (``--sandbox``|``-s``,
+    ``read-only``), the lone flags ``--ignore-user-config`` /
+    ``--ignore-rules`` / ``--strict-config``, and everything
+    ``assert_argv_allowed`` already permits. Refuses, unconditionally:
+    every ``--dangerously-*`` flag, ``--skip-git-repo-check``,
+    ``--add-dir``, ``--ephemeral``, ``--approve-for-me``, the sandbox
+    values ``workspace-write`` / ``danger-full-access`` anywhere in the
+    argv, any ``=``-joined or single-token sandbox form, and any sandbox
+    value other than exactly ``read-only``.
+    """
+    elements = [str(element) for element in argv]
+    index = 0
+    while index < len(elements):
+        text = elements[index]
+        flag = text.split("=", 1)[0]
+        if flag.startswith(BANNED_FLAG_PREFIX):
+            raise BannedFlagError(
+                "banned Codex flag in role-turn argv: %s" % text
+            )
+        if flag in UNCONDITIONALLY_BANNED_FLAGS:
+            raise BannedFlagError(
+                "banned Codex flag in role-turn argv: %s" % text
+            )
+        if text in UNCONDITIONALLY_BANNED_VALUES:
+            raise BannedFlagError(
+                "sandbox-weakening value in role-turn argv: %s" % text
+            )
+        if flag in ("--sandbox", "-s"):
+            # Only the exact two-token pair with the read-only value;
+            # =-joined and single-token forms are refused so the
+            # carve-out stays exactly the ruled token pair.
+            if (
+                "=" in text
+                or text != flag
+                or index + 1 >= len(elements)
+                or elements[index + 1] != ROLE_TURN_SANDBOX_VALUE
+            ):
+                raise BannedFlagError(
+                    "role-turn sandbox flag must be exactly the pair"
+                    " (%s, %s); got: %s"
+                    % (flag, ROLE_TURN_SANDBOX_VALUE, text)
+                )
+            index += 2
+            continue
+        if (
+            text.startswith("-s")
+            and not text.startswith("--")
+            and text != "-s"
+        ):
+            raise BannedFlagError(
+                "banned Codex flag in role-turn argv: %s" % text
+            )
+        index += 1
+    return elements
 
 
 # --- Argv construction -----------------------------------------------------

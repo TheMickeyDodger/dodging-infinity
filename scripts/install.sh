@@ -24,6 +24,13 @@ exec python3 "$ROOT/tgop.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/tgop"
 echo "Installed: $BIN_DIR/tgop"
+chmod +x "$ROOT/dirun.py"
+cat > "$BIN_DIR/dirun" <<EOF
+#!/usr/bin/env bash
+exec python3 "$ROOT/dirun.py" "\$@"
+EOF
+chmod +x "$BIN_DIR/dirun"
+echo "Installed: $BIN_DIR/dirun"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo 'Add to your shell profile: export PATH="$HOME/.local/bin:$PATH"'
 fi

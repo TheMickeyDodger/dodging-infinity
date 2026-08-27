@@ -20,6 +20,8 @@ Dodging Infinity is an engineering orchestration system built around Herdr for t
 
 [v0.6.3](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.3) adds the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
 
+Unreleased (in the working tree, not yet in any tagged release): **DI-REMOTE-2 Remote Target Repository Routing** — one-shot Mission Authorization for exact bounded missions against remote GitHub target repositories, executed by a separate deterministic Runtime (`dirun`) while this repository remains the permanent control and policy repository. See "Remote Target Repository Routing" below.
+
 The operating model is deliberate:
 
 **Phone → Telegram → Telegram Adapter → Codex Gateway → Codex Operator → Herdr → verified result → human-gated delivery**
@@ -823,6 +825,169 @@ The adapter enforces, with static and behavioral regression tests:
 - bind approval actions to a known Codex request/session and the
   exact bounded plan
 - redact the bot token from every error and diagnostic surface
+
+---
+
+# Remote Target Repository Routing (DI-REMOTE-2, unreleased)
+
+DI-REMOTE-2 is implemented in the working tree and is **not yet part
+of any tagged release**. It extends the Telegram remote experience
+from "approve a plan for the configured repository" to "authorize one
+exact bounded mission against a remote GitHub target repository" —
+while Dodging Infinity remains the permanently pinned control and
+policy repository.
+
+The flow:
+
+```text
+Phone intent
+    |
+    v
+Legacy Codex turn  -> DI-REMOTE-2 marker = ROUTING SIGNAL ONLY
+    |                  (no authority; body discarded)
+    |               -> or a DI-REMOTE-1 plan envelope -> v1 local path
+    v
+Separate FRESH restrictive planning turn  (route (b))
+    |   produces the DI-REMOTE-2 Mission Authorization
+    v
+Exact rendered mission on the phone -> one-shot Approve Mission
+    |
+    v
+Durable workflow authority store (workflows.json, schema-2)
+    |
+    v
+Runtime (dirun) claims it and advances the FULL lifecycle:
+  materialize isolated workspace -> verify identity + baseline
+  -> discover bounded target instructions
+  -> fresh read-only handoff-validation turn (SHOWN the real rules)
+  -> dispatch the BYTE-EXACT stored handoff to the target Herdr
+  -> observe the target (read-only Herdr observability)
+  -> fresh verification turn -> VERIFIED -> COMPLETED
+  -> verified result returned to Telegram exactly once (human-gated)
+    |
+    v
+Target Herdr Supervisor makes the FIRST engineering plan
+```
+
+Deliberate properties:
+
+- Routing is **route (b)**: the legacy Codex turn's DI-REMOTE-2 marker
+  is a routing signal that carries no authority; a *separate* fresh
+  restrictive planning turn produces the Mission Authorization.
+- The Mission Authorization binds the **destination and its
+  boundaries only** (objective, constraints, rules, desired outcome,
+  acceptance, unresolved questions, execution scope, control identity +
+  policy digest, canonical target, issue/PR, approved baseline, bounded
+  handoff, revision, `delivery_authority: none`, plus the exact human
+  request). Implementation-strategy fields are refused by name; the
+  target Herdr Supervisor owns the engineering route. Validation is
+  structural — see SECURITY.md for the stated limit and the structural
+  protections around it.
+- **The user's exact typed message is stored**, not just the Operator's
+  paraphrase: it is recorded verbatim in the workflow record
+  (`human_intent`, adapter-stamped — an Operator that supplies it is
+  refused), rendered quoted into the approved mission text, bound by its
+  own sha256, and therefore shown to every role turn via the rendered
+  text. This is what makes "the Operator can never change what the human
+  said" true.
+- Approval is **one-shot** and bound to the exact rendered mission
+  text; a v2 approval dispatches no Codex turn — the Runtime, a
+  separate process, claims the durably consumed authorization on its
+  own. After Approve Mission there is **no manual Mac, clone,
+  registration, Herdr-setup, configuration-switching, or terminal
+  step**, and the lifecycle runs all the way to a **verified result
+  returned to Telegram exactly once** (verified end to end by the
+  hermetic Mitiq-narrative test). "Exactly once" means never twice and
+  never silently dropped — NOT that it always eventually arrives: if a
+  send is interrupted before it completes (durable state `reserved`) or
+  is only partly displayed (`partial`), the result is **not re-sent
+  automatically** and `/status` says so; recovering it is a human step.
+- The initial dispatch is the **byte-exact stored handoff**; corrective
+  follow-ups are a separate path bounded (2) as an **authorization-scope
+  bound, not a review-round limit** — exceeding it transitions durably
+  to NEEDS_REAUTHORIZATION.
+- The durable workflow store is **schema-2**; a schema-1 record is
+  retired (never upgraded) by `tgop migrate-workflows`, which preserves
+  a byte-exact backup.
+- A stopped or uninstalled Runtime is an **actionable `/status`
+  error** naming the exact remedy commands, never a silent stall; an
+  indefinitely unobservable target renders distinctly ("target task
+  NOT OBSERVABLE since …"), never like a healthy running one.
+- **No delivery authority anywhere**: commit, push, PR, tag, release,
+  deploy, and merge remain local, human-authorized actions; the
+  Runtime is structurally incapable of them.
+- DI-REMOTE-1 approvals can never authorize v2 targets, and v1 local
+  behavior is unchanged.
+- **A verified result is gated, not declared.** The fresh
+  verification turn's `verified_result` is NECESSARY, NEVER
+  SUFFICIENT: eight conjuncts (ten independent problem codes) are
+  applied against a fresh disk read, the canonical target Reviewer
+  APPROVE among them as TARGET-PRODUCED evidence that the target's
+  own review process ran and concluded — never independent
+  verification — and Herdr lifecycle COMPLETE alone can never
+  verify. Observation completeness is SOURCE-SCOPED (ruling R-6):
+  the raw global completeness is rendered unaltered, and an
+  agents-unprobed global PARTIAL is EXPECTED in production.
+- **Dispatch identity recovery is evidence-only (ruling R-3).** An
+  identity-unresolved dispatched workflow runs one fresh
+  `status_recovery` turn and reconciles by binding EXACTLY ONE
+  provable existing child (exact leased-workspace realpath plus the
+  lease's own observed task id) or stopping durably BLOCKED; it
+  reads NOTHING outside this repository, never spawns, and the
+  derived alias is never binding evidence. More BLOCKED outcomes
+  are the accepted cost.
+- **A full record never kills the Runtime.** A workflow record at a
+  hard bound stops that ONE workflow durably with a truthful
+  capacity code (record-growth containment); the Runtime process
+  and every other workflow keep running.
+- **Inherited-defect attribution:** the permanent-PARTIAL stall and
+  the never-executable production role-turn wrapper corrected by
+  this work were BOTH inherited from accepted task 20260826-022933.
+- **Live-unverified (human validation items):** the automated suite is
+  hermetic. The first live target dispatch, live Telegram Bot API v2
+  traffic, live GitHub interaction, and the installed Codex binary's
+  acceptance of the `approval_policy=never` config key are NOT
+  exercised by the suite and remain to be validated by a human.
+
+## Runtime service (`dirun`)
+
+`scripts/install.sh` installs the `dirun` wrapper. Run one claim pass
+with `dirun once`, the foreground loop with `dirun run`, or install
+the optional per-user LaunchAgent:
+
+```bash
+scripts/dirun-agent.sh install            # default protected config
+scripts/dirun-agent.sh install --config PATH
+scripts/dirun-agent.sh uninstall
+```
+
+The agent mirrors the tgop LaunchAgent semantics: absolute paths,
+RunAtLoad, KeepAlive with a restart throttle, logs beside the
+protected state, the validated `codex` directory first on the job
+PATH, fail-closed install when `codex` is not resolvable, and a
+single-instance lock (the same lock `/status` probes).
+
+## Upgrading: explicit state migration (breaking)
+
+The adapter state schema moved from version 1 to 2. An existing v1
+`state.json` fails closed until the human runs `tgop migrate-state` —
+the adapter refuses to start against the old schema rather than
+migrating silently, because the migration marks every pre-existing
+approval superseded FOR V2 PURPOSES ONLY (an old approval must never
+authorize a v2 target). The command keeps a byte-exact v1 backup, and
+v1 local semantics are unchanged after migration. This break has
+existed since the v2 state schema landed; it is documented here as
+user-visible breakage.
+
+## What is and is not proven
+
+Everything above is verified hermetically: real local git fixtures,
+the real spawn-bridge validation pass, injected transport, role
+runner, and control plane, plus the accumulated mutation battery. The
+live child-Herdr spawn, live GitHub traffic, and live Codex role
+turns are **not** exercised by the suite; the first live dispatch is
+a human-supervised action. The recorded codex-cli 0.149.0 telemetry
+limitation (A0) is stated verbatim in SECURITY.md.
 
 ---
 
@@ -1666,6 +1831,10 @@ Verified engineering result
 - one-shot, fully bound plan approval and rejection
 - resumed Codex sessions, status, meaningful errors, and verified-result delivery
 - optional per-user macOS LaunchAgent baseline
+- DI-REMOTE-2 Remote Target Repository Routing (implemented and
+  hermetically verified in the working tree; unreleased — live
+  validation of the child-Herdr spawn, GitHub traffic, and Codex role
+  turns is pending and human-supervised)
 
 Real Telegram setup and traffic validation shipped in v0.6.3. The
 adapter was exercised from an allowlisted private Telegram user against

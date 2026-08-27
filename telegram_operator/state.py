@@ -22,9 +22,21 @@ import tempfile
 
 from telegram_operator.config import CONFIG_DIR_RELATIVE
 
-STATE_SCHEMA_VERSION = 1
+# Schema version 2 marks every pre-1.0 (DI-REMOTE-1-era) approval
+# record superseded FOR V2 PURPOSES ONLY via the explicit, human-run
+# `tgop migrate-state` command: an old approval must never authorize a
+# v2 target. v1 local semantics are unchanged by the migration.
+STATE_SCHEMA_VERSION = 2
+_PREVIOUS_SCHEMA_VERSION = 1
+MIGRATION_COMMAND = "tgop migrate-state"
 STATE_FILE_NAME = "state.json"
 LOCK_FILE_NAME = "adapter.lock"
+# The Runtime process (a separate daemon that claims authorized v2
+# workflows) holds THIS lock while running; /status probes it
+# non-destructively to tell an operator, actionably, that authorized
+# missions will not start because no Runtime is running. This name is
+# a binding contract for the Runtime increment.
+RUNTIME_LOCK_FILE_NAME = "runtime.lock"
 
 # Hard bounds, never derived from input. A full queue REFUSES new work
 # with an explicit user-visible message; nothing is silently dropped.
@@ -39,7 +51,11 @@ MAX_APPROVAL_RECORDS = 64
 # (sessions_dropped_total), so the bound is visible, not silent.
 MAX_SESSION_ENTRIES = 64
 
-_TOP_LEVEL_SHAPE = {
+# The closed top-level shape of the state document. Public: the
+# explicit state migration (workflow_authority.migrate) validates v1
+# files against this same table, so the two layers can never drift
+# silently on what a state document is shaped like.
+TOP_LEVEL_SHAPE = {
     "state_schema_version": int,
     "update_offset": (int, type(None)),
     "sessions": dict,
@@ -49,6 +65,8 @@ _TOP_LEVEL_SHAPE = {
     "last_request": (dict, type(None)),
     "sessions_dropped_total": int,
 }
+# Backward-compatible private alias.
+_TOP_LEVEL_SHAPE = TOP_LEVEL_SHAPE
 
 
 class StateError(Exception):
@@ -84,6 +102,23 @@ def _validate_shape(document, path):
         )
     version = document.get("state_schema_version")
     if isinstance(version, bool) or version != STATE_SCHEMA_VERSION:
+        if not isinstance(version, bool) and version == (
+            _PREVIOUS_SCHEMA_VERSION
+        ):
+            # A v1 file is NEVER auto-migrated and NEVER
+            # reinitialized: migration marks pre-existing approvals
+            # superseded for v2 purposes, which must be an explicit,
+            # human-invoked step.
+            raise StateError(
+                "state file %s has state_schema_version %d; this"
+                " adapter now requires version %d. Run '%s' to"
+                " migrate it explicitly (a preserved backup is kept)."
+                " It is NOT safe to delete the file: it records"
+                " approval consumption and the Telegram offset" % (
+                    path, _PREVIOUS_SCHEMA_VERSION,
+                    STATE_SCHEMA_VERSION, MIGRATION_COMMAND,
+                )
+            )
         raise StateError(
             "state file %s has state_schema_version %r; this adapter"
             " understands only %d. Move the file aside (keeping it for"
@@ -91,7 +126,7 @@ def _validate_shape(document, path):
                 path, version, STATE_SCHEMA_VERSION,
             )
         )
-    for key, expected in _TOP_LEVEL_SHAPE.items():
+    for key, expected in TOP_LEVEL_SHAPE.items():
         if key not in document:
             raise StateError(
                 "state file %s is missing required key %r; move the file"

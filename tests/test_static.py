@@ -151,19 +151,41 @@ with tempfile.TemporaryDirectory() as td:
     assert not ok and 'head' in msg.lower()
 
 # --- Codex Gateway / Telegram adapter architectural isolation ------------
-# The gateway and the Telegram Remote Operator adapter must never import
-# or invoke Herdr in any form. Three independent checks, all required:
-# an AST walk, a token scan, and a behavioral import probe.
+# The gateway, the Telegram Remote Operator adapter, and the workflow
+# authority layer must never import or invoke Herdr in any form. Three
+# independent checks, all required: an AST walk, a token scan, and a
+# behavioral import probe.
 
-gateway_files = (
-    sorted((R / 'codex_gateway').glob('*.py'))
-    + [R / 'codexgw.py']
-    + sorted((R / 'telegram_operator').glob('*.py'))
-    + [R / 'tgop.py']
+# ONE shared derivation for every file-set-scanning check (round-09
+# closing pass, the reviewer's I2->I4 recurring finding): the full
+# product file set is DERIVED by walking the tree — the same helper
+# the bound-constant registry and the carve-out caller-set pin use —
+# and each scan FILTERS its scope from it, so a new file, nested
+# submodule, or new entry point is inside every scan the moment it
+# exists.
+from test_workflow_authority import derive_product_python_files
+
+product_files = derive_product_python_files(R)
+assert product_files, 'derived product file set is empty'
+for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
+              'workflow_authority/record.py', 'target_runtime/broker.py',
+              'codexgw.py', 'tgop.py', 'dirun.py', 'herdctl.py'):
+    assert any(
+        p.relative_to(R).as_posix() == known for p in product_files
+    ), ('derived product set lost a known member', known)
+
+_HERDR_FREE_ROOTS = ('codex_gateway', 'telegram_operator', 'workflow_authority')
+gateway_files = sorted(
+    p for p in product_files
+    if p.relative_to(R).parts[0] in _HERDR_FREE_ROOTS
+    or p.name in ('codexgw.py', 'tgop.py')
 )
 assert gateway_files, 'codex_gateway sources not found'
 assert any('telegram_operator' in str(p) for p in gateway_files), (
     'telegram_operator sources not found'
+)
+assert any('workflow_authority' in str(p) for p in gateway_files), (
+    'workflow_authority sources not found'
 )
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
@@ -224,8 +246,151 @@ for path in gateway_files:
                 token.string, FORBIDDEN_STRING_SUBSTRINGS
             ), (path, token.start, token.string)
 
-# 3. Behavioral: importing the gateway, the Telegram adapter, and their
-# entry scripts must not load any herdr/herdctl module.
+# 2b. E-2 path-binding pin (round-04 finding B1; hardened per round-05
+# N1/N2): the DI-REMOTE-2 role-turn carve-out guard is usable ONLY by
+# codex_gateway/role_turn.py; its only other appearance anywhere in the
+# product tree is its definition site in codex_gateway/codex_adapter.py.
+# The scanned set is DERIVED by walking every .py in the tree (except
+# tests/, herdr/, roles/, scripts/, caches and dot-directories), never
+# enumerated — so a NEW product file (dirun.py, target_runtime/*.py, a
+# nested codex_gateway submodule) is inside the pin the moment it
+# exists. Both NAME tokens and non-docstring STRING tokens count, so
+# getattr(module, "assert_role_turn_argv_allowed") is caught too — the
+# same string-half mechanism the herdr-isolation scan above uses.
+# STATED LIMIT: a computed/concatenated name is beyond ANY static pin;
+# this check covers literal references only.
+CARVE_OUT_GUARD_NAME = 'assert_role_turn_argv_allowed'
+assert CARVE_OUT_GUARD_NAME not in src, (
+    'carve-out guard referenced from the orchestration harness'
+)
+# The SAME shared derivation as every other file-set scan (round-09
+# closing pass): one walk, filtered per scope, no inline duplicates.
+pin_files = product_files
+pin_names = {path.relative_to(R).as_posix() for path in pin_files}
+# The derivation must never silently go empty or lose the known
+# product files.
+assert pin_names, 'derived path-binding pin set is empty'
+for required_file in (
+    'codex_gateway/role_turn.py',
+    'codex_gateway/codex_adapter.py',
+    'codex_gateway/gateway.py',
+    'telegram_operator/adapter.py',
+    'workflow_authority/record.py',
+    'codexgw.py',
+    'tgop.py',
+    'herdctl.py',
+):
+    assert required_file in pin_names, (
+        'derived pin set lost a known product file', required_file
+    )
+carve_out_counts = {}
+for path in pin_files:
+    source = path.read_text()
+    doc_positions = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, 'body', [])
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                doc_positions.add((body[0].value.lineno, body[0].value.col_offset))
+    count = 0
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME and token.string == CARVE_OUT_GUARD_NAME:
+            count += 1
+        elif (
+            token.type == tokenize.STRING
+            and token.start not in doc_positions
+            and CARVE_OUT_GUARD_NAME in token.string
+        ):
+            count += 1
+    carve_out_counts[path.relative_to(R).as_posix()] = count
+assert carve_out_counts.get('codex_gateway/role_turn.py', 0) >= 1, carve_out_counts
+assert carve_out_counts.get('codex_gateway/codex_adapter.py', 0) == 1, carve_out_counts
+for file_name, count in sorted(carve_out_counts.items()):
+    if file_name not in (
+        'codex_gateway/role_turn.py', 'codex_gateway/codex_adapter.py'
+    ):
+        assert count == 0, (file_name, CARVE_OUT_GUARD_NAME)
+
+# 2c. target_runtime structural guarantees (I4).
+# (i) delivery_authority none is STRUCTURAL (plan D-2): the package
+#     contains no shell=True, no os.system, no subprocess usage
+#     outside the git transport seam, and no git delivery verb —
+#     string literals are compared by EXACT VALUE so identifiers like
+#     commit_sha stay legal while a "commit"/"push"/"tag"/"merge"/
+#     "gh" argv element can never exist.
+# (ii) the hermetic seam is UNREACHABLE in production (plan D-6): no
+#     environment read anywhere in the package or its entry script,
+#     no "transport"-named option string, and the real GitTransport
+#     is constructed with ZERO arguments (nothing to override).
+# Filtered from the SAME shared derivation (recursive, so a nested
+# target_runtime submodule is scanned automatically).
+target_runtime_files = sorted(
+    p for p in product_files
+    if p.relative_to(R).parts[0] == 'target_runtime'
+)
+assert target_runtime_files, 'target_runtime sources not found'
+assert any(
+    p.relative_to(R).as_posix() == 'target_runtime/git_transport.py'
+    for p in target_runtime_files
+), 'target_runtime scan lost the transport seam'
+FORBIDDEN_DELIVERY_LITERALS = {
+    '"commit"', "'commit'", '"push"', "'push'", '"tag"', "'tag'",
+    '"merge"', "'merge'", '"gh"', "'gh'",
+}
+for path in target_runtime_files + [R / 'dirun.py']:
+    source = path.read_text()
+    assert 'shell=True' not in source, (path, 'shell=True')
+    tree = ast.parse(source)
+    docstring_positions = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = getattr(node, 'body', [])
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                docstring_positions.add((body[0].value.lineno, body[0].value.col_offset))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            assert name not in {'system', '__import__', 'import_module'}, (path, name)
+            if name == 'GitTransport':
+                assert not node.args and not node.keywords, (
+                    path, 'GitTransport must take no arguments'
+                )
+        if isinstance(node, ast.Attribute):
+            assert node.attr not in {'environ', 'getenv'}, (path, node.attr)
+        if isinstance(node, ast.Name):
+            assert node.id not in {'environ', 'getenv'}, (path, node.id)
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name for alias in node.names]
+            if 'subprocess' in names or getattr(node, 'module', None) == 'subprocess':
+                assert path.name == 'git_transport.py', (
+                    path, 'subprocess only in the git transport seam'
+                )
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.STRING and token.start not in docstring_positions:
+            assert token.string not in FORBIDDEN_DELIVERY_LITERALS, (path, token.start, token.string)
+            if path.name in ('cli.py',) or path.name == 'dirun.py':
+                assert 'transport' not in token.string.lower(), (
+                    path, token.start, 'no transport-named option or config key'
+                )
+
+# 3. Behavioral: importing the gateway, the Telegram adapter, the
+# workflow authority layer, and their entry scripts must not load any
+# herdr/herdctl module. The same probe asserts that none of them loads
+# any module named target_runtime (or a submodule of it): the Runtime
+# must never be reachable from the control chain. target_runtime/
+# EXISTS (I4), so this half of the probe is LOAD-BEARING: adding a
+# target_runtime import anywhere in the control chain fails this
+# suite (verified by mutant P1 in the I4 review).
 probe = subprocess.run(
     [
         sys.executable,
@@ -233,12 +398,20 @@ probe = subprocess.run(
         (
             'import sys\n'
             'import codex_gateway, codexgw\n'
+            'import codex_gateway.role_turn\n'
             'import telegram_operator, tgop\n'
             'import telegram_operator.adapter, telegram_operator.cli\n'
             'import telegram_operator.launchagent\n'
+            'import workflow_authority\n'
+            'import workflow_authority.record, workflow_authority.store\n'
+            'import workflow_authority.digest, workflow_authority.migrate\n'
+            'import workflow_authority.authorization\n'
+            'import workflow_authority.canonical\n'
+            'import workflow_authority.rendering\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
+            '    or name == "target_runtime" or name.startswith("target_runtime.")\n'
             ')\n'
             'print("\\n".join(bad))\n'
             'sys.exit(1 if bad else 0)\n'

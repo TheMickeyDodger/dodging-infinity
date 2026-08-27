@@ -411,3 +411,184 @@ commit, push, pull-request, tag, release, or deploy authority. The
 adapter's decision envelope states this explicitly. Delivery remains a
 separate, local, human-authorized step exactly as described in "Git
 Delivery" above.
+
+## Remote Mission Authorization Protocol (DI-REMOTE-2, unreleased)
+
+DI-REMOTE-2 extends the remote protocol with cross-repository
+Mission Authorization. The LEGACY Codex turn answers with either a
+DI-REMOTE-1 plan envelope (the unchanged local path above) or a
+DI-REMOTE-2 marker that carries NO authority and only triggers the
+separate fresh restrictive planning turn (route (b)). The FRESH
+PLANNING turn's answer set is EXACTLY these kinds:
+`mission_authorization`. Any other kind — a v1 `plan` envelope
+included — is refused (`wrong_kind:…`) and arms nothing; there is no
+fallback from the fresh planning turn to the v1 plan path. The adapter
+routes purely on the marker and version and fails closed on anything
+else — it never classifies intent itself, and a message carrying both
+markers, or an unknown `DI-REMOTE-` family marker, is refused.
+
+The normative schema an Operator actually builds against is the fresh
+planning turn's PROMPT: it carries the complete Mission Authorization
+key set and the `control`, `target`, `issue_or_pr`, `baseline`,
+`handoff` sub-shapes. The BOUNDS are enforced by the validator and are
+NOT stated in the prompt — an over-bound authority field, or an
+over-long envelope line, is REFUSED with the exact observed and allowed
+sizes (per-field authority bound 8000; `MAX_ENVELOPE_CHARS` 16384). A
+`role_outcome` envelope's `detail` is separately bounded by
+`MAX_OUTCOME_DETAIL_CHARS` 2000. This section states the key set and
+routing normatively but is not the whole contract.
+
+A v2 response is ONE line starting at COLUMN 0 with:
+
+```text
+DI-REMOTE-2 RESPONSE {"remote_protocol_version":2,"kind":"mission_authorization","body":"..."}
+```
+
+- `remote_protocol_version` must be exactly `2`.
+- `kind` is one of `mission_authorization`, `role_outcome`.
+- `body` is the payload; exactly these three keys.
+
+For `mission_authorization`, `body` is a JSON Mission Authorization
+document with EXACTLY these keys: `objective`, `constraints`,
+`rules`, `desired_outcome`, `acceptance`, `unresolved_questions`,
+`execution_scope`, `control`, `target`, `issue_or_pr`, `baseline`,
+`handoff`, `telegram_approval`, `workflow_id`, `human_intent`,
+`revision`, `delivery_authority`. The set is CLOSED and every key is
+REQUIRED — a document missing any key, or carrying an extra one, is
+refused. It binds the destination and its boundaries only.
+Implementation-strategy keys (`plan`, `steps`, `files`,
+`implementation`, `strategy`, `decomposition`, `roles`, `sequencing`,
+`approach`, `design`, `patch`, `diff`, and their kin) are refused BY
+NAME at any nesting depth — the target Herdr Supervisor owns the
+engineering route, and the Mission Authorization can never carry one.
+`delivery_authority` must be the literal string `none`. `workflow_id`,
+`telegram_approval`, and `human_intent` must be null in the document:
+the adapter stamps those bindings itself — in particular the exact
+human request is recorded by the adapter, verbatim, never supplied by
+the Operator, so a document carrying `human_intent` is refused
+(`mission_codex_minted_human_intent`); a pre-filled binding is
+refused.
+
+The Mission Authorization is produced by ROUTE (b): the legacy Codex
+turn's DI-REMOTE-2 marker is a ROUTING SIGNAL ONLY — its body carries
+no authority and is discarded — and it triggers a SEPARATE fresh
+restrictive planning turn that produces the authorization. The legacy
+turn may still return a DI-REMOTE-1 plan for the v1 local path.
+
+The human sees the exact rendered mission and approves or rejects it
+ONCE, on the bound plan message, under the same displayed-content
+ordering contract as a v1 plan. A v2 approval consumes durably and
+dispatches NO gateway turn: the separate Runtime process (`dirun`)
+claims the authorized workflow from the durable store and advances the
+FULL lifecycle with no manual step — materialize → prepare → validate
+→ dispatch → observe → verify → complete (PLANNED, AUTHORIZED,
+WORKSPACE_READY, PREPARED, VALIDATED, DISPATCHED, VERIFIED, COMPLETED,
+plus BLOCKED and NEEDS_REAUTHORIZATION), each forward step authorized
+by a one-shot capability the Broker validates and consumes. After
+dispatch the Runtime observes the target through read-only Herdr
+observability and, on completion, runs a fresh verification turn and
+returns the verified result to Telegram exactly once. A DI-REMOTE-1
+approval can never authorize a v2 mission.
+
+For `role_outcome`, `body` carries `{role, outcome, detail}` from a
+fresh read-only role turn. The handoff-validation role is SHOWN the
+actual bounded target instruction content (a closed status set per
+allowlisted file) and may yield EXACTLY three outcomes:
+`request_dispatch`, `needs_reauthorization`, `blocked`. Anything else
+fails closed. A role turn runs as a fresh Codex process rooted at the
+control repository under `--sandbox read-only --ignore-user-config
+--ignore-rules --strict-config -c approval_policy=never`, with no
+resume and no ambient authority. (The installed Codex binary's
+acceptance of the `approval_policy=never` key is a LIVE-UNVERIFIED
+human validation item.)
+
+Corrective follow-ups are an AUTHORIZATION-SCOPE bound (2) — how far
+one human authorization may be stretched — and explicitly NOT a
+review-round limit; exceeding it transitions durably to
+NEEDS_REAUTHORIZATION.
+
+DI-REMOTE-2 grants no delivery authority of any kind: the workflow
+record carries `delivery_authority: "none"` structurally, and the
+Runtime has no delivery surface to invoke.
+
+### Verification, dispatch recovery, and containment (DI-REMOTE-2 correctness, unreleased)
+
+VERIFIED is a conjunction the Broker decides — the model never
+decides it. A `verified_result` outcome from the fresh verification
+turn is NECESSARY, NEVER SUFFICIENT: the Broker applies eight
+conjuncts, enforced through ten independent problem codes, against a
+FRESH disk read after the turn — evidence projection complete,
+evidence schema-valid, target stopped, the target's canonical
+Reviewer APPROVE present, origin identity, approved baseline
+unmoved, control policy digest, protected-surface baseline present
+and unchanged, and delivery authority still `none` — and ONE
+failing conjunct stops the workflow durably with its own code.
+Herdr lifecycle COMPLETE alone can never produce VERIFIED.
+
+The canonical Reviewer APPROVE conjunct is TARGET-PRODUCED
+EVIDENCE: the child Herdr's own reviewer writes it, and it proves
+that the target's review process ran and concluded. It is never
+independent verification, and no DI-REMOTE-2 surface claims
+otherwise.
+
+Observation completeness is SOURCE-SCOPED (ruling R-6): a decision
+is supported exactly when no diagnostic in that decision's
+registered consumed-source set is demoting, and an unregistered set
+is refused. The registered consumed-source sets are
+`verification: artifacts, observation, reviews, task` and
+`reconcile_dispatch: children, observation, task`. The RAW global
+completeness value is recorded and rendered unaltered — never
+rewritten into a scoped verdict — and an agents-unprobed global
+PARTIAL is EXPECTED in production (a dispatched target always has
+agents) and weakens no consumed evidence. Two inherited defects are
+corrected here and attributed plainly: the permanent-PARTIAL stall
+(the accepted global completeness gate made `target_complete`
+permanently False in production) and the production role-turn
+wrapper that could never execute the verification path (it accepted
+narrower keywords than the Broker passed, invisible because the
+injected test double was WIDER than production) were BOTH inherited
+from accepted task 20260826-022933.
+
+A DISPATCHED workflow whose target-engine identity was never
+durably resolved takes EXACTLY ONE deterministic recovery path per
+pass, decided on durable state only: wait on a fresh standing
+recovery request, run one fresh `status_recovery` turn, or stop
+durably. A fresh standing request maps deterministically to the
+single evidence-only Broker action `reconcile_dispatch`, which
+binds EXACTLY ONE provable existing child — the control
+repository's own recorded child whose repo realpath equals the
+leased workspace realpath EXACTLY, agreeing with the lease's own
+observed task id, with both observations source-scoped supported —
+and never spawns anything. Every other shape stops durably BLOCKED:
+`no_match`, `multiple_matches`, `conflicting_identity`,
+`children_truncated`, `observation_degraded`. Under ruling R-3,
+reconciliation reads NOTHING outside this repository — the global
+Herdr registry is off limits, and the derived alias (`di-remote-2-`
++ workflow id) is a derived expectation only, never binding
+evidence. More BLOCKED outcomes are the accepted cost of that
+boundary: a BLOCKED a human resolves is correct behaviour.
+
+A record that cannot grow is a reason to stop ONE workflow durably
+— it never kills the Runtime: every record-growing save in the Runtime
+executes under a containment boundary (record-growth containment,
+closed instance-wise for the recovery turn in one increment and
+structurally at the Broker boundary in the next), and a record at a
+hard bound stops durably BLOCKED with a truthful capacity code —
+`broker_record_capacity_exhausted` at the Broker boundary, or
+`runtime_codex_turn_capacity_exhausted` when the Runtime refuses
+before spawning a turn a full record could not hold.
+
+Dispatch stamps a protected-surface receipt (marker:
+`protected-surface baseline at dispatch`) binding the digest of the
+control repository's protected surfaces at dispatch time;
+verification later requires that receipt to exist and the surface
+digest to still match it. A workflow dispatched before the receipt
+existed FAILS CLOSED at verification — the baseline is never
+retro-fitted or fabricated.
+
+Stop reasons are SCOPED, not general: verification blocks and
+recovery blocks are recorded as fixed-marker receipts and surfaced
+in `/status`, but a GENERAL stop/refusal-reason mechanism is a
+DEFERRED follow-up candidate (a human scope decision) — refusals
+outside those two scopes surface in Runtime results (not in
+`/status` or console output) and leave no record receipt today.
