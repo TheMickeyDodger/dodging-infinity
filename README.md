@@ -20,9 +20,13 @@ Dodging Infinity is an engineering orchestration system built around Herdr for t
 
 [v0.6.3](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.3) adds the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
 
-Unreleased (in the working tree, not yet in any tagged release): **DI-REMOTE-2 Remote Target Repository Routing** — one-shot Mission Authorization for exact bounded missions against remote GitHub target repositories, executed by a separate deterministic Runtime (`dirun`) while this repository remains the permanent control and policy repository. See "Remote Target Repository Routing" below.
+Unreleased: **DI-REMOTE-2 Remote Target Repository Routing** is implemented on `main` (landed as commit 8152675) and hermetically proven, and is in no tagged release — v0.6.3 remains the latest tagged release. It adds one-shot Mission Authorization for exact bounded missions against remote GitHub target repositories, executed by a separate deterministic Runtime (`dirun`) while this repository remains the permanent control and policy repository. Live external validation (the first live target dispatch, live Telegram Bot API v2 traffic, live GitHub interaction) is PENDING and human-supervised. See "Remote Target Repository Routing" below.
 
-The operating model is deliberate:
+The operating model is deliberate. On current `main` the principal operating model is Remote Target Repository Routing (DI-REMOTE-2, unreleased):
+
+**Phone → Telegram → fresh Codex planning turn → one-shot Mission Authorization → Runtime → Broker → managed target → target Herdr → evidence verification → Telegram result → human-gated delivery**
+
+The released v0.6.3 operating model remains the local-mission path (a mission against this repository):
 
 **Phone → Telegram → Telegram Adapter → Codex Gateway → Codex Operator → Herdr → verified result → human-gated delivery**
 
@@ -57,7 +61,100 @@ The intelligence is replaceable.
 
 # Architecture
 
-## Current architecture
+## Current architecture on `main`: remote target routing (DI-REMOTE-2, unreleased)
+
+DI-REMOTE-2 — implemented on `main`, in no tagged release — runs one
+exact bounded mission against a remote GitHub target repository while
+this repository remains the permanent control and policy repository.
+This is the principal architecture on current `main`; the released
+v0.6.3 local-mission architecture follows below. The complete
+principal flow:
+
+```text
+control repository (this repo: pinned control + policy, never the work target)
+    |
+    v
+fresh Codex turns (read-only sandbox, no resume/fork; the Mission
+Authorization comes only from a separate fresh planning turn — route (b))
+    |
+    v
+Runtime (`dirun`, a separate deterministic process)
+    |
+    v
+Broker (privileged, fixed lifecycle actions only)
+    |
+    v
+managed target workspace (isolated, materialized only after approval)
+    |
+    v
+target Herdr (Supervisor -> Lead -> Executor / Reviewer)
+    |
+    v
+evidence verification (a verified result is gated, not declared)
+    |
+    v
+Telegram result (the verified result, exactly once — see caveat below)
+    |
+    v
+human delivery gate (commit/push/PR/tag/release/merge stay local human actions)
+```
+
+Each component, precisely:
+
+- **Control repository** — this repository is the permanently pinned
+  control and policy repository, never the work target; target
+  engineering can never modify it through this path.
+- **Telegram transport boundary** — Telegram and the adapter are
+  transport only; there is no direct path from them to Herdr or
+  `herdctl` (the same boundary as the released local flow below).
+- **Fresh restricted Codex turns** — every DI-REMOTE-2 role turn is a
+  distinct fresh process with a read-only sandbox and no resume or
+  fork; the Mission Authorization is produced only by a separate fresh
+  planning turn (route (b) — the legacy turn's marker is a routing
+  signal with no authority).
+- **Deterministic Runtime (`dirun`)** — a separate process, coupled to
+  the control chain only through the durable workflow authority store;
+  Telegram, the Gateway, and Codex never invoke it in-process.
+- **Target Broker** — privileged and fixed-action: nine fixed
+  lifecycle actions; `perform` takes exactly
+  `(workflow_id, action, revision, capability)`, where the capability
+  is the Runtime-minted one-shot token bound to exactly that
+  `(workflow_id, action, revision)` tuple; sensitive values (paths,
+  URLs, baselines, handoff bytes) are resolved from the protected
+  workflow record, never supplied by the caller; capabilities are
+  minted by the Runtime, never by Codex.
+- **Managed isolated targets** — managed workspaces under the
+  protected per-user root, materialized only after one-shot approval
+  consumption, with containment, canonical-remote, and baseline
+  verification.
+- **Target Herdr, Supervisor-first** — the Broker's first dispatch is
+  the byte-exact stored handoff (a corrective follow-up is a bounded
+  corrective brief, never a technical solution); the target Herdr
+  Supervisor is the first strategy-bearing component (the Mission
+  Authorization binds
+  destination and boundaries, never implementation strategy), and the
+  existing Herdr organization — Supervisor -> Lead -> Executor /
+  Reviewer — runs unchanged inside the target.
+- **Evidence verification** — a verified result is gated, not
+  declared: the fresh verification turn's `verified_result` is
+  necessary, never sufficient, and the full gate (eight conjuncts, ten
+  independent problem codes) is described in "Remote Target Repository
+  Routing" below.
+- **Telegram result** — the verified result returns to Telegram
+  exactly once; the not-re-sent-automatically caveat is stated in the
+  section below.
+- **Human delivery gate** — no delivery authority exists anywhere in
+  the machine path; commit, push, PR, tag, release, and merge remain
+  local, human-authorized actions.
+
+---
+
+## Released architecture (v0.6.3): local missions
+
+This is what the released v0.6.3 tag does, and it remains the
+local-mission path on `main` (a mission against this repository).
+It is preserved compatibility behavior, not the principal `main`
+architecture above.
 
 ```mermaid
 flowchart TD
@@ -124,11 +221,11 @@ Telegram Adapter
 
 The gateway must never become an alternate execution path around Codex.
 
----
-
 # End-state architecture
 
 The destination for Dodging Infinity is a remotely accessible autonomous engineering system in which the **MacBook remains the trusted execution node**.
+
+DI-REMOTE-2 on `main` implements the remote-target portion of this destination; the chain below is the local-mission spine that remains underneath it.
 
 The phone does not run Herdr.
 
@@ -489,6 +586,11 @@ Codex handles the translation from human intent into the Herdr handoff.
 
 # How Dodging Infinity works
 
+This section describes the local-mission path — the released flow that
+remains on `main` for missions against this repository. A remote target
+mission follows the DI-REMOTE-2 chain in "Current architecture on
+`main`" instead.
+
 Dodging Infinity starts with an unbounded human objective and turns it into bounded, independently reviewed engineering work.
 
 The human can enter through any of these paths:
@@ -552,6 +654,11 @@ The core loop is:
 ---
 
 # Telegram remote operator experience
+
+This is the released v0.6.3 (v0.1 adapter) experience for a mission
+against the configured local repository; a remote target mission adds
+the one-shot Approve Mission flow described in "Remote Target
+Repository Routing" below.
 
 The implemented v0.1 interaction is deliberately simpler than the machinery underneath it.
 
@@ -830,8 +937,9 @@ The adapter enforces, with static and behavioral regression tests:
 
 # Remote Target Repository Routing (DI-REMOTE-2, unreleased)
 
-DI-REMOTE-2 is implemented in the working tree and is **not yet part
-of any tagged release**. It extends the Telegram remote experience
+DI-REMOTE-2 is implemented on `main` (landed as commit 8152675),
+hermetically proven, and **not yet part of any tagged release**. It
+extends the Telegram remote experience
 from "approve a plan for the configured repository" to "authorize one
 exact bounded mission against a remote GitHub target repository" —
 while Dodging Infinity remains the permanently pinned control and
@@ -1831,10 +1939,10 @@ Verified engineering result
 - one-shot, fully bound plan approval and rejection
 - resumed Codex sessions, status, meaningful errors, and verified-result delivery
 - optional per-user macOS LaunchAgent baseline
-- DI-REMOTE-2 Remote Target Repository Routing (implemented and
-  hermetically verified in the working tree; unreleased — live
-  validation of the child-Herdr spawn, GitHub traffic, and Codex role
-  turns is pending and human-supervised)
+- DI-REMOTE-2 Remote Target Repository Routing (implemented on `main`
+  and hermetically verified; in no tagged release — live validation of
+  the child-Herdr spawn, GitHub traffic, and Codex role turns is
+  pending and human-supervised)
 
 Real Telegram setup and traffic validation shipped in v0.6.3. The
 adapter was exercised from an allowlisted private Telegram user against

@@ -9,6 +9,8 @@ import tempfile
 import tokenize
 from pathlib import Path
 
+from _hermetic_git import run_git
+
 from herdr.guards import (
     install_git_guard,
     push_approval_path,
@@ -107,7 +109,7 @@ with tempfile.TemporaryDirectory() as td:
     (repo / '.gitignore').write_text('node_modules/\n')
     (repo / 'README.md').write_text('hello\n')
     subprocess.run(['git', '-C', str(repo), 'add', 'README.md', '.gitignore'], check=True)
-    subprocess.run(['git', '-C', str(repo), 'commit', '-qm', 'initial'], check=True)
+    run_git('-C', str(repo), 'commit', '-qm', 'initial')
 
     ensure_local_herd_exclude(repo)
     assert (repo / '.gitignore').read_text() == 'node_modules/\n'
@@ -134,7 +136,7 @@ with tempfile.TemporaryDirectory() as td:
     subprocess.run(['git', '-C', str(repo), 'remote', 'add', 'origin', str(bare)], check=True)
     (repo / 'a.txt').write_text('one\n')
     subprocess.run(['git', '-C', str(repo), 'add', 'a.txt'], check=True)
-    subprocess.run(['git', '-C', str(repo), 'commit', '-qm', 'one'], check=True)
+    run_git('-C', str(repo), 'commit', '-qm', 'one')
     branch = subprocess.check_output(['git', '-C', str(repo), 'branch', '--show-current'], text=True).strip()
     subprocess.run(['git', '-C', str(repo), 'push', '-q', '-u', 'origin', branch], check=True)
     (repo / '.herd' / 'state').mkdir(parents=True)
@@ -146,7 +148,7 @@ with tempfile.TemporaryDirectory() as td:
     assert ok, msg
     (repo / 'a.txt').write_text('two\n')
     subprocess.run(['git', '-C', str(repo), 'add', 'a.txt'], check=True)
-    subprocess.run(['git', '-C', str(repo), 'commit', '-qm', 'two'], check=True)
+    run_git('-C', str(repo), 'commit', '-qm', 'two')
     ok, msg = push_approval_valid(repo)
     assert not ok and 'head' in msg.lower()
 

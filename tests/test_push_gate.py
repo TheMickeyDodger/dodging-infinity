@@ -12,23 +12,23 @@ repository's own .herd/state tokens or .git/hooks.
 """
 
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+
+from _hermetic_git import run_git_completed
 
 import herdctl
 from herdr import guards
 
 
 def sh(args, cwd, check=True):
-    p = subprocess.run(
-        args,
-        cwd=str(cwd),
-        text=True,
-        capture_output=True,
-    )
+    """Run a git command (argv tail, no leading "git") hermetically:
+    the shared helper injects invocation-local identity so commits and
+    annotated tags need no ambient Git identity (guarded by
+    tests/test_hermetic_git.py)."""
+    p = run_git_completed(args, cwd=str(cwd), check=False)
     if check and p.returncode:
         raise AssertionError(
             f"{args} failed rc={p.returncode}\n{p.stdout}\n{p.stderr}"
@@ -43,30 +43,30 @@ class PushGateTests(unittest.TestCase):
         base = Path(self.temp.name)
         self.bare = base / "remote.git"
         self.work = base / "work"
-        sh(["git", "init", "--bare", "-q", str(self.bare)], cwd=base)
-        sh(["git", "init", "-q", str(self.work)], cwd=base)
+        sh(["init", "--bare", "-q", str(self.bare)], cwd=base)
+        sh(["init", "-q", str(self.work)], cwd=base)
         self.configure(self.work)
-        sh(["git", "remote", "add", "origin", str(self.bare)], cwd=self.work)
+        sh(["remote", "add", "origin", str(self.bare)], cwd=self.work)
         (self.work / "a.txt").write_text("one\n")
-        sh(["git", "add", "a.txt"], cwd=self.work)
-        sh(["git", "commit", "-qm", "one"], cwd=self.work)
+        sh(["add", "a.txt"], cwd=self.work)
+        sh(["commit", "-qm", "one"], cwd=self.work)
         self.br = sh(
-            ["git", "branch", "--show-current"], cwd=self.work
+            ["branch", "--show-current"], cwd=self.work
         ).stdout.strip()
-        sh(["git", "push", "-qu", "origin", self.br], cwd=self.work)
+        sh(["push", "-qu", "origin", self.br], cwd=self.work)
         # The commit that the push approval will authorize, created before the
         # guards are installed so no commit approval is needed here.
         (self.work / "a.txt").write_text("two\n")
-        sh(["git", "add", "a.txt"], cwd=self.work)
-        sh(["git", "commit", "-qm", "two"], cwd=self.work)
+        sh(["add", "a.txt"], cwd=self.work)
+        sh(["commit", "-qm", "two"], cwd=self.work)
         guards.install_git_guard(self.work)
 
     def configure(self, repo):
-        sh(["git", "config", "user.email", "t@example.com"], cwd=repo)
-        sh(["git", "config", "user.name", "T"], cwd=repo)
+        sh(["config", "user.email", "t@example.com"], cwd=repo)
+        sh(["config", "user.name", "T"], cwd=repo)
 
     def head(self, repo, ref="HEAD"):
-        return sh(["git", "rev-parse", ref], cwd=repo).stdout.strip()
+        return sh(["rev-parse", ref], cwd=repo).stdout.strip()
 
     def write_token(self):
         """Create a push approval exactly as `herdctl approve-push` binds it."""
@@ -82,28 +82,28 @@ class PushGateTests(unittest.TestCase):
         from an independent checkout, bypassing work's hooks (clones get no
         hooks). Returns the clone path."""
         clone = Path(self.temp.name) / name
-        sh(["git", "clone", "-q", str(self.work), str(clone)], cwd=self.temp.name)
+        sh(["clone", "-q", str(self.work), str(clone)], cwd=self.temp.name)
         self.configure(clone)
         if extra_commit is not None:
             (clone / "a.txt").write_text(extra_commit)
-            sh(["git", "add", "a.txt"], cwd=clone)
-            sh(["git", "commit", "-qm", "foreign"], cwd=clone)
+            sh(["add", "a.txt"], cwd=clone)
+            sh(["commit", "-qm", "foreign"], cwd=clone)
         sh(
-            ["git", "push", "-q", str(self.bare), f"HEAD:refs/heads/{self.br}"],
+            ["push", "-q", str(self.bare), f"HEAD:refs/heads/{self.br}"],
             cwd=clone,
         )
         return clone
 
     def test_dry_run_preserves_token_then_real_push_consumes(self):
         token = self.write_token()
-        p = sh(["git", "push", "--dry-run", "origin", self.br], cwd=self.work)
+        p = sh(["push", "--dry-run", "origin", self.br], cwd=self.work)
         self.assertIn("HERD PUSH AUTHORIZED", p.stderr)
         self.assertTrue(
             token.exists(),
             "git push --dry-run transfers nothing and must not consume the "
             "push approval",
         )
-        p = sh(["git", "push", "origin", self.br], cwd=self.work, check=False)
+        p = sh(["push", "origin", self.br], cwd=self.work, check=False)
         self.assertEqual(
             p.returncode,
             0,
@@ -117,18 +117,18 @@ class PushGateTests(unittest.TestCase):
 
     def test_real_push_transfers_and_consumes(self):
         token = self.write_token()
-        sh(["git", "push", "origin", self.br], cwd=self.work)
+        sh(["push", "origin", self.br], cwd=self.work)
         self.assertEqual(self.head(self.bare, self.br), self.head(self.work))
         self.assertFalse(token.exists())
         # With the token consumed, a further push attempt is refused by the
         # guard (nothing new is transferable anyway: the ref is up to date).
-        p = sh(["git", "push", "origin", self.br], cwd=self.work, check=False)
+        p = sh(["push", "origin", self.br], cwd=self.work, check=False)
         self.assertNotIn("HERD PUSH AUTHORIZED", p.stderr)
 
     def test_fetch_of_foreign_commit_does_not_consume(self):
         clone = self.clone_and_push_to_bare("clone-foreign", extra_commit="foreign\n")
         token = self.write_token()
-        sh(["git", "fetch", "-q", "origin"], cwd=self.work)
+        sh(["fetch", "-q", "origin"], cwd=self.work)
         self.assertEqual(
             self.head(self.work, f"refs/remotes/origin/{self.br}"),
             self.head(clone),
@@ -146,7 +146,7 @@ class PushGateTests(unittest.TestCase):
         # remote, so the single-use approval is spent.
         self.clone_and_push_to_bare("clone-same")
         token = self.write_token()
-        sh(["git", "fetch", "-q", "origin"], cwd=self.work)
+        sh(["fetch", "-q", "origin"], cwd=self.work)
         self.assertEqual(
             self.head(self.work, f"refs/remotes/origin/{self.br}"),
             self.head(self.work),
@@ -160,7 +160,7 @@ class PushGateTests(unittest.TestCase):
     def test_tag_push_identity_binds_exact_tag_object(self):
         tag = "v-test"
         sh(
-            ["git", "tag", "-a", tag, "-m", "test release"],
+            ["tag", "-a", tag, "-m", "test release"],
             cwd=self.work,
         )
         tag_oid = self.head(self.work, f"refs/tags/{tag}")
@@ -192,7 +192,7 @@ class PushGateTests(unittest.TestCase):
     def test_tag_push_dry_run_then_real_push_succeeds(self):
         tag = "v-test"
         sh(
-            ["git", "tag", "-a", tag, "-m", "test release"],
+            ["tag", "-a", tag, "-m", "test release"],
             cwd=self.work,
         )
         ident = herdctl.push_identity(
@@ -212,7 +212,7 @@ class PushGateTests(unittest.TestCase):
         refspec = f"refs/tags/{tag}:refs/tags/{tag}"
 
         p = sh(
-            ["git", "push", "--dry-run", "origin", refspec],
+            ["push", "--dry-run", "origin", refspec],
             cwd=self.work,
             check=False,
         )
@@ -240,7 +240,7 @@ class PushGateTests(unittest.TestCase):
         # Pins the internally-consistent exception dialects of both duplicated
         # copies: herdctl raises/catches SystemExit, guards RuntimeError.
         token = self.write_token()
-        sh(["git", "remote", "remove", "origin"], cwd=self.work)
+        sh(["remote", "remove", "origin"], cwd=self.work)
         with self.assertRaises(SystemExit):
             herdctl.push_identity(self.work)
         ok, msg = herdctl.push_approval_valid(self.work)
@@ -248,9 +248,9 @@ class PushGateTests(unittest.TestCase):
         self.assertIn("origin", msg)
         self.assertFalse(token.exists(), "broken identity invalidates the token")
 
-        sh(["git", "remote", "add", "origin", str(self.bare)], cwd=self.work)
+        sh(["remote", "add", "origin", str(self.bare)], cwd=self.work)
         token = self.write_token()
-        sh(["git", "remote", "remove", "origin"], cwd=self.work)
+        sh(["remote", "remove", "origin"], cwd=self.work)
         with self.assertRaises(RuntimeError):
             guards.push_identity(self.work)
         ok, msg = guards.push_approval_valid(self.work)

@@ -48,6 +48,7 @@ from target_runtime import dispatch as dispatch_module
 from target_runtime import evidence as evidence_module
 from target_runtime import git_transport as git_transport_module
 from target_runtime import runtime as runtime_module
+from target_runtime import workspace as workspace_module
 
 from test_mission import (
     MissionHarness,
@@ -1361,6 +1362,278 @@ class CorrectnessDocsPinTests(unittest.TestCase):
         for name in self.ALL_DOCS:
             flat = self.flat(name).lower()
             self.assertIn("never kills the runtime", flat, name)
+
+
+class ReadmePrincipalFlowPinTests(unittest.TestCase):
+    """WS-B (task 20260826-211424): the README's release framing and
+    principal DI-REMOTE-2 flow, pinned in the same edit that added
+    them (the recorded normative-prose rule). doc<->code pins parse
+    the document and assert against the code; framing pins assert
+    exact load-bearing phrases whose code side is cited. The full
+    claim->pin map lives in the WS-B evidence artifact."""
+
+    @staticmethod
+    def flat():
+        return " ".join(read_doc("README.md").split())
+
+    def test_on_main_unreleased_framing(self):
+        # The three-state truth: on `main`, hermetically proven, in no
+        # tagged release; the stale working-tree framing is GONE.
+        readme = self.flat()
+        self.assertIn("implemented on `main`", readme)
+        self.assertIn("not yet part of any tagged release", readme)
+        self.assertIn(
+            "v0.6.3 remains the latest tagged release", readme
+        )
+        self.assertNotIn("implemented in the working tree", readme)
+        self.assertNotIn(
+            "in the working tree, not yet in any tagged release",
+            readme,
+        )
+        self.assertNotIn(
+            "hermetically verified in the working tree", readme
+        )
+
+    def test_principal_flow_is_complete_and_ordered(self):
+        # The principal architecture section shows the COMPLETE
+        # remote-target flow, every component present and IN ORDER.
+        # RETARGETED in I3: the section was promoted from a "###
+        # Remote target routing" subsection to the leading "##
+        # Current architecture on `main`" section; the marker moved
+        # with it (retarget proven by re-running the falsifying
+        # experiments — see the I3 evidence pin ledger).
+        readme = self.flat()
+        marker = ("## Current architecture on `main`: remote target"
+                  " routing (DI-REMOTE-2")
+        self.assertIn(marker, readme)
+        section = readme[readme.index(marker):]
+        tokens = (
+            "control repository",
+            "fresh Codex turns",
+            "Runtime (`dirun`",
+            "Broker (privileged",
+            "managed target workspace",
+            "target Herdr (Supervisor -> Lead -> Executor / Reviewer)",
+            "evidence verification (a verified result is gated, not"
+            " declared)",
+            "Telegram result",
+            "human delivery gate",
+        )
+        position = 0
+        for token in tokens:
+            found = section.find(token, position)
+            self.assertGreaterEqual(
+                found, 0,
+                "principal-flow component missing or out of order:"
+                " %r" % token,
+            )
+            position = found + len(token)
+
+    def test_broker_contract_matches_code(self):
+        # doc<->code: the fixed-action count is derived from
+        # BROKER_ACTIONS, and the documented perform surface is the
+        # COMPLETE parameter list — nothing filtered, so a parameter
+        # added, removed, or renamed (capability included) fails this
+        # pin (round-05 F-1: the earlier defaulted-parameter filter
+        # excluded exactly the parameter that falsified the sentence).
+        readme = self.flat()
+        count_words = {8: "eight", 9: "nine", 10: "ten"}
+        self.assertIn(
+            "%s fixed lifecycle actions"
+            % count_words[len(broker_module.BROKER_ACTIONS)],
+            readme,
+        )
+        signature = inspect.signature(
+            broker_module.TargetBroker.perform
+        )
+        self.assertEqual(
+            list(signature.parameters),
+            ["self", "workflow_id", "action", "revision",
+             "capability"],
+        )
+        self.assertIn(
+            "`(workflow_id, action, revision, capability)`", readme
+        )
+        # The capability's binding tuple, stated next to it.
+        self.assertIn(
+            "bound to exactly that `(workflow_id, action, revision)`"
+            " tuple",
+            readme,
+        )
+
+    def test_runtime_coupling_framing(self):
+        # framing: ruling E-1 — the Runtime couples to the control
+        # chain only through the durable workflow authority store,
+        # AND the in-process half of the same bullet (round-05 F-2):
+        # Telegram, the Gateway, and Codex never invoke it
+        # in-process. Code side: the tests/test_static.py
+        # authority-boundary checks (target_runtime import anywhere
+        # in the control chain fails them).
+        flat = self.flat().lower()
+        self.assertIn(
+            "coupled to the control chain only through the durable"
+            " workflow authority store",
+            flat,
+        )
+        self.assertIn("never invoke it in-process", flat)
+
+    def test_broker_caller_cannot_supply_sensitive_values(self):
+        # doc<->code-docstring (round-05 F-2): the security sentence
+        # "never supplied by the caller" against perform's own stated
+        # contract; the enforced behavior is tested in
+        # tests/test_target_runtime.py action-handler tests.
+        self.assertIn(
+            "never supplied by the caller", self.flat().lower()
+        )
+        self.assertIn(
+            "caller has no way to supply",
+            inspect.getdoc(broker_module.TargetBroker.perform),
+        )
+
+    def test_workspace_verification_framing(self):
+        # doc<->code-docstring (round-05 F-2): the three named
+        # materialize-time verifications against
+        # workspace.materialize's stated contract; the enforced
+        # behavior is tested in tests/test_target_runtime.py
+        # (containment / remote-mismatch / baseline-mismatch
+        # refusals).
+        self.assertIn(
+            "containment, canonical-remote, and baseline"
+            " verification",
+            self.flat().lower(),
+        )
+        materialize_doc = inspect.getdoc(
+            workspace_module.materialize
+        )
+        for token in ("containment", "canonical remote identity",
+                      "approved baseline commit"):
+            self.assertIn(token, materialize_doc)
+
+    def test_control_repo_immutability_framing(self):
+        # framing (round-05 F-2): the control repository cannot be
+        # modified through the remote-target path. Code side: the
+        # tests/test_static.py control-chain bans, the read-only
+        # transport verbs (test_evidence transport tests), and
+        # workspace.materialize's containment-outside-the-control-
+        # repository refusal.
+        self.assertIn(
+            "target engineering can never modify it through this"
+            " path",
+            self.flat().lower(),
+        )
+
+    def test_di_remote_2_is_the_principal_architecture(self):
+        # I3 anti-regression pin (independent Operator finding):
+        # PRESENCE was never the failure — PRIMACY was. The pin is
+        # POSITIONAL: the DI-REMOTE-2 material must be CENTERED as the
+        # current principal architecture AHEAD of the v1 material, and
+        # the v1 material must carry an explicit released/compatibility
+        # label. Reinstating v1 as the centered flow fails this.
+        readme = self.flat()
+        # (1) Inside "# Architecture", the DI-REMOTE-2 section comes
+        # FIRST and the v1 section is labeled released/local.  find()
+        # + authored asserts, not index(): a missing anchor must be an
+        # authored FAIL, never a ValueError crash.
+        architecture_at = readme.find("# Architecture")
+        v2_heading_at = readme.find(
+            "## Current architecture on `main`: remote target routing"
+            " (DI-REMOTE-2"
+        )
+        v1_heading_at = readme.find(
+            "## Released architecture (v0.6.3): local missions"
+        )
+        self.assertGreaterEqual(
+            architecture_at, 0, "Architecture heading missing"
+        )
+        self.assertGreaterEqual(
+            v2_heading_at, 0,
+            "the DI-REMOTE-2 current-architecture heading is missing"
+            " or demoted — DI-REMOTE-2 must be the centered principal"
+            " architecture",
+        )
+        self.assertGreaterEqual(
+            v1_heading_at, 0,
+            "the released-v1 architecture heading (with its explicit"
+            " released label) is missing",
+        )
+        self.assertLess(architecture_at, v2_heading_at)
+        self.assertLess(
+            v2_heading_at, v1_heading_at,
+            "the DI-REMOTE-2 architecture must precede the released"
+            " v1 architecture inside the principal section",
+        )
+        # (2) The v1 section's opening paragraph says plainly what it
+        # is: released tag behavior and the preserved local path, not
+        # the principal `main` architecture.
+        v1_opening = readme[v1_heading_at:v1_heading_at + 400].lower()
+        self.assertIn("released v0.6.3 tag", v1_opening)
+        self.assertIn("local-mission path", v1_opening)
+        self.assertIn("not the principal", v1_opening)
+        # (3) The bold operating-model presentation leads with the
+        # DI-REMOTE-2 chain: the FIRST bold chain after "The operating
+        # model is deliberate" carries the Runtime/target components,
+        # and the v1 chain that follows is introduced as the released
+        # v0.6.3 model.
+        model_at = readme.find("The operating model is deliberate")
+        self.assertGreaterEqual(model_at, 0)
+        first_chain_at = readme.find("**Phone → Telegram →", model_at)
+        self.assertGreaterEqual(first_chain_at, 0)
+        first_chain = readme[first_chain_at:first_chain_at + 300]
+        for token in ("Runtime", "Broker", "managed target",
+                      "target Herdr", "evidence verification"):
+            self.assertIn(
+                token, first_chain,
+                "the FIRST bold operating-model chain must be the"
+                " DI-REMOTE-2 chain",
+            )
+        v1_chain_at = readme.find(
+            "**Phone → Telegram → Telegram Adapter →"
+        )
+        self.assertGreaterEqual(
+            v1_chain_at, 0, "the released v1 chain must stay present"
+        )
+        self.assertGreater(v1_chain_at, first_chain_at)
+        v1_chain_intro = readme[
+            max(0, v1_chain_at - 200):v1_chain_at
+        ].lower()
+        self.assertIn("released v0.6.3 operating model", v1_chain_intro)
+
+    def test_initial_dispatch_framing(self):
+        # framing (round-05 N-1): byte-exact is the FIRST dispatch;
+        # a corrective follow-up is a bounded corrective brief. Code
+        # side: broker._dispatch (initial byte-exact vs D6 follow-up
+        # brief) and the dispatch tests in
+        # tests/test_target_runtime.py.
+        flat = self.flat().lower()
+        self.assertIn(
+            "first dispatch is the byte-exact stored handoff", flat
+        )
+        self.assertIn("corrective brief", flat)
+
+    def test_managed_workspace_framing(self):
+        # framing: workspaces live under the protected per-user root
+        # and are materialized only after one-shot consumption. Code
+        # side: workspace lease + consumption tests in
+        # tests/test_target_runtime.py.
+        flat = self.flat().lower()
+        self.assertIn("protected per-user root", flat)
+        self.assertIn("materialized only after one-shot approval", flat)
+
+    def test_supervisor_first_framing(self):
+        # framing: the target Herdr Supervisor is the first
+        # strategy-bearing component. Code side: the Supervisor-first
+        # narrative assertions in MitiqNarrativeTests.
+        self.assertIn(
+            "first strategy-bearing component", self.flat().lower()
+        )
+
+    def test_runtime_minted_capability_framing(self):
+        # framing: one-shot Broker capabilities are minted by the
+        # Runtime, never by Codex. Code side: the capability
+        # mint/consume tests in tests/test_target_runtime.py.
+        flat = self.flat().lower()
+        self.assertIn("runtime-minted one-shot", flat)
+        self.assertIn("minted by the runtime, never by codex", flat)
 
 
 if __name__ == "__main__":

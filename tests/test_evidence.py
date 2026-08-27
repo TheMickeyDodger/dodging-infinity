@@ -24,10 +24,10 @@ import tempfile
 import types
 import unittest
 
+from _hermetic_git import run_git
 from test_target_runtime import (
     CANONICAL_URL,
     make_git_repo,
-    run_git,
 )
 
 from telegram_operator import mission

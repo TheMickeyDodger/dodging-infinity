@@ -42,15 +42,11 @@ NOW = 1_000_000
 CANONICAL_URL = "https://github.com/octocat/target"
 
 
-def run_git(*argv, cwd=None):
-    completed = subprocess.run(
-        ["git"] + list(argv), cwd=cwd, capture_output=True, text=True
-    )
-    if completed.returncode != 0:
-        raise AssertionError(
-            "test git failed: %s: %s" % (argv, completed.stderr)
-        )
-    return completed.stdout.strip()
+# Hermetic (invocation-local identity; no ambient Git identity needed):
+# every test git call, and every identity-requiring one in particular,
+# routes through the shared helper.  tests/test_hermetic_git.py guards
+# this routing mechanically.
+from _hermetic_git import run_git  # noqa: E402
 
 
 def make_git_repo(path, files):

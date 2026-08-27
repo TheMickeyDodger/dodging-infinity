@@ -21,6 +21,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from _hermetic_git import run_git_completed
+
 import herdctl
 from herdr import observe as obs_mod
 from herdr.observe import (
@@ -63,9 +65,11 @@ def fake_agent_info(status="idle"):
 
 
 def git(repo, *args, check=True):
-    return subprocess.run(
-        ["git", "--no-optional-locks", "-C", str(repo), *args],
-        capture_output=True, text=True, check=check,
+    # Hermetic delegate: invocation-local identity from the shared
+    # helper, so commits need no ambient Git identity (guarded by
+    # tests/test_hermetic_git.py).
+    return run_git_completed(
+        ["--no-optional-locks", "-C", str(repo), *args], check=check,
     )
 
 
@@ -162,7 +166,12 @@ def populate_herd(repo, task_id=TASK_ID):
 
 
 def minimal_env(home):
-    git_dir = os.path.dirname(shutil.which("git") or "/usr/bin/git")
+    # The git dir MUST come from live PATH resolution, never from an
+    # absolute git-binary literal (rule F in tests/test_hermetic_git.py):
+    # a literal here would silently take child processes out of the
+    # executed identity sweep's field of view.
+    which_git = shutil.which("git")
+    git_dir = os.path.dirname(which_git) if which_git else "/usr/bin"
     return {
         "PATH": git_dir + os.pathsep + "/usr/bin" + os.pathsep + "/bin",
         "HOME": str(home),
