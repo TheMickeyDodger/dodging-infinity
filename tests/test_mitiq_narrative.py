@@ -938,16 +938,22 @@ class DocsAccuracyPinTests(unittest.TestCase):
             self.assertIn("review-round limit", doc.lower(), name)
             self.assertIn("NEEDS_REAUTHORIZATION", doc, name)
 
-    def test_live_unverified_items_are_disclosed(self):
-        # The four HUMAN validation items must be stated plainly, not
-        # implied to work, somewhere in the shipped docs.
+    def test_live_proven_and_pending_items_are_disclosed(self):
+        # The production proof must stop at ACTIVE, and the final
+        # lifecycle and delivery stages must remain plainly pending.
         blob = (read_doc("README.md") + read_doc("SECURITY.md")
                 + read_doc("CHANGELOG.md")).lower()
         self.assertIn("live-unverified", blob)
-        self.assertIn("first live", blob)
+        self.assertIn("live-proven through active", blob)
         self.assertIn("telegram", blob)
         self.assertIn("github", blob)
-        self.assertIn("approval_policy", blob)
+        self.assertIn("reviewer approve", blob)
+        self.assertIn("independent final codex verification", blob)
+        self.assertIn("verified", blob)
+        self.assertIn("completed", blob)
+        self.assertIn("exactly-once", blob)
+        self.assertIn("artifact delivery", blob)
+        self.assertIn("delivery_authority = none", blob)
 
     def test_post_dispatch_leak_is_a_standing_constraint(self):
         # The point07 limitation is recorded as a standing constraint

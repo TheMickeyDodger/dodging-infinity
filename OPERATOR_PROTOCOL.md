@@ -530,9 +530,7 @@ status set per allowlisted file) and may yield EXACTLY three outcomes:
 fails closed. A role turn runs as a fresh Codex process rooted at the
 control repository under `--sandbox read-only --ignore-user-config
 --ignore-rules --strict-config -c approval_policy=never`, with no
-resume and no ambient authority. (The installed Codex binary's
-acceptance of the `approval_policy=never` key is a LIVE-UNVERIFIED
-human validation item.)
+resume and no ambient authority.
 
 Corrective follow-ups are an AUTHORIZATION-SCOPE bound (2) — how far
 one human authorization may be stretched — and explicitly NOT a

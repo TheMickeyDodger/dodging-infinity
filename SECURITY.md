@@ -257,14 +257,15 @@ otherwise:
   review-round limit. Exceeding it transitions the workflow durably to
   NEEDS_REAUTHORIZATION (a fresh human mission is required), never a
   silent stop.
-- **Hermetic-only caveat.** All of the above is proven with real
-  local git fixtures, a real bridge-validation pass, injected
-  transports/role-runners/spawns, and the read-only `herdr.observe`
-  projection over local fixtures. These remain HUMAN validation items,
-  NOT claimed to work live: the first live target dispatch, live child-
-  Herdr spawn, live Telegram Bot API v2 traffic, live GitHub traffic,
-  live Codex role turns, and the installed Codex binary's acceptance of
-  the `approval_policy=never` config key.
+- **Automated/live evidence boundary.** All of the above remains proven with
+  real local git fixtures, a real bridge-validation pass, injected
+  transports/role-runners/spawns, and the read-only `herdr.observe` projection
+  over local fixtures. Production separately proves live Telegram v2 traffic,
+  GitHub target materialization, child-Herdr bootstrap and dispatch, and fresh
+  installed-Codex role turns through a target task in `ACTIVE`. It does NOT yet
+  prove final Reviewer APPROVE, target COMPLETE, independent final verification,
+  VERIFIED/COMPLETED, result or artifact delivery, or remote delivery authority;
+  the live workflow still carries `delivery_authority: none`.
 - **Standing constraint on future work.** The capstone narrative's
   "the target Supervisor is the first strategy-bearing artifact" check
   covers only artifacts that exist BEFORE and AT dispatch (the mission,
