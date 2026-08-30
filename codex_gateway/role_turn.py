@@ -947,6 +947,22 @@ def _default_runner(argv, prompt_bytes, cwd, owner_scope=None):
         _own.reap_owned(
             process.pid, directory=owner_scope, settle_seconds=10.0,
         )
+        # `communicate` normally waits and closes its pipe lifecycle for
+        # us.  If it raises, collect the reaped child and close every pipe
+        # explicitly so the exceptional path leaks neither a Popen handle
+        # nor file descriptors (and does not emit ResourceWarning later).
+        wait = getattr(process, "wait", None)
+        if wait is not None:
+            try:
+                wait(timeout=10)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        for stream in (
+                getattr(process, "stdin", None),
+                getattr(process, "stdout", None),
+                getattr(process, "stderr", None)):
+            if stream is not None:
+                stream.close()
     return process.returncode, stdout, stderr, process.pid
 
 

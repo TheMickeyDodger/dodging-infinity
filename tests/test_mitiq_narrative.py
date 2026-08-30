@@ -886,6 +886,99 @@ class DocsAccuracyPinTests(unittest.TestCase):
         self.assertIn("mission_authorization", doc)
         self.assertIn("role_outcome", doc)
 
+    def test_remote_fabric_roadmap_release_gate_is_ordered(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        gate = roadmap.index(
+            "## Immediate release gate: DI-REMOTE-2 acceptance before Phase I"
+        )
+        phase = roadmap.index("# Phase I: Remote Mission Fabric")
+        self.assertLess(gate, phase)
+        section = roadmap[gate:phase]
+        sequence = (
+            "Publish the README and documentation update",
+            "Complete the live Mitiq #2802 mountain",
+            "Repair clean-clone CI hermeticity",
+            "Perform final DI-REMOTE-2 acceptance",
+            "Create the DI-REMOTE-2 release/tag",
+            "Only then begin the Durable Mission Registry and Mission Router",
+        )
+        position = 0
+        for claim in sequence:
+            found = section.find(claim, position)
+            self.assertGreaterEqual(found, 0, claim)
+            position = found + len(claim)
+        flat_section = " ".join(section.replace("> ", "").split())
+        self.assertIn(
+            "DI-REMOTE-2 is released only when the public repository,"
+            " clean-clone CI, and live Telegram-to-target mountain all"
+            " describe and prove the same system.",
+            flat_section,
+        )
+
+    def test_remote_fabric_roadmap_pins_exact_delivery_capabilities(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        start = roadmap.index(
+            "## Iteration 5: Telegram exact delivery authority and Git"
+            " decision surfaces"
+        )
+        end = roadmap.index("## Iteration 6:", start)
+        section = roadmap[start:end]
+        for claim in (
+            "Mission Authorization grants **ZERO delivery authority**",
+            "Each delivery action is an independent one-shot capability",
+            "exact staged bytes/digest",
+            "exact resulting commit SHA, remote/ref, expected remote state",
+            "exact source commit, destination, title/body digest",
+            "exact PR, head SHA, base, merge method, required checks/reviews state",
+            "Release binds the exact tag/commit and release body/artifact digests",
+            "Deploy binds the exact immutable revision and environment",
+        ):
+            self.assertIn(claim, " ".join(section.split()), claim)
+
+    def test_remote_fabric_console_and_release_milestone_are_explicit(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        console = roadmap[
+            roadmap.index("## Iteration 13:"):
+            roadmap.index("# Phase IV:")
+        ]
+        for control in (
+            "mission selection", "status", "artifacts",
+            "blocked-condition acknowledgement", "permitted recovery",
+            "mission approval/rejection", "exact diff inspection",
+            "`Prepare commit`", "`Approve commit`", "`Approve push`",
+            "`Open PR` / PR update", "`Approve merge`",
+            "tag/release/deploy approval when enabled",
+            "authorization history", "expiry/replay state",
+            "exact-result receipts",
+        ):
+            self.assertIn(control, console, control)
+        milestone = roadmap.index("## Milestone B: DI-REMOTE-2 released")
+        multi = roadmap.index("## Milestone C: Multi-mission operation")
+        self.assertLess(milestone, multi)
+        self.assertIn(
+            "That tagged release is the baseline for Mission Router and"
+            " concurrency work.",
+            " ".join(roadmap[milestone:multi].split()),
+        )
+
+    def test_remote_fabric_roadmap_has_no_stale_ahead_of_main_claim(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        self.assertIn(
+            "`main` and `origin/main` agree at the SHA above", roadmap
+        )
+        self.assertIn(
+            "cda06d8c502882672667d94821b8bd00e7060a52", roadmap
+        )
+        self.assertNotIn(
+            "control repo is intentionally still ahead of", roadmap
+        )
+        for open_gap in (
+            "final Mitiq lifecycle acceptance",
+            "unconfigured break-glass Tailscale/SSH",
+            "still-unreached DI-REMOTE-2 tagged release",
+        ):
+            self.assertIn(open_gap, " ".join(roadmap.split()), open_gap)
+
     def test_contributing_lists_the_new_components(self):
         doc = read_doc("CONTRIBUTING.md")
         for token in (

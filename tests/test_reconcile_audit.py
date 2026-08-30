@@ -45,21 +45,25 @@ from test_target_runtime import (                      # noqa: E402
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def live_projection(case):
-    """The projection of THIS repository's live `children.json`.
-
-    Skips when the evidence file is absent — a shadow tree built for
-    the mutation battery excludes `.herd`, and within such a tree the
-    live specimen is unmeasured, so the skip says so rather than
-    reading a missing file as an empty one.
-    """
-    path = os.path.join(REPO_ROOT, ".herd", "state", "children.json")
-    if not os.path.exists(path):
-        case.skipTest(
-            "no live children.json under %s; the live-specimen"
-            " confirmation is UNMEASURED in this tree" % REPO_ROOT
-        )
-    return observe_spawn_records(REPO_ROOT)
+def projection_fixture(case):
+    """A committed one-child specimen in an isolated temporary herd."""
+    temp = tempfile.TemporaryDirectory()
+    case.addCleanup(temp.cleanup)
+    repo = Path(temp.name)
+    state = repo / ".herd" / "state"
+    state.mkdir(parents=True)
+    child_repo = repo / "managed-child"
+    (state / "children.json").write_text(json.dumps({
+        "version": 1,
+        "children": [{
+            "parent_task_id": None,
+            "dependency": False,
+            "repo": str(child_repo),
+            "task_id": "20260828-114612-5d92e1",
+            "task_status": "ACTIVE",
+        }],
+    }))
+    return observe_spawn_records(repo)
 
 
 def broker_source():
@@ -225,13 +229,15 @@ class SurvivedFalsificationTests(WriterFixture):
             identity["task_id"], dispatch_module.UNRESOLVED_TASK_ID
         )
 
-    def test_the_live_specimen_projects_as_lead1_reported(self):
-        """ATTEMPT: find a disagreement with the reported live
-        projection. OUTCOME: survived — the LIVE `children.json` in
-        this repository projects exactly as reported. READ-ONLY within this
-        test: the evidence file is opened for projection only, and no
-        write path is reachable from here."""
-        projection = live_projection(self)
+    def test_the_COMMITTED_specimen_projects_as_lead1_reported(self):
+        """ATTEMPT: falsify the reported projection shape hermetically.
+
+        Historical `.herd/state/children.json` is live machine evidence, not
+        a unit-test fixture.  The same reported one-child shape is constructed
+        in an isolated herd so a clean clone and a populated authoring herd
+        drive identical assertions.
+        """
+        projection = projection_fixture(self)
         self.assertEqual(projection["state"], "available")
         self.assertEqual(projection["count"], 1)
         self.assertFalse(projection["truncated"])
@@ -255,7 +261,7 @@ class SurvivedFalsificationTests(WriterFixture):
         of `ProductionRecoveryPathTests.test_an_equivalently_spelled_record_BINDS`,
         which EXECUTES a reconciliation that binds from `repo` and
         `task_id` alone."""
-        projection = live_projection(self)
+        projection = projection_fixture(self)
         record = projection["listed"][0]
         for field in ("repo", "task_id"):
             self.assertIn(field, record)

@@ -1929,11 +1929,12 @@ class ZZSharedScopeStoreCensusTests(unittest.TestCase):
     word was "byte-identically", and within this census a name is
     unable to witness a byte.
 
-    THE UNRELATED WITNESS is not one this class creates: writing a
-    sentinel into a shared store is an addition AM-1 and AL-2 forbid.
-    It is every record already under those stores, written by earlier
-    runs and by anything else on this machine, and the comparison is
-    over their digests.
+    A clean machine may have no unrelated shared records, and that is a
+    valid baseline.  The suite-wide invariant still compares the real
+    stores before and after.  Its anti-vacuity witness is constructed in
+    a PRIVATE store below, where deterministic entries prove that the
+    same census detects additions, removals, and in-place byte changes
+    without writing a sentinel into machine-global state.
 
     BOUNDS (AO-5). Within one snapshot: at most
     `_scope_hygiene.MAX_SNAPSHOT_ENTRIES` entries; at most
@@ -1994,13 +1995,33 @@ class ZZSharedScopeStoreCensusTests(unittest.TestCase):
         )
 
     def test_the_baseline_is_NOT_VACUOUS(self):
-        """An empty baseline gives the census two empty sets to
-        compare, which proves little. It would stay green if the
-        stores were wiped before the run."""
+        """The census is driven over deterministic, private content.
+
+        The machine-global baseline is allowed to be empty in a clean clone;
+        treating historical developer state as the witness made this test
+        fail for exactly the environment the isolation design must support.
+        """
+        root = tempfile.mkdtemp()
+        self.addCleanup(remove, root)
+        record = os.path.join(
+            root, proc_module.OWNED_ROOT_DIR_NAME, "own-census-witness"
+        )
+        os.makedirs(record)
+        with open(os.path.join(record, "nonce"), "w") as handle:
+            handle.write("deterministic-census-witness")
+
+        baseline = scope_hygiene.shared_base_snapshot(root)
         self.assertTrue(
-            scope_hygiene.SUITE_START["entries"],
-            "the shared scope stores are EMPTY, so the censuses above"
-            " are comparing nothing against nothing",
+            baseline["entries"],
+            "the test-owned census fixture unexpectedly has no entries",
+        )
+        self.assertEqual(
+            scope_hygiene.compare_snapshots(
+                baseline, scope_hygiene.shared_base_snapshot(root)
+            ),
+            ([], [], []),
+            "an unchanged non-empty private baseline did not remain"
+            " byte-identical through the census",
         )
 
     def test_the_snapshot_states_its_BOUNDS(self):

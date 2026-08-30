@@ -93,6 +93,34 @@ Still being proven by the current mountain: Reviewer completion, final
 independent Codex verification, deterministic VERIFIED/COMPLETED transition,
 and exactly-once Telegram result delivery.
 
+## Immediate release gate: DI-REMOTE-2 acceptance before Phase I
+
+The remote mission fabric does not begin from an unaccepted moving target.
+The required product sequence is:
+
+1.  [x] Publish the README and documentation update in this PR.
+2.  [ ] Complete the live Mitiq #2802 mountain, including target Reviewer,
+    independent verification, VERIFIED/COMPLETED, and exactly-once Telegram
+    result evidence.
+3.  [ ] Repair clean-clone CI hermeticity and confirm both runner-equivalent
+    local validation and all four PR matrix jobs.
+4.  [ ] Perform final DI-REMOTE-2 acceptance against the combined public,
+    automated, and live evidence.
+5.  [ ] Create the DI-REMOTE-2 release/tag only when the live mountain and
+    clean-clone CI agree.
+6.  [ ] Only then begin the Durable Mission Registry and Mission Router.
+
+The current Mitiq mountain is not complete: its final Reviewer,
+verification, lifecycle, and result-delivery stages remain open until durable
+evidence proves them. DI-REMOTE-2 also remains unreleased; no tag is implied
+by implementation or by partial live proof.
+
+Acceptance:
+
+> DI-REMOTE-2 is released only when the public repository, clean-clone CI,
+> and live Telegram-to-target mountain all describe and prove the same
+> system.
+
 # Phase I: Remote Mission Fabric
 
 ## Iteration 0: Trusted Mac stabilization and break-glass access
@@ -101,20 +129,25 @@ Reconcile the host before more feature work.
 
 Work:
 
--   synchronize the local control repo with the intended remote state
+-   ~~synchronize `main` and `origin/main` at
+    `cda06d8c502882672667d94821b8bd00e7060a52`~~
 -   ~~migrate Telegram durable state to the current schema~~
 -   ~~reload current tgop and dirun after code changes and verify fresh
     running processes~~
 -   ~~verify dirun, target Herdr bootstrap, Codex execution, Git human
-    gates, launchd, config, and durable workflow state through a live
-    DI-REMOTE-2 mountain~~
+    gates, launchd, config, and durable workflow state through the active
+    portion of the live DI-REMOTE-2 mountain~~
+-   complete the final Mitiq Reviewer, independent-verification,
+    VERIFIED/COMPLETED, and exactly-once result-delivery stages
 -   configure Tailscale plus SSH, restricted to trusted devices/accounts
 -   avoid public inbound SSH exposure
 -   verify persistence across reboot/login
 
-Current gap: the control repo is intentionally still ahead of
-`origin/main` until a separate human-authorized push, and break-glass
-Tailscale/SSH is not yet configured.
+Current state: `main` and `origin/main` agree at the SHA above. The current PR
+branch carries the public documentation and CI-hermeticity work without
+changing `main`. Remaining gaps are final Mitiq lifecycle acceptance,
+unconfigured break-glass Tailscale/SSH, and the still-unreached DI-REMOTE-2
+tagged release.
 
 Test from a genuinely remote network with Telegram healthy, Telegram
 stopped, Runtime stopped, Codex wedged, Herdr wedged, and a stale
@@ -253,15 +286,29 @@ new committed control-plane increment and verified with fresh singleton PIDs.~~
 Automatic running-commit/disk-commit skew detection and safe in-flight restart
 policy remain open.
 
-## Iteration 5: Telegram delivery authority
+## Iteration 5: Telegram exact delivery authority and Git decision surfaces
 
 Make the phone capable of completing the delivery ceremony without weakening
 the human gate. This is now a core requirement, not an optional someday
 feature.
 
-Mission Authorization still grants **zero** delivery authority. Delivery begins
-only after the mission is complete, Reviewer-approved, and independently
-verified. Telegram then exposes a separate exact-result authorization flow.
+The phone-facing ceremony is explicit and ordered:
+
+``` text
+Verified result
+  -> Inspect exact diff / evidence
+  -> Prepare commit
+  -> Approve commit
+  -> Commit receipt
+  -> Approve push OR Open PR
+  -> Push / PR receipt
+  -> Optional later: Approve merge / tag / release / deploy
+```
+
+Mission Authorization grants **ZERO delivery authority**. Delivery begins only
+after the mission is complete, Reviewer-approved, and independently verified.
+Each delivery action is an independent one-shot capability; no action inherits
+authority from Mission Authorization or from another delivery action.
 
 The delivery model must use closed, one-shot capabilities:
 
@@ -269,21 +316,26 @@ The delivery model must use closed, one-shot capabilities:
     mission/workflow ID, baseline, current HEAD, diff summary, changed paths,
     staged-tree/diff digest, validation evidence, Reviewer decision, and
     proposed commit message.
--   `Approve commit` binds the human, chat, mission/result revision, repo
-    identity, HEAD, exact staged bytes/digest, commit message, expiry, and a
+-   `Approve commit` binds the exact repository, mission/result revision,
+    HEAD, exact staged bytes/digest, commit message, human/chat, expiry, and a
     one-shot nonce. Any byte, HEAD, mission revision, or policy change
     invalidates it. Typed Telegram text cannot authorize it.
 -   Commit execution is deterministic and uses the existing Herdr/Git commit
     gate; no `--no-verify`, no arbitrary shell, and no authority reuse.
--   `Approve push` is a **separate** one-shot authority bound to the exact
-    resulting commit SHA, remote, destination branch/ref, expected remote
-    state, human, chat, expiry, and replay protection. Commit approval never
-    implies push approval.
--   PR creation/update is another closed action bound to exact source commit,
-    destination repo/branch, title/body digest, and current remote state.
--   Tag, release, deploy, and merge each require their own separately designed
-    closed capability before they can be enabled remotely. None inherit
-    authority from commit, push, PR, Mission Authorization, or another mission.
+-   `Approve push` is a **separate** one-shot capability bound to the exact
+    resulting commit SHA, remote/ref, expected remote state, human/chat,
+    expiry, and nonce. Commit approval never implies push approval.
+-   `Open PR` / PR update is another closed action bound to the exact source
+    commit, destination, title/body digest, and current remote state.
+-   `Approve merge` is separate from PR creation and binds the exact PR, head
+    SHA, base, merge method, required checks/reviews state, human/chat, expiry,
+    and nonce.
+-   `Approve tag`, `Approve release`, and any future `Approve deploy` each
+    require their own capability. Release binds the exact tag/commit and
+    release body/artifact digests. Deploy binds the exact immutable revision
+    and environment.
+-   No delivery action inherits authority from Mission Authorization, commit,
+    push, PR creation, or any other delivery action or mission.
 -   Every delivery attempt writes a durable receipt with `prepared`,
     `authorized`, `executing`, `succeeded`, `failed`, or `ambiguous` state and
     reconciles uncertain external effects before allowing another attempt.
@@ -409,11 +461,24 @@ Related missions never automatically inherit each other's authority.
 
 ## Iteration 13: Rich remote decision surfaces
 
-Evolve Telegram into a clear mission console with bounded controls
-for: - mission selection - status - artifact requests -
-blocked-condition acknowledgement - permitted recovery - mission
-approval/rejection - delivery preparation - commit/push/PR authorization
-history and exact-result receipts
+Evolve Telegram into a clear mission console with bounded controls for:
+
+-   mission selection
+-   status
+-   artifacts
+-   blocked-condition acknowledgement
+-   permitted recovery
+-   mission approval/rejection
+-   exact diff inspection
+-   `Prepare commit`
+-   `Approve commit`
+-   `Approve push`
+-   `Open PR` / PR update
+-   `Approve merge`
+-   tag/release/deploy approval when enabled
+-   authorization history
+-   expiry/replay state
+-   exact-result receipts
 
 Every control remains bound to exact mission, revision, human, chat, and
 durable state.
@@ -496,37 +561,43 @@ Acceptance:
 
 The Mac is recoverable from anywhere even when Telegram is broken.
 
-## Milestone B: Multi-mission operation
+## Milestone B: DI-REMOTE-2 released
+
+Unreached. Live mountain evidence, clean-clone green CI, public docs, and the
+tagged release all agree. That tagged release is the baseline for Mission
+Router and concurrency work.
+
+## Milestone C: Multi-mission operation
 
 Telegram can naturally control multiple concurrent missions without
 context collision.
 
-## Milestone C: Immediate observability
+## Milestone D: Immediate observability
 
 Status is always available independently of active work.
 
-## Milestone D: Full remote delivery authority
+## Milestone E: Full remote delivery authority
 
 A verified result can move through exact, one-shot, human-approved commit and
 separately authorized push/PR actions from Telegram without granting ambient or
 replayable delivery authority.
 
-## Milestone E: Artifact-native work
+## Milestone F: Artifact-native work
 
 Research and engineering missions return durable reviewed files, not
 only chat text.
 
-## Milestone F: Unattended reliability
+## Milestone G: Unattended reliability
 
 The trusted Mac survives ordinary host/network events and exposes
 readiness before work starts.
 
-## Milestone G: Productization
+## Milestone H: Productization
 
 Install, configure, upgrade, diagnose, and operate Dodging Infinity
 without manually assembling its infrastructure.
 
-## Milestone H: General autonomous work fabric
+## Milestone I: General autonomous work fabric
 
 Engineering, research, operational automation analysis, and other
 bounded mission types all operate through the same durable mission
