@@ -947,16 +947,80 @@ class RoutedProtocolTests(unittest.TestCase):
         self.assertEqual(telegram_api.MAX_MESSAGE_CHUNKS, 5)
         self.assertEqual(telegram_api.MAX_DELIVERABLE_CHARS, 20480)
 
-    def test_v2_envelope_parses(self):
+    def test_legacy_mission_routing_signal_string_is_preserved(self):
         routed = protocol.parse_routed_operator_response(
-            "prose\n" + envelope_line_v2() + "\nafter"
+            "prose\n" + envelope_line_v2(body="route") + "\nafter"
         )
         self.assertTrue(routed.ok)
         self.assertEqual(routed.protocol_version, 2)
         self.assertEqual(
             routed.kind, protocol.KIND_MISSION_AUTHORIZATION
         )
-        self.assertEqual(routed.body, "mission")
+        self.assertEqual(routed.body, "route")
+
+    def test_mission_object_body_is_canonicalized_deterministically(self):
+        original = {
+            "z": "Unicode survives: café ☃",
+            "a": {"values": [1, True, None], "label": "é"},
+        }
+        routed = protocol.parse_routed_operator_response(
+            envelope_line_v2(body=original)
+        )
+        self.assertTrue(routed.ok)
+        self.assertIsInstance(routed.body, str)
+        self.assertEqual(json.loads(routed.body), original)
+        self.assertEqual(
+            routed.body,
+            json.dumps(
+                original,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
+        self.assertIn("café ☃", routed.body)
+
+        same_content_different_order = {
+            "a": {"label": "é", "values": [1, True, None]},
+            "z": "Unicode survives: café ☃",
+        }
+        routed_again = protocol.parse_routed_operator_response(
+            envelope_line_v2(body=same_content_different_order)
+        )
+        self.assertTrue(routed_again.ok)
+        self.assertEqual(routed_again.body, routed.body)
+
+    def test_mission_body_types_fail_closed(self):
+        for body in ("", " \t ", [], 7, True, None):
+            routed = protocol.parse_routed_operator_response(
+                envelope_line_v2(body=body)
+            )
+            self.assertFalse(routed.ok, repr(body))
+            self.assertEqual(
+                routed.problem, protocol.PROBLEM_EMPTY_BODY, repr(body)
+            )
+
+    def test_role_outcome_remains_string_only_at_routed_boundary(self):
+        body_string = '{"role":"handoff_validation"}'
+        routed = protocol.parse_routed_operator_response(
+            envelope_line_v2(
+                kind=protocol.KIND_ROLE_OUTCOME,
+                body=body_string,
+            )
+        )
+        self.assertTrue(routed.ok)
+        self.assertEqual(routed.body, body_string)
+
+        object_body = protocol.parse_routed_operator_response(
+            envelope_line_v2(
+                kind=protocol.KIND_ROLE_OUTCOME,
+                body={"role": "handoff_validation"},
+            )
+        )
+        self.assertFalse(object_body.ok)
+        self.assertEqual(
+            object_body.problem, protocol.PROBLEM_EMPTY_BODY
+        )
 
     def test_v2_last_envelope_wins(self):
         routed = protocol.parse_routed_operator_response(
@@ -1092,8 +1156,6 @@ class RoutedProtocolTests(unittest.TestCase):
             (envelope_line_v2(extra={"more": 1}),
              protocol.PROBLEM_BAD_KEYS),
             (envelope_line_v2(drop="body"), protocol.PROBLEM_BAD_KEYS),
-            (envelope_line_v2(body="   "), protocol.PROBLEM_EMPTY_BODY),
-            (envelope_line_v2(body=7), protocol.PROBLEM_EMPTY_BODY),
         ]
         for message, expected in cases:
             routed = protocol.parse_routed_operator_response(message)
@@ -1214,6 +1276,26 @@ class RoutedProtocolTests(unittest.TestCase):
         self.assertTrue(neutralized)
         routed = protocol.parse_routed_operator_response(composed)
         self.assertFalse(routed.ok)
+
+    def test_intent_prompt_pins_single_protocol_routing_contract(self):
+        composed, neutralized = protocol.build_intent_text(
+            "solve https://github.com/octo/widget/issues/7"
+        )
+        self.assertFalse(neutralized)
+        self.assertIn(
+            "For a request that should become a new engineering mission",
+            composed,
+        )
+        self.assertIn(protocol.RESPONSE_PREFIX_V2.rstrip(), composed)
+        self.assertIn(
+            "kind exactly %r" % protocol.KIND_MISSION_AUTHORIZATION,
+            composed,
+        )
+        self.assertIn(
+            "Emit exactly ONE protocol envelope and never mix",
+            composed,
+        )
+        self.assertIn("DI-REMOTE-1 and DI-REMOTE-2", composed)
 
     def test_marker_free_text_still_round_trips_identically(self):
         for text in ("plain text", "a\r\nb", "x y"):

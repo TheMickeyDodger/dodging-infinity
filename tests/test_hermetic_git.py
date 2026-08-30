@@ -661,6 +661,8 @@ if shutil.which("git") != shim:
                      "on entry\\n")
     sys.exit(97)
 sys.path.insert(0, os.path.dirname(module))
+import test_hermetic_git as _sweep_runner_module
+_sweep_runner_module.mark_sweep_child()
 sys.argv = [module]
 code = 0
 try:
@@ -679,6 +681,47 @@ if shutil.which("git") != shim:
     sys.exit(98)
 sys.exit(code)
 """
+
+
+# How a swept child knows it is one. Round-01 finding B2 and round-02
+# finding B.1: an ENVIRONMENT VARIABLE — even one carrying a nonce
+# checked against a second variable naming a file — is assertable by
+# anyone who can set the environment, because both inputs come from
+# that party and the verifier holds no secret of its own. The reviewer forged it
+# with two variables and a file it wrote itself.
+#
+# The control is therefore INVERTED. The runner does not describe the
+# child to itself through the environment; it REACHES INTO the child
+# and sets an in-process module attribute, using `_CHILD_RUNNER` —
+# code this runner controls, executing inside that child. No ambient
+# environment can set a module attribute, so R-6's stated property
+# ("does not be asserted by anyone other than the sweep runner") holds
+# by construction rather than by proxy.
+_SWEEP_CHILD_ACTIVE = False
+
+
+def mark_sweep_child():
+    """Called by `_CHILD_RUNNER`, inside a child this runner launched.
+
+    Scope of the guarantee: within this mechanism no environment
+    variable, file or argument is consulted, so within it nothing the
+    ambient environment supplies is read — the property rounds 01 and
+    02 were bypassed on.
+
+    Outside that boundary, and disclosed: this is an in-process flag,
+    so code already executing in the process can set it. Injecting
+    such code (for example `PYTHONPATH` plus a `sitecustomize.py`)
+    reaches it, and is deliberately out of scope — that requires
+    arbitrary code execution inside the test process, which is a
+    different thing from the accidental leakage this closes.
+    """
+    global _SWEEP_CHILD_ACTIVE
+    _SWEEP_CHILD_ACTIVE = True
+
+
+def sweep_child_active():
+    """True only inside a child `_CHILD_RUNNER` marked."""
+    return _SWEEP_CHILD_ACTIVE
 
 
 def _argv_has_explicit_identity(argv):
@@ -760,6 +803,10 @@ class ExecutedIdentitySweepTests(unittest.TestCase):
                 env = dict(os.environ)
                 env["PATH"] = shim_dir + os.pathsep + env.get("PATH", "")
                 env["PYTHONDONTWRITEBYTECODE"] = "1"
+                # NOTE: the swept-child signal is NOT passed through
+                # `env`. It is set in-process by `_CHILD_RUNNER` (see
+                # `mark_sweep_child`), because an environment variable
+                # is assertable by anyone who can set it.
                 env["PYTHONPATH"] = repo_root
                 completed = subprocess.run(
                     [sys.executable, "-c", _CHILD_RUNNER, shim_path,

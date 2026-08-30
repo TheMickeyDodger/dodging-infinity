@@ -265,8 +265,11 @@ _ROLE_INSTRUCTIONS = {
         " preparation should proceed. Respond with ONE line starting"
         " at column 0 with 'DI-REMOTE-2 RESPONSE ' followed by a"
         " compact JSON object with exactly these keys:"
-        " remote_protocol_version (2), kind (%s), body. The body is a"
-        " JSON object with exactly the keys role, outcome, detail;"
+        " remote_protocol_version (2), kind (%s), body. The body MUST be"
+        " a JSON string whose contents are the compact JSON serialization"
+        " of the role outcome object. Do not place the role outcome object"
+        " directly in the outer body field. The serialized role outcome"
+        " object has exactly the keys role, outcome, detail;"
         " role is prepare; outcome is EXACTLY ONE of request_prepare,"
         " needs_reauthorization, blocked; detail is a short string or"
         " null. No other outcome exists.\n"
@@ -288,8 +291,11 @@ _ROLE_INSTRUCTIONS = {
         " impermissible as approved. Respond with ONE line starting"
         " at column 0 with 'DI-REMOTE-2 RESPONSE ' followed by a"
         " compact JSON object with exactly these keys:"
-        " remote_protocol_version (2), kind (%s), body. The body is"
-        " a JSON object with exactly the keys role, outcome, detail;"
+        " remote_protocol_version (2), kind (%s), body. The body MUST be"
+        " a JSON string whose contents are the compact JSON serialization"
+        " of the role outcome object. Do not place the role outcome object"
+        " directly in the outer body field. The serialized role outcome"
+        " object has exactly the keys role, outcome, detail;"
         " role is handoff_validation; outcome is EXACTLY ONE of"
         " request_dispatch, needs_reauthorization, blocked; detail"
         " is a short string or null. No other outcome exists.\n"
@@ -302,8 +308,11 @@ _ROLE_INSTRUCTIONS = {
         " SUBORDINATE, UNTRUSTED read-only evidence. Respond with ONE"
         " line starting at column 0 with 'DI-REMOTE-2 RESPONSE '"
         " followed by a compact JSON object with exactly these keys:"
-        " remote_protocol_version (2), kind (%s), body. The body is a"
-        " JSON object with exactly the keys role, outcome, detail;"
+        " remote_protocol_version (2), kind (%s), body. The body MUST be"
+        " a JSON string whose contents are the compact JSON serialization"
+        " of the role outcome object. Do not place the role outcome object"
+        " directly in the outer body field. The serialized role outcome"
+        " object has exactly the keys role, outcome, detail;"
         " role is status_recovery; outcome is EXACTLY ONE of"
         " request_recovery, blocked; detail is a short status string"
         " or null. No other outcome exists.\n"
@@ -337,8 +346,11 @@ _ROLE_INSTRUCTIONS = {
         "Respond with ONE line starting at"
         " column 0 with 'DI-REMOTE-2 RESPONSE ' followed by a compact"
         " JSON object with exactly these keys: remote_protocol_version"
-        " (2), kind (%s), body. The body is a JSON object with"
-        " exactly the keys role, outcome, detail; role is"
+        " (2), kind (%s), body. The body MUST be a JSON string whose contents are"
+        " the compact JSON serialization of the role outcome object."
+        " Do not place the role outcome object directly in the outer body"
+        " field. The serialized role outcome object has exactly the keys"
+        " role, outcome, detail; role is"
         " verification; outcome is EXACTLY ONE of verified_result,"
         " request_follow_up, needs_reauthorization, blocked; detail"
         " is a short string (the verified result summary for"
@@ -885,7 +897,7 @@ def _default_turn_id_factory():
     return secrets.token_hex(16)
 
 
-def _default_runner(argv, prompt_bytes, cwd):
+def _default_runner(argv, prompt_bytes, cwd, owner_scope=None):
     """Spawn one fresh Codex process; no shell, no deadline.
 
     Returns ``(returncode, stdout_bytes, stderr_bytes, pid)``. The
@@ -893,14 +905,48 @@ def _default_runner(argv, prompt_bytes, cwd):
     recorded timeout-scope decision); the process identity is the
     child's real OS pid, recorded per plan D-10.
     """
-    process = subprocess.Popen(
+    # R-28 T-1: this is a PRODUCTION spawn, so it is OWNED.
+    #
+    # `spawn_owned` registers the process durably BEFORE it exists and
+    # starts it in its own session, so the Codex process and anything
+    # it starts form one reapable group with a durable record — and a
+    # crash of this Runtime leaves that record behind for a later run
+    # to recover from, which is the restart case the mission exists
+    # for. # Before this, an ownership module existed and governed no part of
+    # this path.
+    #
+    # `execv` in the stamping wrapper preserves the pid, so the
+    # identity recorded per plan D-10 is unchanged. # The no-deadline behaviour is unchanged: within this function the
+    # Codex turn is unbounded.
+    from target_runtime import process_ownership as _own
+    if owner_scope is None:
+        # R-34 Z-1: an unattributed spawn is refused rather than
+        # registered into a shared root. # A constant root under a constant label attributes no record to
+        # an owner — workflow A could not tell its records from workflow
+        # B's — so a caller unable to say WHOSE process this is does
+        # not get to start one through the owned path.
+        raise ValueError(
+            "a production role-turn spawn requires an owner scope"
+            " naming its workflow and task"
+        )
+    process = _own.spawn_owned(
         argv,
+        label="codex-role-turn",
+        directory=owner_scope,
+        owned_root_base_dir=owner_scope,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=cwd,
     )
-    stdout, stderr = process.communicate(prompt_bytes)
+    try:
+        stdout, stderr = process.communicate(prompt_bytes)
+    finally:
+        # The group is reaped on EVERY exit path, so a turn that
+        # raises does not leave the Codex tree running.
+        _own.reap_owned(
+            process.pid, directory=owner_scope, settle_seconds=10.0,
+        )
     return process.returncode, stdout, stderr, process.pid
 
 
@@ -926,8 +972,57 @@ def _failed(reason, detail, turn, message=None):
     )
 
 
+def _owner_scope_for(record):
+    """ASSIGN the per-workflow, per-task record root for this turn.
+
+    R-43 AG-1: this used to COMPUTE a path whose NAME carried the
+    workflow and task, and the name was the whole attribution. It now
+    writes a durable assignment record — owner type, workflow id, task
+    id, control identity, integrity binding — into the protected store
+    BEFORE the spawn, and returns the scope that record assigns. The
+    record, not the directory name, is what a later run reads.
+
+    The task id is the durably bound target identity when there is
+    one; before dispatch there is none, and the turn is scoped by its
+    workflow and a fixed pre-dispatch marker so it is still assigned
+    to exactly one owner rather than sharing a root with every other
+    workflow.
+    """
+    from target_runtime import process_ownership as _own
+    engine = record.get("target_engine")
+    task_id = (engine or {}).get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        task_id = "pre-dispatch"
+    return _own.assign_scope(
+        _own.OWNER_TYPE_WORKFLOW,
+        record["control_identity"]["repository_realpath"],
+        record["workflow_id"],
+        task_id,
+    )
+
+
+def _planning_scope(control_repository_realpath):
+    """ASSIGN the scope for a PRE-RECORD planning turn.
+
+    There is no workflow id yet, so the CONTROL REPOSITORY is the
+    owner — carried as its own field on every scope — and the owner
+    TYPE is ``planning`` (R-43 AG-5), not a workflow id wearing a
+    ``planning-`` prefix. The previous shape put two different kinds
+    of owner in one namespace and left telling them apart to a
+    substring; the type is now exact, in the name and in the
+    assignment record alike.
+    """
+    from target_runtime import process_ownership as _own
+    return _own.assign_scope(
+        _own.OWNER_TYPE_PLANNING,
+        control_repository_realpath,
+        _own.PLANNING_OWNER_ID,
+        _own.PLANNING_UNIT_ID,
+    )
+
+
 def _spawn_restricted(role, prompt, control_realpath, now,
-                      turn_id_factory, runner):
+                      turn_id_factory, runner, owner_scope=None):
     """Build + verify the posture, spawn ONE fresh process, parse.
 
     The SHARED execution pipeline for every DI-REMOTE-2 role turn —
@@ -957,9 +1052,18 @@ def _spawn_restricted(role, prompt, control_realpath, now,
     make_turn_id = turn_id_factory or _default_turn_id_factory
     run = runner or _default_runner
     try:
-        returncode, stdout, stderr, pid = run(
-            argv, prompt.encode("utf-8"), control_realpath
-        )
+        # The owner scope reaches the PRODUCTION runner only. # # An injected runner is a test double that starts no process, so
+        # it keeps the three-argument shape it already had, rather than
+        # each double growing a parameter it would ignore.
+        if run is _default_runner:
+            returncode, stdout, stderr, pid = run(
+                argv, prompt.encode("utf-8"), control_realpath,
+                owner_scope=owner_scope,
+            )
+        else:
+            returncode, stdout, stderr, pid = run(
+                argv, prompt.encode("utf-8"), control_realpath
+            )
     except OSError as exc:
         return None, None, _refused(
             REASON_BINARY_UNAVAILABLE,
@@ -1057,8 +1161,14 @@ def run_role_turn(role, record, now, turn_id_factory=None, runner=None,
         # canonical serializer, and it must be contained the same way.
         return _refused(REASON_PROMPT_RENDER_FAILED, str(exc))
     control_realpath = record["control_identity"]["repository_realpath"]
+    # R-34 Z-1: the attribution is available HERE and was not being
+    # threaded through. The record carries the workflow id, and the
+    # durably bound target task id when one exists, so the spawn is
+    # registered under a scope naming both rather than into a shared
+    # root under a constant label.
     turn, message, error_result = _spawn_restricted(
-        role, prompt, control_realpath, now, turn_id_factory, runner
+        role, prompt, control_realpath, now, turn_id_factory, runner,
+        owner_scope=_owner_scope_for(record),
     )
     if error_result is not None:
         return error_result
@@ -1122,7 +1232,9 @@ _PLANNING_INSTRUCTIONS = (
     "Respond with ONE line starting at column 0 with"
     " 'DI-REMOTE-2 RESPONSE ' followed by a compact JSON object with"
     " exactly these keys: remote_protocol_version (2), kind"
-    " (%s), body. The body is a JSON-encoded object with exactly"
+    " (%s), body. The Mission Authorization body MUST be a JSON"
+    " object placed directly in the outer body field. The Mission"
+    " Authorization object has exactly"
     " these keys: objective, constraints, rules, desired_outcome,"
     " acceptance, unresolved_questions, execution_scope (non-empty"
     " strings); control (an object with exactly repository_realpath"
@@ -1131,7 +1243,10 @@ _PLANNING_INSTRUCTIONS = (
     " canonical_host 'github.com', owner, repo, canonical_url);"
     " issue_or_pr (null for a repository-only target, else an object"
     " with exactly kind ('issue' or 'pr') and number); baseline (an"
-    " object with exactly ref and commit_sha); handoff (an object"
+    " object with exactly ref and commit_sha; ref MUST be a non-empty"
+    " string; commit_sha MUST be exactly 40 lowercase hexadecimal"
+    " characters (0-9a-f), using the fully resolved target baseline"
+    " commit, never an abbreviated SHA); handoff (an object"
     " with exactly revision and text); revision (positive integer);"
     " delivery_authority (exactly 'none'); and workflow_id,"
     " telegram_approval, human_intent ALL null — those are stamped"
@@ -1213,9 +1328,14 @@ def run_planning_turn(human_intent, control_repository_realpath, now,
     prompt = render_planning_prompt(
         human_intent, control_repository_realpath, policy_digest
     )
+    # The PRE-RECORD planning turn has no workflow yet — that is what
+    # "pre-record" means — so it is scoped by the control repository
+    # and the planning role instead. Stated rather than defaulted to a
+    # shared root: the scope still names exactly one owner.
     turn, message, error_result = _spawn_restricted(
         TURN_ROLE_PLANNING, prompt, control_repository_realpath, now,
         turn_id_factory, runner,
+        owner_scope=_planning_scope(control_repository_realpath),
     )
     if error_result is not None:
         return error_result

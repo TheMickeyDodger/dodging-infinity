@@ -374,9 +374,50 @@ for path in target_runtime_files + [R / 'dirun.py']:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             names = [alias.name for alias in node.names]
             if 'subprocess' in names or getattr(node, 'module', None) == 'subprocess':
-                assert path.name == 'git_transport.py', (
-                    path, 'subprocess only in the git transport seam'
-                )
+                # Two SPAWN seams, and one QUERY seam. The
+                # distinction is the whole content of this rule.
+                #
+                # `git_transport.py` is the Git seam and
+                # `process_ownership.py` is the OWNED-SPAWN construct
+                # every other process start is required to route
+                # through (R-14 E-3). A third SPAWN name here would
+                # mean a third place that can start a process without
+                # owning its tree, which is what this rule exists to
+                # prevent.
+                #
+                # `spawn_stamp.py` is the third name and is NOT a
+                # spawn seam. Added deliberately in I5 for R-54 AR-3,
+                # which requires a recorded pgid to be corroborated
+                # against its leader's START TIME — otherwise the OS
+                # reuses the number and a recovery signals an
+                # unrelated process. Its only subprocess use is
+                # `ps -o lstart= -p <pid>`: a bounded, read-only
+                # query about a pid the caller already holds. Within
+                # this seam it starts no tree, so there is no tree to
+                # own.
+                #
+                # Why `process_ownership.py` is not where it lives
+                # instead: this module is executed BY PATH in the
+                # child (`sys.executable <wrapper> <root> -- argv`),
+                # so only its own directory is on the child's
+                # sys.path and the package is not importable there.
+                # Recording the start time in the PARENT instead
+                # would reopen the window R-27 closed — a parent that
+                # dies after `Popen` would leave an uncorroborated
+                # record, and an uncorroborated record is reported
+                # rather than recovered.
+                #
+                # The residual, stated with it: the `ps` child is a
+                # process this repository starts outside the owned
+                # construct. It is synchronous, bounded by `ps`'s own
+                # exit, and started in the caller's own group, so it
+                # leaves no tree to own.
+                assert path.name in (
+                    'git_transport.py', 'process_ownership.py',
+                    'spawn_stamp.py',
+                ), (path, 'subprocess only in the git transport seam,'
+                    ' the owned-spawn construct, or the spawn_stamp'
+                    ' start-time query')
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
         if token.type == tokenize.STRING and token.start not in docstring_positions:
             assert token.string not in FORBIDDEN_DELIVERY_LITERALS, (path, token.start, token.string)

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from herdr.instance import HerdrInstance
+from herdr import turns
 from herdr.runtime import agent_info, prompt, run
 
 
@@ -93,6 +94,43 @@ def heartbeat_once(
     supervisor = runtime["agents"]["supervisor"]
     now = time.strftime("%H:%M:%S")
 
+    # R-63 BA-5: THE OBSERVER RUNS HERE, and here is the only place it
+    # can run.
+    #
+        # A turn killed by transport is, within this design, unable to
+    # write its own epitaph — the dying party does not run — so the
+    # outcome has to be derived by something that SURVIVES the death. This controller is a separate
+    # process that already probes every control role on every pass and
+    # keeps running when a role's turn dies, which is exactly the
+    # property AS-1's motivating specimen needed and did not have.
+    #
+    # It runs BEFORE the heartbeat prompt below, so a role that died
+    # since the last pass is recorded before anything new is sent —
+    # and it runs on every pass, including the ones that then SKIP the
+    # prompt, because a skipped heartbeat is not a reason to stop
+    # observing.
+    observed = []
+    if isinstance(task.get("id"), str) and task.get("id"):
+        try:
+            observed, _document = turns.observe_control_roles(
+                herd.herd_root, runtime["agents"], task["id"],
+                agent_info,
+            )
+        except Exception as exc:                      # noqa: BLE001
+                        # The observation is EVIDENCE, not control. Within this
+            # controller a failure here must not stop the heartbeat
+            # that keeps the herd alive, and it must not pass silently.
+            print(
+                f"[{now}] turn observation failed: "
+                f"{exc.__class__.__name__}: {exc}",
+                flush=True,
+            )
+        for outcome, logical, turn_id in observed:
+            print(
+                f"[{now}] turn {turn_id} ({logical}): {outcome}",
+                flush=True,
+            )
+
     if task.get("status") != "ACTIVE":
         print(
             f"[{now}] heartbeat skipped: no ACTIVE task "
@@ -122,6 +160,24 @@ def heartbeat_once(
         False,
     )
 
+    # R-55 AS-4: ROUTED and EFFECT-OBSERVED, recorded as two facts.
+    #
+    # A returncode of 0 means the prompt was ACCEPTED by the
+    # transport. It does not mean the supervisor acted on it — that is
+    # the mode R-49 and R-62 each cost this mission once, and the
+    # third mode this increment names. The EFFECT is observed on a
+    # LATER pass, when the supervisor's `state_change_seq` has
+    # advanced past the value recorded when it was routed.
+    if result.returncode == 0:
+        try:
+            _record_heartbeat_routing(herd, task, supervisor)
+        except Exception as exc:                      # noqa: BLE001
+            print(
+                f"[{now}] heartbeat routing record failed: "
+                f"{exc.__class__.__name__}",
+                flush=True,
+            )
+
     if result.returncode == 0:
         task["heartbeat_count"] = (
             int(task.get("heartbeat_count", 0)) + 1
@@ -142,6 +198,63 @@ def heartbeat_once(
     )
 
     return outcome
+
+
+def _state_change_seq(agent):
+    """The agent's own change counter, or None.
+
+    THE EFFECT EVIDENCE, and it is deliberately not a clock: it
+    advances when the agent's state changes and stands still when it
+    does not, so "the instruction was acted on" is derived from the
+    agent's own behaviour rather than from elapsed time.
+    """
+    record = (agent_info(agent).get("raw") or {}).get("result") or {}
+    value = (record.get("agent") or {}).get("state_change_seq")
+    return value if isinstance(value, int) else None
+
+
+def _record_heartbeat_routing(herd, task, supervisor):
+    """Record the heartbeat prompt as ROUTED, and observe its EFFECT.
+
+    Two facts on one record: `routed_at` when the transport accepted
+    it, `effect_observed_at` only once the supervisor's own change
+    counter has moved past the value captured at routing. A pass that
+    finds it unmoved leaves the turn ROUTED-and-unobserved, which is
+    what the surface then reports.
+    """
+    document = turns.load_turns(herd.herd_root)
+    seq = _state_change_seq(supervisor)
+    pending = None
+    for entry in reversed(document["turns"]):
+        if (isinstance(entry, dict)
+                and entry.get("logical") == "supervisor-heartbeat"
+                and entry.get("routed_at")
+                and not entry.get("effect_observed_at")):
+            pending = entry
+            break
+    if pending is not None:
+        routed_seq = pending.get("routed_state_change_seq")
+        if (isinstance(seq, int) and isinstance(routed_seq, int)
+                and seq > routed_seq):
+            observed = turns.mark_effect_observed(pending)
+            observed = turns.close(
+                observed, turns.TURN_COMPLETED, artifact_present=None,
+            )
+            document["turns"] = [
+                observed if entry is pending else entry
+                for entry in document["turns"]
+            ]
+            turns.save_turns(herd.herd_root, document)
+        return
+    record = turns.new_turn(
+        turns._default_turn_id("heartbeat"), task["id"],
+        "supervisor-heartbeat",
+    )
+    record["agent"] = supervisor
+    record = turns.mark_routed(record)
+    record["routed_state_change_seq"] = seq
+    document["turns"].append(record)
+    turns.save_turns(herd.herd_root, document)
 
 
 def run_heartbeat(

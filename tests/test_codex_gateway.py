@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codex_gateway import cli, codex_adapter, contract, gateway, repository
+import _scope_hygiene as scope_hygiene
 
 # The complete keyword surface invoke_codex may pass to subprocess.run.
 # Exact-set equality is the guarantee: no shell, no deadline-style
@@ -1041,6 +1042,21 @@ class CliTests(GatewayCase):
             captured[0].repository,
             repository.resolve_repository_path(str(self.repo)),
         )
+
+
+def setUpModule():
+    """R-47/R-48: this module drives the production planning and
+    role-turn seams, which ASSIGN a scope before the spawn. It runs
+    against a PRIVATE base, so the machine-global store is not
+    somewhere this module can write — and therefore not somewhere it
+    could be tempted to tidy.
+    """
+    global _ISOLATED_BASE
+    _ISOLATED_BASE = scope_hygiene.isolate_module()
+
+
+def tearDownModule():
+    scope_hygiene.release_module(_ISOLATED_BASE)
 
 
 if __name__ == "__main__":

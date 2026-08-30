@@ -23,7 +23,9 @@ from herdr.config import (
 )
 from herdr.control_plane import HerdrControlPlane
 from herdr.registry import REGISTRY
+from herdr import guards
 from herdr.guards import install_git_guard as install_git_guard_runtime
+from herdr import tasks
 from herdr.instance import HerdrInstance
 from herdr.observe import observe as observe_projection, render_observation
 from herdr.runtime import agent_info, jrun, prompt, run, split, start_agent
@@ -463,107 +465,74 @@ def simple_git_push(command):
 
 
 def guard_pretool():
-    try:
-        data = json.load(sys.stdin)
-    except Exception:
-        return 0
-    if data.get("tool_name") != "Bash":
-        return 0
-    command = (data.get("tool_input") or {}).get("command", "")
-    if "git" not in command:
-        return 0
+    """Compatibility wrapper for the package-owned pretool guard.
 
-    cwd = Path(data.get("cwd") or os.getcwd()).resolve()
-    p = run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"])
-    r = Path(p.stdout.strip()).resolve() if p.returncode == 0 else None
+    The body that used to live here was a hand copy of
+    `herdr.guards.guard_pretool`. Copies of a guard drift, and a
+    drifted guard means the one ENFORCED can differ from the one
+    REVIEWED. `install_git_guard` below has been a wrapper of this
+    shape all along; these four follow it rather than invent one.
 
-    if re.search(r"(?:^|[\s;&|])(?:/[^\s]+/)?git\s+[^\n]*\bcommit\b", command):
-        ok, reason = simple_git_commit(command)
-        if not ok:
-            print(reason or "Commit blocked: use a standalone `git commit ...` after approval.", file=sys.stderr)
-            return 2
-        if not r:
-            print("Commit blocked: unable to identify repository.", file=sys.stderr)
-            return 2
-        if not (hroot(r) / CFG).exists():
-            print(f"Commit blocked: {r} is not initialized for herd commit confirmation.", file=sys.stderr)
-            return 2
-        valid, msg = approval_valid(r, consume=False)
-        if not valid:
-            print(f"Commit blocked for {r.name}: {msg}", file=sys.stderr)
-            return 2
-
-    if re.search(r"(?:^|[\s;&|])(?:/[^\s]+/)?git\s+[^\n]*\bpush\b", command):
-        ok, reason = simple_git_push(command)
-        if not ok:
-            print(reason or "Push blocked: use a standalone `git push ...` after approval.", file=sys.stderr)
-            return 2
-        if reason == "dry-run":
-            return 0
-        if not r:
-            print("Push blocked: unable to identify repository.", file=sys.stderr)
-            return 2
-        if not (hroot(r) / CFG).exists():
-            print(f"Push blocked: {r} is not initialized for herd push confirmation.", file=sys.stderr)
-            return 2
-        valid, msg = push_approval_valid(r, consume=False)
-        if not valid:
-            print(f"Push blocked for {r.name}: {msg}", file=sys.stderr)
-            return 2
-    return 0
+    Behaviour preservation was proven by EXECUTION before the copies
+    were removed: 144 cases, independent fixtures per side, plain and
+    symlinked repo roots, comparing this file at HEAD against the
+    package. See the I2b evidence artifact.
+    """
+    return guards.guard_pretool()
 
 
 def guard_precommit(r):
-    valid, msg = approval_valid(r, consume=False)
-    if not valid:
-        print(f"HERD COMMIT BLOCKED: {msg}", file=sys.stderr)
-        return 1
-    print(f"HERD COMMIT PRE-CHECK AUTHORIZED: {r}", file=sys.stderr)
-    return 0
+    """Compatibility wrapper for the package-owned commit guard.
+
+    One accepted change comes with this, decided by supervisor ruling
+    R-11: the package resolves the repository path, so the
+    "HERD COMMIT PRE-CHECK AUTHORIZED" line now prints the RESOLVED
+    spelling. The exit code is unchanged in every executed case; a
+    guard keyed on an unresolved path could be addressed twice under
+    two names, which is why resolving is the canonical behaviour.
+    """
+    return guards.guard_precommit(r)
 
 
 def guard_reference_transaction(r, phase):
-    updates = []
-    for line in sys.stdin.read().splitlines():
-        parts = line.split()
-        if len(parts) >= 3:
-            updates.append((parts[0], parts[1], parts[2]))
-    if phase == "committed":
-        _consume_push_approval_on_transfer(r, updates)
-    head_ref = gitout(r, "symbolic-ref", "-q", "HEAD", allow_fail=True)
-    touches_head = bool(head_ref and any(ref == head_ref for _, _, ref in updates))
-    if not touches_head:
-        return 0
-    if phase == "prepared":
-        valid, msg = approval_valid(r, consume=False)
-        if not valid:
-            print(f"HERD HISTORY UPDATE BLOCKED: {msg}", file=sys.stderr)
-            return 1
-        return 0
-    if phase == "committed":
-        # Consume only after Git reports that the ref transaction committed.
-        approval_path(r).unlink(missing_ok=True)
-        return 0
-    return 0
+    """Compatibility wrapper for the package-owned reference-transaction
+    guard."""
+    return guards.guard_reference_transaction(r, phase)
 
 
 def guard_prepush(r, remote_name, remote_url):
-    updates = []
-    for line in sys.stdin.read().splitlines():
-        parts = line.split()
-        if len(parts) >= 4:
-            updates.append((parts[0], parts[1], parts[2], parts[3]))
-    valid, msg = push_approval_valid(r, remote_name=remote_name, remote_url=remote_url, updates=updates, consume=False)
-    if not valid:
-        print(f"HERD PUSH BLOCKED: {msg}", file=sys.stderr)
-        return 1
-    # Do not consume here: git also runs pre-push for `git push --dry-run`
-    # and gives this hook no way to tell a rehearsal from a real transfer.
-    # _consume_push_approval_on_transfer (reference-transaction, committed
-    # phase) consumes the token once the approved commit is observed on the
-    # approved remote-tracking ref.
-    print(f"HERD PUSH AUTHORIZED: {r} -> {remote_name}", file=sys.stderr)
-    return 0
+    """Compatibility wrapper for the package-owned pre-push guard.
+
+    The package raises `RuntimeError` where this file's copy raised
+    `SystemExit` (R-11: a layering difference, resolved by the library
+    raising and the CLI translating at its own boundary). The
+    translation below preserves CONTROL FLOW as well as the message:
+    a `SystemExit` carrying a string is what the rest of this file
+    already expects from a guard that refuses.
+
+    L-4, stated as one unit because the claim and its residual are
+    one unit (R-9 D-2): this handler is UNREACHABLE BY THE CURRENT
+    CALLERS — `guards.guard_prepush` reaches `push_identity` only
+    through `push_approval_valid`, which catches `RuntimeError` itself
+    and returns a refusal — and the residual is that "unreachable"
+    is a statement about today's package on the paths this suite
+    executes, not a property of the wrapper: a future package change
+    that raises past `push_approval_valid`, or a caller that reaches
+    `guards.guard_prepush` by another route, lands here and is
+    translated rather than crashing.
+
+    It is kept because R-11 puts the layering boundary in the CLI, and
+    because `herdctl.py:398` catches `SystemExit`: an untranslated
+    `RuntimeError` would change CONTROL FLOW at a guard boundary,
+    where a crashing pre-push hook is a worse failure mode than a
+    translated refusal. It is pinned by EXECUTION — an injected raiser
+    drives the wrapper — rather than by waiting for the package to
+    grow one; see `BoundaryTranslationTests`.
+    """
+    try:
+        return guards.guard_prepush(r, remote_name, remote_url)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc))
 
 
 def _consume_push_approval_on_transfer(r, updates):
@@ -628,28 +597,21 @@ def _install_pre_push_hook(r):
 
 
 def _install_one_git_hook(r, hook_name, marker, guard_line):
-    hook_raw = gitout(r, "rev-parse", "--git-path", f"hooks/{hook_name}")
-    hook = Path(hook_raw)
-    if not hook.is_absolute():
-        hook = (r / hook).resolve()
-    hook.parent.mkdir(parents=True, exist_ok=True)
-    if hook.exists() and marker in hook.read_text(errors="ignore"):
-        return
-    backup = hook.with_name(f"{hook_name}.pre-herd")
-    had_backup = False
-    if hook.exists():
-        if backup.exists():
-            raise SystemExit(f"Cannot safely install commit guard: both {hook} and {backup} exist.")
-        hook.rename(backup)
-        had_backup = True
-    backup_call = f'"{backup}" "$@"' if had_backup else ": # no previous hook"
-    hook.write_text(
-        "#!/usr/bin/env bash\n" + marker + "\nset -e\n"
-        + 'ROOT="$(git rev-parse --show-toplevel)"\n'
-        + guard_line + "\n"
-        + backup_call + "\n"
-    )
-    hook.chmod(0o755)
+    """Compatibility wrapper for the package-owned hook installer.
+
+    This helper had NO caller in this file when the copy was removed —
+    `install_git_guard` already delegated to the package — so the copy
+    was dead as well as duplicated. It is kept as a wrapper rather
+    than deleted, because deleting a name is a wider change than
+    collapsing one, and the package raises `RuntimeError` where this
+    file's callers expect `SystemExit`.
+    """
+    try:
+        return guards._install_one_git_hook(
+            r, hook_name, marker, guard_line
+        )
+    except RuntimeError as exc:
+        raise SystemExit(str(exc))
 
 
 def install_git_guard(r):
@@ -1659,48 +1621,28 @@ def send_runtime_reset(agent, command, timeout_ms=30000):
     ])
 
 
-def clear_contexts_internal(r, c, s):
-    t = load_task(r)
-    if t.get("status") == "ACTIVE":
-        raise SystemExit("Refusing to clear contexts during an ACTIVE top-level task.")
-    allowed_types = set(c.get("context", {}).get("clear_roles", ["supervisor", "lead", "executor", "reviewer"]))
-    reset_commands = c.get("context", {}).get("reset_commands", {"claude": "/clear", "codex": "/new"})
-    selected = []
-    for logical, agent in s["agents"].items():
-        typ = role_type_for_logical(logical)
-        if typ not in allowed_types:
-            continue
-        st = agent_info(agent)["status"]
-        if st not in {"idle", "done"}:
-            raise SystemExit(f"Refusing to clear `{logical}` while status is `{st}`. Resolve/finish it first.")
-        kind = c.get("roles", {}).get(typ, {}).get("kind")
-        reset = reset_commands.get(kind)
-        if not reset:
-            raise SystemExit(
-                f"No context reset command configured for runtime kind `{kind}` ({logical}). "
-                f"Set context.reset_commands.{kind} in {CFG}, or disable automatic clearing for that role."
-            )
-        selected.append((logical, agent, typ, kind, reset))
-
-    print("Checkpointed task context is preserved on disk; clearing live model context...")
-    for logical, agent, typ, kind, reset in selected:
-        print(f"Clearing {logical} -> {agent} ({kind}: {reset})")
-        p = send_runtime_reset(agent, reset)
-        if p.returncode:
-            raise SystemExit(p.stderr.strip() or p.stdout.strip() or f"Could not clear {logical}")
-
-    timeout = int(c["orchestration"].get("agent_task_timeout_ms", 600000))
-    agents = s["agents"]
-    for logical, agent, typ, _kind, _reset in selected:
-        print(f"Re-seeding {logical} contract")
-        p = prompt(agent, bootstrap_text(r, logical, typ, agents, c), timeout, True)
-        if p.returncode:
-            print(f"WARNING: contract re-seed for {logical} did not settle cleanly: {p.stderr.strip()}", file=sys.stderr)
-
-
 def clear_contexts_cmd(args):
-    r = resolve_repo_ref(args.repo)
-    clear_contexts_internal(r, cfg(r), state(r))
+    """Delegate to the package implementation.
+
+    The CLI used to carry a hand-copied duplicate of
+    `herdr.tasks.clear_contexts`. The copy drifted: it called
+    `bootstrap_text` without importing it, so the destructive `/clear`
+    loop ran to completion and the re-seed loop then died with
+    `NameError`, leaving every selected agent cleared and unseeded.
+    The duplicate is gone; this command now has one implementation
+    behind it, and `tests/test_parity.py` fails if a new copy of a
+    package function is added to this file.
+
+    The signature difference is the bridge: the package works from a
+    `HerdrInstance`, this command from a resolved repo path.
+    """
+    herd = HerdrInstance(resolve_repo_ref(args.repo))
+
+    try:
+        tasks.clear_contexts(herd)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc))
+
     print("Contexts cleared and role contracts re-seeded.")
 
 

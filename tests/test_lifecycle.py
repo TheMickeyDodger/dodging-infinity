@@ -9,6 +9,29 @@ from herdr.instance import HerdrInstance
 from herdr.lifecycle import start_herd
 
 
+
+def _bound_probe(agent):
+    """Herdr's answer for a freshly started agent.
+
+    R-53 AQ-2: bootstrap now BINDS every role from exact live evidence
+    before reporting the herd ready, so a bootstrap test has to model
+    the dependency answering. It used not to: within these tests Herdr's answer had no reason to
+    be stated, because `start_herd` did no probing at all. That is a
+    small illustration of the ruling itself — a bootstrap that asks
+    about none of its roles is unable to record what they are.
+    """
+    return {
+        "status": "idle",
+        "raw": {"result": {"agent": {
+            "name": agent,
+            "cwd": "/repo",
+            "workspace_id": "ws1",
+            "pane_id": "pane-" + agent,
+            "agent_session": {"value": "sess-" + agent},
+        }}},
+    }
+
+
 class HerdrLifecycleTests(unittest.TestCase):
     def make_instance(self):
         temp = tempfile.TemporaryDirectory()
@@ -71,6 +94,7 @@ class HerdrLifecycleTests(unittest.TestCase):
 
         return temp, HerdrInstance(repo)
 
+    @patch("herdr.lifecycle.agent_info", new=_bound_probe)
     @patch("herdr.lifecycle.run")
     @patch("herdr.lifecycle.prompt")
     @patch("herdr.lifecycle.start_agent")
@@ -149,6 +173,7 @@ class HerdrLifecycleTests(unittest.TestCase):
             4,
         )
 
+    @patch("herdr.lifecycle.agent_info", new=_bound_probe)
     @patch("herdr.lifecycle.run")
     @patch("herdr.lifecycle.prompt")
     @patch("herdr.lifecycle.start_agent")

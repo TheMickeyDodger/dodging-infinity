@@ -37,13 +37,20 @@ from herdr.observe import (
     _OBSERVE_MAX_REVIEW_FILES,
     _OBSERVE_MAX_STRING,
     observe,
+    observe_spawn_records,
     render_observation,
 )
 
 R = Path(__file__).resolve().parents[1]
 
+#: I6 (R-46/R-55/R-61) added four sections. The order is the order
+#: `observe` emits them, and this pin is what makes a section
+#: appearing or vanishing a test failure rather than a surprise for a
+#: consumer — which is why it is updated deliberately here rather
+#: than loosened to a set comparison.
 TOP_KEYS = [
     "schema_version", "generated_at", "completeness", "repository", "config",
+    "vintage", "checkpoint", "roles", "turns",
     "mission", "task", "runtime", "agents", "children", "reviews",
     "artifacts", "recent_tasks", "legacy", "diagnostics",
 ]
@@ -190,7 +197,7 @@ class SchemaStabilityTests(unittest.TestCase):
     def assert_schema(self, obs):
         self.assertEqual(list(obs.keys()), TOP_KEYS)
         self.assertEqual(obs["schema_version"], OBSERVE_SCHEMA_VERSION)
-        self.assertEqual(obs["schema_version"], 1)
+        self.assertEqual(obs["schema_version"], 3)
         self.assertIn(obs["completeness"], {"COMPLETE", "PARTIAL"})
         self.assertIsInstance(obs["generated_at"], int)
         self.assertIsInstance(obs["diagnostics"], list)
@@ -226,7 +233,8 @@ class SchemaStabilityTests(unittest.TestCase):
             self.assertEqual(obs["config"]["project_name"], "demo-project")
             self.assertEqual(obs["config"]["preset"], "all-claude")
             self.assertEqual(obs["config"]["review"]["max_rounds"], 5)
-            models = {r["role"]: r["model"] for r in obs["config"]["roles"]}
+            models = {r["role"]: r["configured_model"]
+                      for r in obs["config"]["roles"]}
             self.assertEqual(models["supervisor"], "fable")
             self.assertEqual(models["reviewer"], "gpt-5.6-sol")
             self.assertEqual(obs["task"]["id"], TASK_ID)
@@ -683,6 +691,129 @@ class UninitializedRepoTests(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertNotIn("Traceback", p.stderr)
             self.assertIn("Herd observation", p.stdout)
+
+
+class AllSpawnRecordProjectionTests(unittest.TestCase):
+    def assert_projection_shape(self, projection):
+        self.assertEqual(
+            set(projection),
+            {"state", "count", "truncated", "listed", "detail"},
+        )
+        self.assertIn(projection["state"], STATE_VOCAB)
+        self.assertIsInstance(projection["truncated"], bool)
+        self.assertIsInstance(projection["listed"], list)
+
+    def test_no_children_file_is_clean_zero(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = make_git_repo(td)
+            projection = observe_spawn_records(repo)
+            self.assert_projection_shape(projection)
+            self.assertEqual(projection["state"], "empty")
+            self.assertEqual(projection["count"], 0)
+            self.assertFalse(projection["truncated"])
+            self.assertEqual(projection["listed"], [])
+            self.assertIsNone(projection["detail"])
+
+    def test_projects_clean_outer_spawn_without_current_task(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = make_git_repo(td)
+            state = repo / ".herd" / "state"
+            record = {
+                "requested_at": 1,
+                "parent_repo": str(repo),
+                "parent_task_id": None,
+                "dependency": False,
+                "repo": "/managed/lease-realpath",
+                "task_id": "target-task-exact",
+                "task_status": "ACTIVE",
+                "workspace_id": "w",
+                "agents": {},
+            }
+            write_json(state / "children.json", {
+                "version": 1, "children": [record],
+            })
+            projection = observe_spawn_records(repo)
+            self.assert_projection_shape(projection)
+            self.assertEqual(projection["state"], "available")
+            self.assertEqual(projection["count"], 1)
+            self.assertEqual(projection["listed"], [{
+                "parent_task_id": None,
+                "dependency": False,
+                "repo": "/managed/lease-realpath",
+                "task_id": "target-task-exact",
+                "recorded_status": "ACTIVE",
+                "role": None,
+            }])
+            # Canonical observe remains current-task-correlated: no
+            # current task means zero children, even though the narrow
+            # all-spawn-record projection sees the persisted outer spawn.
+            canonical = observe(repo, probe_agents=False)
+            self.assertEqual(list(canonical), TOP_KEYS)
+            self.assertEqual(canonical["children"]["state"], "empty")
+            self.assertEqual(canonical["children"]["count"], 0)
+            self.assertEqual(canonical["children"]["listed"], [])
+
+    def test_malformed_json_object_list_and_record_fail_closed(self):
+        payloads = (
+            ("{not json", "malformed"),
+            (json.dumps([]), "malformed"),
+            (json.dumps({"children": {}}), "malformed"),
+            (json.dumps({"children": ["not-an-object"]}), "malformed"),
+            (json.dumps({"children": [{
+                "parent_task_id": None, "dependency": False,
+                "repo": "/child", "task_id": None,
+            }]}), "malformed"),
+        )
+        for payload, expected in payloads:
+            with self.subTest(payload=payload):
+                with tempfile.TemporaryDirectory() as td:
+                    repo = make_git_repo(td)
+                    path = repo / ".herd" / "state" / "children.json"
+                    path.parent.mkdir(parents=True)
+                    path.write_text(payload)
+                    projection = observe_spawn_records(repo)
+                    self.assert_projection_shape(projection)
+                    self.assertEqual(projection["state"], expected)
+                    self.assertIsNotNone(projection["detail"])
+
+    def test_hard_file_size_bound_reports_unreadable(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = make_git_repo(td)
+            path = repo / ".herd" / "state" / "children.json"
+            path.parent.mkdir(parents=True)
+            path.write_text("x" * (_OBSERVE_MAX_FILE_BYTES + 1))
+            projection = observe_spawn_records(repo)
+            self.assertEqual(projection["state"], "unreadable")
+            self.assertIsNone(projection["count"])
+            self.assertEqual(projection["listed"], [])
+            self.assertIn("observation limit", projection["detail"])
+
+    def test_exact_count_beyond_cap_discloses_truncation(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = make_git_repo(td)
+            total = _OBSERVE_MAX_CHILDREN + 7
+            write_json(
+                repo / ".herd" / "state" / "children.json",
+                {"children": [{
+                    "parent_task_id": None,
+                    "dependency": False,
+                    "repo": "/tmp/child-%d" % index,
+                    "task_id": "task-%d" % index,
+                    "task_status": "ACTIVE",
+                } for index in range(total)]},
+            )
+            projection = observe_spawn_records(repo)
+            self.assertEqual(projection["state"], "available")
+            self.assertEqual(projection["count"], total)
+            self.assertEqual(
+                len(projection["listed"]), _OBSERVE_MAX_CHILDREN
+            )
+            self.assertTrue(projection["truncated"])
+            self.assertIn(
+                "truncated to %d of %d"
+                % (_OBSERVE_MAX_CHILDREN, total),
+                projection["detail"],
+            )
 
 
 class CorrelationTests(unittest.TestCase):

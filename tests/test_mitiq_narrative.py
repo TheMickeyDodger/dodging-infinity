@@ -42,8 +42,10 @@ from telegram_operator import mission
 from workflow_authority import record as wa_record
 from workflow_authority import store as wa_store
 from workflow_authority.digest import control_policy_digest
+import _scope_hygiene as scope_hygiene
 
 from target_runtime import broker as broker_module
+from target_runtime import evidence_preservation as preserve_module
 from target_runtime import dispatch as dispatch_module
 from target_runtime import evidence as evidence_module
 from target_runtime import git_transport as git_transport_module
@@ -176,6 +178,19 @@ class MitiqNarrativeTests(unittest.TestCase):
         cls.state_dir = os.path.join(base, "state")
         os.makedirs(cls.state_dir)
         cls.workspaces = os.path.join(base, "workspaces")
+        # I1: injected user-global Claude configuration; within this
+        # fixture the write target is this temp path, not the
+        # developer's real ~/.claude.json.
+        cls.claude_config = os.path.join(base, ".claude.json")
+        # I1 round-01 C-1: HOME points at this fixture's base so the
+        # dispatch-time re-verification resolves the child's config to
+        # cls.claude_config (the real production derivation).
+        from unittest.mock import patch as _mp
+        _home = _mp.dict(os.environ, {"HOME": base})
+        _home.start()
+        cls.addClassCleanup(_home.stop)
+        with open(cls.claude_config, "w", encoding="utf-8") as handle:
+            json.dump({"projects": {}}, handle, indent=2)
         cls.control_before = tree_hash(cls.control)
         cls.target_before = tree_hash(cls.target_fixture)
 
@@ -235,7 +250,9 @@ class MitiqNarrativeTests(unittest.TestCase):
         cls._run_fake_target_herd(cls.lease_path)
 
         # PASS 2: verify (now COMPLETE via the REAL observe) ->
-        # complete.
+        # complete -> release_workspace. The release PRESERVES the
+        # target herd's evidence before reclaiming the workspace, so
+        # the artifact assertions below still find it.
         cls.pass2 = runtime_module.process_once(broker)
         cls.completed_record = cls._fresh_entry(cls)
 
@@ -296,9 +313,28 @@ class MitiqNarrativeTests(unittest.TestCase):
             # RECORDED ONLY — the child target herd is never actually
             # launched here; the live dispatch is a human step.
             spawn_requests.append((parent_repo, dict(request)))
-            return {"task_id": "mitiq-2802",
-                    "target_repo": os.path.join(
-                        os.path.realpath(cls.workspaces), "wf-0001")}
+            repo = os.path.join(
+                os.path.realpath(cls.workspaces), "wf-0001"
+            )
+            return {
+                "repo": repo,
+                "initialization": None,
+                "runtime": {"workspace_id": "mitiq-w"},
+                "task": {"id": "mitiq-2802", "status": "ACTIVE"},
+                "policy": {},
+                "parent_repo": parent_repo,
+                "child_record": {
+                    "requested_at": NOW,
+                    "parent_repo": parent_repo,
+                    "parent_task_id": None,
+                    "dependency": False,
+                    "repo": repo,
+                    "task_id": "mitiq-2802",
+                    "task_status": "ACTIVE",
+                    "workspace_id": "mitiq-w",
+                    "agents": {},
+                },
+            }
 
         # The REAL read-only projection over the leased workspace — the
         # observation is exactly what production computes (I5 closure),
@@ -315,6 +351,7 @@ class MitiqNarrativeTests(unittest.TestCase):
             transport=transport,
             workspaces_root=cls.workspaces,
             role_turn_fn=role_turn,
+            claude_config_path=cls.claude_config,
             spawn_fn=spawn_recorder,
             clock=lambda: NOW,
             observer_fn=observer,
@@ -500,7 +537,15 @@ class MitiqNarrativeTests(unittest.TestCase):
         self.assertEqual(len(self.spawn_requests), 1)
         parent_repo, request = self.spawn_requests[0]
         self.assertEqual(parent_repo, self.control)
-        self.assertEqual(sorted(request), ["alias", "target_repo", "task"])
+        self.assertEqual(
+            sorted(request), ["alias", "preset", "target_repo", "task"]
+        )
+        self.assertEqual(
+            request["preset"], dispatch_module.DI_TARGET_EXECUTION_PRESET
+        )
+        self.assertEqual(
+            dispatch_module.DI_TARGET_EXECUTION_PRESET, "all-claude"
+        )
         self.assertEqual(request["task"], MITIQ_HANDOFF)
         self.assertEqual(
             request["task"].encode("utf-8"),
@@ -515,11 +560,21 @@ class MitiqNarrativeTests(unittest.TestCase):
         # strategy-bearing content in the run: it appears target-side
         # and NOWHERE in the control chain. Regression: the control
         # chain authoring or carrying an engineering plan (H4).
-        strategy_file = os.path.join(
-            self.lease_path, ".herd", "state", "supervisor-strategy.md"
+        # R-37 AB-5: this reads the PRESERVED projection, not the
+        # workspace and not a test-local snapshot. Terminal cleanup
+        # reclaims the directory, and this assertion passes BECAUSE
+        # THE EVIDENCE SURVIVES cleanup — which is the property the
+        # mission needs for independent inspection, and which cleanup
+        # was destroying.
+        preserved = preserve_module.preserved_text(
+            self.state_dir, "wf-0001", "supervisor-strategy.md"
         )
-        with open(strategy_file) as f:
-            self.assertIn(TARGET_SUPERVISOR_STRATEGY, f.read())
+        self.assertIsNotNone(
+            preserved,
+            "the target Supervisor's strategy did not survive"
+            " terminal cleanup; an inspector has nothing to inspect",
+        )
+        self.assertIn(TARGET_SUPERVISOR_STRATEGY, preserved)
         for text in self._control_chain_texts():
             self.assertNotIn(
                 TARGET_SUPERVISOR_STRATEGY, text,
@@ -537,14 +592,19 @@ class MitiqNarrativeTests(unittest.TestCase):
         # the verified result the human sees is the Reviewer's own
         # summary. Regression: the result fabricated control-side
         # rather than carried from the target herd.
-        state = os.path.join(self.lease_path, ".herd", "state")
         for name, needle in (
             ("lead-evidence.md", TARGET_LEAD_EVIDENCE),
             ("executor-evidence.md", TARGET_EXEC_EVIDENCE),
             ("reviewer-evidence.md", TARGET_REVIEWER_SUMMARY),
         ):
-            with open(os.path.join(state, name)) as f:
-                self.assertIn(needle, f.read())
+            preserved = preserve_module.preserved_text(
+                self.state_dir, "wf-0001", name
+            )
+            self.assertIsNotNone(
+                preserved,
+                "%s did not survive terminal cleanup" % name,
+            )
+            self.assertIn(needle, preserved)
         self.assertEqual(
             self.completed_record["verified_result"]["summary"],
             TARGET_REVIEWER_SUMMARY,
@@ -633,9 +693,16 @@ class MitiqNarrativeTests(unittest.TestCase):
         )
         self.assertIsNotNone(self.completed_record["target_engine"])
         actions_pass2 = [a for a, _ in self.pass2["wf-0001"]]
+        # R-33 added the release: reaching COMPLETED now also reclaims
+        # the leased workspace in the SAME pass. Its absence was the
+        # finding — no production caller invoked release_workspace, so
+        # a finished workflow left its workspace and sessions behind,
+        # which is why orphans accumulated over days.
         self.assertEqual(
             actions_pass2,
-            [broker_module.ACTION_VERIFY, broker_module.ACTION_COMPLETE],
+            [broker_module.ACTION_VERIFY,
+             broker_module.ACTION_COMPLETE,
+             broker_module.ACTION_RELEASE],
         )
         # A COMPLETED workflow is terminal: no further LaunchAgent poll
         # can re-claim it, so no matter how long the service loops there
@@ -1634,6 +1701,18 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         flat = self.flat().lower()
         self.assertIn("runtime-minted one-shot", flat)
         self.assertIn("minted by the runtime, never by codex", flat)
+
+
+def setUpModule():
+    """R-47/R-48: this module drives a full release through the
+    Broker, which now reclaims the workflow's process-scope records
+    (R-54 AR-4). It runs against a PRIVATE base."""
+    global _ISOLATED_BASE
+    _ISOLATED_BASE = scope_hygiene.isolate_module()
+
+
+def tearDownModule():
+    scope_hygiene.release_module(_ISOLATED_BASE)
 
 
 if __name__ == "__main__":

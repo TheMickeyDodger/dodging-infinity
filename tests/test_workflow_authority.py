@@ -2005,6 +2005,57 @@ class BoundConstantPinTests(unittest.TestCase):
         "target_runtime/runtime.py": {
             "REQUEST_VALIDITY_SECONDS": 900,
         },
+        "target_runtime/workspace_trust.py": {
+            # Both derived from the installed Claude CLI's own
+            # proper-lockfile options for the global config write
+            # (`stale: 1e4`), not chosen here: DI must agree with the
+            # staleness window the CLI already enforces.
+            "LOCK_STALE_SECONDS": 10.0,
+            "LOCK_RETRY_SECONDS": 0.02,
+            "MAX_LOCK_ATTEMPTS": 100,
+        },
+        "target_runtime/evidence_preservation.py": {
+            # R-37/R-38. Bounds on the forensic archive captured
+            # before terminal cleanup reclaims a workspace. They cap
+            # a COPY, and every one of them is disclosed in the
+            # projection itself — a truncated file, an over-cap
+            # listing and an unreadable entry all make the archive
+            # report itself INCOMPLETE, derived from the entries
+            # rather than asserted beside them.
+            "MAX_FILE_BYTES": 65536,
+            "MAX_FILES": 32,
+            "MAX_TOTAL_BYTES": 1048576,
+        },
+        "target_runtime/process_ownership.py": {
+            # I5 / R-14. Both bound a REAP — local cleanup of a
+            # process this component started — and neither is
+            # reachable from a mission's execution path, so I3's
+            # no-mission-timeout line is untouched. The settle window
+            # is how long a group is watched after SIGKILL before the
+            # tree is reported NOT reaped rather than assumed gone.
+            "REAP_SETTLE_SECONDS": 5.0,
+            "REAP_POLL_SECONDS": 0.02,
+            # R-43 AG-1. Not a time bound: how many hex characters of
+            # the control identity digest ride in a scope NAME, to
+            # keep two deployments sharing one machine-global base
+            # out of each other's record space. The name is a label —
+            # the assignment record carries the FULL control identity
+            # and verification compares against that — so this bounds
+            # a disambiguator, not a credential. A collision is
+            # refused rather than silently inherited.
+            "CONTROL_DIGEST_CHARS": 16,
+        },
+        "target_runtime/readiness.py": {
+            # I3. Within this module the BOOTSTRAP bound is the only
+            # bound constant: it measures
+            # the window from the durable dispatch timestamp to the
+            # first positively evidenced readiness, and it stops
+            # applying for good once readiness is evidenced. No
+            # engineering mission is bounded by it, which
+            # `EngineeringRunsForHoursTests` and
+            # `test_no_mission_timer_behavioral` both drive.
+            "BOOTSTRAP_MAX_SECONDS": 900,
+        },
     }
 
     # (module relpath, constant name) -> NON-EMPTY justification.

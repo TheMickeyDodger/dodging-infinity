@@ -12,6 +12,7 @@ import json
 import unittest
 from unittest.mock import patch
 
+import _scope_hygiene as scope_hygiene
 from codex_gateway import codex_adapter, role_turn
 from telegram_operator import protocol
 from workflow_authority import record as record_module
@@ -156,6 +157,20 @@ class ConstantPinTests(unittest.TestCase):
             role_turn.ROLE_TURN_REFUSED, "role_turn_refused"
         )
         self.assertEqual(role_turn.ROLE_TURN_FAILED, "role_turn_failed")
+
+    def test_all_outcome_parsed_roles_require_string_encoded_body(self):
+        for role in role_turn.OUTCOME_PARSED_ROLES:
+            instruction = role_turn._ROLE_INSTRUCTIONS[role]
+            self.assertIn(
+                "The body MUST be a JSON string whose contents are",
+                instruction,
+                role,
+            )
+            self.assertIn(
+                "Do not place the role outcome object directly",
+                instruction,
+                role,
+            )
 
     def test_six_roles_only_no_seventh(self):
         # The instruction table's key set must be EXACTLY the six
@@ -534,23 +549,21 @@ class PromptTests(unittest.TestCase):
             "6cc8d4803aead904b2b7e7eb46e5f89e"
             "2d0e43968a80f9ffa6155c3a2dc26296",
             "prepare":
-            "ba7c2bd37d9a08693e0e57945d6bf80f"
-            "258e3504d50a824bcfca0df2984d3d2c",
+            "d8a2d89031a49c25c08b27c9e21b6ace"
+            "9cbcc2c07265b938870baf15e9618f6f",
             "handoff_validation":
-            "72887815f1286de781d41c571c06b725"
-            "694305628072486111dfa37fbe3fdb24",
+            "16c0e1c980ebb0f31720fc2a08b01abb"
+            "88a298663ac3f0a31e6778a908571eaf",
             "status_recovery":
-            "57022b5ea96184144a227abc84dd0122"
-            "0802bf83539a2ff5c08b28cef8e9f115",
-            # Recomputed for the I2 verification-instruction rewrite
-            # (evidence binding, lifecycle-insufficient statement,
-            # the two-completeness explanation; envelope contract and
-            # four outcomes unchanged) — a deliberate, reviewed
-            # update. The other five roles are UNCHANGED: I2's blast
-            # radius is exactly the verification instruction.
+            "fce26c1c9bd0b9c7db06fd4e4b429b2"
+            "a1305054110fc0a7e2c1976db13554353",
+            # Recomputed after the DI-REMOTE-2 role-outcome envelope
+            # contract was clarified: parsed roles require outer body
+            # to be a JSON string containing serialized role-outcome
+            # JSON. Planning and follow_up are unchanged.
             "verification":
-            "600f06d10119c20a46c445bc156bf214"
-            "963efde7faa5b6d2434447f3f294eda5",
+            "ea06fa17ba07d546aba17347492db9670"
+            "d6c19b4b1d9fcdeda86b4cdbc31f0ba",
             "follow_up":
             "838ad21e71d8b7830261bd50b7f26309"
             "2418353c4749ba0a1a540c2b822186ea",
@@ -1779,6 +1792,30 @@ class PlanningTurnTests(unittest.TestCase):
         self.assertIn(
             "> solve https://github.com/octo/widget please", prompt
         )
+        self.assertNotIn(
+            "The body MUST be a JSON string whose contents are", prompt
+        )
+        self.assertNotIn(
+            "Do not place the Mission Authorization object directly",
+            prompt,
+        )
+        self.assertIn(
+            "The Mission Authorization body MUST be a JSON object"
+            " placed directly in the outer body field.",
+            prompt,
+        )
+        self.assertIn(
+            "exactly these keys: remote_protocol_version (2), kind"
+            " (mission_authorization), body.",
+            prompt,
+        )
+        self.assertIn("ref MUST be a non-empty string", prompt)
+        self.assertIn(
+            "commit_sha MUST be exactly 40 lowercase hexadecimal"
+            " characters (0-9a-f)",
+            prompt,
+        )
+        self.assertIn("never an abbreviated SHA", prompt)
         # No record-shaped or capability content: no workflow context
         # delimiter, no lease/nonce/telegram vocabulary.
         self.assertNotIn("workflow context", prompt)
@@ -1916,6 +1953,21 @@ class PlanningTurnTests(unittest.TestCase):
             ["human_intent", "control_repository_realpath", "now",
              "turn_id_factory", "runner"],
         )
+
+
+def setUpModule():
+    """R-47/R-48: this module drives the production planning and
+    role-turn seams, which ASSIGN a scope before the spawn. It runs
+    against a PRIVATE base, so the machine-global store is not
+    somewhere this module can write — and therefore not somewhere it
+    could be tempted to tidy.
+    """
+    global _ISOLATED_BASE
+    _ISOLATED_BASE = scope_hygiene.isolate_module()
+
+
+def tearDownModule():
+    scope_hygiene.release_module(_ISOLATED_BASE)
 
 
 if __name__ == "__main__":

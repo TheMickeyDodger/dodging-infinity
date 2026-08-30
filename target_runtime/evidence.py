@@ -326,6 +326,12 @@ _PROTECTED_EXACT_PATHS = ("herdctl.py",)
 OBSERVE_DIAGNOSTIC_SOURCES = (
     "agents",
     "artifacts",
+    # I6 (R-46/R-55/R-61) added four observer sources. Re-derived
+    # DELIBERATELY here rather than loosened: this tuple is what a
+    # consumer binds against, and a vocabulary that grew silently
+    # would let a consumer keep reading a diagnostic set it no longer
+    # covers.
+    "checkpoint",
     "children",
     "config",
     "mission",
@@ -333,8 +339,11 @@ OBSERVE_DIAGNOSTIC_SOURCES = (
     "recent_tasks",
     "repository",
     "reviews",
+    "roles",
     "runtime",
     "task",
+    "turns",
+    "vintage",
 )
 
 # The observer's completeness-DEMOTING diagnostic states ("truth
@@ -364,18 +373,18 @@ VERIFICATION_CONSUMED_SOURCES = (
     "task",
 )
 
-# The reconcile decision's consumed-source set (I5, R-6 condition
-# 3): `children` (the control repository's recorded child spawns),
-# `task` (the LEASED workspace's own task identity — and, on the
-# control-side observation, the task id the children projection
-# correlates by), plus the projection-failure fallback
-# `observation`. BOTH observations the reconcile action takes (the
-# control-side children read and the lease-side task read) are
-# gated by this one set. Deliberately NOT global completeness: a
+# The reconcile decision's declared consumed-source set (I5, R-6
+# condition 3): `children` names the independently projected CONTROL
+# repository spawn-record source; `task` names the LEASED workspace's
+# own canonical task identity; `observation` is the canonical
+# projection-failure fallback. The control source has its own closed
+# clean/degraded shape and is gated directly by Broker; the canonical
+# source-scoped support primitive gates the lease observation with this
+# conservative registered set. Deliberately NOT global completeness: a
 # production observation is globally PARTIAL whenever agents are
 # unprobed, and a global gate here would make every production
-# reconciliation permanently BLOCKED (the E-1 defect in objective
-# B's clothes).
+# reconciliation permanently BLOCKED (the E-1 defect in objective B's
+# clothes).
 RECONCILE_CONSUMED_SOURCES = (
     "children",
     "observation",

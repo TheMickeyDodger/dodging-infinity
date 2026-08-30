@@ -1081,6 +1081,23 @@ class StartHerdCorruptStateContractTests(unittest.TestCase):
             mock_jrun = stack.enter_context(patch("herdr.lifecycle.jrun"))
             mock_split = stack.enter_context(patch("herdr.lifecycle.split"))
             stack.enter_context(patch("herdr.lifecycle.start_agent"))
+            # R-53 AQ-2: bootstrap now BINDS every role from live
+            # evidence before reporting ready, so Herdr's answer has
+            # to be modelled here too. Without it these contract
+            # tests would fail on the binding step rather than on the
+            # corrupt-state behaviour they exist to pin.
+            stack.enter_context(patch(
+                "herdr.lifecycle.agent_info",
+                side_effect=lambda agent: {
+                    "status": "idle",
+                    "raw": {"result": {"agent": {
+                        "name": agent, "cwd": "/repo",
+                        "workspace_id": "ws1",
+                        "pane_id": "pane-" + agent,
+                        "agent_session": {"value": "sess-" + agent},
+                    }}},
+                },
+            ))
             mock_prompt = stack.enter_context(patch("herdr.lifecycle.prompt"))
             stack.enter_context(
                 patch(

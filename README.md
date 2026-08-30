@@ -41,6 +41,31 @@ Dodging Infinity creates a reliable boundary between:
 - deterministic evidence
 - human-controlled delivery
 
+## What this system does not tell you
+
+Read this before the architecture, not after it. These are limits of the
+EVIDENCE, not gaps in the implementation, and each is pinned by a named test —
+see "Claim-to-pin map" below for which one.
+
+- **The model a RUNNING agent uses is not observable through the agent
+  interface (F1).** `herdctl observe` reports `configured_model` — the model a
+  role's CONFIGURATION asks for — and states that limit in its own diagnostics.
+  The projection carries no `running_model` field, no `model_observable` flag
+  and no verdict about a running model, because such a field would imply a
+  distinction the evidence cannot support.
+- **A verdict cannot distinguish a model substitution from a restart (F2).**
+  Where a substitution preserves the agent's session, the two situations are
+  not representably different in what this system can see, and the surface says
+  so rather than guessing.
+- **Observation is a reporting surface, not a gate.** It does not mutate,
+  repair, prompt agents, change workflow or control execution.
+- **A turn record written by a different build of the observer is a claim made
+  by different logic.** Skew is reported, naming both the build that wrote the
+  record and the build on disk, rather than reconciled silently.
+- **DI-REMOTE-2 is hermetically proven and LIVE-UNVERIFIED.** The first live
+  target dispatch, live Telegram Bot API v2 traffic, and live GitHub
+  interaction are human validation items and are not exercised by the suite.
+
 ## Why Dodging Infinity?
 
 Most agent systems ask a model to do more.
@@ -1778,9 +1803,10 @@ It does not:
 - change workflow
 - control execution
 
-## Observation schema v1
+## Observation schema v3
 
-Top-level keys:
+The projection is schema version 3. Top-level keys, in the order the projection
+emits them:
 
 ```text
 schema_version
@@ -1788,6 +1814,10 @@ generated_at
 completeness
 repository
 config
+vintage
+checkpoint
+roles
+turns
 mission
 task
 runtime
@@ -1799,6 +1829,10 @@ recent_tasks
 legacy
 diagnostics
 ```
+
+`vintage`, `checkpoint`, `roles` and `turns` arrived after schema v1: they carry
+the task a state file belongs to, the artifacts that disagree about it, the
+role-to-agent bindings, and the turn records for this task.
 
 Every source section uses a closed source-state vocabulary:
 
@@ -1814,6 +1848,25 @@ empty
 `completeness` describes visibility only.
 
 It does not affect execution.
+
+## What observation says about models
+
+A role's model appears in the projection under the key `configured_model`, and
+in the human render as `model-CONFIGURED=`. Both name the CONFIGURATION, and
+the unqualified `model` key that preceded them is gone rather than merely
+renamed alongside.
+
+The projection also carries the limit itself as a diagnostic, so a consumer
+that reads only the JSON meets it without reading this document:
+
+```text
+NO running-model value exists in this document and there is no unqualified
+`model` key: the model a RUNNING agent uses is not observable through the
+agent interface. `configured_model` states intent.
+```
+
+A role whose configuration names no model renders `(unset)` — stated as unset
+rather than guessed, and not reported as unknown.
 
 ## Hard observation bounds
 

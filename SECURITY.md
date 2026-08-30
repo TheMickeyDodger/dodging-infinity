@@ -273,3 +273,168 @@ otherwise:
   target files after dispatch today. If a future increment adds one
   (e.g. re-reading target content after dispatch), that enumeration
   MUST grow to cover it.
+
+## Managed workspace trust (DI-REMOTE-2 I1, unreleased)
+
+### The boundary in three parts
+
+**WHAT IT DOES.** Trust establishment writes the single
+`hasTrustDialogAccepted` key into one `projects` entry of the user-global
+`~/.claude.json`, so a Herdr starting in a freshly materialized managed
+workspace is not stopped by an interactive trust dialog no unattended run can
+answer.
+
+**THE EXACT SCOPE IT IS CONFINED TO.** One entry at one path: the
+`workspace.lease_path(workspaces_root, workflow_id)` this workflow itself
+materialized, under the DI-owned managed workspaces root. Outside that single
+entry sit every other project entry, every top-level key, and every path this
+workflow has not leased.
+
+**HOW IT FAILS CLOSED OUTSIDE THAT SCOPE.** Within this module a path outside
+the managed root, another workflow's lease, a subdirectory of this lease, a
+symlink resolving out of the root, a traversing path, a non-directory, an
+absent path, and a configuration DI does not account for each produce a
+refusal that leaves the file byte-unchanged. The refusal is durable: it appends
+a receipt whose summary begins `workspace trust not established`, names the
+problem code, and moves the workflow to the terminal BLOCKED phase, from which
+dispatch is unreachable.
+
+**WHERE IT DOES NOT FAIL CLOSED — disclosed, and mitigated at the point of
+use.** The CLI takes `<config>.lock` with `retries: 0` and, on contention,
+falls back to an UNLOCKED read-modify-write, so a CLI write that begins in that
+fallback can overwrite DI's entry after DI's read-back has already succeeded.
+The consequence is a fail-OPEN — the workspace untrusted when the Herdr starts
+— and it is bounded by re-verifying trust immediately before the spawn, against
+the configuration the child will actually read: a workspace that is no longer
+trusted refuses the dispatch durably. That check answers for that moment only.
+
+A Herdr the Runtime starts in a freshly materialized managed
+workspace is an interactive TTY session, and the Claude CLI gates the
+first interactive start in an unseen directory behind a trust dialog
+no unattended run can answer. The installed CLI exposes no `trust`
+verb, no flag, and no settings key that grants it; its own diagnostics
+name exactly one alternative, which is what DI does. This is a
+security surface, and its blast radius is bounded by construction:
+
+- **One key, one entry.** DI writes exactly one key,
+  `hasTrustDialogAccepted`, into exactly one `projects` entry of the
+  user-global `~/.claude.json`. Each other project entry and each
+  top-level key is byte-identical before and after.
+- **One path, derived not retyped.** The entry is only ever the exact
+  `workspace.lease_path(workspaces_root, workflow_id)` this workflow
+  itself materialized, under the DI-owned managed workspaces root.
+- **Everything else is refused with no write.** A path outside the
+  managed root, another workflow's lease, a subdirectory of this
+  lease, a symlink resolving out of the root, a traversing path, a
+  non-directory, and a path that does not exist each refuse with
+  their own problem code and leave the file byte-unchanged.
+- **No ancestor is written by this module.** Within it the managed
+  root and its ancestors are refused, for two reasons of unequal strength.
+  Unconditionally: writing a directory DI did not materialize is a
+  change to user-global state outside this module's stated blast
+  radius. As defence-in-depth: the CLI resolves trust by walking UP
+  from the working directory, so an ancestor entry can confer trust
+  on everything beneath it — which does **not** bite today, because
+  that walk is bounded at the enclosing git root and a materialized
+  workspace is its own git root (demonstrated by execution in this
+  increment's evidence), but does bite the moment a workspace is
+  materialized as a subdirectory of a repository.
+- **No global weakening within this write.** In the write DI makes,
+  no top-level key is added, changed or removed, and no
+  `allowedTools` or other permission surface is widened — neither in
+  DI's own entry nor in another's. Outside that write, what other
+  processes do to the file is not covered.
+- **A config DI does not account for is left alone.** Within this
+  module each of the following is a refusal rather than a repair, a
+  re-creation or a rewrite from scratch: missing, unreadable,
+  unparsable, a non-object root, a missing `projects` object, a
+  `projects` that is not an object, and an existing entry that is not
+  an object.
+- **Atomic write.** The new content goes to a temp file in the same
+  directory and is moved into place with a rename, so a concurrent
+  reader observes the whole old file or the whole new one, and an
+  interrupted write leaves the original byte-for-byte intact.
+- **The CLI's own lock.** The read-modify-write runs while holding
+  `<config>.lock`, the same `mkdir` lock directory the CLI itself
+  takes. Within this module a lock held by another writer is not
+  reclaimed or broken — sustained contention is a refusal, not a
+  forced write — and a lock DI holds is not heartbeated, so a DI
+  process that dies is reclaimed by the CLI's own staleness rule
+  instead of wedging the user's sessions. Outside that boundary, and
+  disclosed: a lock older than the CLI's own staleness window is
+  reclaimed once, and two DI processes seeing the same stale lock
+  have a small unguarded window.
+- **Disclosed residual: lost updates are bounded, not eliminated.**
+  The CLI acquires that lock with `retries: 0` and, on contention,
+  falls back to an UNLOCKED read-modify-write, so a CLI write that
+  begins in that fallback can still overwrite DI's entry. The
+  read-back below detects a write that did not survive to disk;
+  outside that moment it does not detect a later clobber. Left there,
+  the CONSEQUENCE would be
+  a fail-OPEN — the workspace untrusted at Herdr start, the Herdr
+  stopped at a dialog no unattended run can answer — which is the
+  exact failure this mechanism exists to prevent. It is therefore not
+  left there: trust is re-verified at the POINT OF USE, immediately
+  before the spawn, and a workspace that is no longer trusted refuses
+  the dispatch durably instead of starting a Herdr that would hang.
+- **Vendor facts are pinned to a CLI version.** Every statement above
+  about what the CLI itself does — the `projects` trust key, the
+  upward walk, `<config>.lock`, `retries: 0`, the 10s staleness
+  window, `realpath: true` — was derived from **`claude 2.1.251`**
+  and is true of that version, and of no other. Within that version
+  the real-CLI arms drive the actual binary and fail loudly on a
+  change to the gate; outside it — for the derived vendor constants
+  (`retries: 0`, the staleness window, `realpath: true`), which no
+  test observes the CLI performing. Outside the arms' reach a change
+  to those would go quietly false, so re-derive them whenever the
+  installed CLI moves.
+- **The configuration path is resolved before use.** A
+  `~/.claude.json` that is a symlink (a dotfiles checkout) keeps its
+  identity: within this module's own writes, DI locks, writes, and
+  reads back the RESOLVED path, so the symlink is not replaced by a
+  regular file and DI takes the same lock the CLI does. Outside that
+  boundary, and disclosed: another writer that renames the link path
+  is not covered.
+- **Trust is established within the boundary where it can be
+  consumed.** If the
+  configuration DI wrote is not the one the Herdr this dispatch would
+  start will actually read, the dispatch is refused durably rather
+  than reporting success for an effect that no component would
+  consume. The check covers that moment only.
+- **Read-back decides success.** The answer comes from a fresh read
+  of the file from disk rather than the in-memory document; a
+  mismatch is a refusal. That read answers for the file at that
+  moment, and not for its later state.
+- **Refusal is durable and actionable.** A failed establishment
+  appends a reason receipt naming the problem code and moves the
+  workflow to the terminal BLOCKED phase — within the phase machine
+  that is not a silent retry, not a fallback to an interactive
+  prompt, and not a step toward dispatch, which becomes unreachable.
+- **Idempotent.** Within this module, re-establishment on an entry
+  that already records trust performs no write.
+- **The grant is REVOKED at release (I5-1).** `workspace_trust.revoke`
+  removes exactly the entry this workflow established, at exactly its
+  own lease realpath, under the same discipline as establishment:
+  atomic, lock-held, post-write read-back, a corrupt configuration is
+  a refusal, and a failure is a durable actionable receipt. The
+  release path calls it BEFORE removing the workspace directory, and
+  `revoke` does not require that directory to exist — so a crash
+  between the two steps leaves the entry removable rather than
+  stranded, which is the condition that produced the observed orphan.
+  Revocation is idempotent, so a repeat is correct rather than an
+  error.
+
+  The boundary, stated with the guarantee: revocation reaches ONE
+  `projects` key, the one whose path equals this workflow's own
+  derived lease path inside the managed root. Outside that reach sit
+  another project's entry, an entry at a path this workflow has not
+  leased, and every top-level key — and `tests/test_ownership.py`
+  proves the boundary by comparing the surrounding configuration as
+  serialized text rather than by inspection.
+
+  Outside the revocation path, and disclosed: an entry written by an
+  earlier build that had no revocation is not removed retroactively
+  by this change; it is removed the next time that workflow reaches
+  release with its lease still recorded, and an entry whose workflow
+  record is gone entirely has no owner able to prove it and is
+  therefore left alone.

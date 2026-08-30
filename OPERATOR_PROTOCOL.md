@@ -18,6 +18,27 @@ Commit, push, release, and other delivery boundaries remain separately human-aut
 
 ---
 
+## Observation Limits
+
+Read these before acting on an observation. They bound what `herdctl observe`
+reports, and each is pinned by a named test recorded in the I8 claim-to-pin
+map.
+
+- The model a RUNNING agent uses is not observable through the agent
+  interface. `observe` reports `configured_model`, the model the role
+  CONFIGURATION asks for, and it states that limit in its own diagnostics.
+  Do not read a configured model as evidence of what a live agent is running.
+- A verdict does not distinguish a model substitution from a restart. Where a
+  substitution preserves the agent's session, the two situations are not
+  representably different in the evidence available here, so the surface
+  reports what it observed rather than deciding between them.
+- A turn record written by a different build of the observer is reported as
+  BUILD SKEW, naming both the build that wrote the record and the build on
+  disk. Treat such a record as a claim made by different logic.
+- A role with no turn recorded for the current task is OMITTED from the turn
+  listing rather than shown as healthy. An absent row is a question for the
+  operator, not a pass.
+
 ## Standard Workflow
 
 For an engineering objective:
@@ -438,18 +459,21 @@ sizes (per-field authority bound 8000; `MAX_ENVELOPE_CHARS` 16384). A
 `MAX_OUTCOME_DETAIL_CHARS` 2000. This section states the key set and
 routing normatively but is not the whole contract.
 
-A v2 response is ONE line starting at COLUMN 0 with:
+A fresh-planning Mission Authorization response is ONE line starting
+at COLUMN 0 with this shape:
 
 ```text
-DI-REMOTE-2 RESPONSE {"remote_protocol_version":2,"kind":"mission_authorization","body":"..."}
+DI-REMOTE-2 RESPONSE {"remote_protocol_version":2,"kind":"mission_authorization","body":{...}}
 ```
 
 - `remote_protocol_version` must be exactly `2`.
 - `kind` is one of `mission_authorization`, `role_outcome`.
-- `body` is the payload; exactly these three keys.
+- The outer envelope has exactly these three keys; `body` is the
+  kind-specific payload.
 
-For `mission_authorization`, `body` is a JSON Mission Authorization
-document with EXACTLY these keys: `objective`, `constraints`,
+For the fresh planning turn's `mission_authorization`, `body` is the
+JSON Mission Authorization object itself, not a string containing
+serialized JSON. It has EXACTLY these keys: `objective`, `constraints`,
 `rules`, `desired_outcome`, `acceptance`, `unresolved_questions`,
 `execution_scope`, `control`, `target`, `issue_or_pr`, `baseline`,
 `handoff`, `telegram_approval`, `workflow_id`, `human_intent`,
@@ -469,11 +493,18 @@ the Operator, so a document carrying `human_intent` is refused
 (`mission_codex_minted_human_intent`); a pre-filled binding is
 refused.
 
+`baseline` is an object with exactly `ref` and `commit_sha`. `ref`
+must be a non-empty string. `commit_sha` must be the fully resolved
+target baseline commit: exactly 40 lowercase hexadecimal characters
+(`0-9a-f`), never an abbreviated SHA.
+
 The Mission Authorization is produced by ROUTE (b): the legacy Codex
 turn's DI-REMOTE-2 marker is a ROUTING SIGNAL ONLY — its body carries
 no authority and is discarded — and it triggers a SEPARATE fresh
-restrictive planning turn that produces the authorization. The legacy
-turn may still return a DI-REMOTE-1 plan for the v1 local path.
+restrictive planning turn that produces the authorization. This legacy
+`mission_authorization` routing signal remains a non-empty string; it
+need not contain JSON and is never authority-validated. The legacy turn
+may still return a DI-REMOTE-1 plan for the v1 local path.
 
 The human sees the exact rendered mission and approves or rejects it
 ONCE, on the bound plan message, under the same displayed-content
@@ -490,10 +521,11 @@ observability and, on completion, runs a fresh verification turn and
 returns the verified result to Telegram exactly once. A DI-REMOTE-1
 approval can never authorize a v2 mission.
 
-For `role_outcome`, `body` carries `{role, outcome, detail}` from a
-fresh read-only role turn. The handoff-validation role is SHOWN the
-actual bounded target instruction content (a closed status set per
-allowlisted file) and may yield EXACTLY three outcomes:
+For `role_outcome`, `body` remains a non-empty JSON string whose
+contents are `{role, outcome, detail}` from a fresh read-only role turn;
+an object in the outer `body` field is refused. The handoff-validation
+role is SHOWN the actual bounded target instruction content (a closed
+status set per allowlisted file) and may yield EXACTLY three outcomes:
 `request_dispatch`, `needs_reauthorization`, `blocked`. Anything else
 fails closed. A role turn runs as a fresh Codex process rooted at the
 control repository under `--sandbox read-only --ignore-user-config
@@ -592,3 +624,31 @@ in `/status`, but a GENERAL stop/refusal-reason mechanism is a
 DEFERRED follow-up candidate (a human scope decision) — refusals
 outside those two scopes surface in Runtime results (not in
 `/status` or console output) and leave no record receipt today.
+
+### Managed workspace trust (DI-REMOTE-2 I1, unreleased)
+
+The Runtime establishes Claude workspace trust for the workspace it
+just materialized, immediately after materialization succeeds and
+before the workflow can advance one phase, so an unattended target
+Herdr reaches an interactive prompt with no terminal click.
+
+Operator-visible rules:
+
+- Trust is established for exactly one path within the managed
+  root: this workflow's own lease directory, and no other path.
+- The only thing written to the user-global Claude configuration is
+  the single `hasTrustDialogAccepted` key of that one entry.
+- A failure at this step is a durable BLOCKED workflow carrying a
+  receipt whose summary begins `workspace trust not established` and
+  names the exact problem code. It is a human decision to act on;
+  within the Runtime that failure is not retried, not turned into a
+  prompt, and not carried forward to dispatch.
+- Trust is checked again immediately before the Herdr is started,
+  against the configuration that Herdr will actually read. A
+  workspace that is no longer trusted at that moment, or a
+  configuration the child would not consult, blocks the dispatch
+  durably rather than starting a Herdr that would stop at the dialog.
+  The check is made at that moment only; a change after it is
+  outside its reach.
+- The vendor behaviour these rules depend on was derived from
+  `claude 2.1.251`; re-derive it when the installed CLI changes.

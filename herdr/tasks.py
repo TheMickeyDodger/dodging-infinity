@@ -7,6 +7,7 @@ import json
 import time
 from pathlib import Path
 
+from . import identity
 from .instance import HerdrInstance
 from .lifecycle import bootstrap_text
 from .runtime import agent_info, prompt, run
@@ -105,10 +106,103 @@ def send_runtime_reset(
     ])
 
 
+RESET_STATE_FILE = "context-reset.json"
+RESET_STATE_VERSION = 1
+
+RESET_PHASE_PLANNED = "planned"
+RESET_PHASE_CLEARED = "cleared"
+RESET_PHASE_RESEEDED = "reseeded"
+RESET_PHASE_BLOCKED = "blocked"
+
+PROBLEM_RESET_UNAVAILABLE = "context_reset_command_unavailable"
+PROBLEM_RESET_FAILED = "context_reset_clear_failed"
+PROBLEM_RESEED_FAILED = "context_reset_reseed_failed"
+
+
+def reset_state_path(herd: HerdrInstance) -> Path:
+    return herd.herd_root / "state" / RESET_STATE_FILE
+
+
+def load_reset_state(herd: HerdrInstance) -> dict:
+    """The durable record of the last context reset, or an empty one.
+
+    A file that will not parse is reported empty rather than raised:
+    the caller's next action is to write a fresh record anyway.
+    Outside that, and disclosed: this does not repair the file.
+    """
+    try:
+        document = json.loads(reset_state_path(herd).read_text())
+    except (OSError, ValueError):
+        return {"version": RESET_STATE_VERSION, "roles": {}}
+    if not isinstance(document, dict) or not isinstance(
+        document.get("roles"), dict
+    ):
+        return {"version": RESET_STATE_VERSION, "roles": {}}
+    return document
+
+
+def save_reset_state(herd: HerdrInstance, document: dict) -> None:
+    path = reset_state_path(herd)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n"
+    )
+
+
+def _record(document, logical, **fields):
+    entry = document["roles"].setdefault(logical, {})
+    entry.update(fields)
+    return entry
+
+
 def clear_contexts(
     herd: HerdrInstance,
-) -> None:
-    """Clear completed-task model contexts before new work."""
+    lister=None,
+) -> dict:
+    """Clear completed-task model contexts before new work.
+
+    Returns the durable reset record. Every step is written to disk as
+    it happens, so an interruption between clearing a context and
+    re-seeding its contract leaves a record a human can act on: the
+    role's phase stays `cleared` and carries its problem code and the
+    failure's text, whether the re-seed returned non-zero or raised —
+    including a KeyboardInterrupt. That is what replaces the four
+    silently unseeded agents the previous implementation left behind.
+    The record is the state; the return value is a copy of it.
+
+    Scope of that guarantee: failures inside the clear and re-seed
+    loops, which are wrapped. Outside it, and disclosed: a failure
+    between `_record` and the `save_reset_state` that follows it, or a
+    SIGKILL, leaves the record at its previous step — the phases are
+    ordered so that step is the conservative one, but no reason is
+    written for it.
+
+    Refusal shapes, stated because one of them CHANGED in the collapse
+    (round-01 finding E.1):
+
+    - A role whose runtime kind has no configured reset command is
+      recorded BLOCKED and the OTHER roles continue. The CLI copy this
+      replaced raised and aborted the whole operation. Per-role
+      blocking is the brief's "durable, reasoned BLOCK", and it means
+      one unconfigured role no longer prevents the rest from being
+      reset — a deliberate widening of what completes, not of what is
+      permitted.
+    - A BUSY agent still aborts the whole operation by raising. That
+      check runs ahead of the identity work, so within this function a
+      refused role leaves no durable binding write behind it. Outside
+      that ordering, and disclosed: a role already recorded `planned`
+      in an earlier iteration keeps that record, which is the point of
+      writing it.
+
+    Identity is decided per role before a command is sent (see
+    `herdr.identity`). A role whose agent Herdr fails to resolve is
+    rediscovered from the live listing on exact evidence only; one
+    that is neither present nor exactly rediscoverable is recorded
+    BLOCKED and receives no command. Scope: decided from the listing
+    `lister` returns at that moment. Outside it, and disclosed: an
+    agent replaced after the decision and before the send is not
+    caught here.
+    """
 
     config = herd.load_config()
     runtime = load_runtime(herd)
@@ -141,21 +235,40 @@ def clear_contexts(
         },
     )
 
+    document = {"version": RESET_STATE_VERSION, "roles": {}}
+    save_reset_state(herd, document)
+
     selected = []
+    blocked = []
+
+    # R-53 AQ-5: a CORRUPT bindings document is a REFUSAL, and the
+    # refusal is recorded durably before it is raised. The reader used
+    # to map corruption onto an empty document, so a damaged file
+    # became indistinguishable from a first run and this reset would
+    # have proceeded to rediscovery — and the next save would have
+    # overwritten the damaged file, destroying the only evidence that
+    # anything was wrong. Every role is blocked, because within this
+    # reset an identity record that is unreadable is no basis at all.
+    try:
+        bindings = identity.load_bindings(herd.herd_root)
+    except identity.BindingsCorrupt as exc:
+        for logical, agent in runtime["agents"].items():
+            _record(
+                document, logical, phase=RESET_PHASE_BLOCKED,
+                agent=agent,
+                problem=identity.PROBLEM_BINDINGS_CORRUPT,
+                detail=str(exc),
+            )
+            blocked.append(logical)
+        document["blocked"] = blocked
+        save_reset_state(herd, document)
+        return document
 
     for logical, agent in runtime["agents"].items():
         role_type = role_type_for_logical(logical)
 
         if role_type not in allowed_types:
             continue
-
-        status = agent_info(agent)["status"]
-
-        if status not in {"idle", "done"}:
-            raise RuntimeError(
-                f"Refusing to clear `{logical}` while "
-                f"status is `{status}`. Resolve/finish it first."
-            )
 
         kind = (
             config
@@ -167,10 +280,117 @@ def clear_contexts(
         reset = reset_commands.get(kind)
 
         if not reset:
-            raise RuntimeError(
-                f"No context reset command configured for runtime "
-                f"kind `{kind}` ({logical})."
+            _record(
+                document, logical, phase=RESET_PHASE_BLOCKED,
+                agent=agent, problem=PROBLEM_RESET_UNAVAILABLE,
+                detail=(
+                    "no context reset command configured for runtime "
+                    "kind `%s`" % kind
+                ),
             )
+            save_reset_state(herd, document)
+            blocked.append(logical)
+            continue
+
+        # Round-01 E.2: the busy refusal runs ahead of the identity
+        # work, so within this iteration a refused role leaves no
+        # durable binding write. It used to run after `classify` and
+        # after the
+        # REDISCOVER branch's `save_bindings`, which meant a busy
+        # agent could have its binding rewritten to disk and THEN be
+        # refused — a durable effect that disagreed with the
+        # operation's outcome, which is this increment's own subject.
+        #
+        # The probe is taken ONCE and reused, so the refusal and the
+        # classification decide on the same observation rather than on
+        # two reads that could disagree. A probe SENTINEL (`missing`,
+        # `unknown`) is not a busy agent and routes to classification;
+        # refusing it here would restore the conflation I2 removes.
+        probe = agent_info(agent)
+        status = probe["status"]
+
+        if identity.is_busy(status):
+            raise RuntimeError(
+                f"Refusing to clear `{logical}` while "
+                f"status is `{status}`. Resolve/finish it first."
+            )
+
+        binding = bindings["roles"].get(logical, {})
+        verdict = identity.classify(logical, binding, probe)
+
+        if verdict.action == identity.ACTION_REDISCOVER:
+            listing = (lister or _production_listing)()
+            record, problem, detail = identity.rediscover(
+                logical, binding, listing
+            )
+            if record is None:
+                _record(
+                    document, logical, phase=RESET_PHASE_BLOCKED,
+                    agent=agent, problem=problem, detail=detail,
+                    verdict=verdict.verdict,
+                )
+                save_reset_state(herd, document)
+                blocked.append(logical)
+                continue
+            agent = record.get("name") or agent
+            # The REDISCOVERED agent gets the same busy check the
+            # recorded one got, and it runs BEFORE the binding is
+            # written. Moving the original check ahead of the identity
+            # work (round-01 E.2) left this path with no status check
+            # at all, because the probe that ran earlier was of the
+            # name that no longer resolves. Checking here keeps the
+            # refusal and keeps it free of durable side effects.
+            rediscovered_status = record.get("agent_status")
+            if identity.is_busy(rediscovered_status):
+                raise RuntimeError(
+                    f"Refusing to clear `{logical}` while "
+                    f"status is `{rediscovered_status}`. "
+                    f"Resolve/finish it first."
+                )
+            binding = identity.binding_for(logical, agent, record)
+            bindings["roles"][logical] = binding
+            identity.save_bindings(herd.herd_root, bindings)
+            verdict = identity.Verdict(
+                logical, identity.VERDICT_REPLACED,
+                identity.ACTION_REBOOTSTRAP,
+                identity.PROBLEM_SESSION_REPLACED,
+                "rediscovered `%s` on exact evidence" % logical,
+            )
+
+        if verdict.action == identity.ACTION_BIND:
+            # R-53 AQ-3: an UNBOUND role BLOCKS here, and it does not
+            # get bound here. Binding is the BOOTSTRAP's job, from
+            # exact live evidence, before the herd is reported ready
+            # (`lifecycle.establish_role_bindings`). Binding it inside
+            # a reset would put a durable write back into the path
+            # round-01 E.2 cleaned of them, and would bind whatever is
+            # live at reset time — which is precisely the "adopt
+            # whatever answers to the name" behaviour this module
+            # exists to refuse.
+            _record(
+                document, logical, phase=RESET_PHASE_BLOCKED,
+                agent=agent, problem=verdict.problem,
+                detail=verdict.detail, verdict=verdict.verdict,
+            )
+            save_reset_state(herd, document)
+            blocked.append(logical)
+            continue
+
+        if verdict.action == identity.ACTION_BLOCK:
+            _record(
+                document, logical, phase=RESET_PHASE_BLOCKED,
+                agent=agent, problem=verdict.problem,
+                detail=verdict.detail, verdict=verdict.verdict,
+            )
+            save_reset_state(herd, document)
+            blocked.append(logical)
+            continue
+
+        _record(
+            document, logical, phase=RESET_PHASE_PLANNED, agent=agent,
+            verdict=verdict.verdict, problem=None, detail=None,
+        )
+        save_reset_state(herd, document)
 
         selected.append(
             (
@@ -193,17 +413,45 @@ def clear_contexts(
             f"({kind}: {reset})"
         )
 
-        result = send_runtime_reset(
-            agent,
-            reset,
-        )
+        try:
+            result = send_runtime_reset(
+                agent,
+                reset,
+            )
+        except BaseException as exc:
+            # Round-01 finding B, the clear half. An ESCAPING
+            # exception used to record no reason, leaving the durable
+            # record at "planned" with no failure text on it. Caught
+            # as
+            # BaseException because a KeyboardInterrupt at this point
+            # is one of the shapes that motivated the record.
+            _record(
+                document, logical, phase=RESET_PHASE_PLANNED,
+                problem=PROBLEM_RESET_FAILED,
+                detail="%s: %s" % (type(exc).__name__, exc),
+            )
+            save_reset_state(herd, document)
+            raise
 
         if result.returncode:
+            _record(
+                document, logical, phase=RESET_PHASE_BLOCKED,
+                problem=PROBLEM_RESET_FAILED,
+                detail=(
+                    result.stderr.strip()
+                    or result.stdout.strip()
+                    or f"Could not clear {logical}"
+                ),
+            )
+            save_reset_state(herd, document)
             raise RuntimeError(
                 result.stderr.strip()
                 or result.stdout.strip()
                 or f"Could not clear {logical}"
             )
+
+        _record(document, logical, phase=RESET_PHASE_CLEARED)
+        save_reset_state(herd, document)
 
     timeout = int(
         config["orchestration"].get(
@@ -219,25 +467,82 @@ def clear_contexts(
             f"Re-seeding {logical} contract"
         )
 
-        result = prompt(
-            agent,
-            bootstrap_text(
-                herd,
-                logical,
-                role_type,
-                agents,
-                config,
-            ),
-            timeout,
-            True,
-        )
+        try:
+            result = prompt(
+                agent,
+                bootstrap_text(
+                    herd,
+                    logical,
+                    role_type,
+                    agents,
+                    config,
+                ),
+                timeout,
+                True,
+            )
+        except BaseException as exc:
+            # Round-01 finding B, and the historical defect itself.
+            # The failure that motivated this increment was an
+            # EXCEPTION — a NameError raised from this loop — not a
+            # non-zero returncode. Before this, the returncode path
+            # recorded its reason two lines below and the exception
+            # path recorded none, which is the one failure mode the
+            # record exists for. BaseException because case C in the
+            # round-01 review is a KeyboardInterrupt.
+            _record(
+                document, logical, phase=RESET_PHASE_CLEARED,
+                problem=PROBLEM_RESEED_FAILED,
+                detail="%s: %s" % (type(exc).__name__, exc),
+            )
+            save_reset_state(herd, document)
+            raise
 
         if result.returncode:
+            _record(
+                document, logical, phase=RESET_PHASE_CLEARED,
+                problem=PROBLEM_RESEED_FAILED,
+                detail=(
+                    result.stderr.strip()
+                    or f"contract re-seed for {logical} did not settle"
+                ),
+            )
+            save_reset_state(herd, document)
             print(
                 f"WARNING: contract re-seed for "
                 f"{logical} did not settle cleanly: "
                 f"{result.stderr.strip()}"
             )
+            continue
+
+        _record(
+            document, logical, phase=RESET_PHASE_RESEEDED,
+            problem=None, detail=None,
+        )
+        save_reset_state(herd, document)
+
+    document["blocked"] = blocked
+    save_reset_state(herd, document)
+    return document
+
+
+def _production_listing() -> dict:
+    """The real `herdr agent list` payload, or an empty envelope.
+
+    A failed or unparsable listing yields an envelope with no agents,
+    which rediscovery reads as "no candidate" and BLOCKS on. Outside
+    that, and disclosed: this does not distinguish a genuinely empty
+    Herdr from an unreachable one — both block, which is the
+    fail-closed direction.
+    """
+    result = run(["herdr", "agent", "list"])
+
+    if result.returncode:
+        return {}
+
+    try:
+        return json.loads(result.stdout)
+    except ValueError:
+        return {}
 
 
 def _rules_text(

@@ -10,9 +10,10 @@ import sys
 import time
 from pathlib import Path
 
+from . import identity
 from .heartbeat import heartbeat_process_command
 from .instance import HerdrInstance
-from .runtime import jrun, prompt, run, split, start_agent
+from .runtime import agent_info, jrun, prompt, run, split, start_agent
 
 
 ROLE_FILES = {
@@ -246,6 +247,112 @@ Do not kill a slow agent without inspecting it first.
 
 {role}
 """
+
+
+class BindingsNotEstablished(Exception):
+    """Bootstrap could not bind every role from exact live evidence.
+
+    Raised rather than warned, and the direction is the whole point:
+    a herd whose roles are not bound is not honestly ready. Within
+    this module every unbound role classifies as UNBOUND, and a later
+    caller is unable to tell that apart from a role that failed to
+    start.
+    """
+
+
+#: How long `establish_role_bindings` will keep asking Herdr for a
+#: role's record before giving up. A LOCAL SETTLE BOUND on a probe of
+#: an agent that was just contracted — the same shape as this module's
+#: shell-ready wait. No mission is bounded by it.
+BINDING_PROBE_SETTLE_SECONDS = 30.0
+BINDING_PROBE_POLL_SECONDS = 0.5
+
+
+def role_binding_evidence(logical, agent, prober):
+    """``(binding, gap)`` for one role, from EXACT LIVE EVIDENCE.
+
+    Exactly one of the two is None. The evidence required is the same
+    evidence `classify` will later compare against: a readable agent
+    record, its stable identity, and its session id. Anything less is
+    a gap, and a gap is not written — a binding assembled from
+    partial evidence would read as authoritative and compare wrongly
+    forever after.
+    """
+    probe = prober(agent)
+    record = identity.agent_record(probe)
+    if record is None:
+        return None, (
+            "Herdr returned no readable record for `%s` (status %r)"
+            % (agent, (probe or {}).get("status"))
+        )
+    binding = identity.binding_for(logical, agent, record)
+    gap = identity.binding_gap(binding)
+    if gap is not None:
+        return None, gap
+    return binding, None
+
+
+def establish_role_bindings(herd, agents, prober=None, clock=None,
+                            sleeper=None,
+                            settle_seconds=None):
+    """THE PRODUCER R-53 FOUND MISSING (AQ-2).
+
+    `save_bindings` had exactly one production call site, inside
+    ACTION_REDISCOVER, so within a normal bootstrap no binding was
+    ever written. Both of I2's identity guarantees read that absent
+    file and fell through: the lookalike guard iterated an empty
+    mapping, the session-replacement guard tested a None, and an
+    unbound role reported healthy. Within this defect both guards
+    were correct, and their input had no producer.
+
+    This runs at the end of bootstrap, BEFORE the herd is reported
+    ready, and writes one binding per logical role from the live
+    record Herdr returns for it. A role whose evidence is not exact
+    is RETRIED for a bounded settle window, because it was contracted
+    seconds ago and may not be listed yet, and then RAISES: a herd
+    unable to say which sessions hold its roles is not a herd that
+    can be reported ready.
+
+    ``prober``/``clock``/``sleeper``/``settle_seconds`` exist so a
+    test can drive this against recorded evidence; production passes
+    none of them.
+    """
+    probe = prober or agent_info
+    now = clock or time.monotonic
+    wait = sleeper or time.sleep
+    settle = (
+        BINDING_PROBE_SETTLE_SECONDS if settle_seconds is None
+        else settle_seconds
+    )
+    bindings = identity.load_bindings(herd.herd_root)
+    deadline = now() + settle
+    gaps = {}
+    pending = dict(agents)
+    while True:
+        gaps = {}
+        for logical, agent in sorted(pending.items()):
+            binding, gap = role_binding_evidence(logical, agent, probe)
+            if gap is None:
+                bindings["roles"][logical] = binding
+            else:
+                gaps[logical] = gap
+        if not gaps or now() >= deadline:
+            break
+        pending = {
+            logical: agents[logical] for logical in gaps
+        }
+        wait(BINDING_PROBE_POLL_SECONDS)
+    if gaps:
+        raise BindingsNotEstablished(
+            "could not bind %d role(s) from live evidence within"
+            " %.0fs: %s. The herd is NOT reported ready, because an"
+            " unbound role classifies as UNBOUND and nothing later"
+            " can tell that apart from a role that never started"
+            % (len(gaps), settle,
+               "; ".join("%s: %s" % item for item in sorted(gaps.items())))
+        )
+    identity.save_bindings(herd.herd_root, bindings)
+    return bindings
 
 
 def start_herd(
@@ -532,6 +639,22 @@ def start_herd(
                     f"WARNING: {logical} bootstrap "
                     f"did not settle: {result.stderr.strip()}"
                 )
+
+        # R-53 AQ-2: BIND THE ROLES BEFORE REPORTING READY.
+        #
+        # Every role has now been started and contracted, so Herdr
+        # holds a live record for each one — which is the exact
+        # evidence a binding must come from. Writing it here, rather
+        # than leaving it to a later rediscovery, is what makes I2's
+        # two identity guarantees reachable at all: both read this
+        # file, and within a normal bootstrap nothing wrote it.
+        #
+        # It runs BEFORE the heartbeat controller and before this
+        # function returns, so a herd that reports ready is a herd
+        # whose roles are bound. A failure RAISES into the handler
+        # below rather than warning, because a warning would leave
+        # exactly the state this increment exists to remove.
+        establish_role_bindings(herd, agents)
 
         # Run the package-owned heartbeat controller.
         if orchestration.get(

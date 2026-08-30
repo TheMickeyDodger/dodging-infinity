@@ -96,7 +96,10 @@ from target_runtime import capability as capability_module
 from target_runtime import dispatch as dispatch_module
 from target_runtime import evidence as evidence_module
 from target_runtime import prepare as prepare_module
+from target_runtime import ownership as ownership_module
+from target_runtime import readiness as readiness_module
 from target_runtime import workspace as workspace_module
+from target_runtime import workspace_trust as workspace_trust_module
 
 ACTION_MATERIALIZE = "materialize_workspace"
 ACTION_PREPARE = "prepare"
@@ -146,6 +149,149 @@ def _production_observer(lease_repo):
     """
     from herdr.observe import observe
     return observe(lease_repo, probe_agents=False)
+
+
+def _production_readiness_probe(lease_repo):
+    """The production BOOTSTRAP-READINESS probe (I3).
+
+    Read-only and deliberately SEPARATE from `_production_observer`:
+    that observation runs with `probe_agents=False`, so its `agents`
+    section carries no live agent facts, and widening it would both
+    reproduce the recorded agents-unprobed PARTIAL defect and loosen
+    `_probe_one`'s allowlist on a path that feeds a model. This probe
+    instead reads the leased workspace's own runtime mapping and the
+    live agent registry, and returns `{logical: agent_record}` for the
+    logical roles that mapping names.
+
+    Within this function a target it is unable to see yields None,
+    which the readiness layer records as UNOBSERVABLE rather than as a
+    failure; outside it, what that absence means is the readiness
+    layer's decision and not this probe's.
+    """
+    import json
+    import os
+    state = os.path.join(lease_repo, ".herd", "state", "runtime.json")
+    try:
+        with open(state, encoding="utf-8") as handle:
+            agents = json.load(handle).get("agents")
+    except Exception:                                     # noqa: BLE001
+        return None
+    if not isinstance(agents, dict):
+        return None
+    from herdr.tasks import run
+    completed = run(["herdr", "agent", "list"])
+    if getattr(completed, "returncode", 1) != 0:
+        return None
+    try:
+        listed = json.loads(completed.stdout)["result"]["agents"]
+    except Exception:                                     # noqa: BLE001
+        return None
+    by_name = {
+        record.get("name"): record
+        for record in listed
+        if isinstance(record, dict)
+    }
+    probe = {}
+    for logical, name in agents.items():
+        record = by_name.get(name)
+        if record is not None:
+            probe[logical] = record
+    return probe
+
+
+def _production_live_workspaces():
+    """READ-ONLY projection of live workspaces and the agents in them.
+
+    Built by JOINING two Herdr listings, because neither alone
+    carries what the ownership proof needs: `herdr workspace list`
+    reports `workspace_id`, `label` and pane counts and has NO agent
+    mapping, while `herdr agent list` reports each agent's `name` and
+    its `workspace_id`. The join therefore yields, per workspace, the
+    SET OF AGENT NAMES currently in it.
+
+    Read-only in the strict sense: it lists and it returns: no
+    workspace, pane or session is created, focused, renamed or closed
+    here. Returns None when either listing is unreadable, which the
+    proof treats as degraded evidence and refuses on.
+    """
+    import json
+    from herdr.tasks import run
+    try:
+        listed = run(["herdr", "workspace", "list"])
+        agents = run(["herdr", "agent", "list"])
+    except Exception:                                     # noqa: BLE001
+        return None
+    if getattr(listed, "returncode", 1) != 0:
+        return None
+    if getattr(agents, "returncode", 1) != 0:
+        return None
+    try:
+        workspaces = json.loads(
+            listed.stdout
+        )["result"]["workspaces"]
+        agent_rows = json.loads(agents.stdout)["result"]["agents"]
+    except Exception:                                     # noqa: BLE001
+        return None
+    # R-32 X-1: # A ROW THIS IS UNABLE TO READ MAKES THE WHOLE PROJECTION DEGRADED.
+    # Skipping it is outside what this function may do.
+    #
+    # Skipping looks harmless and is not. The ownership proof compares
+    # the live agent NAME SET against the recorded one for EQUALITY,
+    # so its strength rests entirely on that set being COMPLETE. A
+    # silent skip makes it a possibly-strict subset, and while the
+    # usual consequence is a false refusal, the dangerous one is a
+    # truncated set that happens to EQUAL the recorded one — which
+    # reports OWNED and closes a workspace containing live agents
+    # nobody recorded. On a machine of fifteen workspaces, one ours,
+    # that is unrecoverable.
+    #
+    # So this returns None — the degraded value the consumer refuses
+    # on — rather than a narrower answer presented as a complete one.
+    # # `observe_spawn_records` already takes this posture for the same
+    # reason: within it a malformed record makes the WHOLE projection
+    # malformed.
+    by_workspace = {}
+    for row in agent_rows:
+        if not isinstance(row, dict):
+            return None
+        workspace_id = row.get("workspace_id")
+        name = row.get("name")
+        if not isinstance(name, str) or not name:
+            return None
+        if workspace_id is not None and not isinstance(
+            workspace_id, str
+        ):
+            return None
+        if isinstance(workspace_id, str):
+            by_workspace.setdefault(workspace_id, set()).add(name)
+    projection = []
+    for workspace in workspaces:
+        if not isinstance(workspace, dict):
+            return None
+        workspace_id = workspace.get("workspace_id")
+        if not isinstance(workspace_id, str) or not workspace_id:
+            return None
+        projection.append({
+            "workspace_id": workspace_id,
+            "agent_names": by_workspace.get(workspace_id, set()),
+        })
+    return projection
+
+
+def _production_spawn_records_observer(control_repo):
+    """The production read-only control-repository spawn projection."""
+    from herdr.observe import observe_spawn_records
+    return observe_spawn_records(control_repo)
+
+#: I5: a release that completed what it could PROVE it owned while
+#: leaving unprovable resources untouched. Distinct from a plain
+#: release so /status can tell a complete cleanup from a partial one
+#: without parsing prose.
+OUTCOME_RELEASED_DEGRADED = "released_degraded"
+
+#: Fixed marker for the cleanup receipt, so a reader of the durable
+#: record can find what a release actually removed.
+CLEANUP_RECEIPT_MARKER = "workflow cleanup"
 
 PROBLEM_UNKNOWN_ACTION = "broker_unknown_action"
 PROBLEM_UNKNOWN_WORKFLOW = "broker_unknown_workflow"
@@ -525,12 +671,25 @@ class TargetBroker(object):
 
     def __init__(self, store_directory, control_repository_realpath,
                  transport, workspaces_root, role_turn_fn,
-                 spawn_fn=None, clock=None, observer_fn=None):
+                 claude_config_path,
+                 spawn_fn=None, clock=None, observer_fn=None,
+                 spawn_records_fn=None, readiness_probe_fn=None,
+                 workspace_close_fn=None, live_workspaces_fn=None):
         import time
         self.store = store_module.WorkflowStore(store_directory)
         self.control_realpath = control_repository_realpath
         self.transport = transport
         self.workspaces_root = workspaces_root
+        # The user-global Claude configuration whose ONE trust key a
+        # freshly materialized workspace needs before an unattended
+        # interactive Herdr can start in it (I1). REQUIRED rather
+        # than defaulted, within this constructor: a Broker that
+        # silently resolved the real ~/.claude.json would make a
+        # hermetic test a writer of the developer's own
+        # configuration. Outside that, a caller may still pass the
+        # real path deliberately — which is what production does. Production wires it in
+        # target_runtime.cli; tests inject a temp path.
+        self.claude_config_path = claude_config_path
         # The handoff-validation Codex turn (I2 role_turn), injected
         # so hermetic tests never spawn a process; production wires
         # codex_gateway.role_turn.run_role_turn.
@@ -540,12 +699,43 @@ class TargetBroker(object):
         # herdr orchestrator bridge — no parallel path).
         self._spawn = spawn_fn or dispatch_module.production_spawn
         self._clock = clock or time.time
-        # The EXISTING read-only Herdr observability projection (I5
-        # D2), injected so hermetic tests never touch a real target
-        # tree; production wires herdr.observe. It is called with the
-        # leased workspace realpath only — a FIXED read-only call, no
-        # arbitrary-command surface.
+        # The canonical read-only Herdr observation (I5 D2), injected
+        # so hermetic tests never touch a real target tree; production
+        # wires herdr.observe. Reconciliation uses it for the LEASED
+        # workspace's independently observed task identity.
         self._observe = observer_fn or _production_observer
+        # A distinct narrow, read-only seam for ALL spawn records
+        # persisted by the CONTROL repository. It never observes or
+        # follows a child repository and does not alter canonical
+        # observe()["children"] current-task correlation semantics.
+        self._spawn_records = (
+            spawn_records_fn or _production_spawn_records_observer
+        )
+        # The I3 bootstrap-readiness probe: a read-only seam consulted
+        # ONLY inside the pre-readiness window of a DISPATCHED
+        # workflow. Optional with a production default, following
+        # `observer_fn` rather than `claude_config_path`, because this
+        # seam is a reader within its own scope: the argument for
+        # making the config path required was that a defaulted one
+        # would make a test a WRITER of the developer's configuration,
+        # and that argument does not carry over to a reader.
+        self._readiness_probe = (
+            readiness_probe_fn or _production_readiness_probe
+        )
+        # DOMAIN B (R-29 / R-30 V-5): terminal cleanup of the Herdr
+        # WORKSPACE a completed workflow leaves behind, and the
+        # long-lived agent sessions inside it.
+        #
+        # `workspace_close_fn` DEFAULTS TO NONE, and None means this
+        # Broker has NO capability to close a workspace: # it proves ownership and reports, and closes no workspace. There is
+        # deliberately no default reaching the real
+        # `herdr workspace close`. On a machine carrying fifteen
+        # workspaces of which one is ours, a mis-scoped close destroys
+        # other people's live sessions and is unrecoverable in a way a
+        # leaked helper process is not, so the capability is handed in
+        # on purpose or it is absent.
+        self._workspace_close = workspace_close_fn
+        self._live_workspaces = live_workspaces_fn
 
     # -- the fail-closed gate ------------------------------------------
 
@@ -784,11 +974,81 @@ class TargetBroker(object):
                 )
                 self.store.save(workflows)
             return _refused(problem, detail)
+        # ORDERING (I1 P8): trust for the workspace DI just
+        # materialized is established HERE — after materialization
+        # succeeded and BEFORE the workflow can advance one phase.
+        # Dispatch requires VALIDATED, reachable only through
+        # WORKSPACE_READY, so within the phase machine a refusal that
+        # stops the transition and goes to the terminal BLOCKED phase
+        # puts a Herdr start out of reach — structural, not merely
+        # conventional ordering. Outside the phase machine (a direct
+        # call to the spawn bridge) this ordering does not apply.
+        ok, problem, detail = workspace_trust_module.establish(
+            entry, self.workspaces_root, self.claude_config_path
+        )
+        if not ok:
+            # Durable and actionable: a reason receipt naming the
+            # problem code, then a terminal BLOCKED phase. Not a
+            # silent retry, not a fallback to an interactive
+            # prompt, not a step toward dispatch.
+            entry["receipts"] = list(entry["receipts"]) + [
+                workspace_trust_module.trust_block_receipt(
+                    problem, now=self._clock()
+                )
+            ]
+            record_module.apply_transition(
+                entry, record_module.PHASE_BLOCKED
+            )
+            self.store.save(workflows)
+            return _refused(problem, detail)
         record_module.apply_transition(
             entry, record_module.PHASE_WORKSPACE_READY
         )
         self.store.save(workflows)
         return BrokerOutcome(True, phase=entry["phase"])
+
+    def _trust_still_consumable(self, entry):
+        """Is the workspace trusted in the config the CHILD will read?
+
+        The child Herdr is started through the existing spawn bridge
+        and inherits this process's environment, so the configuration
+        it reads is ``default_config_path()`` resolved from the LIVE
+        HOME — not whatever path this Broker was told to write. When
+        those differ, the establishment does not be consumed by
+        a case and reporting success would be the recorded
+        accepted-and-dropped class in a production path.
+        """
+        lease = entry.get("workspace_lease")
+        if not isinstance(lease, dict) or not lease.get(
+            "path_realpath"
+        ):
+            return False, workspace_trust_module.PROBLEM_LEASE_MISSING, (
+                "no workspace lease is recorded to verify trust for"
+            )
+        target = lease["path_realpath"]
+        consumed = workspace_trust_module.resolve_config_path(
+            workspace_trust_module.default_config_path()
+        )
+        established = workspace_trust_module.resolve_config_path(
+            self.claude_config_path
+        )
+        if consumed != established:
+            return (
+                False,
+                workspace_trust_module.PROBLEM_CONFIG_NOT_CONSUMED,
+                "trust was established in %s but the Herdr this"
+                " dispatch would start reads %s; the establishment"
+                " could not be consumed" % (established, consumed),
+            )
+        if not workspace_trust_module.is_trusted(consumed, target):
+            return (
+                False,
+                workspace_trust_module.PROBLEM_TRUST_NOT_PRESENT,
+                "%s no longer records trust for %s at the point of"
+                " use; the Herdr would stop at the trust dialog"
+                % (consumed, target),
+            )
+        return True, None, None
 
     def _prepare(self, workflows, entry):
         ok, problem, detail = workspace_module.verify_leased_workspace(
@@ -944,6 +1204,33 @@ class TargetBroker(object):
         )
         if not ok:
             return _refused(problem, detail)
+        # I1 round-01 C-1 + H4: trust is re-verified AT THE POINT OF
+        # USE, against the configuration the Herdr about to be
+        # started will ACTUALLY read. Establishment happened phases
+        # ago; between then and now a concurrent CLI writer can drop
+        # DI's entry (the disclosed lost-update residual), and under
+        # an injected `--config` the file DI wrote is not the file
+        # the child reads at all. In either case the child would stop
+        # at the trust dialog, which an unattended run is not able to
+        # answer — a FAIL-OPEN in the guarantee this increment exists
+        # to provide, and success reported for an effect that no
+        # component consumed. Both are refused here, durably, before
+        # this dispatch spawns, within the window this check covers.
+        # Outside
+        # this check, and disclosed: a clobber occurring between it
+        # and the spawn is not covered.
+        ok, problem, detail = self._trust_still_consumable(entry)
+        if not ok:
+            entry["receipts"] = list(entry["receipts"]) + [
+                workspace_trust_module.trust_block_receipt(
+                    problem, now=self._clock()
+                )
+            ]
+            record_module.apply_transition(
+                entry, record_module.PHASE_BLOCKED
+            )
+            self.store.save(workflows)
+            return _refused(problem, detail)
         # Ruling R-2: the INITIAL dispatch stamps the dispatch-time
         # protected-surface baseline receipt. The digest is computed
         # BEFORE any durable write: a REFUSED digest (over-bound,
@@ -967,12 +1254,13 @@ class TargetBroker(object):
                         surface["status"], surface["detail"],
                     ),
                 )
-        # The spawn request: exactly three fields, all resolved from
-        # the protected record. The INITIAL dispatch is the stored
-        # handoff text BYTE-EXACT (Supervisor-first); a FOLLOW-UP
-        # (D6) is a corrective brief built ONLY from authority fields
-        # + recorded failed-acceptance evidence, carrying no technical
-        # solution.
+        # The spawn request: exactly four fields. Target/task/alias
+        # are resolved from the protected record; preset is the fixed
+        # DI-owned Runtime execution posture. The INITIAL dispatch is
+        # the stored handoff text BYTE-EXACT (Supervisor-first); a
+        # FOLLOW-UP (D6) is a corrective brief built ONLY from
+        # authority fields + recorded failed-acceptance evidence,
+        # carrying no technical solution.
         if follow_up:
             request = dispatch_module.build_follow_up_spawn_request(
                 entry
@@ -1074,6 +1362,46 @@ class TargetBroker(object):
             "completeness": completeness,
         }
 
+    def _readiness_gate(self, workflows, entry):
+        """The I3 bootstrap-readiness gate for a DISPATCHED workflow.
+
+        Returns a BrokerOutcome when the workflow STOPPED durably, and
+        None when it did not — including every case where readiness is
+        already evidenced, which is the case an engineering mission is
+        in for all but the first minutes of its life.
+
+        Writes at most one receipt per STATE CHANGE, following
+        `_note_observation`: a target polled repeatedly while its roles
+        come up does not churn the store, and a restart re-reads the
+        same durable states rather than replaying them, because the
+        receipt is written only when the newly derived state differs
+        from the last one already on the record.
+        """
+        previous = readiness_module.last_recorded_state(entry)
+        state, detail, _pairs, _probed, stop = readiness_module.evaluate(
+            entry,
+            lambda: self._readiness_probe(
+                entry["workspace_lease"]["path_realpath"]
+            ),
+            self._clock(),
+        )
+        if state != previous:
+            entry["receipts"] = list(entry["receipts"]) + [
+                readiness_module.readiness_receipt(
+                    state, detail, now=self._clock()
+                )
+            ]
+            self.store.save(workflows)
+        if not stop:
+            return None
+        problem = readiness_module.problem_for(state)
+        if entry["phase"] not in record_module.TERMINAL_PHASES:
+            record_module.apply_transition(
+                entry, record_module.PHASE_BLOCKED
+            )
+            self.store.save(workflows)
+        return _refused(problem, detail)
+
     def _note_observation(self, entry, observation):
         """Record the last DISTINCT target observation (I6 carried
         item). Mutates ``entry["last_observation"]`` and returns True
@@ -1165,6 +1493,19 @@ class TargetBroker(object):
         observation = self._observation_context(entry)
         observation_changed = self._note_observation(entry, observation)
         if not observation["target_complete"]:
+            # I3: THIS is where a bootstrap failure and a legitimately
+            # long mission were previously indistinguishable — both
+            # arrived here and waited. The readiness gate separates
+            # them, and separates them in exactly one direction: it
+            # can stop a workflow that, within the bootstrap window,
+            # has not yet been ready. Outside
+            # that case it returns from durable state, and within that
+            # path there is no probe, no clock read and no bound once
+            # readiness has been evidenced once. An engineering
+            # mission does not acquire a deadline here.
+            stopped = self._readiness_gate(workflows, entry)
+            if stopped is not None:
+                return stopped
             # Legitimate wait: no transition. A store write happens
             # ONLY when the observed pair changed (so an indefinitely
             # unobservable target is recorded once, then quiet).
@@ -1270,11 +1611,17 @@ class TargetBroker(object):
         )
 
     def _observe_raw(self, repo_path):
-        """One guarded read-only observation (either the leased
-        workspace or the control repository); None on any failure —
-        the caller treats None as a degraded observation."""
+        """One guarded canonical observation; None on any failure."""
         try:
             raw = self._observe(repo_path)
+        except Exception:
+            return None
+        return raw if isinstance(raw, dict) else None
+
+    def _spawn_records_raw(self):
+        """One guarded control-repository spawn-record projection."""
+        try:
+            raw = self._spawn_records(self.control_realpath)
         except Exception:
             return None
         return raw if isinstance(raw, dict) else None
@@ -1316,13 +1663,12 @@ class TargetBroker(object):
         the durable block.
 
         The binding proof (D-B3): the control repository's own
-        recorded child (its `repo` REALPATH equal to the leased
-        workspace realpath EXACTLY), the leased workspace's own
-        observation reporting the SAME task id, both observations
-        source-scoped supported (R-6 condition 3, the registered
-        reconcile consumed set — never global completeness), and
-        EXACTLY ONE candidate. The deterministic alias is never
-        consulted: herd's child records carry none.
+        persisted spawn record (its already-realpath `repo` equal to
+        the leased workspace realpath EXACTLY), the leased workspace's
+        own canonical observation reporting the SAME task id, clean
+        bounded projections on both sides, and EXACTLY ONE candidate.
+        The deterministic alias is never consulted: herd's child
+        records carry none.
         """
         ok, problem, detail = workspace_module.verify_leased_workspace(
             entry, self.transport, self.workspaces_root
@@ -1344,40 +1690,47 @@ class TargetBroker(object):
         lease_real = os.path.realpath(
             entry["workspace_lease"]["path_realpath"]
         )
-        # Control-side observation: the recorded child evidence.
-        control_raw = self._observe_raw(self.control_realpath)
-        supported, blocking = evidence_module.observation_supports(
-            control_raw, evidence_module.RECONCILE_CONSUMED_SOURCES
-        )
-        if not supported:
+        # Control-side evidence: ALL persisted spawn records, including
+        # valid parent_task_id=None / dependency=False outer spawns.
+        control_records = self._spawn_records_raw()
+        if control_records is None:
             return self._reconcile_block(
                 workflows, entry, PROBLEM_RECONCILE_DEGRADED,
-                "the control-side observation is degraded in a"
-                " consumed source (%s); a partial view is never a"
-                " binding proof" % ", ".join(sorted({
-                    str(d.get("source")) for d in blocking
-                })),
+                "the control-side spawn-record projection is"
+                " unavailable; a partial view is never a binding"
+                " proof",
             )
-        children = (
-            control_raw.get("children")
-            if isinstance(control_raw.get("children"), dict) else {}
-        )
-        if children.get("truncated") is True:
+        if control_records.get("truncated") is True:
             return self._reconcile_block(
                 workflows, entry, PROBLEM_RECONCILE_TRUNCATED,
-                "the recorded child listing is TRUNCATED; a listing"
+                "the spawn-record listing is TRUNCATED; a listing"
                 " that may omit a candidate is never a binding proof",
             )
-        if children.get("state") not in ("available", "empty"):
+        if control_records.get("state") not in ("available", "empty"):
             return self._reconcile_block(
                 workflows, entry, PROBLEM_RECONCILE_DEGRADED,
-                "the recorded child listing is not cleanly readable"
-                " (state %r)" % (children.get("state"),),
+                "the control-side spawn records are not cleanly"
+                " readable (state %r)"
+                % (control_records.get("state"),),
             )
         listed = (
-            children.get("listed")
-            if isinstance(children.get("listed"), list) else []
+            control_records.get("listed")
+            if isinstance(control_records.get("listed"), list) else None
         )
+        count = control_records.get("count")
+        if (
+            listed is None
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            or count != len(listed)
+        ):
+            return self._reconcile_block(
+                workflows, entry, PROBLEM_RECONCILE_DEGRADED,
+                "the control-side spawn-record projection has a"
+                " malformed count/listing shape; it is never a"
+                " binding proof",
+            )
         # Lease-side observation: the workspace's OWN task identity.
         lease_raw = self._observe_raw(lease_real)
         supported, blocking = evidence_module.observation_supports(
@@ -1407,6 +1760,34 @@ class TargetBroker(object):
                 " is never a binding proof"
                 % (lease_task.get("state"),),
             )
+        # I4 item 2. BOTH sides are realpath'd here.
+        #
+        # The audit found the writer already resolves: within
+        # `control_plane.spawn_child` the target is rebound to
+        # `Path(target_repo).expanduser().resolve()` BEFORE the record
+        # is built, so within that writer the `str(target)` fallback
+        # is resolved too, and `spawn` has a single return carrying
+        # `repo`. So a raw comparison was in fact sound for records
+        # that writer produced; records from another writer are
+        # outside what was checked.
+        #
+        # It is not left raw, for two reasons. First, within this
+        # module its soundness rested on a property of a DIFFERENT
+        # module that no assertion here covered — an undocumented
+        # coincidence rather than a guarantee. Second, the failure
+        # DIRECTION is bad in a
+        # way that "fail-closed" hides: a missed match yields
+        # PROBLEM_RECONCILE_NO_MATCH and a durable block, converting a
+        # RECOVERABLE dispatch into a permanent stranding, which is
+        # the dead-end class this task exists to close. Safe and
+        # correct are not the same thing here.
+        #
+        # Within this comparison, resolving both sides only ADDS a
+        # match, and only between two spellings of the SAME FILE, so a
+        # workflow is not bound to a different workspace. Outside
+        # that: a record naming a path that no longer exists resolves
+        # lexically, which is the behaviour the lease side already
+        # had.
         matching = [
             candidate for candidate in listed
             if isinstance(candidate, dict)
@@ -1417,8 +1798,8 @@ class TargetBroker(object):
             return self._reconcile_block(
                 workflows, entry, PROBLEM_RECONCILE_NO_MATCH,
                 "no recorded child names this workflow's leased"
-                " workspace (exact realpath comparison over %d"
-                " recorded child(ren)); nothing provable to bind"
+                " workspace (realpath comparison on both sides over"
+                " %d recorded child(ren)); nothing provable to bind"
                 % len(listed),
             )
         recorded_ids = [
@@ -1481,6 +1862,42 @@ class TargetBroker(object):
         self.store.save(workflows)
         return BrokerOutcome(True, phase=entry["phase"])
 
+    def _retire_process_scopes(self, entry, report):
+        """Reclaim this workflow's scope records (R-54 AR-4).
+
+        Separated from `_release` so the destructive step has its own
+        named function and its own row in the cleanup report, rather
+        than being an unnamed tail of a long method.
+        """
+        from target_runtime import process_ownership as _own
+        control = (
+            entry.get("control_identity") or {}
+        ).get("repository_realpath")
+        if not isinstance(control, str) or not control:
+            report.record(
+                "process_scopes", entry["workflow_id"],
+                ownership_module.UNPROVABLE,
+                detail="the record names no control repository, so no"
+                       " scope can be PROVEN to belong to this"
+                       " workflow; nothing is removed",
+            )
+            return
+        retired, refused = _own.retire_workflow_scopes(
+            control, entry["workflow_id"]
+        )
+        for directory, reason in refused:
+            report.record(
+                "process_scopes", directory,
+                ownership_module.UNPROVABLE, detail=reason,
+            )
+        if retired:
+            report.record(
+                "process_scopes", entry["workflow_id"],
+                ownership_module.OWNED, ok=True,
+                detail="retired %d process-scope record(s)"
+                       % len(retired),
+            )
+
     def _release(self, workflows, entry):
         if entry["phase"] not in record_module.TERMINAL_PHASES:
             return _refused(
@@ -1488,10 +1905,491 @@ class TargetBroker(object):
                 "release requires a terminal phase; the workflow is"
                 " %s" % entry["phase"],
             )
-        ok, problem, detail = workspace_module.release(
-            entry, self.workspaces_root, now=self._clock()
+        report = ownership_module.CleanupReport()
+        # I5-1. Trust is revoked BEFORE the directory is removed, and
+        # the order is load-bearing in one direction only: while the
+        # directory still exists the ownership check is at its
+        # strictest. `revoke` itself does NOT require the directory,
+        # so a crash between these two steps leaves a second release
+        # able to finish the job rather than stranding the entry —
+        # which is the live condition this increment was pointed at.
+        recorded = ownership_module.recorded_lease_realpath(entry)
+        if recorded is None:
+            report.record(
+                "trust", entry["workflow_id"],
+                ownership_module.UNPROVABLE,
+                detail="no lease realpath is recorded, so no trust"
+                       " key can be PROVEN to belong to this"
+                       " workflow; nothing is removed",
+            )
+        else:
+            key = workspace_trust_module.trust_key(recorded)
+            verdict = ownership_module.owns_trust_entry(
+                entry, key, self.workspaces_root
+            )
+            if verdict != ownership_module.OWNED:
+                report.record("trust", key, verdict)
+            else:
+                ok, problem, detail = workspace_trust_module.revoke(
+                    entry, self.workspaces_root,
+                    self.claude_config_path,
+                )
+                report.record(
+                    "trust", key, ownership_module.OWNED,
+                    ok=ok, detail=problem,
+                )
+                if not ok:
+                    entry["receipts"] = list(entry["receipts"]) + [
+                        workspace_trust_module.revoke_block_receipt(
+                            problem, now=self._clock()
+                        )
+                    ]
+        # R-31 W-3: THE DESTRUCTIVE STEP COMES LAST.
+        #
+        # Sessions are closed BEFORE the managed directory is deleted.
+        # The previous order deleted the directory first, so even
+        # fully wired it would have killed agents only after their
+        # workspace was already gone — the third instance in this
+        # increment of an irreversible step running before the step
+        # that makes it safe (the first was `Popen` before the record
+        # that attributes it; the second was freeze state restored
+        # after the fact). `tests/test_ownership.py`'s
+        # `DestructiveOrderingClosureTests` is the structural closure
+        # for the class rather than a third reorder.
+        #
+        # Idempotent on re-entry: the session close proves ownership
+        # from durable records and finds no live workspace the second
+        # time, which is a REFUSAL rather than a second close; and
+        # `workspace_module.release` refuses a lease already released.
+        # So closed-but-not-deleted is a re-enterable state, and the
+        # receipt says which half completed.
+        # R-37 AB-1: PRESERVE THE TARGET EVIDENCE FIRST.
+        #
+        # Before the sessions are closed and before the directory is
+        # deleted, because both destroy what it reads. Reclaiming live
+        # resources and preserving forensics are different
+        # obligations, and cleanup was satisfying the first while
+        # silently destroying the second — the run finished and the
+        # proof that the chain had worked went with the workspace.
+        #
+        # It copies bytes and records a digest of each FULL file, so a
+        # preserved artifact is bound to what was actually there;
+        # reconstructing or summarising would be worse than losing it,
+        # because a reader could not tell.
+        from target_runtime import evidence_preservation as preserve_module
+        # AC-2: the workspace identity comes from the SAME unique
+        # binding the close is about to act on, derived ONCE here and
+        # handed to both. # Two independent derivations of one identity is how a preserved
+        # record could name one workspace while the close named another,
+        # with no check between them.
+        proof = self._domain_b_proof(entry)
+        proof_workspace_id = (
+            proof.workspace_id if proof is not None else None
         )
-        if not ok:
-            return _refused(problem, detail)
+        # THE OWNERSHIP VERDICT IS DERIVED ONCE, HERE, AND USED TWICE.
+        #
+        # It moved ahead of preservation deliberately. Preservation
+        # READS the managed directory and copies its bytes into this
+        # workflow's archive, so running it against a directory this
+        # workflow has not been PROVEN to own would archive somebody
+        # else's evidence under this workflow's id — and, because a
+        # missing required artifact HALTS, an unowned or already-gone
+        # directory would also mask the refusal that should have been
+        # reported (a path mismatch, a lease already released). Only
+        # an OWNED directory is read, and only an OWNED directory is
+        # the one the destructive steps below will act on, which is
+        # the case preservation exists to precede.
+        workspace_verdict = ownership_module.owns_workspace(
+            entry, recorded if recorded is not None else "",
+            self.workspaces_root,
+        )
+        directory_present = (
+            recorded is not None and os.path.isdir(recorded)
+        )
+        if recorded is not None and (
+            workspace_verdict == ownership_module.OWNED
+        ) and not directory_present:
+            # ALREADY GONE. Recorded rather than skipped silently: a
+            # release re-entered after the directory was removed has,
+            # within this branch, no evidence left to preserve.
+            # Halting here would report degradation in place of the
+            # clean refusal `workspace_module.release` already gives
+            # for a lease released once.
+            report.record(
+                "target_evidence", entry["workflow_id"],
+                ownership_module.UNPROVABLE,
+                ok=True,
+                detail="the managed directory is already absent, so"
+                       " there is no target evidence to preserve and"
+                       " nothing downstream can destroy",
+            )
+        elif recorded is not None and (
+            workspace_verdict == ownership_module.OWNED
+        ):
+            # AF-3: PRODUCTION NAMES THE REQUIRED ARTIFACTS.
+            #
+            # The parameter existed and production supplied an empty
+            # set, so within production the required-artifact half of
+            # the completeness policy could fire only in a test. The
+            # constant is passed HERE, at the one production seam, and
+            # within this signature `preserve` has no default for it,
+            # so a later caller re-opens the hole only by editing the
+            # seam.
+            ok, problem, detail, summary = preserve_module.preserve(
+                entry, recorded, self.store.directory, self._clock(),
+                workspace_id=proof_workspace_id,
+                required_names=preserve_module.REQUIRED_ARTIFACTS,
+            )
+            report.record(
+                "target_evidence", entry["workflow_id"],
+                ownership_module.OWNED if ok
+                else ownership_module.UNPROVABLE,
+                ok=ok,
+                # BOTH halves. `problem or detail` dropped the
+                # detail whenever a problem code existed, which within
+                # this path is every failure — so the row named the
+                # policy and left the missing artifact unnamed.
+                detail=("%s: %s" % (problem, detail)) if problem
+                else detail,
+            )
+            if ok:
+                entry["receipts"] = list(entry["receipts"]) + [
+                    _preserve_receipt(summary, now=self._clock())
+                ]
+            else:
+                # AC-1 / AC-3: THE CHAIN HALTS HERE.
+                #
+                # Preservation is a PROVEN PRECONDITION of the two
+                # destructive steps that follow, not merely the step
+                # before them. The previous form recorded the failure
+                # and then proceeded — so a preservation failure could
+                # destroy the only source of the evidence it had just
+                # failed to preserve.
+                #
+                # Halting retains the sessions AND the directory, and
+                # because the lease stays unreleased the workflow
+                # remains a cleanup candidate and the next pass
+                # retries from re-derived evidence. Retryable-degraded
+                # is not completed.
+                report.record(
+                    "workspace", recorded, ownership_module.UNPROVABLE,
+                    detail="the chain HALTED before the session close:"
+                           " the target evidence was not preserved, so"
+                           " nothing downstream may destroy it",
+                )
+                self.store.save(workflows)
+                return BrokerOutcome(
+                    True, phase=entry["phase"],
+                    outcome=OUTCOME_RELEASED_DEGRADED,
+                    problem=ownership_module.PROBLEM_CLEANUP_DEGRADED,
+                    # The report summary is COUNTS, deliberately
+                    # bounded. Counts alone, within this receipt,
+                    # leave an operator unable to act: "1 unprovable"
+                    # does not say which required artifact is missing,
+                    # and that name is the actionable content of the
+                    # halt. Appended here, bounded, rather than
+                    # widening the receipt line.
+                    detail="%s; preservation halted: %s" % (
+                        report.summary(),
+                        (detail or problem or "no reason recorded")
+                        [:400],
+                    ),
+                )
+        sessions = self._release_workspace_sessions(
+            entry, report, snapshot=proof
+        )
+        if workspace_verdict == ownership_module.UNPROVABLE:
+            # "We cannot tell" — the record carries no lease to check
+            # against. # Within this branch the directory is left as it is, and the
+            # release reports itself degraded rather than reporting a
+            # removal it did not perform.
+            report.record(
+                "workspace", "<unrecorded>", ownership_module.UNPROVABLE,
+                detail="no lease realpath is recorded",
+            )
+        else:
+            # NOT_OWNED stays a REFUSAL, and deliberately so: a record
+            # naming a path this workflow does not own is a corrupt or
+            # hostile record, not a partial cleanup, and the existing
+            # release hardening already refuses it with its own problem
+            # code. Downgrading that to a degraded success would let a
+            # caller that checks `ok` read a refusal as a completion —
+            # which an existing guarantee test caught when an earlier
+            # draft of this method did exactly that. So the call is
+            # made in both cases and `workspace_module.release` decides;
+            # # this layer adds a pre-check for the UNPROVABLE case it
+            # could not express before, and its scope: additive only.
+            if sessions != SESSIONS_RECLAIMED:
+                # R-36 AA-1: THE DELETE IS CONDITIONAL, not merely
+                # subsequent. Ordering two steps does not sequence
+                # them if the second runs unconditionally — and this
+                # one deletes the directory, so an unproven close
+                # followed by a delete turns a transient unreadable
+                # projection into permanent abandonment of a LIVE
+                # workspace whose sessions are still running.
+                #
+                # Retaining also preserves CANDIDACY: the lease stays
+                # unreleased, so `terminal_cleanup_candidates` returns
+                # this workflow again and the next pass re-derives the
+                # evidence. # Idempotency comes from proving current state at retry
+                # time, rather than from a flag an attempt wrote.
+                report.record(
+                    "workspace", recorded,
+                    ownership_module.UNPROVABLE,
+                    detail="the workspace directory is RETAINED"
+                           " because the session close was not"
+                           " proven; this workflow remains a cleanup"
+                           " candidate",
+                )
+            else:
+                ok, problem, detail = workspace_module.release(
+                    entry, self.workspaces_root, now=self._clock()
+                )
+                report.record(
+                    "workspace", recorded, workspace_verdict,
+                    ok=ok, detail=problem,
+                )
+                if not ok:
+                    return _refused(problem, detail)
+                # R-54 AR-4: THE PROCESS-SCOPE RECORDS ARE RECLAIMED
+                # HERE, and here is the only place they can be.
+                #
+                # AL-4..AL-7 decided this lifecycle and, within
+                # production, no code executed it, so an assignment
+                # was written before every spawn and left forever. The bound is THIS
+                # WORKFLOW'S OWN terminal cleanup — not an age, not a
+                # size, not a sweep — and the selection is by
+                # ASSIGNMENT CREDENTIAL, so a directory whose name
+                # merely parses is not reclaimed.
+                #
+                # ORDERING: it runs AFTER the release proved out,
+                # because until then the workflow may still be
+                # running and its records are what a recovery would
+                # need. Within it a scope holding a corroborated live
+                # group is refused and reported, so a premature
+                # retire leaves the record rather than the process.
+                self._retire_process_scopes(entry, report)
+        # R-30 V-2: THE UNSCOPED GLOBAL SWEEP THAT WAS HERE IS
+        # REMOVED.
+        #
+        # It called `recover_orphans` with NO BASE, so it read the
+        # GLOBAL record space and would have reaped whatever it found
+        # — including another workflow's helper groups — and then
+        # reported them as this workflow's. That is a cross-workflow
+        # reap and a false attribution at once, which is worse than
+        # the unwired state it was meant to fix: # production does not REGISTER through the owned path, so
+        # reading that space was unfounded in the first place.
+        #
+        # The rule it violated, now explicit: # NO PRODUCTION REAPING WITHOUT PRODUCTION REGISTRATION, and a
+        # recovery must be scoped to the OWNING workflow rather than to
+        # a shared root.
+        # Terminal cleanup of what a workflow actually leaves behind
+        # is a Domain B operation — the workspace and its sessions —
+        # and belongs to `target_runtime.workspace_ownership`, not to
+        # a sweep of local helper processes.
+        entry["receipts"] = list(entry["receipts"]) + [
+            _cleanup_receipt(report, now=self._clock())
+        ]
         self.store.save(workflows)
+        if report.degraded:
+            return BrokerOutcome(
+                True, phase=entry["phase"],
+                outcome=OUTCOME_RELEASED_DEGRADED,
+                problem=ownership_module.PROBLEM_CLEANUP_DEGRADED,
+                detail=report.summary(),
+            )
         return BrokerOutcome(True, phase=entry["phase"])
+
+
+def _cleanup_receipt(report, now, turn_id_factory=None):
+    """The durable, bounded receipt for one release's cleanup (I5).
+
+    It carries `CleanupReport.summary()`, whose degraded state is
+    DERIVED from the unprovable and failed lists rather than passed in,
+    so within this receipt a complete-cleanup claim over a non-empty
+    remainder has no representation.
+    """
+    import hashlib
+    import secrets
+    make_turn_id = turn_id_factory or (
+        lambda: "cleanup-" + secrets.token_hex(8)
+    )
+    summary = report.summary()
+    return {
+        "kind": "evidence",
+        "turn_id": make_turn_id(),
+        "recorded_at": now,
+        "digest": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
+        "bounded_summary": "%s: %s" % (CLEANUP_RECEIPT_MARKER, summary),
+    }
+
+
+#: Close verdicts that mean THE SESSIONS ARE RECLAIMED — the only
+#: states in which the managed directory may be deleted (R-36 AA-1).
+#: Everything else, degraded included, retains the directory.
+SESSIONS_RECLAIMED = "sessions_reclaimed"
+SESSIONS_RETAINED = "sessions_retained"
+
+
+def _domain_b_proof(broker, entry):
+    """The ONE ownership proof for this release (R-40 AD-1).
+
+    Returns a `ProofSnapshot` on an OWNED verdict and None otherwise.
+    The previous helper bound the verdict to `_verdict` and returned
+    the id regardless, so preservation received an identity derived
+    from a proof that had FAILED — and the close then read live state
+    a SECOND time and took its own. Both defects are unwritable now:
+    there is no id to obtain without a snapshot, and a snapshot exists
+    only for OWNED.
+
+    Read-only within this call: it proves and takes no action.
+    """
+    from target_runtime import workspace_ownership as ws_module
+    if broker._live_workspaces is None:
+        return None
+    try:
+        live = broker._live_workspaces()
+        children = broker._spawn_records_raw()
+    except Exception:                                     # noqa: BLE001
+        return None
+    verdict, snapshot, _problem, _detail = ws_module.prove_ownership(
+        entry, (children or {}).get("listed"), live,
+        broker.workspaces_root,
+    )
+    return snapshot if verdict == ws_module.OWNED else None
+
+
+def _domain_b_release(broker, entry, report, snapshot=None):
+    """Terminal DOMAIN B cleanup: the workspace and its sessions.
+
+    R-40 AD-3: it CONSUMES the one snapshot the release already
+    proved, and re-reads live state only to REVALIDATE it immediately
+    before the close (AD-4). It derives no identity of its own, which is what keeps the archive
+    and the close from naming different workspaces.
+    """
+    from target_runtime import workspace_ownership as ws_module
+    if broker._live_workspaces is None and broker._workspace_close is None:
+        # DOMAIN B IS NOT CONFIGURED FOR THIS BROKER AT ALL.
+        #
+        # A CONFIGURATION fact, not a degraded reading, and the
+        # distinction is the point: a Broker given neither a
+        # projection nor a close capability is not the actor for the
+        # workspace dimension, so the directory release proceeds as it
+        # did before Domain B existed. A Broker that IS configured and
+        # is then unable to READ the evidence is the dangerous case,
+        # and it retains.
+        report.record(
+            "workspace_session", entry["workflow_id"],
+            ownership_module.NOT_OWNED,
+        )
+        return SESSIONS_RECLAIMED
+    if broker._workspace_close is None:
+        report.record(
+            "workspace_session", entry["workflow_id"],
+            ownership_module.UNPROVABLE,
+            ok=False,
+            detail="no workspace-close capability is wired, so the"
+                   " sessions cannot be reclaimed",
+        )
+        return SESSIONS_RETAINED
+    if snapshot is None:
+        # # No proof: within this branch no workspace may be closed. Two shapes are still
+        # RECLAIMED because they are positive evidence that no session
+        # remains — and both are established from the proof's own
+        # refusal rather than guessed at.
+        return _domain_b_nothing_to_close(broker, entry, report)
+    try:
+        live_now = broker._live_workspaces()
+    except Exception as exc:                              # noqa: BLE001
+        report.record(
+            "workspace_session", snapshot.workspace_id,
+            ownership_module.UNPROVABLE,
+            detail="live state unreadable at close time (%s)"
+                   % exc.__class__.__name__,
+        )
+        return SESSIONS_RETAINED
+    try:
+        children_now = broker._spawn_records_raw()
+    except Exception:                                     # noqa: BLE001
+        children_now = None
+    closed, workspace_id, problem, detail = (
+        ws_module.close_proven_workspace(
+            snapshot, live_now, broker._workspace_close,
+            child_records=(children_now or {}).get("listed"),
+            entry=entry, workspaces_root=broker.workspaces_root,
+        )
+    )
+    if closed:
+        report.record("workspace_session", workspace_id,
+                      ownership_module.OWNED)
+        return SESSIONS_RECLAIMED
+    report.record(
+        "workspace_session", workspace_id or entry["workflow_id"],
+        ownership_module.UNPROVABLE,
+        detail="%s: %s" % (problem, detail),
+    )
+    return SESSIONS_RETAINED
+
+
+def _domain_b_nothing_to_close(broker, entry, report):
+    """The two POSITIVE-evidence cases in which no session remains.
+
+    Reached only when the proof produced no snapshot. Everything else
+    RETAINS, because a transient unreadable projection must not become
+    permanent abandonment of a live workspace.
+    """
+    from target_runtime import workspace_ownership as ws_module
+    try:
+        live = broker._live_workspaces()
+        children = broker._spawn_records_raw()
+    except Exception as exc:                              # noqa: BLE001
+        report.record(
+            "workspace_session", entry["workflow_id"],
+            ownership_module.UNPROVABLE,
+            detail="workspace evidence unreadable (%s)"
+                   % exc.__class__.__name__,
+        )
+        return SESSIONS_RETAINED
+    _verdict, _snapshot, problem, detail = ws_module.prove_ownership(
+        entry, (children or {}).get("listed"), live,
+        broker.workspaces_root,
+    )
+    report.record(
+        "workspace_session", entry["workflow_id"],
+        ownership_module.UNPROVABLE,
+        detail="%s: %s" % (problem, detail),
+    )
+    if problem == ws_module.PROBLEM_WORKSPACE_NOT_FOUND:
+        return SESSIONS_RECLAIMED
+    if (
+        problem == ws_module.PROBLEM_NO_CHILD_RECORD
+        and ownership_module.recorded_task_id(entry) is None
+    ):
+        return SESSIONS_RECLAIMED
+    return SESSIONS_RETAINED
+
+
+TargetBroker._release_workspace_sessions = _domain_b_release
+TargetBroker._domain_b_proof = _domain_b_proof
+
+
+def _preserve_receipt(summary, now, turn_id_factory=None):
+    """The durable receipt for one evidence preservation (AB-1/AB-3).
+
+    Carries the projection's own summary, including its TRUNCATION
+    disclosure when the listing was capped, so a reader of the record
+    can tell a complete archive from a partial one without opening the
+    projection.
+    """
+    import hashlib
+    import secrets
+    make_turn_id = turn_id_factory or (
+        lambda: "preserve-" + secrets.token_hex(8)
+    )
+    return {
+        "kind": "evidence",
+        "turn_id": make_turn_id(),
+        "recorded_at": now,
+        "digest": hashlib.sha256(summary.encode("utf-8")).hexdigest(),
+        "bounded_summary": summary[:400],
+    }

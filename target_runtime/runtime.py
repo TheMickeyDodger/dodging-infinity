@@ -40,6 +40,8 @@ one Codex proposal stays actionable (a stale one simply requires a
 fresh turn), it never cancels any work.
 """
 
+from target_runtime import process_ownership as ownership_module
+from target_runtime import readiness as readiness_module
 from workflow_authority import canonical as canonical_module
 from workflow_authority import record as record_module
 from workflow_authority import store as store_module
@@ -808,11 +810,181 @@ def _advance_i5_phase(broker, workflow_id, revision, phase, entry,
     return False
 
 
+def readiness_attention(store_directory):
+    """Workflows whose LAST recorded readiness state is not READY.
+
+    THE R-12 CONDITION, discharged. `BOOTSTRAP_UNOBSERVABLE` is
+    recorded durably and, by design, does NOT stop the workflow —
+    bounding on absence of evidence would expire a mission that is
+    merely unreadable, which I3's pinned test rejects. But until this
+    existed the state lived ONLY in a receipt: recorded, and on a surface a human reads. R-12's reasoning was that the wait is "not silent", and a state no
+    part of it surfaces is silent in the only sense that matters.
+
+    DOMAIN: every workflow in the durable store, read once. Returns ``(rows, total)`` where ``total`` is the size of that
+    domain, so a caller can say "0 of 12 need attention" rather than
+    printing an empty line — an empty result here is a QUESTION about
+    whether the enumeration ran at all, and reporting the denominator
+    answers it.
+
+    Read-only, and fail-closed on an unreadable store: no rows and a
+    total of None, which a caller renders as "could not enumerate"
+    rather than as "nothing needs attention".
+    """
+    store = store_module.WorkflowStore(store_directory)
+    with store_module.exclusive_store_lock(store_directory):
+        try:
+            workflows = store.load()
+        except store_module.StoreError:
+            return [], None
+    rows = []
+    entries = workflows["workflows"]
+    for workflow_id in sorted(entries):
+        entry = entries[workflow_id]
+        state = readiness_module.last_recorded_state(entry)
+        if state is None or state == readiness_module.BOOTSTRAP_READY:
+            continue
+        rows.append({
+            "workflow_id": workflow_id,
+            "state": state,
+            "phase": entry.get("phase"),
+            "stops_the_workflow": bool(
+                readiness_module.problem_for(state)
+            ),
+        })
+    return rows, len(entries)
+
+
+def current_scope_owners(store_directory):
+    """The scope owners the DURABLE WORKFLOW RECORD holds RIGHT NOW.
+
+    R-43 AG-3 needs recovery to check an assignment against the
+    current record, not only against the store that issued it. This is
+    that record, as ``(owner_type, owner_id, unit_id)`` triples.
+
+    Both scopes a workflow can own are listed: the pre-dispatch one it
+    used before a target task existed, and the task-scoped one it uses
+    after. A workflow whose turn crashed before dispatch owns records
+    under the first, and omitting it would strand them. Each carries
+    the CONTROL REPOSITORY it belongs to, so that within this base a
+    workflow id cannot claim another deployment's records.
+
+    FAIL-CLOSED, and the consequence stated: an unreadable store
+    yields the EMPTY set, so no workflow-owned scope validates and
+    recovery acts on none of them. That is indistinguishable from an
+    empty store, and deliberately so — both mean "the record does not
+    say this owner exists", and both must leave the records alone.
+    """
+    store = store_module.WorkflowStore(store_directory)
+    with store_module.exclusive_store_lock(store_directory):
+        try:
+            workflows = store.load()
+        except store_module.StoreError:
+            return set()
+    owners = set()
+    for workflow_id, entry in workflows["workflows"].items():
+        control = (
+            entry.get("control_identity") or {}
+        ).get("repository_realpath")
+        if not isinstance(control, str) or not control:
+            # Within this derivation a record that cannot say which
+            # control repository it belongs to names no scope owner. Skipped rather than
+            # guessed: the effect is that its scopes stay
+            # unattributed and are left alone.
+            continue
+        digest = ownership_module.control_digest(control)
+        for unit_id in ("pre-dispatch", (
+            entry.get("target_engine") or {}
+        ).get("task_id")):
+            if isinstance(unit_id, str) and unit_id:
+                owners.add((
+                    ownership_module.OWNER_TYPE_WORKFLOW,
+                    digest, workflow_id, unit_id,
+                ))
+    return owners
+
+
+def recover_inherited_processes(store_directory):
+    """Reap process groups a PREVIOUS Runtime left behind (R-34 Z-3).
+
+    THE RESTART CASE, and the reason this exists: a Runtime that
+    crashed left durable records on disk, and the next Runtime is the
+    only thing that will ever act on them.
+
+    It enumerates ONLY ASSIGNED SCOPES (R-43 AG-2/AG-3). The
+    directory's NAME is a label, and within this gate it decides
+    nothing. What admits a scope to recovery is a durable ASSIGNMENT
+    RECORD in the protected store, written before the spawn, bound by
+    an integrity check, and revalidated here against the current
+    durable workflow record before the action. A directory whose name parses but whose
+    assignment is missing, malformed, forged, conflicting or stale is
+    UNATTRIBUTED.
+
+    Returns ``(results, unattributed)``. ``results`` carries one row
+    per owner — ``(ScopeIdentity, reaped, stuck, unstamped)``; ``unattributed`` carries ``(directory, reason)``
+    pairs. Those are REPORTED and LEFT ALONE, because acting on them
+    would be the guess ownership discipline forbids — and because the
+    name that made them look ownable is exactly what an attacker
+    controls.
+    """
+    return ownership_module.recover_attributed(
+        settle_seconds=10.0,
+        current_owners=current_scope_owners(store_directory),
+    )
+
+
+def terminal_cleanup_candidates(store_directory):
+    """Workflows in a TERMINAL phase that still hold a lease (R-33).
+
+    THE BIAS IS TOWARD NOT CLOSING, and it is enforced here rather
+    than downstream. Membership is decided by
+    ``record.TERMINAL_PHASES`` — read from the record module rather
+    than listed by hand — so a phase added later is NONTERMINAL by
+    construction. Orphan buildup is expensive and recoverable; closing
+    a workspace where engineering is still running destroys work
+    irrecoverably, so an unrecognised phase resolves to leaving it
+    alone.
+
+    A workflow whose lease is already released is not a candidate, so
+    a repeat pass neither retries nor double-closes. And because the
+    lease is released ONLY after a proven close, "released" now means
+    "cleaned up" rather than "an attempt was made" — the substitution
+    R-36 AA-2 forbade.
+    """
+    store = store_module.WorkflowStore(store_directory)
+    with store_module.exclusive_store_lock(store_directory):
+        try:
+            workflows = store.load()
+        except store_module.StoreError:
+            return []
+    candidates = []
+    for workflow_id in sorted(workflows["workflows"]):
+        entry = workflows["workflows"][workflow_id]
+        try:
+            record_module.validate_record(entry)
+        except record_module.RecordError:
+            continue
+        if entry["phase"] not in record_module.TERMINAL_PHASES:
+            continue
+        lease = entry.get("workspace_lease")
+        if not isinstance(lease, dict):
+            continue
+        if lease.get("released_at") is not None:
+            continue
+        candidates.append((workflow_id, entry["handoff"]["revision"]))
+    return candidates
+
+
 def process_once(broker):
     """One full Runtime pass over every claimable workflow.
 
-    Returns {workflow_id: [(label, BrokerOutcome), ...]} — exact,
-    nothing sampled or capped.
+    Returns {workflow_id: [(label, BrokerOutcome), ...]} — exact, with
+    no sampling and no cap.
+
+    R-33: terminal cleanup runs here too. Before this, no production
+    caller invoked ``release_workspace`` at all — the Runtime advanced
+    VERIFIED to COMPLETED and returned — so terminal cleanup was
+    unreachable in unattended operation however correct it was, and
+    that is why orphans accumulated over days.
     """
     processed = {}
     for workflow_id, revision in claimable_workflows(
@@ -821,4 +993,13 @@ def process_once(broker):
         processed[workflow_id] = advance_workflow(
             broker, workflow_id, revision
         )
+    for workflow_id, revision in terminal_cleanup_candidates(
+        broker.store.directory
+    ):
+        outcome = _perform_capability_action(
+            broker, workflow_id, revision,
+            broker_module.ACTION_RELEASE, broker._clock,
+            processed.setdefault(workflow_id, []),
+        )
+        del outcome
     return processed

@@ -41,10 +41,22 @@ import time
 from pathlib import Path
 from stat import S_ISDIR
 
+from . import vintage
 from .runtime import agent_info
 
 
-OBSERVE_SCHEMA_VERSION = 1
+#: Bumped to 3 by I7b: `config.roles[].model` is renamed
+#: `configured_model`. A rename rather than an addition, deliberately:
+#: leaving `model` in place beside a qualified twin would let a
+#: consumer keep reading the unqualified key forever, which is the
+#: defect rather than a migration path.
+#:
+#: Bumped to 2 by I6: four sections were added (`vintage`,
+#: `checkpoint`, `roles`, `turns`) and `mission` gained the
+#: vintage fields it needs to be omitted honestly. A consumer pinned
+#: to v1 sees a different shape, and the version is how it finds out
+#: rather than by a missing key at read time.
+OBSERVE_SCHEMA_VERSION = 3
 
 # ---- hard bound constants (module-level; NEVER derived from input) ----
 _OBSERVE_MAX_FILE_BYTES = 1048576   # refuse to read a state file larger than this
@@ -331,12 +343,66 @@ def _config_section(root, diags):
             section["roles"].append({
                 "role": _trunc(str(role)),
                 "kind": _str_or_none(spec.get("kind")),
-                "model": _model_from_args(spec.get("args")),
+                # R-74 F3: NAMED `configured_model`, not `model`.
+                #
+                # I6's rule is to carry the identity of what you
+                # describe or be omitted, and a JSON consumer is handed
+                # a key rather than the section heading — it reads
+                # `obs["config"]["roles"][i][<key>]`. A key called
+                # `model` reads as THE ROLE'S MODEL, which is a claim
+                # about the running herd that this value cannot make:
+                # it is parsed from the role's `--model` argument and
+                # says what the herd was ASKED to start. The key
+                # carries the qualification so it travels with the
+                # value into every consumer.
+                "configured_model": _model_from_args(spec.get("args")),
             })
         if len(names) > _OBSERVE_MAX_LISTED_AGENTS:
             _note(
                 diags, "config", "available",
                 f"roles truncated to {_OBSERVE_MAX_LISTED_AGENTS} of {len(names)}",
+            )
+        if section["roles"]:
+            # R-76: THE LIMIT REACHES THE STRUCTURED CONSUMER TOO.
+            #
+            # `configured_model` tells an author THAT THIS VALUE IS
+            # CONFIGURED. It does not tell them that NO RUNNING VALUE
+            # EXISTS — and a reasonable author reading a qualified key
+            # INFERS AN UNQUALIFIED COUNTERPART somewhere they have
+            # not yet found. A tool built on it could then surface it
+            # to a human as "model", re-introducing the defect one
+            # layer downstream, and its author would have had no way
+            # to learn the limit from the interface they consumed.
+            # F3 propagating through an API boundary is still F3.
+            #
+            # WHAT THIS IS AND IS NOT. It is a statement about OUR
+            # OBSERVABILITY — what the agent interface exposes — and
+            # it is checkable against that interface. It is NOT a claim about an agent: there is no `running_model`, no
+            # `model_observable`, no verdict, and no field whose value
+            # would assert something about a model that is running.
+            # The prohibition was against fabricating what IS; this
+            # describes what we can SEE.
+            # FRONT-LOADED DELIBERATELY, and this is a finding about
+            # the channel: `_note` TRUNCATES its detail. The first
+            # draft of this sentence explained `configured_model`
+            # first and closed the wrong inference last — and the cap
+            # cut off exactly the closing clause, leaving the half a
+            # consumer already knew. A limit statement on a truncating
+            # channel has to lead with the load-bearing fact.
+            #
+            # AND IT FITS WITHIN THE BOUND (R-78). Front-loading kept
+            # the meaning intact while the delivered bytes still
+            # ended MID-WORD, and a sentence delivered mid-word to a
+            # machine consumer is one whose author did not decide
+            # where it should end. Clause 3 is shortened until the
+            # whole sentence completes inside the cap: it still says
+            # what the KEY means and asserts no fact about an agent.
+            _note(
+                diags, "config", "available",
+                "NO running-model value exists in this document and"
+                " there is no unqualified `model` key: the model a"
+                " RUNNING agent uses is not observable through the"
+                " agent interface. `configured_model` states intent.",
             )
     return section, data
 
@@ -368,6 +434,11 @@ def _mission_section(root, diags):
         value = data.get(key)
         section[field] = len(value) if isinstance(value, list) else None
     section["created_at"] = _int_or_none(data.get("created_at"))
+    # R-46 AJ-1: the mission's own TASK IDENTITY, from the artifact.
+    # `mission.json` in this repository carries none, and that absence
+    # is the finding rather than a gap to fill with a default: a field
+    # whose vintage is unestablished is OMITTED at render.
+    section["task_id"] = vintage.task_id_of_document(data)
     return section
 
 
@@ -612,6 +683,120 @@ def _children_section(root, task_id, diags):
     return section
 
 
+def observe_spawn_records(repo):
+    """Project every persisted child-spawn record from THIS repository.
+
+    This is deliberately separate from canonical :func:`observe`, whose
+    ``children`` section remains correlated to the current task. The
+    projection reads only ``.herd/state/children.json`` under ``repo``;
+    child repository paths are returned as bounded scalar data and are
+    never opened, resolved, or followed.
+
+    The return shape is fixed and bounded. ``count`` is exact whenever
+    the JSON object and its ``children`` list are readable; ``truncated``
+    discloses when the exact count exceeds the listing cap. Any malformed
+    record makes the whole projection ``malformed`` so reconciliation can
+    fail closed instead of silently ignoring unprojectable evidence.
+    """
+    projection = {
+        "state": "unavailable",
+        "count": None,
+        "truncated": False,
+        "listed": [],
+        "detail": None,
+    }
+    try:
+        root = Path(repo).expanduser()
+        data, state, detail = _read_json_object(
+            root / ".herd" / "state" / "children.json"
+        )
+        if state == "missing":
+            projection.update({"state": "empty", "count": 0})
+            return projection
+        if state != "available":
+            projection.update({"state": state, "detail": _trunc(detail)})
+            return projection
+        records = data.get("children")
+        if not isinstance(records, list):
+            projection.update({
+                "state": "malformed",
+                "detail": "`children` in children.json is not a list",
+            })
+            return projection
+
+        projection["count"] = len(records)
+        projection["truncated"] = len(records) > _OBSERVE_MAX_CHILDREN
+        malformed = None
+        for index, record in enumerate(records):
+            if not isinstance(record, dict):
+                malformed = "child record %d is not a JSON object" % index
+                break
+            parent_task_id = record.get("parent_task_id")
+            dependency = record.get("dependency")
+            repo_value = record.get("repo")
+            task_id = record.get("task_id")
+            if not (
+                (parent_task_id is None or isinstance(parent_task_id, str))
+                and isinstance(dependency, bool)
+                and isinstance(repo_value, str)
+                and repo_value.strip()
+                and isinstance(task_id, str)
+                and task_id.strip()
+            ):
+                malformed = "child record %d has malformed identity fields" % index
+                break
+            if any(
+                isinstance(value, str) and len(value) > _OBSERVE_MAX_STRING
+                for value in (parent_task_id, repo_value, task_id)
+            ):
+                malformed = "child record %d has an overlong identity field" % index
+                break
+            if index < _OBSERVE_MAX_CHILDREN:
+                projection["listed"].append({
+                    "parent_task_id": _str_or_none(parent_task_id),
+                    "dependency": dependency,
+                    "repo": _str_or_none(repo_value),
+                    "task_id": _str_or_none(task_id),
+                    "recorded_status": _str_or_none(record.get("task_status")),
+                    "role": _str_or_none(record.get("role")),
+                })
+        if malformed is not None:
+            # I4 item 3. The scan STOPS at the first malformed record,
+            # so `listed` holds only the records before it while
+            # `count` holds the full list length and `truncated` was
+            # derived before the scan. Returning that trio asserts a
+            # complete short listing: count 3, listed 1, truncated
+            # False, with the inconsistency visible only to a caller
+            # that also reads `state`. That is the recorded "silent
+            # truncation presented as fact" class, so the malformed
+            # return carries NO count and NO listing — matching the
+            # `unreadable` path, which already returns count None.
+            projection.update({
+                "state": "malformed",
+                "detail": malformed,
+                "count": None,
+                "truncated": False,
+                "listed": [],
+            })
+            return projection
+        projection["state"] = "available" if records else "empty"
+        if projection["truncated"]:
+            projection["detail"] = (
+                "spawn records truncated to %d of %d"
+                % (_OBSERVE_MAX_CHILDREN, len(records))
+            )
+        return projection
+    except Exception as exc:
+        projection.update({
+            "state": "unavailable",
+            "detail": _trunc(
+                "spawn-record projection failed: %s"
+                % exc.__class__.__name__
+            ),
+        })
+        return projection
+
+
 # Canonical header line written into every persisted review artifact by
 # `herdctl review-decision`. Any recorded token is captured; only APPROVE
 # and REJECT are valid decisions.
@@ -779,6 +964,311 @@ def _artifact_entry(name, path, now):
     return entry, None
 
 
+def _role_binding_section(root, agents_value, diags):
+    """Which roles are bound, and HOW STRONGLY (R-61 AY-4).
+
+    I2c's residual: `identity.binding_gap` requires a NON-EMPTY stable
+    mapping, not a COMPLETE one, so a record missing `pane_id` or
+    `cwd` still binds and `classify` then compares fewer fields. The
+    binding is not wrong; it is WEAKER, and no surface said so. A surface
+    reporting a role as bound has to be able to say which fields the
+    comparison will actually use.
+    """
+    from . import identity
+    section = {
+        "state": "missing",
+        "stable_fields": list(identity.STABLE_FIELDS),
+        "listed": [],
+        # A role this herd RUNS and has NOT bound. Named rather than described: "which roles are bound" is unanswered until the
+                # unbound ones are visible, and R-53's whole finding was that
+        # within a surface an unbound role must not read as healthy.
+        "unbound_roles": [],
+    }
+    try:
+        document = identity.load_bindings(root / ".herd")
+    except identity.BindingsCorrupt as exc:
+        section["state"] = "unreadable"
+        _note(diags, "roles", "unreadable", str(exc))
+        return section
+    except OSError as exc:
+        section["state"] = "unreadable"
+        _note(diags, "roles", "unreadable", exc.__class__.__name__)
+        return section
+    roles = document.get("roles") or {}
+    if not roles:
+        section["state"] = "empty"
+        _note(
+            diags, "roles", "empty",
+            "no role bindings are recorded; every role classifies as"
+            " UNBOUND until bootstrap binds them (R-53)",
+        )
+        return section
+    for logical in sorted(roles):
+        binding = roles[logical]
+        strength, captured, missing = vintage.binding_strength(binding)
+        section["listed"].append({
+            "logical": _trunc(logical),
+            "agent": _trunc(_str_or_none(
+                binding.get("agent") if isinstance(binding, dict)
+                else None
+            )),
+            "strength": strength,
+            "captured": captured,
+            "missing": missing,
+        })
+        if strength != "complete":
+            _note(
+                diags, "roles", "available",
+                "role %s is bound with a %s identity: %s captured, %s"
+                " missing. `classify` compares only the captured"
+                " fields, so this binding is weaker than a complete"
+                " one" % (logical, strength,
+                          ", ".join(captured) or "none",
+                          ", ".join(missing)),
+            )
+    for logical in sorted(agents_value or {}):
+        if logical not in roles:
+            section["unbound_roles"].append(_trunc(logical))
+            _note(
+                diags, "roles", "available",
+                "role %s is running in this herd and has NO recorded"
+                " binding; it classifies as UNBOUND and is NAMED here"
+                " rather than left out of the answer to 'which roles"
+                " are bound'" % (logical,),
+            )
+    section["state"] = "available"
+    return section
+
+
+#: The recovery states a ROW may carry. Anything else is OMITTED and
+#: its role is merely NAMED. An allowlist, not a denylist: a recovery
+#: value added later renders only if it is added here deliberately,
+#: so within this gate a new value stays out of a reader-resolvable
+#: column.
+_RENDERABLE_RECOVERY = (
+    "none", "in_flight", "needs_recovery", "blocked_needs_decision",
+)
+
+
+def _turns_section(root, current, agents_value, diags):
+    """Recorded TURN OUTCOMES for the current task (R-55 AS-1).
+
+    TASK-SCOPED (AW-2): the turn record is task-mixed, and selecting
+    without a scope returns a confident wrong answer. With no current task there is no scope, so the selection is not
+    made — an empty result here is "no scope to select within",
+    which the diagnostic says rather than leaving the reader to read
+    it as "no turns failed".
+    """
+    from . import turns as turns_module
+    section = {
+        "state": "missing",
+        "task_id": current.task_id,
+        "counts": None,
+        "undelivered": None,
+        "observer_build": None,
+        "skewed": [],
+        "listed": [],
+        # PER-ROLE RECOVERY STATE (R-63 BA-4's fourth property), and
+        # the two branches AJ-1 allows. `roles` holds one entry per
+        # role that HAS a recorded turn; `omitted_roles` names the
+        # ones that do not, so the omission is disclosed instead of
+        # being a gap the reader has to notice.
+        "roles": [],
+        "omitted_roles": [],
+    }
+    try:
+        document = turns_module.load_turns(root / ".herd")
+    except turns_module.TurnRecordError as exc:
+        section["state"] = "unreadable"
+        _note(diags, "turns", "unreadable", str(exc))
+        return section
+    if not current.known:
+        section["state"] = "unavailable"
+        _note(
+            diags, "turns", "unavailable",
+            "no current task id, so turn selection has no scope; this"
+            " is an absent SELECTOR, not an absence of turns",
+        )
+        return section
+    scoped = turns_module.turns_for_task(document, current.task_id)
+    section["counts"] = turns_module.outcome_counts(scoped)
+    section["undelivered"] = sum(
+        1 for entry in scoped
+        if entry.get("routed_at") and not turns_module.delivered(entry)
+    )
+    # R-65 (version skew): a record made by a DIFFERENT BUILD of the
+    # observer is a claim from different logic. Reported, so the
+    # disagreement between the running process and the source on disk
+    # is visible instead of silent.
+    current_build = turns_module.observer_build()
+    section["observer_build"] = current_build
+    section["skewed"] = sorted({
+        entry.get("observer_build")
+        for entry in scoped
+        if entry.get("observer_build") != current_build
+    })
+    for build in section["skewed"]:
+        _note(
+            diags, "turns", "available",
+            "turn record(s) here were written by observer build %s and"
+            " the code on disk is build %s; a claim made by a"
+            " different build was made by different logic"
+            % (build or "unknown", current_build or "unknown"),
+        )
+    # R-66 decision: `role_state` is WIRED, not deleted.
+    #
+    # It answers the question a restarting reader actually has —
+    # which roles need recovery — and that is BA-4's fourth
+    # destination property. Leaving it unreachable would invite a
+    # future reader to believe per-role recovery state is surfaced
+    # when it is not, and "someone will wire it later" is how R-63
+    # was very nearly justified.
+    #
+    # AJ-1's TWO BRANCHES apply per role. A role with a recorded turn
+    # CARRIES its identity and renders. A role with NO recorded turn
+    # has no turn state to describe, so it does NOT render a row —
+    # there is no slot for a reader to misread as health — and it is
+    # named in `omitted_roles` with the reason, so the omission is
+    # not itself silent.
+    for logical in sorted(agents_value or {}):
+        state = turns_module.role_state(document, logical)
+        # THE CAVEAT-SLOT INVARIANT, and it is the whole question this
+        # increment is aimed at.
+        #
+        # `[available]` became a caveat slot because it was rendered
+        # AS A PROPERTY OF THE THING DESCRIBED, in a field a reader
+        # resolves. `no_turn_recorded` is the value with that shape
+        # here: put it in a `recovery=` column and a reader resolves
+                # it to a state the role is IN. So within this section it
+        # stays out of every row.
+                # The role is NAMED in `omitted_roles` and no field describes
+        # it — within this render a name is not a slot, being empty of
+        # anything to resolve.
+        #
+        # Written as a POSITIVE filter rather than a `continue`: a later edit removing the branch below still leaves this value
+        # out of every row, because a row is built only from the states
+        # that are allowed to render.
+        if state["recovery"] not in _RENDERABLE_RECOVERY:
+            section["omitted_roles"].append(_trunc(logical))
+            continue
+        section["roles"].append({
+            "logical": _trunc(logical),
+            "current": _trunc(_str_or_none(state.get("current"))),
+            "last_outcome": _trunc(
+                _str_or_none(state.get("last_outcome"))
+            ),
+            "last_cause": _trunc(_str_or_none(state.get("last_cause"))),
+            "recovery": state["recovery"],
+        })
+        if state["recovery"] in ("needs_recovery",
+                                 "blocked_needs_decision"):
+            _note(
+                diags, "turns", "available",
+                "role %s needs attention: its last turn ended %s (%s)"
+                % (logical, state.get("last_outcome"),
+                   state.get("last_cause")),
+            )
+    section["state"] = "available" if scoped else "empty"
+    for entry in scoped[-_OBSERVE_MAX_LISTED_AGENTS:]:
+        section["listed"].append({
+            "turn_id": _trunc(_str_or_none(entry.get("turn_id"))),
+            "logical": _trunc(_str_or_none(entry.get("logical"))),
+            "outcome": _trunc(_str_or_none(entry.get("outcome"))),
+            "cause": _trunc(_str_or_none(entry.get("cause"))),
+            "delivered": turns_module.delivered(entry),
+        })
+    for entry in scoped:
+        if entry.get("outcome") in turns_module.FAILURE_OUTCOMES:
+            _note(
+                diags, "turns", "available",
+                "turn %s (%s) ended %s: %s" % (
+                    entry.get("turn_id"), entry.get("logical"),
+                    entry.get("outcome"), entry.get("cause"),
+                ),
+            )
+        elif entry.get("routed_at") and not turns_module.delivered(entry):
+            _note(
+                diags, "turns", "available",
+                "turn %s was ROUTED and its EFFECT was never observed;"
+                " routed is not delivered (R-55 AS-4)"
+                % (entry.get("turn_id"),),
+            )
+    return section
+
+
+def _checkpoint_section(root, current, diags):
+    """The task checkpoint, WITH the task it belongs to (AJ-3).
+
+    Specimen 2: line 1 of `task-checkpoint.md` named a COMPLETE prior
+    task, and a restart consulting it to learn what it was doing would
+    have resumed the wrong mission. The file is not wrong — it is a
+    truthful record of a task that is over. What was missing is a surface saying WHICH task, so the reader
+    could tell.
+    """
+    section = {
+        "state": "missing",
+        "task_id": None,
+        "vintage": vintage.VINTAGE_UNKNOWN,
+        "label": None,
+        "renders": False,
+    }
+    text, state, detail = _read_state_text(
+        root / ".herd" / "state" / "task-checkpoint.md"
+    )
+    section["state"] = state
+    if state != "available":
+        if state != "missing":
+            _note(diags, "checkpoint", state, detail)
+        return section
+    section["task_id"] = vintage.task_id_of_text(text)
+    section["vintage"] = vintage.classify(
+        section["task_id"], current.task_id
+    )
+    section["renders"] = vintage.renders(section["vintage"])
+    if section["renders"]:
+        section["label"] = vintage.vintage_label(
+            section["vintage"], section["task_id"],
+        )
+    if section["vintage"] == vintage.VINTAGE_PRIOR:
+        _note(
+            diags, "checkpoint", "available",
+            "task-checkpoint.md describes prior task %s, not the"
+            " current task %s; it is rendered as SUPERSEDED and must"
+            " not be used to resume" % (
+                section["task_id"], current.task_id,
+            ),
+        )
+    elif section["vintage"] == vintage.VINTAGE_UNKNOWN:
+        _note(
+            diags, "checkpoint", "available",
+            "task-checkpoint.md names no task on line 1, so its"
+            " vintage cannot be established and it is OMITTED"
+            " (R-46 AJ-1)",
+        )
+    return section
+
+
+def _vintage_section(current, diags):
+    """WHICH TASK IS RUNNING NOW, and what disagrees with it (AJ-2)."""
+    section = current.as_dict()
+    section["state"] = "available" if current.known else "unavailable"
+    if not current.known:
+        _note(
+            diags, "vintage", "unavailable",
+            "task.json does not say which task is running, so every"
+            " field's vintage is UNKNOWN and vintage-bearing fields"
+            " are omitted",
+        )
+    for artifact, task_id in current.disagreements:
+        _note(
+            diags, "vintage", "available",
+            "%s names task %s; task.json is authoritative and names"
+            " %s. The disagreement is REPORTED, not reconciled"
+            % (artifact, task_id, current.task_id),
+        )
+    return section
+
+
 def _artifacts_section(root, now, diags):
     section = {"state": "missing", "listed": []}
     state_dir = root / ".herd" / "state"
@@ -931,6 +1421,23 @@ def _fallback_observation(now, diags):
         "completeness": "PARTIAL",
         "repository": section(),
         "config": section(),
+        # STRUCTURAL, conditional: the fallback carries every
+        # section the full projection does, so within it a failed
+        # projection leaves each section in place. `renders` is False
+        # because an unavailable section has no vintage, and AJ-1's
+        # second branch is exactly what an unknown vintage gets.
+        "vintage": {"state": "unavailable", "task_id": None,
+                    "status": None, "source": vintage.SOURCE_NONE,
+                    "disagreements": []},
+        "checkpoint": {"state": "unavailable", "task_id": None,
+                       "vintage": vintage.VINTAGE_UNKNOWN,
+                       "label": None, "renders": False},
+        "roles": {"state": "unavailable", "stable_fields": [],
+                  "listed": [], "unbound_roles": []},
+        "turns": {"state": "unavailable", "task_id": None,
+                  "counts": None, "undelivered": None,
+                  "observer_build": None, "skewed": [], "listed": [],
+                  "roles": [], "omitted_roles": []},
         "mission": section(),
         "task": section(),
         "runtime": section(),
@@ -971,9 +1478,42 @@ def observe(repo, now=None, probe_agents=True):
         agents = _agents_section(
             config_data, runtime_state, agents_value, probe_agents, diags,
         )
+        current = vintage.current_task(root)
+        vintage_section = _vintage_section(current, diags)
+        checkpoint = _checkpoint_section(root, current, diags)
+        # AJ-1 applied to the mission: it renders only when its own
+        # task identity can be established.
+        mission["vintage"] = vintage.classify(
+            mission.get("task_id"), current.task_id
+        )
+        mission["renders"] = vintage.renders(mission["vintage"])
+        mission["label"] = (
+            vintage.vintage_label(mission["vintage"],
+                                  mission.get("task_id"))
+            if mission["renders"] else None
+        )
+        if not mission["renders"] and mission.get("state") == "available":
+            # DISCLOSED, not DEGRADED. The state here is `available`
+            # deliberately: the projection succeeded and the field was
+            # deliberately omitted, which is a fact about the ARTIFACT
+            # rather than a failure of the observation. Marking it
+            # `unavailable` would demote every herd to PARTIAL for as
+            # long as mission.json lacks a task id, and a completeness
+            # marker stuck at PARTIAL says little.
+            _note(
+                diags, "mission", "available",
+                "mission.json carries no task identity, so its vintage"
+                " cannot be established and the objective is OMITTED"
+                " rather than rendered under a health marker"
+                " (R-46 AJ-1)",
+            )
         children = _children_section(root, task_id, diags)
         reviews = _reviews_section(root, task_id, diags)
         artifacts = _artifacts_section(root, now, diags)
+        roles = _role_binding_section(root, agents_value, diags)
+        turn_section = _turns_section(
+            root, current, agents_value, diags
+        )
         recent_tasks = _recent_tasks_section(root, diags)
         legacy = _legacy_section(root)
     except Exception as exc:  # belt-and-braces: observe() must never raise
@@ -995,6 +1535,10 @@ def observe(repo, now=None, probe_agents=True):
         "completeness": completeness,
         "repository": repository,
         "config": config,
+        "vintage": vintage_section,
+        "checkpoint": checkpoint,
+        "roles": roles,
+        "turns": turn_section,
         "mission": mission,
         "task": task,
         "runtime": runtime,
@@ -1062,8 +1606,21 @@ def render_observation(obs):
 
     orchestration = get("config", "orchestration") or {}
     roles = get("config", "roles") or []
+    # R-74 F3: the LABEL TRAVELS WITH THE VALUE.
+    #
+    # This rendered `executor(claude/fable)` under a `Config` heading,
+    # and a reader scanning it read "executor is running claude on
+    # fable" — a claim about the running herd. The heading did not
+    # protect it, because a reader reads the tuple, not the section
+    # they are three lines below. The qualification is now inside the
+    # field, where it is read at the same moment as the value.
+    #
+    # `(unset)` rather than `?` when no `--model` is configured: the
+    # value is not UNKNOWN, it is ABSENT, and `?` invites a reader to
+    # resolve it into "some default the tool picked".
     role_bits = ", ".join(
-        f"{r.get('role')}({_fmt(r.get('kind'))}/{_fmt(r.get('model'))})"
+        f"{r.get('role')}(kind={_fmt(r.get('kind'))},"
+        f" model-CONFIGURED={_fmt(r.get('configured_model'), '(unset)')})"
         for r in roles if isinstance(r, dict)
     )
     lines.append(
@@ -1074,11 +1631,48 @@ def render_observation(obs):
     )
     if role_bits:
         lines.append(f"  roles: {role_bits}")
+        # THE LIMIT, STATED — because silence is what invites the
+        # misreading. A reader who is told the value is CONFIGURED
+        # still has to be told that the RUNNING value is unavailable,
+        # or they will take the configured one as the best answer
+        # going. R-74 F1: the running model is not observable at the
+        # agent interface, and inventing a plausible value there
+        # would be the fake health this mission exists to remove.
+        lines.append(
+            "  NOTE: these are CONFIGURED models — what this herd was"
+            " asked to start. The model a running agent is actually"
+            " using is NOT observable through the agent interface, so"
+            " nothing here reports it."
+        )
 
-    lines.append(
-        f"Mission [{_fmt(get('mission', 'state'))}]: "
-        f"v{_fmt(get('mission', 'version'))} — {_fmt(get('mission', 'objective'), '(none)')}"
-    )
+    # R-46 AJ-1, TWO BRANCHES AND NO THIRD.
+    #
+    # The mission line used to read `Mission [available]: <objective>`
+    # and the objective was two tasks old. `[available]` was a CAVEAT
+    # SLOT — written to mean "readable", read as "current" — and that
+    # is the third branch the ruling forbids. A field whose task
+    # identity is unestablished is OMITTED, and the reason is
+    # stated where the field would have been so the omission is not
+    # itself silent.
+    if get("mission", "renders"):
+        lines.append(
+            f"Mission [{_fmt(get('mission', 'label'))}]: "
+            f"v{_fmt(get('mission', 'version'))} — "
+            f"{_fmt(get('mission', 'objective'), '(none)')}"
+        )
+    else:
+        lines.append(
+            "Mission: OMITTED — mission.json carries no task identity,"
+            " so nothing here can say WHICH task's objective it is"
+        )
+
+    if get("checkpoint", "renders"):
+        lines.append(f"Checkpoint [{_fmt(get('checkpoint', 'label'))}]")
+    elif get("checkpoint", "state") == "available":
+        lines.append(
+            "Checkpoint: OMITTED — task-checkpoint.md names no task on"
+            " line 1, so its vintage cannot be established"
+        )
 
     lines.append(
         f"Task [{_fmt(get('task', 'state'))}]: {_fmt(get('task', 'status'), '(none)')} "
@@ -1087,6 +1681,88 @@ def render_observation(obs):
         f"| heartbeats={_fmt(get('task', 'heartbeat_count'))} "
         f"prompts={_fmt(get('task', 'manual_prompt_count'))}"
     )
+
+    current_id = get("vintage", "task_id")
+    disagreements = get("vintage", "disagreements") or []
+    lines.append(
+        f"Current task [{_fmt(get('vintage', 'state'))}]: "
+        f"{_fmt(current_id, '(unknown)')} "
+        f"(authority: {_fmt(get('vintage', 'source'))})"
+    )
+    for row in disagreements:
+        if isinstance(row, dict):
+            lines.append(
+                f"  DISAGREES: {_fmt(row.get('artifact'))} names "
+                f"{_fmt(row.get('task_id'))} — reported, not reconciled"
+            )
+
+    roles_listed = get("roles", "listed") or []
+    lines.append(
+        f"Role bindings [{_fmt(get('roles', 'state'))}]: "
+        f"{len(roles_listed)} bound"
+    )
+    unbound = get("roles", "unbound_roles") or []
+    if unbound:
+        lines.append(
+            "  UNBOUND in this herd: %s — named, not described;"
+            " nothing here reports an identity for them"
+            % ", ".join(str(r) for r in unbound)
+        )
+    for entry in roles_listed:
+        if not isinstance(entry, dict):
+            continue
+        missing = entry.get("missing") or []
+        detail = (
+            "" if not missing
+            else " | missing: " + ", ".join(str(m) for m in missing)
+        )
+        lines.append(
+            f"  {_fmt(entry.get('logical')):<12} "
+            f"{_fmt(entry.get('agent'), '(none)'):<34} "
+            f"identity={_fmt(entry.get('strength'))}{detail}"
+        )
+
+    turn_counts = get("turns", "counts") or {}
+    lines.append(
+        f"Turns [{_fmt(get('turns', 'state'))}] for "
+        f"{_fmt(get('turns', 'task_id'), '(no scope)')}: "
+        + (", ".join(
+            f"{name}={count}" for name, count in sorted(turn_counts.items())
+        ) if turn_counts else "(none recorded)")
+        + (f" | routed-but-unobserved={_fmt(get('turns', 'undelivered'))}"
+           if get("turns", "undelivered") else "")
+    )
+    for entry in (get("turns", "roles") or []):
+        if not isinstance(entry, dict):
+            continue
+        cause = entry.get("last_cause")
+        lines.append(
+            f"  {_fmt(entry.get('logical')):<12} "
+            f"recovery={_fmt(entry.get('recovery')):<22} "
+            f"last={_fmt(entry.get('last_outcome'), '-')}"
+            + (f" — {cause}" if cause else "")
+        )
+    omitted = get("turns", "omitted_roles") or []
+    if omitted:
+        lines.append(
+            "  no turn recorded for %s in this task: OMITTED rather"
+            " than shown as healthy" % ", ".join(str(r) for r in omitted)
+        )
+    for build in (get("turns", "skewed") or []):
+        lines.append(
+            f"  BUILD SKEW: record(s) written by observer build "
+            f"{_fmt(build, 'unknown')}; code on disk is "
+            f"{_fmt(get('turns', 'observer_build'), 'unknown')}"
+        )
+    for entry in (get("turns", "listed") or []):
+        if not isinstance(entry, dict):
+            continue
+        lines.append(
+            f"  {_fmt(entry.get('turn_id')):<14} "
+            f"{_fmt(entry.get('logical')):<12} "
+            f"{_fmt(entry.get('outcome')):<17} "
+            f"{_fmt(entry.get('cause'), '')}"
+        )
 
     lines.append(
         f"Runtime [{_fmt(get('runtime', 'state'))}]: "
@@ -1152,6 +1828,17 @@ def render_observation(obs):
     legacy = get("legacy", "events_jsonl") or {}
     if isinstance(legacy, dict) and legacy.get("present"):
         lines.append("Legacy: events.jsonl present — stale legacy journal, not current activity")
+
+    # R-46 AJ-4: an append-only artifact presents its STALEST content
+    # FIRST, which is how a status header said two increments were
+    # delegated while the tail of the same file recorded five closed.
+    # A reader who stops at the top reads the oldest state in the file
+    # and has no way to know it.
+    lines.append(
+        "Append-only artifacts (supervisor-status.md, evidence and"
+        " ruling files): newest entry is at the END. Current truth for"
+        " WHICH TASK IS RUNNING is task.json, shown above."
+    )
 
     diagnostics = obs.get("diagnostics")
     diagnostics = diagnostics if isinstance(diagnostics, list) else []

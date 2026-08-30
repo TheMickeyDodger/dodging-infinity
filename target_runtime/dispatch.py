@@ -3,7 +3,7 @@
 Dispatch goes through the EXISTING structured child-spawn bridge
 (``herdr.orchestrator.execute_spawn_request``) — no parallel path.
 The spawn request the control layer emits toward the target carries
-EXACTLY three fields:
+EXACTLY four fields:
 
 - ``target_repo`` — the leased workspace realpath (resolved from the
   protected record, never from a caller);
@@ -13,16 +13,19 @@ EXACTLY three fields:
   handoff text unrepresentable, so that strip is provably an
   identity for every dispatchable record.)
 - ``alias`` — a fixed derivation from the workflow id.
+- ``preset`` — the fixed DI-owned unattended target execution
+  posture, never sourced from mutable workflow or authority content.
 
 Nothing else: no ``rules``, no ``policy``, no ``task_policy``, no
-``preset``, no ``test_command``, no ``force``, no
-``rejection_drill``. The child Herdr's own role contracts, policy
-resolution, lifecycle, review depth, recovery, and Git gates apply
-untouched — the control layer ADDS nothing, which is what makes the
-target Supervisor demonstrably the FIRST strategy-bearing component
-(plan D-5). Bounded corrective follow-ups re-dispatch the SAME
-byte-exact handoff through the SAME gate; new content requires a new
-authorized revision through the full mission path.
+``test_command``, no ``force``, no ``rejection_drill``. The preset
+controls agent permission posture only. The child Herdr's own role
+contracts, policy resolution, lifecycle, review depth, recovery, and
+Git gates apply untouched — the control layer adds no strategy, which
+is what makes the target Supervisor demonstrably the FIRST
+strategy-bearing component (plan D-5). Bounded corrective follow-ups
+use the SAME fixed execution posture through the SAME gate; new
+authority content requires a new authorized revision through the full
+mission path.
 """
 
 import secrets
@@ -30,6 +33,12 @@ import secrets
 from herdr.orchestrator import execute_spawn_request
 
 ALIAS_PREFIX = "di-remote-2-"
+
+# DI-owned unattended execution posture for every remote target
+# Herdr. This is trusted Runtime configuration: it is deliberately
+# not read from Mission Authorization, handoff text, role output,
+# user text, target instructions, or any mutable workflow field.
+DI_TARGET_EXECUTION_PRESET = "all-claude"
 
 # The SINGLE source of the unresolved-task-id sentinel (I4):
 # ``target_identity_from_spawn`` NEVER returns None — a spawn result
@@ -97,36 +106,56 @@ def surface_baseline_digest(entry):
 
 
 def build_spawn_request(entry):
-    """The complete spawn request — exactly three fields, all
-    resolved from the protected record."""
+    """The complete four-field spawn request.
+
+    Target, task, and alias are resolved from the protected record;
+    the unattended permission posture is the fixed DI-owned Runtime
+    constant.
+    """
     return {
         "target_repo": entry["workspace_lease"]["path_realpath"],
         "task": entry["handoff"]["text"],
         "alias": ALIAS_PREFIX + entry["workflow_id"],
+        "preset": DI_TARGET_EXECUTION_PRESET,
     }
 
 
 def target_identity_from_spawn(spawn_result, entry, now):
     """The durable target-Herdr identity, bounded, from the spawn
-    result (D1). Reads only string identity keys the bridge returns;
-    unknown/absent keys fall back to bounded derivations so the
-    binding is always present. Never stores a capability or a raw
-    result blob."""
+    result (D1). The real bridge returns the task identity twice:
+    ``task.id`` and ``child_record.task_id``. Both must be present,
+    non-empty strings and agree exactly; otherwise the identity stays
+    unresolved. Alias is display-only and is never identity evidence.
+    Never stores a capability or a raw result blob."""
     result = spawn_result if isinstance(spawn_result, dict) else {}
 
     def _bounded(value, fallback):
-        if isinstance(value, str) and value:
+        if isinstance(value, str) and value.strip():
             return value[:128]
         return fallback
 
+    task = result.get("task")
+    child_record = result.get("child_record")
+    task_id = task.get("id") if isinstance(task, dict) else None
+    recorded_task_id = (
+        child_record.get("task_id")
+        if isinstance(child_record, dict) else None
+    )
+    usable_task_id = (
+        task_id
+        if isinstance(task_id, str)
+        and task_id.strip()
+        and isinstance(recorded_task_id, str)
+        and recorded_task_id.strip()
+        and task_id == recorded_task_id
+        else UNRESOLVED_TASK_ID
+    )
+
     return {
         "alias": ALIAS_PREFIX + entry["workflow_id"],
-        "task_id": _bounded(
-            result.get("task_id") or result.get("child"),
-            UNRESOLVED_TASK_ID,
-        ),
+        "task_id": _bounded(usable_task_id, UNRESOLVED_TASK_ID),
         "repo": _bounded(
-            result.get("target_repo") or result.get("repo"),
+            result.get("repo"),
             entry["target"]["canonical_url"],
         ),
         "dispatched_at": now,
@@ -156,7 +185,8 @@ def build_follow_up_spawn_request(entry):
     text is built from a FIXED template with authority values slotted
     in, so no engineering plan can be introduced here — planning
     returns to the target Supervisor, which remains the first
-    strategy-bearing component. Still exactly three fields.
+    strategy-bearing component. Still exactly four fields, including
+    the same fixed DI-owned execution posture as the initial dispatch.
     """
     authorization = entry["mission_authorization"]
     correction = latest_correction_evidence(entry) or (
@@ -182,6 +212,7 @@ def build_follow_up_spawn_request(entry):
         "target_repo": entry["workspace_lease"]["path_realpath"],
         "task": task,
         "alias": ALIAS_PREFIX + entry["workflow_id"],
+        "preset": DI_TARGET_EXECUTION_PRESET,
     }
 
 

@@ -22,6 +22,7 @@ from workflow_authority import record as wa_record
 from workflow_authority import store as wa_store
 from workflow_authority.digest import text_digest
 
+import _scope_hygiene as scope_hygiene
 from test_telegram_operator import (
     NOW,
     FakeGatewayRequest,
@@ -74,7 +75,9 @@ def mission_document(**overrides):
 
 
 def mission_envelope(document=None, **overrides):
-    body = json.dumps(document or mission_document(**overrides))
+    body = (
+        document if document is not None else mission_document(**overrides)
+    )
     return "DI-REMOTE-2 RESPONSE " + json.dumps({
         "remote_protocol_version": 2,
         "kind": "mission_authorization",
@@ -576,6 +579,50 @@ class MissionBoundPinTests(unittest.TestCase):
         self.assertEqual(mission.MAX_TARGET_NAME_CHARS, 100)
 
 
+class FreshPlanningObjectBodyTests(unittest.TestCase):
+    def test_object_body_routes_to_existing_mission_validator(self):
+        original = mission_document(
+            objective="Resolve the production-shaped café defect"
+        )
+        result = planning_result(mission_envelope(original))
+        routed = protocol.parse_routed_operator_response(result.message)
+
+        self.assertTrue(routed.ok)
+        self.assertEqual(
+            routed.kind, protocol.KIND_MISSION_AUTHORIZATION
+        )
+        self.assertIsInstance(routed.body, str)
+        self.assertEqual(json.loads(routed.body), original)
+        validated = mission.validate_mission_document(routed.body, REPO)
+        self.assertEqual(validated, original)
+
+    def test_abbreviated_sha_reaches_existing_validator_and_is_refused(self):
+        original = mission_document(baseline={
+            "ref": "refs/heads/main", "commit_sha": "abc1234",
+        })
+        result = planning_result(mission_envelope(original))
+        routed = protocol.parse_routed_operator_response(result.message)
+
+        self.assertTrue(routed.ok)
+        self.assertEqual(
+            json.loads(routed.body)["baseline"]["commit_sha"],
+            "abc1234",
+        )
+        try:
+            mission.validate_mission_document(routed.body, REPO)
+        except mission.MissionError as caught:
+            self.assertEqual(
+                caught.problem, mission.PROBLEM_BASELINE_SHAPE
+            )
+        except Exception as exc:
+            self.fail(
+                "abbreviated SHA must reach the existing mission"
+                " validator, got %r" % (exc,)
+            )
+        else:
+            self.fail("abbreviated baseline SHA was ACCEPTED")
+
+
 class OfferOrderingTests(MissionCase):
     def test_full_ordering_contract_holds(self):
         harness = self.harness()
@@ -999,14 +1046,9 @@ class OfferOrderingTests(MissionCase):
 
     def test_authority_bound_refusal_is_belt_and_honest(self):
         # UNREACHABLE-BY-INVARIANT, tested at the unit seam: the
-        # document travels double-encoded inside the v2 envelope, so
-        # the envelope line is ALWAYS longer than the rendered text
-        # (measured: overhead ~+350 chars). A rendered text over the
-        # 16384 authority bound therefore cannot arrive through a
-        # valid envelope today. The refusal is kept as enforced belt:
-        # driven here by calling the offer path directly with an
-        # over-bound body, it must refuse honestly (exact bound named)
-        # and persist NOTHING.
+        # The refusal is kept as an enforced belt and driven here by
+        # calling the offer path directly with an over-bound body: it
+        # must refuse honestly (exact bound named) and persist NOTHING.
         harness = self.harness()
 
         class ParsedStub(object):
@@ -1257,8 +1299,17 @@ class PlanningBoundaryTests(MissionCase):
 
         class FakePopen(object):
             def __init__(self, argv, stdin=None, stdout=None,
-                         stderr=None, cwd=None):
-                self.record = {"argv": list(argv), "cwd": cwd}
+                         stderr=None, cwd=None, **kwargs):
+                # `**kwargs` because production now spawns through
+                # `process_ownership.spawn_owned`, which adds
+                # `start_new_session=True` so the Codex process and
+                # anything it starts form one reapable group. A double
+                # that accepted LESS than production emits fails on a
+                # keyword rather than on the behaviour under test, and
+                # the argv assertion below still pins exactly what is
+                # executed.
+                self.record = {"argv": list(argv), "cwd": cwd,
+                               "kwargs": dict(kwargs)}
                 spawns.append(self.record)
                 self.returncode = None
                 self.pid = 4242
@@ -1278,10 +1329,47 @@ class PlanningBoundaryTests(MissionCase):
                 msg_update(1, "do the mission")
             )
             harness.drain_worker()
-        # Exactly one fresh process; the COMPLETE posture on the
-        # executed argv.
-        self.assertEqual(len(spawns), 1)
-        argv = spawns[0]["argv"]
+        # Exactly one fresh CODEX process, plus the one bounded
+        # corroboration query R-54 AR-3 added. Both are asserted
+        # rather than one being filtered away quietly: this double
+        # patches `subprocess.Popen` itself, so every process the seam
+        # starts lands here, and a seam that started a third would be
+        # a finding.
+        query = [s for s in spawns if s["argv"][0] == "ps"]
+        started = [s for s in spawns if s["argv"][0] != "ps"]
+        self.assertEqual(
+            len(query), 1,
+            "the owned spawn did not record its leader's START TIME;"
+            " without it the pgid it stamps cannot be told apart from"
+            " one the OS reused (AR-3)",
+        )
+        self.assertEqual(query[0]["argv"][:3], ["ps", "-o", "lstart="])
+        self.assertEqual(len(started), 1)
+        spawns = started
+        # R-31: production now spawns through
+        # `process_ownership.spawn_owned`, which prefixes a stamping
+        # wrapper the child EXECS. The wrapper `execv`s the tail
+        # UNCHANGED, so the argv Codex actually receives is the tail
+        # after "--" — and this pin asserts BOTH halves: the wrapper
+        # prefix has the exact expected shape, and the Codex argv
+        # beyond it is byte-identical to what it always was.
+        executed = spawns[0]["argv"]
+        self.assertEqual(
+            executed[1], os.path.join(
+                os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__)
+                )), "target_runtime", "spawn_stamp.py"
+            ),
+            "the spawn wrapper is not the stamping wrapper: %r"
+            % (executed[:4],),
+        )
+        self.assertEqual(executed[3], "--")
+        self.assertTrue(
+            spawns[0]["kwargs"].get("start_new_session"),
+            "the Codex spawn is not in its own session, so its tree"
+            " is not reapable as one group",
+        )
+        argv = executed[4:]
         self.assertEqual(argv, [
             "codex", "exec", "--json", "-C", control,
             "--sandbox", "read-only",
@@ -2201,6 +2289,18 @@ class CapabilityFreedomTests(MissionCase):
                 repr(terminator),
             )
             wa_record.validate_record(reloaded)
+
+
+def setUpModule():
+    """R-47/R-48: this module drives the production PLANNING seam
+    through the Telegram adapter, which ASSIGNS a scope before the
+    spawn. It runs against a PRIVATE base."""
+    global _ISOLATED_BASE
+    _ISOLATED_BASE = scope_hygiene.isolate_module()
+
+
+def tearDownModule():
+    scope_hygiene.release_module(_ISOLATED_BASE)
 
 
 if __name__ == "__main__":
