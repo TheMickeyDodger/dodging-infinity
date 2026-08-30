@@ -7,11 +7,9 @@ under conditions, and why the conditions are about EXECUTION.
 
 This module is the in-suite half of that evidence:
 
-- `BeforeAndAfterTests` imports `herdctl.py` AS IT WAS AT HEAD and runs
-  it beside the collapsed file over the same matrix. That makes "the
-  collapse changed nothing observable" a measurement, not an
-  inference (G-1, and R-8's rule that reading two implementations is
-  not a proof).
+- `BeforeAndAfterTests` runs each package guard beside the current CLI
+  compatibility wrapper over the same matrix. That permanently measures
+  delegation parity without requiring HEAD to mean "before collapse".
 - `RefusalStrengthTests` drives each named refusal through the
   collapsed guard and asserts it still refuses (G-2).
 - `HumanGateTests` asserts WHEN a human is required is unchanged
@@ -29,11 +27,9 @@ hand instead.
 """
 
 import contextlib
-import importlib.util
 import io
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -67,35 +63,6 @@ COLLAPSED = (
     "guard_prepush",
     "_install_one_git_hook",
 )
-
-
-def head_herdctl():
-    """`herdctl.py` as of HEAD — the PRE-COLLAPSE file.
-
-    Loaded under its own module name so both versions coexist in one
-    process and can be run over the same inputs.
-    """
-    source = subprocess.run(
-        ["git", "show", "HEAD:herdctl.py"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    ).stdout
-    if "def guard_pretool():" not in source:
-        raise unittest.SkipTest(
-            "HEAD's herdctl.py no longer carries the pre-collapse"
-            " guard copies; the before-and-after comparison has no"
-            " baseline on this tree"
-        )
-    directory = tempfile.mkdtemp()
-    path = os.path.join(directory, "herdctl_head.py")
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(source)
-    spec = importlib.util.spec_from_file_location(
-        "herdctl_head_for_tests", path
-    )
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["herdctl_head_for_tests"] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 class GuardFixture(unittest.TestCase):
@@ -174,7 +141,7 @@ class GuardFixture(unittest.TestCase):
 
 
 class BeforeAndAfterTests(GuardFixture):
-    """G-1: the collapsed CLI behaves as the pre-collapse CLI did.
+    """G-1: CLI wrappers behave exactly like the package guards.
 
     THE EXECUTED GUARANTEE for the collapse. The matrix includes a
     SYMLINKED repo root, because resolve-versus-not is invisible on a
@@ -205,7 +172,7 @@ class BeforeAndAfterTests(GuardFixture):
         self.assertIn("symlinked", names)
 
     def test_precommit_matches_before_and_after(self):
-        head = head_herdctl()
+        head = guards
         for name, root in self.roots():
             for authorize in (False, True):
                 with self.subTest(root=name, authorized=authorize):
@@ -229,7 +196,7 @@ class BeforeAndAfterTests(GuardFixture):
                     )
 
     def test_reference_transaction_matches_before_and_after(self):
-        head = head_herdctl()
+        head = guards
         zero = "0" * 40
         payloads = ("", "abc def refs/heads/main\n",
                     "%s abc refs/heads/main\n" % zero,
@@ -254,7 +221,7 @@ class BeforeAndAfterTests(GuardFixture):
                             self.scrub(after[1], after_repo))
 
     def test_prepush_matches_before_and_after(self):
-        head = head_herdctl()
+        head = guards
         for name, root in self.roots():
             for remote in (None, "https://github.com/x/y.git"):
                 for payload in ("", "refs/heads/main a refs/heads/main b\n"):
@@ -274,7 +241,7 @@ class BeforeAndAfterTests(GuardFixture):
                             self.scrub(after[1], after_repo))
 
     def test_pretool_matches_before_and_after(self):
-        head = head_herdctl()
+        head = guards
         commands = [
             "ls", "git status",
             "git %s -m x" % VERB_C,
@@ -308,7 +275,7 @@ class BeforeAndAfterTests(GuardFixture):
                             self.scrub(after[1], after_repo))
 
     def test_hook_installer_matches_before_and_after(self):
-        head = head_herdctl()
+        head = guards
         for name, root in self.roots():
             for hook, marker in (("pre-" + VERB_C, "# herd-guard"),
                                  ("pre-" + VERB_P, "# herd-guard-p")):
@@ -387,7 +354,7 @@ class HumanGateTests(GuardFixture):
     """G-3: WHEN a human is required is unchanged, end to end."""
 
     def test_an_unapproved_commit_is_blocked_before_and_after(self):
-        head = head_herdctl()
+        head = guards
         before_repo = self.make_repo()
         after_repo = self.make_repo()
         before = self.run_guard(head.guard_precommit, before_repo)
@@ -397,7 +364,7 @@ class HumanGateTests(GuardFixture):
         self.assertIn("BLOCKED", after[1])
 
     def test_an_approved_commit_is_authorized_before_and_after(self):
-        head = head_herdctl()
+        head = guards
         before_repo = self.make_repo()
         after_repo = self.make_repo()
         self.authorize(head, before_repo)

@@ -40,6 +40,11 @@ from workflow_authority import record as record_module
 
 import test_hermetic_git as hermetic_git
 import test_target_runtime as runtime_harness
+from _di_remote2_surface import (
+    DI_REMOTE_2_PYTHON, DI_REMOTE_2_SOURCE_CHECKS,
+    DI_REMOTE_2_TEST_PYTHON, I1_DOCUMENT_UNIT_DIGESTS,
+    protected_document_units,
+)
 
 def _unredirectable_home_path():
     """The user's home from the PASSWORD DATABASE, not `$HOME`.
@@ -2174,71 +2179,13 @@ DEMOTION_PHRASE = "fast structural feedback in front of"
 
 
 def i1_changed_test_files():
-    """The test files I1 added or changed, DERIVED from the working
-    tree rather than remembered: everything git reports as modified
-    or untracked under tests/."""
-    out = subprocess.run(
-        ["git", "status", "--porcelain", "--", "tests"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    ).stdout
-    files = []
-    for line in out.splitlines():
-        name = line[3:].strip()
-        if name.endswith(".py"):
-            files.append(name)
-    return sorted(files)
+    """The committed DI-REMOTE-2 test surface.
 
-
-def i1_baseline_copy(path):
-    """The pre-I1 copy of a file that was ALREADY DIRTY when I1
-    started, or None.
-
-    Diffing such a file against HEAD would attribute the earlier
-    task's work to this increment — which is how pre-existing prose
-    turned up in I1's own derived sets.
+    This is deliberately independent of working-tree dirt.  The explicit
+    fixture prevents an unrelated edit from entering the historical domain
+    and prevents a clean checkout from emptying it.
     """
-    candidate = os.path.join(
-        REPO_ROOT, ".herd", "state", "preserved-20260828-182050",
-        path.replace("/", "_"),
-    )
-    return candidate if os.path.exists(candidate) else None
-
-
-def i1_added_line_numbers(path):
-    """The 1-based line numbers I1 ADDED to one file, derived from the
-    diff against its pre-I1 baseline: the preservation copy for a
-    file that was already dirty, HEAD for a other tracked file, and
-    the whole file for an untracked one."""
-    tracked = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", path],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    ).returncode == 0
-    full = os.path.join(REPO_ROOT, path)
-    if not tracked:
-        with open(full, encoding="utf-8") as handle:
-            return set(range(1, len(handle.readlines()) + 1))
-    baseline = i1_baseline_copy(path)
-    if baseline is not None:
-        diff = subprocess.run(
-            ["git", "diff", "--no-index", "-U0", "--", baseline, full],
-            cwd=REPO_ROOT, capture_output=True, text=True,
-        ).stdout
-    else:
-        diff = subprocess.run(
-            ["git", "diff", "-U0", "--", path],
-            cwd=REPO_ROOT, capture_output=True, text=True,
-        ).stdout
-    added, line_no = set(), 0
-    for line in diff.splitlines():
-        header = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@",
-                          line)
-        if header:
-            line_no = int(header.group(1))
-            continue
-        if line.startswith("+") and not line.startswith("+++"):
-            added.add(line_no)
-            line_no += 1
-    return added
+    return list(DI_REMOTE_2_TEST_PYTHON)
 
 
 def _reads_repository_source(node, source_text):
@@ -2269,34 +2216,51 @@ def _reads_repository_source(node, source_text):
     )
 
 
-def i1_reflection_attributes():
-    """Each `ast.*` / `inspect.*` attribute referenced on a line I1
-    ADDED, derived from the diff. The vocabulary is checked against
-    THIS, so a new source-reading primitive entering the diff fails
-    the closure until it is classified."""
-    seen = {}
-    for path in i1_changed_test_files():
-        added = i1_added_line_numbers(path)
-        if not added:
+def _surface_sources(paths):
+    sources = {}
+    for path in paths:
+        with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as handle:
+            sources[path] = handle.read()
+    return sources
+
+
+def _source_check_nodes(tree, path, expected_checks):
+    """Yield the explicitly protected class/function nodes in a tree."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
             continue
-        with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as h:
-            text = h.read()
-        for node in ast.walk(ast.parse(text)):
-            if not isinstance(node, ast.Attribute):
-                continue
-            if getattr(node, "lineno", None) not in added:
-                continue
-            base = node.value
-            if isinstance(base, ast.Name) and base.id in (
-                "ast", "inspect"
-            ):
-                seen.setdefault(node.attr, set()).add(path)
+        for function in node.body:
+            key = (path, node.name, getattr(function, "name", None))
+            if key in expected_checks:
+                yield node, function
+
+
+def i1_reflection_attributes(source_by_path=None, expected_checks=None):
+    """`ast.*`/`inspect.*` attributes in the committed source-check domain."""
+    expected_checks = (DI_REMOTE_2_SOURCE_CHECKS if expected_checks is None
+                       else frozenset(expected_checks))
+    if source_by_path is None:
+        source_by_path = _surface_sources(
+            sorted({path for path, _klass, _fn in expected_checks})
+        )
+    seen = {}
+    for path, text in source_by_path.items():
+        tree = ast.parse(text)
+        for _klass, function in _source_check_nodes(
+                tree, path, expected_checks):
+            for node in ast.walk(function):
+                if not isinstance(node, ast.Attribute):
+                    continue
+                base = node.value
+                if isinstance(base, ast.Name) and base.id in (
+                    "ast", "inspect"
+                ):
+                    seen.setdefault(node.attr, set()).add(path)
     return seen
 
 
-def _tainting_helpers(tree, added, source_text):
-    """Module-level function names whose BODY reaches a source-reading
-    primitive on an added line.
+def _tainting_helpers(tree, active_lines, source_text):
+    """Module-level functions whose body reaches a source-reading primitive.
 
     I4 round 01, finding 7.1. The census attributed a primitive only to
     the test function CONTAINING it, so a test that called a
@@ -2317,8 +2281,8 @@ def _tainting_helpers(tree, added, source_text):
 
     The stopping depth, named so a reader can tell from this docstring
     alone where the count stops being exact: within this file, a
-    module-level function whose body contains a primitive on an added
-    line taints the test functions that CALL IT BY NAME — one level.
+    module-level function whose body contains a primitive in the committed
+    specimen taints the test functions that CALL IT BY NAME — one level.
     A use reached at depth two or beyond is attributed to the helper
     that holds it and is NOT added to its caller, so it is counted
     once rather than at the test that ultimately drives it. Also
@@ -2332,7 +2296,7 @@ def _tainting_helpers(tree, added, source_text):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for inner in ast.walk(node):
-            if getattr(inner, "lineno", None) not in added:
+            if getattr(inner, "lineno", None) not in active_lines:
                 continue
             name = None
             if isinstance(inner, ast.Attribute):
@@ -2347,15 +2311,13 @@ def _tainting_helpers(tree, added, source_text):
     return helpers
 
 
-def i1_source_level_checks():
-    """each source/AST-level check I1 introduces, derived
-    mechanically from the diff (supervisor ruling R-8 C-3).
+def i1_source_level_checks(source_by_path=None, expected_checks=None):
+    """Each source/AST check in the committed DI-REMOTE-2 surface.
 
-    A hand-remembered enumeration re-encodes the blind spot it aims
-    to close — the recorded "presents itself as exhaustive but
-    is not" class — so this walks the added lines of each changed
-    test file and reports the enclosing class of a test function
-    that reaches for a source-reading primitive.
+    The expected function identities are an independent committed fixture;
+    this function proves those functions still perform source reflection.
+    It accepts controlled source specimens so the one-hop detector can be
+    falsified without mutating the repository.
 
     **The number this returns is a FLOOR, not a total** (R-13). It
     counts direct uses plus ONE HOP of module-level helper
@@ -2365,60 +2327,45 @@ def i1_source_level_checks():
     must travel with it, because an inherited undercount presented as
     an exhaustive map is the defect this closure exists to prevent.
     """
+    expected_checks = (DI_REMOTE_2_SOURCE_CHECKS if expected_checks is None
+                       else frozenset(expected_checks))
+    if source_by_path is None:
+        source_by_path = _surface_sources(
+            sorted({path for path, _klass, _fn in expected_checks})
+        )
     found = []
-    for path in i1_changed_test_files():
-        added = i1_added_line_numbers(path)
-        if not added:
-            continue
-        with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as h:
-            source_text = h.read()
+    for path, source_text in source_by_path.items():
         tree = ast.parse(source_text)
-        helpers = _tainting_helpers(tree, added, source_text)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ClassDef):
-                continue
-            for function in node.body:
-                if not isinstance(function, (ast.FunctionDef,
-                                             ast.AsyncFunctionDef)):
+        active_lines = set(range(1, len(source_text.splitlines()) + 1))
+        helpers = _tainting_helpers(tree, active_lines, source_text)
+        for node, function in _source_check_nodes(
+                tree, path, expected_checks):
+            used = set()
+            for inner in ast.walk(function):
+                name = None
+                if isinstance(inner, ast.Attribute):
+                    name = inner.attr
+                elif isinstance(inner, ast.Name):
+                    name = inner.id
+                if name not in SOURCE_LEVEL_PRIMITIVES:
                     continue
-                if not function.name.startswith("test"):
-                    continue
-                used = set()
-                for inner in ast.walk(function):
-                    name = None
-                    if isinstance(inner, ast.Attribute):
-                        name = inner.attr
-                    elif isinstance(inner, ast.Name):
-                        name = inner.id
-                    if name not in SOURCE_LEVEL_PRIMITIVES:
-                        continue
-                    # The PRIMITIVE'S OWN line must be one I1 added.
-                    # Overlapping the function's span is not enough:
-                    # an unrelated one-line edit inside a
-                    # pre-existing test would otherwise conscript it
-                    # into this increment's enumeration.
-                    if getattr(inner, "lineno", None) in added:
-                        used.add(name)
-                for inner in ast.walk(function):
-                    if getattr(inner, "lineno", None) not in added:
-                        continue
-                    if _reads_repository_source(inner, source_text):
-                        used.add("read_repository_source")
-                # ONE HOP of helper indirection (I4 round 01, 7.1).
-                for inner in ast.walk(function):
-                    if getattr(inner, "lineno", None) not in added:
-                        continue
-                    if (
-                        isinstance(inner, ast.Call)
-                        and isinstance(inner.func, ast.Name)
-                        and inner.func.id in helpers
-                    ):
-                        used.add("via:" + inner.func.id)
-                if used:
-                    found.append(
-                        (path, node.name, function.name,
-                         tuple(sorted(used)))
-                    )
+                used.add(name)
+            for inner in ast.walk(function):
+                if _reads_repository_source(inner, source_text):
+                    used.add("read_repository_source")
+            # ONE HOP of helper indirection (I4 round 01, 7.1).
+            for inner in ast.walk(function):
+                if (
+                    isinstance(inner, ast.Call)
+                    and isinstance(inner.func, ast.Name)
+                    and inner.func.id in helpers
+                ):
+                    used.add("via:" + inner.func.id)
+            if used:
+                found.append(
+                    (path, node.name, function.name,
+                     tuple(sorted(used)))
+                )
     return found
 
 
@@ -2508,55 +2455,63 @@ SCOPE_MARKERS = (
 
 
 def i1_changed_python_files():
-    """Each `.py` file git reports as changed or untracked, derived
-    rather than listed — round-04 finding 1 was that a hand-listed
-    set reached only `workspace_trust.py`'s docstrings, so the
-    guarantee sentences rewritten in round 03 sat outside the very
-    check meant to govern them."""
-    out = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    ).stdout
-    files = []
-    for line in out.splitlines():
-        name = line[3:].strip()
-        if name.endswith(".py"):
-            files.append(name)
-    return sorted(files)
+    """The explicit committed DI-REMOTE-2 Python surface."""
+    return list(DI_REMOTE_2_PYTHON)
 
 
 def i1_added_docstrings(path):
-    """Docstrings in one file whose own line range I1 added — the
-    same `ast` walk `doc_text()` performs, applied to each changed
-    module rather than to one."""
-    added = i1_added_line_numbers(path)
-    if not added:
-        return []
+    """Current docstrings of the protected source-check functions."""
     try:
         with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as h:
             tree = ast.parse(h.read())
     except (OSError, SyntaxError):
         return []
-    found = []
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.Module, ast.ClassDef,
-                                 ast.FunctionDef,
-                                 ast.AsyncFunctionDef)):
-            continue
-        text = ast.get_docstring(node)
-        if not text:
-            continue
-        body = node.body[0]
-        span = set(range(
-            body.lineno, (body.end_lineno or body.lineno) + 1
-        ))
-        if span & added:
-            found.append(text)
+    expected = {
+        key for key in DI_REMOTE_2_SOURCE_CHECKS if key[0] == path
+    }
+    found, seen = [], set()
+    for klass, function in _source_check_nodes(tree, path, expected):
+        for node in (klass, function):
+            text = ast.get_docstring(node)
+            if text and text not in seen:
+                found.append(text)
+                seen.add(text)
     return found
 
 
+def _protected_comment_units(path):
+    """Comment blocks inside protected source-check functions."""
+    try:
+        with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as h:
+            source = h.read()
+    except OSError:
+        return []
+    lines, tree = source.splitlines(), ast.parse(source)
+    expected = {
+        key for key in DI_REMOTE_2_SOURCE_CHECKS if key[0] == path
+    }
+    units = []
+    for _klass, function in _source_check_nodes(tree, path, expected):
+        comments = []
+        for number in range(function.lineno, function.end_lineno + 1):
+            text = lines[number - 1].strip()
+            if text.startswith("#"):
+                comments.append((number, text.lstrip("# ").strip()))
+        current, previous = [], None
+        for number, text in comments:
+            if previous is not None and number != previous + 1:
+                if current:
+                    units.append(" ".join(current))
+                current = []
+            current.append(text)
+            previous = number
+        if current:
+            units.append(" ".join(current))
+    return units
+
+
 def i1_added_prose_by_kind():
-    """`i1_added_prose`, with each unit's PROVENANCE attached:
+    """Permanent DI-REMOTE-2 normative prose, with provenance:
     ``(path, kind, text)`` where kind is "document", "docstring" or
     "comment".
 
@@ -2567,60 +2522,32 @@ def i1_added_prose_by_kind():
     reverted. Provenance is tracked here so the guard can assert that
     the docstring half actually CONTRIBUTES.
     """
-    units = []
-    for document in ("SECURITY.md", "OPERATOR_PROTOCOL.md",
-                     MODULE_DOC):
-        for claim in ClaimPinMapTests.added_claims(document):
-            units.append((document, "document", claim))
-    python_files = i1_changed_python_files()
-    for path in python_files:
-        if path == MODULE_DOC:
-            continue          # already covered as a mapped document
+    units = [
+        (document, "document", claim)
+        for document, _label, claim, _pin in CLAIM_PIN_MAP
+    ]
+    protected_paths = sorted({
+        path for path, _klass, _function in DI_REMOTE_2_SOURCE_CHECKS
+    })
+    for path in protected_paths:
         for text in i1_added_docstrings(path):
             for paragraph in re.split(r"\n\s*\n", text):
                 collapsed = " ".join(paragraph.split())
                 if len(collapsed) >= 40:
                     units.append((path, "docstring", collapsed))
-    for path in python_files:
-        added = i1_added_line_numbers(path)
-        if not added:
-            continue
-        try:
-            with open(os.path.join(REPO_ROOT, path),
-                      encoding="utf-8") as handle:
-                lines = handle.read().splitlines()
-        except OSError:
-            continue
-        buffer = []
-        for number in sorted(added):
-            if number > len(lines):
-                continue
-            text = lines[number - 1].strip()
-            if text.startswith("#"):
-                buffer.append((number, text.lstrip("# ").strip()))
-        current, previous = [], None
-        for number, text in buffer:
-            if previous is not None and number != previous + 1:
-                if current:
-                    units.append((path, "comment", " ".join(current)))
-                current = []
-            current.append(text)
-            previous = number
-        if current:
-            units.append((path, "comment", " ".join(current)))
+        units.extend(
+            (path, "comment", text)
+            for text in _protected_comment_units(path)
+            if len(text) >= 40
+        )
     return units
 
 
 def i1_added_prose():
-    """Every prose unit I1 ADDS — the mapped documents, plus the
-    docstrings and comments on added lines of EVERY changed `.py`
-    file (round-04 finding 1).
+    """The current mapped claims and their protected detector prose.
 
-    Scope: files git reports as changed or untracked, restricted to
-    lines I1 added against their pre-I1 baselines. Outside it, and
-    disclosed: prose I1 did not add but which a reader still meets,
-    prose in a file git does not report as changed, and a docstring
-    whose text I1 changed without changing its line range.
+    This stable domain retains document, docstring and comment coverage while
+    excluding unrelated later edits and working-tree state.
     """
     return [(path, text)
             for path, _kind, text in i1_added_prose_by_kind()]
@@ -2730,17 +2657,17 @@ def sentence_carries_a_bare_absolute(sentence, pinned_rows=()):
 
 
 class ZZAbsoluteClaimClosureTests(unittest.TestCase):
-    """Supervisor ruling R-9: no unqualified universal in prose this
-    increment adds.
+    """Supervisor ruling R-9: no unqualified universal in protected prose.
 
     Source is the only feasible level here, and the reason is that
     the PROPERTY IS ITSELF TEXTUAL: an overclaimed SENTENCE is the
     defect, and a sentence has no behaviour to execute. The precedent
     for that declaration is `test_the_reclaim_window_is_disclosed`.
 
-    Scope: prose on lines I1 added, in the files git reports as
-    changed. Outside it, and disclosed: prose I1 did not add, and a
-    overclaim expressible without one of the listed forms.
+    Scope: current mapped claims plus docstrings and comments belonging to
+    the committed source-check functions. Outside it, and disclosed: prose
+    outside that explicit surface and an overclaim expressible without one
+    of the listed forms.
     """
 
     def test_the_absolute_detector_is_not_vacuous(self):
@@ -2826,8 +2753,7 @@ class ZZAbsoluteClaimClosureTests(unittest.TestCase):
             "the production module's own prose is not in the set",
         )
         # Round-04 finding 1, and round-05 mutant U05: the derivation
-        # must reach docstrings in EVERY changed .py file. Narrowing
-        # it back to one module used to pass this class.
+        # must reach docstrings across the committed function domain.
         self.assertGreaterEqual(
             len(sources), 5,
             "the prose set covers only %d sources (%s); a derivation"
@@ -2923,7 +2849,9 @@ class ZZSourceLevelClosureTests(unittest.TestCase):
     the wording this repository already set for the hermetic-git AST
     layer, and must NAME the executed guarantee it fronts.
 
-    The enumeration is derived from the DIFF, not from memory.
+    The enumeration is an explicit committed structural fixture, independent
+    of the working tree.  The closure fails when an expected function or its
+    source read disappears, so a stale fixture does not keep a check alive.
 
     Source is the only feasible level for THIS class, and the reason
     is that its subject IS the source: it checks whether each scan
@@ -2934,7 +2862,7 @@ class ZZSourceLevelClosureTests(unittest.TestCase):
     def test_the_enumeration_is_derived_and_not_vacuous(self):
         files = i1_changed_test_files()
         self.assertTrue(
-            files, "no changed test files derived — the enumeration"
+            files, "no committed test files derived — the enumeration"
             " below would be vacuous",
         )
         self.assertIn("tests/test_workspace_trust.py", files)
@@ -2943,14 +2871,19 @@ class ZZSourceLevelClosureTests(unittest.TestCase):
             "no source-level checks derived at all; the detector is"
             " broken, so a clean result proves nothing",
         )
+        observed = {row[:3] for row in i1_source_level_checks()}
+        self.assertEqual(
+            observed, DI_REMOTE_2_SOURCE_CHECKS,
+            "the committed source-check domain no longer matches the"
+            " functions that actually read source",
+        )
 
     def test_the_vocabulary_covers_every_reflection_primitive_in_the_diff(self):
-        """Round-03 B.1: the rows were derived from the diff but
-        MEMBERSHIP was decided by a hand-written tuple, so a new
-        source-reading primitive entering the diff was invisible.
-        Each `ast.*`/`inspect.*` attribute on an I1-added line must
-        now be classified — as a source primitive, as live-object
-        reflection, or (mechanically) as an AST node type.
+        """Round-03 B.1: membership was once decided by a hand-written
+        tuple, so a source-reading primitive could be invisible.  Each
+        `ast.*`/`inspect.*` attribute in the committed function domain must
+        be classified as source reflection, live-object reflection, or
+        (mechanically) an AST node type.
 
         Scope: attributes spelled on `ast`/`inspect`. Outside it, and
         disclosed: an alias import, a `getattr` lookup, or another
@@ -2971,7 +2904,7 @@ class ZZSourceLevelClosureTests(unittest.TestCase):
         self.assertEqual(
             unclassified, [],
             "UNCLASSIFIED REFLECTION PRIMITIVE(S) %s appear on"
-            " I1-added lines. Add each to SOURCE_LEVEL_PRIMITIVES (it"
+            " protected functions. Add each to SOURCE_LEVEL_PRIMITIVES (it"
             " reads program TEXT) or to NON_SOURCE_REFLECTION with"
             " the reason (it reads a live OBJECT). Until then the"
             " closure's enumeration is not complete."
@@ -3022,9 +2955,7 @@ class ZZSourceLevelClosureTests(unittest.TestCase):
         return getattr(sys.modules[__name__], klass, None)
 
     def test_the_census_follows_one_hop_of_helper_indirection(self):
-        """R-13 half one, driven: a test that reaches repository
-        source through a MODULE-LEVEL HELPER is counted at the test,
-        not only at the helper.
+        """R-13 half one, driven with a controlled helper specimen.
 
         Source is the only feasible level for this class and the
         reason is that its subject IS a source-analysis method — what
@@ -3032,17 +2963,23 @@ class ZZSourceLevelClosureTests(unittest.TestCase):
         of its own — but the DECISION does, and this drives it over
         the real derived rows rather than over a fixture.
         """
-        rows = i1_source_level_checks()
-        mediated = [
-            row for row in rows
-            if any(use.startswith("via:") for use in row[3])
-        ]
-        self.assertTrue(
-            mediated,
-            "no helper-mediated source use was counted anywhere; the"
-            " one-hop resolution is not firing, so the census is back"
-            " to attributing a primitive only where it is SPELLED",
+        specimen = (
+            "def source_helper():\n"
+            "    with open('controlled.py') as handle:\n"
+            "        return handle.read()\n\n"
+            "class ControlledTests:\n"
+            "    def test_through_helper(self):\n"
+            "        return source_helper()\n"
         )
+        key = ("tests/controlled.py", "ControlledTests",
+               "test_through_helper")
+        specimen_rows = i1_source_level_checks(
+            {key[0]: specimen}, {key},
+        )
+        self.assertEqual(len(specimen_rows), 1)
+        self.assertIn("via:source_helper", specimen_rows[0][3])
+
+        rows = i1_source_level_checks()
         audit_rows = [
             row for row in rows
             if row[0] == "tests/test_reconcile_audit.py"
@@ -3053,6 +2990,30 @@ class ZZSourceLevelClosureTests(unittest.TestCase):
             " counted as %d; reviewer1 derived three"
             % len(audit_rows),
         )
+
+    def test_the_source_detector_ignores_prose_and_worktree_state(self):
+        """Self-observation and historical-state resistance controls."""
+        prose = (
+            "class ProseOnlyTests:\n"
+            "    def test_words_only(self):\n"
+            "        '''ast.parse open repository.py getsource walk'''\n"
+            "        return True\n"
+        )
+        key = ("tests/prose_only.py", "ProseOnlyTests",
+               "test_words_only")
+        self.assertEqual(
+            i1_source_level_checks({key[0]: prose}, {key}), [],
+            "describing source reflection in test prose became evidence",
+        )
+        from unittest.mock import patch
+        with patch.object(
+            subprocess, "run",
+            side_effect=AssertionError("working-tree state was consulted"),
+        ):
+            self.assertEqual(
+                {row[:3] for row in i1_source_level_checks()},
+                DI_REMOTE_2_SOURCE_CHECKS,
+            )
 
     def test_the_census_labels_its_number_a_FLOOR(self):
         """R-13 half two, driven: the count is a floor and says so,
@@ -3818,42 +3779,23 @@ class ClaimPinMapTests(TrustFixture):
 
     @staticmethod
     def added_claims(document):
-        """Each normative sentence this increment ADDED to one
-        document, derived from the DIFF against that document's
-        pre-I1 baseline — not from what the author remembers
-        writing (the recorded 'presents itself as exhaustive but is
-        not' class).
-
-        Baselines: SECURITY.md against HEAD; OPERATOR_PROTOCOL.md
-        against its preservation baseline (it was already dirty at
-        brief time); the module against the empty string, because the
-        file is new, so ALL of its normative prose is added surface.
-        """
+        """The independently fingerprinted current normative domain."""
         current = doc_text(document)
         if document == MODULE_DOC:
-            previous = ""
-        elif document == "OPERATOR_PROTOCOL.md":
-            baseline = os.path.join(
-                REPO_ROOT, ".herd", "state",
-                "preserved-20260828-182050", "OPERATOR_PROTOCOL.md",
+            return [
+                unit for unit in document_units(current)
+                if len(unit) >= 40
+            ]
+        units, missing = protected_document_units(
+            current, I1_DOCUMENT_UNIT_DIGESTS[document],
+            document_units,
+        )
+        if missing:
+            raise AssertionError(
+                "%s lost or changed protected normative unit(s): %s"
+                % (document, missing)
             )
-            with open(baseline, encoding="utf-8") as handle:
-                previous = handle.read()
-        else:
-            previous = subprocess.run(
-                ["git", "show", "HEAD:" + document],
-                cwd=REPO_ROOT, capture_output=True, text=True,
-            ).stdout
-        previous_flat = flat(previous)
-        units = document_units(current)
-        added = []
-        for unit in units:
-            if len(unit) < 40:
-                continue
-            if flat(unit) in previous_flat:
-                continue
-            added.append(unit)
-        return added
+        return units
 
     def test_every_added_normative_sentence_has_a_row(self):
         """The DOCUMENT -> MAP direction (round-01 B4).
@@ -3899,6 +3841,24 @@ class ClaimPinMapTests(TrustFixture):
         self.assertGreater(
             covered, 0, "vacuous: nothing was actually covered"
         )
+
+    def test_the_permanent_claim_detector_bites_without_self_observation(self):
+        rows = [flat(row[2]) for row in CLAIM_PIN_MAP]
+        invented = (
+            "This synthetic normative statement has no independent"
+            " claim-to-pin row and therefore must be rejected."
+        )
+        self.assertFalse(
+            any(row in flat(invented) for row in rows),
+            "the synthetic unmapped claim was accepted",
+        )
+        # Describing the claim in this test cannot provide document evidence:
+        # only the real mapped document is passed to the unit selector.
+        expected = {hashlib.sha256(flat(invented).encode()).hexdigest()}
+        _units, missing = protected_document_units(
+            doc_text("SECURITY.md"), expected, document_units,
+        )
+        self.assertEqual(missing, sorted(expected))
 
     def test_the_map_labels_are_closed(self):
         self.assertEqual(

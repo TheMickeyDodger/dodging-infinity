@@ -5,22 +5,11 @@ is a CLAIM, and each claim is either PINNED by something executable or
 DISCLOSED as unpinned. A claim that is neither gets deleted rather than
 softened.
 
-THE ROW SET IS DERIVED MECHANICALLY, from the diff of each document
-against ITS OWN baseline, and not from what the author remembers
-writing. The baselines differ per document for a stated reason:
-
-  README.md, CHANGELOG.md          committed and clean at I8 start, so
-                                   `git show HEAD:<doc>` IS the I8-start
-                                   content.
-  SECURITY.md, OPERATOR_PROTOCOL.md  already modified at I8 start and
-                                   inside the 47 changed files, so HEAD
-                                   is the wrong baseline; the I8-start
-                                   snapshot lead1 verified byte-identical
-                                   to the I7 ACCEPTED tree is the right
-                                   one.
-
-A missing baseline FAILS rather than skips. A skipped exhaustiveness
-check is an exhaustiveness check that stopped being one.
+THE PERMANENT ROW SET is an explicit committed expectation.  Each
+protected normative unit has an independent content fingerprint and
+must still exist in its real document and have a row.  This preserves
+the authoring-time exhaustiveness guarantee without making a clean
+checkout depend on a dirty diff, an old HEAD, or local mission state.
 
 WHAT A ROW IS WORTH. A `doc<->code` row PARSES its document and drives
 production with what it parsed, so falsifying the SENTENCE fails the
@@ -39,7 +28,6 @@ be two maps free to disagree.
 import json
 import os
 import re
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,54 +36,33 @@ import herdr.observe as observe
 import herdr.turns as turns
 from test_workspace_trust import (CLAIM_PIN_MAP, REPO_ROOT, document_units,
                                   flat)
+from _di_remote2_surface import (I8_DOCUMENT_UNIT_DIGESTS,
+                                 protected_document_units, unit_digest)
 
 I8_DOCS = ("README.md", "SECURITY.md", "OPERATOR_PROTOCOL.md",
            "CHANGELOG.md")
-
-#: The I8-start snapshot: lead1 took it before the first I8 edit and
-#: verified it byte-identical to the I7 ACCEPTED tree, 47 files, 47
-#: digests.
-I8_START_SNAPSHOT = os.path.join(
-    REPO_ROOT, ".herd", "state", "lead1-snapshot-I8-start"
-)
-SNAPSHOT_BASELINE = ("SECURITY.md", "OPERATOR_PROTOCOL.md")
-
 
 def doc_text(document):
     with open(os.path.join(REPO_ROOT, document), encoding="utf-8") as fh:
         return fh.read()
 
 
-def baseline_text(document):
-    """The I8-START content of one document, from the baseline that
-    document actually has."""
-    if document in SNAPSHOT_BASELINE:
-        path = os.path.join(I8_START_SNAPSHOT, document)
-        if not os.path.exists(path):
-            raise AssertionError(
-                "the I8-start snapshot has no %s at %s, so the added-unit"
-                " derivation for it has no baseline and this check would"
-                " be vacuous" % (document, path)
-            )
-        with open(path, encoding="utf-8") as handle:
-            return handle.read()
-    result = subprocess.run(
-        ["git", "show", "HEAD:" + document],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    if result.returncode != 0 or not result.stdout:
-        raise AssertionError(
-            "git could not produce HEAD:%s, so the added-unit derivation"
-            " for it has no baseline: %r" % (document, result.stderr)
-        )
-    return result.stdout
-
-
 def added_units(document):
-    """Each unit of normative text I8 ADDED to one document."""
-    previous = flat(baseline_text(document))
-    return [unit for unit in document_units(doc_text(document))
-            if len(unit) >= 40 and flat(unit) not in previous]
+    """Protected current normative units and missing fingerprints."""
+    return protected_document_units(
+        doc_text(document), I8_DOCUMENT_UNIT_DIGESTS[document],
+        document_units,
+    )
+
+
+def unmapped_units(units, rows, exemptions=()):
+    """Units not covered by an independent claim row or exemption."""
+    return [
+        unit for unit in units
+        if not any(row in flat(unit) for row in rows)
+        and not any(flat(phrase) in flat(unit)
+                    for _reason, phrase in exemptions)
+    ]
 
 
 def herd_fixture(case, roles=None, args=None):
@@ -240,23 +207,26 @@ class ClaimPinMapI8Tests(unittest.TestCase):
             rows_by_doc.setdefault(document, []).append(flat(claim))
         unpinned, covered = [], 0
         for document in I8_DOCS:
-            units = added_units(document)
+            units, missing = added_units(document)
+            self.assertEqual(
+                missing, [],
+                "%s lost or changed protected normative unit(s): %s"
+                % (document, missing),
+            )
             self.assertTrue(
                 units,
-                "derived NO added text for %s — the baseline is wrong,"
-                " so this exhaustiveness check is vacuous" % document,
+                "the committed normative domain for %s is empty"
+                % document,
             )
             rows = rows_by_doc.get(document, [])
             self.assertTrue(rows, "no rows at all for %s" % document)
-            for unit in units:
-                flat_unit = flat(unit)
-                if any(row in flat_unit for row in rows):
-                    covered += 1
-                    continue
-                if any(flat(phrase) in flat_unit
-                       for _reason, phrase in NON_NORMATIVE_EXEMPTIONS):
-                    continue
-                unpinned.append("%s: %s" % (document, unit[:150]))
+            gaps = unmapped_units(
+                units, rows, NON_NORMATIVE_EXEMPTIONS,
+            )
+            covered += len(units) - len(gaps)
+            unpinned.extend(
+                "%s: %s" % (document, unit[:150]) for unit in gaps
+            )
         self.assertEqual(
             unpinned, [],
             "UNPINNED NORMATIVE SURFACE (%d). Each needs a claim->pin"
@@ -281,11 +251,33 @@ class ClaimPinMapI8Tests(unittest.TestCase):
         rows = [flat(row[2]) for row in self.all_rows()]
         invented = ("This sentence states a contract that no row in"
                     " either map covers, at all.")
-        self.assertFalse(
-            any(row in flat(invented) for row in rows),
+        self.assertEqual(
+            unmapped_units([invented], rows), [invented],
             "an invented sentence matched a row, so the matcher is"
             " loose enough to cover text nobody mapped",
         )
+
+    def test_the_committed_domain_resists_mutation_and_self_observation(self):
+        """A changed document unit disappears; prose here is not evidence."""
+        document = "README.md"
+        units, missing = added_units(document)
+        self.assertFalse(missing)
+        expected = {unit_digest(units[0])}
+        mutated = units[0] + " synthetic violation"
+        _found, mutation_missing = protected_document_units(
+            mutated, expected, document_units,
+        )
+        self.assertEqual(mutation_missing, sorted(expected))
+
+        prose_only_in_this_test = (
+            "This sentence describes a protected normative condition"
+            " but does not occur in the document under test."
+        )
+        expected = {unit_digest(prose_only_in_this_test)}
+        _found, self_observation_missing = protected_document_units(
+            doc_text(document), expected, document_units,
+        )
+        self.assertEqual(self_observation_missing, sorted(expected))
 
     def test_the_disclosed_rows_are_visible_as_disclosures(self):
         """A `NO PIN` row is a DISCLOSURE, and it stays labelled as

@@ -53,16 +53,28 @@ from target_runtime import dispatch as dispatch_module  # noqa: E402
 from target_runtime import evidence_preservation as preserve_module  # noqa: E402
 from target_runtime import ownership as ownership_module  # noqa: E402
 from target_runtime import process_ownership as proc_module  # noqa: E402
+from target_runtime import spawn_stamp as stamp_module      # noqa: E402
 from target_runtime import workspace as workspace_module  # noqa: E402
 from target_runtime import workspace_ownership as ws_module  # noqa: E402
 from target_runtime import workspace_trust as trust_module  # noqa: E402
 from workflow_authority import record as wa_record      # noqa: E402
 
 import _scope_hygiene as scope_hygiene                  # noqa: E402
+from _di_remote2_surface import (                       # noqa: E402
+    DI_REMOTE_2_PRODUCTION_PYTHON, DI_REMOTE_2_TEST_PYTHON,
+)
 from test_target_runtime import NOW, RuntimeCase        # noqa: E402
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _committed_sources(paths):
+    sources = {}
+    for path in paths:
+        with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as handle:
+            sources[path] = handle.read()
+    return sources
 
 
 #: Where fixture ownership records live. Deliberately NOT a temp
@@ -3538,6 +3550,168 @@ class ProductionLiveWorkspaceProjectionTests(unittest.TestCase):
             )
 
 
+class SpawnStampExecutableResolutionTests(unittest.TestCase):
+    """The real stamping wrapper preserves Popen's exec contract."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp()
+        self.addCleanup(remove, self.base)
+        self.bin = os.path.join(self.base, "bin")
+        os.makedirs(self.bin)
+
+    def path_python(self, name):
+        executable = os.path.join(self.bin, name)
+        os.symlink(sys.executable, executable)
+        environment = os.environ.copy()
+        environment["PATH"] = os.pathsep.join((
+            self.bin, environment.get("PATH", os.defpath),
+        ))
+        return environment
+
+    def root(self, name):
+        root = os.path.join(self.base, name)
+        os.makedirs(root)
+        return root
+
+    def run_wrapper(self, root, argv, environment=None):
+        return subprocess.run(
+            [sys.executable, proc_module._STAMP_WRAPPER, root, "--"]
+            + list(argv),
+            capture_output=True, text=True, timeout=30,
+            start_new_session=True, env=environment,
+        )
+
+    def release(self, handle):
+        if handle.poll() is None:
+            proc_module.reap_owned(
+                handle.pid, directory=self.base, settle_seconds=3.0,
+            )
+        try:
+            handle.wait(timeout=3)
+        except Exception:                                 # noqa: BLE001
+            pass
+
+    def test_PATH_only_executable_runs_with_argv_and_environment_unchanged(self):
+        name = "path-only-stamp-probe"
+        environment = self.path_python(name)
+        environment["SPAWN_STAMP_ENV_PROBE"] = "inherited unchanged"
+        arguments = ["plain", "space value", "$HOME", ";", ""]
+        script = (
+            "import json, os, sys; print(json.dumps({"
+            "'argv': sys.argv[1:], "
+            "'environment': os.environ['SPAWN_STAMP_ENV_PROBE']}))"
+        )
+        root = self.root("path-root")
+        completed = self.run_wrapper(
+            root, [name, "-c", script] + arguments, environment,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), {
+            "argv": arguments,
+            "environment": "inherited unchanged",
+        })
+        self.assertTrue(os.path.exists(os.path.join(root, "pgid")))
+
+    def test_absolute_executable_still_runs(self):
+        root = self.root("absolute-root")
+        completed = self.run_wrapper(
+            root,
+            [sys.executable, "-c",
+             "import sys; sys.stdout.write(sys.argv[1])", "absolute-ok"],
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "absolute-ok")
+        self.assertTrue(os.path.exists(os.path.join(root, "pgid")))
+
+    def test_exec_handoff_is_PATH_aware_and_has_no_shell_fallback(self):
+        """Fast structural feedback in front of the executed
+        `test_PATH_only_executable_runs_with_argv_and_environment_unchanged`,
+        `test_spawn_owned_runs_a_PATH_only_executable_and_keeps_its_stamp`,
+        and `test_nonexistent_executable_fails_after_stamping` guarantees.
+        """
+        source = inspect.getsource(stamp_module.main)
+        self.assertIn("os.execvp(rest[0], rest)", source)
+        self.assertNotIn("os.execv(rest[0], rest)", source)
+        for forbidden in (
+            "shell=True", "/bin/sh", "os.system", "subprocess.Popen",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_nonexistent_executable_fails_after_stamping(self):
+        root = self.root("missing-root")
+        missing = "definitely-not-an-executable-" + secrets.token_hex(8)
+        completed = self.run_wrapper(root, [missing])
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("FileNotFoundError", completed.stderr)
+        self.assertTrue(
+            os.path.exists(os.path.join(root, "pgid")),
+            "the wrapper did not stamp before the failed exec",
+        )
+
+    def test_spawn_owned_runs_a_PATH_only_executable_and_keeps_its_stamp(self):
+        name = "path-owned-probe"
+        environment = self.path_python(name)
+        arguments = ["one", "two words", "$(not-a-shell)", ""]
+        script = (
+            "import json, os, sys; print(json.dumps({"
+            "'pid': os.getpid(), 'pgid': os.getpgrp(), "
+            "'argv': sys.argv[1:]}))"
+        )
+        handle = proc_module.spawn_owned(
+            [name, "-c", script] + arguments,
+            label="path-resolution-integration",
+            directory=self.base, owned_root_base_dir=self.base,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, env=environment,
+        )
+        self.addCleanup(self.release, handle)
+        stdout, stderr = handle.communicate(timeout=30)
+        self.assertEqual(handle.returncode, 0, stderr)
+        observed = json.loads(stdout)
+        self.assertEqual(observed["argv"], arguments)
+        self.assertEqual(observed["pid"], handle.pid)
+        self.assertEqual(observed["pgid"], handle.pid)
+        roots = proc_module.owned_roots(self.base)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(roots[0][1], handle.pid)
+        self.assertIn(handle.pid, proc_module.owned_groups(self.base))
+
+    def test_production_runner_accepts_a_bare_PATH_executable(self):
+        from unittest.mock import patch
+        from codex_gateway import role_turn as role_turn_module
+        name = "path-role-turn-probe"
+        environment = self.path_python(name)
+        scope = proc_module.assign_scope(
+            proc_module.OWNER_TYPE_WORKFLOW, "/control/repo",
+            "wf-path", "t-path", base=self.base,
+        )
+        script = (
+            "import json, os, sys; data=sys.stdin.buffer.read(); "
+            "print(json.dumps({'pid': os.getpid(), "
+            "'pgid': os.getpgrp(), 'argv': sys.argv[1:], "
+            "'stdin': data.decode()}))"
+        )
+        with patch.dict(
+            os.environ, {"PATH": environment["PATH"]}, clear=False,
+        ):
+            rc, stdout, stderr, pid = role_turn_module._default_runner(
+                [name, "-c", script, "bare-command"], b"prompt", None,
+                owner_scope=scope,
+            )
+        self.assertEqual(rc, 0, stderr)
+        observed = json.loads(stdout)
+        self.assertEqual(observed, {
+            "pid": pid,
+            "pgid": pid,
+            "argv": ["bare-command"],
+            "stdin": "prompt",
+        })
+        self.assertIn(pid, proc_module.owned_groups(scope))
+        self.assertIn(pid, [pgid for _root, pgid
+                            in proc_module.owned_roots(scope)])
+        self.assertFalse(proc_module._group_alive(pid))
+
+
 class ProductionPathOwnershipTests(unittest.TestCase):
     """R-28 T-2: ownership asserted THROUGH THE PRODUCTION CALLER.
 
@@ -4370,27 +4544,21 @@ class DestructiveOrderingClosureTests(unittest.TestCase):
         ),
     }
 
-    def domain(self):
-        """Every function containing a destructive call, in the
-        changed PRODUCTION surface. Derived from the diff."""
+    def domain(self, sources=None):
+        """Every destructive function in the committed production surface."""
         import ast
-        out = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=REPO_ROOT, capture_output=True, text=True,
-        ).stdout
+        if sources is None:
+            paths = [
+                path for path in DI_REMOTE_2_PRODUCTION_PYTHON
+                if path.split("/")[0] in (
+                    "target_runtime", "herdr", "workflow_authority",
+                    "codex_gateway",
+                )
+            ]
+            sources = _committed_sources(paths)
         found = {}
-        for line in out.splitlines():
-            path = line[3:].strip()
-            if not path.endswith(".py"):
-                continue
-            if path.split("/")[0] not in (
-                "target_runtime", "herdr", "workflow_authority",
-                "codex_gateway",
-            ):
-                continue
-            with open(os.path.join(REPO_ROOT, path),
-                      encoding="utf-8") as handle:
-                tree = ast.parse(handle.read())
+        for path, source in sources.items():
+            tree = ast.parse(source)
             for node in ast.walk(tree):
                 if not isinstance(node, (ast.FunctionDef,
                                          ast.AsyncFunctionDef)):
@@ -4423,6 +4591,32 @@ class DestructiveOrderingClosureTests(unittest.TestCase):
                         continue
                     found.setdefault((path, node.name), set()).add(name)
         return found
+
+    def test_the_detector_bites_without_worktree_or_self_prose(self):
+        import ast
+        specimen = (
+            "import os\n"
+            "def synthetic_violation():\n"
+            "    os.unlink('owned-only-in-the-specimen')\n"
+        )
+        key = ("target_runtime/specimen.py", "synthetic_violation")
+        domain = self.domain({key[0]: specimen})
+        self.assertIn(key, domain)
+        self.assertNotIn(key, self.ORDERING)
+        prose_only = (
+            "def harmless():\n"
+            "    '''os.unlink and remove are words, not calls.'''\n"
+            "    return True\n"
+        )
+        self.assertEqual(
+            self.domain({"target_runtime/prose.py": prose_only}), {},
+        )
+        from unittest.mock import patch
+        with patch.object(
+            subprocess, "run",
+            side_effect=AssertionError("dirty state was consulted"),
+        ):
+            self.assertTrue(self.domain())
 
     @staticmethod
     def _is_probe(call, name):
@@ -4514,8 +4708,9 @@ class DestructiveOrderingClosureTests(unittest.TestCase):
 
     def test_the_domain_is_a_FLOOR_and_its_bounds_are_named(self):
         """R-13 rides here too. The scan counts functions whose OWN
-        body spells one of the listed destructive calls, in CHANGED
-        production files, at depth ZERO — so the number is a FLOOR.
+        body spells one of the listed destructive calls, in the committed
+        DI-REMOTE-2 production surface, at depth ZERO — so the number is a
+        FLOOR.
 
         This enumeration is fast structural feedback in front of
         `test_sessions_close_BEFORE_the_directory_is_deleted` and
@@ -4523,7 +4718,7 @@ class DestructiveOrderingClosureTests(unittest.TestCase):
         which EXECUTE the orders being claimed.
 
         Named as outside it, each leaving the count a floor: a destructive step reached only through a helper at depth one or
-        beyond, one in an UNCHANGED file, one reached through an alias
+        beyond, one outside the committed surface, one reached through an alias
         or `getattr`, one performed by a library this code calls, and a
         destruction spelled some way outside the listed names.
         """
@@ -4906,25 +5101,24 @@ class ReaperFunctionClosureTests(unittest.TestCase):
             " own.",
     }
 
-    def domain(self):
-        """Every reaper FUNCTION on the changed surface, derived."""
+    def domain(self, sources=None):
+        """Every reaper function on the committed DI-REMOTE-2 surface."""
         import ast
-        out = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=REPO_ROOT, capture_output=True, text=True,
-        ).stdout
+        if sources is None:
+            paths = [
+                path for path in (
+                    DI_REMOTE_2_PRODUCTION_PYTHON
+                    + DI_REMOTE_2_TEST_PYTHON
+                )
+                if path.split("/")[0] in (
+                    "tests", "target_runtime", "herdr",
+                    "workflow_authority",
+                )
+            ]
+            sources = _committed_sources(paths)
         found = {}
-        for line in out.splitlines():
-            path = line[3:].strip()
-            if not path.endswith(".py"):
-                continue
-            if not path.split("/")[0] in (
-                "tests", "target_runtime", "herdr", "workflow_authority"
-            ):
-                continue
-            with open(os.path.join(REPO_ROOT, path),
-                      encoding="utf-8") as handle:
-                tree = ast.parse(handle.read())
+        for path, source in sources.items():
+            tree = ast.parse(source)
             for node in ast.walk(tree):
                 if not isinstance(node, (ast.FunctionDef,
                                          ast.AsyncFunctionDef)):
@@ -4943,6 +5137,31 @@ class ReaperFunctionClosureTests(unittest.TestCase):
                     found[(path, node.name)] = node.lineno
                     break
         return found
+
+    def test_the_detector_bites_without_worktree_or_self_prose(self):
+        specimen = (
+            "import os\n"
+            "def synthetic_reaper(pid):\n"
+            "    os.kill(pid, 15)\n"
+        )
+        key = ("target_runtime/specimen.py", "synthetic_reaper")
+        domain = self.domain({key[0]: specimen})
+        self.assertIn(key, domain)
+        self.assertNotIn(key, self.PINNED)
+        prose_only = (
+            "def harmless():\n"
+            "    '''os.kill and waitpid are words, not calls.'''\n"
+            "    return True\n"
+        )
+        self.assertEqual(
+            self.domain({"target_runtime/prose.py": prose_only}), {},
+        )
+        from unittest.mock import patch
+        with patch.object(
+            subprocess, "run",
+            side_effect=AssertionError("dirty state was consulted"),
+        ):
+            self.assertTrue(self.domain())
 
     @staticmethod
     def _is_probe(call, name):
@@ -5038,12 +5257,12 @@ class ReaperFunctionClosureTests(unittest.TestCase):
         """R-13 rides on R-15's axis too.
 
         The enumeration counts functions whose OWN body spells a
-        terminating call, in CHANGED files, at depth ZERO — so the
-        number is a FLOOR, not a total.
+        terminating call, in the committed DI-REMOTE-2 surface, at depth ZERO
+        — so the number is a FLOOR, not a total.
 
         Named as outside it, each leaving the count a floor: a reaper
         that terminates only through a helper it calls (depth one or
-        beyond), a reaper in an UNCHANGED file, a call reached through
+        beyond), a reaper outside the committed surface, a call reached through
         an alias or `getattr`, a process terminated by a library this
         code calls, and a termination expressed some way other than
         the four names above. The transitive closure over this domain
@@ -5065,7 +5284,7 @@ class SpawnSiteClosureTests(unittest.TestCase):
     test surface, with the site set derived MECHANICALLY from the
     diff.
 
-    The instance fixes are not the deliverable; this closure is. It walks the changed test files, finds the calls that can start a
+    The instance fixes are not the deliverable; this closure is. It walks the committed DI-REMOTE-2 test files, finds the calls that can start a
     process, and requires each one to be either routed through
     `target_runtime.process_ownership` or covered by a BLOCKING form
     whose scope: it returns only after its child has exited.
@@ -5077,8 +5296,8 @@ class SpawnSiteClosureTests(unittest.TestCase):
     a real tree, and the harness-level `surviving_owned_groups` check.
     """
 
-    #: Names that can start a process. Derived from what the changed
-    #: files actually call, not from a remembered list.
+    #: Names that can start a process. Applied to the explicit committed
+    #: surface rather than to whatever happens to be dirty today.
     SPAWNERS = (
         "Popen", "run", "call", "check_call", "check_output",
         "fork", "forkpty", "spawn_owned", "system", "posix_spawn",
@@ -5114,22 +5333,14 @@ class SpawnSiteClosureTests(unittest.TestCase):
             " named here rather than silently exempt",
     }
 
-    def sites(self):
-        """(path, lineno, callee) for every spawn-capable call on a
-        changed test file, derived from the diff."""
+    def sites(self, sources=None):
+        """Spawn-capable calls on the committed DI-REMOTE-2 test surface."""
         import ast
-        out = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=REPO_ROOT, capture_output=True, text=True,
-        ).stdout
+        if sources is None:
+            sources = _committed_sources(DI_REMOTE_2_TEST_PYTHON)
         found = []
-        for line in out.splitlines():
-            path = line[3:].strip()
-            if not (path.startswith("tests/") and path.endswith(".py")):
-                continue
-            with open(os.path.join(REPO_ROOT, path),
-                      encoding="utf-8") as handle:
-                tree = ast.parse(handle.read())
+        for path, source in sources.items():
+            tree = ast.parse(source)
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
@@ -5146,6 +5357,30 @@ class SpawnSiteClosureTests(unittest.TestCase):
                 if name in self.SPAWNERS:
                     found.append((path, node.lineno, base + name))
         return sorted(found)
+
+    def test_the_detector_bites_without_worktree_or_self_prose(self):
+        specimen = (
+            "import subprocess\n"
+            "def synthetic_spawn():\n"
+            "    return subprocess.Popen(['child'])\n"
+        )
+        key = ("tests/specimen.py", "subprocess.Popen")
+        sites = self.sites({key[0]: specimen})
+        self.assertEqual(len(sites), 1)
+        self.assertEqual((sites[0][0], sites[0][2]), key)
+        self.assertNotIn(key, self.DECLARED)
+        prose_only = (
+            "def harmless():\n"
+            "    '''subprocess.Popen is prose, not a call.'''\n"
+            "    return True\n"
+        )
+        self.assertEqual(self.sites({"tests/prose.py": prose_only}), [])
+        from unittest.mock import patch
+        with patch.object(
+            subprocess, "run",
+            side_effect=AssertionError("dirty state was consulted"),
+        ):
+            self.assertTrue(self.sites())
 
     def test_the_enumeration_is_derived_and_not_vacuous(self):
         sites = self.sites()
@@ -5191,7 +5426,7 @@ class SpawnSiteClosureTests(unittest.TestCase):
 
     def test_the_count_is_a_FLOOR_and_the_depth_is_named(self):
         """R-13 rides here. The enumeration counts DIRECT calls spelled
-        on the listed names, in changed test files, at depth ZERO —
+        on the listed names, in the committed test surface, at depth ZERO —
         the call is attributed where it is written.
 
         So the number is a FLOOR, not a total. Named as outside it,

@@ -915,7 +915,7 @@ def _default_runner(argv, prompt_bytes, cwd, owner_scope=None):
     # for. # Before this, an ownership module existed and governed no part of
     # this path.
     #
-    # `execv` in the stamping wrapper preserves the pid, so the
+    # `execvp` in the stamping wrapper preserves the pid, so the
     # identity recorded per plan D-10 is unchanged. # The no-deadline behaviour is unchanged: within this function the
     # Codex turn is unbounded.
     from target_runtime import process_ownership as _own

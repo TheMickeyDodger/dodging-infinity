@@ -20,7 +20,6 @@ import ast
 import difflib
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -39,6 +38,7 @@ from herdr.instance import HerdrInstance
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI_PATH = os.path.join(REPO_ROOT, "herdctl.py")
 PACKAGE_DIR = os.path.join(REPO_ROOT, "herdr")
+GUARDS_PATH = os.path.join(PACKAGE_DIR, "guards.py")
 
 #: Similarity alone, at a threshold tuned to obvious copies, MISSES a
 #: drifted one. `clear_contexts_internal` scored 0.66 against
@@ -307,15 +307,50 @@ def current_cli_source():
         return handle.read()
 
 
-def head_cli_source():
-    """`herdctl.py` as of HEAD — the pre-collapse file, which still
-    contains `clear_contexts_internal`. Used only by the calibration
-    test, so the method is proven against the copy we know about."""
-    result = subprocess.run(
-        ["git", "show", "HEAD:herdctl.py"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    return result.stdout
+DRIFTED_CLEAR_CONTEXTS_COPY = '''
+def clear_contexts_internal(r, c, s):
+    t = load_task(r)
+    if t.get("status") == "ACTIVE":
+        raise SystemExit("Refusing to clear contexts during an ACTIVE top-level task.")
+    allowed_types = set(c.get("context", {}).get("clear_roles", ["supervisor", "lead", "executor", "reviewer"]))
+    reset_commands = c.get("context", {}).get("reset_commands", {"claude": "/clear", "codex": "/new"})
+    selected = []
+    for logical, agent in s["agents"].items():
+        typ = role_type_for_logical(logical)
+        if typ not in allowed_types:
+            continue
+        st = agent_info(agent)["status"]
+        if st not in {"idle", "done"}:
+            raise SystemExit(f"Refusing to clear `{logical}` while status is `{st}`. Resolve/finish it first.")
+        kind = c.get("roles", {}).get(typ, {}).get("kind")
+        reset = reset_commands.get(kind)
+        if not reset:
+            raise SystemExit(
+                f"No context reset command configured for runtime kind `{kind}` ({logical}). "
+                f"Set context.reset_commands.{kind} in {CFG}, or disable automatic clearing for that role."
+            )
+        selected.append((logical, agent, typ, kind, reset))
+
+    print("Checkpointed task context is preserved on disk; clearing live model context...")
+    for logical, agent, typ, kind, reset in selected:
+        print(f"Clearing {logical} -> {agent} ({kind}: {reset})")
+        p = send_runtime_reset(agent, reset)
+        if p.returncode:
+            raise SystemExit(p.stderr.strip() or p.stdout.strip() or f"Could not clear {logical}")
+
+    timeout = int(c["orchestration"].get("agent_task_timeout_ms", 600000))
+    agents = s["agents"]
+    for logical, agent, typ, _kind, _reset in selected:
+        print(f"Re-seeding {logical} contract")
+        p = prompt(agent, bootstrap_text(r, logical, typ, agents, c), timeout, True)
+        if p.returncode:
+            print(f"WARNING: contract re-seed for {logical} did not settle cleanly: {p.stderr.strip()}", file=sys.stderr)
+'''
+
+
+def source_with_known_drifted_copy():
+    """A self-contained mutation specimen, never the checked-out tree."""
+    return current_cli_source() + "\n" + DRIFTED_CLEAR_CONTEXTS_COPY
 
 
 class DuplicationCensusTests(unittest.TestCase):
@@ -455,20 +490,21 @@ COLLAPSED_GUARDS = (
 
 
 def source_with_a_fresh_hand_copy(name):
-    """The CURRENT `herdctl.py` with `name`'s wrapper replaced by
-    HEAD's hand-copied body — a re-divergence, synthesised in memory.
+    """Current CLI with a package guard pasted over its wrapper.
+
+    That produces the forbidden hand-copy shape from current committed
+    sources, without relying on an old checkout or writing a specimen.
 
     This function builds the specimen in memory and throws it away,
     because the census takes source text and so has no need to write
     one out. That is a statement about this function, not about the
-    module: the callers below read `herdctl.py` and run `git show`,
-    both of which touch the working tree and the object store as
-    readers.
+    module: the callers below read current committed source files only.
     """
     import ast
-    head = head_cli_source()
     current = current_cli_source()
-    head_tree = ast.parse(head)
+    with open(GUARDS_PATH, encoding="utf-8") as handle:
+        package = handle.read()
+    package_tree = ast.parse(package)
     current_tree = ast.parse(current)
 
     def segment(tree, text):
@@ -477,7 +513,7 @@ def source_with_a_fresh_hand_copy(name):
                 return ast.get_source_segment(text, node)
         return None
 
-    copied = segment(head_tree, head)
+    copied = segment(package_tree, package)
     wrapper = segment(current_tree, current)
     if copied is None or wrapper is None:
         return None
@@ -489,8 +525,8 @@ class GuardCollapseBiteTests(unittest.TestCase):
 
     An extension whose only evidence is its own presence leaves open
     whether it fires, which is the failure mode this class exists to
-    rule out. Each test here rebuilds a real re-divergence — HEAD's hand-copied body pasted back
-    over the collapsed wrapper — and asserts the census reports it and
+    rule out. Each test rebuilds a real re-divergence — the current package
+    body pasted over the CLI wrapper — and asserts the census reports it and
     that the baseline no longer excuses it.
 
     Source is the only feasible level for this class, and the reason is
@@ -513,11 +549,10 @@ class GuardCollapseBiteTests(unittest.TestCase):
         for name in COLLAPSED_GUARDS:
             with self.subTest(name=name):
                 specimen = source_with_a_fresh_hand_copy(name)
-                if specimen is None:
-                    self.skipTest(
-                        "%s is missing from HEAD or from the current"
-                        " file; the specimen cannot be built" % name
-                    )
+                self.assertIsNotNone(
+                    specimen,
+                    "%s is missing from the current CLI or package" % name,
+                )
                 self.assertNotEqual(
                     specimen, current_cli_source(),
                     "the specimen is identical to the current file, so"
@@ -536,8 +571,9 @@ class GuardCollapseBiteTests(unittest.TestCase):
         for name in COLLAPSED_GUARDS:
             with self.subTest(name=name):
                 specimen = source_with_a_fresh_hand_copy(name)
-                if specimen is None:
-                    self.skipTest("specimen unavailable for %s" % name)
+                self.assertIsNotNone(
+                    specimen, "specimen unavailable for %s" % name,
+                )
                 added = set(census(specimen)) - (
                     KNOWN_DUPLICATES_AT_I2_START
                 )
@@ -556,6 +592,16 @@ class GuardCollapseBiteTests(unittest.TestCase):
         )
         self.assertEqual(added, set())
 
+    def test_detector_does_not_observe_its_own_prose(self):
+        prose = (
+            "\nCOLLAPSE_DESCRIPTION = '''def guard_pretool(): a fresh"
+            " hand copy would be forbidden'''\n"
+        )
+        added = set(census(current_cli_source() + prose)) - (
+            KNOWN_DUPLICATES_AT_I2_START
+        )
+        self.assertEqual(added, set())
+
 
 class CensusCalibrationTests(unittest.TestCase):
     """The census's own calibration, proven rather than asserted.
@@ -567,11 +613,7 @@ class CensusCalibrationTests(unittest.TestCase):
     """
 
     def test_the_census_catches_the_known_drifted_copy(self):
-        source = head_cli_source()
-        if "clear_contexts_internal" not in source:
-            self.skipTest(
-                "HEAD's herdctl.py no longer contains the specimen"
-            )
+        source = source_with_known_drifted_copy()
         hits = census(source)
         self.assertIn(
             "clear_contexts_internal", hits,
@@ -581,9 +623,7 @@ class CensusCalibrationTests(unittest.TestCase):
         )
 
     def test_similarity_alone_would_have_missed_the_known_copy(self):
-        source = head_cli_source()
-        if "clear_contexts_internal" not in source:
-            self.skipTest("HEAD's herdctl.py lacks the specimen")
+        source = source_with_known_drifted_copy()
         similarity_hits = census(source, similarity_only=True)
         self.assertNotIn(
             "clear_contexts_internal", similarity_hits,

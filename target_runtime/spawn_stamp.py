@@ -20,11 +20,13 @@ This module is the replacement. The parent spawns
     python -m target_runtime.spawn_stamp <root> -- <argv...>
 
 and this module, running as the child AFTER exec, writes its own
-process-group id into ``<root>`` and then ``execv``s the real argv in
+process-group id into ``<root>`` and then ``execvp``s the real argv in
 place. Stamping therefore happens in a fully exec'd process with no
 inherited lock state, which is what makes it thread-safe; and because
-``execv`` REPLACES this process rather than forking again, the pid and
+``execvp`` REPLACES this process rather than forking again, the pid and
 group that were stamped are the ones the real program runs under.
+The ``p`` variant preserves the PATH lookup that a direct
+``subprocess.Popen(argv)`` performed before this wrapper existed.
 
 What is still true of the child, stated with it: a program that changes its own process group after exec moves outside
 the group this stamp names, and where the root is unwritable no stamp is
@@ -142,7 +144,7 @@ def main(argv):
             " unattributable process\n" % (root, exc)
         )
         return EXIT_UNSTAMPABLE
-    os.execv(rest[0], rest)
+    os.execvp(rest[0], rest)
     return 1                                    # pragma: no cover
 
 

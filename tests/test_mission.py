@@ -1348,7 +1348,7 @@ class PlanningBoundaryTests(MissionCase):
         spawns = started
         # R-31: production now spawns through
         # `process_ownership.spawn_owned`, which prefixes a stamping
-        # wrapper the child EXECS. The wrapper `execv`s the tail
+        # wrapper the child EXECS. The wrapper `execvp`s the tail
         # UNCHANGED, so the argv Codex actually receives is the tail
         # after "--" — and this pin asserts BOTH halves: the wrapper
         # prefix has the exact expected shape, and the Codex argv
