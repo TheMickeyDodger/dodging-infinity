@@ -1,9 +1,11 @@
 """I2: logical role identity versus transient agent/session identity.
 
 Every adversarial class named in the I2 brief has a test here whose
-name states the class it kills. The contract tests at the bottom run
-the REAL `herdr` binary read-only and pin the field paths and value
-domains this module consumes against the dependency's own output.
+name states the class it kills. The contract tests at the bottom always
+pin the consumed envelope, field paths, value domains, forwarding, and
+classification against a deterministic dependency-shaped specimen. An
+opt-in read-only integration specimen applies the same assertions to an
+installed `herdr` binary when explicitly requested.
 """
 
 import ast
@@ -1445,55 +1447,29 @@ class BindingsDocumentTests(unittest.TestCase):
         self.assertEqual(identity.load_bindings(root), document)
 
 
-class RealDependencyContractTests(unittest.TestCase):
-    """Contract test against the REAL `herdr` binary.
-
-    Read-only: within this class the only command run is `agent
-    list`. It starts, prompts, clears and kills no agent, which
-    matters because most of the agents it observes belong to other
-    herds.
-
-    The field paths and value domains are derived from the binary's
-    OWN output rather than enumerated here, because a hand-written
-    domain re-encodes the consumer's blind spot one layer down.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        result = subprocess.run(
-            ["herdr", "agent", "list"],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            raise unittest.SkipTest(
-                "the real `herdr agent list` did not succeed; the"
-                " contract is UNVERIFIED here"
-            )
-        try:
-            cls.listing = json.loads(result.stdout)
-        except ValueError:
-            raise unittest.SkipTest("real listing did not parse")
+class _DependencyContractAssertions(object):
+    """The dependency contract, shared by a hermetic fixture and live probe."""
 
     def records(self):
         return identity.listed_agents(self.listing)
 
-    def test_the_consumer_reads_the_real_envelope(self):
+    def test_the_consumer_reads_the_dependency_envelope(self):
         self.assertTrue(
             self.records(),
-            "the real listing produced no records through the"
-            " consumer's own reader; the envelope has moved",
+            "the listing produced no records through the consumer's"
+            " own reader; the envelope has moved",
         )
 
-    def test_every_stable_field_exists_on_every_real_record(self):
+    def test_every_stable_field_exists_on_every_dependency_record(self):
         for record in self.records():
             with self.subTest(name=record.get("name")):
                 for field in identity.STABLE_FIELDS:
                     self.assertIsInstance(
                         record.get(field), str,
-                        "%s is not a string on a real record" % field,
+                        "%s is not a string on a dependency record" % field,
                     )
 
-    def test_every_transient_field_exists_on_every_real_record(self):
+    def test_every_transient_field_exists_on_every_dependency_record(self):
         for record in self.records():
             with self.subTest(name=record.get("name")):
                 for field in identity.TRANSIENT_FIELDS:
@@ -1503,25 +1479,22 @@ class RealDependencyContractTests(unittest.TestCase):
         values = {identity.session_value(record)
                   for record in self.records()}
         self.assertNotIn(None, values,
-                         "a real record carries no session value")
+                         "a dependency record carries no session value")
         self.assertEqual(
             len(values), len(self.records()),
-            "two real agents share a session id; the replacement"
+            "two dependency agents share a session id; the replacement"
             " check compares on a value that is not unique",
         )
 
     def test_agent_status_domain_excludes_the_probe_sentinels(self):
-        """`missing` and `unknown` are synthesised by `agent_info`
-        when the probe fails; within the real listing they do not
-        appear as an `agent_status`. A double that emitted either would express a
-        shape the real dependency does not produce."""
+        """Probe-failure sentinels are not dependency agent statuses."""
         statuses = {record.get("agent_status")
                     for record in self.records()}
         self.assertTrue(statuses)
         self.assertNotIn("missing", statuses)
         self.assertNotIn("unknown", statuses)
 
-    def test_rediscovery_fields_identify_a_real_agent_uniquely(self):
+    def test_rediscovery_fields_identify_a_dependency_agent_uniquely(self):
         seen = {}
         for record in self.records():
             key = tuple(record.get(field)
@@ -1532,14 +1505,12 @@ class RealDependencyContractTests(unittest.TestCase):
         self.assertEqual(
             collisions, {},
             "the fields rediscovery matches on are not unique across"
-            " the real fleet, so an exact match could be ambiguous:"
-            " %s" % collisions,
+            " the dependency records, so an exact match could be"
+            " ambiguous: %s" % collisions,
         )
 
-    def test_a_real_record_classifies_as_present_against_its_own_binding(self):
-        """The forwarded value REACHES its destination and CHANGES an
-        outcome: the same record classifies PRESENT against a binding
-        built from it and REPLACED once only the session id differs."""
+    def test_a_dependency_record_classifies_against_its_own_binding(self):
+        """A forwarded session value reaches and changes the verdict."""
         record = self.records()[0]
         binding = identity.binding_for(
             "probe", record.get("name"), record
@@ -1552,6 +1523,67 @@ class RealDependencyContractTests(unittest.TestCase):
         replaced = identity.classify("probe", binding, info(moved))
         self.assertEqual(replaced.verdict, identity.VERDICT_REPLACED)
         self.assertNotEqual(present.action, replaced.action)
+
+
+class HermeticDependencyContractTests(
+        _DependencyContractAssertions, unittest.TestCase):
+    """The committed dependency contract, driven by fixed records.
+
+    This is the normal unit/regression specimen.  It preserves the exact
+    envelope, field-domain, uniqueness, forwarding, and classification
+    assertions without consulting an installed CLI or any active herd.
+    """
+
+    listing = list_envelope([
+        agent_payload(name="fixture-supervisor", session="fixture-s1"),
+        agent_payload(
+            name="fixture-executor", workspace="fixture-w2",
+            pane="fixture-w2:p1", session="fixture-s2",
+        ),
+    ])
+
+
+class RealDependencyContractTests(
+        _DependencyContractAssertions, unittest.TestCase):
+    """Opt-in live specimen against the REAL `herdr` binary.
+
+    Read-only: within this class the only command run is `agent
+    list`. It starts, prompts, clears and kills no agent, which
+    matters because most of the agents it observes belong to other
+    herds.
+
+    The hermetic class above always exercises equivalent contract
+    assertions.  This live specimen is intentionally opt-in because an
+    installed CLI and populated agent fleet are external integration state,
+    not prerequisites of a clean-clone unit suite.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if os.environ.get("DI_RUN_LIVE_HERDR_CONTRACT") != "1":
+            raise unittest.SkipTest(
+                "set DI_RUN_LIVE_HERDR_CONTRACT=1 to run the read-only"
+                " installed-Herdr integration specimen"
+            )
+        try:
+            result = subprocess.run(
+                ["herdr", "agent", "list"],
+                capture_output=True, text=True, timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise unittest.SkipTest(
+                "the installed `herdr agent list` integration specimen"
+                " is unavailable: %s" % error
+            )
+        if result.returncode != 0:
+            raise unittest.SkipTest(
+                "the real `herdr agent list` did not succeed; the"
+                " contract is UNVERIFIED here"
+            )
+        try:
+            cls.listing = json.loads(result.stdout)
+        except ValueError:
+            raise unittest.SkipTest("real listing did not parse")
 
 
 class SeamPinTests(unittest.TestCase):

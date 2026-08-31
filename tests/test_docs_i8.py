@@ -115,11 +115,15 @@ I8_CLAIM_PIN_MAP = (
      "OperatorLimitsAreProductionsTests."
      "test_operator_skew_label_is_the_one_the_render_emits"),
     ("README.md", "fact-only",
-     "DI-REMOTE-2 is hermetically proven and LIVE-UNVERIFIED",
-     "NO PIN — DISCLOSED AS UNPINNED. It states what the automated"
-     " suite does NOT exercise; a suite cannot evidence its own"
-     " absence of live traffic, and the human validation items are"
-     " listed in CHANGELOG.md under LIVE-UNVERIFIED"),
+     "DI-REMOTE-2 has both hermetic proof and bounded live proof",
+     "NO PIN — DISCLOSED AS UNPINNED. The automated proof is covered"
+     " by the suite, but the bounded production evidence is an external"
+     " human validation fact listed in CHANGELOG.md under the LIVE"
+     " mountain entry. The bullet's TERMINAL framing (BLOCKED at"
+     " broker_verification_policy_drift, and the final Reviewer NOT"
+     " among the unproven stages) IS pinned, by"
+     " TerminalMountainDocsPinTests in tests/test_mitiq_narrative.py;"
+     " what stays unpinned is the external evidence itself"),
     ("README.md", "doc<->code",
      "The projection is schema version 3",
      "SchemaSurfaceIsProductionsTests."
@@ -289,7 +293,7 @@ class ClaimPinMapI8Tests(unittest.TestCase):
         )
         self.assertEqual(
             disclosed,
-            ("DI-REMOTE-2 is hermetically proven and LIVE-UNVERIFIED",),
+            ("DI-REMOTE-2 has both hermetic proof and bounded live proof",),
         )
 
 

@@ -257,14 +257,22 @@ otherwise:
   review-round limit. Exceeding it transitions the workflow durably to
   NEEDS_REAUTHORIZATION (a fresh human mission is required), never a
   silent stop.
-- **Hermetic-only caveat.** All of the above is proven with real
-  local git fixtures, a real bridge-validation pass, injected
-  transports/role-runners/spawns, and the read-only `herdr.observe`
-  projection over local fixtures. These remain HUMAN validation items,
-  NOT claimed to work live: the first live target dispatch, live child-
-  Herdr spawn, live Telegram Bot API v2 traffic, live GitHub traffic,
-  live Codex role turns, and the installed Codex binary's acceptance of
-  the `approval_policy=never` config key.
+- **Automated/live evidence boundary.** All of the above remains proven with
+  real local git fixtures, a real bridge-validation pass, injected
+  transports/role-runners/spawns, and the read-only `herdr.observe` projection
+  over local fixtures. Production separately exercised live Telegram v2 traffic,
+  GitHub target materialization, child-Herdr bootstrap and dispatch, and fresh
+  installed-Codex role turns on ONE historical Mitiq #2802 mountain (workflow
+  `wf-2c901885473fc4781bf82296`), as far as target Herdr task
+  `20260830-094026-9fef2d` reaching COMPLETE with a canonical target Reviewer
+  APPROVE recorded. That mountain then exposed genuine post-dispatch policy
+  drift and correctly terminated BLOCKED at
+  `broker_verification_policy_drift`, so it does NOT prove independent final
+  verification, VERIFIED/COMPLETED, result or artifact delivery, or remote
+  delivery authority — `verified_result` and `result_delivery` remained null,
+  no target Git delivery occurred, and the workflow carried
+  `delivery_authority: none` throughout. Proving the remaining stages requires
+  a NEW live mountain.
 - **Standing constraint on future work.** The capstone narrative's
   "the target Supervisor is the first strategy-bearing artifact" check
   covers only artifacts that exist BEFORE and AT dispatch (the mission,

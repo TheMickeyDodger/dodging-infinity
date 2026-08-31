@@ -31,11 +31,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(
 from herdr import identity, observe, tasks               # noqa: E402
 from herdr.instance import HerdrInstance                 # noqa: E402
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-#: The live preset this herd runs, read from the real config rather
-#: than retyped: supervisor/executor on fable, lead/reviewer on opus.
-LIVE_CONFIG = os.path.join(REPO_ROOT, ".herd", "herd.config.json")
+ROLE_CONFIG = {
+    "supervisor": {"kind": "claude", "args": ["--model", "fable"]},
+    "lead": {"kind": "claude", "args": ["--model", "opus"]},
+    "executor": {"kind": "claude", "args": ["--model", "fable"]},
+    "reviewer": {"kind": "claude", "args": ["--model", "opus"]},
+}
 
 
 def agent_record(name="h-exec1", cwd="/repo", workspace="wT",
@@ -73,6 +74,44 @@ def info(record, status="idle"):
                     "result": {"agent": record, "type": "agent_info"}}}
 
 
+def configured_herd(case):
+    """An isolated four-role herd with deterministic config and bindings."""
+    temp = tempfile.TemporaryDirectory()
+    case.addCleanup(temp.cleanup)
+    repo = Path(temp.name)
+    herd = repo / ".herd"
+    (herd / "state").mkdir(parents=True)
+    (herd / "herd.config.json").write_text(json.dumps({
+        "version": 4,
+        "project": {"name": "model-substitution-fixture"},
+        "orchestration": {"leads": 1, "pods": 1},
+        "roles": ROLE_CONFIG,
+        "policy": {},
+    }))
+    identity.save_bindings(herd, {
+        "version": 1,
+        "roles": {
+            "supervisor": identity.binding_for(
+                "supervisor", "fixture-supervisor",
+                agent_record(name="fixture-supervisor", pane="wT:p1"),
+            ),
+            "lead1": identity.binding_for(
+                "lead1", "fixture-lead1",
+                agent_record(name="fixture-lead1", pane="wT:p2"),
+            ),
+            "executor1": identity.binding_for(
+                "executor1", "fixture-executor1",
+                agent_record(name="fixture-executor1", pane="wT:p3"),
+            ),
+            "reviewer1": identity.binding_for(
+                "reviewer1", "fixture-reviewer1",
+                agent_record(name="fixture-reviewer1", pane="wT:p4"),
+            ),
+        },
+    })
+    return repo
+
+
 class ModelIsNotInTheIDENTITYTests(unittest.TestCase):
     """Where the model IS, and where it is NOT.
 
@@ -103,17 +142,15 @@ class ModelIsNotInTheIDENTITYTests(unittest.TestCase):
             sorted(binding["stable"]), sorted(identity.STABLE_FIELDS)
         )
 
-    def test_the_LIVE_BINDINGS_carry_no_model(self):
-        """The four real bindings on this herd, not a fixture."""
-        document = identity.load_bindings(
-            Path(REPO_ROOT) / ".herd"
-        )
+    def test_the_ISOLATED_FOUR_ROLE_BINDINGS_carry_no_model(self):
+        """The production persistence path writes no model into identity."""
+        repo = configured_herd(self)
+        document = identity.load_bindings(repo / ".herd")
         roles = document["roles"]
         self.assertEqual(
             sorted(roles),
             ["executor1", "lead1", "reviewer1", "supervisor"],
-            "this herd's four roles are not all bound; the rest of"
-            " this class would then be auditing a different state",
+            "the deterministic four-role fixture is incomplete",
         )
         self.assertNotIn("model", json.dumps(document))
 
@@ -141,7 +178,8 @@ class ModelIsNotInTheIDENTITYTests(unittest.TestCase):
     def test_the_model_lives_ONLY_in_the_role_CONFIG(self):
         """And it is the CONFIGURED model — what should be started —
         not the model of anything running."""
-        with open(LIVE_CONFIG) as handle:
+        repo = configured_herd(self)
+        with open(repo / ".herd" / "herd.config.json") as handle:
             config = json.load(handle)
         models = {
             role: observe._model_from_args(cfg.get("args"))
@@ -151,6 +189,15 @@ class ModelIsNotInTheIDENTITYTests(unittest.TestCase):
         self.assertEqual(models["executor"], "fable")
         self.assertEqual(models["lead"], "opus")
         self.assertEqual(models["reviewer"], "opus")
+
+        projection = observe.observe(repo, probe_agents=False)
+        projected = {
+            role["role"]: role["configured_model"]
+            for role in projection["config"]["roles"]
+        }
+        self.assertEqual(projected, models)
+        bindings = identity.load_bindings(repo / ".herd")
+        self.assertNotIn("model", json.dumps(bindings))
 
 
 class SubstitutionWithSessionPRESERVEDTests(unittest.TestCase):

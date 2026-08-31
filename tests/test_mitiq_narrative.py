@@ -121,6 +121,160 @@ def read_doc(name):
         return f.read()
 
 
+# ---- The HISTORICAL live Mitiq mountain: TERMINAL evidence ------------
+# This mountain is finished. It ran real target engineering, then
+# EXPOSED GENUINE POST-DISPATCH POLICY DRIFT and CORRECTLY TERMINATED
+# BLOCKED. Nothing downstream of that stop ever ran. Every identifier
+# below is quoted verbatim from the durable evidence; the docs must
+# carry them and must NOT overstate what they prove.
+MOUNTAIN_WORKFLOW_ID = "wf-2c901885473fc4781bf82296"
+MOUNTAIN_TARGET_TASK = "20260830-094026-9fef2d"
+MOUNTAIN_BASELINE = "3e1833d930723ef4f7220698c98155a925591d4d"
+MOUNTAIN_STOP_CODE = "broker_verification_policy_drift"
+
+# ---- The SEPARATE Runtime stabilization: pushed, NOT integrated -------
+# It closed the defects the mountain exposed. It is not on this branch,
+# it has never been merged, and it has never been released.
+STABILIZATION_SHA = "d8ec2af409e4086f985be03371a872a84a3767ec"
+STABILIZATION_BRANCH = "fix/runtime-terminal-reconciliation"
+STABILIZATION_TASK = "20260830-185309-4c3db7"
+
+# ---- PR #14 clean-clone CI evidence -----------------------------------
+CI_RUN_ID = "33330263889"
+CI_COMMITS = (
+    "52a97b71a3b5c9f20ff33d4feb1332284cd825b7",
+    "4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f",
+)
+# The run the roadmap used to cite. It is STALE and must be gone.
+CI_STALE_RUN_ID = "33329676305"
+
+# The one framing sentence every reconciled document must carry. It is
+# the ANCHOR for the negative pins below: a document that never
+# mentioned the mountain at all would satisfy "does not claim it
+# passed" vacuously, so absence is only ever asserted alongside this
+# presence.
+TERMINAL_ANCHOR = (
+    "exposed genuine post-dispatch policy drift and correctly"
+    " terminated BLOCKED"
+)
+
+# Claims that were TRUE of nothing and must appear NOWHERE. Each is
+# whitespace-normalized and lower-cased before comparison, because
+# these documents hard-wrap prose.
+FORBIDDEN_LIVE_CLAIMS = (
+    "live-proven through active",
+    "live-proven through real target herdr",
+    "live-proven through target herdr",
+    "live-proven foundation",
+    "pending live validation",
+    "the mountain passed",
+    "mountain has passed",
+    "di-remote-2 has been released",
+    "di-remote-2 is now released",
+    "di-remote-2 acceptance is complete",
+    "main is stable",
+    "main is now stable",
+    "has been merged into",
+    "stabilization is merged",
+    "telegram git authority",
+    "final telegram result was delivered",
+    "reached verified",
+    "the workflow completed",
+    # ROUND-1 B1/B2 survivors. These were IN THE TREE while all 87
+    # pins were green: the pins asserted PRESENCE of the corrected
+    # framing and nothing asserted ABSENCE of the superseded framing.
+    "through an `active` target task",
+    "has not yet proved the final reviewer",
+)
+
+# Some superseded framings are a SHAPE, not a phrase: "production has
+# not yet proved the final Reviewer" survives any number of rewordings
+# ("does not prove the Reviewer", "never proved target COMPLETE"). A
+# phrase list cannot close a shape, so these are patterns. Each is
+# matched against the whitespace-normalized, lower-cased document.
+FORBIDDEN_CLAIM_PATTERNS = (
+    (
+        "the final Reviewer / target COMPLETE claimed UNPROVEN"
+        " (both DID happen on the historical mountain)",
+        r"(?:not\s+yet\s+prove|has\s+not\s+prove|have\s+not\s+prove"
+        r"|does\s+not\s+prove|do\s+not\s+prove|never\s+prove"
+        r"|cannot\s+prove|fails?\s+to\s+prove)\w*\s+"
+        r"(?:that\s+)?(?:the\s+)?(?:final\s+)?"
+        r"(?:target\s+(?:herdr\s+)?complete|reviewer)",
+    ),
+    (
+        "the final Reviewer listed among still-pending items"
+        " (state word BEFORE the subject)",
+        r"(?:still\s+)?(?:pending|unproven|live-unverified|unverified)"
+        r"[^.]{0,60}?final\s+reviewer",
+    ),
+    (
+        "the final Reviewer described as unproven"
+        " (state word AFTER the subject)",
+        # The mirror of the row above. Round-2 mutant N06 proved the
+        # single-direction pattern SURVIVED "the final Reviewer remains
+        # unproven": a shape pin must cover both word orders.
+        r"final\s+reviewer(?:\s+approve)?[^.]{0,60}?"
+        r"(?:remains?|is|are|stays?|stayed)\s+(?:still\s+)?"
+        r"(?:unproven|unverified|live-unverified|pending)",
+    ),
+)
+
+# Present-tense assertions of a mission that is TERMINAL. The roadmap
+# is the document that carried one (round-1 B2).
+FORBIDDEN_PRESENT_TENSE_PATTERNS = (
+    (
+        "asserts a currently ACTIVE mission",
+        # Unqualified subject, present tense, ACTIVE. This is the exact
+        # shape of the round-1 B2 survivor ("the Mitiq mission is
+        # ACTIVE"). Deliberately NOT extended to "is running": the
+        # roadmap's own acceptance criterion legitimately says "while an
+        # eight-hour mission is running" about FUTURE missions, and a
+        # pin that fires on that would be pressure to weaken a
+        # preserved requirement.
+        r"(?:mission|mountain|workflow)\s+is\s+active",
+    ),
+    (
+        "asserts the HISTORICAL mountain is still in flight",
+        # Subject explicitly identified as the historical one, so any
+        # present-tense in-flight verb is wrong here.
+        r"(?:mitiq|historical|di-remote-2|#2802)\s+"
+        r"(?:mission|mountain|workflow)\s+(?:is|remains)\s+"
+        r"(?:still\s+)?(?:active|running|in\s+flight|underway|ongoing)",
+    ),
+)
+
+RECONCILED_DOCS = (
+    "README.md",
+    "CHANGELOG.md",
+    "docs/remote-mission-fabric-roadmap.md",
+)
+# SECURITY.md carries the same evidence boundary in narrower form: it
+# states the terminal framing but not the release gate or the CI run,
+# so it joins the ANCHORED negative pin and nothing else.
+CLAIM_DISCIPLINED_DOCS = RECONCILED_DOCS + ("SECURITY.md",)
+
+
+def flat(text):
+    """Whitespace-normalize hard-wrapped prose."""
+    return " ".join(text.split())
+
+
+def flat_lower(text):
+    return flat(text.lower())
+
+
+def find_flexible(text, phrase):
+    """Index of ``phrase`` in ``text``, tolerating hard-wrap newlines.
+
+    Returns -1 when absent, so callers fail by AUTHORED assertion
+    rather than by a ValueError crash.
+    """
+    pattern = re.compile(r"\s+".join(re.escape(w) for w in phrase.split()))
+    match = pattern.search(text)
+    return match.start() if match else -1
+
+
 class MitiqNarrativeTests(unittest.TestCase):
     """The DI-REMOTE-2 capstone: ONE hermetic narrative from the EXACT
     driving sentence to the Telegram verified result.
@@ -886,6 +1040,132 @@ class DocsAccuracyPinTests(unittest.TestCase):
         self.assertIn("mission_authorization", doc)
         self.assertIn("role_outcome", doc)
 
+    # The release gate is SEVEN steps, in one exact order. This pin is
+    # POSITIONAL: each anchor must be found AFTER the previous one, so
+    # restoring the old six-step ordering (or reordering two steps)
+    # fails it. It uses find() plus authored messages, never index(),
+    # so a missing anchor is a KILL and not a ValueError crash.
+    RELEASE_GATE_SEQUENCE = (
+        "Complete the README and documentation reconciliation",
+        "Repair clean-clone CI hermeticity",
+        "final DI-REMOTE-2 acceptance is INCOMPLETE",
+        "its integration is PENDING",
+        "Assemble a stable `main`",
+        "Run a NEW live Mitiq mountain",
+        "may the Durable Mission Registry and Mission Router begin",
+    )
+
+    def test_remote_fabric_roadmap_release_gate_is_ordered(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        gate = roadmap.find(
+            "## Immediate release gate: DI-REMOTE-2 acceptance before Phase I"
+        )
+        phase = roadmap.find("# Phase I: Remote Mission Fabric")
+        self.assertGreaterEqual(gate, 0, "release-gate heading missing")
+        self.assertGreaterEqual(phase, 0, "Phase I heading missing")
+        self.assertLess(
+            gate, phase, "the release gate must precede Phase I"
+        )
+        section = roadmap[gate:phase]
+        self.assertEqual(
+            len(self.RELEASE_GATE_SEQUENCE), 7,
+            "the release gate is a SEVEN-step ordering",
+        )
+        # Hard-wrapped prose: compare on the normalized section so a
+        # re-wrap cannot silently break an anchor.
+        flat_section = flat(section)
+        position = 0
+        for index, claim in enumerate(self.RELEASE_GATE_SEQUENCE, start=1):
+            found = flat_section.find(flat(claim), position)
+            self.assertGreaterEqual(
+                found, 0,
+                "release-gate step %d missing or out of order: %r"
+                % (index, claim),
+            )
+            position = found + len(flat(claim))
+        # The steps that are already done, and the ones that are not.
+        self.assertIn("1.  [x]", section)
+        self.assertIn("2.  [x]", section)
+        for open_step in ("3.  [ ]", "4.  [ ]", "5.  [ ]", "6.  [ ]",
+                          "7.  [ ]"):
+            self.assertIn(open_step, section, open_step)
+        # The gate carries the CI evidence and the stabilization SHA,
+        # and the STALE run id is gone from the whole roadmap.
+        self.assertIn(CI_RUN_ID, section)
+        self.assertIn(STABILIZATION_SHA, section)
+        self.assertNotIn(CI_STALE_RUN_ID, roadmap)
+        flat_section = " ".join(section.replace("> ", "").split())
+        self.assertIn(
+            "DI-REMOTE-2 is released only when the public repository,"
+            " clean-clone CI, and live Telegram-to-target mountain all"
+            " describe and prove the same system.",
+            flat_section,
+        )
+
+    def test_remote_fabric_roadmap_pins_exact_delivery_capabilities(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        start = roadmap.index(
+            "## Iteration 5: Telegram exact delivery authority and Git"
+            " decision surfaces"
+        )
+        end = roadmap.index("## Iteration 6:", start)
+        section = roadmap[start:end]
+        for claim in (
+            "Mission Authorization grants **ZERO delivery authority**",
+            "Each delivery action is an independent one-shot capability",
+            "exact staged bytes/digest",
+            "exact resulting commit SHA, remote/ref, expected remote state",
+            "exact source commit, destination, title/body digest",
+            "exact PR, head SHA, base, merge method, required checks/reviews state",
+            "Release binds the exact tag/commit and release body/artifact digests",
+            "Deploy binds the exact immutable revision and environment",
+        ):
+            self.assertIn(claim, " ".join(section.split()), claim)
+
+    def test_remote_fabric_console_and_release_milestone_are_explicit(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        console = roadmap[
+            roadmap.index("## Iteration 13:"):
+            roadmap.index("# Phase IV:")
+        ]
+        for control in (
+            "mission selection", "status", "artifacts",
+            "blocked-condition acknowledgement", "permitted recovery",
+            "mission approval/rejection", "exact diff inspection",
+            "`Prepare commit`", "`Approve commit`", "`Approve push`",
+            "`Open PR` / PR update", "`Approve merge`",
+            "tag/release/deploy approval when enabled",
+            "authorization history", "expiry/replay state",
+            "exact-result receipts",
+        ):
+            self.assertIn(control, console, control)
+        milestone = roadmap.index("## Milestone B: DI-REMOTE-2 released")
+        multi = roadmap.index("## Milestone C: Multi-mission operation")
+        self.assertLess(milestone, multi)
+        self.assertIn(
+            "That tagged release is the baseline for Mission Router and"
+            " concurrency work.",
+            " ".join(roadmap[milestone:multi].split()),
+        )
+
+    def test_remote_fabric_roadmap_has_no_stale_ahead_of_main_claim(self):
+        roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        self.assertIn(
+            "`main` and `origin/main` agree at the SHA above", roadmap
+        )
+        self.assertIn(
+            "cda06d8c502882672667d94821b8bd00e7060a52", roadmap
+        )
+        self.assertNotIn(
+            "control repo is intentionally still ahead of", roadmap
+        )
+        for open_gap in (
+            "final Mitiq lifecycle acceptance",
+            "unconfigured break-glass Tailscale/SSH",
+            "still-unreached DI-REMOTE-2 tagged release",
+        ):
+            self.assertIn(open_gap, " ".join(roadmap.split()), open_gap)
+
     def test_contributing_lists_the_new_components(self):
         doc = read_doc("CONTRIBUTING.md")
         for token in (
@@ -938,16 +1218,26 @@ class DocsAccuracyPinTests(unittest.TestCase):
             self.assertIn("review-round limit", doc.lower(), name)
             self.assertIn("NEEDS_REAUTHORIZATION", doc, name)
 
-    def test_live_unverified_items_are_disclosed(self):
-        # The four HUMAN validation items must be stated plainly, not
-        # implied to work, somewhere in the shipped docs.
-        blob = (read_doc("README.md") + read_doc("SECURITY.md")
-                + read_doc("CHANGELOG.md")).lower()
+    # RETARGETED (was test_live_proven_and_pending_items_are_disclosed,
+    # which asserted "live-proven through active"). That framing is now
+    # FALSE: the mountain is terminal. A green test asserting a stale
+    # property is worse than no test, so the name moved with the claim.
+    def test_terminal_outcome_and_live_unverified_items_are_disclosed(self):
+        blob = flat_lower(
+            read_doc("README.md") + read_doc("SECURITY.md")
+            + read_doc("CHANGELOG.md")
+        )
+        self.assertIn(flat_lower(TERMINAL_ANCHOR), blob)
         self.assertIn("live-unverified", blob)
-        self.assertIn("first live", blob)
         self.assertIn("telegram", blob)
         self.assertIn("github", blob)
-        self.assertIn("approval_policy", blob)
+        self.assertIn("reviewer approve", blob)
+        self.assertIn("independent final codex verification", blob)
+        self.assertIn("verified", blob)
+        self.assertIn("completed", blob)
+        self.assertIn("exactly-once", blob)
+        self.assertIn("artifact delivery", blob)
+        self.assertIn("delivery_authority = none", blob)
 
     def test_post_dispatch_leak_is_a_standing_constraint(self):
         # The point07 limitation is recorded as a standing constraint
@@ -1701,6 +1991,252 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         flat = self.flat().lower()
         self.assertIn("runtime-minted one-shot", flat)
         self.assertIn("minted by the runtime, never by codex", flat)
+
+
+class TerminalMountainDocsPinTests(unittest.TestCase):
+    """The historical Mitiq mountain is TERMINAL — pinned as such.
+
+    Positive pins carry the exact evidence identifiers. Negative pins
+    forbid the overstatements the documents used to make. Every
+    negative pin is ANCHORED: the same assertion first requires the
+    terminal framing sentence to be PRESENT, so a document that simply
+    stopped mentioning the mountain cannot satisfy it vacuously.
+    """
+
+    # ---- A. the terminal mountain ------------------------------------
+    def test_every_reconciled_doc_carries_the_terminal_framing(self):
+        for name in RECONCILED_DOCS:
+            self.assertIn(
+                flat_lower(TERMINAL_ANCHOR), flat_lower(read_doc(name)),
+                name,
+            )
+
+    def test_every_reconciled_doc_carries_the_exact_identifiers(self):
+        for name in RECONCILED_DOCS:
+            doc = flat(read_doc(name))
+            for identifier in (
+                MOUNTAIN_WORKFLOW_ID,
+                MOUNTAIN_TARGET_TASK,
+                MOUNTAIN_BASELINE,
+                MOUNTAIN_STOP_CODE,
+                EXACT_SENTENCE,
+            ):
+                self.assertIn(
+                    identifier, doc, "%s: %s" % (name, identifier)
+                )
+
+    def test_the_stop_state_is_stated_with_what_stayed_null(self):
+        # `verified_result` and `result_delivery` remained null and no
+        # target Git delivery occurred: the three facts that separate a
+        # BLOCKED mountain from a completed one. SECURITY.md states
+        # the same boundary and is held to it too.
+        for name in CLAIM_DISCIPLINED_DOCS:
+            doc = flat_lower(read_doc(name))
+            self.assertIn("`verified_result`", doc, name)
+            self.assertIn("`result_delivery`", doc, name)
+            self.assertIn("null", doc, name)
+            self.assertIn("no target git delivery occurred", doc, name)
+
+    def test_the_target_stayed_at_baseline_with_a_diff_only(self):
+        for name in RECONCILED_DOCS:
+            doc = flat_lower(read_doc(name))
+            self.assertIn("implementation diff only", doc, name)
+            self.assertIn(MOUNTAIN_BASELINE, doc, name)
+
+    def test_the_engineering_that_did_run_is_stated_exactly(self):
+        # The mountain reached a target task COMPLETE with a canonical
+        # target Reviewer APPROVE, and target observation refreshed off
+        # its stale ACTIVE reading. Understating this is as wrong as
+        # overstating the stages that never ran. The anchors are exact
+        # phrases: a bare "complete" occurs all over these documents.
+        for name in RECONCILED_DOCS:
+            doc = flat_lower(read_doc(name))
+            self.assertIn("reached complete", doc, name)
+            self.assertIn("canonical target reviewer approve", doc, name)
+            self.assertIn(
+                "refreshed from a stale `active` reading to `complete`",
+                doc, name,
+            )
+
+    def test_readme_states_the_terminal_outcome_in_its_opening(self):
+        # PRIMACY, not presence. The same framing sentence occurs
+        # further down the README, so a whole-document assertIn stays
+        # green through a header that still reads as a success story.
+        # This pin is POSITIONAL: the terminal outcome must appear in
+        # the opening material a skimmer actually reads.
+        readme = read_doc("README.md").lower()
+        anchor = find_flexible(readme, TERMINAL_ANCHOR.lower())
+        boundary = readme.find("the goal is not merely multi-agent coding")
+        self.assertGreaterEqual(
+            anchor, 0, "README never states the terminal outcome"
+        )
+        self.assertGreaterEqual(
+            boundary, 0, "README opening-section boundary line missing"
+        )
+        self.assertLess(
+            anchor, boundary,
+            "the terminal outcome must be stated in the README opening,"
+            " not only deep in the DI-REMOTE-2 section",
+        )
+
+    # ---- B. the separate, unintegrated stabilization ------------------
+    # Each document states the not-merged/not-released fact in its own
+    # words; the pin quotes each document's ACTUAL sentence rather than
+    # a lowest-common-denominator substring that would survive a
+    # rewrite into a weaker claim.
+    NOT_INTEGRATED_PHRASES = {
+        "README.md": (
+            "awaiting integration — never merged, never released",
+        ),
+        "CHANGELOG.md": (
+            "awaiting integration",
+            "has never been merged and never released",
+        ),
+        "docs/remote-mission-fabric-roadmap.md": (
+            "its integration is pending",
+        ),
+    }
+
+    def test_stabilization_is_documented_as_pushed_and_unintegrated(self):
+        for name in RECONCILED_DOCS:
+            doc = flat(read_doc(name))
+            self.assertIn(STABILIZATION_SHA, doc, name)
+            self.assertIn(STABILIZATION_BRANCH, doc, name)
+            lowered = flat_lower(read_doc(name))
+            for phrase in self.NOT_INTEGRATED_PHRASES[name]:
+                self.assertIn(
+                    flat_lower(phrase), lowered,
+                    "%s: %s" % (name, phrase),
+                )
+        for name in ("README.md", "CHANGELOG.md"):
+            doc = flat_lower(read_doc(name))
+            self.assertIn(STABILIZATION_TASK, doc, name)
+            self.assertIn("round 6 approve", doc, name)
+            self.assertIn("pushed", doc, name)
+
+    def test_stabilization_validation_results_are_pinned(self):
+        for name in ("README.md", "CHANGELOG.md"):
+            doc = flat_lower(read_doc(name))
+            for result in (
+                "159/159",
+                "250/250",
+                "static checks pass",
+                "python 3.9.6 compile pass",
+                "`git diff --check` pass",
+            ):
+                self.assertIn(
+                    result, doc, "%s: %s" % (name, result)
+                )
+
+    def test_the_35_of_37_live_state_caveat_is_disclosed(self):
+        # NOT a regression introduced by that task: two pre-existing
+        # live `.herd` specimen assertions predate it. Naming both
+        # files is the point — a bare "35/37" is not the disclosure.
+        for name in ("README.md", "CHANGELOG.md"):
+            doc = flat_lower(read_doc(name))
+            self.assertIn("35/37", doc, name)
+            self.assertIn("tests/test_hermetic_git.py", doc, name)
+            self.assertIn("tests/test_reconcile_audit.py", doc, name)
+            self.assertIn("predate", doc, name)
+
+    # ---- C. clean-clone CI evidence ----------------------------------
+    def test_clean_clone_ci_evidence_is_exact_and_not_stale(self):
+        for name in RECONCILED_DOCS:
+            doc = flat(read_doc(name))
+            self.assertIn(CI_RUN_ID, doc, name)
+            for sha in CI_COMMITS:
+                self.assertIn(sha, doc, "%s: %s" % (name, sha))
+            self.assertNotIn(
+                CI_STALE_RUN_ID, doc,
+                "%s still cites the STALE CI run" % name,
+            )
+
+    def test_all_four_ci_jobs_are_described(self):
+        for name, phrase in (
+            ("README.md",
+             "all four macOS/Ubuntu x Python 3.9/3.13 jobs green"),
+            ("CHANGELOG.md",
+             "green across all four macOS/Ubuntu x Python 3.9/3.13 jobs"),
+            ("docs/remote-mission-fabric-roadmap.md",
+             "all four PR matrix jobs (macOS and Ubuntu x Python 3.9 and"
+             " 3.13) are green"),
+        ):
+            self.assertIn(flat(phrase), flat(read_doc(name)), name)
+
+    # ---- Negative pins, each ANCHORED to the terminal framing ---------
+    def test_no_reconciled_doc_reintroduces_a_forbidden_claim(self):
+        for name in CLAIM_DISCIPLINED_DOCS:
+            doc = flat_lower(read_doc(name))
+            # ANCHOR first: absence only counts in a document that
+            # actually discusses the mountain.
+            self.assertIn(
+                flat_lower(TERMINAL_ANCHOR), doc,
+                "%s: anchor missing — the absence assertions below"
+                " would pass vacuously" % name,
+            )
+            for claim in FORBIDDEN_LIVE_CLAIMS:
+                self.assertNotIn(
+                    claim, doc,
+                    "%s reintroduces the forbidden claim %r"
+                    % (name, claim),
+                )
+
+    def test_no_doc_claims_the_terminal_facts_are_unproven(self):
+        # ROUND-1 B1. The target task reached COMPLETE and a canonical
+        # target Reviewer APPROVE was recorded. A document that still
+        # lists either among the not-yet-proved stages contradicts the
+        # rest of the same document. This is a SHAPE pin, not a phrase
+        # pin: rewording the sentence does not escape it.
+        for name in CLAIM_DISCIPLINED_DOCS:
+            doc = flat_lower(read_doc(name))
+            self.assertIn(
+                flat_lower(TERMINAL_ANCHOR), doc,
+                "%s: anchor missing — the absence assertions below"
+                " would pass vacuously" % name,
+            )
+            for label, pattern in FORBIDDEN_CLAIM_PATTERNS:
+                match = re.search(pattern, doc)
+                self.assertIsNone(
+                    match,
+                    "%s: %s — matched %r"
+                    % (name, label, match.group(0) if match else None),
+                )
+
+    def test_no_doc_asserts_a_currently_active_mission(self):
+        # ROUND-1 B2. The mountain is TERMINAL; no document may speak
+        # of it in the present tense. A strikethrough is not a tense.
+        for name in CLAIM_DISCIPLINED_DOCS:
+            doc = flat_lower(read_doc(name))
+            self.assertIn(
+                flat_lower(TERMINAL_ANCHOR), doc,
+                "%s: anchor missing — the absence assertions below"
+                " would pass vacuously" % name,
+            )
+            for label, pattern in FORBIDDEN_PRESENT_TENSE_PATTERNS:
+                match = re.search(pattern, doc)
+                self.assertIsNone(
+                    match,
+                    "%s: %s — matched %r"
+                    % (name, label, match.group(0) if match else None),
+                )
+
+    def test_di_remote_2_is_stated_unreleased_and_acceptance_incomplete(self):
+        readme = flat_lower(read_doc("README.md"))
+        self.assertIn(flat_lower(TERMINAL_ANCHOR), readme)
+        self.assertIn("di-remote-2 is unreleased", readme)
+        roadmap = flat_lower(read_doc("docs/remote-mission-fabric-roadmap.md"))
+        self.assertIn(flat_lower(TERMINAL_ANCHOR), roadmap)
+        self.assertIn("di-remote-2 acceptance is incomplete", roadmap)
+        self.assertIn("not yet proven stable", roadmap)
+
+    def test_a_new_mountain_is_required(self):
+        # The historical mountain can never stand in for acceptance.
+        for name in ("README.md",
+                     "docs/remote-mission-fabric-roadmap.md"):
+            doc = flat_lower(read_doc(name))
+            self.assertIn(flat_lower(TERMINAL_ANCHOR), doc, name)
+            self.assertIn("new live mitiq mountain", doc, name)
+            self.assertIn("cannot stand in for", doc, name)
 
 
 def setUpModule():
