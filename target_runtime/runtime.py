@@ -390,8 +390,18 @@ def advance_workflow(broker, workflow_id, revision):
     Returns the ordered list of (label, BrokerOutcome); labels are
     Broker action names, or ``request:<role>`` for the Runtime's own
     request/validation refusals and applied stop proposals. Stops at
-    the first refusal — which writes nothing — or at a phase with no
-    step.
+    the first refusal, or at a phase with no step.
+
+    WHAT A REFUSAL WRITES (R-09; this sentence previously read "which
+    writes nothing" and R-01 made that FALSE). A refusal still writes
+    nothing to the WORKFLOW RECORD. It does NOT follow that it writes
+    nothing at all. Since R-01, ``broker.perform`` validates and
+    CONSUMES the presented capability BEFORE it reads the workflow
+    store and before its gate runs, so an AUTHENTIC presentation is
+    SPENT even when the gate then refuses. The Runtime mints a fresh
+    capability on its next validated request; that is a spend of one
+    token, never a replay. A NON-authentic presentation still consumes
+    nothing at all.
 
     ONE clock (I4 D5, closing the I3 review carry-over): every
     time-dependent decision in a pass — request freshness, capability
@@ -974,6 +984,243 @@ def terminal_cleanup_candidates(store_directory):
     return candidates
 
 
+def _action_can_run_in_a_terminal_phase(action):
+    """Could ``action`` EVER succeed while the workflow is terminal?
+
+    Derived from the Broker's own phase table rather than listed by
+    hand, so a table change cannot silently make this stale. An action
+    whose required phase is a NON-terminal phase can never run in a
+    terminal one — the gate refuses `broker_wrong_phase_for_action`
+    forever. An action whose required phase is ``None`` is
+    phase-checked inside its handler (that is exactly
+    ``ACTION_RELEASE``, whose whole purpose is terminal cleanup), so
+    this function cannot prove anything about it and answers True —
+    KEEP. An action the table does not mention at all is likewise
+    unprovable, and answers True.
+    """
+    required = broker_module._REQUIRED_PHASE
+    if action not in required:
+        return True
+    phase = required[action]
+    if phase is None:
+        return True
+    return phase in record_module.TERMINAL_PHASES
+
+
+def capability_actionability_oracle(workflows):
+    """Build the R-02 oracle from a LOADED workflow document.
+
+    Returns a predicate ``(workflow_id, action, revision) -> bool``
+    answering ONE question: is this capability PROVABLY
+    NON-ACTIONABLE, so that compaction may delete it?
+
+    This lives here, not in ``capability``, on purpose: R-02 forbids
+    the capability module importing the store or the Broker, and this
+    is the caller that already holds the workflow document.
+
+    IT ANSWERS ``True`` ONLY ON PROOF. The three grounds, and nothing
+    else:
+
+      (c) the workflow_id is ABSENT from the store — the authority
+          names something that no longer exists;
+      (d) the capability's revision is not the workflow's CURRENT
+          ``handoff.revision`` — revision never moves backwards, so
+          `broker_stale_revision` is permanent;
+      (e) the workflow's phase is TERMINAL and the action can never
+          run in a terminal phase.
+
+    EVERYTHING ELSE ANSWERS ``False`` — KEEP. That includes every
+    malformed or surprising shape: a non-dict record, a missing or
+    non-dict ``handoff``, a missing/None/non-integer revision on
+    either side, a missing or non-string phase, a record that does not
+    validate, and a phase string that is simply not terminal. A
+    malformed oracle input is an AMBIGUITY, and deleting authority on
+    an ambiguity is exactly the failure mode this predicate exists to
+    avoid: it would convert a repairable condition into permanent
+    authority loss.
+
+    Note what is deliberately NOT a ground for removal: a live
+    workflow at the current revision whose Broker gate currently
+    refuses `broker_policy_digest_drift`. Drift is REPAIRABLE, so that
+    authority is still actionable and MUST survive. There is no
+    age-based or clock-based removal here at all — the only clock
+    input to compaction is the existing hard expiry, applied by
+    ``capability._prune`` itself.
+    """
+    records = None
+    if isinstance(workflows, dict):
+        candidate = workflows.get("workflows")
+        if isinstance(candidate, dict):
+            records = candidate
+    if records is None:
+        # An unusable document proves nothing about anything.
+        return lambda workflow_id, action, revision: False
+
+    def non_actionable(workflow_id, action, revision):
+        entry = records.get(workflow_id)
+        if entry is None:
+            return True                                    # (c)
+        if not isinstance(entry, dict):
+            return False
+        try:
+            record_module.validate_record(entry)
+        except Exception:
+            # A record we cannot read is not a record we may act on
+            # the absence of. KEEP.
+            return False
+        handoff = entry.get("handoff")
+        if not isinstance(handoff, dict):
+            return False
+        current = handoff.get("revision")
+        if not _is_plain_int(current) or not _is_plain_int(revision):
+            return False
+        if revision != current:
+            return True                                    # (d)
+        phase = entry.get("phase")
+        if not isinstance(phase, str):
+            return False
+        if phase not in record_module.TERMINAL_PHASES:
+            return False
+        if _action_can_run_in_a_terminal_phase(action):
+            return False
+        return True                                        # (e)
+
+    return non_actionable
+
+
+def _is_plain_int(value):
+    """A real integer, not a bool (``True == 1`` would compare equal
+    to revision 1 and is never a revision)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _safe_diagnostic_type_name(value):
+    """The type name of ``value``, or a placeholder. NEVER raises."""
+    try:
+        return type(value).__name__
+    except Exception:
+        return "<unknown type>"
+
+
+def _safe_diagnostic_text(value, limit=200):
+    """Bounded text for ``value``, or a placeholder. NEVER raises.
+
+    A diagnostic renders values it did not construct — here, an
+    exception raised by a caller-supplied oracle. ``str()`` on such an
+    object is arbitrary caller code and can itself raise, so the
+    rendering is contained and degrades to a placeholder rather than
+    losing the whole report.
+    """
+    try:
+        return str(value)[:limit]
+    except Exception:
+        return "<unprintable %s>" % _safe_diagnostic_type_name(value)
+
+
+def _report_oracle_failures(oracle_errors):
+    """Surface a compaction oracle that is FAILING (J2 N-1).
+
+    A raising oracle keeps every entry — that is the correct
+    fail-closed default and it is not changed here, or anywhere in
+    this function. What is reported is that the failure HAPPENED, so
+    an operator can tell "compaction removed nothing" apart from
+    "compaction is broken and removal has silently stopped".
+
+    Reported once per pass, bounded, deterministic (sorted by nonce),
+    and to stderr only: this is a diagnostic, never a control-flow
+    signal, and its return value is never consulted.
+
+    CONTAINMENT (R-11), AND IT IS NOT DECORATIVE. This function is
+    called from ``compact_capabilities``, which is THE FIRST STATEMENT
+    of ``process_once``. Anything that escapes here propagates out of
+    the whole pass and kills EVERY workflow before a single one is
+    advanced — the exact failure class ``perform``'s containment
+    boundary already fences ("an uncaught raise here took down every
+    workflow in the store"). It is worse than a generic crash because
+    it fires ONLY on the already-degraded path, turning "compaction is
+    degraded but safe" into "the Runtime is dead"; and because this is
+    an UNATTENDED runtime, a closed stderr pipe is an ordinary
+    condition, not an exotic one. Both were demonstrated to kill a
+    poll before this containment existed:
+    a raising ``__str__`` on the oracle's exception, and a
+    ``BrokenPipeError`` from the stderr write.
+
+    So EVERY step is contained: the sorting, the type-name access, the
+    ``str()``, the stream lookup and the write itself. The function
+    cannot raise. It deliberately does NOT swallow the report in the
+    normal case — silence is the defect J2 N-1 closed — and a
+    diagnostic that cannot be delivered is simply lost, never fatal.
+    """
+    import sys
+    try:
+        stream = getattr(sys, "stderr", None)
+        if stream is None:
+            # No stderr at all (a detached or reconfigured runtime).
+            # Nothing to report to, and nothing to fail over.
+            return
+        try:
+            nonces = sorted(nonce for nonce, _exc in oracle_errors)
+        except Exception:
+            nonces = []
+        count = len(oracle_errors)
+        first = oracle_errors[0][1] if oracle_errors else None
+        stream.write(
+            "dirun: capability compaction oracle FAILED on %d entr%s"
+            " (%s%s); every affected capability was KEPT — compaction"
+            " is degraded, not destructive. First error: %s: %s\n"
+            % (
+                count,
+                "y" if count == 1 else "ies",
+                ", ".join(nonces[:3]) if nonces else "<unlistable>",
+                ", ..." if len(nonces) > 3 else "",
+                _safe_diagnostic_type_name(first),
+                _safe_diagnostic_text(first),
+            )
+        )
+    except Exception:
+        # A DIAGNOSTIC MAY NEVER KILL A POLL. The report is lost; the
+        # KEEP semantic that actually protects authority is unaffected
+        # because it was decided before this function was ever called.
+        pass
+
+
+def compact_capabilities(broker):
+    """Compact the capability store for ONE Runtime pass.
+
+    Holds the exclusive workflow-store lock across load-oracle-compact
+    so no workflow can appear or change between the evidence and the
+    deletion decided from it. Take ``now`` from the Broker's SINGLE
+    clock — the one-clock-per-pass rule.
+
+    Returns the removed nonces (sorted), or [] when the store could
+    not be read. A store that cannot be read is NEVER reinitialized:
+    the error is swallowed here only to keep one unreadable store from
+    killing the poll loop, exactly as every other refusal in this
+    module is contained.
+    """
+    try:
+        with store_module.exclusive_store_lock(broker.store.directory):
+            try:
+                workflows = broker.store.load()
+            except store_module.StoreError:
+                # Cannot prove anything about any workflow: compact
+                # nothing rather than guess.
+                return []
+            oracle_errors = []
+            removed = capability_module.compact(
+                broker.store.directory, broker._clock(),
+                capability_actionability_oracle(workflows),
+                oracle_errors,
+            )
+            if oracle_errors:
+                _report_oracle_failures(oracle_errors)
+            return removed
+    except capability_module.CapabilityError:
+        # Malformed/unreadable capability store: surfaced by the
+        # actions themselves, never erased here.
+        return []
+
+
 def process_once(broker):
     """One full Runtime pass over every claimable workflow.
 
@@ -985,7 +1232,16 @@ def process_once(broker):
     VERIFIED to COMPLETED and returned — so terminal cleanup was
     unreachable in unattended operation however correct it was, and
     that is why orphans accumulated over days.
+
+    R-02: the pass OPENS with capability compaction, before any mint,
+    so a pass that would otherwise be refused
+    `runtime_capability_mint_failed` gets the room back first. It
+    removes only PROVABLY non-actionable authority (see
+    ``capability_actionability_oracle``); a live workflow's authority
+    at the current revision survives, including while it is
+    gate-refused for policy drift.
     """
+    compact_capabilities(broker)
     processed = {}
     for workflow_id, revision in claimable_workflows(
         broker.store.directory

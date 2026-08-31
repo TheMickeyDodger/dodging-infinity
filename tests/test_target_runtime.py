@@ -15,6 +15,7 @@ asserted not called.
 """
 
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -25,7 +26,7 @@ import unittest
 from telegram_operator import mission, protocol
 from workflow_authority import record as wa_record
 from workflow_authority import store as wa_store
-from workflow_authority.digest import control_policy_digest
+from workflow_authority.digest import DigestError, control_policy_digest
 
 from telegram_operator import adapter as adapter_module
 
@@ -718,10 +719,16 @@ class RuntimeCase(unittest.TestCase):
         """Perform ONE broker action under a freshly minted one-shot
         capability — the way the Runtime drives it. Refusal tests
         that must write NOTHING keep calling ``self.broker.perform``
-        raw (no capability, no mint, no store write)."""
+        raw (no capability, no mint, no store write).
+
+        Records the nonce as ``self.presented_capability`` so
+        ``assert_zero_side_effect`` can require that the ONLY thing
+        consumed is THIS token (reviewer F-2) rather than merely
+        bounding how many entries were consumed."""
         token = capability_module.mint(
             self.store_dir, workflow_id, action, revision, NOW
         )
+        self.presented_capability = token
         return self.broker.perform(
             workflow_id, action, revision, capability=token
         )
@@ -792,6 +799,43 @@ class RuntimeCase(unittest.TestCase):
         with open(path, "rb") as handle:
             return handle.read()
 
+    def capability_entries(self):
+        """The capability store's entries by nonce; {} when absent."""
+        raw = self.capability_bytes()
+        if raw is None:
+            return {}
+        return json.loads(raw.decode("utf-8"))["capabilities"]
+
+    def live_capability_nonces(self, now=NOW):
+        """Nonces that are unconsumed and unexpired at ``now``."""
+        return set(
+            nonce
+            for nonce, entry in self.capability_entries().items()
+            if entry["consumed_at"] is None
+            and now < entry["expires_at"]
+        )
+
+    # -- F-3: a live unrelated decoy so the strengthened branch works --
+
+    DECOY_WORKFLOW = "wf-decoy"
+
+    def mint_live_decoy(self):
+        """Mint UNRELATED live authority and remember it.
+
+        Reviewer F-3: `before_LIVE` was 0 at all 23 permissive
+        `assert_zero_side_effect` sites, so the strengthened
+        `allow_capability_consumption` branch iterated nothing and
+        protected nothing there. With a live decoy in the store the
+        branch becomes load-bearing: any refusal path that deletes,
+        alters, or consumes an unrelated live entry now fails the
+        assertion instead of passing vacuously.
+        """
+        self.decoy = capability_module.mint(
+            self.store_dir, self.DECOY_WORKFLOW,
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        return self.decoy
+
     # -- the zero-side-effect harness ----------------------------------
 
     def assert_zero_side_effect(self, perform, expected_problem,
@@ -801,6 +845,11 @@ class RuntimeCase(unittest.TestCase):
         workspaces_before = tree_hash(self.workspaces)
         store_before = self.store_bytes()
         capability_before = self.capability_bytes()
+        capability_entries_before = self.capability_entries()
+        # F-2: whatever the callable presents, it must set this. A
+        # lambda that presents a raw capability (or none) leaves it
+        # None, and then NO pre-existing entry may be consumed at all.
+        self.presented_capability = None
         transport_before = len(self.transport.calls)
         turns_before = len(self.role_turn.calls)
         spawns_before = len(self.spawn_requests)
@@ -825,10 +874,60 @@ class RuntimeCase(unittest.TestCase):
             "%s: durable store changed" % label,
         )
         if allow_capability_consumption:
-            # A handler-level refusal legitimately spends the
-            # presented one-shot capability (mint + durable
-            # consumption are the ONLY permitted writes).
-            pass
+            # A refusal that happens AFTER an authentic presentation
+            # legitimately spends that one-shot capability. Since
+            # R-01 that includes every GATE refusal, not only a
+            # handler-level one. "Legitimately spends" is not "may do
+            # anything to the store": the ONLY permitted writes are
+            # the mint of the token this very call presented, its
+            # durable consumption, and mint's pruning of entries that
+            # were ALREADY consumed or expired. This branch proves
+            # that explicitly rather than waiving the check, so
+            # collateral destruction of UNRELATED live authority —
+            # the cross-workflow starvation this increment exists to
+            # prevent — still fails the test.
+            entries_after = self.capability_entries()
+            newly_consumed = []
+            for nonce, was in capability_entries_before.items():
+                was_live = (
+                    was["consumed_at"] is None
+                    and NOW < was["expires_at"]
+                )
+                if nonce not in entries_after:
+                    self.assertFalse(
+                        was_live,
+                        "%s: a LIVE capability %r was removed from"
+                        " the store" % (label, nonce),
+                    )
+                    continue
+                now_entry = entries_after[nonce]
+                if was_live and now_entry["consumed_at"] is not None:
+                    newly_consumed.append(nonce)
+                    self.assertEqual(
+                        dict(was,
+                             consumed_at=now_entry["consumed_at"]),
+                        now_entry,
+                        "%s: capability %r changed beyond its"
+                        " consumption" % (label, nonce),
+                    )
+                else:
+                    self.assertEqual(
+                        was, now_entry,
+                        "%s: pre-existing capability %r changed"
+                        % (label, nonce),
+                    )
+            # F-2: IDENTITY, not a count. Bounding the count at one
+            # left exactly one unit of spare capacity: an
+            # implementation that consumed ONE unrelated live
+            # capability on the refusal path satisfied it. The only
+            # entry this call may consume is the one it presented.
+            for nonce in newly_consumed:
+                self.assertEqual(
+                    nonce, self.presented_capability,
+                    "%s: consumed a capability that was NOT the one"
+                    " presented (consumed %r, presented %r)"
+                    % (label, nonce, self.presented_capability),
+                )
         else:
             self.assertEqual(
                 self.capability_bytes(), capability_before,
@@ -858,6 +957,13 @@ class RuntimeCase(unittest.TestCase):
 
 
 class AdversarialMatrixTests(RuntimeCase):
+    def setUp(self):
+        # F-3: every refusal in this class now runs with UNRELATED
+        # live authority present, so the strengthened harness branch
+        # actually protects something at each site.
+        RuntimeCase.setUp(self)
+        self.mint_live_decoy()
+
     def test_case_01_pre_approval(self):
         # Recovered state claiming AUTHORIZED without consumption is
         # adversarial input.
@@ -865,21 +971,23 @@ class AdversarialMatrixTests(RuntimeCase):
         entry["phase"] = wa_record.PHASE_AUTHORIZED  # tampered phase
         self.put_record(entry)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_NOT_AUTHORIZED,
             label="pre-approval",
+            allow_capability_consumption=True,
         )
 
     def test_case_02_wrong_workflow(self):
         self.put_record(self.authorized_record())
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-nope", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_UNKNOWN_WORKFLOW,
             label="wrong-workflow",
+            allow_capability_consumption=True,
         )
 
     def test_case_03_wrong_target_control(self):
@@ -892,11 +1000,12 @@ class AdversarialMatrixTests(RuntimeCase):
         entry = self.authorized_record(control=other_control)
         self.put_record(entry)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_WRONG_CONTROL,
             label="wrong-target",
+            allow_capability_consumption=True,
         )
 
     def test_case_04_wrong_action(self):
@@ -910,28 +1019,33 @@ class AdversarialMatrixTests(RuntimeCase):
         # AUTHORIZED workflow it is a wrong-PHASE refusal with the
         # same zero side effect (no dispatch before validation).
         self.assert_zero_side_effect(
-            lambda: self.broker.perform("wf-0001", "dispatch", 2),
+            lambda: self.perform("wf-0001", "dispatch", 2),
             broker_module.PROBLEM_WRONG_PHASE,
             label="dispatch-before-validation",
+            allow_capability_consumption=True,
         )
 
     def test_case_05_stale_request(self):
         self.put_record(self.authorized_record())
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 1
             ),
             broker_module.PROBLEM_STALE_REVISION,
             label="stale-request",
+            allow_capability_consumption=True,
         )
 
     def test_case_06_wrong_revision_tamper(self):
         # Since I1 the TOTAL render binding lives in validate_record
         # (re-render from fields, byte-equality), so an on-disk
         # revision-field tamper is refused at the store's own load —
-        # before the gate ever sees the record — still with proven
-        # zero side effects. The in-gate re-validation is driven
-        # directly in test_gate_revalidates_the_record_as_belt.
+        # before the gate ever sees the record. Since R-01 the
+        # capability is validated and consumed BEFORE that load, so
+        # the presented authentic token is spent; every other side
+        # effect, the workflow record included, is still zero. The
+        # in-gate re-validation is driven directly in
+        # test_gate_revalidates_the_record_as_belt.
         self.put_record(self.authorized_record())
         workflows = self.fresh_workflows()
         workflows["workflows"]["wf-0001"]["mission_authorization"][
@@ -939,17 +1053,19 @@ class AdversarialMatrixTests(RuntimeCase):
         ] = 9
         self.write_raw(workflows)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_STORE_UNREADABLE,
             label="wrong-revision",
+            allow_capability_consumption=True,
         )
 
     def test_case_07_altered_baseline(self):
         # Same layer shift as case 06: the altered-baseline FIELD
         # tamper breaks the render binding at store load, fail-closed
-        # with zero side effects.
+        # with zero side effects apart from the R-01 spend of the
+        # authentic capability presented to reach it.
         self.put_record(self.authorized_record())
         workflows = self.fresh_workflows()
         workflows["workflows"]["wf-0001"]["approved_baseline"][
@@ -957,11 +1073,12 @@ class AdversarialMatrixTests(RuntimeCase):
         ] = "b" * 40
         self.write_raw(workflows)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_STORE_UNREADABLE,
             label="altered-baseline",
+            allow_capability_consumption=True,
         )
 
     def test_case_08_expired(self):
@@ -971,11 +1088,12 @@ class AdversarialMatrixTests(RuntimeCase):
         )
         self.put_record(entry)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_EXPIRED,
             label="expired",
+            allow_capability_consumption=True,
         )
 
     def test_case_09_replayed(self):
@@ -988,11 +1106,12 @@ class AdversarialMatrixTests(RuntimeCase):
         # Replaying materialize after it succeeded must be refused
         # with zero FURTHER side effect.
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_WRONG_PHASE,
             label="replayed",
+            allow_capability_consumption=True,
         )
 
     def test_case_10_crash_ambiguous(self):
@@ -1003,11 +1122,12 @@ class AdversarialMatrixTests(RuntimeCase):
         }
         self.put_record(entry)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_CRASH_AMBIGUOUS,
             label="crash-ambiguous",
+            allow_capability_consumption=True,
         )
 
     def test_case_11_substituted_workspace(self):
@@ -1084,11 +1204,12 @@ class AdversarialMatrixTests(RuntimeCase):
         ] = None
         self.write_raw(workflows)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_STORE_UNREADABLE,
             label="cross-form-forgery",
+            allow_capability_consumption=True,
         )
 
     def test_rejected_decision_never_authorizes(self):
@@ -1096,11 +1217,12 @@ class AdversarialMatrixTests(RuntimeCase):
         entry["approval"]["decision"] = "reject"  # tampered state
         self.put_record(entry)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_NOT_APPROVED,
             label="rejected-decision",
+            allow_capability_consumption=True,
         )
 
     def test_gate_revalidates_the_record_as_belt(self):
@@ -1129,11 +1251,12 @@ class AdversarialMatrixTests(RuntimeCase):
         ) as handle:
             handle.write("drifted line\n")
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_MATERIALIZE, 2
             ),
             broker_module.PROBLEM_POLICY_DRIFT,
             label="policy-drift",
+            allow_capability_consumption=True,
         )
 
 
@@ -1648,6 +1771,13 @@ HOSTILE_HANDOFF = (
 
 
 class DispatchTests(RuntimeCase):
+    def setUp(self):
+        # F-3: every refusal in this class now runs with UNRELATED
+        # live authority present, so the strengthened harness branch
+        # actually protects something at each site.
+        RuntimeCase.setUp(self)
+        self.mint_live_decoy()
+
     def validated(self, handoff_text="HANDOFF DESTINATION TEXT"):
         entry = self.authorized_record(handoff_text=handoff_text)
         self.put_record(entry)
@@ -1930,11 +2060,12 @@ class DispatchTests(RuntimeCase):
         )
         self.assertTrue(outcome.ok, outcome.problem)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_DISPATCH, 2
             ),
             broker_module.PROBLEM_WRONG_PHASE,
             label="double-dispatch",
+            allow_capability_consumption=True,
         )
 
     def test_follow_ups_carry_a_corrective_brief_and_are_bounded(self):
@@ -2007,11 +2138,12 @@ class DispatchTests(RuntimeCase):
     def test_follow_up_before_dispatch_is_refused(self):
         self.validated()
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_FOLLOW_UP, 2
             ),
             broker_module.PROBLEM_WRONG_PHASE,
             label="follow-up-before-dispatch",
+            allow_capability_consumption=True,
         )
 
     def test_spawn_failure_blocks_durably_and_never_redispatches(self):
@@ -2040,11 +2172,12 @@ class DispatchTests(RuntimeCase):
         self.validated()
         # revision drift
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_DISPATCH, 1
             ),
             broker_module.PROBLEM_STALE_REVISION,
             label="dispatch-revision-drift",
+            allow_capability_consumption=True,
         )
         # superseded record
         import copy
@@ -2055,11 +2188,12 @@ class DispatchTests(RuntimeCase):
         ] = True
         self.write_raw(tampered)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_DISPATCH, 2
             ),
             broker_module.PROBLEM_SUPERSEDED,
             label="dispatch-superseded",
+            allow_capability_consumption=True,
         )
         # handoff digest drift (tampered text): the store's own
         # load-time validation fails closed.
@@ -2069,11 +2203,12 @@ class DispatchTests(RuntimeCase):
         ] += " TAMPERED"
         self.write_raw(tampered)
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_DISPATCH, 2
             ),
             broker_module.PROBLEM_STORE_UNREADABLE,
             label="dispatch-digest-drift",
+            allow_capability_consumption=True,
         )
         self.write_raw(pristine)
         # lease released (missing)
@@ -2114,11 +2249,12 @@ class DispatchTests(RuntimeCase):
         ) as handle:
             handle.write("drift\n")
         self.assert_zero_side_effect(
-            lambda: self.broker.perform(
+            lambda: self.perform(
                 "wf-0001", broker_module.ACTION_DISPATCH, 2
             ),
             broker_module.PROBLEM_POLICY_DRIFT,
             label="dispatch-policy-drift",
+            allow_capability_consumption=True,
         )
 
     def test_no_mission_timer_behavioral(self):
@@ -2276,6 +2412,191 @@ class I5LifecycleTests(RuntimeCase):
             self.store_bytes(), after_first,
             "an unchanged observation must not churn the store",
         )
+
+    def test_daemon_restart_reconciles_late_complete_agents_partial_once(self):
+        """The live DI-REMOTE-2 failure shape, through process_once.
+
+        Dispatch first observes ACTIVE/PARTIAL.  A later daemon instance
+        starts against the same durable record after Herdr has become
+        COMPLETE; the raw observation remains PARTIAL solely because
+        agents were deliberately unprobed.  The stale durable observation
+        is evidence only: it cannot cache or veto the fresh pass.
+        """
+        agents_unprobed = [{
+            "source": "agents", "state": "unavailable",
+            "detail": "live probing disabled; 4 agent(s) left unprobed",
+        }]
+        self.target_task_status = "ACTIVE"
+        self.observation_overrides.update({
+            "completeness": "PARTIAL",
+            "diagnostics": agents_unprobed,
+            "review_round": 2,
+            "review_decision": "APPROVE",
+        })
+        self.dispatched()
+        self.populate_lease_state(round_number=2)
+
+        first = runtime_module.process_once(self.broker)
+        first_verify = [
+            outcome for label, outcome in first["wf-0001"]
+            if label == broker_module.ACTION_VERIFY
+        ]
+        self.assertEqual(len(first_verify), 1)
+        self.assertEqual(first_verify[0].outcome, "target_running")
+        waiting = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual(waiting["phase"], wa_record.PHASE_DISPATCHED)
+        self.assertEqual(
+            waiting["last_observation"],
+            {"task_status": "ACTIVE", "completeness": "PARTIAL",
+             "observed_at": NOW},
+        )
+
+        # Simulate a Runtime-only restart: a newly constructed Broker,
+        # same store and workspace, with the target already COMPLETE.
+        self.target_task_status = "COMPLETE"
+        verification_calls_before = len([
+            call for call in self.role_turn.calls
+            if call[0] == "verification"
+        ])
+        restarted = self.broker_at(NOW + 1)
+        second = runtime_module.process_once(restarted)
+        labels = [label for label, _outcome in second["wf-0001"]]
+        self.assertEqual(
+            labels[:2],
+            [broker_module.ACTION_VERIFY,
+             broker_module.ACTION_COMPLETE],
+        )
+        completed = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual(completed["phase"], wa_record.PHASE_COMPLETED)
+        self.assertIsNotNone(completed["verified_result"])
+        self.assertEqual(
+            completed["last_observation"]["task_status"], "COMPLETE"
+        )
+        self.assertEqual(
+            completed["last_observation"]["completeness"], "PARTIAL"
+        )
+        verification_calls_after = len([
+            call for call in self.role_turn.calls
+            if call[0] == "verification"
+        ])
+        self.assertEqual(
+            verification_calls_after - verification_calls_before, 1
+        )
+
+        # COMPLETED is not claimable: later daemon passes can perform
+        # cleanup only, never verify or complete a second time.
+        third = runtime_module.process_once(self.broker_at(NOW + 2))
+        later_labels = [
+            label for label, _outcome in third.get("wf-0001", [])
+        ]
+        self.assertNotIn(broker_module.ACTION_VERIFY, later_labels)
+        self.assertNotIn(broker_module.ACTION_COMPLETE, later_labels)
+        self.assertEqual(len([
+            call for call in self.role_turn.calls
+            if call[0] == "verification"
+        ]), verification_calls_after)
+
+    def test_late_complete_policy_drift_is_durable_not_endless_refusal(self):
+        """A correct policy refusal reaches the existing durable stop."""
+        self.target_task_status = "ACTIVE"
+        self.observation_overrides.update({
+            "completeness": "PARTIAL",
+            "diagnostics": [{
+                "source": "agents", "state": "unavailable",
+                "detail": "live probing disabled; 4 agent(s) left unprobed",
+            }],
+            "review_round": 2,
+            "review_decision": "APPROVE",
+        })
+        self.dispatched()
+        self.populate_lease_state(round_number=2)
+        runtime_module.process_once(self.broker)
+
+        # The target completes after dispatch, while the exact authority
+        # document bytes change.  This is a real security blocker, not a
+        # reason to weaken the digest gate.
+        self.target_task_status = "COMPLETE"
+        with open(os.path.join(self.control, "OPERATOR_PROTOCOL.md"), "a") \
+                as handle:
+            handle.write("post-dispatch policy drift\n")
+        calls_before = len(self.role_turn.calls)
+        processed = runtime_module.process_once(self.broker_at(NOW + 1))
+        verify_rows = [
+            outcome for label, outcome in processed["wf-0001"]
+            if label == broker_module.ACTION_VERIFY
+        ]
+        self.assertEqual(len(verify_rows), 1)
+        verify = verify_rows[0]
+        self.assertTrue(verify.ok, (verify.problem, verify.detail))
+        self.assertEqual(
+            verify.outcome, broker_module.OUTCOME_VERIFICATION_BLOCKED
+        )
+        self.assertEqual(
+            verify.problem, broker_module.PROBLEM_VERIFY_POLICY_DRIFT
+        )
+        self.assertEqual(len(self.role_turn.calls), calls_before)
+
+        blocked = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual(blocked["phase"], wa_record.PHASE_BLOCKED)
+        self.assertEqual(
+            blocked["last_observation"]["task_status"], "COMPLETE"
+        )
+        self.assertEqual(
+            blocked["last_observation"]["completeness"], "PARTIAL"
+        )
+        receipts = [
+            receipt for receipt in blocked["receipts"]
+            if receipt["bounded_summary"].startswith(
+                broker_module.VERIFICATION_BLOCK_MARKER + ": "
+            )
+        ]
+        self.assertEqual(len(receipts), 1)
+        self.assertIn(
+            broker_module.PROBLEM_VERIFY_POLICY_DRIFT,
+            receipts[0]["bounded_summary"],
+        )
+
+        # No repeat verification and no duplicate block receipt on a
+        # later production pass.
+        later = runtime_module.process_once(self.broker_at(NOW + 2))
+        self.assertNotIn(
+            broker_module.ACTION_VERIFY,
+            [label for label, _outcome in later.get("wf-0001", [])],
+        )
+        again = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual(len([
+            receipt for receipt in again["receipts"]
+            if receipt["bounded_summary"].startswith(
+                broker_module.VERIFICATION_BLOCK_MARKER + ": "
+            )
+        ]), 1)
+
+    def test_verification_turn_refusal_stops_durably(self):
+        """A failed fresh verification turn cannot disappear per poll."""
+        self.dispatched()
+        self.role_turn.verification_result = FakeRoleTurnResult(
+            status="role_turn_failed", outcome=None,
+            reason="restricted process did not produce an envelope",
+        )
+        processed = runtime_module.process_once(self.broker)
+        verify = [
+            outcome for label, outcome in processed["wf-0001"]
+            if label == broker_module.ACTION_VERIFY
+        ][0]
+        self.assertTrue(verify.ok)
+        self.assertEqual(
+            verify.outcome, broker_module.OUTCOME_VERIFICATION_BLOCKED
+        )
+        self.assertEqual(
+            verify.problem, broker_module.PROBLEM_TURN_NOT_COMPLETED
+        )
+        blocked = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual(blocked["phase"], wa_record.PHASE_BLOCKED)
+        self.assertTrue(any(
+            broker_module.PROBLEM_TURN_NOT_COMPLETED
+            in receipt["bounded_summary"]
+            for receipt in blocked["receipts"]
+        ))
 
     def test_observation_change_rewrites_last_observation(self):
         # When the observed pair CHANGES, last_observation is rewritten
@@ -4139,11 +4460,17 @@ class I5ReconcileTests(RuntimeCase):
     def test_gate_refusals_write_nothing(self):
         # The non-durable refusal shapes: stale revision, missing
         # capability, wrong phase, and a substituted lease all
-        # refuse with the existing codes and write nothing.
+        # refuse with the existing codes and write nothing TO THE
+        # WORKFLOW RECORD, which is what this test asserts
+        # (`bytes_before` is the workflow store). Since R-01 the
+        # stale-revision probe must present an AUTHENTIC capability
+        # to reach the gate at all, and that capability is spent by
+        # the refusal — the capability store is deliberately not
+        # part of this test's invariant.
         self.unresolved_dispatched(children=lambda: [self.child()])
         bytes_before = self.store_bytes()
         spawns_before = len(self.spawn_requests)
-        stale = self.broker.perform(
+        stale = self.perform(
             "wf-0001", broker_module.ACTION_RECONCILE, 1
         )
         self.assertEqual(
@@ -4926,6 +5253,32 @@ class DirunCliTests(unittest.TestCase):
         self.assertEqual(
             pauses, [cli.RUNTIME_POLL_INTERVAL_SECONDS]
         )
+
+    def test_daemon_surfaces_new_refusals_without_log_spam(self):
+        import contextlib
+        from target_runtime import cli
+        refusal = broker_module.BrokerOutcome(
+            False, problem=broker_module.PROBLEM_POLICY_DRIFT,
+            detail="policy changed after authorization",
+        )
+        processed = {"wf-live": [(broker_module.ACTION_VERIFY,
+                                   refusal)]}
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            reported = cli._report_new_refusals(processed)
+            reported = cli._report_new_refusals(processed, reported)
+        rendered = stream.getvalue()
+        self.assertEqual(rendered.count("REFUSED"), 1)
+        self.assertIn("wf-live", rendered)
+        self.assertIn(broker_module.PROBLEM_POLICY_DRIFT, rendered)
+
+        # Once the refusal clears it leaves the active suppression set;
+        # a later recurrence is surfaced again rather than hidden forever.
+        reported = cli._report_new_refusals({}, reported)
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            cli._report_new_refusals(processed, reported)
+        self.assertEqual(stream.getvalue().count("REFUSED"), 1)
 
     def test_runtime_lock_is_visible_to_status_probe(self):
         from target_runtime import cli
@@ -6514,6 +6867,2830 @@ class CapabilityTests(RuntimeCase):
         self.assertEqual(self.store_bytes(), store_before)
         self.assertEqual(self.capability_bytes(), capability_before)
 
+
+class J1ConsumptionOrderingTests(RuntimeCase):
+    """R-01: the capability is validated and CONSUMED before the
+    workflow store is read and before the gate runs.
+
+    The security claim under test has two halves that must be proven
+    SEPARATELY, because R-01 changes one and must not change the
+    other:
+
+      * an AUTHENTIC, exactly-bound, unconsumed, unexpired
+        presentation is SPENT even when a later refusal (gate or
+        store-unreadable) means nothing was performed; and
+      * a NON-AUTHENTIC presentation — missing, malformed, forged,
+        already consumed, expired, wrong workflow, wrong action,
+        wrong revision — still consumes NOTHING and still destroys
+        no other authority in the shared store.
+
+    Every class below therefore proves a REFUSAL (never a happy
+    path) and proves it PERSISTS ACROSS A RUNTIME RESTART, by
+    rebuilding a fresh Broker over the same durable store via
+    ``broker_at`` and re-presenting.
+    """
+
+    DECOY_WORKFLOW = "wf-decoy"
+
+    def setUp(self):
+        RuntimeCase.setUp(self)
+        self.put_record(self.authorized_record())
+        # UNRELATED live authority that must survive every refusal
+        # below byte-for-byte: this is the cross-workflow authority
+        # a leak or a collateral delete would destroy.
+        self.decoy = capability_module.mint(
+            self.store_dir, self.DECOY_WORKFLOW,
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+
+    # -- helpers -------------------------------------------------------
+
+    def agents_path(self):
+        return os.path.join(self.control, "AGENTS.md")
+
+    def drift_control_policy(self):
+        """Make the LIVE control policy bytes drift so the gate
+        refuses `broker_policy_digest_drift` for MATERIALIZE. The
+        original bytes are kept so a test can REPAIR the drift."""
+        with open(self.agents_path(), "rb") as handle:
+            self._policy_bytes = handle.read()
+        with open(self.agents_path(), "ab") as handle:
+            handle.write(b"drifted line\n")
+
+    def repair_control_policy(self):
+        """Restore the exact control policy bytes: drift is
+        REPAIRABLE, so authority refused for drift is not dead."""
+        with open(self.agents_path(), "wb") as handle:
+            handle.write(self._policy_bytes)
+
+    def assert_decoy_untouched(self, label):
+        entries = self.capability_entries()
+        self.assertIn(
+            self.decoy, entries,
+            "%s: unrelated live authority was REMOVED" % label,
+        )
+        self.assertEqual(
+            entries[self.decoy],
+            {"workflow_id": self.DECOY_WORKFLOW,
+             "action": broker_module.ACTION_MATERIALIZE,
+             "revision": 2,
+             "issued_at": NOW,
+             "expires_at": NOW + capability_module
+             .CAPABILITY_VALIDITY_SECONDS,
+             "consumed_at": None},
+            "%s: unrelated live authority was ALTERED" % label,
+        )
+
+    def assert_consumes_nothing(self, capability, expected_problem,
+                                label, workflow_id="wf-0001",
+                                action=None, revision=2, now=NOW):
+        """A NON-AUTHENTIC presentation: refused, writing NOTHING to
+        the capability store at all, and refused identically after a
+        Runtime restart over the same durable store."""
+        action = action or broker_module.ACTION_MATERIALIZE
+        before = self.capability_bytes()
+        outcome = self.broker_at(now).perform(
+            workflow_id, action, revision, capability=capability
+        )
+        self.assertFalse(outcome.ok, label)
+        self.assertEqual(outcome.problem, expected_problem, label)
+        self.assertEqual(
+            self.capability_bytes(), before,
+            "%s: the capability store changed on a NON-AUTHENTIC"
+            " presentation" % label,
+        )
+        self.assert_decoy_untouched(label)
+        # PERSISTENCE ACROSS RUNTIME RESTART: a brand-new Broker over
+        # the SAME durable store refuses identically and still writes
+        # nothing.
+        restarted = self.broker_at(now).perform(
+            workflow_id, action, revision, capability=capability
+        )
+        self.assertFalse(restarted.ok, label + "/restart")
+        self.assertEqual(
+            restarted.problem, expected_problem, label + "/restart"
+        )
+        self.assertEqual(
+            self.capability_bytes(), before,
+            "%s/restart: the capability store changed" % label,
+        )
+        self.assert_decoy_untouched(label + "/restart")
+        return outcome
+
+    # -- class 1: authentic + later gate refusal IS spent --------------
+
+    def test_class_01_authentic_presentation_is_spent_by_a_gate_refusal(self):
+        self.drift_control_policy()
+        token = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        self.assertIn(token, self.live_capability_nonces())
+        outcome = self.broker.perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+            capability=token,
+        )
+        # The GATE refused — nothing was performed ...
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_POLICY_DRIFT
+        )
+        # ... and yet the authentic capability IS SPENT. This is the
+        # single property R-01 changes.
+        entries = self.capability_entries()
+        self.assertEqual(entries[token]["consumed_at"], NOW)
+        self.assertNotIn(token, self.live_capability_nonces())
+        self.assert_decoy_untouched("class-01")
+        # Replay of the spent nonce is refused with its own code.
+        replay = self.broker.perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+            capability=token,
+        )
+        self.assertEqual(
+            replay.problem,
+            capability_module.PROBLEM_CAPABILITY_CONSUMED,
+        )
+        # PERSISTENCE ACROSS RUNTIME RESTART.
+        restarted = self.broker_at(NOW).perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+            capability=token,
+        )
+        self.assertEqual(
+            restarted.problem,
+            capability_module.PROBLEM_CAPABILITY_CONSUMED,
+        )
+        self.assert_decoy_untouched("class-01/restart")
+
+    def test_class_01b_repair_after_a_spent_refusal_needs_a_fresh_mint(self):
+        # The spend is not a dead end. Drift is REPAIRABLE: once the
+        # control bytes are restored the workflow proceeds under a
+        # NEWLY minted capability, while the capability spent by the
+        # earlier refusal stays refused forever.
+        self.drift_control_policy()
+        spent = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        self.assertEqual(
+            self.broker.perform(
+                "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+                capability=spent,
+            ).problem,
+            broker_module.PROBLEM_POLICY_DRIFT,
+        )
+        self.repair_control_policy()
+        fresh = self.perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2
+        )
+        self.assertTrue(fresh.ok, fresh.problem)
+        # The spent nonce stays refused across a Runtime restart. Per
+        # the module's Refusal-code ordering note, the INTERVENING
+        # mint above prunes the consumed entry, so the replay may
+        # surface `capability_unknown` rather than
+        # `capability_already_consumed`. Both refuse and write
+        # nothing; the guarantee under test is that it never executes
+        # again, not which of the two diagnostics it reports.
+        replay = self.broker_at(NOW).perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+            capability=spent,
+        )
+        self.assertFalse(replay.ok)
+        self.assertIn(
+            replay.problem,
+            (capability_module.PROBLEM_CAPABILITY_CONSUMED,
+             capability_module.PROBLEM_CAPABILITY_UNKNOWN),
+        )
+
+    # -- classes 2-7: NON-AUTHENTIC presentations consume nothing ------
+
+    def test_class_02_forged_nonce_consumes_and_destroys_nothing(self):
+        self.assert_consumes_nothing(
+            "f" * 64, capability_module.PROBLEM_CAPABILITY_UNKNOWN,
+            "class-02-forged",
+        )
+
+    def test_class_03_malformed_nonce_consumes_nothing(self):
+        for value, label in (
+            (None, "none"), ("", "empty"), (17, "int"),
+            (b"a" * 64, "bytes"), (["a"], "list"), ({}, "dict"),
+        ):
+            self.assert_consumes_nothing(
+                value, capability_module.PROBLEM_CAPABILITY_MISSING,
+                "class-03-malformed-" + label,
+            )
+
+    def test_class_04_wrong_workflow_binding_consumes_nothing(self):
+        other = capability_module.mint(
+            self.store_dir, "wf-other",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        self.assert_consumes_nothing(
+            other, capability_module.PROBLEM_CAPABILITY_MISMATCH,
+            "class-04-wrong-workflow",
+        )
+
+    def test_class_05_wrong_action_binding_consumes_nothing(self):
+        other = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_PREPARE, 2, NOW,
+        )
+        self.assert_consumes_nothing(
+            other, capability_module.PROBLEM_CAPABILITY_MISMATCH,
+            "class-05-wrong-action",
+        )
+
+    def test_class_06_wrong_revision_binding_consumes_nothing(self):
+        other = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_MATERIALIZE, 9, NOW,
+        )
+        self.assert_consumes_nothing(
+            other, capability_module.PROBLEM_CAPABILITY_MISMATCH,
+            "class-06-wrong-revision",
+        )
+
+    def test_class_07_expired_capability_consumes_nothing(self):
+        token = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        expired_now = (
+            NOW + capability_module.CAPABILITY_VALIDITY_SECONDS
+        )
+        self.assert_consumes_nothing(
+            token, capability_module.PROBLEM_CAPABILITY_EXPIRED,
+            "class-07-expired", now=expired_now,
+        )
+
+    # -- class 8: unknown action is refused FIRST ----------------------
+
+    def test_class_08_unknown_action_refuses_before_consuming(self):
+        # A capability minted for the unknown action, presented WITH
+        # it: PROBLEM_UNKNOWN_ACTION must still win, and the token
+        # must survive. An action outside the fixed set is a
+        # caller-shape error and must not spend authority.
+        token = capability_module.mint(
+            self.store_dir, "wf-0001", "deploy", 2, NOW,
+        )
+        before = self.capability_bytes()
+        outcome = self.broker.perform(
+            "wf-0001", "deploy", 2, capability=token
+        )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_UNKNOWN_ACTION
+        )
+        self.assertEqual(self.capability_bytes(), before)
+        self.assertIn(token, self.live_capability_nonces())
+        self.assert_decoy_untouched("class-08")
+        # PERSISTENCE ACROSS RUNTIME RESTART: still refused, still
+        # unspent.
+        restarted = self.broker_at(NOW).perform(
+            "wf-0001", "deploy", 2, capability=token
+        )
+        self.assertEqual(
+            restarted.problem, broker_module.PROBLEM_UNKNOWN_ACTION
+        )
+        self.assertEqual(self.capability_bytes(), before)
+        self.assertIn(token, self.live_capability_nonces())
+
+    # -- class 9: the store-unreadable leak path is CLOSED -------------
+
+    def test_class_09_store_unreadable_no_longer_leaks_the_capability(self):
+        # Tamper the workflow store so `store.load()` refuses. Since
+        # R-01 consumption happens BEFORE that load, so the presented
+        # authentic capability is spent and cannot be replayed — the
+        # leak path an unreadable store used to open is closed.
+        workflows = self.fresh_workflows()
+        workflows["workflows"]["wf-0001"]["mission_authorization"][
+            "revision"
+        ] = 9
+        self.write_raw(workflows)
+        token = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        outcome = self.broker.perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+            capability=token,
+        )
+        self.assertFalse(outcome.ok)
+        # The EXACT refusal code returned on this path:
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_STORE_UNREADABLE
+        )
+        self.assertEqual(self.capability_entries()[token][
+            "consumed_at"], NOW)
+        self.assertNotIn(token, self.live_capability_nonces())
+        self.assert_decoy_untouched("class-09")
+        # PERSISTENCE ACROSS RUNTIME RESTART: the spend is durable,
+        # and the replay now reports the CONSUMPTION rather than the
+        # unreadable store — proving consumption preceded the load.
+        restarted = self.broker_at(NOW).perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+            capability=token,
+        )
+        self.assertEqual(
+            restarted.problem,
+            capability_module.PROBLEM_CAPABILITY_CONSUMED,
+        )
+
+    # -- class 10: unrelated authority survives every refusal ----------
+
+    def test_class_10_unrelated_live_authority_survives_every_refusal(self):
+        # Aggregate restatement of class 10 over classes 2-7 in ONE
+        # store: many refusals of every non-authentic shape, then the
+        # decoy is proven byte-identical and still usable.
+        before = self.capability_bytes()
+        mismatched = capability_module.mint(
+            self.store_dir, "wf-other",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        after_mint = self.capability_bytes()
+        for capability, problem in (
+            ("f" * 64, capability_module.PROBLEM_CAPABILITY_UNKNOWN),
+            (None, capability_module.PROBLEM_CAPABILITY_MISSING),
+            ("", capability_module.PROBLEM_CAPABILITY_MISSING),
+            (17, capability_module.PROBLEM_CAPABILITY_MISSING),
+            (mismatched,
+             capability_module.PROBLEM_CAPABILITY_MISMATCH),
+        ):
+            outcome = self.broker.perform(
+                "wf-0001", broker_module.ACTION_MATERIALIZE, 2,
+                capability=capability,
+            )
+            self.assertEqual(outcome.problem, problem)
+        self.assertEqual(self.capability_bytes(), after_mint)
+        self.assertNotEqual(after_mint, before)
+        self.assert_decoy_untouched("class-10")
+        # The decoy is not merely present, it is still SPENDABLE.
+        self.put_record(
+            self.authorized_record(workflow_id=self.DECOY_WORKFLOW)
+        )
+        outcome = self.broker.perform(
+            self.DECOY_WORKFLOW, broker_module.ACTION_MATERIALIZE, 2,
+            capability=self.decoy,
+        )
+        self.assertTrue(outcome.ok, outcome.problem)
+
+
+class J1SaturationRegressionTests(RuntimeCase):
+    """R-01's operational point: repeated Runtime polling of a
+    persistently gate-refusing workflow must not accrue live
+    capabilities without bound in the SHARED store.
+
+    THE LEAK PATH, derived rather than assumed. A leak needs the
+    RUNTIME to mint and the BROKER's gate to then refuse. Conditions
+    the Runtime itself pre-checks in `validate_transition_request` —
+    phase, ambiguity, revision, control identity, control-policy
+    DRIFT, target identity, request freshness — never reach a mint,
+    so they never leaked. The gate refusals the Runtime does NOT
+    pre-check are the leaking ones; APPROVAL VALIDITY is the
+    persistent, realistic representative used here: the Runtime
+    validates the transition, MINTS, and the Broker gate then refuses
+    `broker_consumption_outside_validity` on every single poll,
+    forever.
+
+    THE ARITHMETIC (Lead D-1, correcting the strategy's informal
+    reading) is the true one: with `CAPABILITY_VALIDITY_SECONDS` 900
+    and a 5-second poll interval, ONE stuck workflow reaches a steady
+    state of 900/5 = 180 live entries against a bound of 256. One
+    stuck workflow therefore does NOT self-exhaust the store — it
+    permanently occupies ~70% of a GLOBAL bound, so a SECOND stuck
+    workflow is what tips the shared budget into starvation. Nothing
+    here asserts that one stuck workflow exhausts the store; that
+    claim is false.
+
+    Every clock value is injected. There are no wall-clock sleeps.
+    """
+
+    POLLS = 200
+
+    def setUp(self):
+        RuntimeCase.setUp(self)
+        for workflow_id in ("wf-0001", "wf-0002"):
+            self.put_record(self.stuck_record(workflow_id))
+        # The REAL poll interval, read from the module that owns it —
+        # not a copy that could drift from production pacing.
+        from target_runtime import cli as cli_module
+        self.poll_interval = cli_module.RUNTIME_POLL_INTERVAL_SECONDS
+
+    def stuck_record(self, workflow_id):
+        """A workflow the RUNTIME will happily mint for and the
+        BROKER's gate then refuses on every poll, permanently."""
+        entry = self.authorized_record(workflow_id=workflow_id)
+        entry["approval"]["consumed_at"] = (
+            entry["approval"]["expires_at"] + 1
+        )
+        return entry
+
+    def poll(self, workflow_id, now):
+        """ONE Runtime pass over ``workflow_id`` at injected ``now``
+        — mint plus perform, exactly as `process_once` drives it,
+        through the SINGLE clock of a broker built at ``now``."""
+        return runtime_module.advance_workflow(
+            self.broker_at(now), workflow_id, 2
+        )
+
+    def test_the_leak_path_mints_and_then_gate_refuses(self):
+        # Prove the premise of the whole regression: a poll of a
+        # stuck workflow DOES mint (so a leak was possible at all)
+        # and the BROKER gate — not the Runtime precheck — refuses.
+        before = len(self.capability_entries())
+        results = self.poll("wf-0001", NOW)
+        label, outcome = results[-1]
+        self.assertEqual(label, broker_module.ACTION_MATERIALIZE)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_EXPIRED
+        )
+        self.assertEqual(len(self.capability_entries()), before + 1)
+        # ... and R-01 means the minted entry is NOT left live.
+        self.assertEqual(len(self.live_capability_nonces()), 0)
+
+    # -- the leak SHAPE, characterized directly ------------------------
+
+    def test_unconsumed_mints_accrue_without_bound_and_starve(self):
+        # CHARACTERIZATION of the pre-R-01 behaviour: a capability
+        # minted for a pass whose refusal never consumed it stays
+        # LIVE. `_prune` drops only consumed-or-expired entries, so
+        # such entries accumulated one per poll, and `mint` RAISES
+        # rather than evicting a live entry. This is the mechanism
+        # R-01 removes; it is asserted here on `mint` alone so the
+        # regression below has a PROVEN contrast, not an assumption.
+        for index in range(capability_module.MAX_CAPABILITIES):
+            capability_module.mint(
+                self.store_dir, "wf-0001",
+                broker_module.ACTION_MATERIALIZE, 2, NOW,
+            )
+            self.assertEqual(
+                len(self.live_capability_nonces()), index + 1
+            )
+        # The bound is SHARED and GLOBAL: an unrelated, perfectly
+        # healthy workflow can no longer obtain authority at all.
+        # This is the cross-workflow starvation, exhibited on the
+        # leaked shape.
+        with self.assertRaises(capability_module.CapabilityError):
+            capability_module.mint(
+                self.store_dir, "wf-healthy",
+                broker_module.ACTION_MATERIALIZE, 2, NOW,
+            )
+
+    def test_one_stuck_workflow_alone_does_not_exhaust_the_bound(self):
+        # D-1 stated precisely: even under the LEAKED shape, one
+        # stuck workflow's steady state is 900/5 = 180 live entries,
+        # which is BELOW the 256 bound. Asserted so no later change
+        # can quietly restore the false "one workflow exhausts it"
+        # reading.
+        validity = capability_module.CAPABILITY_VALIDITY_SECONDS
+        steady_state = validity // self.poll_interval
+        self.assertEqual(steady_state, 180)
+        self.assertLess(
+            steady_state, capability_module.MAX_CAPABILITIES
+        )
+        # Two of them do NOT fit. That is the real starvation
+        # threshold.
+        self.assertGreater(
+            2 * steady_state, capability_module.MAX_CAPABILITIES
+        )
+
+    # -- the regression: bounded under the same repeated polling -------
+
+    def test_repeated_polling_of_a_stuck_workflow_stays_bounded(self):
+        observed = set()
+        for poll_index in range(self.POLLS):
+            # The one-clock-per-pass rule: a single injected value
+            # per pass, advanced by the REAL poll interval.
+            now = NOW + poll_index * self.poll_interval
+            results = self.poll("wf-0001", now)
+            _, outcome = results[-1]
+            # The refusal is PERSISTENT — it never repairs itself ...
+            self.assertFalse(outcome.ok)
+            self.assertEqual(
+                outcome.problem, broker_module.PROBLEM_EXPIRED
+            )
+            # ... and yet live authority does not accumulate.
+            observed.add(len(self.live_capability_nonces(now=now)))
+        self.assertLessEqual(
+            max(observed), 1,
+            "live capabilities accrued across %d polls of a"
+            " persistently gate-refusing workflow: observed live"
+            " counts %r" % (self.POLLS, sorted(observed)),
+        )
+        # BOUNDED vs UNBOUNDED, stated against the characterized
+        # leak: the same polling under the old ordering would have
+        # left one live entry per poll.
+        self.assertLess(
+            max(observed), capability_module.MAX_CAPABILITIES
+        )
+
+    def test_two_stuck_workflows_do_not_starve_a_healthy_workflow(self):
+        # D-1's actual starvation condition: TWO persistently stuck
+        # workflows. Under the pre-R-01 shape they reach 2 x 180 =
+        # 360 live entries against a bound of 256 and deny every
+        # other workflow its mint. After R-01 they accrue nothing,
+        # and a healthy workflow still obtains AND spends authority.
+        for poll_index in range(self.POLLS):
+            now = NOW + poll_index * self.poll_interval
+            for workflow_id in ("wf-0001", "wf-0002"):
+                results = self.poll(workflow_id, now)
+                _, outcome = results[-1]
+                self.assertEqual(
+                    outcome.problem, broker_module.PROBLEM_EXPIRED
+                )
+        end_now = NOW + self.POLLS * self.poll_interval
+        live = self.live_capability_nonces(now=end_now)
+        self.assertLessEqual(len(live), 2, sorted(live))
+        # The healthy workflow's authority is intact after 400 stuck
+        # polls: it can mint AND spend.
+        self.put_record(self.authorized_record(
+            workflow_id="wf-healthy"
+        ))
+        token = capability_module.mint(
+            self.store_dir, "wf-healthy",
+            broker_module.ACTION_MATERIALIZE, 2, end_now,
+        )
+        outcome = self.broker_at(end_now).perform(
+            "wf-healthy", broker_module.ACTION_MATERIALIZE, 2,
+            capability=token,
+        )
+        self.assertTrue(outcome.ok, outcome.problem)
+
+class J1TerminalCleanupLeakTests(RuntimeCase):
+    """THE REAL INCIDENT PATH (R-01, corrected derivation).
+
+    `validate_transition_request` — the Runtime's own drift precheck —
+    has exactly ONE call site, `advance_workflow` runtime.py:499, and
+    even there only when `step["mode"] != STEP_ACTION_EMBEDDED_REQUEST`.
+    It does NOT gate the SIX call sites that invoke
+    `_perform_capability_action` DIRECTLY: runtime.py:645 and 744
+    (ACTION_RECONCILE), 777 and 790 (ACTION_VERIFY and
+    ACTION_FOLLOW_UP), 806 (ACTION_COMPLETE) and 999 (ACTION_RELEASE).
+
+    Site 999 is the decisive one and it is the one this workflow's
+    incident rode. `process_once` iterates
+    `terminal_cleanup_candidates` and calls
+    `_perform_capability_action(..., ACTION_RELEASE, ...)` directly.
+    `terminal_cleanup_candidates` (runtime.py:935) contains NO drift
+    check whatsoever: it selects on a valid record, a TERMINAL phase,
+    a lease dict, and `released_at is None`.
+
+    So under control-policy drift a terminal workflow holding a lease
+    MINTS a capability on EVERY poll and is then refused
+    `broker_policy_digest_drift` by `_gate`. Worse, it can never leave
+    the candidate set: `released_at` is written only after a PROVEN
+    close, which the gate refusal prevents. The leak is therefore
+    permanent and bounded only by expiry — 900/5 = 180 live entries
+    per stranded terminal workflow, so TWO of them exceed
+    MAX_CAPABILITIES = 256 and produce `runtime_capability_mint_failed`.
+
+    F-A's drift illustration is CORRECT on this path.
+
+    R-06: no real workspace close may occur. Two independent
+    guarantees, both asserted: `workspace_close_fn` is injected with a
+    recorder that FAILS the test if it is ever called, and the gate
+    refuses before `_release` runs at all.
+    """
+
+    POLLS = 200
+
+    def setUp(self):
+        RuntimeCase.setUp(self)
+        from target_runtime import cli as cli_module
+        self.poll_interval = cli_module.RUNTIME_POLL_INTERVAL_SECONDS
+        self.close_attempts = []
+
+    def refuse_close(self, *args, **kwargs):
+        # R-06 tripwire: reaching a real workspace close is a test
+        # failure, not a tolerated side effect.
+        self.close_attempts.append((args, kwargs))
+        raise AssertionError(
+            "R-06 VIOLATION: a workspace close was attempted"
+        )
+
+    def cleanup_broker(self, now):
+        """A Broker whose SINGLE clock reads ``now`` and whose
+        workspace-close capability is the tripwire above."""
+        return broker_module.TargetBroker(
+            store_directory=self.store_dir,
+            control_repository_realpath=self.control,
+            transport=self.transport,
+            workspaces_root=self.workspaces,
+            role_turn_fn=self.role_turn,
+            claude_config_path=self.claude_config,
+            spawn_fn=self.spawn_fn,
+            clock=lambda: now,
+            observer_fn=self.observer,
+            spawn_records_fn=self.spawn_records,
+            readiness_probe_fn=lambda path: self.readiness_probe(path),
+            workspace_close_fn=self.refuse_close,
+            live_workspaces_fn=lambda: [],
+        )
+
+    def stranded_terminal_record(self, workflow_id):
+        """A TERMINAL workflow still holding an unreleased lease —
+        exactly what `terminal_cleanup_candidates` selects."""
+        entry = self.authorized_record(workflow_id)
+        lease = workspace_module.lease_path(
+            self.workspaces, workflow_id
+        )
+        os.makedirs(lease, exist_ok=True)
+        entry["workspace_lease"] = {
+            "lease_id": "lease-%s" % workflow_id,
+            "path_realpath": os.path.realpath(lease),
+            "acquired_at": NOW,
+            "released_at": None,
+        }
+        wa_record.apply_transition(entry, wa_record.PHASE_BLOCKED)
+        return entry
+
+    def drift_control_policy(self):
+        with open(
+            os.path.join(self.control, "AGENTS.md"), "ab"
+        ) as handle:
+            handle.write(b"drifted line\n")
+
+    def release_outcomes(self, processed, workflow_id):
+        return [
+            outcome for label, outcome in processed[workflow_id]
+            if label == broker_module.ACTION_RELEASE
+        ]
+
+    # -- the premise, proven from the code's behaviour -----------------
+
+    def test_terminal_cleanup_candidate_is_selected_without_any_drift_check(self):
+        self.put_record(self.stranded_terminal_record("wf-0001"))
+        self.drift_control_policy()
+        # Drift does not remove it from the candidate set: there is no
+        # drift check in terminal_cleanup_candidates.
+        self.assertEqual(
+            runtime_module.terminal_cleanup_candidates(self.store_dir),
+            [("wf-0001", 2)],
+        )
+
+    def test_process_once_mints_and_the_gate_no_longer_refuses_drift(self):
+        # UPDATED BY J3, and this is the increment's whole point. The
+        # premise is unchanged and still asserted: this path MINTS,
+        # because neither `process_once` nor
+        # `terminal_cleanup_candidates` has any drift precheck. What
+        # J3 changes is the outcome — the gate's drift branch now
+        # exempts ACTION_RELEASE on a COMPUTED-AND-MISMATCHED digest,
+        # so the release is no longer refused for drift and reaches
+        # `_release`, where every narrowing gate still applies.
+        self.put_record(self.stranded_terminal_record("wf-0001"))
+        self.drift_control_policy()
+        before = len(self.capability_entries())
+        processed = runtime_module.process_once(
+            self.cleanup_broker(NOW)
+        )
+        outcomes = self.release_outcomes(processed, "wf-0001")
+        self.assertEqual(len(outcomes), 1)
+        self.assertNotEqual(
+            outcomes[0].problem, broker_module.PROBLEM_POLICY_DRIFT,
+            "J3: drift must no longer strand terminal cleanup",
+        )
+        # A capability WAS minted: the leak was possible here.
+        self.assertEqual(len(self.capability_entries()), before + 1)
+        # R-01: and it is NOT left live.
+        self.assertEqual(len(self.live_capability_nonces()), 0)
+        # R-06: nothing reached a workspace close.
+        self.assertEqual(self.close_attempts, [])
+
+    def test_a_candidate_that_cannot_prove_a_close_stays_a_candidate(self):
+        # `released_at` is written ONLY after a PROVEN close, so a
+        # workflow that cannot prove one is selected again on every
+        # subsequent poll. Before J3 the blocker was the gate's drift
+        # refusal. AFTER J3 drift no longer blocks it, and this
+        # fixture is retained for a DIFFERENT and still-correct
+        # reason: its lease directory is bare, so evidence
+        # preservation halts the chain before anything destructive
+        # runs and the release reports itself DEGRADED. Retaining
+        # candidacy on an unproven close is the fail-closed behaviour,
+        # and J3 does not change it — see
+        # J3TerminalCleanupUnstrandingTests for the case where the
+        # close IS proven and the loop therefore TERMINATES.
+        #
+        # NOT EVIDENCE FOR J3 (reviewer1 N-2). This test passes with
+        # the J3 exemption present AND with it reverted, because the
+        # property it now tests — retain candidacy on an unproven
+        # close — is ordering-independent. Its passing must never be
+        # read as confirming J3 works; that is
+        # `test_repeated_process_once_terminates_the_release_loop`.
+        self.put_record(self.stranded_terminal_record("wf-0001"))
+        self.drift_control_policy()
+        for poll_index in range(3):
+            now = NOW + poll_index * self.poll_interval
+            runtime_module.process_once(self.cleanup_broker(now))
+            self.assertIsNone(
+                self.fresh_workflows()["workflows"]["wf-0001"][
+                    "workspace_lease"]["released_at"]
+            )
+            self.assertEqual(
+                runtime_module.terminal_cleanup_candidates(
+                    self.store_dir
+                ),
+                [("wf-0001", 2)],
+            )
+        self.assertEqual(self.close_attempts, [])
+
+    # -- the regression --------------------------------------------------
+
+    def test_repeated_process_once_under_drift_stays_bounded(self):
+        self.put_record(self.stranded_terminal_record("wf-0001"))
+        self.drift_control_policy()
+        observed = set()
+        for poll_index in range(self.POLLS):
+            now = NOW + poll_index * self.poll_interval
+            processed = runtime_module.process_once(
+                self.cleanup_broker(now)
+            )
+            outcomes = self.release_outcomes(processed, "wf-0001")
+            self.assertEqual(len(outcomes), 1)
+            # J3: no longer a drift refusal. The bounded-capability
+            # property this test exists for is unchanged and is
+            # asserted below exactly as before.
+            self.assertNotEqual(
+                outcomes[0].problem,
+                broker_module.PROBLEM_POLICY_DRIFT,
+            )
+            observed.add(len(self.live_capability_nonces(now=now)))
+        self.assertLessEqual(
+            max(observed), 1,
+            "live capabilities accrued across %d process_once polls"
+            " of a drift-stranded terminal workflow: observed live"
+            " counts %r" % (self.POLLS, sorted(observed)),
+        )
+        self.assertLess(
+            max(observed), capability_module.MAX_CAPABILITIES
+        )
+        self.assertEqual(self.close_attempts, [])
+
+    def test_two_drift_stranded_terminal_workflows_do_not_starve(self):
+        # 2 x 180 = 360 > 256: under the pre-R-01 ordering this is the
+        # `runtime_capability_mint_failed` condition observed in
+        # production. After R-01 nothing accrues and a healthy
+        # workflow still mints AND spends.
+        for workflow_id in ("wf-0001", "wf-0002"):
+            self.put_record(self.stranded_terminal_record(workflow_id))
+        self.drift_control_policy()
+        for poll_index in range(self.POLLS):
+            now = NOW + poll_index * self.poll_interval
+            processed = runtime_module.process_once(
+                self.cleanup_broker(now)
+            )
+            for workflow_id in ("wf-0001", "wf-0002"):
+                outcomes = self.release_outcomes(processed, workflow_id)
+                self.assertEqual(len(outcomes), 1)
+                # J3: drift no longer refuses here. The starvation
+                # property under test is unchanged.
+                self.assertNotEqual(
+                    outcomes[0].problem,
+                    broker_module.PROBLEM_POLICY_DRIFT,
+                )
+        end_now = NOW + self.POLLS * self.poll_interval
+        self.assertLessEqual(
+            len(self.live_capability_nonces(now=end_now)), 2
+        )
+        # No `runtime_capability_mint_failed` anywhere across 400
+        # release attempts.
+        token = capability_module.mint(
+            self.store_dir, "wf-healthy",
+            broker_module.ACTION_MATERIALIZE, 2, end_now,
+        )
+        self.put_record(self.authorized_record("wf-healthy"))
+        outcome = self.broker_at(end_now).perform(
+            "wf-healthy", broker_module.ACTION_MATERIALIZE, 2,
+            capability=token,
+        )
+        self.assertTrue(outcome.ok, outcome.problem)
+        self.assertEqual(self.close_attempts, [])
+
+    # -- (a) the Lead's explicit confirmation question -------------------
+
+    def test_release_under_drift_consumes_its_capability(self):
+        # ANSWER (a) to lead1's J1 question: YES, and it stays YES
+        # after J3. R-01 consumes BEFORE the gate, so the capability
+        # is spent regardless of what the gate then does — which is
+        # exactly why this assertion survives J3 changing the outcome
+        # from a drift refusal to a real release attempt.
+        self.put_record(self.stranded_terminal_record("wf-0001"))
+        self.drift_control_policy()
+        token = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_RELEASE, 2, NOW,
+        )
+        self.assertIn(token, self.live_capability_nonces())
+        outcome = self.cleanup_broker(NOW).perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2,
+            capability=token,
+        )
+        # J3: no longer a drift refusal at the gate.
+        self.assertNotEqual(
+            outcome.problem, broker_module.PROBLEM_POLICY_DRIFT
+        )
+        # The capability is spent WHATEVER the outcome (R-01).
+        self.assertEqual(
+            self.capability_entries()[token]["consumed_at"], NOW
+        )
+        self.assertNotIn(token, self.live_capability_nonces())
+        restarted = self.cleanup_broker(NOW).perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2,
+            capability=token,
+        )
+        self.assertEqual(
+            restarted.problem,
+            capability_module.PROBLEM_CAPABILITY_CONSUMED,
+        )
+        self.assertEqual(self.close_attempts, [])
+
+class J2CompactionTests(RuntimeCase):
+    """R-02: compaction removes ONLY provably non-actionable authority.
+
+    Compaction DELETES authority, so every test here is written from
+    the deletion side: the question is never "did it clean up?" but
+    "what did it refuse to delete, and can anything trick it into
+    deleting more?". The oracle lives in `runtime`, which holds the
+    workflow document; `capability` neither imports nor needs the
+    store or the Broker.
+    """
+
+    LIVE = "wf-0001"
+
+    def setUp(self):
+        RuntimeCase.setUp(self)
+        self.put_record(self.authorized_record(self.LIVE))
+
+    # -- helpers -------------------------------------------------------
+
+    def mint_for(self, workflow_id, action=None, revision=2, now=NOW):
+        return capability_module.mint(
+            self.store_dir, workflow_id,
+            action or broker_module.ACTION_MATERIALIZE,
+            revision, now,
+        )
+
+    def compact(self, now=NOW):
+        """Compaction exactly as the Runtime performs it."""
+        return runtime_module.compact_capabilities(self.broker_at(now))
+
+    def nonces(self):
+        return set(self.capability_entries())
+
+    def make_terminal(self, workflow_id):
+        workflows = self.fresh_workflows()
+        wa_record.apply_transition(
+            workflows["workflows"][workflow_id],
+            wa_record.PHASE_BLOCKED,
+        )
+        self.write_raw(workflows)
+
+    def drift_control_policy(self):
+        with open(os.path.join(self.control, "AGENTS.md"), "rb") as h:
+            self._policy_bytes = h.read()
+        with open(os.path.join(self.control, "AGENTS.md"), "ab") as h:
+            h.write(b"drifted line\n")
+
+    def repair_control_policy(self):
+        with open(os.path.join(self.control, "AGENTS.md"), "wb") as h:
+            h.write(self._policy_bytes)
+
+    # == THE LINE THAT MATTERS MOST ====================================
+
+    def test_drift_refused_live_authority_survives_compaction(self):
+        # An unconsumed, unexpired capability for a LIVE workflow at
+        # the CURRENT revision, whose Broker gate currently refuses
+        # `broker_policy_digest_drift`. Drift is REPAIRABLE, so this
+        # authority is STILL ACTIONABLE and deleting it would convert
+        # a recoverable condition into permanent authority loss.
+        survivor = self.mint_for(self.LIVE)
+        self.drift_control_policy()
+        # PROVE the gate really does refuse drift right now, using a
+        # DIFFERENT token so the survivor stays unconsumed.
+        probe = self.mint_for(self.LIVE)
+        self.assertEqual(
+            self.broker.perform(
+                self.LIVE, broker_module.ACTION_MATERIALIZE, 2,
+                capability=probe,
+            ).problem,
+            broker_module.PROBLEM_POLICY_DRIFT,
+        )
+        self.assertIn(survivor, self.live_capability_nonces())
+        # Compaction must NOT touch the survivor. It DOES reclaim the
+        # spent probe — that is rule (a), consumed, and is exactly the
+        # distinction under test: spent authority goes, drift-refused
+        # LIVE authority stays.
+        self.assertEqual(self.compact(), [probe])
+        self.assertIn(survivor, self.live_capability_nonces())
+        # PERSISTENCE ACROSS RUNTIME RESTART: a fresh Broker over the
+        # same durable store compacts again and still keeps it.
+        self.assertEqual(
+            runtime_module.compact_capabilities(self.broker_at(NOW)), []
+        )
+        self.assertIn(survivor, self.live_capability_nonces())
+        # And it is not merely present — repairing the drift makes it
+        # SPENDABLE, which is what "still actionable" means.
+        self.repair_control_policy()
+        outcome = self.broker_at(NOW).perform(
+            self.LIVE, broker_module.ACTION_MATERIALIZE, 2,
+            capability=survivor,
+        )
+        self.assertTrue(outcome.ok, outcome.problem)
+
+    def test_repeated_compaction_under_drift_never_erodes_authority(self):
+        # Compaction runs every pass. Under sustained drift it must
+        # keep answering "keep" — no slow erosion, no age-based decay.
+        survivor = self.mint_for(self.LIVE)
+        self.drift_control_policy()
+        for poll in range(50):
+            now = NOW + poll * 5
+            self.assertEqual(
+                runtime_module.compact_capabilities(
+                    self.broker_at(now)
+                ),
+                [],
+            )
+            self.assertIn(
+                survivor, self.live_capability_nonces(now=now)
+            )
+
+    # == (c) (d) (e): each removes ONLY what it should =================
+
+    def test_c_absent_workflow_is_removed_and_only_it(self):
+        keep = self.mint_for(self.LIVE)
+        gone = self.mint_for("wf-never-existed")
+        self.assertEqual(self.compact(), [gone])
+        self.assertEqual(self.nonces(), {keep})
+
+    def test_d_superseded_revision_is_removed_and_only_it(self):
+        keep = self.mint_for(self.LIVE, revision=2)
+        stale = self.mint_for(self.LIVE, revision=1)
+        ahead = self.mint_for(self.LIVE, revision=3)
+        removed = self.compact()
+        # BOTH non-current revisions go: revision never moves
+        # backwards, so neither can ever match again.
+        self.assertEqual(sorted(removed), sorted([stale, ahead]))
+        self.assertEqual(self.nonces(), {keep})
+
+    def test_e_terminal_phase_removes_only_actions_that_cannot_run(self):
+        materialize = self.mint_for(
+            self.LIVE, broker_module.ACTION_MATERIALIZE
+        )
+        dispatch = self.mint_for(
+            self.LIVE, broker_module.ACTION_DISPATCH
+        )
+        release = self.mint_for(
+            self.LIVE, broker_module.ACTION_RELEASE
+        )
+        self.make_terminal(self.LIVE)
+        removed = self.compact()
+        self.assertEqual(sorted(removed), sorted([materialize, dispatch]))
+        # ACTION_RELEASE SURVIVES: it is phase-checked in its handler
+        # and terminal cleanup is precisely its job. Deleting it would
+        # destroy the authority J3 exists to use.
+        self.assertEqual(self.nonces(), {release})
+
+    def test_e_is_derived_from_the_brokers_own_phase_table(self):
+        # Not a hand-written list: every action whose required phase
+        # is a NON-terminal phase must be judged unable to run in a
+        # terminal phase, and only ACTION_RELEASE (required phase
+        # None) may survive.
+        survives = set(
+            action for action in broker_module.BROKER_ACTIONS
+            if runtime_module._action_can_run_in_a_terminal_phase(
+                action
+            )
+        )
+        self.assertEqual(survives, {broker_module.ACTION_RELEASE})
+
+    def test_a_live_workflow_at_current_revision_is_never_removed(self):
+        keep = set(
+            self.mint_for(self.LIVE, action)
+            for action in (
+                broker_module.ACTION_MATERIALIZE,
+                broker_module.ACTION_PREPARE,
+                broker_module.ACTION_DISPATCH,
+                broker_module.ACTION_VERIFY,
+                broker_module.ACTION_COMPLETE,
+                broker_module.ACTION_RELEASE,
+            )
+        )
+        self.assertEqual(self.compact(), [])
+        self.assertEqual(self.nonces(), keep)
+
+    # == HOSTILE ORACLE INPUT — every one must FAIL CLOSED (keep) ======
+
+    def hostile_workflow_keeps(self, mutate, label):
+        """Mint live authority, corrupt the workflow document in a way
+        designed to trick the oracle, and require SURVIVAL."""
+        token = self.mint_for(self.LIVE)
+        workflows = self.fresh_workflows()
+        mutate(workflows["workflows"][self.LIVE], workflows)
+        self.write_raw(workflows)
+        removed = self.compact()
+        self.assertEqual(
+            removed, [],
+            "%s: compaction DELETED authority on malformed oracle"
+            " input" % label,
+        )
+        self.assertIn(token, self.nonces(), label)
+
+    def test_hostile_workflow_shapes_all_fail_closed(self):
+        cases = {
+            "record-is-not-a-dict":
+                lambda e, w: w["workflows"].__setitem__(self.LIVE, []),
+            "record-is-a-string":
+                lambda e, w: w["workflows"].__setitem__(self.LIVE, "x"),
+            "handoff-missing":
+                lambda e, w: e.pop("handoff"),
+            "handoff-is-none":
+                lambda e, w: e.__setitem__("handoff", None),
+            "handoff-is-not-a-dict":
+                lambda e, w: e.__setitem__("handoff", [2]),
+            "revision-missing":
+                lambda e, w: e["handoff"].pop("revision"),
+            "revision-is-none":
+                lambda e, w: e["handoff"].__setitem__("revision", None),
+            "revision-is-a-string":
+                lambda e, w: e["handoff"].__setitem__("revision", "2"),
+            "revision-is-a-bool":
+                lambda e, w: e["handoff"].__setitem__("revision", True),
+            "revision-is-a-float":
+                lambda e, w: e["handoff"].__setitem__("revision", 2.0),
+            "phase-missing":
+                lambda e, w: e.pop("phase"),
+            "phase-is-none":
+                lambda e, w: e.__setitem__("phase", None),
+            "phase-is-not-a-string":
+                lambda e, w: e.__setitem__("phase", ["BLOCKED"]),
+            "phase-unknown-string":
+                lambda e, w: e.__setitem__("phase", "NOT_A_PHASE"),
+            "phase-lowercase-terminal":
+                lambda e, w: e.__setitem__("phase", "blocked"),
+            "record-does-not-validate":
+                lambda e, w: e.__setitem__("objective", None),
+            "record-carries-an-unknown-key":
+                lambda e, w: e.__setitem__("surprise", 1),
+            "workflows-key-is-a-list":
+                lambda e, w: w.__setitem__("workflows", []),
+            "workflows-key-missing":
+                lambda e, w: w.pop("workflows"),
+        }
+        for label in sorted(cases):
+            with self.subTest(shape=label):
+                self.setUp()
+                self.hostile_workflow_keeps(cases[label], label)
+
+    def test_hostile_capability_revision_types_fail_closed(self):
+        # The capability side of the same question: a stored revision
+        # of a surprising TYPE must not be compared loosely. True == 1
+        # must never satisfy "revision 1".
+        for value, label in (
+            ("2", "string"), (True, "bool-true"), (False, "bool-false"),
+            (None, "none"), (2.0, "float"), ([2], "list"),
+        ):
+            with self.subTest(revision=label):
+                self.setUp()
+                token = self.mint_for(self.LIVE)
+                document = json.loads(
+                    self.capability_bytes().decode("utf-8")
+                )
+                document["capabilities"][token]["revision"] = value
+                path = os.path.join(
+                    self.store_dir,
+                    capability_module.CAPABILITIES_FILE_NAME,
+                )
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(document, handle, sort_keys=True, indent=1)
+                self.assertEqual(
+                    self.compact(), [],
+                    "%s: deleted on an odd capability revision type"
+                    % label,
+                )
+                self.assertIn(token, self.nonces(), label)
+
+    def test_an_invalid_record_is_never_a_ground_for_deletion(self):
+        # THE DISCRIMINATING CASE for the oracle's `validate_record`
+        # guard, exercised where that guard is actually REACHABLE.
+        #
+        # Through `compact_capabilities` it is NOT reachable:
+        # `WorkflowStore.load` validates every record and raises
+        # StoreError first, so a malformed record never reaches the
+        # oracle at all (proved by
+        # test_unreadable_workflow_store_compacts_nothing). The guard
+        # is defence-in-depth for any caller that builds the document
+        # itself — which is what this test does.
+        #
+        # Every OTHER hostile shape in this class is also caught by an
+        # individual isinstance guard, so those tests alone do not
+        # prove the record must VALIDATE. These two do: phase, handoff
+        # and revision are each perfectly well-formed and criterion
+        # (e) / (d) WOULD fire on them (proved by the control test
+        # below); only the record AS A WHOLE is invalid. Verified by
+        # mutation — removing the guard makes exactly these fail.
+        base = self.fresh_workflows()
+
+        terminal = json.loads(json.dumps(base))
+        wa_record.apply_transition(
+            terminal["workflows"][self.LIVE], wa_record.PHASE_BLOCKED
+        )
+        terminal["workflows"][self.LIVE]["objective"] = None
+        superseded = json.loads(json.dumps(base))
+        superseded["workflows"][self.LIVE]["objective"] = None
+
+        for label, document, revision in (
+            ("terminal-phase-on-an-invalid-record", terminal, 2),
+            ("superseded-revision-on-an-invalid-record",
+             superseded, 1),
+        ):
+            with self.subTest(shape=label):
+                entry = document["workflows"][self.LIVE]
+                with self.assertRaises(wa_record.RecordError):
+                    wa_record.validate_record(entry)
+                oracle = runtime_module.capability_actionability_oracle(
+                    document
+                )
+                self.assertFalse(
+                    oracle(
+                        self.LIVE, broker_module.ACTION_MATERIALIZE,
+                        revision,
+                    ),
+                    "%s: the oracle reported PROVABLY NON-ACTIONABLE"
+                    " on the strength of an INVALID record" % label,
+                )
+
+    def test_the_oracle_still_proves_the_valid_cases(self):
+        # THE CONTROL for the test above, and for every fail-closed
+        # test in this class: without it, an oracle that always
+        # answered False would satisfy all of them. On a VALID record
+        # the SAME two shapes DO prove non-actionability.
+        base = self.fresh_workflows()
+
+        terminal = json.loads(json.dumps(base))
+        wa_record.apply_transition(
+            terminal["workflows"][self.LIVE], wa_record.PHASE_BLOCKED
+        )
+        wa_record.validate_record(terminal["workflows"][self.LIVE])
+        self.assertTrue(
+            runtime_module.capability_actionability_oracle(terminal)(
+                self.LIVE, broker_module.ACTION_MATERIALIZE, 2
+            ),
+            "(e) must fire on a VALID terminal record",
+        )
+
+        # (d): the record stays at its own revision — editing
+        # handoff.revision would break the record's render binding and
+        # make it invalid, which is a DIFFERENT condition. A stale
+        # capability is one bound to an OLDER revision than the
+        # record's current one.
+        wa_record.validate_record(base["workflows"][self.LIVE])
+        self.assertTrue(
+            runtime_module.capability_actionability_oracle(base)(
+                self.LIVE, broker_module.ACTION_MATERIALIZE, 1
+            ),
+            "(d) must fire for a capability bound to an older"
+            " revision than the record's current one",
+        )
+        # ... and the current revision is still KEPT.
+        self.assertFalse(
+            runtime_module.capability_actionability_oracle(base)(
+                self.LIVE, broker_module.ACTION_MATERIALIZE, 2
+            )
+        )
+
+    def test_a_broken_oracle_deletes_nothing(self):
+        # An oracle that RAISES proves nothing. Directly at the
+        # capability layer, since no caller should be able to make
+        # compaction destructive by malfunctioning.
+        token = self.mint_for(self.LIVE)
+
+        def exploding(workflow_id, action, revision):
+            raise RuntimeError("oracle failure")
+
+        self.assertEqual(
+            capability_module.compact(self.store_dir, NOW, exploding),
+            [],
+        )
+        self.assertIn(token, self.nonces())
+
+    def test_only_exactly_true_deletes(self):
+        # Truthy is NOT enough. Anything but the singleton True keeps.
+        for verdict, label in (
+            (None, "none"), (1, "int-one"), ("yes", "truthy-string"),
+            ([1], "truthy-list"), ({"a": 1}, "truthy-dict"),
+            (object(), "truthy-object"), (0, "zero"), ("", "empty"),
+        ):
+            with self.subTest(verdict=label):
+                self.setUp()
+                token = self.mint_for(self.LIVE)
+                self.assertEqual(
+                    capability_module.compact(
+                        self.store_dir, NOW,
+                        lambda w, a, r: verdict,
+                    ),
+                    [],
+                    "%s: a non-True verdict deleted authority" % label,
+                )
+                self.assertIn(token, self.nonces(), label)
+        # ... and the control: exactly True DOES delete.
+        self.setUp()
+        token = self.mint_for(self.LIVE)
+        self.assertEqual(
+            capability_module.compact(
+                self.store_dir, NOW, lambda w, a, r: True
+            ),
+            [token],
+        )
+
+    def test_unreadable_workflow_store_compacts_nothing(self):
+        # If the workflow store cannot be read, NOTHING is provable —
+        # least of all "this workflow is absent".
+        token = self.mint_for(self.LIVE)
+        path = os.path.join(self.store_dir, wa_store.WORKFLOWS_FILE_NAME)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{ this is not json")
+        self.assertEqual(self.compact(), [])
+        self.assertIn(token, self.nonces())
+
+    # == DETERMINISM AND BOUNDEDNESS ===================================
+
+    def test_compaction_is_deterministic_and_order_independent(self):
+        removable = [self.mint_for("wf-absent-%02d" % i) for i in range(8)]
+        keepers = [self.mint_for(self.LIVE) for _ in range(4)]
+        before = json.loads(self.capability_bytes().decode("utf-8"))
+        first = self.compact()
+        self.assertEqual(first, sorted(removable))
+        self.assertEqual(self.nonces(), set(keepers))
+        # Re-run over a REORDERED copy of the same content: identical
+        # removal list, because iteration is over sorted nonces.
+        path = os.path.join(
+            self.store_dir, capability_module.CAPABILITIES_FILE_NAME
+        )
+        shuffled = {
+            "capability_store_schema_version":
+                before["capability_store_schema_version"],
+            "capabilities": dict(
+                reversed(list(before["capabilities"].items()))
+            ),
+        }
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(shuffled, handle, sort_keys=False, indent=1)
+        second = self.compact()
+        self.assertEqual(second, first)
+        # A second compaction of an already-compacted store is a no-op
+        # and leaves the file BYTE-IDENTICAL.
+        unchanged = self.capability_bytes()
+        self.assertEqual(self.compact(), [])
+        self.assertEqual(self.capability_bytes(), unchanged)
+
+    def test_compaction_reclaims_a_store_saturated_with_dead_authority(self):
+        # Boundedness at MAX_CAPABILITIES: a store filled with
+        # non-actionable entries denies a healthy mint, and compaction
+        # is what gives the room back.
+        for index in range(capability_module.MAX_CAPABILITIES):
+            self.mint_for("wf-absent-%03d" % index)
+        with self.assertRaises(capability_module.CapabilityError):
+            self.mint_for(self.LIVE)
+        removed = self.compact()
+        self.assertEqual(
+            len(removed), capability_module.MAX_CAPABILITIES
+        )
+        token = self.mint_for(self.LIVE)
+        self.assertIn(token, self.live_capability_nonces())
+
+    def test_compaction_cannot_rescue_a_store_full_of_LIVE_authority(self):
+        # The counterpart, and the safety property: when the store is
+        # full of ACTIONABLE authority, compaction removes NOTHING and
+        # the mint still refuses. Compaction must never buy room by
+        # evicting something usable.
+        for _ in range(capability_module.MAX_CAPABILITIES):
+            self.mint_for(self.LIVE)
+        self.assertEqual(self.compact(), [])
+        with self.assertRaises(capability_module.CapabilityError):
+            self.mint_for(self.LIVE)
+
+    def test_expiry_is_the_only_clock_input(self):
+        # No age-based decay beyond the existing hard expiry: a
+        # capability one second short of expiry survives, and the same
+        # capability at expiry is dropped by the existing rule.
+        token = self.mint_for(self.LIVE)
+        validity = capability_module.CAPABILITY_VALIDITY_SECONDS
+        self.assertEqual(self.compact(now=NOW + validity - 1), [])
+        self.assertIn(token, self.nonces())
+        self.assertEqual(self.compact(now=NOW + validity), [token])
+
+    # == THE MALFORMED CAPABILITY STORE IS NEVER REINITIALIZED =========
+
+    def test_malformed_capability_store_is_never_silently_reinitialized(self):
+        path = os.path.join(
+            self.store_dir, capability_module.CAPABILITIES_FILE_NAME
+        )
+        for content, label in (
+            ("{ not json", "not-json"),
+            ('{"capabilities": {}}', "missing-schema-version"),
+            ('{"capability_store_schema_version": 1}', "missing-capabilities"),
+            ('[]', "top-level-list"),
+        ):
+            with self.subTest(shape=label):
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(content)
+                raw_before = self.capability_bytes()
+                # Directly: the error is RAISED, never swallowed into
+                # a fresh empty store.
+                with self.assertRaises(
+                    capability_module.CapabilityError
+                ):
+                    capability_module.compact(
+                        self.store_dir, NOW, lambda w, a, x: True
+                    )
+                self.assertEqual(self.capability_bytes(), raw_before)
+                # And through the Runtime caller: contained, still not
+                # reinitialized.
+                self.assertEqual(self.compact(), [])
+                self.assertEqual(self.capability_bytes(), raw_before)
+
+    # == THE STRUCTURAL CONSTRAINT =====================================
+
+    def test_capability_module_imports_neither_store_nor_broker(self):
+        # R-02 structural rule, asserted on the module's own source
+        # rather than on an import side effect.
+        import ast
+        import inspect
+        source = inspect.getsource(capability_module)
+        imported = set()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Import):
+                imported.update(a.name for a in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported.add(node.module or "")
+                imported.update(
+                    "%s.%s" % (node.module or "", a.name)
+                    for a in node.names
+                )
+        for forbidden in (
+            "workflow_authority.store", "target_runtime.broker",
+            "target_runtime.runtime",
+        ):
+            for name in imported:
+                self.assertNotIn(
+                    forbidden, name,
+                    "capability.py must not import %r" % forbidden,
+                )
+        self.assertEqual(
+            imported, {"json", "os", "secrets", "tempfile"}
+        )
+
+    # == THE RUNTIME PASS ACTUALLY COMPACTS ============================
+
+    def test_process_once_compacts_before_it_mints(self):
+        # The wiring: a pass over a saturated store recovers rather
+        # than dying with runtime_capability_mint_failed.
+        for index in range(capability_module.MAX_CAPABILITIES):
+            self.mint_for("wf-absent-%03d" % index)
+        processed = runtime_module.process_once(self.broker_at(NOW))
+        labels = [
+            outcome.problem
+            for _, outcome in processed.get(self.LIVE, [])
+        ]
+        self.assertNotIn(
+            runtime_module.PROBLEM_CAPABILITY_MINT, labels
+        )
+        self.assertNotIn(
+            "wf-absent-000", "".join(str(n) for n in self.nonces())
+        )
+
+class J3TerminalCleanupUnstrandingTests(RuntimeCase):
+    """R-03 + R-07: terminal cleanup is unstranded by control-policy
+    BYTE DRIFT, and by nothing else.
+
+    The exemption lives in `_gate`, keyed on `action == ACTION_RELEASE`
+    by EXACT EQUALITY, and it defers EXACTLY ONE CONJUNCT — the
+    control-policy digest comparison. Every other narrowing gate is
+    untouched and is proven here INDIVIDUALLY, each one under active
+    drift so the exemption is engaged while it refuses.
+
+    R-07 is the sharp edge: a digest that CANNOT BE COMPUTED is not
+    drift and is more severe than drift, so `ACTION_RELEASE` still
+    REFUSES on `DigestError` even though it is exempt from a
+    mismatched digest.
+
+    R-06: nothing here may close a real workspace. The Brokers used by
+    the closing tests carry NO workspace-close capability at all
+    (`workspace_close_fn` defaults to None, which broker.py documents
+    as "this Broker has NO capability to close a workspace ... there
+    is deliberately no default reaching the real `herdr workspace
+    close`"), and that is asserted. A separate tripwire test injects a
+    close function that FAILS the test if it is ever called. Every
+    path stays inside this case's temporary directories.
+    """
+
+    POLLS = 20
+
+    def setUp(self):
+        RuntimeCase.setUp(self)
+        from target_runtime import cli as cli_module
+        self.poll_interval = cli_module.RUNTIME_POLL_INTERVAL_SECONDS
+        self.close_attempts = []
+
+    # -- fixtures ------------------------------------------------------
+
+    def agents_path(self):
+        return os.path.join(self.control, "AGENTS.md")
+
+    def drift_control_policy(self):
+        """Byte drift of a READABLE policy surface — the ONLY
+        condition the RELEASE exemption covers."""
+        with open(self.agents_path(), "ab") as handle:
+            handle.write(b"drifted line\n")
+
+    def break_control_policy_readability(self):
+        """Make the digest UNCOMPUTABLE — a DigestError, which is NOT
+        drift and is NOT exempt (R-07)."""
+        os.unlink(self.agents_path())
+        with self.assertRaises(DigestError):
+            control_policy_digest(self.control)
+
+    def terminal_with_real_workspace(self, workflow_id="wf-0001"):
+        """A TERMINAL workflow holding a REAL materialized lease, so a
+        close can actually be PROVEN. Returns the lease path.
+
+        Materialization runs BEFORE the drift, exactly as production
+        reaches this state: the workflow was authorized and worked on
+        under a policy surface that then drifted underneath it.
+        """
+        self.put_record(self.authorized_record(workflow_id))
+        outcome = self.perform(
+            workflow_id, broker_module.ACTION_MATERIALIZE, 2
+        )
+        self.assertTrue(outcome.ok, outcome.problem)
+        workflows = self.fresh_workflows()
+        entry = workflows["workflows"][workflow_id]
+        wa_record.apply_transition(entry, wa_record.PHASE_BLOCKED)
+        wa_store.WorkflowStore(self.store_dir).save(workflows)
+        path = entry["workspace_lease"]["path_realpath"]
+        self.assertTrue(os.path.isdir(path))
+        return path
+
+    def cleanup_broker(self, now=NOW):
+        """A Broker with the SINGLE clock at ``now`` and NO
+        workspace-close capability (R-06)."""
+        broker = self.broker_at(now)
+        self.assertIsNone(
+            broker._workspace_close,
+            "R-06: this Broker must have no workspace-close"
+            " capability at all",
+        )
+        return broker
+
+    def tripwire_broker(self, now=NOW):
+        """A Broker whose close capability FAILS the test if reached."""
+        def refuse_close(*args, **kwargs):
+            self.close_attempts.append((args, kwargs))
+            raise AssertionError(
+                "R-06 VIOLATION: a workspace close was attempted"
+            )
+        return broker_module.TargetBroker(
+            store_directory=self.store_dir,
+            control_repository_realpath=self.control,
+            transport=self.transport,
+            workspaces_root=self.workspaces,
+            role_turn_fn=self.role_turn,
+            claude_config_path=self.claude_config,
+            spawn_fn=self.spawn_fn,
+            clock=lambda: now,
+            observer_fn=self.observer,
+            spawn_records_fn=self.spawn_records,
+            readiness_probe_fn=lambda path: self.readiness_probe(path),
+            workspace_close_fn=refuse_close,
+            live_workspaces_fn=lambda: [],
+        )
+
+    def release_outcomes(self, processed, workflow_id):
+        return [
+            outcome for label, outcome in processed.get(workflow_id, [])
+            if label == broker_module.ACTION_RELEASE
+        ]
+
+    def released_at(self, workflow_id="wf-0001"):
+        return self.fresh_workflows()["workflows"][workflow_id][
+            "workspace_lease"]["released_at"]
+
+    # == SECTION 11: THE LOOP MUST TERMINATE, NOT JUST REFUSE BETTER ===
+
+    def test_repeated_process_once_terminates_the_release_loop(self):
+        # THE BINDING ACCEPTANCE CRITERION. Before J3 a drift-stranded
+        # terminal workflow minted one capability per poll FOREVER,
+        # because the gate refused, `released_at` was never written,
+        # and `terminal_cleanup_candidates` therefore selected it
+        # again on the next poll. J3 must stop the MINT-PER-POLL, not
+        # merely change the refusal code.
+        path = self.terminal_with_real_workspace()
+        self.drift_control_policy()
+        self.assertEqual(
+            runtime_module.terminal_cleanup_candidates(self.store_dir),
+            [("wf-0001", 2)],
+        )
+        self.nonces_before = set(self.capability_entries())
+
+        first = runtime_module.process_once(self.cleanup_broker(NOW))
+        outcomes = self.release_outcomes(first, "wf-0001")
+        self.assertEqual(len(outcomes), 1)
+        self.assertTrue(outcomes[0].ok, outcomes[0].problem)
+        # A PROVEN close: the directory is gone and released_at is set.
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual(self.released_at(), NOW)
+        # THE CANDIDATE LEAVES THE SET — this is what terminates the
+        # loop.
+        self.assertEqual(
+            runtime_module.terminal_cleanup_candidates(self.store_dir),
+            [],
+        )
+        # Exactly ONE capability was minted for the cleanup. Counted
+        # as NONCES EVER SEEN, because J2 compaction reclaims spent
+        # entries and a raw entry count would fall rather than rise.
+        seen = set(self.capability_entries())
+        self.assertEqual(len(seen - self.nonces_before), 1)
+
+        # ... and no further poll mints anything for it, ever.
+        for poll_index in range(1, self.POLLS + 1):
+            now = NOW + poll_index * self.poll_interval
+            processed = runtime_module.process_once(
+                self.cleanup_broker(now)
+            )
+            self.assertEqual(
+                self.release_outcomes(processed, "wf-0001"), [],
+                "poll %d attempted another release" % poll_index,
+            )
+            new = set(self.capability_entries()) - seen
+            self.assertEqual(
+                new, set(),
+                "poll %d MINTED again after a proven close: %r"
+                % (poll_index, new),
+            )
+        self.assertEqual(len(self.live_capability_nonces()), 0)
+
+    def test_two_drift_stranded_terminal_workflows_both_terminate(self):
+        # The starvation scenario from the incident: 2 x 180 live
+        # entries would have exceeded MAX_CAPABILITIES. After J3 both
+        # simply finish.
+        paths = [
+            self.terminal_with_real_workspace("wf-0001"),
+            self.terminal_with_real_workspace("wf-0002"),
+        ]
+        self.drift_control_policy()
+        runtime_module.process_once(self.cleanup_broker(NOW))
+        for path in paths:
+            self.assertFalse(os.path.exists(path))
+        self.assertEqual(
+            runtime_module.terminal_cleanup_candidates(self.store_dir),
+            [],
+        )
+        for poll_index in range(1, self.POLLS + 1):
+            runtime_module.process_once(
+                self.cleanup_broker(
+                    NOW + poll_index * self.poll_interval
+                )
+            )
+        self.assertEqual(len(self.live_capability_nonces()), 0)
+        self.assertLess(
+            len(self.capability_entries()),
+            capability_module.MAX_CAPABILITIES,
+        )
+
+    # == R-07: DigestError IS NOT EXEMPT ===============================
+
+    def test_release_refuses_when_the_digest_cannot_be_computed(self):
+        # THE R-07 ATTACK. An unreadable control policy is MORE severe
+        # than drift, and RELEASE has no downstream re-imposition the
+        # way the verification precheck chain backstops VERIFY. It
+        # must REFUSE, and it must not read as "the digest matched".
+        path = self.terminal_with_real_workspace()
+        self.break_control_policy_readability()
+        outcome = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_POLICY_DRIFT
+        )
+        # NOTHING was closed and NOTHING was recorded.
+        self.assertTrue(os.path.isdir(path))
+        self.assertIsNone(self.released_at())
+        # Still refused after a Runtime restart.
+        token = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_RELEASE, 2, NOW,
+        )
+        restarted = self.cleanup_broker(NOW).perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2,
+            capability=token,
+        )
+        self.assertEqual(
+            restarted.problem, broker_module.PROBLEM_POLICY_DRIFT
+        )
+        self.assertTrue(os.path.isdir(path))
+        self.assertIsNone(self.released_at())
+
+    def test_process_once_does_not_loop_forever_on_a_digest_error(self):
+        # A DigestError DOES keep the workflow a candidate — correctly,
+        # because nothing was closed. This test exists to state that
+        # plainly rather than let it look like the bug J3 fixed: the
+        # condition is UNREADABLE POLICY, which an operator repairs,
+        # and the refusal is the fail-closed outcome. R-01 still means
+        # each poll's capability is spent rather than leaked.
+        self.terminal_with_real_workspace()
+        self.break_control_policy_readability()
+        for poll_index in range(5):
+            now = NOW + poll_index * self.poll_interval
+            processed = runtime_module.process_once(
+                self.cleanup_broker(now)
+            )
+            outcomes = self.release_outcomes(processed, "wf-0001")
+            self.assertEqual(len(outcomes), 1)
+            self.assertEqual(
+                outcomes[0].problem,
+                broker_module.PROBLEM_POLICY_DRIFT,
+            )
+            self.assertLessEqual(
+                len(self.live_capability_nonces(now=now)), 1
+            )
+        self.assertIsNone(self.released_at())
+
+    def test_a_digest_error_never_reads_as_a_matching_digest(self):
+        # The structural trap R-07 names: for EVERY action, including
+        # both exempt ones, a DigestError must reach an explicit
+        # outcome and never fall through a comparison as though the
+        # digest had matched.
+        self.terminal_with_real_workspace()
+        self.break_control_policy_readability()
+        for action in broker_module.BROKER_ACTIONS:
+            with self.subTest(action=action):
+                outcome = self.perform("wf-0001", action, 2)
+                self.assertFalse(outcome.ok, action)
+                if action == broker_module.ACTION_VERIFY:
+                    # VERIFY continues past the gate (preserved
+                    # behaviour) but is stopped downstream by
+                    # _gate_control_policy in the verification
+                    # precheck chain — never silently allowed.
+                    continue
+                self.assertEqual(
+                    outcome.problem,
+                    broker_module.PROBLEM_POLICY_DRIFT, action,
+                )
+
+    # == DRIFT REMAINS FATAL FOR EVERY NON-EXEMPT ACTION ===============
+
+    def test_drift_remains_fatal_for_every_non_exempt_action(self):
+        # Byte drift of a READABLE surface. Only ACTION_VERIFY
+        # (preserved) and ACTION_RELEASE (R-03) may pass the gate's
+        # drift branch; every other action must still be refused
+        # `broker_policy_digest_drift`.
+        self.put_record(self.authorized_record("wf-0001"))
+        self.drift_control_policy()
+        exempt = (
+            broker_module.ACTION_VERIFY, broker_module.ACTION_RELEASE
+        )
+        refused = []
+        for action in broker_module.BROKER_ACTIONS:
+            if action in exempt:
+                continue
+            with self.subTest(action=action):
+                outcome = self.perform("wf-0001", action, 2)
+                self.assertFalse(outcome.ok, action)
+                self.assertEqual(
+                    outcome.problem,
+                    broker_module.PROBLEM_POLICY_DRIFT, action,
+                )
+                refused.append(action)
+        # Named explicitly so the list cannot silently shrink:
+        # dispatch (which carries engineering), follow-up,
+        # reconcile, complete (behind which every delivery gate —
+        # commit, push, PR, merge, tag, release-as-delivery, deploy —
+        # sits and is therefore unreachable under drift), plus the
+        # three preparation actions.
+        for action in (
+            broker_module.ACTION_MATERIALIZE,
+            broker_module.ACTION_PREPARE,
+            broker_module.ACTION_VALIDATE_HANDOFF,
+            broker_module.ACTION_DISPATCH,
+            broker_module.ACTION_FOLLOW_UP,
+            broker_module.ACTION_COMPLETE,
+            broker_module.ACTION_RECONCILE,
+        ):
+            self.assertIn(action, refused)
+        self.assertEqual(len(refused), 7)
+
+    def test_delivery_is_unreachable_under_drift(self):
+        # Delivery (commit / push / PR / merge / tag / deploy) is
+        # performed beneath ACTION_COMPLETE, and the drift refusal
+        # happens at the gate BEFORE any handler runs — so no delivery
+        # verb can be reached. Proven by the transport recording
+        # nothing at all.
+        self.put_record(self.authorized_record("wf-0001"))
+        self.drift_control_policy()
+        calls_before = len(self.transport.calls)
+        turns_before = len(self.role_turn.calls)
+        for action in (
+            broker_module.ACTION_DISPATCH,
+            broker_module.ACTION_COMPLETE,
+            broker_module.ACTION_FOLLOW_UP,
+        ):
+            outcome = self.perform("wf-0001", action, 2)
+            self.assertEqual(
+                outcome.problem,
+                broker_module.PROBLEM_POLICY_DRIFT, action,
+            )
+        self.assertEqual(len(self.transport.calls), calls_before)
+        self.assertEqual(len(self.role_turn.calls), turns_before)
+        self.assertEqual(len(self.spawn_requests), 0)
+
+    def test_the_exemption_is_two_exact_equalities_not_a_set(self):
+        # R-03: keyed on the ACTION, by exact equality, one action
+        # each — not a phase predicate, not a membership test against
+        # a collection something could be added to.
+        #
+        # READ THIS BEFORE DELETING ANYTHING AS REDUNDANT (reviewer1
+        # N-1). THIS TEST PINS THE FORM ONLY: equality rather than
+        # membership. IT DOES NOT PIN THE SIZE OF THE EXEMPTION. A
+        # THIRD `action != ACTION_X` added to the gate WOULD PASS
+        # THIS TEST — the reviewer proved exactly that with a mutant.
+        # The guarantee that the exemption cannot GROW to cover
+        # another action lives in
+        # `test_drift_remains_fatal_for_every_non_exempt_action`,
+        # which enumerates BROKER_ACTIONS and requires a drift refusal
+        # from every action that is not one of the two exempt ones.
+        # These two tests are complements, not duplicates: deleting
+        # that one because this one "already covers it" would remove
+        # the growth guarantee with nothing failing.
+        import inspect
+        source = inspect.getsource(broker_module.TargetBroker._gate)
+        self.assertIn("action != ACTION_VERIFY", source)
+        self.assertIn("action != ACTION_RELEASE", source)
+        # No set/tuple/list membership decides the exemption.
+        for forbidden in (
+            "action in ", "action not in ", "TERMINAL_PHASES",
+            "_DRIFT_EXEMPT",
+        ):
+            self.assertNotIn(
+                forbidden, source,
+                "the drift exemption must not be keyed on %r"
+                % forbidden,
+            )
+
+    # == EVERY NARROWING GATE, INDIVIDUALLY, UNDER ACTIVE DRIFT ========
+
+    def test_nonterminal_workflow_never_closes_under_drift(self):
+        self.put_record(self.authorized_record("wf-0001"))
+        outcome = self.perform(
+            "wf-0001", broker_module.ACTION_MATERIALIZE, 2
+        )
+        self.assertTrue(outcome.ok, outcome.problem)
+        path = self.fresh_workflows()["workflows"]["wf-0001"][
+            "workspace_lease"]["path_realpath"]
+        self.drift_control_policy()
+        outcome = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_WRONG_PHASE
+        )
+        self.assertTrue(os.path.isdir(path))
+        self.assertIsNone(self.released_at())
+
+    def test_wrong_control_identity_still_refuses_under_drift(self):
+        # Checked BEFORE the drift branch, and NOT exempted.
+        other = os.path.realpath(os.path.join(self.base, "other-ctl"))
+        make_git_repo(other, {
+            "AGENTS.md": "other\n", "OPERATOR_PROTOCOL.md": "other\n",
+        })
+        entry = self.authorized_record("wf-0001", control=other)
+        wa_record.apply_transition(entry, wa_record.PHASE_BLOCKED)
+        self.put_record(entry)
+        self.drift_control_policy()
+        outcome = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_WRONG_CONTROL
+        )
+
+    def test_stale_revision_still_refuses_under_drift(self):
+        # Checked AFTER the drift branch, and NOT exempted.
+        self.terminal_with_real_workspace()
+        self.drift_control_policy()
+        outcome = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 1
+        )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_STALE_REVISION
+        )
+        self.assertIsNone(self.released_at())
+
+    def test_every_approval_gate_still_refuses_under_drift(self):
+        cases = (
+            ("superseded",
+             lambda e: e["approval"].__setitem__("superseded", True),
+             broker_module.PROBLEM_SUPERSEDED),
+            ("never-consumed",
+             lambda e: e["approval"].__setitem__("consumed_at", None),
+             broker_module.PROBLEM_NOT_AUTHORIZED),
+            ("decision-not-approve",
+             lambda e: e["approval"].__setitem__("decision", "reject"),
+             broker_module.PROBLEM_NOT_APPROVED),
+            ("consumed-outside-validity",
+             lambda e: e["approval"].__setitem__(
+                 "consumed_at", e["approval"]["expires_at"] + 1),
+             broker_module.PROBLEM_EXPIRED),
+        )
+        for label, mutate, expected in cases:
+            with self.subTest(gate=label):
+                self.setUp()
+                path = self.terminal_with_real_workspace()
+                workflows = self.fresh_workflows()
+                mutate(workflows["workflows"]["wf-0001"])
+                self.write_raw(workflows)
+                self.drift_control_policy()
+                outcome = self.perform(
+                    "wf-0001", broker_module.ACTION_RELEASE, 2
+                )
+                self.assertFalse(outcome.ok, label)
+                self.assertEqual(outcome.problem, expected, label)
+                self.assertTrue(os.path.isdir(path), label)
+                self.assertIsNone(self.released_at(), label)
+
+    def test_ambiguity_still_refuses_under_drift(self):
+        path = self.terminal_with_real_workspace()
+        workflows = self.fresh_workflows()
+        workflows["workflows"]["wf-0001"]["ambiguity"] = {
+            "state": wa_record.AMBIGUITY_CRASH_UNCERTAIN,
+            "detail": "marked by a prior interrupted run",
+        }
+        self.write_raw(workflows)
+        self.drift_control_policy()
+        outcome = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem, broker_module.PROBLEM_CRASH_AMBIGUOUS
+        )
+        self.assertTrue(os.path.isdir(path))
+        self.assertIsNone(self.released_at())
+
+    # == THE ATTACK: drift MUST NOT become a cross-workflow close ======
+
+    def test_drift_plus_release_cannot_close_a_workspace_it_does_not_own(self):
+        # THE ATTACK the brief demands be demonstrably impossible.
+        # A terminal record naming ANOTHER workflow's lease path,
+        # under active drift so the exemption is fully engaged.
+        victim_path = self.terminal_with_real_workspace("wf-0001")
+        victim_before = tree_hash(victim_path)
+        self.assertNotEqual(victim_before, "ABSENT")
+
+        attacker = self.authorized_record("wf-0002")
+        attacker["workspace_lease"] = {
+            "lease_id": "lease-wf-0002",
+            "path_realpath": victim_path,
+            "acquired_at": NOW,
+            "released_at": None,
+        }
+        wa_record.apply_transition(attacker, wa_record.PHASE_BLOCKED)
+        self.put_record(attacker)
+        self.drift_control_policy()
+
+        outcome = self.perform(
+            "wf-0002", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertFalse(outcome.ok)
+        self.assertEqual(
+            outcome.problem,
+            workspace_module.PROBLEM_RELEASE_PATH_MISMATCH,
+        )
+        # The victim is byte-for-byte intact and still present.
+        self.assertTrue(os.path.isdir(victim_path))
+        self.assertEqual(tree_hash(victim_path), victim_before)
+        # And the attacker recorded no release.
+        self.assertIsNone(self.released_at("wf-0002"))
+
+    def test_unprovable_ownership_removes_nothing_under_drift(self):
+        # A terminal record carrying NO lease realpath: ownership is
+        # UNPROVABLE, so nothing may be removed.
+        entry = self.authorized_record("wf-0001")
+        entry["workspace_lease"] = None
+        wa_record.apply_transition(entry, wa_record.PHASE_BLOCKED)
+        self.put_record(entry)
+        self.drift_control_policy()
+        from target_runtime import ownership as ownership_mod
+        workspaces_before = tree_hash(self.workspaces)
+        outcome = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        # UNPROVABLE reports itself DEGRADED rather than claiming a
+        # removal it did not perform — and, the point of this test,
+        # REMOVES NOTHING.
+        self.assertEqual(
+            outcome.problem,
+            ownership_mod.PROBLEM_CLEANUP_DEGRADED,
+        )
+        self.assertEqual(outcome.outcome, broker_module.OUTCOME_RELEASED_DEGRADED)
+        self.assertEqual(tree_hash(self.workspaces), workspaces_before)
+        self.assertIsNone(
+            self.fresh_workflows()["workflows"]["wf-0001"][
+                "workspace_lease"]
+        )
+
+    def test_release_under_drift_is_idempotent(self):
+        path = self.terminal_with_real_workspace()
+        self.drift_control_policy()
+        first = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertTrue(first.ok, first.problem)
+        self.assertFalse(os.path.exists(path))
+        released = self.released_at()
+        self.assertEqual(released, NOW)
+        second = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertFalse(second.ok)
+        self.assertEqual(
+            second.problem, workspace_module.PROBLEM_LEASE_MISSING
+        )
+        # released_at is NOT rewritten by the retry.
+        self.assertEqual(self.released_at(), released)
+
+    def test_released_at_is_written_only_after_a_proven_close(self):
+        # Pair the two outcomes directly: a bare lease directory
+        # cannot preserve evidence, so the chain halts, nothing is
+        # destroyed and released_at stays None; a real materialized
+        # lease closes and records.
+        bare = self.authorized_record("wf-0002")
+        lease = workspace_module.lease_path(self.workspaces, "wf-0002")
+        os.makedirs(lease, exist_ok=True)
+        bare["workspace_lease"] = {
+            "lease_id": "lease-wf-0002",
+            "path_realpath": os.path.realpath(lease),
+            "acquired_at": NOW,
+            "released_at": None,
+        }
+        wa_record.apply_transition(bare, wa_record.PHASE_BLOCKED)
+        self.put_record(bare)
+        real = self.terminal_with_real_workspace("wf-0001")
+        self.drift_control_policy()
+
+        degraded = self.perform(
+            "wf-0002", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertIsNone(self.released_at("wf-0002"))
+        self.assertTrue(os.path.isdir(lease))
+        self.assertNotEqual(degraded.outcome, None)
+
+        proven = self.perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2
+        )
+        self.assertTrue(proven.ok, proven.problem)
+        self.assertEqual(self.released_at("wf-0001"), NOW)
+        self.assertFalse(os.path.exists(real))
+
+    # == N-2: RELEASE AUTHORITY SURVIVES COMPACTION, SECOND ANGLE ======
+
+    def test_release_capability_survives_repeated_compaction(self):
+        # N-2 (reviewer1, binding). J2's compaction clause (e) deletes
+        # capabilities whose action can never run in a terminal phase.
+        # ACTION_RELEASE is precisely the exception, and it is the
+        # authority J3 depends on. Asserted here from a SECOND angle:
+        # a live RELEASE capability for a drift-stranded TERMINAL
+        # workflow, checked on EVERY one of 20 compaction passes.
+        self.terminal_with_real_workspace()
+        self.drift_control_policy()
+        survivor = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_RELEASE, 2, NOW,
+        )
+        for poll_index in range(self.POLLS):
+            now = NOW + poll_index * self.poll_interval
+            removed = runtime_module.compact_capabilities(
+                self.broker_at(now)
+            )
+            self.assertNotIn(
+                survivor, removed,
+                "compaction pass %d deleted the RELEASE authority J3"
+                " needs" % poll_index,
+            )
+            self.assertIn(
+                survivor, self.live_capability_nonces(now=now),
+                "pass %d" % poll_index,
+            )
+        # And it is still SPENDABLE — survival that cannot be used is
+        # not survival.
+        outcome = self.broker_at(NOW).perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2,
+            capability=survivor,
+        )
+        self.assertTrue(outcome.ok, outcome.problem)
+        self.assertEqual(self.released_at(), NOW)
+
+    def test_non_release_terminal_authority_is_still_compacted(self):
+        # The control for N-2: clause (e) must still do its job. A
+        # MATERIALIZE capability for the same terminal workflow is
+        # removed on the first pass, so the survival above is a
+        # property of ACTION_RELEASE and not of compaction being inert.
+        self.terminal_with_real_workspace()
+        self.drift_control_policy()
+        doomed = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        survivor = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_RELEASE, 2, NOW,
+        )
+        removed = runtime_module.compact_capabilities(
+            self.broker_at(NOW)
+        )
+        self.assertIn(doomed, removed)
+        self.assertNotIn(survivor, removed)
+
+    # == REPLAY AND R-06 ==============================================
+
+    def test_an_authentic_release_presentation_is_not_replayable(self):
+        self.terminal_with_real_workspace()
+        self.drift_control_policy()
+        token = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_RELEASE, 2, NOW,
+        )
+        first = self.cleanup_broker(NOW).perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2,
+            capability=token,
+        )
+        self.assertTrue(first.ok, first.problem)
+        # Re-presenting the SAME nonce after a Runtime restart is
+        # refused, and performs no second close.
+        replay = self.cleanup_broker(NOW).perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2,
+            capability=token,
+        )
+        self.assertFalse(replay.ok)
+        self.assertIn(
+            replay.problem,
+            (capability_module.PROBLEM_CAPABILITY_CONSUMED,
+             capability_module.PROBLEM_CAPABILITY_UNKNOWN),
+        )
+
+    def test_no_real_workspace_close_is_ever_reached(self):
+        # R-06 tripwire. With a close capability wired to a function
+        # that FAILS the test, the drift+release path must never call
+        # it: this Broker's projection reports no live workspace, so
+        # the session close is not PROVEN and the chain retains rather
+        # than closing.
+        lease = self.terminal_with_real_workspace()
+        self.drift_control_policy()
+        token = capability_module.mint(
+            self.store_dir, "wf-0001",
+            broker_module.ACTION_RELEASE, 2, NOW,
+        )
+        self.tripwire_broker(NOW).perform(
+            "wf-0001", broker_module.ACTION_RELEASE, 2,
+            capability=token,
+        )
+        self.assertEqual(
+            self.close_attempts, [],
+            "R-06: a workspace close was attempted",
+        )
+        # Nothing was destroyed on the unproven path.
+        self.assertTrue(os.path.isdir(lease))
+        self.assertIsNone(self.released_at())
+
+class J4PreservedPatchCoverageTests(RuntimeCase):
+    """F-D: the PRESERVED reconciliation patch, covered explicitly.
+
+    The patch has been carried since before J1 and must end this task
+    fully covered. It is four behaviours, and the two halves of the
+    coverage are deliberately separated here:
+
+    ALREADY COVERED BY THE PATCH'S OWN TESTS (mutation-verified in the
+    J4 evidence, not assumed):
+      (b) `_gate_control_policy` in the verification precheck chain ->
+          `test_late_complete_policy_drift_is_durable_not_endless_refusal`
+      (c) `_verification_block` for PROBLEM_TURN_NOT_COMPLETED ->
+          `test_verification_turn_refusal_stops_durably`
+
+    NOT COVERED BEFORE J4, and covered here:
+      (a) the VERIFY drift exemption AT THE GATE, isolated from its
+          downstream consequences — under a MISMATCHED digest AND
+          under a DigestError, which R-07 made structurally distinct
+          branches and VERIFY is the one action that continues in
+          BOTH;
+      (b') the durable stop under a DigestError specifically — the
+          patch's own test covers the MISMATCH branch only;
+      (d) cli.py's `_report_new_refusals` WIRING. The patch's test
+          calls the function directly as a unit; nothing proved
+          `cli.main` actually calls it, in either the `once` path or
+          the daemon loop. Both wirings are covered here.
+    """
+
+    # -- helpers -------------------------------------------------------
+
+    def agents_path(self):
+        return os.path.join(self.control, "AGENTS.md")
+
+    def drift_control_policy(self):
+        """A READABLE but CHANGED policy surface — a mismatched
+        digest, R-07 condition 2."""
+        with open(self.agents_path(), "ab") as handle:
+            handle.write(b"post-authorization drift\n")
+
+    def break_control_policy_readability(self):
+        """An UNREADABLE policy surface — a DigestError, R-07
+        condition 1."""
+        os.unlink(self.agents_path())
+        with self.assertRaises(DigestError):
+            control_policy_digest(self.control)
+
+    def dispatched(self, workflow_id="wf-0001"):
+        self.put_record(self.authorized_record(workflow_id))
+        for action in (broker_module.ACTION_MATERIALIZE,
+                       broker_module.ACTION_PREPARE,
+                       broker_module.ACTION_VALIDATE_HANDOFF,
+                       broker_module.ACTION_DISPATCH):
+            outcome = self.perform(workflow_id, action, 2)
+            self.assertTrue(
+                outcome.ok, (action, outcome.problem, outcome.detail)
+            )
+        return self.fresh_workflows()["workflows"][workflow_id]
+
+    def gate_only(self, action, revision=2, workflow_id="wf-0001"):
+        """Run ONLY the gate and report its refusal, if any.
+
+        Calls `_gate` directly so the exemption is observed in
+        isolation, without any handler side effect standing in for it.
+        """
+        workflows = self.fresh_workflows()
+        _entry, refusal = self.broker._gate(
+            workflows, workflow_id, action, revision
+        )
+        return refusal
+
+    # == (a) THE VERIFY DRIFT EXEMPTION, AT THE GATE, ISOLATED =========
+
+    def test_verify_alone_passes_the_gate_under_a_mismatched_digest(self):
+        # R-07 condition 2, observed at the GATE itself rather than
+        # inferred from a downstream outcome.
+        self.dispatched()
+        self.drift_control_policy()
+        exempt = (
+            broker_module.ACTION_VERIFY, broker_module.ACTION_RELEASE
+        )
+        for action in broker_module.BROKER_ACTIONS:
+            with self.subTest(action=action):
+                refusal = self.gate_only(action)
+                if action in exempt:
+                    self.assertIsNone(
+                        refusal,
+                        "%s must PASS the gate under a mismatched"
+                        " digest" % action,
+                    )
+                else:
+                    self.assertIsNotNone(refusal, action)
+                    self.assertEqual(
+                        refusal.problem,
+                        broker_module.PROBLEM_POLICY_DRIFT, action,
+                    )
+
+    def test_verify_alone_passes_the_gate_under_a_digest_error(self):
+        # R-07 condition 1. VERIFY is the ONLY action that continues
+        # here — ACTION_RELEASE is deliberately NOT exempt from a
+        # DigestError, which is the distinction R-07 exists to make.
+        self.dispatched()
+        self.break_control_policy_readability()
+        for action in broker_module.BROKER_ACTIONS:
+            with self.subTest(action=action):
+                refusal = self.gate_only(action)
+                if action == broker_module.ACTION_VERIFY:
+                    self.assertIsNone(
+                        refusal,
+                        "VERIFY must PASS the gate under a"
+                        " DigestError (backstopped downstream)",
+                    )
+                else:
+                    self.assertIsNotNone(refusal, action)
+                    self.assertEqual(
+                        refusal.problem,
+                        broker_module.PROBLEM_POLICY_DRIFT, action,
+                    )
+
+    def test_the_two_drift_branches_are_not_the_same_branch(self):
+        # The structural claim, stated behaviourally: RELEASE is
+        # exempt from ONE of the two conditions and not the other.
+        # If the branches were ever merged this test fails whichever
+        # way they were merged.
+        self.dispatched()
+        self.drift_control_policy()
+        self.assertIsNone(
+            self.gate_only(broker_module.ACTION_RELEASE),
+            "RELEASE must be exempt from a MISMATCHED digest",
+        )
+        # Same workflow, same Broker, the other condition.
+        self.break_control_policy_readability()
+        refusal = self.gate_only(broker_module.ACTION_RELEASE)
+        self.assertIsNotNone(
+            refusal, "RELEASE must NOT be exempt from a DigestError"
+        )
+        self.assertEqual(
+            refusal.problem, broker_module.PROBLEM_POLICY_DRIFT
+        )
+
+    # == (b') THE DURABLE STOP UNDER A DigestError =====================
+
+    def test_verify_stops_durably_under_a_digest_error(self):
+        # The preserved patch exists so that drift stops the workflow
+        # DURABLY after a FRESH observation, instead of being
+        # discarded by the Runtime on every poll. Its own test proves
+        # that for a MISMATCHED digest; this proves it for the
+        # DigestError branch, which R-07 separated.
+        self.dispatched()
+        self.populate_lease_state()
+        self.target_task_status = "COMPLETE"
+        self.break_control_policy_readability()
+        turns_before = len(self.role_turn.calls)
+
+        processed = runtime_module.process_once(self.broker_at(NOW + 1))
+        verify_rows = [
+            outcome for label, outcome in processed["wf-0001"]
+            if label == broker_module.ACTION_VERIFY
+        ]
+        self.assertEqual(len(verify_rows), 1)
+        verify = verify_rows[0]
+        # It reached the handler (so the gate DID exempt it) and
+        # stopped durably rather than returning a bare refusal.
+        self.assertTrue(verify.ok, (verify.problem, verify.detail))
+        self.assertEqual(
+            verify.outcome, broker_module.OUTCOME_VERIFICATION_BLOCKED
+        )
+        # No model call was spent on an unverifiable workflow.
+        self.assertEqual(len(self.role_turn.calls), turns_before)
+
+        blocked = self.fresh_workflows()["workflows"]["wf-0001"]
+        # THE FRESH OBSERVATION IS RECORDED — this is the property the
+        # patch exists for. Before it, last_observation stayed stale
+        # because the Runtime discarded the refusal every poll.
+        self.assertEqual(
+            blocked["last_observation"]["task_status"], "COMPLETE"
+        )
+        # THE STOP IS DURABLE.
+        self.assertEqual(blocked["phase"], wa_record.PHASE_BLOCKED)
+        receipts = [
+            receipt for receipt in blocked["receipts"]
+            if receipt["bounded_summary"].startswith(
+                broker_module.VERIFICATION_BLOCK_MARKER + ": "
+            )
+        ]
+        self.assertEqual(len(receipts), 1)
+
+        # NOT an endless refusal: a later pass does not re-verify and
+        # does not append a second block receipt.
+        later = runtime_module.process_once(self.broker_at(NOW + 2))
+        self.assertNotIn(
+            broker_module.ACTION_VERIFY,
+            [label for label, _o in later.get("wf-0001", [])],
+        )
+        again = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual(len([
+            receipt for receipt in again["receipts"]
+            if receipt["bounded_summary"].startswith(
+                broker_module.VERIFICATION_BLOCK_MARKER + ": "
+            )
+        ]), 1)
+
+    def test_release_is_still_refused_on_the_same_pass(self):
+        # End-to-end confirmation that R-07 holds inside the real
+        # poll: the workflow that just blocked is now TERMINAL, so
+        # terminal cleanup selects it — and under a DigestError the
+        # release is REFUSED rather than unstranded.
+        self.dispatched()
+        self.populate_lease_state()
+        self.target_task_status = "COMPLETE"
+        self.break_control_policy_readability()
+        processed = runtime_module.process_once(self.broker_at(NOW + 1))
+        release_rows = [
+            outcome for label, outcome in processed["wf-0001"]
+            if label == broker_module.ACTION_RELEASE
+        ]
+        self.assertEqual(len(release_rows), 1)
+        self.assertFalse(release_rows[0].ok)
+        self.assertEqual(
+            release_rows[0].problem,
+            broker_module.PROBLEM_POLICY_DRIFT,
+        )
+        self.assertIsNone(
+            self.fresh_workflows()["workflows"]["wf-0001"][
+                "workspace_lease"]["released_at"]
+        )
+
+    # == (d) THE cli.py WIRING, NOT JUST THE FUNCTION ==================
+
+    def cli_config(self):
+        """A dirun config INSIDE this case's store directory, so
+        `cli.main` builds its broker over the SAME store and control
+        repository these fixtures use (`_build_broker` takes the state
+        directory from the config file's own directory)."""
+        # The loader refuses a config directory readable by
+        # group/other, because it would leak the bot token. That guard
+        # is real and stays; the fixture simply satisfies it.
+        os.chmod(self.store_dir, 0o700)
+        path = os.path.join(self.store_dir, "config.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({
+                "bot_token": "123:abc",
+                "allowed_user_ids": [42],
+                "repository": self.control,
+            }, handle)
+        os.chmod(path, 0o600)
+        return path
+
+    def run_cli(self, argv, **kwargs):
+        import contextlib
+        from target_runtime import cli
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            code = cli.main(argv, **kwargs)
+        return code, stream.getvalue()
+
+    def run_cli_over(self, processed, argv_tail, **kwargs):
+        """Drive the REAL `cli.main` with `process_once` stubbed.
+
+        The uncovered thing is the WIRING — whether `main` passes
+        `process_once`'s return value to `_report_new_refusals` — not
+        what `process_once` computes, which is covered exhaustively
+        elsewhere in this module. Stubbing it keeps these tests
+        hermetic and fast: `cli.main` builds the PRODUCTION broker
+        (real GitTransport, real role-turn seam), and an earlier draft
+        of this test that let it run for real spent 104 seconds
+        driving actual role turns. Nothing in this class may reach a
+        production seam.
+        """
+        import contextlib
+        from target_runtime import cli
+        calls = []
+
+        def fake_process_once(broker):
+            calls.append(broker)
+            return processed
+
+        original = runtime_module.process_once
+        runtime_module.process_once = fake_process_once
+        try:
+            stream = io.StringIO()
+            with contextlib.redirect_stderr(stream):
+                code = cli.main(
+                    ["--config", self.cli_config()] + argv_tail,
+                    **kwargs
+                )
+        finally:
+            runtime_module.process_once = original
+        self.assertEqual(len(self.transport.calls), 0)
+        self.assertEqual(len(self.spawn_requests), 0)
+        return code, stream.getvalue(), calls
+
+    def a_refusal(self):
+        return {"wf-0001": [(
+            broker_module.ACTION_VERIFY,
+            broker_module.BrokerOutcome(
+                False,
+                problem=broker_module.PROBLEM_POLICY_DRIFT,
+                detail="policy changed after authorization",
+            ),
+        )]}
+
+    def test_cli_once_surfaces_a_runtime_refusal(self):
+        # THE WIRING. `_report_new_refusals` is unit-tested by the
+        # preserved patch, but nothing proved `cli.main` CALLS it.
+        # Reverting the call in the `once` path left the ENTIRE suite
+        # green before J4 (J4 evidence, mutant P-e).
+        code, stderr, calls = self.run_cli_over(
+            self.a_refusal(), ["once"]
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("REFUSED", stderr)
+        self.assertIn("wf-0001", stderr)
+        self.assertIn(broker_module.PROBLEM_POLICY_DRIFT, stderr)
+
+    def test_cli_run_loop_surfaces_a_refusal_once_across_polls(self):
+        # The LOOP wiring (`run`), plus the no-spam property the
+        # suppression set exists for: three passes over the SAME
+        # persistent refusal report it ONCE. Reverting the loop's call
+        # also left the suite green before J4 (mutant P-d).
+        code, stderr, calls = self.run_cli_over(
+            self.a_refusal(), ["run"],
+            sleeper=lambda _seconds: None, passes=3,
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(stderr.count("REFUSED"), 1, stderr)
+        self.assertIn("wf-0001", stderr)
+
+    def test_cli_run_loop_reports_nothing_when_nothing_is_refused(self):
+        # The control: no refusal, no noise. Without it, a wiring that
+        # printed unconditionally would satisfy both tests above.
+        healthy = {"wf-0001": [(
+            broker_module.ACTION_VERIFY,
+            broker_module.BrokerOutcome(True, phase="DISPATCHED"),
+        )]}
+        code, stderr, calls = self.run_cli_over(
+            healthy, ["run"],
+            sleeper=lambda _seconds: None, passes=2,
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("REFUSED", stderr)
+
+    # == R-12: THE REFUSAL DIAGNOSTIC MUST NEVER KILL THE RUN LOOP =====
+
+    class RefusalWriteBrokenStderr(object):
+        """A stderr that fails ONLY on the refusal-report writes.
+
+        Deliberately targeted. A globally failing stderr also kills
+        `cli.main` at STARTUP, in the pre-existing `readiness
+        attention` print (`cli.py`, HEAD line 260) that is outside
+        this task's change set and which reviewer1 ruled separate
+        work. Failing only the writes this task's code performs
+        isolates the defect under test from that one.
+        """
+
+        def __init__(self):
+            self.attempts = 0
+            self.text = ""
+
+        def write(self, text, *args, **kwargs):
+            if "REFUSED" in text:
+                self.attempts += 1
+                raise BrokenPipeError(32, "Broken pipe")
+            self.text += text
+            return len(text)
+
+        def flush(self, *args, **kwargs):
+            pass
+
+    def run_loop_with_stderr(self, stream, passes=3):
+        """Drive the REAL `cli.main` run loop with `process_once`
+        stubbed to a persistent refusal. Returns (exit, polls,
+        raised)."""
+        from target_runtime import cli
+        polls = []
+
+        def fake_process_once(broker):
+            polls.append(1)
+            return self.a_refusal()
+
+        original = runtime_module.process_once
+        runtime_module.process_once = fake_process_once
+        saved = sys.stderr
+        sys.stderr = stream
+        try:
+            try:
+                code = cli.main(
+                    ["--config", self.cli_config(), "run"],
+                    sleeper=lambda _seconds: None, passes=passes,
+                )
+                return code, len(polls), None
+            except BaseException as exc:          # noqa: BLE001
+                return None, len(polls), exc
+        finally:
+            sys.stderr = saved
+            runtime_module.process_once = original
+
+    def test_the_run_loop_survives_a_broken_refusal_write(self):
+        # R-12 (a). BEFORE the fix this propagated BrokenPipeError out
+        # of `cli.main` and the unattended loop DIED after 0 of 3
+        # polls — the enclosing handler catches only KeyboardInterrupt.
+        stream = self.RefusalWriteBrokenStderr()
+        code, polls, raised = self.run_loop_with_stderr(stream)
+        self.assertIsNone(raised, "the run loop died on a diagnostic")
+        self.assertEqual(code, 0)
+        # IT KEPT POLLING — all three passes ran, not merely "did not
+        # crash on the first".
+        self.assertEqual(polls, 3)
+        # The write was ATTEMPTED on every poll: an unreported refusal
+        # stays ELIGIBLE rather than being suppressed after a failure.
+        self.assertEqual(stream.attempts, 3)
+
+    def test_the_normal_path_still_reports_exactly_once(self):
+        # R-12 (b). The regression test against "contain it with a
+        # bare try/except": with a WORKING stderr, three polls over
+        # the same persistent refusal must still produce exactly ONE
+        # line. Containment must not buy survival with blindness.
+        stream = io.StringIO()
+        code, polls, raised = self.run_loop_with_stderr(stream)
+        self.assertIsNone(raised)
+        self.assertEqual(code, 0)
+        self.assertEqual(polls, 3)
+        self.assertEqual(stream.getvalue().count("REFUSED"), 1)
+        self.assertIn("wf-0001", stream.getvalue())
+
+    def test_a_refusal_whose_write_failed_is_reported_after_recovery(self):
+        # R-12 (c), AND THE SUBTLE HALF OF THE FIX. Returning
+        # `current` wholesale would mark this refusal reported even
+        # though its write failed, suppressing it FOREVER — permanent
+        # blindness, strictly worse than the crash. A signature enters
+        # the returned set ONLY if its write actually succeeded.
+        from target_runtime import cli
+        broken = self.RefusalWriteBrokenStderr()
+        saved = sys.stderr
+        sys.stderr = broken
+        try:
+            reported = cli._report_new_refusals(self.a_refusal())
+        finally:
+            sys.stderr = saved
+        # The failed write did NOT enter the suppression set.
+        self.assertEqual(reported, set())
+        self.assertEqual(broken.attempts, 1)
+
+        # Once the stream recovers the refusal IS surfaced.
+        good = io.StringIO()
+        sys.stderr = good
+        try:
+            reported = cli._report_new_refusals(
+                self.a_refusal(), reported
+            )
+        finally:
+            sys.stderr = saved
+        self.assertEqual(good.getvalue().count("REFUSED"), 1)
+        self.assertEqual(len(reported), 1)
+        # ... and then suppressed normally, exactly once.
+        again = io.StringIO()
+        sys.stderr = again
+        try:
+            cli._report_new_refusals(self.a_refusal(), reported)
+        finally:
+            sys.stderr = saved
+        self.assertEqual(again.getvalue().count("REFUSED"), 0)
+
+    def test_a_missing_stderr_leaves_the_refusal_eligible(self):
+        # `sys.stderr` can be None on a detached runtime. Nothing is
+        # written, nothing raises, and — the property that matters —
+        # the refusal is NOT marked reported.
+        from target_runtime import cli
+        saved = sys.stderr
+        sys.stderr = None
+        try:
+            reported = cli._report_new_refusals(self.a_refusal())
+        finally:
+            sys.stderr = saved
+        self.assertEqual(reported, set())
+
+class J4OracleDegradationTests(RuntimeCase):
+    """J2 N-1: a failing compaction oracle must not degrade SILENTLY.
+
+    The fail-closed semantic is UNCHANGED and is re-asserted here: a
+    raising oracle KEEPS every entry. What J4 adds is that the failure
+    is reported, so "compaction removed nothing" can be told apart
+    from "compaction is broken and removal has stopped".
+    """
+
+    def setUp(self):
+        RuntimeCase.setUp(self)
+        self.put_record(self.authorized_record("wf-0001"))
+
+    def test_a_raising_oracle_still_keeps_everything(self):
+        # THE SEMANTIC THAT MUST NOT CHANGE.
+        token = capability_module.mint(
+            self.store_dir, "wf-gone",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+
+        def exploding(workflow_id, action, revision):
+            raise RuntimeError("oracle is broken")
+
+        errors = []
+        removed = capability_module.compact(
+            self.store_dir, NOW, exploding, errors
+        )
+        self.assertEqual(removed, [])
+        self.assertIn(token, self.live_capability_nonces())
+        # ... and the failure is now VISIBLE to the caller.
+        self.assertEqual([nonce for nonce, _exc in errors], [token])
+        self.assertIsInstance(errors[0][1], RuntimeError)
+
+    def test_oracle_failures_are_not_collected_when_not_asked_for(self):
+        # Backwards compatible: the parameter is optional and omitting
+        # it behaves exactly as before.
+        capability_module.mint(
+            self.store_dir, "wf-gone",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+
+        def exploding(workflow_id, action, revision):
+            raise RuntimeError("oracle is broken")
+
+        self.assertEqual(
+            capability_module.compact(self.store_dir, NOW, exploding),
+            [],
+        )
+
+    def test_the_runtime_surfaces_a_failing_oracle(self):
+        # The wiring: `compact_capabilities` reports to stderr, once
+        # per pass, bounded — and still removes nothing.
+        import contextlib
+        capability_module.mint(
+            self.store_dir, "wf-gone",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        original = runtime_module.capability_actionability_oracle
+
+        def broken_oracle(workflows):
+            def explode(workflow_id, action, revision):
+                raise RuntimeError("oracle is broken")
+            return explode
+
+        runtime_module.capability_actionability_oracle = broken_oracle
+        try:
+            stream = io.StringIO()
+            with contextlib.redirect_stderr(stream):
+                removed = runtime_module.compact_capabilities(
+                    self.broker_at(NOW)
+                )
+        finally:
+            runtime_module.capability_actionability_oracle = original
+        self.assertEqual(removed, [])
+        rendered = stream.getvalue()
+        self.assertIn("compaction oracle FAILED", rendered)
+        self.assertIn("KEPT", rendered)
+        self.assertIn("RuntimeError", rendered)
+        self.assertEqual(len(self.live_capability_nonces()), 1)
+
+    def test_a_healthy_oracle_reports_nothing(self):
+        # The control: no spurious warning on the normal path.
+        import contextlib
+        capability_module.mint(
+            self.store_dir, "wf-gone",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            removed = runtime_module.compact_capabilities(
+                self.broker_at(NOW)
+            )
+        self.assertEqual(len(removed), 1)
+        self.assertEqual(stream.getvalue(), "")
+    # == R-11: THE DIAGNOSTIC MUST NEVER KILL A POLL ===================
+
+    class RaisingStrError(Exception):
+        """An oracle exception whose ``__str__`` itself raises."""
+
+        def __str__(self):
+            raise RuntimeError("__str__ exploded")
+
+    class BrokenStderr(object):
+        """A stderr whose ``write`` fails, as a closed pipe does."""
+
+        def __init__(self):
+            self.attempts = 0
+
+        def write(self, *args, **kwargs):
+            self.attempts += 1
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def flush(self, *args, **kwargs):
+            pass
+
+    _CAPTURE = object()
+
+    def run_pass_with_broken_oracle(self, error_factory,
+                                    stderr=_CAPTURE):
+        """One full `process_once` whose compaction oracle RAISES.
+
+        Returns (raised_or_None, stderr_text). `process_once` is the
+        real entry point on purpose: R-11 is about what escapes the
+        PASS, not what escapes the helper, because
+        `compact_capabilities` is its first statement and its call
+        site catches only CapabilityError.
+        """
+        original = runtime_module.capability_actionability_oracle
+
+        def broken_oracle(workflows):
+            def explode(workflow_id, action, revision):
+                raise error_factory()
+            return explode
+
+        runtime_module.capability_actionability_oracle = broken_oracle
+        saved = sys.stderr
+        # `_MISSING` means "run with sys.stderr set to None"; any other
+        # value replaces the stream; the default captures it.
+        captured = io.StringIO()
+        sys.stderr = captured if stderr is self._CAPTURE else stderr
+        try:
+            try:
+                runtime_module.process_once(self.broker_at(NOW))
+            except BaseException as exc:          # noqa: BLE001
+                return exc, captured.getvalue()
+            return None, captured.getvalue()
+        finally:
+            sys.stderr = saved
+            runtime_module.capability_actionability_oracle = original
+
+    def assert_poll_survived_and_kept(self, raised, token, label):
+        """The two properties R-11 must never trade against each
+        other: the pass SURVIVES, and the fail-closed KEEP holds."""
+        self.assertIsNone(
+            raised,
+            "%s: the diagnostic killed the poll (%r)" % (label, raised),
+        )
+        # THE PASS ACTUALLY RAN — not merely "did not raise". An
+        # AUTHORIZED workflow is driven all the way to COMPLETED.
+        self.assertEqual(
+            self.fresh_workflows()["workflows"]["wf-0001"]["phase"],
+            wa_record.PHASE_COMPLETED, label,
+        )
+        # FAIL-CLOSED KEEP, RE-PROVEN (not assumed) AFTER CONTAINMENT.
+        self.assertIn(token, self.live_capability_nonces(), label)
+
+    def test_a_raising_str_on_the_oracle_error_never_kills_the_poll(self):
+        # R-11 case 1. Before containment this propagated out of
+        # process_once as RuntimeError("__str__ exploded") and no
+        # workflow was advanced at all.
+        token = capability_module.mint(
+            self.store_dir, "wf-gone",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        raised, stderr = self.run_pass_with_broken_oracle(
+            self.RaisingStrError
+        )
+        self.assert_poll_survived_and_kept(raised, token, "raising-str")
+        # AND THE REPORT IS STILL EMITTED — containment must not
+        # silence the diagnostic J2 N-1 exists to produce. The
+        # unrenderable detail degrades to a placeholder; the fact of
+        # the failure still reaches the operator.
+        self.assertIn("compaction oracle FAILED", stderr)
+        self.assertIn("KEPT", stderr)
+        self.assertIn("RaisingStrError", stderr)
+        self.assertIn("unprintable", stderr)
+
+    def test_a_broken_stderr_never_kills_the_poll(self):
+        # R-11 case 2, and the realistic one: this is an UNATTENDED
+        # runtime, so a closed stderr pipe is ordinary. Before
+        # containment this propagated BrokenPipeError out of
+        # process_once and killed the pass for every workflow.
+        token = capability_module.mint(
+            self.store_dir, "wf-gone",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        stream = self.BrokenStderr()
+        raised, _ = self.run_pass_with_broken_oracle(
+            lambda: RuntimeError("oracle is broken"), stderr=stream,
+        )
+        self.assert_poll_survived_and_kept(
+            raised, token, "broken-stderr"
+        )
+        # The write WAS attempted — the report is lost only because
+        # the stream is gone, never because it was skipped.
+        self.assertGreaterEqual(stream.attempts, 1)
+
+    def test_a_missing_stderr_never_kills_the_poll(self):
+        # `sys.stderr` can be None in a detached runtime. Writing to
+        # `file=None` would misdirect the diagnostic to stdout, so the
+        # function returns instead — and still does not raise.
+        token = capability_module.mint(
+            self.store_dir, "wf-gone",
+            broker_module.ACTION_MATERIALIZE, 2, NOW,
+        )
+        import contextlib
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            raised, _ = self.run_pass_with_broken_oracle(
+                lambda: RuntimeError("oracle is broken"), stderr=None,
+            )
+        self.assert_poll_survived_and_kept(
+            raised, token, "missing-stderr"
+        )
+        # ... and the diagnostic is NOT misdirected to stdout. The
+        # docstring says "to stderr only"; `print(file=None)` would
+        # quietly write to stdout, which on this runtime is a
+        # different consumer entirely.
+        self.assertNotIn("compaction oracle FAILED", stdout.getvalue())
+
+    def test_the_helper_itself_cannot_raise_on_hostile_input(self):
+        # Direct unit coverage of the containment contract, over
+        # shapes the caller could never produce but the function must
+        # still not die on: unsortable nonces, a non-exception second
+        # element, an empty list, and a malformed pair list.
+        import contextlib
+        hostile = [
+            [],
+            [(1, RuntimeError("x")), ("a", RuntimeError("y"))],
+            [("nonce", None)],
+            [("nonce", self.RaisingStrError())],
+        ]
+        for index, errors in enumerate(hostile):
+            with self.subTest(shape=index):
+                stream = io.StringIO()
+                with contextlib.redirect_stderr(stream):
+                    # Must return normally. No assertion on content:
+                    # the contract is "never raises", not "always
+                    # renders".
+                    runtime_module._report_oracle_failures(errors)
 
 class ReleaseHardeningTests(RuntimeCase):
     """I3 D3 / criterion H: release never rmtrees a path that is not

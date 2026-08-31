@@ -16,15 +16,55 @@ even import this package.
 
 Consumption is durable BEFORE the action's effects: a crash between
 consumption and effect costs one capability (the Runtime mints a new
-one on a later validated request), never a replay. Every refusal
-writes nothing.
+one on a later validated request), never a replay.
 
-Refusal-code ordering note (round-05 ledger): a consumed capability
-presented again IMMEDIATELY is refused ``capability_already_consumed``;
+WHAT A REFUSAL WRITES — the two cases are different, and the
+difference is the whole point of this module's ordering contract:
+
+* A refusal BY ``validate_and_consume`` writes NOTHING. Missing,
+  malformed (non-str or empty), unknown or forged, already consumed,
+  expired, and binding-mismatched presentations are all rejected
+  before the function's single write, and no OTHER entry in the store
+  is altered, removed, or re-serialized. Nothing a caller can forge
+  or replay can destroy live authority belonging to anything else.
+* A refusal by the BROKER AFTER a successful consumption does NOT
+  restore the capability. ``TargetBroker.perform`` validates and
+  consumes BEFORE it reads the workflow store and before its gate
+  runs, so an AUTHENTIC, exactly-bound, unconsumed, unexpired
+  presentation is SPENT even when the gate then refuses (policy
+  digest drift, wrong phase, stale revision, ambiguity, approval
+  refusals) and even when the workflow store cannot be read. The
+  Runtime mints a fresh capability on its next validated request;
+  this is a spend of one token, never a replay.
+
+That ordering is deliberate. Consuming only after the gate left an
+authentic capability LIVE through every gate refusal, so a workflow
+refusing persistently accrued one live entry per Runtime poll against
+``MAX_CAPABILITIES`` — a SHARED, global bound — and degraded the
+authority budget every other workflow mints from.
+
+RECOVERY (R-02). ``_prune`` on its own drops only consumed and
+expired entries, so authority that became unreachable for any OTHER
+reason — its workflow deleted, its revision superseded, its workflow
+terminal — stayed until its hard expiry. ``compact`` adds those
+grounds, but ONLY on positive proof supplied by the caller's oracle:
+this module deliberately cannot import the workflow store or the
+Broker, so it cannot and does not decide actionability itself. Every
+ambiguity KEEPS the entry. A capability for a live workflow at the
+current revision survives compaction even while the gate refuses it
+for policy drift, because drift is repairable.
+
+Refusal-code ordering note (round-05 ledger, re-derived after the
+consume-before-gate reordering): a consumed capability presented
+again IMMEDIATELY is refused ``capability_already_consumed``;
 presented again after an INTERVENING mint it may surface
 ``capability_unknown`` instead, because ``mint`` prunes consumed
 entries. Both refuse and write nothing — the specific code is a
 diagnostic, not a guarantee about which of the two a replay sees.
+Because an authentic presentation is now spent even when the Broker
+subsequently refuses, re-presenting the capability from a
+gate-refused attempt takes exactly this same path: it is one of those
+two codes, never a second execution.
 """
 
 import json
@@ -148,18 +188,109 @@ def _save(directory, document):
         os.close(directory_descriptor)
 
 
-def _prune(document, now):
-    """Drop consumed and expired entries; exact count returned."""
+def _prune(document, now, non_actionable=None, oracle_errors=None):
+    """Drop entries that are PROVABLY non-actionable; return the
+    removed nonces in sorted order.
+
+    Two independent grounds, and the difference matters:
+
+    * SELF-EVIDENT (always applied, no oracle needed): the entry is
+      already consumed, or `now` has reached its hard expiry. These
+      need no knowledge outside this module.
+    * PROVEN BY THE CALLER'S ORACLE (applied only when
+      ``non_actionable`` is supplied): the workflow this authority
+      names is gone, its revision has moved on, or its phase is
+      terminal and this action can never run there. This module
+      cannot know any of that — it deliberately cannot import the
+      workflow store or the Broker — so the caller that already holds
+      the workflow document passes the answer in.
+
+    FAIL-CLOSED IS THE WHOLE CONTRACT HERE. Removing authority is
+    destructive and irreversible, so an entry is removed ONLY on a
+    positive proof of non-actionability. The oracle must return
+    EXACTLY ``True`` to delete: any exception, and any other value
+    whatsoever — ``None``, a truthy string, ``1``, a truthy object —
+    KEEPS the entry. Ambiguity is never resolved in favour of
+    deletion. In particular a capability that is unconsumed,
+    unexpired, for a live workflow at the current revision is
+    actionable EVEN WHILE the Broker gate refuses it for
+    ``broker_policy_digest_drift``: drift is REPAIRABLE, so deleting
+    such an entry would convert a recoverable condition into
+    permanent authority loss.
+
+    Deterministic and bounded: iteration is over ``sorted`` nonces, so
+    the removal set and its order depend only on the store's content,
+    never on dict insertion order; the store is already hard-bounded
+    at ``MAX_CAPABILITIES``. ``now`` is the caller's single injected
+    clock value — this function never reads a clock of its own.
+    """
     capabilities = document["capabilities"]
-    stale = [
-        nonce
-        for nonce, entry in capabilities.items()
-        if entry["consumed_at"] is not None
-        or now >= entry["expires_at"]
-    ]
+    stale = []
+    for nonce in sorted(capabilities):
+        entry = capabilities[nonce]
+        if (
+            entry["consumed_at"] is not None
+            or now >= entry["expires_at"]
+        ):
+            stale.append(nonce)
+            continue
+        if non_actionable is None:
+            continue
+        try:
+            verdict = non_actionable(
+                entry["workflow_id"], entry["action"],
+                entry["revision"],
+            )
+        except Exception as exc:
+            # A BROKEN ORACLE PROVES NOTHING. Keep the authority — the
+            # fail-closed semantic is UNCHANGED and deliberately so.
+            #
+            # But it must not be INVISIBLE (J2 N-1). Silently keeping
+            # everything is indistinguishable from having nothing to
+            # remove, so a defective oracle would regress compaction to
+            # its pre-R-02 behaviour with no counter, no log and no
+            # refusal — recovery would quietly stop while every test
+            # and every operator surface still looked healthy. When the
+            # caller passes ``oracle_errors`` the failure is recorded
+            # for it to surface; the entry is kept either way.
+            if oracle_errors is not None:
+                oracle_errors.append((nonce, exc))
+            continue
+        if verdict is True:
+            stale.append(nonce)
     for nonce in stale:
         del capabilities[nonce]
-    return len(stale)
+    return stale
+
+
+def compact(directory, now, non_actionable=None, oracle_errors=None):
+    """Compact the capability store; return the removed nonces sorted.
+
+    The recovery half of R-02. ``_prune`` alone runs only as a side
+    effect of ``mint``, and drops only consumed-or-expired entries, so
+    authority that became non-actionable for any other reason — its
+    workflow deleted, its revision superseded, its workflow terminal —
+    was previously unreachable and occupied the shared bound until its
+    hard expiry.
+
+    ``non_actionable`` is the caller's oracle; see ``_prune`` for the
+    fail-closed contract it must satisfy. Pass a list as
+    ``oracle_errors`` to be told which entries the oracle FAILED on:
+    those entries are kept, as always, but a caller that never asks
+    cannot distinguish "nothing was removable" from "the oracle is
+    broken and removal has silently stopped". The store is written ONLY
+    when something was actually removed, so a no-op compaction leaves
+    the file byte-identical.
+
+    A malformed store raises ``CapabilityError`` out of ``_load`` and
+    is NEVER silently reinitialized: an unreadable store is a
+    condition to surface, not to erase.
+    """
+    document = _load(directory)
+    removed = _prune(document, now, non_actionable, oracle_errors)
+    if removed:
+        _save(directory, document)
+    return removed
 
 
 def mint(directory, workflow_id, action, revision, now,
@@ -198,11 +329,13 @@ def validate_and_consume(directory, nonce, workflow_id, action,
                          revision, now):
     """Validate one presented capability and consume it exactly once.
 
-    Returns ``(ok, problem, detail)``. Every refusal — missing,
-    unknown, already consumed, expired, or bound to a different
-    (workflow, action, revision) — writes NOTHING. On success the
-    consumption is saved durably BEFORE the caller performs any
-    effect.
+    Returns ``(ok, problem, detail)``. Every refusal here — missing,
+    malformed, unknown, already consumed, expired, or bound to a
+    different (workflow, action, revision) — writes NOTHING, and
+    leaves every other entry in the store byte-for-byte untouched. On
+    success the consumption is saved durably BEFORE the caller
+    performs any effect, and the caller does NOT restore it if the
+    caller itself later refuses.
     """
     if not isinstance(nonce, str) or not nonce:
         return False, PROBLEM_CAPABILITY_MISSING, (

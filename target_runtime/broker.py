@@ -764,19 +764,87 @@ class TargetBroker(object):
                     self.control_realpath,
                 ),
             )
+        # THE CONTROL-POLICY DIGEST, AND THE TWO CONDITIONS THAT MUST
+        # NEVER BE CONFLATED (R-07).
+        #
+        # "Cannot compute the digest" and "computed it and it does not
+        # match" are DIFFERENT FACTS, and only the second one is
+        # drift. They are written as structurally separate branches
+        # here, each reaching ONE explicit outcome, precisely so that
+        # a DigestError can never fall through and read as "the digest
+        # matched". An earlier shape shared a `live_digest = None`
+        # fall-through between them; that is safe for ACTION_VERIFY
+        # only by accident of a downstream re-imposition, and would be
+        # a strictly LARGER hole for ACTION_RELEASE, which has none.
+        digest_error = None
+        live_digest = None
         try:
             live_digest = control_policy_digest(self.control_realpath)
         except DigestError as exc:
-            return None, _refused(PROBLEM_POLICY_DRIFT, str(exc))
-        if live_digest != entry["control_identity"][
+            digest_error = exc
+
+        if digest_error is not None:
+            # CONDITION 1 — THE POLICY SURFACE CANNOT BE READ AT ALL.
+            #
+            # This is NOT byte drift, and it is MORE severe than
+            # drift, not less: drift means we can see the surface and
+            # it changed; this means we cannot see it. The operator's
+            # objective authorizes unstranding cleanup blocked solely
+            # by policy BYTE DRIFT, and a DigestError is not byte
+            # drift. So every action is refused here EXCEPT
+            # ACTION_VERIFY.
+            #
+            # ACTION_VERIFY alone continues, and ONLY because the
+            # verification precheck chain re-imposes the policy
+            # comparison downstream via `_gate_control_policy`, where
+            # it stops the workflow DURABLY after a fresh observation.
+            # ACTION_RELEASE has NO such downstream re-imposition — it
+            # goes straight to `_release` — which is exactly why it is
+            # refused here rather than sharing this branch. Do not add
+            # it: the exemption below covers a mismatched digest, not
+            # an unreadable one.
+            if action != ACTION_VERIFY:
+                return None, _refused(
+                    PROBLEM_POLICY_DRIFT, str(digest_error)
+                )
+        elif live_digest != entry["control_identity"][
             "policy_digest_sha256"
         ]:
-            return None, _refused(
-                PROBLEM_POLICY_DRIFT,
-                "the LIVE control policy digest does not match the"
-                " one this workflow was authorized under; the policy"
-                " surface drifted between authorization and use",
-            )
+            # CONDITION 2 — THE DIGEST COMPUTED, AND MISMATCHED.
+            #
+            # True byte drift of a READABLE policy surface. This, and
+            # only this, is what the two exemptions defer.
+            #
+            # ACTION_VERIFY (preserved) and ACTION_RELEASE (R-03) are
+            # named by EXACT EQUALITY, one action each — deliberately
+            # not a phase predicate and not a set, so the exemption
+            # cannot widen by someone adding a member. It defers
+            # EXACTLY ONE CONJUNCT, this digest comparison, and
+            # nothing else: workflow identity was already enforced
+            # ABOVE this branch and is not exempted; revision,
+            # approval (superseded / consumed / decision / validity)
+            # and ambiguity are enforced BELOW it and are not
+            # exempted; and `_release` still re-checks the terminal
+            # phase, the recorded lease realpath, proven ownership
+            # (UNPROVABLE refuses and removes nothing), ambiguity and
+            # idempotent re-entry for itself.
+            #
+            # Why RELEASE at all: release closes only PROVEN-OWNED
+            # resources, and a terminal workflow stranded by drift can
+            # otherwise NEVER be released — its workspace, trust key,
+            # sessions and scope records are stranded forever, while
+            # `process_once` re-mints a capability for it on every
+            # poll. Drift is repairable; permanent stranding is not.
+            if action != ACTION_VERIFY and action != ACTION_RELEASE:
+                return None, _refused(
+                    PROBLEM_POLICY_DRIFT,
+                    "the LIVE control policy digest does not match"
+                    " the one this workflow was authorized under; the"
+                    " policy surface drifted between authorization"
+                    " and use",
+                )
+        # else: the digest computed AND matched — nothing is deferred
+        # for any action, exempt or not.
         if revision != entry["handoff"]["revision"]:
             return None, _refused(
                 PROBLEM_STALE_REVISION,
@@ -830,18 +898,57 @@ class TargetBroker(object):
     def perform(self, workflow_id, action, revision, capability=None):
         """Run ONE fixed lifecycle action; fail closed on everything.
 
-        The gate runs first and a refusal writes nothing anywhere.
         Sensitive values (paths, URLs, baselines, handoff bytes) are
         resolved from the record INSIDE the action handlers — the
         caller has no way to supply one. ``capability`` is the
         Runtime-issued one-shot internal token (I3): it must be bound
         to exactly this (workflow, action, revision), unconsumed and
-        unexpired; it is validated LAST (so every record/authority
-        refusal above it writes nothing, capability store included)
-        and CONSUMED DURABLY before any effect — the second
-        presentation of the same capability is refused with its own
-        code. Codex never sees or supplies one: the only production
-        caller is the Runtime, in-process.
+        unexpired. Codex never sees or supplies one: the only
+        production caller is the Runtime, in-process.
+
+        ORDER, AND WHAT EACH STEP WRITES (this is the contract; read
+        it as two separate properties, because they are no longer the
+        same property):
+
+        1. ``PROBLEM_UNKNOWN_ACTION`` is refused FIRST, outside the
+           lock, and consumes NOTHING. An action outside the fixed set
+           cannot be the exact binding of any capability, so a token
+           presented with one would be refused
+           ``capability_binding_mismatch`` regardless; refusing first
+           avoids spending authority on a caller-shape error.
+        2. The capability is then validated and CONSUMED DURABLY,
+           before the workflow store is read and before the gate runs.
+           A NON-AUTHENTIC presentation — missing, malformed, unknown
+           or forged, already consumed, expired, or bound to a
+           different (workflow, action, revision) — is refused writing
+           NOTHING, and destroys no other entry in the capability
+           store.
+        3. Only then are the workflow record loaded and the gate run.
+
+        Consequently:
+
+        * A gate refusal (policy digest drift, wrong phase, stale or
+          superseded revision, ambiguity, invalid record, wrong
+          control, approval refusals) writes nothing to the WORKFLOW
+          RECORD, and neither does a store-unreadable refusal. That
+          property is unchanged.
+        * An AUTHENTIC presentation is SPENT REGARDLESS OF THE
+          OUTCOME — including when the gate refuses afterwards, and
+          including when the workflow store cannot be read. It is NOT
+          the case that a refusal writes nothing anywhere; it is not
+          the case that the capability store is untouched by a
+          refusal. Re-presenting that same nonce is refused with its
+          own code, durably, across Runtime restarts.
+
+        This is deliberate. Leaving an authentic capability live
+        through a gate refusal made every Runtime poll of a
+        persistently refusing workflow accrue one more live entry
+        against the capability store's hard bound, so one stuck
+        workflow degraded the shared authority budget every other
+        workflow mints from. Consumption is durable BEFORE any effect:
+        a crash between consumption and effect costs one capability —
+        the Runtime mints a fresh one after re-validating — never a
+        replay.
         """
         if action not in BROKER_ACTIONS:
             return _refused(
@@ -850,6 +957,34 @@ class TargetBroker(object):
                 % (action,),
             )
         with store_module.exclusive_store_lock(self.store.directory):
+            # R-01 CONSUMPTION ORDER. The capability is validated and
+            # consumed FIRST, before the workflow store is even read
+            # and before the gate runs. `validate_and_consume` itself
+            # refuses every NON-authentic presentation — missing,
+            # malformed, unknown/forged, already consumed, expired, or
+            # bound to a different (workflow, action, revision) —
+            # writing NOTHING and touching no other entry, so nothing
+            # a caller can forge destroys authority. What this
+            # ordering changes, and the ONLY thing it changes, is that
+            # an AUTHENTIC, exactly-bound, unconsumed, unexpired
+            # presentation is SPENT even when the gate below refuses.
+            # That is the point: a gate refusal used to leave the
+            # presented capability live, so a persistently refusing
+            # workflow accrued one live entry per Runtime poll against
+            # the store's hard bound and starved every other
+            # workflow's authority. Running before `self.store.load()`
+            # closes the same leak on the store-unreadable path:
+            # capability authenticity does not depend on the workflow
+            # store, so an unreadable store cannot leak a live
+            # capability either.
+            consumed, problem, detail = (
+                capability_module.validate_and_consume(
+                    self.store.directory, capability, workflow_id,
+                    action, revision, self._clock(),
+                )
+            )
+            if not consumed:
+                return _refused(problem, detail)
             try:
                 workflows = self.store.load()
             except store_module.StoreError as exc:
@@ -859,14 +994,6 @@ class TargetBroker(object):
             )
             if refusal is not None:
                 return refusal
-            consumed, problem, detail = (
-                capability_module.validate_and_consume(
-                    self.store.directory, capability, workflow_id,
-                    action, revision, self._clock(),
-                )
-            )
-            if not consumed:
-                return _refused(problem, detail)
             # THE CONTAINMENT BOUNDARY (I5 revision 1, round-10
             # F-1 structural closure): every action handler below
             # can GROW the record (turn identities, receipts, the
@@ -1489,7 +1616,9 @@ class TargetBroker(object):
             entry, self.transport, self.workspaces_root
         )
         if not ok:
-            return _refused(problem, detail)
+            return self._verification_block(
+                workflows, entry, problem, detail
+            )
         observation = self._observation_context(entry)
         observation_changed = self._note_observation(entry, observation)
         if not observation["target_complete"]:
@@ -1521,7 +1650,18 @@ class TargetBroker(object):
         # evidence refuses BEFORE any model call — no Codex turn is
         # spent on it — and stops durably (nothing left to wait for).
         projection = self._collect_evidence(entry)
-        for precheck in (_gate_evidence_complete, _gate_evidence_valid):
+        # Policy drift is already one of the separate verification
+        # conjuncts.  It is checked here, after the fresh target
+        # observation is captured but BEFORE a verification role turn,
+        # so the common Broker gate must not shadow this durable stop.
+        # The pre-I9 ordering returned broker_policy_digest_drift before
+        # capability consumption on every poll: the Runtime discarded
+        # that outcome, last_observation stayed stale, and the existing
+        # verification-block receipt was unreachable.
+        for precheck in (
+                _gate_evidence_complete,
+                _gate_evidence_valid,
+                _gate_control_policy):
             gate_problem, gate_detail = precheck(entry, projection)
             if gate_problem is not None:
                 return self._verification_block(
@@ -1534,8 +1674,8 @@ class TargetBroker(object):
         if result.status != ROLE_TURN_COMPLETED or (
             result.outcome is None
         ):
-            return _refused(
-                PROBLEM_TURN_NOT_COMPLETED,
+            return self._verification_block(
+                workflows, entry, PROBLEM_TURN_NOT_COMPLETED,
                 "verification turn did not complete with an outcome"
                 " (status %s, reason %s)"
                 % (result.status, result.reason),
