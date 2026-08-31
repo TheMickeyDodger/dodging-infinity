@@ -45,6 +45,115 @@ EXIT_LOCKED = 3
 RUNTIME_POLL_INTERVAL_SECONDS = 5
 
 
+def _refusal_signatures(processed):
+    """Bounded, deterministic Runtime refusals from one full pass.
+
+    ``process_once`` intentionally returns every Broker outcome.  The
+    production loop used to discard that return value, which made a
+    common-gate refusal indistinguishable from a healthy wait.  Keep
+    the workflow record as the durable source of truth and surface any
+    refusal the action could not record itself in the Runtime log.
+    """
+    signatures = set()
+    for workflow_id in sorted(processed):
+        for label, outcome in processed[workflow_id]:
+            if outcome.ok:
+                continue
+            signatures.add((
+                workflow_id,
+                label,
+                outcome.problem or "unspecified_refusal",
+                (outcome.detail or "")[:2000],
+            ))
+    return signatures
+
+
+def _safe_report_text(value, limit=2000):
+    """Bounded text for a value this module did not construct.
+
+    NEVER raises: the refusal fields come from Broker outcomes, so
+    rendering them is not this function's code and must not be trusted
+    to succeed.
+    """
+    try:
+        return str(value)[:limit]
+    except Exception:
+        try:
+            return "<unprintable %s>" % type(value).__name__
+        except Exception:
+            return "<unprintable>"
+
+
+def _report_new_refusals(processed, previously_reported=None):
+    """Write each currently persistent refusal once; return the set of
+    signatures that have ACTUALLY BEEN REPORTED.
+
+    CONTAINMENT (R-12). This runs inside the unattended `run` loop,
+    whose enclosing handler catches only KeyboardInterrupt, so an
+    escaping exception kills the Runtime outright. A `BrokenPipeError`
+    from the stderr write did exactly that: the loop died after 0 of 3
+    polls. It is the same failure class as R-11 in `runtime.py` — a
+    DIAGNOSTIC on the DEGRADED path taking down the process it was
+    added to make observable — and it is worse here because a healthy
+    pass writes nothing and survives a closed stderr, so the runtime
+    dies on the FIRST refusal it tries to report. For this mission
+    that first refusal is very likely the drift-stranded workflow the
+    task was opened for.
+
+    So the write is contained, every rendered value goes through
+    `_safe_report_text`, and a missing `sys.stderr` is handled rather
+    than left to `print(file=None)`, which would silently redirect the
+    diagnostic to stdout.
+
+    WHAT IS DELIBERATELY *NOT* DONE: the whole body is not wrapped in
+    a bare `try/except: pass`. That would contain the crash while
+    re-introducing the blindness this function exists to remove — the
+    normal path must still write, and it is tested that it does.
+
+    SUPPRESSION CORRECTNESS, WHICH IS THE SUBTLE HALF. The caller
+    feeds the return value back as `previously_reported` to suppress
+    repeats. A signature therefore enters the returned set ONLY IF ITS
+    WRITE ACTUALLY SUCCEEDED. Returning `current` wholesale — as this
+    function used to — would mark a refusal reported even when its
+    write failed, suppressing it FOREVER: after stderr recovered it
+    would never be surfaced again. That is permanent blindness, which
+    is strictly worse than the crash being fixed. Signatures whose
+    write failed stay OUT of the set and remain eligible on the next
+    poll. Signatures already reported and still present stay
+    suppressed; signatures that have cleared drop out, so a later
+    recurrence is surfaced again.
+    """
+    previous = previously_reported or set()
+    current = _refusal_signatures(processed)
+    # Already reported AND still present: stays suppressed. A cleared
+    # refusal is simply absent from `current`, so it leaves the set.
+    reported = current & previous
+    stream = getattr(sys, "stderr", None)
+    for signature in sorted(current - previous):
+        if stream is None:
+            # Nothing to report to. NOT reported, so still eligible.
+            continue
+        workflow_id, label, problem, detail = signature
+        suffix = (
+            ": %s" % _safe_report_text(detail) if detail else ""
+        )
+        line = "dirun: workflow %s action %s REFUSED (%s)%s\n" % (
+            _safe_report_text(workflow_id, 200),
+            _safe_report_text(label, 200),
+            _safe_report_text(problem, 200),
+            suffix,
+        )
+        try:
+            stream.write(line)
+        except Exception:
+            # The write FAILED. Do NOT record it as reported: leaving
+            # it eligible is what allows it to be surfaced once the
+            # stream recovers.
+            continue
+        reported.add(signature)
+    return reported
+
+
 def acquire_runtime_lock(state_directory):
     """Hold the Runtime's single-instance lock, or return None.
 
@@ -273,6 +382,7 @@ def main(argv=None, sleeper=None, passes=None):
     try:
         if namespace.command == "once":
             processed = runtime_module.process_once(broker)
+            _report_new_refusals(processed)
             print(
                 "dirun: processed %d workflow(s) (exact)"
                 % len(processed),
@@ -281,8 +391,12 @@ def main(argv=None, sleeper=None, passes=None):
             return EXIT_OK
         pause = sleeper or time.sleep
         remaining = passes
+        reported_refusals = set()
         while True:
-            runtime_module.process_once(broker)
+            processed = runtime_module.process_once(broker)
+            reported_refusals = _report_new_refusals(
+                processed, reported_refusals
+            )
             if remaining is not None:
                 remaining -= 1
                 if remaining <= 0:
