@@ -24,9 +24,11 @@ strategy and delegates through Lead, Executor, and Reviewer.
 [v0.6.3](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.3) adds the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
 
 Unreleased: **DI-REMOTE-2 Remote Target Repository Routing** is implemented on
-`main`, hermetically proven, and now live-proven through real cross-repository
-dispatch into active target engineering; it remains outside any tagged release,
-so v0.6.3 remains the latest tagged release. A natural-language Telegram request now
+`main` and hermetically proven. One historical live Mitiq #2802 mountain
+exercised it through real cross-repository dispatch into target engineering;
+that mountain exposed genuine post-dispatch policy drift and correctly
+terminated BLOCKED. DI-REMOTE-2 remains outside any tagged release, so v0.6.3
+remains the latest tagged release. A natural-language Telegram request now
 produces a separately planned, one-shot Mission Authorization that the
 independent Runtime advances through an isolated managed target workspace into
 a real Herdr. No manual clone, target registration, terminal bootstrap, or
@@ -36,11 +38,16 @@ The operating model is deliberate. On current `main` the principal operating mod
 
 **Phone → Telegram → Mission Authorization → approval → Runtime → Broker → isolated managed target → target Herdr → evidence verification → Telegram result → human-gated delivery**
 
-The live Mitiq #2802 validation has exercised this path through target Herdr
-`ACTIVE` execution, including durable workflow/task identity and `/status`
-reporting. Reviewer completion, independent final Codex verification,
-`VERIFIED`/`COMPLETED`, exactly-once result delivery, artifact delivery, and
-all delivery actions remain pending live validation.
+One historical live Mitiq #2802 mountain (workflow
+`wf-2c901885473fc4781bf82296`, target Herdr task `20260830-094026-9fef2d`)
+exercised this path from the exact phone request through target Herdr
+execution to a target task COMPLETE and a canonical target Reviewer APPROVE.
+It then exposed genuine post-dispatch policy drift and correctly terminated
+BLOCKED at `broker_verification_policy_drift`: `verified_result` and
+`result_delivery` stayed null, and no target Git delivery occurred. The
+verification, `VERIFIED`/`COMPLETED`, exactly-once result-delivery, artifact
+delivery, and delivery-action stages downstream of that stop never ran and
+remain live-unverified.
 
 Remote mission execution authority exists today; remote delivery authority does
 not. Current Telegram missions carry `delivery_authority = none`, and commit and
@@ -85,12 +92,15 @@ see "Claim-to-pin map" below for which one.
   by different logic.** Skew is reported, naming both the build that wrote the
   record and the build on disk, rather than reconciled silently.
 - **DI-REMOTE-2 has both hermetic proof and bounded live proof.** Automated
-  coverage proves the full fail-closed lifecycle. Production has exercised real
+  coverage proves the full fail-closed lifecycle. Production exercised real
   Telegram v2 traffic, GitHub target materialization, fresh Codex role turns,
-  unattended target bootstrap, and Supervisor-led Herdr execution through an
-  `ACTIVE` target task. Production has not yet proved the final Reviewer,
-  independent verification, `VERIFIED`/`COMPLETED`, result/artifact delivery,
-  or any Telegram-native delivery-authorization stage.
+  unattended target bootstrap, and Supervisor-led Herdr execution on ONE
+  historical Mitiq #2802 mountain, as far as a target Herdr task COMPLETE with
+  a canonical target Reviewer APPROVE recorded. That mountain then exposed
+  genuine post-dispatch policy drift and correctly terminated BLOCKED at
+  `broker_verification_policy_drift`. What remains live-unverified is
+  independent final verification, `VERIFIED`/`COMPLETED`, result/artifact
+  delivery, and every Telegram-native delivery-authorization stage.
 
 ## Why Dodging Infinity?
 
@@ -193,7 +203,7 @@ Each component, precisely:
   Routing" below.
 - **Telegram result** — the implemented and hermetically tested lifecycle
   returns the verified result exactly once; this final delivery stage remains
-  pending live validation, and the not-re-sent-automatically caveat is stated
+  live-unverified, and the not-re-sent-automatically caveat is stated
   in the section below.
 - **Human delivery gate** — no delivery authority exists anywhere in
   the machine path; commit, push, PR, tag, release, and merge remain
@@ -996,8 +1006,9 @@ The adapter enforces, with static and behavioral regression tests:
 
 # Remote Target Repository Routing (DI-REMOTE-2, unreleased)
 
-DI-REMOTE-2 is implemented on `main`, hermetically proven, live-proven through
-real target Herdr `ACTIVE` execution, and **not yet part of any tagged release**. It
+DI-REMOTE-2 is implemented on `main`, hermetically proven, exercised once on a
+historical live Mitiq #2802 mountain that terminated BLOCKED, and **not yet
+part of any tagged release**. It
 extends the Telegram remote experience
 from "approve a plan for the configured repository" to "authorize one
 exact bounded mission against a remote GitHub target repository" —
@@ -1110,22 +1121,44 @@ Deliberate properties:
 - **Inherited-defect attribution:** the permanent-PARTIAL stall and
   the never-executable production role-turn wrapper corrected by
   this work were BOTH inherited from accepted task 20260826-022933.
-- **Live-proven through active engineering:** the Mitiq #2802 mountain began
-  from the exact natural-language Telegram request, used a separate fresh
-  restrictive planning process, preserved the exact human request, bound
-  `main` at `3e1833d930723ef4f7220698c98155a925591d4d`, and required a
-  one-shot Telegram button approval with `delivery_authority = none`. Runtime,
-  not the Gateway, then materialized and trusted the isolated workspace,
-  prepared and validated the handoff, recorded durable target identity,
-  bootstrapped all four Herdr roles, and reached Supervisor-led `ACTIVE`
-  execution. After the PATH-spawn repair, production launched fresh Codex role
-  turns through the installed `codex` executable. `/status` and direct target
-  observation agreed on the dispatched workflow, target task, authorized
-  baseline, complete role bindings, and live agents.
-- **Still pending live validation:** final Reviewer APPROVE, target Herdr
-  COMPLETE, independent final Codex verification, `VERIFIED`, `COMPLETED`,
-  exactly-once final Telegram result delivery, artifact delivery, and every
-  Telegram commit, push, PR, tag, release, deploy, or merge authorization.
+- **What the historical mountain proved:** workflow
+  `wf-2c901885473fc4781bf82296` began from the exact natural-language Telegram
+  request `I want to solve
+  https://github.com/unitaryfoundation/mitiq/issues/2802. Go do it.`, used a
+  separate fresh restrictive planning process, preserved the exact human
+  request, bound the target baseline
+  `3e1833d930723ef4f7220698c98155a925591d4d`, and required a one-shot Telegram
+  button approval with `delivery_authority = none`. Runtime, not the Gateway,
+  then materialized and trusted the isolated workspace, prepared and validated
+  the handoff, recorded durable target identity, and bootstrapped all four
+  Herdr roles. Supervisor owned strategy; Lead, Executor, and Reviewer ran
+  normally; target Herdr task `20260830-094026-9fef2d` reached COMPLETE; a
+  canonical target Reviewer APPROVE was recorded; and target observation
+  refreshed from a stale `ACTIVE` reading to `COMPLETE`.
+- **How the historical mountain ended:** it exposed genuine post-dispatch
+  policy drift and correctly terminated BLOCKED at
+  `broker_verification_policy_drift`. `verified_result` and `result_delivery`
+  remained null. No target Git delivery occurred — the target stayed at
+  baseline `3e1833d930723ef4f7220698c98155a925591d4d` carrying an
+  implementation diff only.
+- **Still live-unverified:** independent final Codex verification, `VERIFIED`,
+  `COMPLETED`, exactly-once final Telegram result delivery, artifact delivery,
+  and every Telegram commit, push, PR, tag, release, deploy, or merge
+  authorization. Proving them requires a NEW live mountain; the historical one
+  cannot stand in for it.
+- **Defects the mountain exposed are fixed but not integrated:** a separate
+  Runtime stabilization commit
+  `d8ec2af409e4086f985be03371a872a84a3767ec` on branch
+  `fix/runtime-terminal-reconciliation` (Herdr task `20260830-185309-4c3db7`,
+  COMPLETE, final canonical Reviewer round 6 APPROVE) closes the
+  reconciliation, capability-lifecycle, and terminal-cleanup defects. It is
+  reviewed and pushed, and it is AWAITING INTEGRATION — never merged, never
+  released. Its validation was: focused regression 159/159;
+  `tests/test_target_runtime.py` 250/250; static checks PASS; Python 3.9.6
+  compile PASS; `git diff --check` PASS. Caveat recorded with it: the
+  repository-wide LIVE working-tree loop stood at 35/37 solely because
+  pre-existing live `.herd` specimen assertions in `tests/test_hermetic_git.py`
+  and `tests/test_reconcile_audit.py` predate that task.
 
 ## Runtime service (`dirun`)
 
@@ -1161,11 +1194,17 @@ user-visible breakage.
 
 The full lifecycle is verified hermetically with real local git fixtures, the
 real spawn-bridge validation pass, injected transport, role runner and control
-plane, plus the accumulated mutation battery. Production separately proves the
-live Telegram-to-Mitiq path through real child-Herdr `ACTIVE` execution and
-fresh installed-Codex role turns. The final lifecycle and delivery stages
-listed above remain live-unverified. The recorded codex-cli 0.149.0 telemetry
-limitation (A0) is stated verbatim in SECURITY.md.
+plane, plus the accumulated mutation battery. Production exercised the live
+Telegram-to-Mitiq path once, through real child-Herdr execution and fresh
+installed-Codex role turns, as far as a target task COMPLETE with a canonical
+target Reviewer APPROVE; that mountain then terminated BLOCKED on genuine
+post-dispatch policy drift. The final lifecycle and delivery stages listed
+above remain live-unverified, and DI-REMOTE-2 acceptance is INCOMPLETE. The
+clean-clone CI evidence for this branch is GitHub run `33330263889` at
+`4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f` — all four macOS/Ubuntu x Python
+3.9/3.13 jobs green; the branch also passed at
+`52a97b71a3b5c9f20ff33d4feb1332284cd825b7`. The recorded codex-cli 0.149.0
+telemetry limitation (A0) is stated verbatim in SECURITY.md.
 
 ---
 
@@ -2019,8 +2058,9 @@ Verified engineering result
 # Roadmap
 
 The detailed [Remote Mission Fabric roadmap](docs/remote-mission-fabric-roadmap.md)
-tracks the live-proven foundation, the remaining validation mountain, and the
-Phase-I requirement for exact Telegram-native delivery authorization.
+tracks what the historical mountain proved before it terminated BLOCKED, the
+seven-step release gate that a NEW mountain must clear, and the Phase-I
+requirement for exact Telegram-native delivery authorization.
 
 ## Completed foundations
 
@@ -2042,9 +2082,10 @@ Phase-I requirement for exact Telegram-native delivery authorization.
 - resumed Codex sessions, status, meaningful errors, and verified-result delivery
 - optional per-user macOS LaunchAgent baseline
 - DI-REMOTE-2 Remote Target Repository Routing (implemented on `main`,
-  hermetically verified, and live-proven through real Mitiq target Herdr
-  `ACTIVE` execution; final review, verification, result, artifact, and
-  delivery stages remain pending live validation)
+  hermetically verified, and exercised once on a historical live Mitiq
+  mountain that reached target Herdr COMPLETE and then terminated BLOCKED on
+  post-dispatch policy drift; verification, result, artifact, and delivery
+  stages remain live-unverified and DI-REMOTE-2 is UNRELEASED)
 
 Real Telegram setup and traffic validation shipped in v0.6.3. The
 adapter was exercised from an allowlisted private Telegram user against
@@ -2080,10 +2121,12 @@ Do not move engineering execution out of the trusted Mac.
 
 ## 2. Complete external-repository validation
 
-Complete the current Mitiq mountain through final review, independent
-verification, workflow completion, and exactly-once result delivery, then
-repeat the workflow against unrelated repositories and real issues. Remote
-delivery remains a separately authorized roadmap stage.
+Integrate the pushed Runtime stabilization commit, assemble a stable `main`,
+then run a NEW live Mitiq mountain through independent verification, workflow
+completion, and exactly-once result delivery, and repeat the workflow against
+unrelated repositories and real issues. The historical mountain terminated
+BLOCKED and cannot stand in for that new run. Remote delivery remains a
+separately authorized roadmap stage.
 
 The test is:
 

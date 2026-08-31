@@ -118,8 +118,12 @@ I8_CLAIM_PIN_MAP = (
      "DI-REMOTE-2 has both hermetic proof and bounded live proof",
      "NO PIN — DISCLOSED AS UNPINNED. The automated proof is covered"
      " by the suite, but the bounded production evidence is an external"
-     " human validation fact listed in CHANGELOG.md under LIVE"
-     " validation"),
+     " human validation fact listed in CHANGELOG.md under the LIVE"
+     " mountain entry. The bullet's TERMINAL framing (BLOCKED at"
+     " broker_verification_policy_drift, and the final Reviewer NOT"
+     " among the unproven stages) IS pinned, by"
+     " TerminalMountainDocsPinTests in tests/test_mitiq_narrative.py;"
+     " what stays unpinned is the external evidence itself"),
     ("README.md", "doc<->code",
      "The projection is schema version 3",
      "SchemaSurfaceIsProductionsTests."

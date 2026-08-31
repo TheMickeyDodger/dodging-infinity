@@ -2,9 +2,10 @@
 
 Status: Working roadmap\
 Created: August 27, 2026\
-Updated: August 30, 2026
+Updated: August 31, 2026
 
-Progress notation: ~~crossed out~~ = live-proven or completed; uncrossed = still open.
+Progress notation: ~~crossed out~~ = completed, or proven by the historical
+live Mitiq #2802 mountain before it terminated BLOCKED; uncrossed = still open.
 
 ## North Star
 
@@ -60,10 +61,18 @@ That is a break-glass recovery path, not normal mission authority.
 -   One mission must never inherit another mission's authority, state,
     artifacts, approvals, or context.
 
-## Live-proven foundation as of August 30, 2026
+## Foundation proven by the historical Mitiq #2802 mountain
 
-The following DI-REMOTE-2 foundation is now proven on the live Mitiq
-#2802 mountain rather than only in tests:
+The historical live Mitiq #2802 mountain is TERMINAL. It exposed genuine
+post-dispatch policy drift and correctly terminated BLOCKED at
+`broker_verification_policy_drift`.
+Its identifiers, for the record: workflow `wf-2c901885473fc4781bf82296`,
+target Herdr task `20260830-094026-9fef2d`, target baseline
+`3e1833d930723ef4f7220698c98155a925591d4d`, from the exact request
+`I want to solve https://github.com/unitaryfoundation/mitiq/issues/2802. Go do it.`
+
+Before it terminated, that mountain did prove the following DI-REMOTE-2
+foundation outside tests:
 
 -   ~~A natural-language Telegram request can trigger a fresh restrictive
     Codex planning turn and render a bounded Mission Authorization.~~
@@ -88,33 +97,58 @@ The following DI-REMOTE-2 foundation is now proven on the live Mitiq
     `push: require-human`) and cannot deliver from Mission Authorization.~~
 -   ~~Owned role-turn spawning preserves PATH lookup and process/session
     ownership, with the full committed regression suite green.~~
+-   ~~The target Herdr task reached COMPLETE and a canonical target Reviewer
+    APPROVE was recorded.~~
+-   ~~Target observation refreshed from a stale `ACTIVE` reading to
+    `COMPLETE`.~~
 
-Still being proven by the current mountain: Reviewer completion, final
-independent Codex verification, deterministic VERIFIED/COMPLETED transition,
-and exactly-once Telegram result delivery.
+Terminal outcome. The workflow then stopped BLOCKED at
+`broker_verification_policy_drift`. `verified_result` and
+`result_delivery` remained null. No target Git delivery occurred: the
+target stayed at baseline `3e1833d930723ef4f7220698c98155a925591d4d`
+carrying an implementation diff only. Everything downstream of the drift
+stop — fresh independent Runtime verification, the `VERIFIED` and
+`COMPLETED` transitions, exactly-once Telegram result delivery, and
+artifact delivery — never ran, and DI-REMOTE-2 acceptance is INCOMPLETE.
+
+The defects that mountain exposed were closed by a separate Runtime
+stabilization commit that is not part of this branch; see the release gate
+below.
 
 ## Immediate release gate: DI-REMOTE-2 acceptance before Phase I
 
 The remote mission fabric does not begin from an unaccepted moving target.
 The required product sequence is:
 
-1.  [x] Publish the README and documentation update in this PR.
-2.  [ ] Complete the live Mitiq #2802 mountain, including target Reviewer,
-    independent verification, VERIFIED/COMPLETED, and exactly-once Telegram
-    result evidence.
-3.  [x] Repair clean-clone CI hermeticity: runner-equivalent local validation
-    passed, and all four PR matrix jobs are green in CI run #56
-    (`33329676305`).
-4.  [ ] Perform final DI-REMOTE-2 acceptance against the combined public,
-    automated, and live evidence.
-5.  [ ] Create the DI-REMOTE-2 release/tag only when the live mountain and
-    clean-clone CI agree.
-6.  [ ] Only then begin the Durable Mission Registry and Mission Router.
+1.  [x] Complete the README and documentation reconciliation in this PR.
+2.  [x] Repair clean-clone CI hermeticity: runner-equivalent local validation
+    passed, and all four PR matrix jobs (macOS and Ubuntu x Python 3.9 and
+    3.13) are green in CI run `33330263889` at
+    `4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f`; the branch also passed at
+    `52a97b71a3b5c9f20ff33d4feb1332284cd825b7`.
+3.  [ ] Historical Mitiq #2802 engineering is complete, but final DI-REMOTE-2
+    acceptance is INCOMPLETE: that mountain terminated BLOCKED at
+    `broker_verification_policy_drift`.
+4.  [ ] A separate, already pushed Runtime stabilization commit
+    `d8ec2af409e4086f985be03371a872a84a3767ec` on branch
+    `fix/runtime-terminal-reconciliation` corrected the defects that mountain
+    exposed; its integration is PENDING.
+5.  [ ] Assemble a stable `main` from this documentation reconciliation and
+    that stabilization branch.
+6.  [ ] Run a NEW live Mitiq mountain. A new mountain is REQUIRED; the
+    historical one cannot stand in for it.
+7.  [ ] Only a successful NEW mountain permits the DI-REMOTE-2 tag/release,
+    and only AFTER that release may the Durable Mission Registry and Mission
+    Router begin.
 
-The current Mitiq mountain is not complete: its final Reviewer,
-verification, lifecycle, and result-delivery stages remain open until durable
-evidence proves them. DI-REMOTE-2 also remains unreleased; no tag is implied
-by implementation or by partial live proof.
+The historical live Mitiq #2802 mountain exposed genuine post-dispatch
+policy drift and correctly terminated BLOCKED at
+`broker_verification_policy_drift`. Its engineering ran to a target
+Herdr COMPLETE with a canonical target Reviewer APPROVE, and then the
+workflow stopped: `verified_result` and `result_delivery` stayed null and no
+target Git delivery occurred. DI-REMOTE-2 remains unreleased; no tag is
+implied by implementation, by partial live proof, or by the pushed but
+unintegrated stabilization commit.
 
 Acceptance:
 
@@ -138,17 +172,21 @@ Work:
 -   ~~verify dirun, target Herdr bootstrap, Codex execution, Git human
     gates, launchd, config, and durable workflow state through the active
     portion of the live DI-REMOTE-2 mountain~~
--   complete the final Mitiq Reviewer, independent-verification,
-    VERIFIED/COMPLETED, and exactly-once result-delivery stages
+-   integrate the pushed Runtime stabilization commit
+    `d8ec2af409e4086f985be03371a872a84a3767ec` and assemble a stable `main`
+-   run a NEW live Mitiq mountain through independent verification,
+    VERIFIED/COMPLETED, and exactly-once result delivery
 -   configure Tailscale plus SSH, restricted to trusted devices/accounts
 -   avoid public inbound SSH exposure
 -   verify persistence across reboot/login
 
-Current state: `main` and `origin/main` agree at the SHA above. The current PR
-branch carries the public documentation and CI-hermeticity work without
-changing `main`. Remaining gaps are final Mitiq lifecycle acceptance,
-unconfigured break-glass Tailscale/SSH, and the still-unreached DI-REMOTE-2
-tagged release.
+Current state: `main` and `origin/main` agree at the SHA above, and `main` is
+not yet proven stable for release. The current PR branch carries the public
+documentation and CI-hermeticity work without changing `main`, and the Runtime
+stabilization commit sits pushed but unintegrated on its own branch. Remaining
+gaps are final Mitiq lifecycle acceptance, the pending stabilization
+integration, a NEW live Mitiq mountain, unconfigured break-glass
+Tailscale/SSH, and the still-unreached DI-REMOTE-2 tagged release.
 
 Test from a genuinely remote network with Telegram healthy, Telegram
 stopped, Runtime stopped, Codex wedged, Herdr wedged, and a stale
@@ -240,9 +278,9 @@ Hard requirement: status reads durable state and bounded read-only
 observability directly. It never waits for the mission-specific Codex
 turn.
 
-~~Live proof: `/status` already reads the durable v2 workflow store while the
-Mitiq mission is ACTIVE and reports Runtime state, workflow phase, target, and
-target Herdr task without waiting for the mission Codex turn.~~ The richer
+~~Live proof: `/status` read the durable v2 workflow store while the
+historical Mitiq mission WAS ACTIVE and reported Runtime state, workflow phase,
+target, and target Herdr task without waiting for the mission Codex turn.~~ The richer
 mission-control surface above remains open.
 
 Acceptance:
