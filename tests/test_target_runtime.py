@@ -329,7 +329,7 @@ class FakeGitTransport(object):
     def status_porcelain_readonly(self, path):
         # --no-optional-locks mirrors the real verb's non-mutation
         # guarantee: this verb runs against the CONTROL repository
-        # too, and byte-untouched control-tree assertions (the mitiq
+        # too, and byte-untouched control-tree assertions (the release
         # narrative tree-hashes .git as well) depend on it.
         self.calls.append(("status_porcelain_readonly", path))
         text = self._run(

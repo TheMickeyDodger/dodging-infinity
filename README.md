@@ -29,7 +29,7 @@ Authorization that the independent Runtime advances through an isolated managed
 target workspace into a real Herdr. No manual clone, target registration,
 terminal bootstrap, or manual Herdr setup is required.
 
-One historical live Mitiq #2802 mountain exercised the real cross-repository
+One historical external-target mountain exercised the real cross-repository
 path through target Herdr COMPLETE and then exposed genuine post-dispatch
 policy drift and correctly terminated BLOCKED. The corrected final-result path
 was subsequently certified hermetically and adversarially for v0.7.0. A fresh
@@ -40,7 +40,7 @@ The operating model is deliberate. In v0.7.0 the principal operating model is Re
 
 **Phone → Telegram → Mission Authorization → approval → Runtime → Broker → isolated managed target → target Herdr → evidence verification → Telegram result → human-gated delivery**
 
-One historical live Mitiq #2802 mountain (workflow
+One historical external-target mountain (workflow
 `wf-2c901885473fc4781bf82296`, target Herdr task `20260830-094026-9fef2d`)
 exercised this path from the exact phone request through target Herdr
 execution to a target task COMPLETE and a canonical target Reviewer APPROVE.
@@ -99,7 +99,7 @@ see "Claim-to-pin map" below for which one.
   coverage proves the fail-closed lifecycle. Production exercised real
   Telegram v2 traffic, GitHub target materialization, fresh Codex role turns,
   unattended target bootstrap, and Supervisor-led Herdr execution on ONE
-  historical Mitiq #2802 mountain through target Herdr COMPLETE with a
+  historical external-target mountain through target Herdr COMPLETE with a
   canonical target Reviewer APPROVE. That historical execution then exposed
   genuine post-dispatch policy drift and correctly terminated BLOCKED at
   `broker_verification_policy_drift`; `verified_result` and `result_delivery`
@@ -741,7 +741,7 @@ You open Telegram on your phone.
 You send:
 
 ```text
-Fix issue #702 in Mitiq.
+Fix issue #702 in the external target repository.
 
 Investigate the actual cause, preserve the repository contribution rules,
 add the necessary verification, and prepare the result for delivery.
@@ -757,7 +757,7 @@ Your phone receives:
 PLAN READY
 
 Repository:
-mitiq
+external-target
 
 Objective:
 Resolve issue #702
@@ -1018,7 +1018,7 @@ The adapter enforces, with static and behavioral regression tests:
 DI-REMOTE-2 is the v0.7.0 remote-target capability. It extends the Telegram
 remote experience from a local configured repository to one exact bounded
 mission against a remote GitHub target while Dodging Infinity remains the
-permanent control and policy repository. The historical Mitiq #2802 mountain
+permanent control and policy repository. The historical external-target mountain
 remains bounded live evidence; the corrected final-result contract is
 certified by the later hermetic and adversarial release evidence.
 
@@ -1082,7 +1082,7 @@ Deliberate properties:
   registration, Herdr-setup, configuration-switching, or terminal
   step**, and the lifecycle runs all the way to a **verified result
   returned to Telegram exactly once** (verified end to end by the
-  hermetic Mitiq-narrative test). "Exactly once" means never twice and
+  hermetic release-narrative test). "Exactly once" means never twice and
   never silently dropped — NOT that it always eventually arrives: a
   placeholder-bound workflow can never fall back to a second result
   `sendMessage`, so the result is **not re-sent automatically** in any
@@ -1136,9 +1136,8 @@ Deliberate properties:
   the never-executable production role-turn wrapper corrected by
   this work were BOTH inherited from accepted task 20260826-022933.
 - **What the historical mountain proved:** workflow
-  `wf-2c901885473fc4781bf82296` began from the exact natural-language Telegram
-  request `I want to solve
-  https://github.com/unitaryfoundation/mitiq/issues/2802. Go do it.`, used a
+  `wf-2c901885473fc4781bf82296` began from a natural-language Telegram request
+  targeting an external repository issue, used a
   separate fresh restrictive planning process, preserved the exact human
   request, bound the target baseline
   `3e1833d930723ef4f7220698c98155a925591d4d`, and required a one-shot Telegram
@@ -1208,7 +1207,7 @@ user-visible breakage.
 The complete DI-REMOTE-2 lifecycle is certified hermetically and adversarially
 on the stable release tree.
 
-Production separately exercised one historical Telegram-to-Mitiq mountain
+Production separately exercised one historical external-repository mission
 through real target Herdr COMPLETE and canonical target Reviewer APPROVE. That
 historical execution then exposed genuine post-dispatch policy drift and
 correctly terminated BLOCKED; `verified_result` and `result_delivery` remained
@@ -2147,7 +2146,7 @@ Do not move engineering execution out of the trusted Mac.
 Repeat the certified DI-REMOTE-2 workflow against unrelated repositories and
 real issues, then exercise multi-mission and hostile recovery conditions.
 
-A fresh post-fix Mitiq mountain may provide useful additional production
+A fresh post-fix live mountain may provide useful additional production
 evidence, but it is not used as the v0.7.0 release prerequisite or release
 proof. Remote delivery remains a separately authorized roadmap stage.
 

@@ -242,7 +242,7 @@ class ExactlyOnceTests(DeliveryCase):
         placeholder — exactly one visible object, and ZERO sendMessage
         on the result path."""
         harness = self.harness_with_edits([api_ok({"message_id": PLACEHOLDER_ID})])
-        self.bound_and_completed(harness, "mitiq issue resolved")
+        self.bound_and_completed(harness, "external target issue resolved")
         harness.adapter.deliver_result_edits()
 
         sends, edits = self.visible_objects(harness)
@@ -253,7 +253,7 @@ class ExactlyOnceTests(DeliveryCase):
         )
         self.assertEqual(len(edits), 1)
         self.assertEqual(edits[0]["message_id"], PLACEHOLDER_ID)
-        self.assertIn("mitiq issue resolved", edits[0]["text"])
+        self.assertIn("external target issue resolved", edits[0]["text"])
         marker = self.delivery(harness)
         self.assertEqual(
             marker["state"], wa_record.DELIVERY_DELIVERED_BY_EDIT

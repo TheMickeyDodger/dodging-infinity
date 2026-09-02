@@ -364,7 +364,7 @@ class ResultDeliveryTests(MissionCase):
         # actual historical writer. No post-arming nulling occurs.
         #
         # LANE SEPARATION unchanged: this fixture is the LEGACY lane;
-        # the bound EDIT lane is covered by the Mitiq narrative. Every
+        # the bound EDIT lane is covered by the release narrative. Every
         # send / retry / PARTIAL / RESERVED / status assertion below is
         # unchanged.
         real_request = harness.adapter._request_result_placeholder
@@ -422,14 +422,14 @@ class ResultDeliveryTests(MissionCase):
 
     def test_result_delivered_exactly_once(self):
         harness = self.harness()
-        self.completed_workflow(harness, "mitiq issue resolved")
+        self.completed_workflow(harness, "external target issue resolved")
         harness.adapter.deliver_pending_results()
         delivered = [
             s for s in harness.sends()
             if "Mission COMPLETED and verified" in s["text"]
         ]
         self.assertEqual(len(delivered), 1)
-        self.assertIn("mitiq issue resolved", delivered[0]["text"])
+        self.assertIn("external target issue resolved", delivered[0]["text"])
         self.assertIn(
             "https://github.com/octocat/target (issue #7)",
             delivered[0]["text"],
@@ -501,7 +501,7 @@ class ResultDeliveryTests(MissionCase):
         # the chunks the human already saw. It is marked PARTIAL
         # (terminal for auto-delivery), consulting chunks_sent.
         harness = self.harness()
-        self.completed_workflow(harness, "mitiq issue resolved")
+        self.completed_workflow(harness, "external target issue resolved")
         harness.api.result_send_script = [
             telegram_api.SendOutcome(False, (100,), 1, 0, "netfail")
         ]

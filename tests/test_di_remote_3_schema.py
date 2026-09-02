@@ -1674,13 +1674,13 @@ class LegacyMigrationTests(MissionCase):
         LEGACY at-most-once path, byte-for-byte as today. This
         increment does not claim exactly-once for it."""
         harness = self.harness()
-        self.completed_workflow(harness, "mitiq issue resolved")
+        self.completed_workflow(harness, "external target issue resolved")
         written = self.make_on_disk_legacy(harness)
         self.assertIsNone(written["result_delivery"])
         harness.adapter.deliver_pending_results()
         sends = self.result_sends(harness)
         self.assertEqual(len(sends), 1)
-        self.assertIn("mitiq issue resolved", sends[0]["text"])
+        self.assertIn("external target issue resolved", sends[0]["text"])
         reloaded = self.assert_legacy_lane(harness)
         self.assertEqual(
             reloaded["result_delivery"]["state"], "delivered"

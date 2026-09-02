@@ -122,7 +122,7 @@ I8_CLAIM_PIN_MAP = (
      " mountain entry. The bullet's TERMINAL framing (BLOCKED at"
      " broker_verification_policy_drift, and the final Reviewer NOT"
      " among the unproven stages) IS pinned, by"
-     " TerminalMountainDocsPinTests in tests/test_mitiq_narrative.py;"
+     " TerminalMountainDocsPinTests in tests/test_release_narrative.py;"
      " what stays unpinned is the external evidence itself"),
     ("README.md", "doc<->code",
      "The projection is schema version 3",
@@ -154,6 +154,10 @@ I8_CLAIM_PIN_MAP = (
      "A role whose configuration names no model renders `(unset)`",
      "ModelHonestyIsProductionsTests."
      "test_readme_unset_marker_is_the_one_production_writes"),
+    ("README.md", "doc<->code",
+     "Approval is **one-shot** and bound to the exact rendered mission text",
+     "test_release_narrative.DocsAccuracyPinTests."
+     "test_exactly_once_discloses_the_not_retried_states"),
     # -- CHANGELOG.md ------------------------------------------------
     ("CHANGELOG.md", "doc<->code",
      "Herdr observability is schema version 3",

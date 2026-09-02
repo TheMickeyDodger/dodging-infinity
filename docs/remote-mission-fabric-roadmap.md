@@ -5,7 +5,7 @@ Created: August 27, 2026\
 Updated: September 1, 2026
 
 Progress notation: ~~crossed out~~ = completed, or proven by the historical
-live Mitiq #2802 mountain before it terminated BLOCKED; uncrossed = still open.
+external-target mountain before it terminated BLOCKED; uncrossed = still open.
 
 ## North Star
 
@@ -61,15 +61,15 @@ That is a break-glass recovery path, not normal mission authority.
 -   One mission must never inherit another mission's authority, state,
     artifacts, approvals, or context.
 
-## Foundation proven by the historical Mitiq #2802 mountain
+## Foundation proven by the historical external-target mountain
 
-The historical live Mitiq #2802 mountain is TERMINAL. It exposed genuine
+The historical external-target mountain is TERMINAL. It exposed genuine
 post-dispatch policy drift and correctly terminated BLOCKED at
 `broker_verification_policy_drift`.
 Its identifiers, for the record: workflow `wf-2c901885473fc4781bf82296`,
 target Herdr task `20260830-094026-9fef2d`, target baseline
-`3e1833d930723ef4f7220698c98155a925591d4d`, from the exact request
-`I want to solve https://github.com/unitaryfoundation/mitiq/issues/2802. Go do it.`
+`3e1833d930723ef4f7220698c98155a925591d4d`, from a natural-language request
+targeting an external repository issue.
 
 Before it terminated, that mountain did prove the following DI-REMOTE-2
 foundation outside tests:
@@ -126,7 +126,7 @@ The release sequence is now:
     3.13) are green in CI run `33330263889` at
     `4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f`; the branch also passed at
     `52a97b71a3b5c9f20ff33d4feb1332284cd825b7`.
-3.  [x] Preserve the historical Mitiq #2802 mountain as terminal diagnostic
+3.  [x] Preserve the historical external-target mountain as terminal diagnostic
     evidence: it reached target Herdr COMPLETE and then correctly stopped
     BLOCKED at `broker_verification_policy_drift`.
 4.  [x] Integrate the reviewed and pushed Runtime stabilization commit
@@ -136,9 +136,10 @@ The release sequence is now:
     continuation task `20260901-165812-045b0c` reached COMPLETE, Reviewer
     persisted APPROVE, and the authoritative discovery ran 2,048 tests with
     `OK (skipped=1)` and exit 0.
-6.  [x] Prepare the v0.7.0 release candidate with reconciled public docs and
+6.  [x] Prepare the v0.7.0 release tree with reconciled public docs and
     preserved historical evidence.
-7.  [ ] Create the v0.7.0 tag only after CI is green on the exact release commit.
+7.  [x] Prove the exact v0.7.0 release tree green in CI; tag publication is
+    governed separately by the human authorization gate.
 
 Historical stabilization evidence remains part of the release record:
 task `20260830-185309-4c3db7`, final canonical Reviewer round 6 APPROVE,
@@ -149,7 +150,7 @@ because pre-existing live `.herd` specimen assertions in
 `tests/test_hermetic_git.py` and `tests/test_reconcile_audit.py` predate
 that task.
 
-The historical live Mitiq #2802 mountain remains truthful historical evidence:
+The historical external-target mountain remains truthful historical evidence:
 it terminated BLOCKED before final verification/result delivery. The corrected
 final-result contract is certified by the later hermetic/adversarial release
 evidence; a fresh post-fix live mountain is not used as release evidence.
@@ -186,11 +187,11 @@ Work:
 -   verify persistence across reboot/login
 
 Current state: the Runtime stabilization lineage is integrated, DI-REMOTE-2
-acceptance is complete for the v0.7.0 release candidate, and the corrected
+acceptance is complete for the v0.7.0 release tree, and the corrected
 final-result contract is certified on the stable tree. A fresh post-fix live
 mountain is not used as release evidence. Remaining Iteration-0 work is the
 break-glass Tailscale/SSH and reboot/login persistence work; release tagging
-remains separately gated on green CI for the exact release commit.
+is governed separately by its human authorization gate.
 
 Test from a genuinely remote network with Telegram healthy, Telegram
 stopped, Runtime stopped, Codex wedged, Herdr wedged, and a stale
@@ -230,7 +231,7 @@ Progress: durable `wf-*` workflow identity, Telegram binding, target identity,
 and task identity now exist and survive independently of the Gateway turn. The
 first-class `M-####` registry and natural-language Mission Router remain open.
 
-Acceptance: Mitiq, Silvi, and another mission can all be active and
+Acceptance: the historical external target, Silvi, and another mission can all be active and
 natural-language follow-ups reliably reach the right mission.
 
 ## Iteration 2: Per-mission asynchronous execution lanes
@@ -256,7 +257,7 @@ simultaneous Herdr tasks - explicit capacity behavior - fair
 scheduling - isolation between queues, approvals, contexts, state, and
 artifacts
 
-Acceptance: start Silvi, then Mitiq, then a third mission, and continue
+Acceptance: start Silvi, then an external-target mission, then a third mission, and continue
 interacting with all three while Telegram remains responsive.
 
 ## Iteration 3: Out-of-band observability and mission control
@@ -283,7 +284,7 @@ observability directly. It never waits for the mission-specific Codex
 turn.
 
 ~~Live proof: `/status` read the durable v2 workflow store while the
-historical Mitiq mission WAS ACTIVE and reported Runtime state, workflow phase,
+historical external-target mission WAS ACTIVE and reported Runtime state, workflow phase,
 target, and target Herdr task without waiting for the mission Codex turn.~~ The richer
 mission-control surface above remains open.
 
@@ -414,7 +415,7 @@ Acceptance:
 
 ## Iteration 7: Multi-mission mountain and chaos test
 
-Run at least three concurrent missions: - Mitiq #2802 engineering -
+Run at least three concurrent missions: - external-target engineering -
 Silvi operational-automation research - one unrelated third mission
 
 Inject failures: - kill Telegram adapter - kill Runtime - kill a Herdr
@@ -453,7 +454,7 @@ delivery, and target child bootstrap.
 Expose READY, DEGRADED, BLOCKED, and actionable reasons.
 
 ~~Target-child bootstrap readiness is now a durable production receipt: the
-Mitiq mountain recorded all four logical roles registered and
+historical external-target mountain recorded all four logical roles registered and
 interactive-ready before engineering proceeded.~~ The broader host dependency
 graph remains open.
 
@@ -546,7 +547,7 @@ reload, and rollback/recovery.
 
 ## Iteration 15: Repository and target onboarding
 
-~~For the live Mitiq #2802 path, remote target setup now requires no manual
+~~For the historical external-target path, remote target setup now requires no manual
 clone, registration, terminal, or Herdr setup: Runtime materialized the pinned
 workspace, collected target instructions, bootstrapped Herdr, and dispatched the
 mission from one Telegram authorization.~~
@@ -606,10 +607,10 @@ The Mac is recoverable from anywhere even when Telegram is broken.
 
 ## Milestone B: DI-REMOTE-2 released
 
-The v0.7.0 release candidate has completed DI-REMOTE-2 acceptance; exact
-release-commit CI and the separately human-authorized tag remain the final
-release gate. That tagged release is the baseline for Mission Router and
-concurrency work.
+The v0.7.0 release tree has completed DI-REMOTE-2 acceptance and exact
+release-tree CI is green. Tag publication is governed separately by the human
+authorization gate. The v0.7.0 release tree is the baseline for Mission Router
+and concurrency work.
 
 ## Milestone C: Multi-mission operation
 

@@ -13,9 +13,9 @@
   executable without weakening process/session ownership.
 - **AUTOMATED validation.** The corrected increment passed 1778 tests with 0
   skips, all static checks, and `git diff --check`.
-- **LIVE mountain — TERMINAL, ended BLOCKED.** The exact Telegram request
-  `I want to solve https://github.com/unitaryfoundation/mitiq/issues/2802. Go
-  do it.` triggered a separate fresh restrictive planning process and a valid
+- **LIVE mountain — TERMINAL, ended BLOCKED.** A natural-language Telegram
+  request targeting an external repository issue triggered a separate fresh
+  restrictive planning process and a valid
   Mission Authorization that preserved the human request, bound the control
   repository and target baseline
   `main @ 3e1833d930723ef4f7220698c98155a925591d4d`, retained

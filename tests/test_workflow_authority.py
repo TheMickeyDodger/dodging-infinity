@@ -2411,8 +2411,8 @@ class CanonicalTargetUrlTests(unittest.TestCase):
     ACCEPTED = (
         ("https://github.com/octocat/target",
          ("octocat", "target", None, None)),
-        ("https://github.com/unitaryfoundation/mitiq/issues/2802",
-         ("unitaryfoundation", "mitiq", "issue", 2802)),
+        ("https://github.com/example-org/external-target/issues/42",
+         ("example-org", "external-target", "issue", 42)),
         ("https://github.com/octo-cat/tar.get2/pull/17",
          ("octo-cat", "tar.get2", "pr", 17)),
     )

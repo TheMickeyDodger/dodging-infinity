@@ -80,23 +80,23 @@ from test_telegram_operator import (
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# The EXACT driving sentence — byte-for-byte the input the human
-# sends. Note: unitaryfoundation, issue 2802 (NOT unitaryfund/702).
+# A representative driving sentence — byte-for-byte the input the human
+# sends — using a generic external target and issue.
 EXACT_SENTENCE = (
     "I want to solve"
-    " https://github.com/unitaryfoundation/mitiq/issues/2802."
+    " https://github.com/example-org/external-target/issues/42."
     " Go do it."
 )
-MITIQ_URL = "https://github.com/unitaryfoundation/mitiq"
-MITIQ_OWNER = "unitaryfoundation"
-MITIQ_ISSUE = 2802
+TARGET_URL = "https://github.com/example-org/external-target"
+TARGET_OWNER = "example-org"
+TARGET_ISSUE = 42
 
 # The bounded handoff the control chain dispatches: objective +
 # constraints + rules, and NO technical solution — the corrective
 # brief, never an engineering plan. (The engineering plan is the FAKE
 # TARGET SUPERVISOR's job; see TARGET_SUPERVISOR_STRATEGY.)
-MITIQ_HANDOFF = (
-    "Resolve issue #2802 in mitiq: investigate the actual cause,"
+TARGET_HANDOFF = (
+    "Resolve issue #42 in the external target repository: investigate the actual cause,"
     " preserve the repository contribution rules, add the necessary"
     " verification, and prepare the result for review."
 )
@@ -107,17 +107,16 @@ MITIQ_HANDOFF = (
 # control-chain prompt/context, or the control repo), the control
 # chain has authored engineering, which it must never do (H4).
 TARGET_SUPERVISOR_STRATEGY = (
-    "TARGET-SUPERVISOR STRATEGY: reproduce the #2802 density-matrix"
-    " mismatch, bisect mitiq/interface, add a regression test under"
-    " mitiq/tests/, then run the suite to green."
+    "TARGET-SUPERVISOR STRATEGY: reproduce the target issue, isolate"
+    " the defect, add a regression test, then run the suite to green."
 )
 # The target herd's Lead / Executor / Reviewer evidence — target-side
 # artifacts, the source of the verified result the human finally sees.
-TARGET_LEAD_EVIDENCE = "LEAD: decomposed #2802 into reproduce+fix+verify."
-TARGET_EXEC_EVIDENCE = "EXECUTOR: patched mitiq/interface; added a test."
+TARGET_LEAD_EVIDENCE = "LEAD: decomposed the target issue into reproduce+fix+verify."
+TARGET_EXEC_EVIDENCE = "EXECUTOR: patched the target interface; added a test."
 TARGET_REVIEWER_SUMMARY = (
-    "REVIEWER: #2802 resolved — regression test added and the full"
-    " mitiq suite passes; acceptance criteria met."
+    "REVIEWER: external target issue resolved — regression test added and the full"
+    " target suite passes; acceptance criteria met."
 )
 
 
@@ -126,7 +125,7 @@ def read_doc(name):
         return f.read()
 
 
-# ---- The HISTORICAL live Mitiq mountain: TERMINAL evidence ------------
+# ---- The historical external-target mountain: TERMINAL evidence -------
 # This mountain is finished. It ran real target engineering, then
 # EXPOSED GENUINE POST-DISPATCH POLICY DRIFT and CORRECTLY TERMINATED
 # BLOCKED. Nothing downstream of that stop ever ran. Every identifier
@@ -230,7 +229,7 @@ FORBIDDEN_PRESENT_TENSE_PATTERNS = (
     (
         "asserts a currently ACTIVE mission",
         # Unqualified subject, present tense, ACTIVE. This is the exact
-        # shape of the round-1 B2 survivor ("the Mitiq mission is
+        # shape of the round-1 B2 survivor ("the historical mission is
         # ACTIVE"). Deliberately NOT extended to "is running": the
         # roadmap's own acceptance criterion legitimately says "while an
         # eight-hour mission is running" about FUTURE missions, and a
@@ -242,7 +241,7 @@ FORBIDDEN_PRESENT_TENSE_PATTERNS = (
         "asserts the HISTORICAL mountain is still in flight",
         # Subject explicitly identified as the historical one, so any
         # present-tense in-flight verb is wrong here.
-        r"(?:mitiq|historical|di-remote-2|#2802)\s+"
+        r"(?:historical|external-target|di-remote-2)\s+"
         r"(?:mission|mountain|workflow)\s+(?:is|remains)\s+"
         r"(?:still\s+)?(?:active|running|in\s+flight|underway|ongoing)",
     ),
@@ -279,7 +278,7 @@ def find_flexible(text, phrase):
     return match.start() if match else -1
 
 
-class MitiqNarrativeTests(unittest.TestCase):
+class ReleaseNarrativeTests(unittest.TestCase):
     """The DI-REMOTE-2 capstone: ONE hermetic narrative from the EXACT
     driving sentence to the Telegram verified result.
 
@@ -390,16 +389,16 @@ class MitiqNarrativeTests(unittest.TestCase):
             os.path.join("herdr", "core.py"): "VALUE = 1\n",
             os.path.join("roles", "executor.md"): "executor role\n",
         })
-        # The target fixture standing in for unitaryfoundation/mitiq,
+        # The generic external target fixture,
         # carrying the REAL contribution rules the handoff-validation
         # turn must be shown.
-        cls.target_fixture = os.path.join(base, "mitiq-fixture")
+        cls.target_fixture = os.path.join(base, "external-target-fixture")
         cls.contributing = (
-            "mitiq contribution rules: sign the CLA, add tests,"
+            "external target contribution rules: sign the CLA, add tests,"
             " keep public APIs stable.\n"
         )
         cls.baseline = make_git_repo(cls.target_fixture, {
-            "README.md": "mitiq readme\n",
+            "README.md": "external target readme\n",
             "CONTRIBUTING.md": cls.contributing,
         })
         cls.state_dir = os.path.join(base, "state")
@@ -429,7 +428,7 @@ class MitiqNarrativeTests(unittest.TestCase):
             FakeGatewayResult(None, message=ROUTING_SIGNAL_ENVELOPE)
         )
         cls.harness.planning_script.append(
-            planning_result(mission_envelope(cls._mitiq_document()))
+            planning_result(mission_envelope(cls._target_document()))
         )
         cls.harness.adapter.process_update(msg_update(1, EXACT_SENTENCE))
         cls.harness.drain_worker()
@@ -547,9 +546,9 @@ class MitiqNarrativeTests(unittest.TestCase):
 
     # ---- fixtures -----------------------------------------------------
     @classmethod
-    def _mitiq_document(cls):
+    def _target_document(cls):
         return mission_document(
-            objective="Resolve issue #2802 in mitiq",
+            objective="Resolve issue #42 in the external target repository",
             control={
                 "repository_realpath": cls.control,
                 "policy_digest_sha256": control_policy_digest(
@@ -558,15 +557,15 @@ class MitiqNarrativeTests(unittest.TestCase):
             },
             target={
                 "canonical_host": "github.com",
-                "owner": MITIQ_OWNER,
-                "repo": "mitiq",
-                "canonical_url": MITIQ_URL,
+                "owner": TARGET_OWNER,
+                "repo": "external-target",
+                "canonical_url": TARGET_URL,
             },
-            issue_or_pr={"kind": "issue", "number": MITIQ_ISSUE},
+            issue_or_pr={"kind": "issue", "number": TARGET_ISSUE},
             baseline={
                 "ref": "refs/heads/main", "commit_sha": cls.baseline
             },
-            handoff={"revision": 2, "text": MITIQ_HANDOFF},
+            handoff={"revision": 2, "text": TARGET_HANDOFF},
         )
 
     @classmethod
@@ -588,7 +587,7 @@ class MitiqNarrativeTests(unittest.TestCase):
         probe_state = os.path.join(cls._tmp.name, "probe-state")
         probe_workspaces = os.path.join(cls._tmp.name, "probe-workspaces")
         shutil.copytree(cls.state_dir, probe_state)
-        transport = FakeGitTransport({MITIQ_URL: cls.target_fixture})
+        transport = FakeGitTransport({TARGET_URL: cls.target_fixture})
         role_turn = FakeRoleTurn(
             FakeRoleTurnResult(
                 outcome="request_dispatch",
@@ -629,7 +628,7 @@ class MitiqNarrativeTests(unittest.TestCase):
     @classmethod
     def _build_runtime_broker(cls):
         from herdr.observe import observe
-        transport = FakeGitTransport({MITIQ_URL: cls.target_fixture})
+        transport = FakeGitTransport({TARGET_URL: cls.target_fixture})
         role_turn = FakeRoleTurn(
             FakeRoleTurnResult(
                 outcome="request_dispatch",
@@ -658,8 +657,8 @@ class MitiqNarrativeTests(unittest.TestCase):
             return {
                 "repo": repo,
                 "initialization": None,
-                "runtime": {"workspace_id": "mitiq-w"},
-                "task": {"id": "mitiq-2802", "status": "ACTIVE"},
+                "runtime": {"workspace_id": "target-w"},
+                "task": {"id": "target-issue-42", "status": "ACTIVE"},
                 "policy": {},
                 "parent_repo": parent_repo,
                 "child_record": {
@@ -668,9 +667,9 @@ class MitiqNarrativeTests(unittest.TestCase):
                     "parent_task_id": None,
                     "dependency": False,
                     "repo": repo,
-                    "task_id": "mitiq-2802",
+                    "task_id": "target-issue-42",
                     "task_status": "ACTIVE",
-                    "workspace_id": "mitiq-w",
+                    "workspace_id": "target-w",
                     "agents": {},
                 },
             }
@@ -715,9 +714,9 @@ class MitiqNarrativeTests(unittest.TestCase):
             f.write(TARGET_REVIEWER_SUMMARY + "\n")
         with open(os.path.join(state, "task.json"), "w") as f:
             f.write(json.dumps({
-                "id": "mitiq-2802", "status": "COMPLETE",
+                "id": "target-issue-42", "status": "COMPLETE",
                 "started_at": 1, "completed_at": 2,
-                "description": "resolve mitiq #2802",
+                "description": "resolve external target issue #42",
             }))
         # I3: the artifacts a REAL target herd produces and the
         # verification evidence now BINDS — the lifecycle checkpoint
@@ -731,19 +730,19 @@ class MitiqNarrativeTests(unittest.TestCase):
             os.path.join(state, "task-checkpoint.md"), "w"
         ) as f:
             f.write(
-                "# Task Checkpoint — mitiq-2802\n\n"
-                "## Outcome\nCOMPLETE. Issue 2802 resolved.\n\n"
-                "## Verification\n- mitiq test suite green\n\n"
+                "# Task Checkpoint — target-issue-42\n\n"
+                "## Outcome\nCOMPLETE. External target issue resolved.\n\n"
+                "## Verification\n- target test suite green\n\n"
                 "## Mutation evidence\n- 4/4 mutants KILLED\n"
             )
         reviews = os.path.join(state, "reviews")
         os.makedirs(reviews, exist_ok=True)
         with open(
-            os.path.join(reviews, "mitiq-2802-round-01.md"), "w"
+            os.path.join(reviews, "target-issue-42-round-01.md"), "w"
         ) as f:
             f.write(
                 "# Reviewer round 1\n\n"
-                "Reviewer: `reviewer1` / `mitiq-rev-session`\n\n"
+                "Reviewer: `reviewer1` / `target-rev-session`\n\n"
                 "Protocol token: `APPROVE`\n\n"
                 "## Transcript\n\nHERD_DECISION: APPROVE\n"
             )
@@ -799,9 +798,9 @@ class MitiqNarrativeTests(unittest.TestCase):
         # a section dropped from the displayed text.
         text = self.mission_offer_text
         self.assertIn(mission.MISSION_MESSAGE_HEADER, text)
-        self.assertIn("Resolve issue #2802 in mitiq", text)
-        self.assertIn(MITIQ_URL, text)
-        self.assertIn("issue #2802", text)
+        self.assertIn("Resolve issue #42 in the external target repository", text)
+        self.assertIn(TARGET_URL, text)
+        self.assertIn("issue #42", text)
         # The exact sentence is shown, quoted verbatim.
         self.assertIn(EXACT_SENTENCE, text)
 
@@ -970,7 +969,7 @@ class MitiqNarrativeTests(unittest.TestCase):
         self.assertEqual(
             dispatch_module.DI_TARGET_EXECUTION_PRESET, "all-claude"
         )
-        self.assertEqual(request["task"], MITIQ_HANDOFF)
+        self.assertEqual(request["task"], TARGET_HANDOFF)
         self.assertEqual(
             request["task"].encode("utf-8"),
             self.completed_record["handoff"]["text"].encode("utf-8"),
@@ -1137,8 +1136,8 @@ class MitiqNarrativeTests(unittest.TestCase):
         # (3) The EXACT target identity and the Reviewer's own summary
         # — the original assertions, now against the edited text.
         self.assertIn(TARGET_REVIEWER_SUMMARY, edit["text"])
-        self.assertIn(MITIQ_URL, edit["text"])
-        self.assertIn("issue #2802", edit["text"])
+        self.assertIn(TARGET_URL, edit["text"])
+        self.assertIn("issue #42", edit["text"])
         # R-1: no clock, no attempt counter reached the payload, and no
         # parse_mode/reply_markup rides with it.
         self.assertEqual(
@@ -1699,7 +1698,7 @@ SENDMESSAGE_MENTION_UNITS = {
         # "Approval is **one-shot** ... a placeholder-bound workflow can
         # never fall back to a second result `sendMessage`, so the result
         # is **not re-sent automatically** ..." (exactly-once caveat)
-        "ea235daf4edd183d5baf40357b842ffc977788172ddf7ec5cf3f833f24ac4faf",
+        "ffbd6266ae2091f31b5dddeb6bf2a74a0a9a1b9922576d1a4f77a1a5e3144229",
     ),
     "SECURITY.md": (
         # "Final-result delivery uses one dedicated bot-owned Telegram
@@ -1773,11 +1772,11 @@ class DocsAccuracyPinTests(unittest.TestCase):
     RELEASE_GATE_SEQUENCE = (
         "Complete the README and documentation reconciliation",
         "Repair clean-clone CI hermeticity",
-        "historical Mitiq #2802 mountain",
+        "historical external-target mountain",
         "Integrate the reviewed and pushed Runtime stabilization commit",
         "Complete final DI-REMOTE-2 certification",
-        "Prepare the v0.7.0 release candidate",
-        "Create the v0.7.0 tag only after CI is green",
+        "Prepare the v0.7.0 release tree",
+        "Prove the exact v0.7.0 release tree green in CI",
     )
 
     def test_remote_fabric_roadmap_release_gate_is_ordered(self):
@@ -1808,12 +1807,12 @@ class DocsAccuracyPinTests(unittest.TestCase):
                 % (index, claim),
             )
             position = found + len(flat(claim))
-        # Steps 1-6 are complete. Publishing the tag remains the one
-        # open human-gated release action.
+        # All seven acceptance/CI steps are complete. Tag publication
+        # remains a separate human-gated action rather than part of this
+        # checklist's proof state.
         for done_step in ("1.  [x]", "2.  [x]", "3.  [x]", "4.  [x]",
-                          "5.  [x]", "6.  [x]"):
+                          "5.  [x]", "6.  [x]", "7.  [x]"):
             self.assertIn(done_step, section, done_step)
-        self.assertIn("7.  [ ]", section)
         # The gate carries the CI evidence and the stabilization SHA,
         # and the STALE run id is gone from the whole roadmap.
         self.assertIn(CI_RUN_ID, section)
@@ -1869,25 +1868,25 @@ class DocsAccuracyPinTests(unittest.TestCase):
         multi = roadmap.index("## Milestone C: Multi-mission operation")
         self.assertLess(milestone, multi)
         self.assertIn(
-            "That tagged release is the baseline for Mission Router and"
-            " concurrency work.",
+            "The v0.7.0 release tree is the baseline for Mission Router"
+            " and concurrency work.",
             " ".join(roadmap[milestone:multi].split()),
         )
 
-    def test_remote_fabric_roadmap_release_candidate_state_is_current(self):
+    def test_remote_fabric_roadmap_release_tree_state_is_current(self):
         roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
         flat_roadmap = " ".join(roadmap.split())
         self.assertIn(
-            "DI-REMOTE-2 acceptance is complete for the v0.7.0 release candidate",
+            "DI-REMOTE-2 acceptance is complete for the v0.7.0 release tree",
             flat_roadmap,
         )
         self.assertIn(
             "cda06d8c502882672667d94821b8bd00e7060a52", roadmap
         )
         self.assertIn("break-glass Tailscale/SSH", flat_roadmap)
-        self.assertIn("release tagging remains separately gated", flat_roadmap)
+        self.assertIn("release tagging is governed separately by its human authorization gate", flat_roadmap)
         self.assertNotIn("not yet proven stable", flat_roadmap)
-        self.assertNotIn("final Mitiq lifecycle acceptance", flat_roadmap)
+        self.assertNotIn("final external-target lifecycle acceptance", flat_roadmap)
         self.assertNotIn(
             "still-unreached DI-REMOTE-2 tagged release", flat_roadmap
         )
@@ -2806,7 +2805,7 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
     def test_supervisor_first_framing(self):
         # framing: the target Herdr Supervisor is the first
         # strategy-bearing component. Code side: the Supervisor-first
-        # narrative assertions in MitiqNarrativeTests.
+        # narrative assertions in ReleaseNarrativeTests.
         self.assertIn(
             "first strategy-bearing component", self.flat().lower()
         )
@@ -2821,7 +2820,7 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
 
 
 class TerminalMountainDocsPinTests(unittest.TestCase):
-    """The historical Mitiq mountain is TERMINAL — pinned as such.
+    """The historical external-target mountain is TERMINAL — pinned as such.
 
     Positive pins carry the exact evidence identifiers. Negative pins
     forbid the overstatements the documents used to make. Every
@@ -2838,7 +2837,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
                 name,
             )
 
-    def test_every_reconciled_doc_carries_the_exact_identifiers(self):
+    def test_every_reconciled_doc_carries_the_exact_evidence_identifiers(self):
         for name in RECONCILED_DOCS:
             doc = flat(read_doc(name))
             for identifier in (
@@ -2846,11 +2845,16 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
                 MOUNTAIN_TARGET_TASK,
                 MOUNTAIN_BASELINE,
                 MOUNTAIN_STOP_CODE,
-                EXACT_SENTENCE,
             ):
                 self.assertIn(
                     identifier, doc, "%s: %s" % (name, identifier)
                 )
+
+    def test_every_reconciled_doc_generalizes_the_natural_language_request(self):
+        for name in RECONCILED_DOCS:
+            doc = flat_lower(read_doc(name))
+            self.assertIn("natural-language", doc, name)
+            self.assertIn("external repository issue", doc, name)
 
     def test_the_stop_state_is_stated_with_what_stayed_null(self):
         # `verified_result` and `result_delivery` remained null and no
@@ -3049,7 +3053,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
         roadmap = flat_lower(read_doc("docs/remote-mission-fabric-roadmap.md"))
         self.assertIn(flat_lower(TERMINAL_ANCHOR), roadmap)
         self.assertIn("di-remote-2 acceptance is complete", roadmap)
-        self.assertIn("v0.7.0 release candidate", roadmap)
+        self.assertIn("v0.7.0 release tree", roadmap)
 
     def test_post_fix_live_mountain_is_not_release_evidence(self):
         for name in ("README.md",

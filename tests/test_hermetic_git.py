@@ -63,7 +63,7 @@ remains unguarded:
 - a DYNAMICALLY built identity invocation in a module OUTSIDE the
   sweep set.  The sweep set is: modules where the AST scan finds
   routed identity sites, plus modules that DIRECTLY import a name from
-  such a module (one level — how test_mitiq_narrative reaches git via
+  such a module (one level — how test_release_narrative reaches git via
   make_git_repo), plus the pinned known five.  A module whose only
   identity invocations are statically invisible AND that imports no
   identity-helper module is not swept (reviewer attack E is the
@@ -631,7 +631,7 @@ class GitIdentityGuardTests(unittest.TestCase):
 
 # Anti-vacuity floor for the sweep: the round-4 measured run observed
 # 526 identity-requiring git invocations across the six swept modules
-# (evidence 180 / mitiq_narrative 2 / observe 30 / push_gate 17 /
+# (evidence 180 / release_narrative 2 / observe 30 / push_gate 17 /
 # static 3 / target_runtime 294; the reviewer's independent full-suite
 # shim enumeration also measured 526).  The floor sits at ~86% of
 # measured so ordinary test edits don't trip it; note the count is
@@ -741,7 +741,7 @@ def sweep_module_set():
     (2) every tests module that DIRECTLY imports a name from a module
         in (1) — one level, module-level or nested — because such a
         module can reach git through an imported helper with no
-        identity verb at its own call sites (test_mitiq_narrative
+        identity verb at its own call sites (test_release_narrative
         reaches git via make_git_repo from test_target_runtime; found
         as reviewer finding R3-B2).  A DEEPER import chain is not
         followed — stated in the docstring residuals;

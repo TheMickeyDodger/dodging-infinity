@@ -186,7 +186,7 @@ class InitialDispatchGateTests(DispatchGateCase):
 
         It is also the ANTI-REGRESSION PIN for the ~30 pre-existing
         dispatch tests across test_target_runtime.py,
-        test_workspace_trust.py, test_mitiq_narrative.py,
+        test_workspace_trust.py, test_release_narrative.py,
         test_readiness.py, test_evidence.py and test_role_turn.py,
         every one of which drives ACTION_DISPATCH on a
         placeholder-free record. If the tri-state were wrong, those

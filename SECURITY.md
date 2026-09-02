@@ -277,7 +277,7 @@ otherwise:
 - **Automated/live evidence boundary.** Production exercised real Telegram
   v2 traffic, GitHub target materialization, child-Herdr bootstrap and
   dispatch, fresh installed-Codex role turns, target Herdr COMPLETE, and a
-  canonical target Reviewer APPROVE on the historical Mitiq #2802 mountain.
+  canonical target Reviewer APPROVE on the historical external-target mountain.
   That particular workflow then exposed genuine post-dispatch policy drift
   and correctly terminated BLOCKED; `verified_result` and `result_delivery`
   remained null in that historical execution and no target Git delivery
