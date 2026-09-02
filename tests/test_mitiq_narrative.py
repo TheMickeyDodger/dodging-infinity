@@ -31,6 +31,7 @@ import json
 import os
 import plistlib
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -298,6 +299,75 @@ class MitiqNarrativeTests(unittest.TestCase):
     """
 
     MAX_RUNTIME_PASSES = 8
+    # The message id Telegram assigns the bot's own result placeholder.
+    PLACEHOLDER_MESSAGE_ID = 7301
+
+    # ---- the placeholder send seam (DI-REMOTE-3 R-6) -------------------
+    #
+    # `Adapter.ensure_result_placeholders` sends the placeholder through
+    # `api.send_message_once` — the I2 single-attempt entry that never
+    # retries and never chunks. This narrative's Telegram fake predates
+    # that entry, so it is wrapped here: everything else is delegated
+    # untouched, and the one new method is served by the REAL
+    # `telegram_api.TelegramApi` over a transport that returns a
+    # genuine Telegram `ok:true` body. The adapter therefore runs its
+    # ORDINARY path against the REAL classifier — nothing about the
+    # binding is hand-written into the record.
+    class _PlaceholderSendApi(object):
+        """The narrative's Telegram fake, plus the two DI-REMOTE-3
+        entry points, each served by the REAL `telegram_api` client.
+
+        `send_message_once` (I2) binds the placeholder;
+        `edit_message_text` (I2) delivers the verified result INTO that
+        bound object. Both run through a genuine
+        `telegram_api.TelegramApi` over a recording transport that
+        returns a real Telegram `ok:true` body, so the adapter
+        exercises the real classifier — nothing about the delivery is
+        hand-written into the record.
+
+        `transport_calls` is the raw CALL LOG: every request that
+        actually left the client, in order. Asserting on it rather
+        than on state is what makes a fresh-send regression visible;
+        a state-only check would not have caught R-15.
+        """
+
+        def __init__(self, inner, message_id):
+            self._inner = inner
+            self.placeholder_sends = []
+            self.edit_calls = []
+            self.transport_calls = []
+            self._message_id = message_id
+            from telegram_operator import telegram_api as _api
+
+            def transport(url, payload_bytes, deadline_seconds):
+                payload = json.loads(payload_bytes.decode("utf-8"))
+                method = url.rsplit("/", 1)[-1]
+                self.transport_calls.append((method, payload))
+                if "message_id" in payload:
+                    self.edit_calls.append(payload)
+                else:
+                    self.placeholder_sends.append(payload)
+                body = json.dumps({
+                    "ok": True,
+                    "result": {"message_id": self._message_id},
+                }).encode("utf-8")
+                return 200, body
+
+            self._real = _api.TelegramApi(
+                "12345:NARRATIVE-TOKEN", transport=transport,
+                sleeper=lambda seconds: None,
+            )
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def send_message_once(self, chat_id, text):
+            return self._real.send_message_once(chat_id, text)
+
+        def edit_message_text(self, chat_id, message_id, text):
+            return self._real.edit_message_text(
+                chat_id, message_id, text
+            )
 
     # ---- one narrative, built once ------------------------------------
     @classmethod
@@ -384,6 +454,41 @@ class MitiqNarrativeTests(unittest.TestCase):
         )
         cls.after_second_approve = cls._fresh_entry(cls)
 
+        # --- DI-REMOTE-3 R-6: the initial-dispatch placeholder gate.
+        #
+        # Layer 1 (I3) stamps `result_placeholder = required` in the
+        # SAME locked transaction that arms the mission, so a
+        # go-forward workflow reaches VALIDATED with a placeholder that
+        # is not yet bound, and the Broker REFUSES initial dispatch
+        # until the adapter binds it. In production the two loops run
+        # concurrently — the adapter's own poll loop calls
+        # `ensure_result_placeholders()` — so the refusal is transient
+        # and self-healing, and the ordering below is the REAL one:
+        # the adapter binds, and the Runtime then runs its whole chain.
+        #
+        # This narrative previously approved and then called
+        # `process_once` immediately, a sequence production can no
+        # longer perform. Rather than merely surviving the gate, the
+        # two probes below DOCUMENT it: dispatch is refused with ZERO
+        # spawn requests while unbound, and succeeds once bound.
+        cls.placeholder_after_approval = (
+            cls._fresh_entry(cls)["result_placeholder"]
+        )
+        (cls.gated_pass, cls.gated_spawn_requests,
+         cls.gated_entry) = cls._probe_dispatch_before_binding()
+
+        # The BINDING, through the adapter's ORDINARY loop step — the
+        # same call `Adapter.run` makes every poll iteration. Nothing
+        # is written into the record by hand.
+        cls.placeholder_api = cls._PlaceholderSendApi(
+            cls.harness.adapter.api, cls.PLACEHOLDER_MESSAGE_ID
+        )
+        cls.harness.adapter.api = cls.placeholder_api
+        cls.harness.adapter.ensure_result_placeholders()
+        cls.placeholder_after_binding = (
+            cls._fresh_entry(cls)["result_placeholder"]
+        )
+
         # --- The automation, driven exactly as `dirun run` drives it.
         broker, transport, role_turn, spawn_requests = (
             cls._build_runtime_broker()
@@ -411,7 +516,27 @@ class MitiqNarrativeTests(unittest.TestCase):
         cls.completed_record = cls._fresh_entry(cls)
 
         # --- The adapter delivers the verified result to Telegram. ---
-        cls.harness.adapter.deliver_pending_results()
+        #
+        # DI-REMOTE-3 R-15/R-16: this workflow carries a BOUND
+        # placeholder (bound above through the ordinary adapter loop
+        # step), so production delivers its result by EDITING that
+        # object — never by a fresh send. `deliver_pending_results` is
+        # the LEGACY at-most-once lane and is gated on
+        # `result_placeholder is None`, so it CORRECTLY refuses this
+        # record; both loop steps are driven here in the same order
+        # `run()` drives them, and the assertions below pin that the
+        # legacy lane produced nothing while the edit lane produced
+        # exactly one edit.
+        cls.sends_before_delivery = len(cls.harness.sends())
+        # R-11: a seam that is missing or broken must fail this
+        # narrative by an AUTHORED assertion (test_point10 below), not
+        # by an ERROR cascade out of setUpClass — a crash is not a kill.
+        cls.delivery_error = None
+        try:
+            cls.harness.adapter.deliver_result_edits()
+            cls.harness.adapter.deliver_pending_results()
+        except Exception as exc:  # pragma: no cover - defensive
+            cls.delivery_error = "%s: %s" % (type(exc).__name__, exc)
         cls.delivered_record = cls._fresh_entry(cls)
 
         cls.control_after = tree_hash(cls.control)
@@ -440,6 +565,63 @@ class MitiqNarrativeTests(unittest.TestCase):
             },
             handoff={"revision": 2, "text": MITIQ_HANDOFF},
         )
+
+    @classmethod
+    def _probe_dispatch_before_binding(cls):
+        """Run the REAL Runtime chain against this workflow while its
+        placeholder is still `required`, on a COPY of the store.
+
+        Why a copy: the chain would otherwise advance the narrative's
+        own record through materialize/prepare/validate, and
+        `test_point04` pins that ALL FIVE actions occur inside ONE
+        `process_once` after approval — which is the true production
+        ordering, because the adapter binds on its own poll loop long
+        before the Runtime materializes. The copy lets the SAME record
+        bytes, the SAME Broker code and the SAME gate be exercised in
+        the unbound state without disturbing that ordering.
+
+        Returns `(pass_result, spawn_requests, entry_from_state_file)`.
+        """
+        probe_state = os.path.join(cls._tmp.name, "probe-state")
+        probe_workspaces = os.path.join(cls._tmp.name, "probe-workspaces")
+        shutil.copytree(cls.state_dir, probe_state)
+        transport = FakeGitTransport({MITIQ_URL: cls.target_fixture})
+        role_turn = FakeRoleTurn(
+            FakeRoleTurnResult(
+                outcome="request_dispatch",
+                turn={"turn_id": "turn-hv",
+                      "role": "handoff_validation",
+                      "process_id": 4242},
+            )
+        )
+        spawn_requests = []
+
+        def spawn_recorder(parent_repo, request):
+            # If the gate is doing its job this is NEVER called.
+            spawn_requests.append((parent_repo, dict(request)))
+            raise AssertionError(
+                "the placeholder gate must refuse initial dispatch"
+                " while the placeholder is unbound; a spawn was"
+                " requested for %r" % (request.get("target_repo"),)
+            )
+
+        from herdr.observe import observe
+        broker = broker_module.TargetBroker(
+            store_directory=probe_state,
+            control_repository_realpath=cls.control,
+            transport=transport,
+            workspaces_root=probe_workspaces,
+            role_turn_fn=role_turn,
+            claude_config_path=cls.claude_config,
+            spawn_fn=spawn_recorder,
+            clock=lambda: NOW,
+            observer_fn=lambda path: observe(path),
+        )
+        result = runtime_module.process_once(broker)
+        entry = wa_store.WorkflowStore(probe_state).load()[
+            "workflows"
+        ]["wf-0001"]
+        return result, spawn_requests, entry
 
     @classmethod
     def _build_runtime_broker(cls):
@@ -650,6 +832,91 @@ class MitiqNarrativeTests(unittest.TestCase):
             wa_record.PHASE_AUTHORIZED,
         )
 
+    def test_point03b_initial_dispatch_is_refused_until_bound(self):
+        # DI-REMOTE-3 R-6, POSITIVELY pinned rather than merely
+        # survived. Approval stamps `result_placeholder = required` in
+        # the same locked transaction that arms the mission (Layer 1),
+        # and the Broker then REFUSES initial dispatch until that
+        # placeholder is durably bound — so a mission can never run
+        # without an object to deliver its verified result into.
+        #
+        # Every assertion reads the STATE FILE (`_fresh_entry` and the
+        # probe's own freshly loaded store), never in-memory adapter
+        # state.
+        self.assertIsNotNone(
+            self.placeholder_after_approval,
+            "approval must durably REQUEST the placeholder",
+        )
+        self.assertEqual(
+            self.placeholder_after_approval["state"],
+            wa_record.PLACEHOLDER_REQUIRED,
+        )
+        self.assertIsNone(
+            self.placeholder_after_approval["message_id"]
+        )
+        # The chain runs, and stops at the gate.
+        actions = [a for a, _ in self.gated_pass["wf-0001"]]
+        self.assertIn(broker_module.ACTION_DISPATCH, actions)
+        refusals = [
+            outcome for action, outcome in self.gated_pass["wf-0001"]
+            if action == broker_module.ACTION_DISPATCH
+        ]
+        self.assertEqual(len(refusals), 1)
+        self.assertFalse(refusals[0].ok)
+        self.assertEqual(
+            refusals[0].problem,
+            broker_module.PROBLEM_PLACEHOLDER_NOT_BOUND,
+        )
+        # ZERO spawn requests: nothing was launched at the target.
+        self.assertEqual(self.gated_spawn_requests, [])
+        # The refusal wrote nothing that advanced the workflow: it is
+        # TRANSIENT and self-healing, not a dead end.
+        self.assertEqual(
+            self.gated_entry["phase"], wa_record.PHASE_VALIDATED
+        )
+        self.assertEqual(
+            self.gated_entry["result_placeholder"]["state"],
+            wa_record.PLACEHOLDER_REQUIRED,
+        )
+
+    def test_point03c_the_adapter_binds_and_then_dispatch_proceeds(self):
+        # The other half of R-6: the adapter's OWN loop step binds the
+        # placeholder — the same `ensure_result_placeholders()` call
+        # `Adapter.run` makes every poll iteration — and the Runtime
+        # then dispatches normally. In production both loops run
+        # concurrently, which is why the refusal above is transient.
+        self.assertEqual(
+            self.placeholder_after_binding["state"],
+            wa_record.PLACEHOLDER_BOUND,
+        )
+        self.assertEqual(
+            self.placeholder_after_binding["message_id"],
+            self.PLACEHOLDER_MESSAGE_ID,
+        )
+        self.assertIsNotNone(
+            self.placeholder_after_binding["bound_at"]
+        )
+        self.assertIsNotNone(
+            self.placeholder_after_binding["text_digest"]
+        )
+        # EXACTLY ONE placeholder message was sent, and it carries the
+        # workflow id so a human can identify the object in the chat
+        # (strategy §1.3).
+        self.assertEqual(len(self.placeholder_api.placeholder_sends), 1)
+        sent = self.placeholder_api.placeholder_sends[0]
+        self.assertIn("wf-0001", sent["text"])
+        self.assertEqual(
+            sent["chat_id"],
+            self.offered_record["telegram"]["chat_id"],
+        )
+        # And with it bound, the very next Runtime pass dispatched —
+        # the spawn the rest of this narrative depends on.
+        self.assertEqual(len(self.spawn_requests), 1)
+        self.assertEqual(
+            self.after_pass1["result_placeholder"]["state"],
+            wa_record.PLACEHOLDER_BOUND,
+        )
+
     def test_point04_automatic_preparation_no_manual_step(self):
         # After approval the whole forward chain runs inside
         # process_once with NO broker action performed by the test.
@@ -792,22 +1059,126 @@ class MitiqNarrativeTests(unittest.TestCase):
         )
 
     def test_point10_telegram_verified_result(self):
-        # The verified result reaches Telegram exactly once, naming the
-        # exact target and carrying the Reviewer's summary; the durable
-        # marker is DELIVERED. Regression: no delivery, a double
-        # delivery, or a fabricated summary.
+        # RETARGETED under RULING R-16, and STRICTLY STRONGER than the
+        # regression it replaces.
+        #
+        # This used to assert a FRESH send plus a DELIVERY_DELIVERED
+        # marker — the pre-placeholder delivery model. Since R-12 this
+        # workflow binds a real placeholder through the ordinary
+        # adapter path, and since R-15 the legacy at-most-once lane is
+        # gated on `result_placeholder is None`, so production delivers
+        # this result by EDITING the bound object. A test asserting a
+        # fresh send would pin a sequence production can no longer
+        # perform.
+        #
+        # Every substantive claim of the original survives — the result
+        # reaches Telegram exactly once, names the exact target, and
+        # carries the Reviewer's own summary — now asserted against the
+        # EDIT, plus the task's HEADLINE guarantee: exactly ONE visible
+        # result object and ZERO fresh sends, end to end on a real
+        # mission.
+        #
+        # Regression: no delivery, a double delivery, a fabricated
+        # summary, or ANY fresh result message beside the bound one.
+
+        # (0) The delivery step itself completed. R-11: this turns a
+        # missing or broken edit seam into an AUTHORED failure here
+        # rather than an ERROR cascade out of setUpClass.
+        self.assertIsNone(
+            self.delivery_error,
+            "the delivery step must complete; it raised %r"
+            % (self.delivery_error,),
+        )
+
+        # (1) ZERO fresh result sends. Asserted on the harness send log
+        # AND on the client's raw TRANSPORT CALL LOG — a state-only
+        # check would not have caught R-15, which is exactly why this
+        # is asserted here.
         delivered = [
             s for s in self.harness.sends()
             if adapter_module.RESULT_MESSAGE_HEADER in s["text"]
         ]
-        self.assertEqual(len(delivered), 1)
-        self.assertIn(TARGET_REVIEWER_SUMMARY, delivered[0]["text"])
-        self.assertIn(MITIQ_URL, delivered[0]["text"])
-        self.assertIn("issue #2802", delivered[0]["text"])
         self.assertEqual(
-            self.delivered_record["result_delivery"]["state"],
-            wa_record.DELIVERY_DELIVERED,
+            delivered, [],
+            "a placeholder-bound workflow must NEVER receive a fresh"
+            " result message; the result is delivered by editing the"
+            " bound placeholder",
         )
+        self.assertEqual(
+            len(self.harness.sends()), self.sends_before_delivery,
+            "delivery must not add ANY Telegram message",
+        )
+        sent_methods = [
+            method for method, _ in
+            self.placeholder_api.transport_calls
+        ]
+        self.assertNotIn(
+            "sendMessage", sent_methods[self._edit_call_floor():],
+            "the transport call log shows a fresh sendMessage on the"
+            " result path: %r" % (sent_methods,),
+        )
+
+        # (2) EXACTLY ONE edit, targeting the BOUND object.
+        self.assertEqual(
+            len(self.placeholder_api.edit_calls), 1,
+            "exactly one edit delivers the result: %r"
+            % (self.placeholder_api.edit_calls,),
+        )
+        edit = self.placeholder_api.edit_calls[0]
+        self.assertEqual(edit["message_id"], self.PLACEHOLDER_MESSAGE_ID)
+        self.assertEqual(
+            edit["chat_id"],
+            self.offered_record["telegram"]["chat_id"],
+        )
+
+        # (3) The EXACT target identity and the Reviewer's own summary
+        # — the original assertions, now against the edited text.
+        self.assertIn(TARGET_REVIEWER_SUMMARY, edit["text"])
+        self.assertIn(MITIQ_URL, edit["text"])
+        self.assertIn("issue #2802", edit["text"])
+        # R-1: no clock, no attempt counter reached the payload, and no
+        # parse_mode/reply_markup rides with it.
+        self.assertEqual(
+            sorted(edit), ["chat_id", "message_id", "text"]
+        )
+
+        # (4) The durable marker, read from the STATE FILE.
+        on_disk = wa_store.WorkflowStore(self.state_dir).load()
+        marker = on_disk["workflows"]["wf-0001"]["result_delivery"]
+        self.assertEqual(
+            marker["state"], wa_record.DELIVERY_DELIVERED_BY_EDIT
+        )
+        self.assertEqual(
+            marker["edited_message_id"], self.PLACEHOLDER_MESSAGE_ID
+        )
+        # The LEGACY key keeps its own meaning and is NOT repurposed.
+        self.assertIsNone(marker["telegram_message_id"])
+        # R-4: the delivery is bound to THIS verified result.
+        self.assertEqual(
+            marker["verified_result_digest"],
+            on_disk["workflows"]["wf-0001"]["verified_result"]["digest"],
+        )
+        # And the placeholder it edited is the one that was bound.
+        placeholder = (
+            on_disk["workflows"]["wf-0001"]["result_placeholder"]
+        )
+        self.assertEqual(
+            placeholder["state"], wa_record.PLACEHOLDER_BOUND
+        )
+        self.assertEqual(
+            placeholder["message_id"], self.PLACEHOLDER_MESSAGE_ID
+        )
+
+    def _edit_call_floor(self):
+        """Index of the first transport call made by the DELIVERY
+        step, so the assertion above covers the result path only and
+        not the earlier placeholder bind."""
+        for index, (method, payload) in enumerate(
+            self.placeholder_api.transport_calls
+        ):
+            if "message_id" in payload:
+                return index
+        return len(self.placeholder_api.transport_calls)
 
     def test_point11_control_repository_byte_identical(self):
         # The control repository is byte-identical across the WHOLE

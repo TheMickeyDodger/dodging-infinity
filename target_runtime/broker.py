@@ -313,6 +313,10 @@ PROBLEM_INSTRUCTIONS_DRIFTED = "broker_instructions_drifted"
 PROBLEM_VERIFICATION_UNSUPPORTED = "broker_verification_bad_outcome"
 PROBLEM_NO_VERIFIED_RESULT = "broker_no_verified_result"
 PROBLEM_SURFACE_UNAVAILABLE = "broker_surface_digest_refused"
+# DI-REMOTE-3 I4 (RULING R-6, Layer 2 of plan §1.1): the INITIAL
+# dispatch refuses while a REQUESTED result placeholder is not yet
+# durably bound.
+PROBLEM_PLACEHOLDER_NOT_BOUND = "broker_result_placeholder_not_bound"
 
 # --- I5 revision 1: record-growth containment (round-10 F-1) ---------------
 #
@@ -663,6 +667,64 @@ class BrokerOutcome(object):
 
 def _refused(problem, detail=None):
     return BrokerOutcome(False, problem=problem, detail=detail)
+
+
+def _placeholder_dispatch_refusal(entry):
+    """The R-6 INITIAL-dispatch placeholder gate, as a pure record read.
+
+    Returns ``(problem, detail)`` to refuse, or ``(None, None)`` to
+    permit. Reads the record only: no I/O, no clock, no write.
+
+    **TRI-STATE, and the three states mean different things.** Reading
+    this as a two-state "bound or not" test gets the legacy population
+    wrong in the dangerous direction, so each is spelled out:
+
+    1. ``result_placeholder is None`` -> **LEGACY LANE, UNGATED.**
+       This does NOT mean "a placeholder is not needed". It means the
+       record predates or sits outside the placeholder architecture
+       (plan §4), and its verified result is delivered on the legacy
+       **at-most-once** path. Gating on absence would refuse every
+       pre-existing workflow forever; permitting it is a deliberate,
+       disclosed narrowing of the guarantee, not an oversight.
+
+    2. requested but ``state != bound`` (``required``, ``sending``,
+       ``failed_unsent``, ``indefinite``, ``unbindable``) ->
+       **REFUSE**, fail-closed, with this gate's own problem code.
+       Once a placeholder has been REQUESTED, binding is mandatory:
+       dispatching now would run a mission whose result has no bound
+       object to be delivered into, which is precisely the
+       at-most-once gap this task exists to close.
+
+    3. ``state == bound`` -> permit.
+
+    Why absence can be trusted to mean "legacy" (plan §1.1, Layer 1):
+    the adapter writes the ``required`` request in the SAME locked
+    load-modify-save transaction that arms the mission, so a
+    go-forward workflow can never reach VALIDATED with a null
+    placeholder. Without that atomicity, ``None`` would be ambiguous
+    between "legacy" and "go-forward that lost its request", and this
+    gate would be unsound.
+
+    **DISCLOSURE (Supervisor §6, non-negotiable).** The acceptance
+    criterion "Runtime dispatch must not occur until the result
+    placeholder is durably bound" therefore holds **STRICTLY for
+    go-forward, placeholder-requested workflows**. Pre-existing
+    records dispatch **UNGATED** on the legacy at-most-once path.
+    This is NOT full coverage and must not be read as such.
+    """
+    placeholder = entry.get("result_placeholder")
+    if placeholder is None:
+        return None, None
+    state = placeholder.get("state")
+    if state == record_module.PLACEHOLDER_BOUND:
+        return None, None
+    return PROBLEM_PLACEHOLDER_NOT_BOUND, (
+        "the result placeholder for this workflow was REQUESTED but is"
+        " not durably bound (state %r); initial dispatch is refused"
+        " fail-closed until it is bound, so a mission never runs"
+        " without an object to deliver its verified result into."
+        " Nothing was dispatched and nothing was written." % (state,)
+    )
 
 
 class TargetBroker(object):
@@ -1366,6 +1428,22 @@ class TargetBroker(object):
         # a dispatch without a truthful baseline would create a
         # workflow that can never verify, and an absent or fabricated
         # baseline is forbidden outright.
+        # RULING R-6 (Layer 2 of plan §1.1): the INITIAL-dispatch
+        # placeholder gate. Scoped to `not follow_up` deliberately —
+        # a FOLLOW-UP dispatch continues a mission whose placeholder
+        # question was already settled at initial dispatch, so gating
+        # it again would strand corrective work for no added
+        # guarantee. Placed here with the other initial-dispatch
+        # preconditions, and refusing through `_refused` so the
+        # refusal writes NOTHING: no receipt, no transition, no save.
+        # It is a pure record read and therefore refuses before the
+        # protected-surface digest touches the filesystem.
+        if not follow_up:
+            gate_problem, gate_detail = _placeholder_dispatch_refusal(
+                entry
+            )
+            if gate_problem is not None:
+                return _refused(gate_problem, gate_detail)
         surface = None
         if not follow_up:
             surface = evidence_module.protected_surface_digest(

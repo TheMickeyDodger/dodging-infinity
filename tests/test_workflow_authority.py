@@ -548,6 +548,124 @@ class RecordValidationTests(unittest.TestCase):
             caught.exception.problem, record.PROBLEM_BAD_VALUE
         )
 
+    def test_R18_issue_or_pr_number_is_bounded_by_the_canonical_url(self):
+        """RULING R-18 — the durable-boundary certification, in the
+        validator's OWN home.
+
+        `_validate_target` refuses any issue/PR number that would make
+        the FULL canonical issue/PR URL exceed
+        `canonical.MAX_TARGET_URL_CHARS`, so a target the canonicalizer
+        could never emit is UNREPRESENTABLE at the record boundary
+        rather than merely undeliverable later. This is proven for BOTH
+        the `issue` and the `pull` segment, and every quantity is
+        DERIVED from the live canonical constants — no literal 512, no
+        literal segment length — so a change to `MAX_TARGET_URL_CHARS`
+        or to either segment name breaks this test instead of silently
+        widening the contract.
+        """
+        repo_url = "https://github.com/octocat/target"
+        # `make_record` stores the REPOSITORY url in target.canonical_url
+        # (validated by canonicalize_repository_url); the number lives
+        # separately, so the bound must be reconstructed here exactly as
+        # the validator does.
+
+        def room_for(segment):
+            return (
+                canonical.MAX_TARGET_URL_CHARS
+                - len(repo_url) - len("/") - len(segment) - len("/")
+            )
+
+        cases = (
+            ("issue", canonical.ISSUE_SEGMENT),
+            ("pr", canonical.PULL_SEGMENT),
+        )
+        issue_room = room_for(canonical.ISSUE_SEGMENT)
+        pr_room = room_for(canonical.PULL_SEGMENT)
+        # DERIVATION SANITY: "pull" is shorter than "issues", so a PR
+        # target may carry a strictly larger number. If a mutant uses
+        # one segment for both kinds this equality/ordering breaks.
+        self.assertGreater(
+            pr_room, issue_room,
+            "the PR segment is shorter, so its number room must be"
+            " larger; a shared-segment mutant collapses this",
+        )
+
+        for kind, segment in cases:
+            room = room_for(segment)
+            largest_legal = int("9" * room)
+            first_illegal = int("9" * (room + 1))
+
+            # The largest number whose canonical URL is EXACTLY the
+            # bound is ACCEPTED. AUTHORED assertion, not a bare call: an
+            # off-by-one-narrowing, dropped-separator or shared-segment
+            # mutant REJECTS this legal target and must die by THIS
+            # fail, never by an uncaught RecordError (repo rule: a crash
+            # is not a kill). `make_record` self-validates through
+            # `new_record`, so the rejection surfaces HERE — wrap it too.
+            try:
+                accepted = make_record(
+                    issue_or_pr_kind=kind,
+                    issue_or_pr_number=largest_legal,
+                )
+            except record.RecordError as exc:
+                self.fail(
+                    "the largest canonical-legal %s number must be"
+                    " ACCEPTED by the constructor; the R-18 bound"
+                    " rejected it: %s" % (kind, exc)
+                )
+            self.assertEqual(
+                len(accepted["target"]["canonical_url"])
+                + len("/") + len(segment) + len("/")
+                + len(str(largest_legal)),
+                canonical.MAX_TARGET_URL_CHARS,
+                "the fixture must sit EXACTLY on the bound (%s)" % kind,
+            )
+            try:
+                record.validate_record(accepted)
+            except record.RecordError as exc:
+                self.fail(
+                    "the largest canonical-legal %s number must be"
+                    " ACCEPTED; the bound rejected it: %s" % (kind, exc)
+                )
+
+            # One digit more is UNREPRESENTABLE — proven on a COHERENT
+            # record whose authorization rendering ALSO reflects the
+            # oversized number. That matters: `_validate_target` (the
+            # R-18 guard) runs BEFORE the total render-binding check, so
+            # an INCOHERENT over-record (number bumped, rendered_text
+            # stale) would, under a mutant that deletes the R-18 guard,
+            # be refused by PROBLEM_RENDER_BINDING instead — a kill
+            # attributable to the wrong guard. Rendering the
+            # authorization WITH the oversized number makes the R-18
+            # bound the SOLE refuser: delete it and this record
+            # VALIDATES (the bad state becomes representable), so the
+            # authored `self.fail` below fires.
+            over = copy.deepcopy(accepted)
+            over["target"]["issue_or_pr"]["number"] = first_illegal
+            rendered = rendering.render_record_text(over)
+            over["mission_authorization"]["rendered_text"] = rendered
+            over["mission_authorization"]["digest_sha256"] = (
+                digest.text_digest(rendered)
+            )
+            try:
+                record.validate_record(over)
+            except record.RecordError as exc:
+                self.assertEqual(
+                    exc.problem, record.PROBLEM_ISSUE_URL_TOO_LONG,
+                    "a coherent over-bound %s record must be refused by"
+                    " the R-18 bound, not another guard" % kind,
+                )
+                self.assertIn(
+                    str(canonical.MAX_TARGET_URL_CHARS), str(exc),
+                    "the refusal must name the derived canonical bound",
+                )
+            else:
+                self.fail(
+                    "a coherent over-bound %s number must be refused by"
+                    " the R-18 durable bound; it VALIDATED — the bound"
+                    " is missing" % kind
+                )
+
     def test_negative_timestamps_refused(self):
         for section, key in (
             ("approval", "created_at"),

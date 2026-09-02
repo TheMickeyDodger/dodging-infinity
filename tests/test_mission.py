@@ -348,14 +348,49 @@ class ResultDeliveryTests(MissionCase):
         from workflow_authority.digest import text_digest
         harness.offer_mission()
         bound = harness.bound_message_id()
-        harness.adapter.process_update(
-            cb_update(10, "A:wf-0001", message_id=bound)
-        )
+        # RULING R-17 — build a GENUINE pre-placeholder (DI-REMOTE-2)
+        # legacy record with the REAL pre-I3 writer shape: run the
+        # approval / mission-arming transaction WITHOUT the I3
+        # placeholder request, so result_placeholder is NEVER written.
+        #
+        # This REPLACES the earlier forged construction — approve
+        # THROUGH the adapter (which stamps result_placeholder=
+        # {'state':'required'} in the arming transaction), then rewrite
+        # it to null on disk — which R-17 item 2 forbids: that produced
+        # a bound-record-nulled forgery whose comment claimed a property
+        # the construction did not provide. A record predating I3 was
+        # armed by this IDENTICAL transaction minus the placeholder
+        # request, so suppressing exactly that one write reproduces the
+        # actual historical writer. No post-arming nulling occurs.
+        #
+        # LANE SEPARATION unchanged: this fixture is the LEGACY lane;
+        # the bound EDIT lane is covered by the Mitiq narrative. Every
+        # send / retry / PARTIAL / RESERVED / status assertion below is
+        # unchanged.
+        real_request = harness.adapter._request_result_placeholder
+
+        def _di_remote_2_arming(workflows, workflow_id, now):
+            return False  # pre-I3 arming: no placeholder request
+
+        harness.adapter._request_result_placeholder = _di_remote_2_arming
+        try:
+            harness.adapter.process_update(
+                cb_update(10, "A:wf-0001", message_id=bound)
+            )
+        finally:
+            harness.adapter._request_result_placeholder = real_request
         # Drive the record to COMPLETED with a verified result, as the
         # Runtime would (directly on the shared store).
         with wa_store.exclusive_store_lock(harness.tmpdir):
             workflows = harness.workflow_store.load()
             entry = workflows["workflows"]["wf-0001"]
+            # The arming really left NO placeholder written: this is a
+            # genuinely pre-placeholder record, never bound-then-nulled.
+            assert entry["result_placeholder"] is None, (
+                "R-17: completed_workflow must produce a REAL"
+                " pre-placeholder record; the arming wrote a"
+                " placeholder: %r" % (entry["result_placeholder"],)
+            )
             for phase in (wa_record.PHASE_WORKSPACE_READY,
                           wa_record.PHASE_PREPARED,
                           wa_record.PHASE_VALIDATED,
@@ -369,6 +404,21 @@ class ResultDeliveryTests(MissionCase):
                 "recorded_at": NOW,
             }
             harness.workflow_store.save(workflows)
+        # ANTI-VACUITY (R-17, mandatory): re-read from the STORE and
+        # prove the record really IS null-placeholder before any legacy
+        # delivery is invoked. Without this, a later change to Layer 1
+        # could leave these tests silently passing while covering
+        # nothing — the exact "or this test proves nothing" failure
+        # this project has rejected before.
+        reloaded = harness.fresh_workflows()["workflows"]["wf-0001"]
+        assert reloaded["result_placeholder"] is None, (
+            "the LEGACY fixture must build a null-placeholder record,"
+            " or these tests exercise the legacy lane with a"
+            " non-legacy record and prove nothing: %r"
+            % (reloaded["result_placeholder"],)
+        )
+        assert reloaded["phase"] == wa_record.PHASE_COMPLETED
+        assert reloaded["verified_result"] is not None
 
     def test_result_delivered_exactly_once(self):
         harness = self.harness()

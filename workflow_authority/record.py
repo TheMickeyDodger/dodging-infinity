@@ -38,6 +38,18 @@ authority content, and the optional ``issue_or_pr``. Version-1
 records lack authority fields that must never be fabricated, so they
 fail closed here and are migrated only by the explicit human-invoked
 store migration (which retires them into a preserved backup).
+
+DI-REMOTE-3 I1 adds ``result_placeholder`` and six additive
+``result_delivery`` fields. Like ``verified_result``/``result_delivery``
+before them they are durable, nullable, MUTABLE NON-AUTHORITY state:
+outside the render binding, and outside the binding set named above —
+``delivery_authority`` is still the only authority field and is still
+required to be exactly ``"none"``. The schema version is deliberately
+NOT bumped for them; see ``_TOP_LEVEL_KEYS`` and
+``workflow_authority.store._normalize_additive_keys``. (Pinned by
+tests/test_di_remote_3_schema.py:
+``test_X3_delivery_authority_stays_none_on_every_new_field`` and
+``test_schema_version_is_not_bumped``.)
 """
 
 import os
@@ -203,6 +215,44 @@ PROBLEM_DIGEST_MISMATCH = "workflow_record_digest_mismatch"
 PROBLEM_RENDER_BINDING = "workflow_record_render_binding"
 PROBLEM_BASELINE_REF = "workflow_record_baseline_ref_grammar"
 PROBLEM_PATH_CHARACTER = "workflow_record_path_character"
+# DI-REMOTE-3 I1: the result placeholder's state/field table (§3.1)
+# fails closed per FIELD, each with its own problem code, so an
+# out-of-table combination names the exact field that is wrong rather
+# than collapsing into the generic bad-value code.
+PROBLEM_PLACEHOLDER_STATE_FIELDS = (
+    "workflow_record_placeholder_state_fields"
+)
+PROBLEM_PLACEHOLDER_MESSAGE_ID = (
+    "workflow_record_placeholder_message_id"
+)
+PROBLEM_PLACEHOLDER_SENT_AT = "workflow_record_placeholder_sent_at"
+PROBLEM_PLACEHOLDER_BOUND_AT = "workflow_record_placeholder_bound_at"
+PROBLEM_PLACEHOLDER_TEXT_DIGEST = (
+    "workflow_record_placeholder_text_digest"
+)
+PROBLEM_PLACEHOLDER_CHAT_MISMATCH = (
+    "workflow_record_placeholder_chat_mismatch"
+)
+# RULING R-18: the record schema was LOOSER than the canonicalizer —
+# it admitted an issue/PR number the canonicalizer could never emit.
+PROBLEM_ISSUE_URL_TOO_LONG = "workflow_record_issue_url_too_long"
+# DI-REMOTE-3 I5 (round-01 F1): the result_delivery receipt's six
+# additive fields carry TOTAL per-state invariants (which state must
+# carry which digest / id / timestamp / problem, and which must be
+# null), enforced at the durable boundary so a FALSE receipt — a
+# `delivered_by_edit` with no rendered digest, no edited message id and
+# no timestamps — is UNREPRESENTABLE rather than merely refused
+# downstream. An out-of-table combination names the exact field.
+PROBLEM_DELIVERY_STATE_FIELDS = (
+    "workflow_record_delivery_state_fields"
+)
+# DI-REMOTE-3 I5 (round-02 G1): beyond per-field SHAPE, the delivery
+# receipt must be RELATIONALLY TRUE of its record. A `delivered_by_edit`
+# receipt whose `edited_message_id` does not name the bound placeholder
+# message claims an edit that never happened, and the edit engine never
+# re-claims a delivered_by_edit — so the lie would suppress delivery
+# permanently. Failing closed here makes it UNREPRESENTABLE.
+PROBLEM_DELIVERY_BINDING = "workflow_record_delivery_binding"
 PROBLEM_UNKNOWN_PHASE = "workflow_unknown_phase"
 PROBLEM_INVALID_TRANSITION = "workflow_invalid_transition"
 
@@ -435,6 +485,22 @@ _TOP_LEVEL_KEYS = (
     # state, so they are outside the render binding).
     "target_engine",
     "verified_result",
+    # DI-REMOTE-3 I1 (plan §2.2): the bot-owned per-workflow RESULT
+    # PLACEHOLDER binding. NULLABLE, and null is not "not needed" — it
+    # means the record predates / sits outside the placeholder
+    # architecture (the §4 legacy population, delivered by the legacy
+    # at-most-once lane). Durable, mutable, non-authority state, so it
+    # is outside the render binding exactly like verified_result.
+    #
+    # WORKFLOW_SCHEMA_VERSION is deliberately NOT bumped for this key
+    # (plan §2.1): a bump routes every record already on disk into
+    # 'tgop migrate-workflows', whose only v1->v2 behaviour is
+    # RETIREMENT, which would destroy in-flight COMPLETED records — a
+    # direct violation of the migration truth in strategy §4. The key
+    # is instead materialized on records already on disk by the
+    # explicit, non-fabricating store._normalize_additive_keys at the
+    # LOAD boundary; validation below stays fully strict and closed.
+    "result_placeholder",
     "result_delivery",
     # I6 carried item: the last DISTINCT target observation
     # (task_status, completeness, observed_at) — written only when the
@@ -524,6 +590,48 @@ def _validate_target(value, location):
         issue_or_pr["number"], location + ".issue_or_pr.number",
         minimum=1,
     )
+    # RULING R-18 — the CANONICAL CONTRACT, enforced at the RECORD
+    # boundary so the bad state is UNREPRESENTABLE rather than merely
+    # refused downstream (the same posture as
+    # `result_placeholder.chat_id == telegram.chat_id`).
+    #
+    # `canonical.canonicalize_target_url` derives `number` from the
+    # FULL issue/PR URL, and that whole URL is bounded by
+    # `MAX_TARGET_URL_CHARS`. But the record stores the REPOSITORY
+    # url, so `number` is NOT re-derivable from it, and this validator
+    # previously bounded the number not at all. The schema therefore
+    # accepted records the canonicalizer could never produce — and
+    # THAT mismatch, not the render guard, was the defect.
+    #
+    # The bound below is the canonicalizer's OWN, reconstructed from
+    # the canonical constants: the full issue/PR URL this record
+    # describes must itself fit. Nothing is hard-coded — a change to
+    # MAX_TARGET_URL_CHARS or to either segment name moves this bound
+    # with it.
+    #
+    # This does NOT replace the runtime render guard, which stays as
+    # DEFENCE IN DEPTH and keeps its load-bearing labelling. It makes
+    # the guard cover only what is already unrepresentable here.
+    segment = (
+        canonical.ISSUE_SEGMENT
+        if issue_or_pr["kind"] == ISSUE_OR_PR_KIND_ISSUE
+        else canonical.PULL_SEGMENT
+    )
+    issue_url_chars = (
+        len(value["canonical_url"])
+        + len("/") + len(segment) + len("/")
+        + len(str(issue_or_pr["number"]))
+    )
+    if issue_url_chars > canonical.MAX_TARGET_URL_CHARS:
+        _fail(
+            PROBLEM_ISSUE_URL_TOO_LONG,
+            "%s.issue_or_pr.number %d makes the canonical %s URL %d"
+            " characters; the canonical bound is %d. The canonicalizer"
+            " could never emit this target, so the record is refused"
+            " here rather than accepted and found undeliverable later"
+            % (location, issue_or_pr["number"], segment,
+               issue_url_chars, canonical.MAX_TARGET_URL_CHARS),
+        )
 
 
 def _validate_approved_baseline(value, location):
@@ -828,18 +936,297 @@ def _validate_last_observation(value, location):
 DELIVERY_RESERVED = "reserved"
 DELIVERY_DELIVERED = "delivered"
 DELIVERY_PARTIAL = "partial"
-DELIVERY_STATES = (
+# The LEGACY three, unchanged in meaning (strategy §4): a legacy
+# marker stays exactly as truthful and as terminal as it is today, and
+# its /status phrasing is unchanged (pinned verbatim by T-X2).
+DELIVERY_LEGACY_STATES = (
     DELIVERY_RESERVED, DELIVERY_DELIVERED, DELIVERY_PARTIAL,
 )
+
+# DI-REMOTE-3 I1 (plan §3.3): the edit-path delivery states. Declared
+# here so the durable schema admits them; the delivery engine that
+# WRITES them, and the /status branch that RENDERS them, land in I5.
+# Until then they are representable but never produced — an honest
+# statement of what this increment does and does not deliver.
+DELIVERY_EDIT_PENDING = "edit_pending"
+DELIVERY_DELIVERED_BY_EDIT = "delivered_by_edit"
+DELIVERY_DEGRADED_UNBINDABLE = "degraded_unbindable"
+DELIVERY_DEGRADED_UNRENDERABLE = "degraded_unrenderable"
+DELIVERY_EDIT_INDEFINITE = "edit_indefinite"
+DELIVERY_EDIT_STATES = (
+    DELIVERY_EDIT_PENDING,
+    DELIVERY_DELIVERED_BY_EDIT,
+    DELIVERY_DEGRADED_UNBINDABLE,
+    DELIVERY_DEGRADED_UNRENDERABLE,
+    DELIVERY_EDIT_INDEFINITE,
+)
+DELIVERY_STATES = DELIVERY_LEGACY_STATES + DELIVERY_EDIT_STATES
+
+# The three keys every result_delivery marker has carried since the
+# DI-REMOTE-2 delivery increment.
+RESULT_DELIVERY_LEGACY_KEYS = (
+    "state", "reserved_at", "telegram_message_id",
+)
+# DI-REMOTE-3 I1 (plan §2.3): six ADDITIVE nullable fields. They are
+# OPTIONAL in the closed key set, not required, because a legacy
+# marker carrying only the three keys above already exists in stores
+# and in the existing (unmodifiable) tests and must keep validating
+# byte-for-byte as it does today; ABSENT is exactly equivalent to
+# null. store._normalize_additive_keys materializes them at the LOAD
+# boundary so a loaded marker always has the total shape. Unknown keys
+# are still REFUSED — the dict stays closed.
+RESULT_DELIVERY_ADDITIVE_KEYS = (
+    "verified_result_digest",
+    "rendered_digest",
+    "edited_message_id",
+    "attempted_at",
+    "settled_at",
+    "problem",
+)
+
+
+# --- Result placeholder (plan §2.2 / §3.1) ---------------------------
+PLACEHOLDER_REQUIRED = "required"
+PLACEHOLDER_SENDING = "sending"
+PLACEHOLDER_BOUND = "bound"
+PLACEHOLDER_FAILED_UNSENT = "failed_unsent"
+PLACEHOLDER_INDEFINITE = "indefinite"
+PLACEHOLDER_UNBINDABLE = "unbindable"
+PLACEHOLDER_STATES = (
+    PLACEHOLDER_REQUIRED,
+    PLACEHOLDER_SENDING,
+    PLACEHOLDER_BOUND,
+    PLACEHOLDER_FAILED_UNSENT,
+    PLACEHOLDER_INDEFINITE,
+    PLACEHOLDER_UNBINDABLE,
+)
+
+RESULT_PLACEHOLDER_KEYS = (
+    "state",
+    "chat_id",
+    "message_id",
+    "requested_at",
+    "sent_at",
+    "bound_at",
+    "text_digest",
+)
+
+# The CLOSED state/field table of plan §3.1. True means the field MUST
+# be non-null in that state; False means it MUST be null. There is no
+# permissive fallthrough: a state absent from this table is refused,
+# and every present/absent combination outside the table fails closed
+# with the field's own problem code.
+#
+#   required      requested durably; nothing has been sent yet.
+#   sending       write-ahead of the send intent. sent_at and
+#                 text_digest are recorded BEFORE the send, because an
+#                 ``indefinite`` outcome may leave a real message on
+#                 screen: without the digest of the exact text that was
+#                 about to be sent, the object the human is told to
+#                 recover (strategy §1.3 — the text carries the
+#                 workflow id) is unidentifiable.
+#   failed_unsent send proved definite-zero-effect; nothing exists.
+#   indefinite    R-5 ambiguous. TERMINAL — never auto-retried.
+#   bound         the object exists and is ours.
+#   unbindable    R-3, a POST-BOUND state: the binding it lost is
+#                 retained so /status can name it truthfully.
+_PLACEHOLDER_FIELD_TABLE = {
+    PLACEHOLDER_REQUIRED: {
+        "message_id": False, "sent_at": False,
+        "bound_at": False, "text_digest": False,
+    },
+    PLACEHOLDER_SENDING: {
+        "message_id": False, "sent_at": True,
+        "bound_at": False, "text_digest": True,
+    },
+    PLACEHOLDER_FAILED_UNSENT: {
+        "message_id": False, "sent_at": True,
+        "bound_at": False, "text_digest": True,
+    },
+    PLACEHOLDER_INDEFINITE: {
+        "message_id": False, "sent_at": True,
+        "bound_at": False, "text_digest": True,
+    },
+    PLACEHOLDER_BOUND: {
+        "message_id": True, "sent_at": True,
+        "bound_at": True, "text_digest": True,
+    },
+    PLACEHOLDER_UNBINDABLE: {
+        "message_id": True, "sent_at": True,
+        "bound_at": True, "text_digest": True,
+    },
+}
+
+_PLACEHOLDER_PROBLEM_BY_FIELD = {
+    "message_id": PROBLEM_PLACEHOLDER_MESSAGE_ID,
+    "sent_at": PROBLEM_PLACEHOLDER_SENT_AT,
+    "bound_at": PROBLEM_PLACEHOLDER_BOUND_AT,
+    "text_digest": PROBLEM_PLACEHOLDER_TEXT_DIGEST,
+}
+
+
+def _require_closed_keys_with_optional(
+    value, required, optional, location
+):
+    """Closed-key check where some keys are additive and optional.
+
+    Unknown keys are refused exactly as ``_require_closed_keys``
+    refuses them (the dict stays CLOSED); only the listed optional
+    keys may be absent, and their absence means exactly null.
+    """
+    unknown = sorted(set(value) - set(required) - set(optional))
+    if unknown:
+        _fail(
+            PROBLEM_UNKNOWN_KEY,
+            "%s has unknown keys: %s (the key set is closed; an"
+            " unexpected key could carry unauthorized meaning)"
+            % (location, ", ".join(repr(key) for key in unknown)),
+        )
+    missing = sorted(set(required) - set(value))
+    if missing:
+        _fail(
+            PROBLEM_MISSING_KEY,
+            "%s is missing required keys: %s"
+            % (location, ", ".join(repr(key) for key in missing)),
+        )
+
+
+def _validate_result_placeholder(value, location, telegram_chat_id):
+    """Validate the bot-owned result placeholder binding.
+
+    ``None`` is the LEGACY lane (plan §1.1): the record predates or
+    sits outside the placeholder architecture. It is NOT "placeholder
+    not needed", and nothing here fabricates one.
+    """
+    if value is None:
+        return
+    _require_dict(value, location)
+    _require_closed_keys(value, RESULT_PLACEHOLDER_KEYS, location)
+    _require_member(
+        value["state"], PLACEHOLDER_STATES, location + ".state"
+    )
+    state = value["state"]
+    _require_int(value["chat_id"], location + ".chat_id", minimum=1)
+    if value["chat_id"] != telegram_chat_id:
+        _fail(
+            PROBLEM_PLACEHOLDER_CHAT_MISMATCH,
+            "%s.chat_id is %r but the record's telegram.chat_id is"
+            " %r; the placeholder is copied from the record at request"
+            " time and is thereafter immutable, so a placeholder bound"
+            " in another chat is unrepresentable"
+            % (location, value["chat_id"], telegram_chat_id),
+        )
+    _require_timestamp(
+        value["requested_at"], location + ".requested_at"
+    )
+    expected = _PLACEHOLDER_FIELD_TABLE.get(state)
+    if expected is None:
+        # No permissive fallthrough: a state with no row is refused
+        # rather than validated by omission.
+        _fail(
+            PROBLEM_PLACEHOLDER_STATE_FIELDS,
+            "%s.state %r has no row in the placeholder state/field"
+            " table; it is refused rather than accepted by omission"
+            % (location, state),
+        )
+    for field in ("message_id", "sent_at", "bound_at", "text_digest"):
+        field_location = "%s.%s" % (location, field)
+        present = value[field] is not None
+        if present != expected[field]:
+            _fail(
+                _PLACEHOLDER_PROBLEM_BY_FIELD[field],
+                "%s must be %s in placeholder state %r; got %r"
+                % (
+                    field_location,
+                    "non-null" if expected[field] else "null",
+                    state,
+                    value[field],
+                ),
+            )
+        if not present:
+            continue
+        if field == "message_id":
+            _require_int(value[field], field_location, minimum=1)
+        elif field == "text_digest":
+            _require_hex(value[field], field_location, 64)
+        else:
+            _require_timestamp(value[field], field_location)
+
+
+
+# DI-REMOTE-3 I5 (round-01 F1): the delivery state/field table. True =
+# the additive field MUST be non-null in that state; False = it MUST be
+# null. This mirrors exactly what telegram_operator/adapter.py writes:
+#   - the legacy lane (reserved/delivered/partial) is written as the
+#     historical three-key dict, so every additive field is null;
+#   - edit_pending is the write-ahead: the digests and attempted_at are
+#     set, but settled_at, edited_message_id and problem are not yet;
+#   - delivered_by_edit records the edited message id and settles, with
+#     no problem;
+#   - the three degraded/indefinite edit states settle with a problem
+#     and no edited message id.
+# `telegram_message_id` is governed separately above (non-null iff the
+# legacy DELIVERED state). The table is pinned to the engine's ACTUAL
+# output by the cross-boundary test
+# tests/test_di_remote_3_delivery.py::EngineFieldTablePinTests
+# ::test_engine_output_satisfies_the_delivery_field_table, which drives
+# the real adapter to produce ALL EIGHT of these states — the five
+# edit-lane states plus legacy delivered/reserved/partial — and asserts
+# each on-disk marker's field profile against an independently authored
+# expectation. A table that drifts from what the engine writes makes
+# that state's delivery unsavable and fails there; its totality
+# assertion also fails if a delivery state is added without being driven.
+_DELIVERY_FIELD_TABLE = {
+    DELIVERY_RESERVED: {
+        "verified_result_digest": False, "rendered_digest": False,
+        "edited_message_id": False, "attempted_at": False,
+        "settled_at": False, "problem": False,
+    },
+    DELIVERY_DELIVERED: {
+        "verified_result_digest": False, "rendered_digest": False,
+        "edited_message_id": False, "attempted_at": False,
+        "settled_at": False, "problem": False,
+    },
+    DELIVERY_PARTIAL: {
+        "verified_result_digest": False, "rendered_digest": False,
+        "edited_message_id": False, "attempted_at": False,
+        "settled_at": False, "problem": False,
+    },
+    DELIVERY_EDIT_PENDING: {
+        "verified_result_digest": True, "rendered_digest": True,
+        "edited_message_id": False, "attempted_at": True,
+        "settled_at": False, "problem": False,
+    },
+    DELIVERY_DELIVERED_BY_EDIT: {
+        "verified_result_digest": True, "rendered_digest": True,
+        "edited_message_id": True, "attempted_at": True,
+        "settled_at": True, "problem": False,
+    },
+    DELIVERY_DEGRADED_UNBINDABLE: {
+        "verified_result_digest": True, "rendered_digest": True,
+        "edited_message_id": False, "attempted_at": True,
+        "settled_at": True, "problem": True,
+    },
+    DELIVERY_DEGRADED_UNRENDERABLE: {
+        "verified_result_digest": True, "rendered_digest": True,
+        "edited_message_id": False, "attempted_at": True,
+        "settled_at": True, "problem": True,
+    },
+    DELIVERY_EDIT_INDEFINITE: {
+        "verified_result_digest": True, "rendered_digest": True,
+        "edited_message_id": False, "attempted_at": True,
+        "settled_at": True, "problem": True,
+    },
+}
 
 
 def _validate_result_delivery(value, location):
     if value is None:
         return
     _require_dict(value, location)
-    _require_closed_keys(
-        value, ("state", "reserved_at", "telegram_message_id"),
-        location,
+    _require_closed_keys_with_optional(
+        value, RESULT_DELIVERY_LEGACY_KEYS,
+        RESULT_DELIVERY_ADDITIVE_KEYS, location,
     )
     _require_member(value["state"], DELIVERY_STATES,
                     location + ".state")
@@ -862,6 +1249,152 @@ def _validate_result_delivery(value, location):
             "%s.telegram_message_id must be null unless the delivery is"
             " confirmed delivered" % location,
         )
+    # DI-REMOTE-3 I5 (round-01 F1): the six additive fields now carry
+    # TOTAL per-state invariants, enforced HERE at the durable boundary
+    # so a FALSE receipt is UNREPRESENTABLE rather than merely refused
+    # downstream — the same bad-state-representable class R-18 closed
+    # for issue numbers. `_DELIVERY_FIELD_TABLE` mirrors EXACTLY what
+    # the delivery engine writes for each state on BOTH lanes: the
+    # legacy three (reserved/delivered/partial) carry none of the
+    # additive fields; each edit-lane state carries exactly its proven
+    # digests / edited id / timestamps / problem and nulls the rest. A
+    # state with no row is refused, never accepted by omission.
+    state = value["state"]
+    expected = _DELIVERY_FIELD_TABLE.get(state)
+    if expected is None:
+        _fail(
+            PROBLEM_DELIVERY_STATE_FIELDS,
+            "%s.state %r has no row in the delivery state/field table;"
+            " it is refused rather than accepted by omission"
+            % (location, state),
+        )
+    for key in RESULT_DELIVERY_ADDITIVE_KEYS:
+        field_location = "%s.%s" % (location, key)
+        present = value.get(key) is not None
+        if present != expected[key]:
+            _fail(
+                PROBLEM_DELIVERY_STATE_FIELDS,
+                "%s must be %s in delivery state %r; got %r"
+                % (
+                    field_location,
+                    "non-null" if expected[key] else "null",
+                    state, value.get(key),
+                ),
+            )
+        if not present:
+            continue
+        if key in ("verified_result_digest", "rendered_digest"):
+            _require_hex(value[key], field_location, 64)
+        elif key == "edited_message_id":
+            _require_int(value[key], field_location, minimum=1)
+        elif key in ("attempted_at", "settled_at"):
+            _require_timestamp(value[key], field_location)
+        elif key == "problem":
+            # Bounded truthful detail for a degraded delivery, rendered
+            # in /status. It reuses MAX_BOUNDED_SUMMARY_CHARS — the
+            # module's existing bound for a stored, human-displayed
+            # summary string (receipts' bounded_summary) — because that
+            # is exactly what this field is.
+            _require_str(
+                value[key], field_location,
+                max_chars=MAX_BOUNDED_SUMMARY_CHARS,
+            )
+
+
+def _validate_delivery_relations(document, location):
+    """DI-REMOTE-3 I5 (round-02 G1 / round-03 H1): RELATIONAL truth of
+    the delivery receipt — beyond the per-field SHAPE
+    `_DELIVERY_FIELD_TABLE` enforces, the receipt's values must be TRUE
+    of the record they sit in.
+
+    An EDIT-LANE receipt (any state in `DELIVERY_EDIT_STATES`) could
+    only have been written by the edit engine, and the engine claims a
+    record for editing ONLY when
+    `telegram_operator/adapter.py::_edit_delivery_claimable`'s own
+    preconditions hold: `phase == COMPLETED`, a non-null
+    `verified_result`, and a placeholder in state `bound`. Every edit
+    state (delivered_by_edit, edit_pending, edit_indefinite, and both
+    degraded states) is written with exactly those held — the
+    cross-boundary engine-pin test drives each edit state and
+    re-validates the engine's real output under exactly these rules, so
+    a drift would fail there — so a receipt in ANY edit state without
+    them is IMPOSSIBLE: the engine never produced it, and it
+    would strand FOREVER (the same preconditions fail before the engine
+    ever looks at the receipt, so it is never claimed, retried, or
+    surfaced as broken). Failing closed makes that unrepresentable.
+
+    This is TOTAL over the edit lane: the prerequisites gate on
+    membership in `DELIVERY_EDIT_STATES`, so a state added to that tuple
+    later inherits them and fails closed by omission rather than
+    slipping through.
+
+    `delivered_by_edit` additionally names the object it edited: its
+    `edited_message_id` MUST equal the bound placeholder's message id
+    (a receipt naming a never-edited object, e.g. 999, would suppress
+    the real delivery while /status reports success). The delivery CHAT
+    is provably the bound chat by construction — the edit targets
+    `result_placeholder.chat_id`, pinned equal to `telegram.chat_id` —
+    so there is no separate delivery-chat field to reconcile.
+
+    `rendered_digest` is deliberately NOT checked here. It is the digest
+    of the RESULT MESSAGE text, and that renderer lives in the Telegram
+    adapter — a HIGHER layer this store-only module must not import.
+    That relation is enforced where the receipt is read as proof
+    (`telegram_operator/adapter.py::_edit_delivery_claimable`), which
+    re-derives the current render and reclaims a receipt whose premise
+    no longer holds: for `delivered_by_edit`, a rendered_digest that no
+    longer matches; for the TERMINAL `degraded_unrenderable`, a render
+    that is not actually oversized (a false terminal). That read-as-proof
+    layer audits every non-claimable state locally except
+    `degraded_unbindable`, whose premise (the Telegram object is gone)
+    cannot be re-verified without another Telegram call and where R-3
+    forbids any replacement send — it is terminal by design.
+    """
+    delivery = document["result_delivery"]
+    if delivery is None or delivery["state"] not in DELIVERY_EDIT_STATES:
+        return
+    state = delivery["state"]
+    placeholder = document["result_placeholder"] or {}
+    if document["phase"] != PHASE_COMPLETED:
+        _fail(
+            PROBLEM_DELIVERY_BINDING,
+            "%s carries an edit-lane result_delivery receipt (%r) but"
+            " phase is %r, not COMPLETED; the edit engine only ever"
+            " writes such a receipt on a COMPLETED record, so this"
+            " state is impossible and would strand forever"
+            % (location, state, document["phase"]),
+        )
+    if document["verified_result"] is None:
+        _fail(
+            PROBLEM_DELIVERY_BINDING,
+            "%s carries an edit-lane result_delivery receipt (%r) but"
+            " has NO verified_result; the edit engine only edits a"
+            " record that has one, so this receipt is impossible"
+            % (location, state),
+        )
+    if placeholder.get("state") != PLACEHOLDER_BOUND:
+        _fail(
+            PROBLEM_DELIVERY_BINDING,
+            "%s carries an edit-lane result_delivery receipt (%r) but"
+            " its result_placeholder state is %r, not 'bound'; the edit"
+            " engine claims ONLY a bound placeholder, so an edit receipt"
+            " against a %r placeholder is impossible and would strand"
+            % (location, state, placeholder.get("state"),
+               placeholder.get("state")),
+        )
+    if state == DELIVERY_DELIVERED_BY_EDIT:
+        bound_message_id = placeholder.get("message_id")
+        if delivery["edited_message_id"] != bound_message_id:
+            _fail(
+                PROBLEM_DELIVERY_BINDING,
+                "%s.result_delivery.edited_message_id %r must equal the"
+                " bound result_placeholder.message_id %r: a"
+                " delivered_by_edit receipt must name the object that"
+                " was actually edited, or it claims a delivery it cannot"
+                " prove and suppresses the real one"
+                % (location, delivery["edited_message_id"],
+                   bound_message_id),
+            )
 
 
 def validate_record(document, location="workflow record"):
@@ -937,9 +1470,18 @@ def validate_record(document, location="workflow record"):
     _validate_verified_result(
         document["verified_result"], location + ".verified_result"
     )
+    _validate_result_placeholder(
+        document["result_placeholder"],
+        location + ".result_placeholder",
+        document["telegram"]["chat_id"],
+    )
     _validate_result_delivery(
         document["result_delivery"], location + ".result_delivery"
     )
+    # G1: the receipt must be RELATIONALLY true of its record, not just
+    # well-shaped. Runs after placeholder and delivery are individually
+    # validated, so both cross-referenced fields are known-good here.
+    _validate_delivery_relations(document, location)
     _validate_last_observation(
         document["last_observation"], location + ".last_observation"
     )
@@ -1132,6 +1674,13 @@ def new_record(workflow_id, human_intent, repository_realpath,
         "ambiguity": {"state": AMBIGUITY_NONE, "detail": None},
         "target_engine": None,
         "verified_result": None,
+        # A brand-new record starts on the LEGACY/ungated lane (plan
+        # §1.1): nothing has requested a placeholder yet. The adapter's
+        # approval path writes the ``required`` request in I3, in the
+        # same locked transaction that arms the mission.
+        "result_placeholder": None,
+        # result_delivery starts null, so its six additive fields
+        # (RESULT_DELIVERY_ADDITIVE_KEYS) are vacuously null too.
         "result_delivery": None,
         "last_observation": None,
         "delivery_authority": DELIVERY_AUTHORITY_NONE,

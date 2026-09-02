@@ -1995,9 +1995,9 @@ class DispatchTests(RuntimeCase):
         self.assertIs(result, applied)
         self.assertEqual(result["preset"], "all-claude")
         expected_models = {
-            "supervisor": "fable",
+            "supervisor": "claude-fable-5-1",
             "lead": "opus",
-            "executor": "fable",
+            "executor": "claude-fable-5-1",
             "reviewer": "opus",
         }
         self.assertEqual(set(result["roles"]), set(expected_models))

@@ -55,7 +55,7 @@
       "kind": "claude",
       "args": [
         "--model",
-        "fable",
+        "claude-fable-5-1",
         "--permission-mode",
         "auto"
       ]
@@ -73,7 +73,7 @@
       "kind": "claude",
       "args": [
         "--model",
-        "fable",
+        "claude-fable-5-1",
         "--permission-mode",
         "auto"
       ]

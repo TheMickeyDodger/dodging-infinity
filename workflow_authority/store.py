@@ -15,6 +15,29 @@ carries authorization records, and re-creating it from nothing could
 replay or erase authority. Every record is validated against the
 closed workflow schema on every load AND every save.
 
+On LOAD ONLY, and before that validation, ``_normalize_additive_keys``
+materializes the DI-REMOTE-3 additive keys as ``None`` on records
+written before those keys existed. It inserts only those keys, never
+overwrites, and never derives a value; validation afterwards is
+unchanged, so an unknown key or any other missing key still refuses
+the load. It is deliberately not applied on save.
+
+A subsequent save PERSISTS the materialized keys, and that is forced,
+not a liberty taken: ``result_placeholder`` is in the record's
+``_TOP_LEVEL_KEYS`` and ``_require_closed_keys`` requires it, so any
+record written at all must carry it. The upgrade is value-neutral
+(``None`` is exactly what absence meant) and idempotent (both
+insertions are guarded by ``not in``), and it can never write a
+half-migrated store: ``load`` mutates only the freshly parsed local
+document and raises before returning if validation fails, and ``save``
+validates the whole document before anything touches the filesystem.
+(Pinned by
+tests/test_di_remote_3_schema.py:
+``test_M6_store_load_materializes_the_additive_keys``,
+``test_M6_store_load_normalizes_EVERY_record_not_just_the_first``,
+``test_M7_store_load_still_fails_closed_on_a_corrupt_record`` and
+``test_save_is_not_normalized``.)
+
 ``MAX_WORKFLOW_RECORDS`` is a hard constant, never derived from
 input. At the cap, only records in a terminal phase are pruned
 (oldest first); an ACTIVE record is never evicted, and if pruning
@@ -31,6 +54,7 @@ import tempfile
 
 from telegram_operator.config import CONFIG_DIR_RELATIVE
 from workflow_authority.record import (
+    RESULT_DELIVERY_ADDITIVE_KEYS,
     TERMINAL_PHASES,
     RecordError,
     validate_record,
@@ -60,6 +84,54 @@ PROBLEM_STORE_FULL = "workflow_store_full"
 PROBLEM_DUPLICATE_WORKFLOW = "workflow_duplicate_id"
 
 _TOP_LEVEL_KEYS = ("workflow_store_schema_version", "workflows")
+
+
+def _normalize_additive_keys(document):
+    """Materialize the DI-REMOTE-3 additive keys on ONE record, at the
+    LOAD boundary, before ``validate_record`` sees it.
+
+    ``WORKFLOW_SCHEMA_VERSION`` is deliberately NOT bumped for these
+    keys (lead plan §2.1): a bump would route every record already on
+    disk into ``tgop migrate-workflows``, whose only v1->v2 behaviour
+    is RETIREMENT — that would destroy in-flight COMPLETED records, a
+    direct violation of the migration truth in strategy §4. This
+    function is the whole of the alternative, and its boundaries are
+    the point:
+
+      - it inserts ONLY ``result_placeholder`` at the top level, and
+        ONLY the six ``RESULT_DELIVERY_ADDITIVE_KEYS`` inside
+        ``result_delivery``, and only when ``result_delivery`` is
+        already a dict (a null marker stays null — nothing is created);
+      - the inserted value is ALWAYS ``None``. It NEVER derives a
+        value from anything else in the record. A placeholder that was
+        never requested is null, and null means "this record predates
+        or sits outside the placeholder architecture" (the §4 legacy
+        lane) — never "placeholder not needed";
+      - it NEVER overwrites a key that is present, INCLUDING one
+        present with the value ``None``;
+      - it fills NO other missing key. An unknown key and any other
+        missing key are still REFUSED by the strict, closed-key
+        ``validate_record`` that runs unchanged AFTER this.
+
+    The failure mode this function must never become is "fill in
+    anything missing", which would silently repair a corrupt
+    authorization record instead of failing closed. It is a named
+    function with its own anti-abuse tests (T-M6/T-M7) rather than an
+    inline ``.get()`` scattered through consumers.
+
+    Total: a non-dict document is returned untouched (the strict
+    validation below reports it). Returns the same object, mutated.
+    """
+    if not isinstance(document, dict):
+        return document
+    if "result_placeholder" not in document:
+        document["result_placeholder"] = None
+    delivery = document.get("result_delivery")
+    if isinstance(delivery, dict):
+        for key in RESULT_DELIVERY_ADDITIVE_KEYS:
+            if key not in delivery:
+                delivery[key] = None
+    return document
 
 
 class StoreError(Exception):
@@ -203,6 +275,17 @@ class WorkflowStore(object):
                 " it is NOT safe to delete it: it carries"
                 " authorization records" % (self.path, exc)
             )
+        # LOAD boundary: materialize the additive keys on every
+        # record BEFORE the strict closed-schema validation below.
+        # Deliberately not applied on save — a writer must produce a
+        # complete record, and normalizing on the way out would hide
+        # exactly that defect.
+        workflows = document.get("workflows") if isinstance(
+            document, dict
+        ) else None
+        if isinstance(workflows, dict):
+            for record in workflows.values():
+                _normalize_additive_keys(record)
         _validate_document(document, self.path)
         return document
 

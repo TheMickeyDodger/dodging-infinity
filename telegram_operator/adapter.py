@@ -54,6 +54,7 @@ from telegram_operator import approval as approval_module
 from telegram_operator import authz, protocol, state as state_module
 from telegram_operator import mission as mission_module
 from telegram_operator import telegram_api
+from workflow_authority import digest as wa_digest
 from workflow_authority import record as wa_record
 from workflow_authority import store as workflow_store_module
 
@@ -103,10 +104,144 @@ def _render_target_line(entry):
     )
 
 
+# DI-REMOTE-3 I3: the bot-owned result placeholder.
+#
+# The text is a PURE function of the workflow id — no clock, no attempt
+# counter, no "as of now". Two reasons, both load-bearing:
+#   * strategy §1.3 REQUIRES the text to carry the workflow_id, because
+#     an `indefinite` send may leave a real message on screen and this
+#     id is the only handle a human has for identifying that object;
+#   * `text_digest` binds this exact text and is written AHEAD of the
+#     send (LEAD RULING L-1), so a text that varied between renders
+#     would make the recorded digest describe something that is not on
+#     screen.
+PLACEHOLDER_MESSAGE_HEADER = "Mission result placeholder"
+
+
+def render_placeholder_text(workflow_id):
+    """The exact placeholder text. Deterministic; id-carrying."""
+    return (
+        "%s\nworkflow: %s\n\nThe verified mission result will appear"
+        " in THIS message when the mission completes. This message"
+        " grants no commit, push, PR, tag, release, or deploy"
+        " authority." % (PLACEHOLDER_MESSAGE_HEADER, workflow_id)
+    )
+
+
+def render_result_text(entry):
+    """The verified-result message text. R-1: a PURE function of
+    ``(RESULT_MESSAGE_HEADER, target fields, verified_result.summary)``
+    and NOTHING else.
+
+    No clock, no "as of now", no attempt counter, no delivery
+    timestamp. If the payload differed between attempts, a replayed
+    edit would SUCCEED a second time instead of returning
+    message-not-modified — which would destroy the R-2 proof that the
+    bound object already holds exactly the intended content.
+
+    This is the single renderer for BOTH delivery lanes: the legacy
+    at-most-once ``sendMessage`` path and the edit path produce
+    byte-identical text, so the edit path cannot drift from what
+    legacy records already received.
+    """
+    return (
+        "%s\n%s\n\nVERIFIED RESULT:\n"
+        "%s\n\nDelivery is separately human-gated; this message"
+        " grants no commit, push, PR, tag, release, or deploy"
+        " authority." % (
+            RESULT_MESSAGE_HEADER,
+            _render_target_line(entry),
+            entry["verified_result"]["summary"],
+        )
+    )
+
+
+def _placeholder_is_claimable(placeholder):
+    """True when a placeholder may be claimed for a send attempt.
+
+    The CLOSED selection set, and it is the terminality guarantee:
+    `indefinite` is TERMINAL and is never claimable by any pass after
+    any restart (a retry from it is the duplicate-placeholder
+    generator R-5 names); `bound` is terminal for binding; `sending`
+    is claimed by nobody (a crash-orphaned one fails closed at
+    startup); and a null placeholder is the LEGACY lane, never
+    fabricated into a request.
+    """
+    if placeholder is None:
+        return False
+    return placeholder.get("state") in (
+        wa_record.PLACEHOLDER_REQUIRED,
+        wa_record.PLACEHOLDER_FAILED_UNSENT,
+    )
+
+
+def _render_placeholder_status(placeholder):
+    """Honest /status phrasing for the placeholder binding.
+
+    Every state gets its OWN branch and its own words. No state renders
+    as "pending" or "delivered" unless it is that; the two TERMINAL
+    degraded states name the workflow and tell the human what to do,
+    because nothing will ever retry them. The unknown/unmapped
+    fallback is kept and must remain reachable — a new state silently
+    landing in it is a defect.
+    """
+    if placeholder is None:
+        # Plan §1.1: NOT "not needed". This record predates or sits
+        # outside the placeholder architecture, and is delivered by the
+        # legacy AT-MOST-ONCE path.
+        return (
+            "no result placeholder (legacy workflow: dispatch is"
+            " ungated and the result is delivered AT-MOST-ONCE)"
+        )
+    state = placeholder.get("state")
+    if state == wa_record.PLACEHOLDER_REQUIRED:
+        return "result placeholder requested; not yet sent"
+    if state == wa_record.PLACEHOLDER_SENDING:
+        return (
+            "result placeholder send IN FLIGHT (intent written ahead;"
+            " outcome not yet recorded)"
+        )
+    if state == wa_record.PLACEHOLDER_BOUND:
+        return "result placeholder bound to message %s" % (
+            placeholder.get("message_id"),
+        )
+    if state == wa_record.PLACEHOLDER_FAILED_UNSENT:
+        return (
+            "result placeholder send failed with NO message created;"
+            " it will be retried"
+        )
+    if state == wa_record.PLACEHOLDER_INDEFINITE:
+        return (
+            "result placeholder send outcome INDEFINITE: a placeholder"
+            " message naming this workflow MAY exist in this chat and"
+            " MAY be unbound. This is TERMINAL and is never retried"
+            " automatically (a retry could post a second placeholder);"
+            " the mission will not dispatch. Human recovery required."
+        )
+    if state == wa_record.PLACEHOLDER_UNBINDABLE:
+        return (
+            "result placeholder is UNBINDABLE: the bound message is"
+            " gone or the binding does not match. TERMINAL; no"
+            " replacement message is ever sent."
+        )
+    # Unknown/unmapped placeholder state: fail loud, never silently
+    # reported as bound or pending.
+    return "result placeholder state unrecognized (%r)" % state
+
+
 def _render_delivery_status(delivery):
-    """Honest /status phrasing for a verified result's delivery
-    (round-10 F-2). Distinguishes the four durable cases so no case
-    that will NEVER be auto-retried is reported as 'pending':
+    """Honest /status phrasing for a verified result's delivery.
+
+    DI-REMOTE-3 I5 (plan §6a.6): this used to say it "distinguishes
+    the four durable cases". There are now EIGHT representable delivery
+    states — the three LEGACY ones plus the five EDIT-path ones — plus
+    the None (genuinely pending) case, and every one gets its own
+    explicit branch below. No state is reported as "pending" or
+    "delivered" unless it IS that, and the unknown/unmapped fallback
+    stays reachable and fails loud.
+
+    LEGACY lane (at-most-once `sendMessage`), phrasing UNCHANGED and
+    pinned verbatim by T-X2:
 
       - None      -> genuinely pending: deliver_pending_results (which
                      selects result_delivery is None) will attempt it.
@@ -115,6 +250,24 @@ def _render_delivery_status(delivery):
                      reserve and send); NOT retried automatically.
       - partial   -> displayed INCOMPLETELY; NOT retried automatically
                      (a retry would re-display the chunks already seen).
+
+    EDIT lane (exactly-once visible presentation, placeholder-bound
+    workflows only):
+
+      - edit_pending          -> the edit intent is durable; the
+                                 outcome is not yet recorded.
+      - delivered_by_edit     -> the bound object provably holds the
+                                 intended text.
+      - degraded_unbindable   -> R-3: the object is gone or the
+                                 binding moved. TERMINAL, and NO
+                                 replacement message is ever sent.
+      - degraded_unrenderable -> the rendered result exceeds one
+                                 Telegram message. TERMINAL for this
+                                 revision; never chunked, never
+                                 truncated.
+      - edit_indefinite       -> the edit outcome is ambiguous; a
+                                 bounded retry is safe because the
+                                 edit is idempotent.
     """
     if delivery is None:
         return "recorded (delivery pending)"
@@ -131,6 +284,43 @@ def _render_delivery_status(delivery):
         return (
             "recorded; delivery attempted but UNCONFIRMED (not retried"
             " automatically, since t=%s)" % since
+        )
+    # --- the EDIT lane. Every additive key is read with .get: a
+    # marker built IN-PROCESS has not passed the load-boundary
+    # normalizer and carries only the three legacy keys (T-X6).
+    problem = delivery.get("problem")
+    if state == wa_record.DELIVERY_DELIVERED_BY_EDIT:
+        return (
+            "delivered by editing the bound placeholder message %s"
+            " (exactly one visible message)"
+            % (delivery.get("edited_message_id"),)
+        )
+    if state == wa_record.DELIVERY_EDIT_PENDING:
+        return (
+            "recorded; the edit intent is durable and its outcome is"
+            " NOT yet recorded (it will be retried; editing a bound"
+            " message is idempotent)"
+        )
+    if state == wa_record.DELIVERY_EDIT_INDEFINITE:
+        return (
+            "recorded; the edit outcome is AMBIGUOUS and will be"
+            " retried (idempotent against the bound message)%s"
+            % (": %s" % problem if problem else "")
+        )
+    if state == wa_record.DELIVERY_DEGRADED_UNBINDABLE:
+        return (
+            "recorded but NOT delivered: the bound placeholder message"
+            " is gone or its binding no longer matches. TERMINAL — no"
+            " replacement message is ever sent, so the result must be"
+            " recovered by a human%s"
+            % (" (%s)" % problem if problem else "")
+        )
+    if state == wa_record.DELIVERY_DEGRADED_UNRENDERABLE:
+        return (
+            "recorded but NOT delivered: the rendered result does not"
+            " fit ONE Telegram message. TERMINAL for this revision —"
+            " never chunked and never truncated%s"
+            % (" (%s)" % problem if problem else "")
         )
     # Unknown/unmapped delivery state: fail loud, never silently
     # reported as delivered or pending.
@@ -289,6 +479,11 @@ class Adapter(object):
         turn may or may not have reached Codex — and is never
         redispatched.
         """
+        # I3 / strategy §1.3: a placeholder found mid-`sending` at
+        # process start is a crash between the write-ahead and the
+        # outcome. It fails CLOSED to `indefinite` here — never
+        # re-sent.
+        self._reconcile_sending_placeholders()
         with self._state_lock:
             document = self._document
             pending = list(document["queue"])
@@ -641,6 +836,25 @@ class Adapter(object):
                                     mission_module.PROBLEM_ALREADY_CONSUMED
                                 )
                             else:
+                                # LAYER 1 (plan §1.1), the load-bearing
+                                # atomicity property. The placeholder
+                                # REQUEST is written into the SAME
+                                # locked load-modify-save transaction
+                                # that arms the mission, so the two
+                                # cannot come apart: one save() persists
+                                # both or neither. If this write does
+                                # not land, nothing is armed.
+                                #
+                                # That is what makes
+                                # `result_placeholder is None` provably
+                                # mean "legacy record" and never
+                                # "go-forward workflow that lost its
+                                # request" — the distinction the whole
+                                # legacy lane rests on.
+                                if chosen == wa_record.DECISION_APPROVE:
+                                    self._request_result_placeholder(
+                                        workflows, workflow_id, now
+                                    )
                                 # Authority durably persisted BEFORE
                                 # any external acknowledgement.
                                 self.workflow_store.save(workflows)
@@ -1102,19 +1316,701 @@ class Adapter(object):
             " decided. Re-send your intent for a fresh plan.",
         )
 
-    def deliver_pending_results(self):
-        """Deliver every COMPLETED workflow's verified result exactly
-        once (I5 D4).
+    def _request_result_placeholder(self, workflows, workflow_id, now):
+        """Stamp the `required` placeholder request onto ONE record.
 
-        The Runtime records the verified result durably; the adapter
-        delivers it. Delivery is EXACTLY-ONCE in effect: the durable
-        ``result_delivery`` marker is written to the workflow store
-        BEFORE the Telegram send is attempted, under the store lock,
-        so a crash after the marker never re-sends (the marker is
-        present on restart) and a crash before it re-attempts on the
-        next loop (nothing was sent). The adapter reads and writes ONLY
-        the shared workflow store — it never touches Runtime, Broker,
-        or Herdr.
+        Caller MUST already hold the store lock and MUST save the same
+        document afterwards; this never saves and never sends. It is a
+        pure in-document mutation precisely so it cannot be split from
+        the arming save (plan §1.1).
+
+        `chat_id` is copied from the record's own `telegram.chat_id`
+        and is thereafter immutable — the record schema refuses any
+        other value, so a placeholder bound in another chat is
+        unrepresentable. An existing placeholder is never overwritten.
+        """
+        entry = workflows["workflows"].get(workflow_id)
+        if entry is None or entry.get("result_placeholder") is not None:
+            return False
+        entry["result_placeholder"] = {
+            "state": wa_record.PLACEHOLDER_REQUIRED,
+            "chat_id": entry["telegram"]["chat_id"],
+            "message_id": None,
+            "requested_at": now,
+            "sent_at": None,
+            "bound_at": None,
+            "text_digest": None,
+        }
+        return True
+
+    def _reconcile_sending_placeholders(self):
+        """Fail a crash-interrupted `sending` CLOSED, at startup only.
+
+        Strategy §1.3, the one forced residual: a record found in
+        `sending` when this process starts means a previous process
+        wrote the send intent and died before recording the outcome.
+        There is no Bot API call that can reconcile that — `getUpdates`
+        returns incoming updates only, and a bot cannot read back its
+        own outgoing messages — so DI genuinely cannot distinguish
+        "the request never left" from "Telegram created the message".
+
+        It therefore fails closed to `indefinite`: TERMINAL, never
+        auto-retried, surfaced truthfully in /status naming the
+        workflow. Guessing, or sending a second plausible placeholder,
+        is exactly the duplicate-placeholder generator R-5 forbids.
+        """
+        try:
+            with workflow_store_module.exclusive_store_lock(
+                self.workflow_store.directory
+            ):
+                workflows = self.workflow_store.load()
+                changed = False
+                for entry in workflows["workflows"].values():
+                    placeholder = entry.get("result_placeholder")
+                    if placeholder is None:
+                        continue
+                    if placeholder.get("state") != (
+                        wa_record.PLACEHOLDER_SENDING
+                    ):
+                        continue
+                    placeholder["state"] = (
+                        wa_record.PLACEHOLDER_INDEFINITE
+                    )
+                    changed = True
+                if changed:
+                    self.workflow_store.save(workflows)
+        except workflow_store_module.StoreError:
+            return
+
+    def _eligible_placeholder_workflow_ids(self):
+        """Snapshot the workflow ids whose placeholder may be sent.
+
+        Read-only and mutation-free: it takes the lock, lists, and
+        releases. The listing is only a candidate set — each id is
+        RE-CHECKED under the lock at claim time, because the store is
+        shared and a record may have moved on in between.
+        """
+        try:
+            with workflow_store_module.exclusive_store_lock(
+                self.workflow_store.directory
+            ):
+                workflows = self.workflow_store.load()
+                return [
+                    workflow_id
+                    for workflow_id, entry in sorted(
+                        workflows["workflows"].items()
+                    )
+                    if _placeholder_is_claimable(
+                        entry.get("result_placeholder")
+                    )
+                ]
+        except workflow_store_module.StoreError:
+            return []
+
+    def _claim_one_placeholder(self, workflow_id):
+        """Write ONE record's send intent ahead, durably. Sends nothing.
+
+        Returns ``(chat_id, text, digest)`` when this pass now owns the
+        claim, or None when the record is no longer claimable or the
+        write did not land.
+
+        RULING R-10: exactly ONE record is claimed per lock cycle, and
+        the caller sends and resolves it before claiming the next, so
+        **never more than one placeholder is in `sending` at a time**.
+        The previous batch claim marked every eligible record `sending`
+        in one save; a crash after the FIRST object's send then made
+        the startup sweep mark the whole remaining batch terminal
+        `indefinite` even though their transport was never invoked —
+        fabricating ambiguity for objects that were never touched, and
+        stranding N-1 unrelated missions per crash. With a per-object
+        claim a crash can orphan AT MOST ONE record: the irreducible
+        one-object ambiguity strategy §1.2/§1.3 accepts, and no more.
+        Every never-attempted workflow stays `required` and is claimed
+        by the next pass.
+
+        LEAD RULING L-1 is unchanged and still strict: `sent_at` AND
+        `text_digest` of the exact text about to be sent are persisted
+        BEFORE the transport is touched.
+        """
+        try:
+            with workflow_store_module.exclusive_store_lock(
+                self.workflow_store.directory
+            ):
+                workflows = self.workflow_store.load()
+                entry = workflows["workflows"].get(workflow_id)
+                if entry is None:
+                    return None
+                placeholder = entry.get("result_placeholder")
+                # Re-checked under the lock: the snapshot that named
+                # this id is not authority.
+                if not _placeholder_is_claimable(placeholder):
+                    return None
+                text = render_placeholder_text(workflow_id)
+                digest = wa_digest.text_digest(text)
+                placeholder["state"] = wa_record.PLACEHOLDER_SENDING
+                placeholder["sent_at"] = self._clock()
+                placeholder["text_digest"] = digest
+                placeholder["message_id"] = None
+                placeholder["bound_at"] = None
+                self.workflow_store.save(workflows)
+                return placeholder["chat_id"], text, digest
+        except workflow_store_module.StoreError:
+            # The claim did not land, so nothing may be sent for it.
+            return None
+
+    def ensure_result_placeholders(self):
+        """Drive `required`/`failed_unsent` -> `sending` -> outcome.
+
+        ONE object at a time, and the ordering per object is the
+        guarantee:
+
+        1. UNDER THE LOCK, claim THIS record alone: state becomes
+           `sending` with `sent_at` AND `text_digest` of the exact text
+           about to be sent (LEAD RULING L-1), then save. Without the
+           digest written ahead, an `indefinite` outcome would leave a
+           message on screen the human cannot identify, and §1.3's
+           recovery path would be truthful but useless.
+        2. OUTSIDE the lock, send ONE message through the I2
+           single-attempt path (`send_message_once`). That path never
+           retries and never chunks: a retried `sendMessage` after a
+           fired deadline is precisely a duplicate-placeholder
+           generator (R-5).
+        3. UNDER THE LOCK, record the three-valued outcome.
+
+        R-10: the claim is PER OBJECT, never per batch. A crash at any
+        point can therefore orphan at most one `sending` record. If an
+        outcome fails to persist, the pass STOPS rather than claiming
+        another object, so the at-most-one-orphan invariant holds even
+        when the store becomes unwritable mid-pass.
+
+        SELECTION IS THE TERMINALITY GUARANTEE: only `required` and
+        `failed_unsent` are ever claimed. `indefinite` is never
+        selected, by any pass, after any restart — a retry from it is
+        the duplicate generator R-5 names. `bound` is terminal for
+        binding, and `sending` is claimed by nobody (a crash-orphaned
+        one is failed closed at startup, not re-sent).
+        """
+        for workflow_id in self._eligible_placeholder_workflow_ids():
+            claim = self._claim_one_placeholder(workflow_id)
+            if claim is None:
+                continue
+            chat_id, text, digest = claim
+            outcome = self.api.send_message_once(chat_id, text)
+            if not self._record_placeholder_outcome(
+                workflow_id, digest, outcome
+            ):
+                # The outcome could not be persisted, so this record is
+                # still `sending`. Claiming another object now would
+                # put a SECOND record in `sending` and reopen exactly
+                # the batch-contamination window R-10 closes.
+                return
+
+    def _record_placeholder_outcome(self, workflow_id, digest, outcome):
+        """Record ONE placeholder send outcome durably (R-5).
+
+        Returns True when this pass's claim is RESOLVED — persisted, or
+        already resolved by somebody else — and False when the record
+        is still `sending` because the write did not land. The caller
+        uses that to keep R-10's at-most-one-`sending` invariant.
+        """
+        classification = getattr(outcome, "classification", None)
+        message_id = getattr(outcome, "message_id", None)
+        try:
+            with workflow_store_module.exclusive_store_lock(
+                self.workflow_store.directory
+            ):
+                workflows = self.workflow_store.load()
+                entry = workflows["workflows"].get(workflow_id)
+                if entry is None:
+                    return True
+                placeholder = entry.get("result_placeholder")
+                # Only resolve the intent THIS pass wrote: the state
+                # must still be `sending` and the digest must still be
+                # the one that was sent. Anything else was changed
+                # underneath us and is left alone rather than
+                # overwritten.
+                if placeholder is None:
+                    return True
+                if placeholder.get("state") != (
+                    wa_record.PLACEHOLDER_SENDING
+                ):
+                    return True
+                if placeholder.get("text_digest") != digest:
+                    return True
+                now = self._clock()
+                if (
+                    classification == telegram_api.SEND_APPLIED
+                    and isinstance(message_id, int)
+                    and not isinstance(message_id, bool)
+                    and message_id >= 1
+                ):
+                    placeholder["state"] = wa_record.PLACEHOLDER_BOUND
+                    placeholder["message_id"] = message_id
+                    placeholder["bound_at"] = now
+                elif classification == telegram_api.SEND_DEFINITE_ZERO:
+                    # Proved no message exists. Retry is SAFE and the
+                    # next pass will re-claim this record.
+                    placeholder["state"] = (
+                        wa_record.PLACEHOLDER_FAILED_UNSENT
+                    )
+                else:
+                    # INDEFINITE, and anything unrecognized: fail
+                    # closed to the TERMINAL state. Never retried.
+                    placeholder["state"] = (
+                        wa_record.PLACEHOLDER_INDEFINITE
+                    )
+                self.workflow_store.save(workflows)
+                return True
+        except workflow_store_module.StoreError:
+            return False
+
+    # -- DI-REMOTE-3 I5: edit-based final delivery ---------------------
+
+    def _edit_delivery_claimable(self, entry):
+        """True when the EDIT engine may attempt this record.
+
+        The new engine drives ONLY workflows carrying a placeholder
+        BINDING (plan §4): `result_placeholder.state == bound`. A
+        record with no placeholder is the LEGACY lane and is delivered
+        at-most-once by `_deliver_one_result`; this predicate never
+        selects it.
+
+        Every additive `result_delivery` key is read with ``.get``,
+        never ``[...]``: a marker built IN-PROCESS carries only the
+        three legacy keys and has NOT passed the load-boundary
+        normalizer (plan §2.3, T-X6).
+        """
+        if entry["phase"] != wa_record.PHASE_COMPLETED:
+            return False
+        verified = entry["verified_result"]
+        if verified is None:
+            return False
+        placeholder = entry.get("result_placeholder")
+        if placeholder is None:
+            return False
+        if placeholder.get("state") != wa_record.PLACEHOLDER_BOUND:
+            return False
+        delivery = entry.get("result_delivery")
+        if delivery is None:
+            return True
+        state = delivery.get("state")
+        # READ-AS-PROOF AUDIT (round-04), state by state. Every terminal
+        # or non-claimable outcome below either has its premise
+        # RE-VERIFIED locally here, or a stated reason why it cannot be.
+        #
+        # degraded_unbindable — TERMINAL, premise NOT locally verifiable
+        # and deliberately so. Its premise is "the bound Telegram object
+        # is gone / its binding no longer matches", established at
+        # delivery time from a real editMessageText outcome. Re-checking
+        # it here would require ANOTHER Telegram call, and R-3 forbids
+        # ever sending a replacement for this workflow, so there is no
+        # safe local action even if the premise had lapsed. It is left
+        # terminal, by design, not by omission.
+        if state == wa_record.DELIVERY_DEGRADED_UNBINDABLE:
+            return False
+        # A LEGACY marker on a placeholder-bound record is terminal and
+        # truthful; the state IS the premise (a legacy at-most-once
+        # marker), so there is nothing external to re-verify, and the
+        # edit engine never rewrites one.
+        if state in wa_record.DELIVERY_LEGACY_STATES:
+            return False
+        # R-4: delivery is satisfied ONLY for the CURRENT verified
+        # result. A revised result re-edits the SAME bound object, so a
+        # stale digest never counts as delivered.
+        if delivery.get("verified_result_digest") != verified["digest"]:
+            return True
+        # G1 (round-02), the READ-AS-PROOF half of the relational
+        # invariant. A `delivered_by_edit` receipt is trusted as "the
+        # bound object holds the verified result" ONLY if its
+        # `rendered_digest` is the digest of the text THIS record
+        # renders now. The record validator enforces the
+        # `edited_message_id == bound message_id` half, but it cannot
+        # check this half: the result renderer lives HERE, above the
+        # store-only authority boundary that record.py must not cross.
+        # A receipt whose rendered_digest does not match is not proof —
+        # re-deliver (editing a pre-bound object with the correct
+        # byte-identical payload is idempotent, R-5, and overwrites the
+        # untrue receipt with a true one).
+        if state == wa_record.DELIVERY_DELIVERED_BY_EDIT:
+            return delivery.get("rendered_digest") != wa_digest.text_digest(
+                render_result_text(entry)
+            )
+        # degraded_unrenderable — TERMINAL, but its premise IS locally
+        # verifiable, so it must be verified (round-04). The premise is
+        # "the result this record renders does not fit ONE Telegram
+        # message". Trust it as terminal ONLY when the receipt's
+        # rendered_digest matches THIS record's current rendering AND
+        # that rendering genuinely exceeds telegram_api.MAX_MESSAGE_CHARS.
+        # A receipt marking a result unrenderable when the current render
+        # is not actually oversized (a false terminal, or stale on the
+        # render even at the same verified_result revision) is NOT proof:
+        # reclaim and heal it (the edit is idempotent, R-5). This is the
+        # same class as the delivered_by_edit check above — a terminal
+        # receipt must not be trusted without its premise. T-G2 is
+        # preserved: a genuinely oversized result stays terminal and is
+        # never chunked or truncated.
+        if state == wa_record.DELIVERY_DEGRADED_UNRENDERABLE:
+            text = render_result_text(entry)
+            premise_holds = (
+                delivery.get("rendered_digest")
+                == wa_digest.text_digest(text)
+                and len(text) > telegram_api.MAX_MESSAGE_CHARS
+            )
+            return not premise_holds
+        # `edit_pending` and `edit_indefinite` are RETRYABLE, because an
+        # edit against a pre-bound object with a byte-identical payload
+        # is idempotent (R-5); they are claimable regardless, so there is
+        # no false-terminal risk and the re-claim renders afresh. A
+        # shorter revision re-entered above via the verified_result_digest
+        # branch.
+        return state in (
+            wa_record.DELIVERY_EDIT_PENDING,
+            wa_record.DELIVERY_EDIT_INDEFINITE,
+        )
+
+    def deliver_result_edits(self):
+        """Deliver each bound workflow's verified result BY EDITING its
+        placeholder — exactly-once VISIBLE presentation.
+
+        One object at a time (the R-10 discipline): claim THIS record's
+        edit intent durably, edit, record the outcome, then move on.
+
+        The write-ahead records BOTH digests (R-4) before the transport
+        is touched, so a crash mid-edit is resumable and can never
+        report a delivery it cannot prove.
+        """
+        for workflow_id in self._edit_delivery_workflow_ids():
+            claim = self._claim_one_edit(workflow_id)
+            if claim is None:
+                continue
+            self._perform_one_edit(workflow_id, claim)
+
+    def _edit_delivery_workflow_ids(self):
+        try:
+            with workflow_store_module.exclusive_store_lock(
+                self.workflow_store.directory
+            ):
+                workflows = self.workflow_store.load()
+                return [
+                    workflow_id
+                    for workflow_id, entry in sorted(
+                        workflows["workflows"].items()
+                    )
+                    if self._edit_delivery_claimable(entry)
+                ]
+        except workflow_store_module.StoreError:
+            return []
+
+    def _claim_one_edit(self, workflow_id):
+        """Write ONE record's edit intent ahead, durably.
+
+        Returns the claim dict, or None when the record is no longer
+        claimable, the claim did not land, or the render guard refused
+        it (in which case the refusal itself was persisted).
+        """
+        try:
+            with workflow_store_module.exclusive_store_lock(
+                self.workflow_store.directory
+            ):
+                workflows = self.workflow_store.load()
+                entry = workflows["workflows"].get(workflow_id)
+                if entry is None:
+                    return None
+                if not self._edit_delivery_claimable(entry):
+                    return None
+                placeholder = entry["result_placeholder"]
+                text = render_result_text(entry)
+                now = self._clock()
+                # THE RENDER-TIME GUARD.
+                #
+                # LABELLING, mandatory (Supervisor ACCEPTED CORRECTION
+                # to strategy §3): THIS GUARD IS THE LOAD-BEARING
+                # SINGLE-MESSAGE GUARANTEE. The constant-derived
+                # arithmetic test is ONLY a constant-drift alarm in
+                # front of it, never the guarantee itself.
+                #
+                # Why the arithmetic can never be the guarantee:
+                # RULING R-18 now bounds `target.issue_or_pr.number` at
+                # the record boundary (its full canonical issue/PR URL
+                # must fit `canonical.MAX_TARGET_URL_CHARS`), so the
+                # target line is NO LONGER unbounded. But this guard
+                # stays LOAD-BEARING for a DIFFERENT input the record
+                # boundary does not bound to one message: the
+                # verified-result SUMMARY. `MAX_VERIFIED_SUMMARY_CHARS`
+                # is deliberately wider than the enforced-presentable
+                # `protocol.MAX_OUTCOME_DETAIL_CHARS`, so a summary at
+                # the schema cap can still overflow one message. A
+                # proof over the (now-bounded) target line alone
+                # therefore still cannot establish that the result fits
+                # one message — this guard, and only this guard, does.
+                #
+                # Fail CLOSED: never chunk, never truncate. The result
+                # path does not call the chunking `send_message` at
+                # all.
+                if len(text) > telegram_api.MAX_MESSAGE_CHARS:
+                    entry["result_delivery"] = self._delivery_marker(
+                        entry,
+                        state=(
+                            wa_record.DELIVERY_DEGRADED_UNRENDERABLE
+                        ),
+                        verified_result_digest=(
+                            entry["verified_result"]["digest"]
+                        ),
+                        rendered_digest=wa_digest.text_digest(text),
+                        attempted_at=now,
+                        settled_at=now,
+                        problem=(
+                            "the rendered result is %d characters and"
+                            " the single-message limit is %d; delivery"
+                            " fails closed — it is never chunked and"
+                            " never truncated"
+                            % (len(text), telegram_api.MAX_MESSAGE_CHARS)
+                        ),
+                    )
+                    self.workflow_store.save(workflows)
+                    return None
+                rendered_digest = wa_digest.text_digest(text)
+                entry["result_delivery"] = self._delivery_marker(
+                    entry,
+                    state=wa_record.DELIVERY_EDIT_PENDING,
+                    verified_result_digest=(
+                        entry["verified_result"]["digest"]
+                    ),
+                    rendered_digest=rendered_digest,
+                    attempted_at=now,
+                )
+                self.workflow_store.save(workflows)
+                return {
+                    "chat_id": placeholder["chat_id"],
+                    "message_id": placeholder["message_id"],
+                    "text": text,
+                    "rendered_digest": rendered_digest,
+                    "verified_result_digest": (
+                        entry["verified_result"]["digest"]
+                    ),
+                }
+        except workflow_store_module.StoreError:
+            return None
+
+    def _delivery_marker(self, entry, state, verified_result_digest,
+                         rendered_digest, attempted_at,
+                         settled_at=None, problem=None,
+                         edited_message_id=None):
+        """A complete nine-key result_delivery marker.
+
+        ``reserved_at`` keeps its EXACT legacy meaning — when delivery
+        was first reserved for this record — and is preserved across
+        edit attempts rather than restamped. Read with ``.get`` (T-X6).
+        """
+        existing = entry.get("result_delivery") or {}
+        reserved_at = existing.get("reserved_at")
+        if reserved_at is None:
+            reserved_at = attempted_at
+        return {
+            "state": state,
+            "reserved_at": reserved_at,
+            # The LEGACY key keeps its exact meaning: it names a
+            # message created by the legacy sendMessage path. The edit
+            # path records `edited_message_id` instead and never
+            # writes this one.
+            "telegram_message_id": None,
+            "verified_result_digest": verified_result_digest,
+            "rendered_digest": rendered_digest,
+            "edited_message_id": edited_message_id,
+            "attempted_at": attempted_at,
+            "settled_at": settled_at,
+            "problem": problem,
+        }
+
+    def _perform_one_edit(self, workflow_id, claim):
+        """Edit the bound object, then record the outcome durably.
+
+        The edit goes through the I2 bounded `editMessageText` seam.
+        Blanket retry is SAFE there, and that is the design's whole
+        point: editing a pre-bound ``(chat_id, message_id)`` with a
+        byte-identical payload is idempotent, so a replay leaves
+        exactly the same visible state (R-5). The payload carries NO
+        ``parse_mode`` and NO ``reply_markup`` — the transport omits
+        them entirely, so byte-identity across replays holds BY
+        CONSTRUCTION rather than by care (R-1).
+        """
+        outcome = self.api.edit_message_text(
+            claim["chat_id"], claim["message_id"], claim["text"]
+        )
+        detail = getattr(outcome, "detail", None)
+        try:
+            with workflow_store_module.exclusive_store_lock(
+                self.workflow_store.directory
+            ):
+                workflows = self.workflow_store.load()
+                entry = workflows["workflows"].get(workflow_id)
+                if entry is None:
+                    return
+                delivery = entry.get("result_delivery") or {}
+                # Only resolve the intent THIS pass wrote.
+                if delivery.get("state") != (
+                    wa_record.DELIVERY_EDIT_PENDING
+                ):
+                    return
+                if delivery.get("rendered_digest") != (
+                    claim["rendered_digest"]
+                ):
+                    return
+                now = self._clock()
+                state, problem, edited_message_id = (
+                    self._classify_edit_outcome(
+                        entry, claim, outcome, detail
+                    )
+                )
+                entry["result_delivery"] = self._delivery_marker(
+                    entry,
+                    state=state,
+                    verified_result_digest=(
+                        claim["verified_result_digest"]
+                    ),
+                    rendered_digest=claim["rendered_digest"],
+                    attempted_at=delivery.get("attempted_at") or now,
+                    settled_at=now,
+                    problem=problem,
+                    edited_message_id=edited_message_id,
+                )
+                self.workflow_store.save(workflows)
+        except workflow_store_module.StoreError:
+            return
+
+    def _classify_edit_outcome(self, entry, claim, outcome, detail):
+        """Map one edit attempt to a durable delivery state.
+
+        Returns ``(state, problem, edited_message_id)``.
+        """
+        placeholder = entry.get("result_placeholder") or {}
+        binding_matches = (
+            placeholder.get("state") == wa_record.PLACEHOLDER_BOUND
+            and placeholder.get("chat_id") == claim["chat_id"]
+            and placeholder.get("message_id") == claim["message_id"]
+        )
+        if not binding_matches:
+            # R-2 clause 1, applied to EVERY success path and not only
+            # to message-not-modified: the record must still name the
+            # object this pass edited. If the binding moved underneath
+            # us, we cannot claim the CURRENT bound object holds the
+            # text, so we fail closed rather than record a delivery we
+            # cannot prove. Belt coverage — I3 never rewrites a bound
+            # placeholder — but a concurrent writer must not be able to
+            # turn an edit into a false delivery claim.
+            return (
+                wa_record.DELIVERY_DEGRADED_UNBINDABLE,
+                "the placeholder binding changed while the edit was in"
+                " flight, so this delivery cannot be proven against the"
+                " CURRENT bound object; NO replacement message is sent",
+                None,
+            )
+        if getattr(outcome, "ok", False):
+            return (
+                wa_record.DELIVERY_DELIVERED_BY_EDIT, None,
+                claim["message_id"],
+            )
+        # --- R-2: message-not-modified is success ONLY under proof ---
+        #
+        # STATED BOT API ASSUMPTION, not a fact any test here proves:
+        # ONLY THIS BOT CAN EDIT ITS OWN MESSAGES. Under that
+        # assumption, this response on the bot's own bound object
+        # proves the object already holds exactly the intended
+        # content, because no third party could have produced
+        # coincidentally identical text. If that assumption were
+        # false, clause (3) below would no longer be sufficient.
+        #
+        # All FOUR clauses must hold (plan §3.4):
+        #   1. the edit targeted the EXACT bound chat_id AND
+        #      message_id, both re-read from the durable record in
+        #      THIS load — checked here, not assumed from the claim;
+        #   2. the rendered digest equals the digest recorded for the
+        #      CURRENT verified_result (R-4);
+        #   3. the description matches the message-not-modified
+        #      condition rigorously — exact membership of a named
+        #      closed set on the NORMALIZED description, never a loose
+        #      substring scan (telegram_api.is_message_not_modified);
+        #   4. it is a genuine structured ok=false body, not an
+        #      inferred one — also enforced by that same predicate.
+        verified = entry.get("verified_result") or {}
+        digest_matches = (
+            verified.get("digest") == claim["verified_result_digest"]
+            and claim["rendered_digest"] == wa_digest.text_digest(
+                claim["text"]
+            )
+        )
+        if telegram_api.is_message_not_modified(detail):
+            if binding_matches and digest_matches:
+                return (
+                    wa_record.DELIVERY_DELIVERED_BY_EDIT, None,
+                    claim["message_id"],
+                )
+            # The phrase arrived, but the proof did not. Never a
+            # success: fail closed to the ambiguous state.
+            return (
+                wa_record.DELIVERY_EDIT_INDEFINITE,
+                "Telegram reported message-not-modified, but the"
+                " four-part proof did not hold (binding_matches=%s,"
+                " digest_matches=%s); it is NOT recorded as delivered"
+                % (binding_matches, digest_matches),
+                None,
+            )
+        # --- R-3: the bound object is gone, or the binding moved ---
+        # Fail CLOSED. NO replacement message is EVER sent: silently
+        # sending a fresh result is the exact duplicate-presentation
+        # bug this whole task exists to remove.
+        if telegram_api.is_message_to_edit_not_found(detail) or (
+            not binding_matches
+        ):
+            return (
+                wa_record.DELIVERY_DEGRADED_UNBINDABLE,
+                "the bound placeholder message is gone or its binding"
+                " no longer matches; the verified result was NOT"
+                " delivered and NO replacement message is ever sent."
+                " Human recovery required.",
+                None,
+            )
+        return (
+            wa_record.DELIVERY_EDIT_INDEFINITE,
+            getattr(outcome, "problem", None)
+            or "the edit outcome is ambiguous",
+            None,
+        )
+
+    def deliver_pending_results(self):
+        """The LEGACY AT-MOST-ONCE lane: deliver a verified result by
+        sending a fresh message.
+
+        SCOPE, enforced by the selector below and not merely asserted
+        here (RULING R-15): this lane serves ONLY records with
+        ``result_placeholder is None`` — those that predate or sit
+        outside the placeholder architecture. A placeholder-bearing
+        workflow is delivered by EDITING its bound object
+        (``deliver_result_edits``) and must never receive a fresh
+        message, because a fresh message is a second visible result
+        object.
+
+        **AT-MOST-ONCE, not exactly-once.** This docstring used to
+        claim "exactly once" and "EXACTLY-ONCE in effect"; that was
+        false for the lane it serves, and a docstring asserting a
+        guarantee the code does not provide is exactly the class this
+        task keeps rejecting. What this lane actually guarantees:
+
+          * the durable ``result_delivery`` marker is written BEFORE
+            the send is attempted, under the store lock, so a crash
+            after the marker never re-sends;
+          * a crash BEFORE the marker re-attempts on the next loop,
+            because nothing was sent;
+          * but the send itself is a non-idempotent ``sendMessage``
+            with no way to read back the bot's own outgoing message,
+            so the RESERVED and PARTIAL outcomes are TERMINAL and are
+            never re-sent. In those cases the result is never shown
+            again. That is at-most-once, and it is the acceptance gap
+            the placeholder architecture exists to close for
+            go-forward workflows.
+
+        The adapter reads and writes ONLY the shared workflow store —
+        it never touches Runtime, Broker, or Herdr.
         """
         try:
             with workflow_store_module.exclusive_store_lock(
@@ -1129,6 +2025,38 @@ class Adapter(object):
                         entry["phase"] == wa_record.PHASE_COMPLETED
                         and entry["verified_result"] is not None
                         and entry["result_delivery"] is None
+                        # RULING R-15 — the LEGACY-LANE GATE, and it is
+                        # a GUARD, not a comment.
+                        #
+                        # Before this, the selector never read
+                        # `result_placeholder`, so a placeholder-BOUND
+                        # record and a legacy record were
+                        # INDISTINGUISHABLE here. `_deliver_one_result`
+                        # asserted in prose that it was reached only by
+                        # legacy records; nothing enforced it.
+                        #
+                        # The window was real and reachable, not
+                        # theoretical: `_edit_delivery_workflow_ids`
+                        # returns [] on a TRANSIENT StoreError and
+                        # writes NO marker, and `run()` calls
+                        # `deliver_pending_results` immediately after
+                        # `deliver_result_edits` in the SAME pass. Its
+                        # own load then succeeds, sees a bound record
+                        # with `result_delivery is None`, and sends a
+                        # FRESH result message — a second visible
+                        # object for a workflow whose result must be
+                        # delivered by EDITING its bound placeholder.
+                        # That breaks exactly-once visible
+                        # presentation and R-3's "never create a
+                        # replacement result object".
+                        #
+                        # Run-loop ordering is NOT an invariant:
+                        # transient store recovery breaks it, and that
+                        # is precisely the window this task exists to
+                        # close. So the legacy at-most-once lane is
+                        # reachable ONLY by records that never entered
+                        # the placeholder architecture.
+                        and entry.get("result_placeholder") is None
                     ):
                         pending.append((workflow_id, entry))
                 if not pending:
@@ -1157,15 +2085,12 @@ class Adapter(object):
             self._deliver_one_result(workflow_id, entry)
 
     def _deliver_one_result(self, workflow_id, entry):
+        # LEGACY AT-MOST-ONCE LANE, unchanged. Reached only by records
+        # with NO placeholder (plan §1.1/§4). The text now comes from
+        # the shared renderer, which produces the SAME bytes this path
+        # has always sent.
         chat_id = entry["telegram"]["chat_id"]
-        target = _render_target_line(entry)
-        summary = entry["verified_result"]["summary"]
-        text = (
-            "%s\n%s\n\nVERIFIED RESULT:\n"
-            "%s\n\nDelivery is separately human-gated; this message"
-            " grants no commit, push, PR, tag, release, or deploy"
-            " authority." % (RESULT_MESSAGE_HEADER, target, summary)
-        )
+        text = render_result_text(entry)
         outcome = self.api.send_message(chat_id, text)
         # Resolve the send against BOTH axes of exactly-once:
         #  - complete send -> DELIVERED with the real message id;
@@ -1753,6 +2678,9 @@ class Adapter(object):
                         line += "; target engine task: %s" % (
                             bound_task
                         )
+                    line += "; %s" % _render_placeholder_status(
+                        entry.get("result_placeholder")
+                    )
                     if entry["verified_result"] is not None:
                         line += "; verified result %s" % (
                             _render_delivery_status(
@@ -1803,6 +2731,12 @@ class Adapter(object):
                 # iteration so a COMPLETED workflow's result reaches
                 # Telegram without a user prompt; delivery is recorded
                 # durably so it can neither double-send nor drop.
+                # I3: drive requested placeholders to bound BEFORE
+                # delivering results. Ordering matters only for
+                # promptness, not for correctness: each step is
+                # independently fail-closed and store-only.
+                self.ensure_result_placeholders()
+                self.deliver_result_edits()
                 self.deliver_pending_results()
                 if self.poll_once():
                     consecutive_failures = 0

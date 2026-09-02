@@ -32,9 +32,9 @@ from herdr import identity, observe, tasks               # noqa: E402
 from herdr.instance import HerdrInstance                 # noqa: E402
 
 ROLE_CONFIG = {
-    "supervisor": {"kind": "claude", "args": ["--model", "fable"]},
+    "supervisor": {"kind": "claude", "args": ["--model", "claude-fable-5-1"]},
     "lead": {"kind": "claude", "args": ["--model", "opus"]},
-    "executor": {"kind": "claude", "args": ["--model", "fable"]},
+    "executor": {"kind": "claude", "args": ["--model", "claude-fable-5-1"]},
     "reviewer": {"kind": "claude", "args": ["--model", "opus"]},
 }
 
@@ -185,8 +185,8 @@ class ModelIsNotInTheIDENTITYTests(unittest.TestCase):
             role: observe._model_from_args(cfg.get("args"))
             for role, cfg in config["roles"].items()
         }
-        self.assertEqual(models["supervisor"], "fable")
-        self.assertEqual(models["executor"], "fable")
+        self.assertEqual(models["supervisor"], "claude-fable-5-1")
+        self.assertEqual(models["executor"], "claude-fable-5-1")
         self.assertEqual(models["lead"], "opus")
         self.assertEqual(models["reviewer"], "opus")
 

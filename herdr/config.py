@@ -155,7 +155,7 @@ PRESETS = {
                 "kind": "claude",
                 "args": [
                     "--model",
-                    "fable",
+                    "claude-fable-5-1",
                     "--permission-mode",
                     "auto",
                 ],
@@ -173,7 +173,7 @@ PRESETS = {
                 "kind": "claude",
                 "args": [
                     "--model",
-                    "fable",
+                    "claude-fable-5-1",
                     "--permission-mode",
                     "auto",
                 ],
