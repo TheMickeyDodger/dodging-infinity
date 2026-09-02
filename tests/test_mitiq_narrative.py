@@ -26,6 +26,8 @@ v1-state migration break — so a doc edit that silently drops or
 paraphrases a required disclosure fails the suite.
 """
 
+import html
+import html.parser
 import inspect
 import json
 import os
@@ -44,6 +46,8 @@ from workflow_authority import record as wa_record
 from workflow_authority import store as wa_store
 from workflow_authority.digest import control_policy_digest
 import _scope_hygiene as scope_hygiene
+from _di_remote2_surface import unit_digest
+from test_workspace_trust import document_units
 
 from target_runtime import broker as broker_module
 from target_runtime import evidence_preservation as preserve_module
@@ -1360,6 +1364,356 @@ class DirunAgentInstallerTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
 
 
+class _SendMessageTextExtractor(html.parser.HTMLParser):
+    """Round 5 (supervisor ruling 06): the stdlib HTML parser is the ONLY
+    markup handling in the detector — no hand-written tag or comment
+    regex anywhere. Quoting is handled by the parser itself, so a `>`
+    inside a quoted attribute cannot end a tag early, and comments,
+    declarations, processing instructions and CDATA/marked sections are
+    parser events that contribute no text. convert_charrefs=True decodes
+    entities in text (html.unescape also runs first, so an ESCAPED tag
+    such as `send&lt;b&gt;Message` collapses instead of keeping letters).
+
+    Three views are built from the parser's events (a fourth, the
+    MARKDOWN-VISIBLE view, is derived from the VISIBLE one by _views):
+      * the CLEAN view — exactly the character data handed to
+        handle_data (residue included verbatim); tags and their
+        attributes contribute nothing;
+      * the FAIL-CLOSED view — the same data PLUS, for every start tag,
+        its raw text minus the leading tag-name word, and with the
+        parser's incomplete-markup residue (a lone `<` data char followed
+        by data beginning with a letter, `/`, `!` or `?`) minus that
+        first word;
+      * the VISIBLE view (round 6) — the CLEAN view MINUS the content of
+        HIDDEN_CONTENT_ELEMENTS, tracked by element depth, so the visible
+        halves around a hidden element JOIN (`send<style>x</style>Message`
+        -> `sendMessage`). The set errs toward MORE exclusion: the two
+        raw-text elements HTMLParser itself treats as CDATA (script,
+        style), template content, document metadata (head, title), and
+        elements whose text is not rendered as prose (textarea, noscript,
+        iframe, noframes, noembed). Excluding more can only ADD recall,
+        because a token found in ANY view counts. Nesting is a depth
+        counter; a stray end tag never goes below zero. An UNCLOSED hidden
+        element has an unknown extent, so its content (including what the
+        parser left unconsumed in CDATA mode) is reported separately via
+        unclosed_hidden() and the detector admits every cut point of it —
+        `send<style>xMessage` is caught by joining `send` with the
+        `Message` suffix.
+    A token found in EITHER view counts. FAILURE DIRECTION for malformed
+    markup, stated not assumed: Python's HTMLParser never drops text it
+    could not parse, but it does two things that would HIDE a token —
+    at end of input an unterminated tag token (`send<span Message`)
+    comes back as `<` plus ordinary text, so the tag-name letters land
+    between the halves; mid-document the same tag is tolerated up to the
+    next `>` and everything inside becomes attributes (`send<span
+    Message twice. later <b>`), as a browser would. The fail-closed view
+    exists for exactly those two shapes: attribute text and residue are
+    re-admitted with only the tag-name word removed, so the detector
+    degrades toward OVER-approximation, never toward hiding. A bare `<`
+    in prose (SECURITY's `| < 0.7 | No |` cell) is a lone `<` followed by
+    a space, which is not residue; it strips harmlessly. On well-formed
+    text without attribute junk or hidden elements the views are
+    identical.
+
+    The parser also records every START TAG's exact raw text
+    (get_starttag_text(), self-closing included) in document order, for
+    the closed start-tag allowlist (supervisor ruling 07) that is the
+    OUTER gate on markup: see ALLOWED_START_TAGS."""
+
+    HIDDEN_CONTENT_ELEMENTS = frozenset((
+        "script", "style", "template", "head", "title", "textarea",
+        "noscript", "iframe", "noframes", "noembed",
+    ))
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.chunks = []
+        self.start_tags = []
+        self._hidden_depth = 0
+        self._unclosed_from = None
+
+    @staticmethod
+    def _minus_head(text):
+        parts = text.split(None, 1)
+        return parts[1] if len(parts) > 1 else ""
+
+    def handle_starttag(self, tag, attrs):
+        raw = self.get_starttag_text() or ""
+        self.start_tags.append(raw)
+        self.chunks.append(("attrs", self._minus_head(raw), False))
+        if tag in self.HIDDEN_CONTENT_ELEMENTS:
+            if self._hidden_depth == 0:
+                self._unclosed_from = len(self.chunks)
+            self._hidden_depth += 1
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if tag in self.HIDDEN_CONTENT_ELEMENTS and self._hidden_depth > 0:
+            self._hidden_depth -= 1
+            if self._hidden_depth == 0:
+                self._unclosed_from = None
+
+    def handle_data(self, data):
+        after_lone_lt = (
+            bool(self.chunks) and self.chunks[-1][:2] == ("data", "<")
+        )
+        hidden = self._hidden_depth > 0
+        if after_lone_lt and data[:1] and (
+                data[0].isalpha() or data[0] in "/!?"):
+            self.chunks.append(("residue", data, hidden))
+        else:
+            self.chunks.append(("data", data, hidden))
+
+    def views(self):
+        clean = "".join(
+            text for kind, text, _ in self.chunks
+            if kind in ("data", "residue")
+        )
+        fail_closed = "".join(
+            self._minus_head(text) if kind == "residue" else text
+            for kind, text, _ in self.chunks
+        )
+        visible = "".join(
+            text for kind, text, hidden in self.chunks
+            if kind in ("data", "residue") and not hidden
+        )
+        return (clean, fail_closed, visible)
+
+    def unclosed_hidden(self):
+        """(visible text before the unclosed hidden element, its content
+        to end of input) when a hidden element was never closed, else
+        None. The CDATA leftover HTMLParser keeps in rawdata at close()
+        is part of that content."""
+        if self._unclosed_from is None:
+            return None
+        before = self.chunks[:self._unclosed_from]
+        prefix = "".join(
+            text for kind, text, hidden in before
+            if kind in ("data", "residue") and not hidden
+        )
+        tail = "".join(
+            text for kind, text, _ in self.chunks[self._unclosed_from:]
+            if kind in ("data", "residue")
+        ) + self.rawdata
+        return (prefix, tail)
+
+
+def _extract(text):
+    parser = _SendMessageTextExtractor()
+    parser.feed(html.unescape(text))
+    parser.close()
+    return parser
+
+
+def _normalize(view):
+    return re.sub(r"[^a-z0-9]", "", view.lower())
+
+
+# Round 7 (supervisor ruling 09): the MARKDOWN-VISIBLE view. Derived from
+# the VISIBLE text by dropping the Markdown link/reference machinery a
+# renderer does not display —
+#   `[label]: ...`    -> ``    reference-definition line (whole line)
+#   `](destination)`  -> `]`   inline link / image destination
+#   `][label]`        -> `]`   reference label
+#   `[^label]`        -> ``    footnote reference
+# — then the ruling-05 normalize core. `[send](#delivery)Message` renders
+# as sendMessage but read `senddeliverymessage` in every other view; here
+# it reads `sendmessage`. This is NOT a Markdown renderer and there is no
+# Markdown allowlist: any construct not listed stays as it is.
+#
+# ONE PASS, NOT FOUR (round-7 lead finding): applying the substitutions
+# as successive passes let the `]` produced by dropping one destination
+# form a `][Message]` that the NEXT pass read as a reference label, so
+# two ADJACENT links `[send](#a)[Message](#b)` lost the text between
+# them (view truncated to `...send`). The three inline constructs are
+# therefore matched in a SINGLE alternation pass — re.sub never re-scans
+# replaced text — and every alternative is bounded by a character class
+# that cannot cross its own closing delimiter (`[^()]`, `[^\]]`), so
+# adjacent constructs match separately and the text between them
+# survives. A destination may contain ONE level of balanced parentheses
+# (`(#a(b))`); deeper nesting leaves the tail of the destination in the
+# text (over-approximation only: it can add letters, never remove the
+# visible halves). Definition lines are removed first, line-wise.
+# FAILURE DIRECTION: a substitution that does not match leaves the text
+# exactly as the VISIBLE view already has it, and "token in ANY view
+# counts" means this view can only ADD recall — it degrades toward
+# OVER-approximation (a dropped destination or definition can only join
+# neighbouring text), never toward hiding.
+_MARKDOWN_DEFINITION_LINE = re.compile(r"^\s*\[[^\]]+\]:\s.*$", re.M)
+_MARKDOWN_INLINE_MACHINERY = re.compile(
+    r"\]\((?:[^()]|\([^()]*\))*\)"     # ](destination), one nested level
+    r"|\]\[[^\]]*\]"                     # ][label]
+    r"|(?P<footnote>\[\^[^\]]*\])"       # [^label]
+)
+
+
+def _markdown_visible(text):
+    text = _MARKDOWN_DEFINITION_LINE.sub("", text)
+    return _MARKDOWN_INLINE_MACHINERY.sub(
+        lambda match: "" if match.group("footnote") else "]", text
+    )
+
+
+def _views(parser):
+    """CLEAN, FAIL-CLOSED, VISIBLE, and MARKDOWN-VISIBLE (the VISIBLE
+    text with Markdown link/reference machinery dropped)."""
+    clean, fail_closed, visible = parser.views()
+    return (clean, fail_closed, visible, _markdown_visible(visible))
+
+
+def sendmessage_normalized_views(text):
+    """The DETECTOR's views of document text: markup removed by the
+    stdlib parser above, then the ruling-05 core — lower-cased with EVERY
+    non-[a-z0-9] character stripped. A unit mentions sendMessage iff any
+    view contains the token "sendmessage". That is recall, not pattern
+    matching: `sendMessage`, send**Message**, send_message, send-message,
+    "send message", send.Message, SENDMESSAGE, send<b>Message</b>,
+    send&#77;essage, send&nbsp;Message, send<style>x</style>Message, and
+    any other Markdown/HTML/punctuation split, in any word order and
+    casing, collapse to the same token. It deliberately OVER-approximates
+    (stripping everything can join adjacent words, e.g. "...to send
+    messages twice" also contains the token); that direction is
+    fail-closed. These views are used ONLY to classify; the units that
+    are digested are the real document units."""
+    return tuple(_normalize(view) for view in _views(_extract(text)))
+
+
+SENDMESSAGE_TOKEN = "sendmessage"
+
+
+def _unclosed_hidden_hits(parser):
+    """Token occurrences admitted by an UNCLOSED hidden element: its
+    extent is unknown, so every cut point of its content is allowed —
+    the token counts if it lies in the content, or straddles the join
+    between the visible prefix and some suffix of the content."""
+    unclosed = parser.unclosed_hidden()
+    if unclosed is None:
+        return 0
+    prefix, tail = (_normalize(part) for part in unclosed)
+    token = SENDMESSAGE_TOKEN
+    straddles = any(
+        prefix.endswith(token[:split]) and token[split:] in tail
+        for split in range(1, len(token))
+    )
+    return prefix.count(token) + tail.count(token) + int(straddles)
+
+
+def mentions_sendmessage(text):
+    """True iff any detector view of ``text`` contains the token, or an
+    unclosed hidden element admits it."""
+    parser = _extract(text)
+    return any(
+        SENDMESSAGE_TOKEN in _normalize(view) for view in _views(parser)
+    ) or _unclosed_hidden_hits(parser) > 0
+
+
+def sendmessage_count(text):
+    """Occurrences of the token, taken as the MAX over the detector views
+    and the unclosed-hidden admission (over-approximation is the
+    fail-closed direction for a count that is compared for equality
+    against the enumerated cardinality)."""
+    parser = _extract(text)
+    return max(
+        [_normalize(view).count(SENDMESSAGE_TOKEN) for view in _views(parser)]
+        + [_unclosed_hidden_hits(parser)]
+    )
+
+
+def sendmessage_start_tags(text):
+    """Every start tag the parser emits for ``text``, as exact raw text,
+    in document order (self-closing tags included)."""
+    return list(_extract(text).start_tags)
+
+
+# Closed START-TAG allowlist (supervisor ruling 07) — the OUTER gate on
+# markup, and an identity pin, not prose evidence: every start tag the
+# stdlib parser emits for the document (exact raw text, self-closing
+# included) must equal this ordered list — membership, order AND
+# cardinality. Derived verbatim from the documents as they stand. Any
+# other element — style, script, template, noscript, svg, iframe,
+# details, div, span, a conditional-comment host, anything — fails BY
+# CONSTRUCTION rather than by enumerating rendering rules; so does an
+# allowed tag with an added attribute, a reordered tag, or a duplicate.
+# End tags need no allowlist: an end tag never hides text (the parser
+# drops it and the halves join). Re-derive ONLY when a document's markup
+# is deliberately changed and re-reviewed.
+ALLOWED_START_TAGS = {
+    "README.md": (
+        '<p align="center">',
+        '<img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">',
+        '<token from @BotFather>',
+        '<intent>',
+        '<task>',
+    ),
+    "SECURITY.md": (
+        '<config>',
+        '<config>',
+        '<config>',
+    ),
+}
+
+
+# Identity pin (NOT prose evidence) for test_exactly_once_discloses_the_
+# not_retried_states: the complete, ordered set of document units that
+# mention sendMessage AT ALL (per mentions_sendmessage), one digest per
+# unit, computed by unit_digest over test_workspace_trust.document_units.
+# Each pinned unit carries exactly one occurrence, and it is a negated
+# "no second sendMessage" one; re-derive a digest ONLY when its sentence
+# is deliberately changed and re-reviewed, the same discipline as the
+# I1/I8 maps.
+#
+# DOMAIN BOUND — stated precisely, not overstated. This pin claims: every
+# occurrence of the normalized "sendmessage" TOKEN in reader-visible text
+# as recovered by the stdlib HTML parser — with the content of
+# non-rendered elements (HIDDEN_CONTENT_ELEMENTS) excluded so the visible
+# halves around it join, with attribute text and malformed-markup residue
+# re-admitted fail-closed, with Markdown link/reference machinery dropped
+# (_MARKDOWN_INLINE_MACHINERY), and with every start tag gated by the closed
+# ALLOWED_START_TAGS list so that any element outside it fails by
+# construction.
+#
+# NOT claimed — CLASS CLOSURE (supervisor ruling 09, superseding ruling
+# 08 §3(ii)): after round 7 of task 20260901-225712, EVERY rendered-text
+# evasion of ANY syntax family — HTML, Markdown (any construct not listed
+# above), Unicode (confusables, homoglyphs, zero-width joiners, bidi
+# controls, combining marks, font tricks), or any MIXTURE of them — is a
+# RECORDED RESIDUAL, not a defect. So is a contradictory paraphrase that
+# never uses the token at all (e.g. "a second message is sent"). THREAT
+# MODEL: an honest editor documenting a second-send fallback in prose.
+# LOAD-BEARING CONTROLS: the anchored positive pin, the identity-pinned
+# closed mention set with cardinality, the closed start-tag allowlist,
+# and human claim review.
+#
+# MAINTENANCE COST, recorded: the allowlists and digests make this pin
+# sensitive to ANY future edit that adds a link, footnote, or tag to
+# these two documents, or touches one of the four mention-bearing units —
+# such an edit fails here until its entry is deliberately updated and
+# re-reviewed, the same discipline as the I1/I8 maps.
+SENDMESSAGE_MENTION_UNITS = {
+    "README.md": (
+        # "**Telegram result** — ... can never fall back to a second
+        # result `sendMessage`." (principal-flow bullet)
+        "12ff6a9e14f2b616bcd5542a4e934c91f680145222595d94f877cc7aca972d1e",
+        # "Approval is **one-shot** ... a placeholder-bound workflow can
+        # never fall back to a second result `sendMessage`, so the result
+        # is **not re-sent automatically** ..." (exactly-once caveat)
+        "ea235daf4edd183d5baf40357b842ffc977788172ddf7ec5cf3f833f24ac4faf",
+    ),
+    "SECURITY.md": (
+        # "Final-result delivery uses one dedicated bot-owned Telegram
+        # placeholder ... can never fall back to a second result
+        # `sendMessage`; ..." (Completion bullet, delivery paragraph)
+        "d8a9cf23001bf5eb0e181cfaf3259a03c5f6f9cda8ee2da09bdce8ef3e2a621b",
+        # "Exactly once means never twice ... Because there is no
+        # second `sendMessage`, the result is not re-sent automatically
+        # ..." (Completion bullet, caveat paragraph)
+        "8f6d2639731fe2334ce759dbcd33a12fa9693e26695984a58630c4488f7a8d7e",
+    ),
+}
+
+
 class DocsAccuracyPinTests(unittest.TestCase):
     """The shipped docs must describe what actually shipped.
 
@@ -1638,20 +1992,110 @@ class DocsAccuracyPinTests(unittest.TestCase):
         )
 
     def test_exactly_once_discloses_the_not_retried_states(self):
-        # Round-13 F-3: "exactly once" is misleading by omission unless
-        # the two durable NEVER-auto-retried states (reserved, partial)
-        # are disclosed. Both docs must say the result is not re-sent
-        # automatically in those shapes.
+        # Round-13 F-3, retargeted for the DI-REMOTE-3 placeholder lane
+        # (task 20260901-225712): "exactly once" is misleading by
+        # omission unless both docs disclose which durable shapes are
+        # NOT re-sent. The principal path is the bound bot-owned
+        # placeholder plus edit, so the disclosed states are the
+        # go-forward ones, named FROM production
+        # (workflow_authority.record) so this pin cannot drift from the
+        # code: the ambiguous edit outcome (retried only as an idempotent
+        # edit, never a send), the two degraded terminals, and the
+        # terminal placeholder-creation state.
+        #
+        # ADDED CONTROL, doc side: both docs must state that a
+        # placeholder-bound workflow can never fall back to a second
+        # result `sendMessage`; documenting a second-send fallback would
+        # fail here. Code side of the same control:
+        # tests/test_di_remote_3_delivery.py DeterminismTests.
+        # test_R2_edit_payload_has_no_parse_mode_or_reply_markup asserts
+        # exactly ONE transport payload carries RESULT_MESSAGE_HEADER
+        # together with a message_id — an edit, never a send.
+        #
+        # VACUITY GUARD: the bare word "partial" is deliberately NOT
+        # asserted — it occurs incidentally inside the R-6 phrase
+        # "agents-unprobed global PARTIAL". Legacy vocabulary is accepted
+        # only inside an explicit legacy-lane framing that labels the
+        # lane AT-MOST-ONCE (the adapter's own legacy-lane docstring is
+        # the source of truth for that label).
+        go_forward_states = (
+            wa_record.DELIVERY_EDIT_INDEFINITE,
+            wa_record.DELIVERY_DEGRADED_UNRENDERABLE,
+            wa_record.DELIVERY_DEGRADED_UNBINDABLE,
+            wa_record.PLACEHOLDER_INDEFINITE,
+        )
+        legacy_framing = "legacy lane (`reserved` / `partial`)"
         for name in ("README.md", "SECURITY.md"):
             # Normalize wrapping so line breaks inside a phrase don't
             # hide it.
             doc = " ".join(read_doc(name).lower().split())
             self.assertIn("re-sent automatically", doc, name)
-            self.assertIn("reserved", doc, name)
-            self.assertIn("partial", doc, name)
             # "exactly once" must never stand alone as the whole story:
             # the not-arrives caveat appears in the same document.
             self.assertIn("not that it always eventually arrives", doc, name)
+            for state in go_forward_states:
+                # Backticked, so the placeholder state `indefinite`
+                # cannot be satisfied by the tail of `edit_indefinite`.
+                self.assertIn("`%s`" % state, doc, (name, state))
+            self.assertIn(
+                "can never fall back to a second result `sendmessage`",
+                doc, name,
+            )
+            # CLOSED MENTION SET (round 3, reviewer D2 / supervisor
+            # ruling 04). Presence of the negated sentence is not enough,
+            # and neither is inferring meaning from the characters before
+            # each mention: "can fall back ...", "It is false that ... can
+            # never fall back ...", and "no guarantee that there will be
+            # no second sendMessage" all defeated the earlier shapes. So
+            # NO semantics are inferred. The document is split with the
+            # ONE canonical splitter (test_workspace_trust.document_units,
+            # the same one the I1/I8 fixtures use), every unit that
+            # mentions sendMessage at all — any word order, casing, or
+            # delimiting — is collected, and that list must EQUAL, in order and in
+            # number, the enumerated allowed units for this document.
+            # The allowed units are pinned by identity (unit_digest =
+            # sha256 of the whitespace-flattened, lower-cased unit), so
+            # the prose stays in the document and nothing is retyped
+            # here. Closed by construction: an added sentence of ANY
+            # wording is an extra mention-bearing unit (or changes an
+            # allowed unit's identity), a verbatim benign duplicate
+            # breaks the cardinality, and a removed required sentence
+            # leaves the list short. The whole-document mention count is
+            # asserted too, so a mention that lands inside an existing
+            # unit cannot hide (it changes that unit's digest as well).
+            # Round 4: the classifier is "does the unit contain the
+            # normalized sendmessage token AT ALL" — no word-order
+            # pattern (round 3's `second (result) sendMessage` regex was
+            # an under-approximation: "may call sendMessage twice" and
+            # send**Message** were invisible to it).
+            raw = read_doc(name)
+            mention_units = [
+                unit for unit in document_units(raw)
+                if mentions_sendmessage(unit)
+            ]
+            self.assertEqual(
+                [unit_digest(unit) for unit in mention_units],
+                list(SENDMESSAGE_MENTION_UNITS[name]),
+                (name, [" ".join(unit.split())[:100]
+                        for unit in mention_units]),
+            )
+            self.assertEqual(
+                sendmessage_count(raw),
+                len(SENDMESSAGE_MENTION_UNITS[name]),
+                name,
+            )
+            # Ruling 07 outer gate: the document's start tags are exactly
+            # the enumerated ones, in order (see ALLOWED_START_TAGS).
+            self.assertEqual(
+                sendmessage_start_tags(raw),
+                list(ALLOWED_START_TAGS[name]),
+                name,
+            )
+            self.assertIn(legacy_framing, doc, name)
+            legacy_at = doc.index(legacy_framing)
+            self.assertIn(
+                "at-most-once", doc[legacy_at:legacy_at + 160], name
+            )
 
     def test_operator_key_list_matches_enforced_schema(self):
         # Round-14 F-1, STRUCTURAL closure (same shape as I5's herd-
@@ -2008,9 +2452,19 @@ class CorrectnessDocsPinTests(unittest.TestCase):
         # unprobed_partial, test_agents_unprobed_partial_advances_
         # every_terminal_status, test_completeness_lines_render_raw_
         # distinct_values.
+        #
+        # ANCHORED (task 20260901-225712 round 2, reviewer D1): a bare
+        # "source-scoped" was vacuous for SECURITY.md, which also says
+        # "observations source-scoped supported" in the unrelated R-3
+        # recovery paragraph — deleting the R-6 framing left the pin
+        # green. The phrase is now pinned in its R-6 shape, which every
+        # document in ALL_DOCS carries verbatim: the completeness noun,
+        # the term, and the ruling citation together. The R-3 wording
+        # cannot satisfy it.
+        r6_anchor = "observation completeness is source-scoped (ruling r-6)"
         for name in self.ALL_DOCS:
             flat = self.flat(name).lower()
-            self.assertIn("source-scoped", flat, name)
+            self.assertIn(r6_anchor, flat, name)
             self.assertIn("rendered unaltered", flat, name)
             self.assertIn("expected in production", flat, name)
 

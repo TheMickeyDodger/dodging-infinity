@@ -6,8 +6,8 @@ Security fixes are currently provided for the latest Dodging Infinity release li
 
 | Version | Supported |
 | --- | --- |
-| 0.6.x | Yes |
-| < 0.6 | No |
+| 0.7.x | Yes |
+| < 0.7 | No |
 
 ## Reporting a vulnerability
 
@@ -103,7 +103,7 @@ by regression tests:
 
 ## DI-REMOTE-2 Remote Target Repository Routing surface (v0.7.0)
 
-DI-REMOTE-2, released in v0.7.0,
+DI-REMOTE-2, part of v0.7.0,
 lets an allowlisted Telegram user authorize one exact bounded mission
 against a remote GitHub target repository while this repository stays
 the permanent control and policy repository. Its security properties,
@@ -199,10 +199,20 @@ otherwise:
   corrective-follow-up path carries a bounded brief built from the
   authority fields.
 - **Completion and the verified result.** After dispatch the Runtime observes
-  the target through the existing read-only Herdr observability. The fresh
-  verification turn's `verified_result` is necessary, never sufficient: the
-  complete durable verification conjunction must pass before
-  `VERIFIED`/`COMPLETED`.
+  the target through the existing read-only Herdr observability
+  (`herdr.observe`). Observation completeness is SOURCE-SCOPED (ruling R-6):
+  a projection degraded in a CONSUMED source waits or stops durably (it never
+  declares completion), while an agents-unprobed global PARTIAL — EXPECTED in
+  production, since a dispatched target always has agents — weakens no
+  consumed evidence; the raw global completeness is recorded and rendered
+  unaltered. A fresh verification turn then runs, but its `verified_result`
+  is NECESSARY, NEVER SUFFICIENT: eight conjuncts (ten independent problem
+  codes) are applied against a fresh disk read — the canonical target
+  Reviewer APPROVE among them as TARGET-PRODUCED evidence that the target's
+  own review process ran and concluded, never independent verification — and
+  only then does DISPATCHED → VERIFIED → COMPLETED proceed, with the verified
+  result returned to Telegram exactly once by editing the bound placeholder
+  described next.
 
   Final-result delivery uses one dedicated bot-owned Telegram placeholder.
   Its exact chat/message identity is durably bound before consequential
@@ -212,6 +222,21 @@ otherwise:
   placeholder-bound workflow can never fall back to a second result
   `sendMessage`; and an oversized final render fails closed rather than being
   chunked or truncated.
+
+  "Exactly once" means never twice and never silently dropped — NOT that it
+  always eventually arrives. Because there is no second `sendMessage`, the
+  result is not re-sent automatically in any state: an ambiguous edit outcome
+  (durable state `edit_indefinite`) is retried only as an idempotent edit of
+  the same bound message; a rendered result that does not fit one Telegram
+  message (`degraded_unrenderable`, terminal for that rendered revision —
+  never chunked and never truncated) and a bound placeholder that is gone or
+  no longer matches its binding (`degraded_unbindable`, terminal outright) are
+  never retried; an ambiguous placeholder creation (placeholder state
+  `indefinite`) is terminal before dispatch, so the mission never dispatches.
+  In every such case `/status` says so, and recovering a terminal outcome is a
+  human step.
+  Records from the pre-DI-REMOTE-3 legacy lane (`reserved` / `partial`) are
+  AT-MOST-ONCE: those markers are terminal and are never re-sent either.
 
   Herdr lifecycle COMPLETE alone can never verify. No step grants Git,
   release, or deployment authority.

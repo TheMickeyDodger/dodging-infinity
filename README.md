@@ -1083,10 +1083,17 @@ Deliberate properties:
   step**, and the lifecycle runs all the way to a **verified result
   returned to Telegram exactly once** (verified end to end by the
   hermetic Mitiq-narrative test). "Exactly once" means never twice and
-  never silently dropped — NOT that it always eventually arrives: if a
-  send is interrupted before it completes (durable state `reserved`) or
-  is only partly displayed (`partial`), the result is **not re-sent
-  automatically** and `/status` says so; recovering it is a human step.
+  never silently dropped — NOT that it always eventually arrives: a
+  placeholder-bound workflow can never fall back to a second result
+  `sendMessage`, so the result is **not re-sent automatically** in any
+  state. An ambiguous edit outcome (durable state `edit_indefinite`) is
+  retried only as an idempotent edit of the same bound message; a result
+  that does not fit one Telegram message (`degraded_unrenderable`), a
+  bound placeholder that is gone or no longer matches (`degraded_unbindable`),
+  and an ambiguous placeholder creation before dispatch (placeholder state
+  `indefinite`) are terminal; `/status` says so, and recovering a terminal
+  outcome is a human step. Records from the pre-DI-REMOTE-3 legacy lane
+  (`reserved` / `partial`) are AT-MOST-ONCE and are never re-sent either.
 - The initial dispatch is the **byte-exact stored handoff**; corrective
   follow-ups are a separate path bounded (2) as an **authorization-scope
   bound, not a review-round limit** — exceeding it transitions durably
@@ -2096,7 +2103,7 @@ exact Telegram-native delivery authorization.
 - one-shot, fully bound plan approval and rejection
 - resumed Codex sessions, status, meaningful errors, and verified-result delivery
 - optional per-user macOS LaunchAgent baseline
-- DI-REMOTE-2 Remote Target Repository Routing (released in v0.7.0;
+- DI-REMOTE-2 Remote Target Repository Routing (part of v0.7.0;
   hermetically verified and historically exercised through target Herdr
   COMPLETE before the live mountain exposed post-dispatch policy drift and
   terminated BLOCKED; the corrected final-result path is now certified
