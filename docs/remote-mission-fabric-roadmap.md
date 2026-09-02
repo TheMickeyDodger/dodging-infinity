@@ -2,7 +2,7 @@
 
 Status: Working roadmap\
 Created: August 27, 2026\
-Updated: August 31, 2026
+Updated: September 1, 2026
 
 Progress notation: ~~crossed out~~ = completed, or proven by the historical
 live Mitiq #2802 mountain before it terminated BLOCKED; uncrossed = still open.
@@ -106,55 +106,60 @@ Terminal outcome. The workflow then stopped BLOCKED at
 `broker_verification_policy_drift`. `verified_result` and
 `result_delivery` remained null. No target Git delivery occurred: the
 target stayed at baseline `3e1833d930723ef4f7220698c98155a925591d4d`
-carrying an implementation diff only. Everything downstream of the drift
-stop — fresh independent Runtime verification, the `VERIFIED` and
-`COMPLETED` transitions, exactly-once Telegram result delivery, and
-artifact delivery — never ran, and DI-REMOTE-2 acceptance is INCOMPLETE.
-
-The defects that mountain exposed were closed by a separate Runtime
-stabilization commit that is not part of this branch; see the release gate
-below.
+carrying an implementation diff only. Everything downstream of the drift stop did not run in that historical
+execution. The defects it exposed were subsequently closed, the Runtime
+stabilization lineage was integrated into `main`, and the corrected
+verification plus exactly-once final-result path was certified hermetically
+and adversarially for v0.7.0. A fresh post-fix live mountain is not used as
+release evidence. Separate artifact delivery remains outside that
+certification. DI-REMOTE-2 acceptance is COMPLETE for the v0.7.0 release
+candidate.
 
 ## Immediate release gate: DI-REMOTE-2 acceptance before Phase I
 
 The remote mission fabric does not begin from an unaccepted moving target.
-The required product sequence is:
+The release sequence is now:
 
-1.  [x] Complete the README and documentation reconciliation in this PR.
+1.  [x] Complete the README and documentation reconciliation.
 2.  [x] Repair clean-clone CI hermeticity: runner-equivalent local validation
     passed, and all four PR matrix jobs (macOS and Ubuntu x Python 3.9 and
     3.13) are green in CI run `33330263889` at
     `4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f`; the branch also passed at
     `52a97b71a3b5c9f20ff33d4feb1332284cd825b7`.
-3.  [ ] Historical Mitiq #2802 engineering is complete, but final DI-REMOTE-2
-    acceptance is INCOMPLETE: that mountain terminated BLOCKED at
-    `broker_verification_policy_drift`.
-4.  [ ] A separate, already pushed Runtime stabilization commit
-    `d8ec2af409e4086f985be03371a872a84a3767ec` on branch
-    `fix/runtime-terminal-reconciliation` corrected the defects that mountain
-    exposed; its integration is PENDING.
-5.  [ ] Assemble a stable `main` from this documentation reconciliation and
-    that stabilization branch.
-6.  [ ] Run a NEW live Mitiq mountain. A new mountain is REQUIRED; the
-    historical one cannot stand in for it.
-7.  [ ] Only a successful NEW mountain permits the DI-REMOTE-2 tag/release,
-    and only AFTER that release may the Durable Mission Registry and Mission
-    Router begin.
+3.  [x] Preserve the historical Mitiq #2802 mountain as terminal diagnostic
+    evidence: it reached target Herdr COMPLETE and then correctly stopped
+    BLOCKED at `broker_verification_policy_drift`.
+4.  [x] Integrate the reviewed and pushed Runtime stabilization commit
+    `d8ec2af409e4086f985be03371a872a84a3767ec` from branch
+    `fix/runtime-terminal-reconciliation` into `main`.
+5.  [x] Complete final DI-REMOTE-2 certification on the stable tree:
+    continuation task `20260901-165812-045b0c` reached COMPLETE, Reviewer
+    persisted APPROVE, and the authoritative discovery ran 2,048 tests with
+    `OK (skipped=1)` and exit 0.
+6.  [x] Prepare the v0.7.0 release candidate with reconciled public docs and
+    preserved historical evidence.
+7.  [ ] Create the v0.7.0 tag only after CI is green on the exact release commit.
 
-The historical live Mitiq #2802 mountain exposed genuine post-dispatch
-policy drift and correctly terminated BLOCKED at
-`broker_verification_policy_drift`. Its engineering ran to a target
-Herdr COMPLETE with a canonical target Reviewer APPROVE, and then the
-workflow stopped: `verified_result` and `result_delivery` stayed null and no
-target Git delivery occurred. DI-REMOTE-2 remains unreleased; no tag is
-implied by implementation, by partial live proof, or by the pushed but
-unintegrated stabilization commit.
+Historical stabilization evidence remains part of the release record:
+task `20260830-185309-4c3db7`, final canonical Reviewer round 6 APPROVE,
+focused regression 159/159, `tests/test_target_runtime.py` 250/250, static
+checks PASS, Python 3.9.6 compile PASS, and `git diff --check` PASS. The
+historical repository-wide LIVE working-tree loop stood at 35/37 solely
+because pre-existing live `.herd` specimen assertions in
+`tests/test_hermetic_git.py` and `tests/test_reconcile_audit.py` predate
+that task.
+
+The historical live Mitiq #2802 mountain remains truthful historical evidence:
+it terminated BLOCKED before final verification/result delivery. The corrected
+final-result contract is certified by the later hermetic/adversarial release
+evidence; a fresh post-fix live mountain is not used as release evidence.
+Separate artifact delivery is not claimed by that certification.
 
 Acceptance:
 
-> DI-REMOTE-2 is released only when the public repository, clean-clone CI,
-> and live Telegram-to-target mountain all describe and prove the same
-> system.
+> DI-REMOTE-2 acceptance is complete when the public repository, exact release
+> commit CI, canonical review evidence, and authoritative unchanged-tree test
+> run all describe the same bounded system.
 
 # Phase I: Remote Mission Fabric
 
@@ -172,21 +177,20 @@ Work:
 -   ~~verify dirun, target Herdr bootstrap, Codex execution, Git human
     gates, launchd, config, and durable workflow state through the active
     portion of the live DI-REMOTE-2 mountain~~
--   integrate the pushed Runtime stabilization commit
-    `d8ec2af409e4086f985be03371a872a84a3767ec` and assemble a stable `main`
--   run a NEW live Mitiq mountain through independent verification,
-    VERIFIED/COMPLETED, and exactly-once result delivery
+-   ~~integrate the pushed Runtime stabilization commit
+    `d8ec2af409e4086f985be03371a872a84a3767ec` and assemble a stable `main`~~
+-   ~~certify independent verification, VERIFIED/COMPLETED, and exactly-once
+    final-result delivery hermetically and adversarially on the stable tree~~
 -   configure Tailscale plus SSH, restricted to trusted devices/accounts
 -   avoid public inbound SSH exposure
 -   verify persistence across reboot/login
 
-Current state: `main` and `origin/main` agree at the SHA above, and `main` is
-not yet proven stable for release. The current PR branch carries the public
-documentation and CI-hermeticity work without changing `main`, and the Runtime
-stabilization commit sits pushed but unintegrated on its own branch. Remaining
-gaps are final Mitiq lifecycle acceptance, the pending stabilization
-integration, a NEW live Mitiq mountain, unconfigured break-glass
-Tailscale/SSH, and the still-unreached DI-REMOTE-2 tagged release.
+Current state: the Runtime stabilization lineage is integrated, DI-REMOTE-2
+acceptance is complete for the v0.7.0 release candidate, and the corrected
+final-result contract is certified on the stable tree. A fresh post-fix live
+mountain is not used as release evidence. Remaining Iteration-0 work is the
+break-glass Tailscale/SSH and reboot/login persistence work; release tagging
+remains separately gated on green CI for the exact release commit.
 
 Test from a genuinely remote network with Telegram healthy, Telegram
 stopped, Runtime stopped, Codex wedged, Herdr wedged, and a stale
@@ -602,9 +606,10 @@ The Mac is recoverable from anywhere even when Telegram is broken.
 
 ## Milestone B: DI-REMOTE-2 released
 
-Unreached. Live mountain evidence, clean-clone green CI, public docs, and the
-tagged release all agree. That tagged release is the baseline for Mission
-Router and concurrency work.
+The v0.7.0 release candidate has completed DI-REMOTE-2 acceptance; exact
+release-commit CI and the separately human-authorized tag remain the final
+release gate. That tagged release is the baseline for Mission Router and
+concurrency work.
 
 ## Milestone C: Multi-mission operation
 

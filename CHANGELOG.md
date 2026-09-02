@@ -43,12 +43,19 @@
   evidence. This release certifies verified final-result delivery; separate
   artifact-delivery behavior is not claimed by this certification. Git,
   release, and deployment authority remain separately human-gated.
-- **Runtime stabilization — integrated.** The reconciliation,
-  capability-lifecycle, terminal-cleanup, and production role-turn repairs
-  originally developed during the live-mountain recovery were reconciled,
-  reviewed, and integrated into `main` before this release. The historical
-  red evidence remains preserved; the release no longer depends on an
-  unmerged stabilization branch.
+- **Runtime stabilization — integrated.** Historical stabilization commit
+  `d8ec2af409e4086f985be03371a872a84a3767ec` on branch
+  `fix/runtime-terminal-reconciliation` (Herdr task `20260830-185309-4c3db7`,
+  COMPLETE, final canonical Reviewer round 6 APPROVE) was reviewed and pushed
+  before being integrated into `main` for v0.7.0. Its historical validation
+  remains preserved: focused regression 159/159;
+  `tests/test_target_runtime.py` 250/250; static checks PASS; Python 3.9.6
+  compile PASS; `git diff --check` PASS. The historical repository-wide LIVE
+  working-tree loop stood at 35/37 solely because pre-existing live `.herd`
+  specimen assertions in `tests/test_hermetic_git.py` and
+  `tests/test_reconcile_audit.py` predate that task. The historical red
+  evidence remains preserved; the release no longer depends on an unmerged
+  stabilization branch.
 - **Clean-clone CI evidence.** Commits
   `52a97b71a3b5c9f20ff33d4feb1332284cd825b7` and
   `4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f` made the CI hermetic; the final

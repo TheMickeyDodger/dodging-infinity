@@ -172,7 +172,6 @@ FORBIDDEN_LIVE_CLAIMS = (
     "mountain has passed",
     "di-remote-2 has been released",
     "di-remote-2 is now released",
-    "di-remote-2 acceptance is complete",
     "main is stable",
     "main is now stable",
     "has been merged into",
@@ -1390,15 +1389,16 @@ class DocsAccuracyPinTests(unittest.TestCase):
         changelog = read_doc("CHANGELOG.md")
         self.assertIn("tgop migrate-state", changelog)
 
-    def test_di_remote_2_is_not_claimed_for_v063(self):
+    def test_di_remote_2_is_claimed_for_v070_not_v063(self):
         changelog = read_doc("CHANGELOG.md")
         self.assertIn("## Unreleased", changelog)
-        unreleased, _, released = changelog.partition("## v0.6.3")
-        self.assertTrue(released, "v0.6.3 section missing")
-        self.assertIn("DI-REMOTE-2", unreleased)
-        # Historical accuracy: no released section claims the v2
-        # capability.
-        self.assertNotIn("DI-REMOTE-2", released)
+        before_v063, marker, v063_and_older = changelog.partition("## v0.6.3")
+        self.assertTrue(marker, "v0.6.3 section missing")
+        self.assertIn("## v0.7.0", before_v063)
+        self.assertIn("DI-REMOTE-2", before_v063)
+        # Historical accuracy: v0.6.3 and older release sections do not
+        # retroactively claim the v0.7.0 capability.
+        self.assertNotIn("DI-REMOTE-2", v063_and_older)
 
     def test_structure_only_limit_is_disclosed(self):
         self.assertIn(
@@ -1419,11 +1419,11 @@ class DocsAccuracyPinTests(unittest.TestCase):
     RELEASE_GATE_SEQUENCE = (
         "Complete the README and documentation reconciliation",
         "Repair clean-clone CI hermeticity",
-        "final DI-REMOTE-2 acceptance is INCOMPLETE",
-        "its integration is PENDING",
-        "Assemble a stable `main`",
-        "Run a NEW live Mitiq mountain",
-        "may the Durable Mission Registry and Mission Router begin",
+        "historical Mitiq #2802 mountain",
+        "Integrate the reviewed and pushed Runtime stabilization commit",
+        "Complete final DI-REMOTE-2 certification",
+        "Prepare the v0.7.0 release candidate",
+        "Create the v0.7.0 tag only after CI is green",
     )
 
     def test_remote_fabric_roadmap_release_gate_is_ordered(self):
@@ -1454,12 +1454,12 @@ class DocsAccuracyPinTests(unittest.TestCase):
                 % (index, claim),
             )
             position = found + len(flat(claim))
-        # The steps that are already done, and the ones that are not.
-        self.assertIn("1.  [x]", section)
-        self.assertIn("2.  [x]", section)
-        for open_step in ("3.  [ ]", "4.  [ ]", "5.  [ ]", "6.  [ ]",
-                          "7.  [ ]"):
-            self.assertIn(open_step, section, open_step)
+        # Steps 1-6 are complete. Publishing the tag remains the one
+        # open human-gated release action.
+        for done_step in ("1.  [x]", "2.  [x]", "3.  [x]", "4.  [x]",
+                          "5.  [x]", "6.  [x]"):
+            self.assertIn(done_step, section, done_step)
+        self.assertIn("7.  [ ]", section)
         # The gate carries the CI evidence and the stabilization SHA,
         # and the STALE run id is gone from the whole roadmap.
         self.assertIn(CI_RUN_ID, section)
@@ -1467,9 +1467,10 @@ class DocsAccuracyPinTests(unittest.TestCase):
         self.assertNotIn(CI_STALE_RUN_ID, roadmap)
         flat_section = " ".join(section.replace("> ", "").split())
         self.assertIn(
-            "DI-REMOTE-2 is released only when the public repository,"
-            " clean-clone CI, and live Telegram-to-target mountain all"
-            " describe and prove the same system.",
+            "DI-REMOTE-2 acceptance is complete when the public repository,"
+            " exact release commit CI, canonical review evidence, and"
+            " authoritative unchanged-tree test run all describe the same"
+            " bounded system.",
             flat_section,
         )
 
@@ -1519,23 +1520,23 @@ class DocsAccuracyPinTests(unittest.TestCase):
             " ".join(roadmap[milestone:multi].split()),
         )
 
-    def test_remote_fabric_roadmap_has_no_stale_ahead_of_main_claim(self):
+    def test_remote_fabric_roadmap_release_candidate_state_is_current(self):
         roadmap = read_doc("docs/remote-mission-fabric-roadmap.md")
+        flat_roadmap = " ".join(roadmap.split())
         self.assertIn(
-            "`main` and `origin/main` agree at the SHA above", roadmap
+            "DI-REMOTE-2 acceptance is complete for the v0.7.0 release candidate",
+            flat_roadmap,
         )
         self.assertIn(
             "cda06d8c502882672667d94821b8bd00e7060a52", roadmap
         )
+        self.assertIn("break-glass Tailscale/SSH", flat_roadmap)
+        self.assertIn("release tagging remains separately gated", flat_roadmap)
+        self.assertNotIn("not yet proven stable", flat_roadmap)
+        self.assertNotIn("final Mitiq lifecycle acceptance", flat_roadmap)
         self.assertNotIn(
-            "control repo is intentionally still ahead of", roadmap
+            "still-unreached DI-REMOTE-2 tagged release", flat_roadmap
         )
-        for open_gap in (
-            "final Mitiq lifecycle acceptance",
-            "unconfigured break-glass Tailscale/SSH",
-            "still-unreached DI-REMOTE-2 tagged release",
-        ):
-            self.assertIn(open_gap, " ".join(roadmap.split()), open_gap)
 
     def test_contributing_lists_the_new_components(self):
         doc = read_doc("CONTRIBUTING.md")
@@ -1593,20 +1594,23 @@ class DocsAccuracyPinTests(unittest.TestCase):
     # which asserted "live-proven through active"). That framing is now
     # FALSE: the mountain is terminal. A green test asserting a stale
     # property is worse than no test, so the name moved with the claim.
-    def test_terminal_outcome_and_live_unverified_items_are_disclosed(self):
+    def test_terminal_outcome_and_release_evidence_boundary_are_disclosed(self):
         blob = flat_lower(
             read_doc("README.md") + read_doc("SECURITY.md")
             + read_doc("CHANGELOG.md")
         )
         self.assertIn(flat_lower(TERMINAL_ANCHOR), blob)
-        self.assertIn("live-unverified", blob)
         self.assertIn("telegram", blob)
         self.assertIn("github", blob)
         self.assertIn("reviewer approve", blob)
-        self.assertIn("independent final codex verification", blob)
+        self.assertIn("verified_result", blob)
+        self.assertIn("result_delivery", blob)
+        self.assertIn("final-result release certification", blob)
         self.assertIn("verified", blob)
         self.assertIn("completed", blob)
         self.assertIn("exactly-once", blob)
+        self.assertIn("fresh post-fix live mountain", blob)
+        self.assertIn("not used as release evidence", blob)
         self.assertIn("artifact delivery", blob)
         self.assertIn("delivery_authority = none", blob)
 
@@ -2104,23 +2108,21 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
     def flat():
         return " ".join(read_doc("README.md").split())
 
-    def test_on_main_unreleased_framing(self):
-        # The three-state truth: on `main`, hermetically proven, in no
-        # tagged release; the stale working-tree framing is GONE.
+    def test_v070_release_framing(self):
         readme = self.flat()
-        self.assertIn("implemented on `main`", readme)
-        self.assertIn("not yet part of any tagged release", readme)
+        self.assertIn("# Dodging Infinity v0.7.0", readme)
         self.assertIn(
-            "v0.6.3 remains the latest tagged release", readme
+            "v0.7.0 adds DI-REMOTE-2 Remote Target Repository Routing",
+            readme,
         )
-        self.assertNotIn("implemented in the working tree", readme)
-        self.assertNotIn(
-            "in the working tree, not yet in any tagged release",
+        self.assertIn(
+            "fresh post-fix live mountain is not used as release evidence",
             readme,
         )
         self.assertNotIn(
-            "hermetically verified in the working tree", readme
+            "v0.6.3 remains the latest tagged release", readme
         )
+        self.assertNotIn("DI-REMOTE-2, unreleased", readme)
 
     def test_principal_flow_is_complete_and_ordered(self):
         # The principal architecture section shows the COMPLETE
@@ -2450,31 +2452,26 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
             " not only deep in the DI-REMOTE-2 section",
         )
 
-    # ---- B. the separate, unintegrated stabilization ------------------
-    # Each document states the not-merged/not-released fact in its own
-    # words; the pin quotes each document's ACTUAL sentence rather than
-    # a lowest-common-denominator substring that would survive a
-    # rewrite into a weaker claim.
-    NOT_INTEGRATED_PHRASES = {
+    # ---- B. historical stabilization lineage, now integrated ----------
+    INTEGRATED_PHRASES = {
         "README.md": (
-            "awaiting integration — never merged, never released",
+            "integrated into `main` for v0.7.0",
         ),
         "CHANGELOG.md": (
-            "awaiting integration",
-            "has never been merged and never released",
+            "integrated into `main` for v0.7.0",
         ),
         "docs/remote-mission-fabric-roadmap.md": (
-            "its integration is pending",
+            "integrate the reviewed and pushed Runtime stabilization commit",
         ),
     }
 
-    def test_stabilization_is_documented_as_pushed_and_unintegrated(self):
+    def test_stabilization_history_is_preserved_and_integration_is_current(self):
         for name in RECONCILED_DOCS:
             doc = flat(read_doc(name))
             self.assertIn(STABILIZATION_SHA, doc, name)
             self.assertIn(STABILIZATION_BRANCH, doc, name)
             lowered = flat_lower(read_doc(name))
-            for phrase in self.NOT_INTEGRATED_PHRASES[name]:
+            for phrase in self.INTEGRATED_PHRASES[name]:
                 self.assertIn(
                     flat_lower(phrase), lowered,
                     "%s: %s" % (name, phrase),
@@ -2591,23 +2588,22 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
                     % (name, label, match.group(0) if match else None),
                 )
 
-    def test_di_remote_2_is_stated_unreleased_and_acceptance_incomplete(self):
+    def test_di_remote_2_release_acceptance_is_current(self):
         readme = flat_lower(read_doc("README.md"))
         self.assertIn(flat_lower(TERMINAL_ANCHOR), readme)
-        self.assertIn("di-remote-2 is unreleased", readme)
+        self.assertIn("v0.7.0 adds di-remote-2", readme)
         roadmap = flat_lower(read_doc("docs/remote-mission-fabric-roadmap.md"))
         self.assertIn(flat_lower(TERMINAL_ANCHOR), roadmap)
-        self.assertIn("di-remote-2 acceptance is incomplete", roadmap)
-        self.assertIn("not yet proven stable", roadmap)
+        self.assertIn("di-remote-2 acceptance is complete", roadmap)
+        self.assertIn("v0.7.0 release candidate", roadmap)
 
-    def test_a_new_mountain_is_required(self):
-        # The historical mountain can never stand in for acceptance.
+    def test_post_fix_live_mountain_is_not_release_evidence(self):
         for name in ("README.md",
                      "docs/remote-mission-fabric-roadmap.md"):
             doc = flat_lower(read_doc(name))
             self.assertIn(flat_lower(TERMINAL_ANCHOR), doc, name)
-            self.assertIn("new live mitiq mountain", doc, name)
-            self.assertIn("cannot stand in for", doc, name)
+            self.assertIn("fresh post-fix live mountain", doc, name)
+            self.assertIn("not used as release evidence", doc, name)
 
 
 def setUpModule():

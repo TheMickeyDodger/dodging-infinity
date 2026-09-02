@@ -2,7 +2,7 @@
   <img src="assets/brand/banner.svg" alt="Dodging Infinity — Bounding the infinite to the finite." width="100%">
 </p>
 
-# Dodging Infinity v0.6.3
+# Dodging Infinity v0.7.0
 
 [![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -23,18 +23,20 @@ strategy and delegates through Lead, Executor, and Reviewer.
 
 [v0.6.3](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.3) adds the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
 
-Unreleased: **DI-REMOTE-2 Remote Target Repository Routing** is implemented on
-`main` and hermetically proven. One historical live Mitiq #2802 mountain
-exercised it through real cross-repository dispatch into target engineering;
-that mountain exposed genuine post-dispatch policy drift and correctly
-terminated BLOCKED. DI-REMOTE-2 remains outside any tagged release, so v0.6.3
-remains the latest tagged release. A natural-language Telegram request now
-produces a separately planned, one-shot Mission Authorization that the
-independent Runtime advances through an isolated managed target workspace into
-a real Herdr. No manual clone, target registration, terminal bootstrap, or
-manual Herdr setup is required.
+**v0.7.0 adds DI-REMOTE-2 Remote Target Repository Routing.** A natural-language
+Telegram request can produce a separately planned, one-shot Mission
+Authorization that the independent Runtime advances through an isolated managed
+target workspace into a real Herdr. No manual clone, target registration,
+terminal bootstrap, or manual Herdr setup is required.
 
-The operating model is deliberate. On current `main` the principal operating model is Remote Target Repository Routing (DI-REMOTE-2, unreleased):
+One historical live Mitiq #2802 mountain exercised the real cross-repository
+path through target Herdr COMPLETE and then exposed genuine post-dispatch
+policy drift and correctly terminated BLOCKED. The corrected final-result path
+was subsequently certified hermetically and adversarially for v0.7.0. A fresh
+post-fix live mountain is not used as release evidence, and separate artifact
+delivery is not claimed by that certification.
+
+The operating model is deliberate. In v0.7.0 the principal operating model is Remote Target Repository Routing (DI-REMOTE-2):
 
 **Phone → Telegram → Mission Authorization → approval → Runtime → Broker → isolated managed target → target Herdr → evidence verification → Telegram result → human-gated delivery**
 
@@ -44,10 +46,12 @@ exercised this path from the exact phone request through target Herdr
 execution to a target task COMPLETE and a canonical target Reviewer APPROVE.
 It then exposed genuine post-dispatch policy drift and correctly terminated
 BLOCKED at `broker_verification_policy_drift`: `verified_result` and
-`result_delivery` stayed null, and no target Git delivery occurred. The
-verification, `VERIFIED`/`COMPLETED`, exactly-once result-delivery, artifact
-delivery, and delivery-action stages downstream of that stop never ran and
-remain live-unverified.
+`result_delivery` stayed null, and no target Git delivery occurred. Those
+downstream stages did not run in that historical execution. The corrected
+verification and exactly-once final-result path is now certified hermetically
+and adversarially for v0.7.0; a fresh post-fix live mountain is not used as
+release evidence. Separate artifact delivery and Telegram-native delivery
+authorization remain outside that certification.
 
 Remote mission execution authority exists today; remote delivery authority does
 not. Current Telegram missions carry `delivery_authority = none`, and commit and
@@ -92,15 +96,19 @@ see "Claim-to-pin map" below for which one.
   by different logic.** Skew is reported, naming both the build that wrote the
   record and the build on disk, rather than reconciled silently.
 - **DI-REMOTE-2 has both hermetic proof and bounded live proof.** Automated
-  coverage proves the full fail-closed lifecycle. Production exercised real
+  coverage proves the fail-closed lifecycle. Production exercised real
   Telegram v2 traffic, GitHub target materialization, fresh Codex role turns,
   unattended target bootstrap, and Supervisor-led Herdr execution on ONE
-  historical Mitiq #2802 mountain, as far as a target Herdr task COMPLETE with
-  a canonical target Reviewer APPROVE recorded. That mountain then exposed
+  historical Mitiq #2802 mountain through target Herdr COMPLETE with a
+  canonical target Reviewer APPROVE. That historical execution then exposed
   genuine post-dispatch policy drift and correctly terminated BLOCKED at
-  `broker_verification_policy_drift`. What remains live-unverified is
-  independent final verification, `VERIFIED`/`COMPLETED`, result/artifact
-  delivery, and every Telegram-native delivery-authorization stage.
+  `broker_verification_policy_drift`; `verified_result` and `result_delivery`
+  remained null in that historical run. The corrected independent
+  verification, `VERIFIED`/`COMPLETED`, and exactly-once final-result path is
+  certified hermetically and adversarially for v0.7.0. A fresh post-fix live
+  mountain is not used as release evidence. Separate artifact delivery and
+  Telegram-native delivery authorization remain outside that certification.
+
 
 ## Why Dodging Infinity?
 
@@ -122,14 +130,13 @@ The intelligence is replaceable.
 
 # Architecture
 
-## Current architecture on `main`: remote target routing (DI-REMOTE-2, unreleased)
+## Current architecture on `main`: remote target routing (DI-REMOTE-2, v0.7.0)
 
-DI-REMOTE-2 — implemented on `main`, in no tagged release — runs one
-exact bounded mission against a remote GitHub target repository while
-this repository remains the permanent control and policy repository.
-This is the principal architecture on current `main`; the released
-v0.6.3 local-mission architecture follows below. The complete
-principal flow:
+DI-REMOTE-2 is the v0.7.0 remote-target architecture. It runs one exact
+bounded mission against a remote GitHub target repository while this
+repository remains the permanent control and policy repository. The v0.6.3
+local-mission path remains preserved compatibility behavior underneath it.
+The complete principal flow:
 
 ```text
 control repository (this repo: pinned control + policy, never the work target)
@@ -201,10 +208,12 @@ Each component, precisely:
   necessary, never sufficient, and the full gate (eight conjuncts, ten
   independent problem codes) is described in "Remote Target Repository
   Routing" below.
-- **Telegram result** — the implemented and hermetically tested lifecycle
-  returns the verified result exactly once; this final delivery stage remains
-  live-unverified, and the not-re-sent-automatically caveat is stated
-  in the section below.
+- **Telegram result** — before dispatch, the adapter creates and durably
+  binds one bot-owned result placeholder. After independent verification, the
+  final result edits that same known Telegram object. Ambiguous placeholder
+  creation fails closed before dispatch, crash-after-edit recovery reconciles
+  against that same object, and a placeholder-bound workflow can never fall
+  back to a second result `sendMessage`.
 - **Human delivery gate** — no delivery authority exists anywhere in
   the machine path; commit, push, PR, tag, release, and merge remain
   local, human-authorized actions. Telegram-native exact delivery approvals are
@@ -1004,16 +1013,14 @@ The adapter enforces, with static and behavioral regression tests:
 
 ---
 
-# Remote Target Repository Routing (DI-REMOTE-2, unreleased)
+# Remote Target Repository Routing (DI-REMOTE-2, v0.7.0)
 
-DI-REMOTE-2 is implemented on `main`, hermetically proven, exercised once on a
-historical live Mitiq #2802 mountain that terminated BLOCKED, and **not yet
-part of any tagged release**. It
-extends the Telegram remote experience
-from "approve a plan for the configured repository" to "authorize one
-exact bounded mission against a remote GitHub target repository" —
-while Dodging Infinity remains the permanently pinned control and
-policy repository.
+DI-REMOTE-2 is the v0.7.0 remote-target capability. It extends the Telegram
+remote experience from a local configured repository to one exact bounded
+mission against a remote GitHub target while Dodging Infinity remains the
+permanent control and policy repository. The historical Mitiq #2802 mountain
+remains bounded live evidence; the corrected final-result contract is
+certified by the later hermetic and adversarial release evidence.
 
 The flow:
 
@@ -1141,24 +1148,23 @@ Deliberate properties:
   remained null. No target Git delivery occurred — the target stayed at
   baseline `3e1833d930723ef4f7220698c98155a925591d4d` carrying an
   implementation diff only.
-- **Still live-unverified:** independent final Codex verification, `VERIFIED`,
-  `COMPLETED`, exactly-once final Telegram result delivery, artifact delivery,
-  and every Telegram commit, push, PR, tag, release, deploy, or merge
-  authorization. Proving them requires a NEW live mountain; the historical one
-  cannot stand in for it.
-- **Defects the mountain exposed are fixed but not integrated:** a separate
-  Runtime stabilization commit
+- **Final-result release certification:** the corrected independent
+  verification, `VERIFIED`/`COMPLETED`, and exactly-once final Telegram result
+  path is certified hermetically and adversarially for v0.7.0. A fresh
+  post-fix live mountain is not used as release evidence. Separate artifact
+  delivery and Telegram-native commit/push/PR/tag/release/deploy/merge
+  authorization remain outside this certification.
+- **Historical Runtime stabilization — integrated:** stabilization commit
   `d8ec2af409e4086f985be03371a872a84a3767ec` on branch
   `fix/runtime-terminal-reconciliation` (Herdr task `20260830-185309-4c3db7`,
-  COMPLETE, final canonical Reviewer round 6 APPROVE) closes the
-  reconciliation, capability-lifecycle, and terminal-cleanup defects. It is
-  reviewed and pushed, and it is AWAITING INTEGRATION — never merged, never
-  released. Its validation was: focused regression 159/159;
+  COMPLETE, final canonical Reviewer round 6 APPROVE) was reviewed and pushed
+  before being integrated into `main` for v0.7.0. Its historical validation
+  remains part of the evidence record: focused regression 159/159;
   `tests/test_target_runtime.py` 250/250; static checks PASS; Python 3.9.6
-  compile PASS; `git diff --check` PASS. Caveat recorded with it: the
-  repository-wide LIVE working-tree loop stood at 35/37 solely because
-  pre-existing live `.herd` specimen assertions in `tests/test_hermetic_git.py`
-  and `tests/test_reconcile_audit.py` predate that task.
+  compile PASS; `git diff --check` PASS. The historical repository-wide LIVE
+  working-tree loop stood at 35/37 solely because pre-existing live `.herd`
+  specimen assertions in `tests/test_hermetic_git.py` and
+  `tests/test_reconcile_audit.py` predate that task.
 
 ## Runtime service (`dirun`)
 
@@ -1192,19 +1198,28 @@ user-visible breakage.
 
 ## What is and is not proven
 
-The full lifecycle is verified hermetically with real local git fixtures, the
-real spawn-bridge validation pass, injected transport, role runner and control
-plane, plus the accumulated mutation battery. Production exercised the live
-Telegram-to-Mitiq path once, through real child-Herdr execution and fresh
-installed-Codex role turns, as far as a target task COMPLETE with a canonical
-target Reviewer APPROVE; that mountain then terminated BLOCKED on genuine
-post-dispatch policy drift. The final lifecycle and delivery stages listed
-above remain live-unverified, and DI-REMOTE-2 acceptance is INCOMPLETE. The
-clean-clone CI evidence for this branch is GitHub run `33330263889` at
-`4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f` — all four macOS/Ubuntu x Python
-3.9/3.13 jobs green; the branch also passed at
-`52a97b71a3b5c9f20ff33d4feb1332284cd825b7`. The recorded codex-cli 0.149.0
-telemetry limitation (A0) is stated verbatim in SECURITY.md.
+The complete DI-REMOTE-2 lifecycle is certified hermetically and adversarially
+on the stable release tree.
+
+Production separately exercised one historical Telegram-to-Mitiq mountain
+through real target Herdr COMPLETE and canonical target Reviewer APPROVE. That
+historical execution then exposed genuine post-dispatch policy drift and
+correctly terminated BLOCKED; `verified_result` and `result_delivery` remained
+null in that run and no target Git delivery occurred.
+
+For v0.7.0, the corrected independent verification,
+`VERIFIED`/`COMPLETED`, and exactly-once final-result path is certified by the
+later release evidence. A fresh post-fix live mountain is not used as release
+evidence. Separate artifact delivery and Telegram-native delivery authority
+remain outside this certification.
+
+Historical clean-clone evidence remains GitHub run `33330263889` at
+`4eea64f2a915e988dbfd73ad51dd9f6546bc6a8f`; the branch also passed at
+`52a97b71a3b5c9f20ff33d4feb1332284cd825b7`, with all four macOS/Ubuntu x
+Python 3.9/3.13 jobs green.
+
+The recorded codex-cli 0.149.0 telemetry limitation (A0) remains stated
+verbatim in SECURITY.md.
 
 ---
 
@@ -2058,9 +2073,9 @@ Verified engineering result
 # Roadmap
 
 The detailed [Remote Mission Fabric roadmap](docs/remote-mission-fabric-roadmap.md)
-tracks what the historical mountain proved before it terminated BLOCKED, the
-seven-step release gate that a NEW mountain must clear, and the Phase-I
-requirement for exact Telegram-native delivery authorization.
+preserves the historical BLOCKED mountain as diagnostic evidence, records the
+v0.7.0 certification and release gate, and defines the Phase-I requirement for
+exact Telegram-native delivery authorization.
 
 ## Completed foundations
 
@@ -2081,11 +2096,12 @@ requirement for exact Telegram-native delivery authorization.
 - one-shot, fully bound plan approval and rejection
 - resumed Codex sessions, status, meaningful errors, and verified-result delivery
 - optional per-user macOS LaunchAgent baseline
-- DI-REMOTE-2 Remote Target Repository Routing (implemented on `main`,
-  hermetically verified, and exercised once on a historical live Mitiq
-  mountain that reached target Herdr COMPLETE and then terminated BLOCKED on
-  post-dispatch policy drift; verification, result, artifact, and delivery
-  stages remain live-unverified and DI-REMOTE-2 is UNRELEASED)
+- DI-REMOTE-2 Remote Target Repository Routing (released in v0.7.0;
+  hermetically verified and historically exercised through target Herdr
+  COMPLETE before the live mountain exposed post-dispatch policy drift and
+  terminated BLOCKED; the corrected final-result path is now certified
+  hermetically and adversarially, while separate artifact delivery remains
+  outside that certification)
 
 Real Telegram setup and traffic validation shipped in v0.6.3. The
 adapter was exercised from an allowlisted private Telegram user against
@@ -2119,32 +2135,14 @@ Validate:
 
 Do not move engineering execution out of the trusted Mac.
 
-## 2. Complete external-repository validation
+## 2. Broaden external-repository validation
 
-Integrate the pushed Runtime stabilization commit, assemble a stable `main`,
-then run a NEW live Mitiq mountain through independent verification, workflow
-completion, and exactly-once result delivery, and repeat the workflow against
-unrelated repositories and real issues. The historical mountain terminated
-BLOCKED and cannot stand in for that new run. Remote delivery remains a
-separately authorized roadmap stage.
+Repeat the certified DI-REMOTE-2 workflow against unrelated repositories and
+real issues, then exercise multi-mission and hostile recovery conditions.
 
-The test is:
-
-```text
-Phone
- |
-Telegram
- |
-Mac
- |
-Codex
- |
-Herdr
- |
-PR
-```
-
-without manually operating the terminal.
+A fresh post-fix Mitiq mountain may provide useful additional production
+evidence, but it is not used as the v0.7.0 release prerequisite or release
+proof. Remote delivery remains a separately authorized roadmap stage.
 
 ## 3. Distribution / productization
 

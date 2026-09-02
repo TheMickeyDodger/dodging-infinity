@@ -101,9 +101,9 @@ by regression tests:
   statically (AST walk, token scan) and behaviorally (import probe and
   an audited end-to-end filesystem check).
 
-## DI-REMOTE-2 Remote Target Repository Routing surface (unreleased)
+## DI-REMOTE-2 Remote Target Repository Routing surface (v0.7.0)
 
-DI-REMOTE-2 (implemented, **not yet part of any tagged release**)
+DI-REMOTE-2, released in v0.7.0,
 lets an allowlisted Telegram user authorize one exact bounded mission
 against a remote GitHub target repository while this repository stays
 the permanent control and policy repository. Its security properties,
@@ -198,32 +198,24 @@ otherwise:
   The initial dispatch is the BYTE-EXACT stored handoff; the separate
   corrective-follow-up path carries a bounded brief built from the
   authority fields.
-- **Completion and the verified result.** After dispatch the Runtime
-  observes the target through the existing read-only Herdr
-  observability (`herdr.observe`); the stopped decision is driven by
-  herd's own stopped set under SOURCE-SCOPED completeness (ruling
-  R-6): a projection degraded in a CONSUMED source WAITS or stops
-  durably (it never declares completion), while an agents-unprobed
-  global PARTIAL — EXPECTED in production, since a dispatched target
-  always has agents — weakens no consumed evidence. The raw global
-  completeness is recorded and rendered unaltered, and the last
-  distinct observation is surfaced in `/status`. A fresh
-  verification turn then runs, but its `verified_result` is
-  NECESSARY, NEVER SUFFICIENT: eight conjuncts (ten independent
-  problem codes) are applied against a fresh disk read — the
-  canonical target Reviewer APPROVE among them as TARGET-PRODUCED
-  evidence that the target's own review process ran and concluded,
-  never independent verification — and only then does DISPATCHED →
-  VERIFIED → COMPLETED proceed, with the verified result returned to
-  Telegram exactly once (reserve-before-send). Herdr lifecycle
-  COMPLETE alone can never verify. No step grants delivery.
-  "Exactly once" means never twice and never silently dropped — NOT
-  that it always eventually arrives: if a send crashes between reserve
-  and send (durable state `reserved`) or is only partly displayed
-  (`partial`), the result is NOT re-sent automatically (the delivery
-  pass selects only unreserved results), and `/status` says so
-  ("not retried automatically, since …"); recovering it is a human
-  step.
+- **Completion and the verified result.** After dispatch the Runtime observes
+  the target through the existing read-only Herdr observability. The fresh
+  verification turn's `verified_result` is necessary, never sufficient: the
+  complete durable verification conjunction must pass before
+  `VERIFIED`/`COMPLETED`.
+
+  Final-result delivery uses one dedicated bot-owned Telegram placeholder.
+  Its exact chat/message identity is durably bound before consequential
+  dispatch. After verification, the final result edits that same message
+  object. Ambiguous placeholder creation fails closed before dispatch;
+  crash-after-edit recovery reconciles against the same object; a
+  placeholder-bound workflow can never fall back to a second result
+  `sendMessage`; and an oversized final render fails closed rather than being
+  chunked or truncated.
+
+  Herdr lifecycle COMPLETE alone can never verify. No step grants Git,
+  release, or deployment authority.
+
 - **Dispatch-time protected-surface receipt.** Dispatch stamps a
   receipt (marker: `protected-surface baseline at dispatch`) binding
   the digest of this repository's protected surfaces at dispatch
@@ -257,22 +249,21 @@ otherwise:
   review-round limit. Exceeding it transitions the workflow durably to
   NEEDS_REAUTHORIZATION (a fresh human mission is required), never a
   silent stop.
-- **Automated/live evidence boundary.** All of the above remains proven with
-  real local git fixtures, a real bridge-validation pass, injected
-  transports/role-runners/spawns, and the read-only `herdr.observe` projection
-  over local fixtures. Production separately exercised live Telegram v2 traffic,
-  GitHub target materialization, child-Herdr bootstrap and dispatch, and fresh
-  installed-Codex role turns on ONE historical Mitiq #2802 mountain (workflow
-  `wf-2c901885473fc4781bf82296`), as far as target Herdr task
-  `20260830-094026-9fef2d` reaching COMPLETE with a canonical target Reviewer
-  APPROVE recorded. That mountain then exposed genuine post-dispatch policy
-  drift and correctly terminated BLOCKED at
-  `broker_verification_policy_drift`, so it does NOT prove independent final
-  verification, VERIFIED/COMPLETED, result or artifact delivery, or remote
-  delivery authority — `verified_result` and `result_delivery` remained null,
-  no target Git delivery occurred, and the workflow carried
-  `delivery_authority: none` throughout. Proving the remaining stages requires
-  a NEW live mountain.
+- **Automated/live evidence boundary.** Production exercised real Telegram
+  v2 traffic, GitHub target materialization, child-Herdr bootstrap and
+  dispatch, fresh installed-Codex role turns, target Herdr COMPLETE, and a
+  canonical target Reviewer APPROVE on the historical Mitiq #2802 mountain.
+  That particular workflow then exposed genuine post-dispatch policy drift
+  and correctly terminated BLOCKED; `verified_result` and `result_delivery`
+  remained null in that historical execution and no target Git delivery
+  occurred.
+
+  The corrected independent verification, `VERIFIED`/`COMPLETED`, and
+  exactly-once final-result contract is certified by the later hermetic and
+  adversarial v0.7.0 release evidence. A fresh post-fix live mountain is not
+  used as release evidence. Separate artifact delivery and remote
+  Git/release/deployment authority remain outside that certification.
+
 - **Standing constraint on future work.** The capstone narrative's
   "the target Supervisor is the first strategy-bearing artifact" check
   covers only artifacts that exist BEFORE and AT dispatch (the mission,
@@ -282,7 +273,7 @@ otherwise:
   (e.g. re-reading target content after dispatch), that enumeration
   MUST grow to cover it.
 
-## Managed workspace trust (DI-REMOTE-2 I1, unreleased)
+## Managed workspace trust (DI-REMOTE-2 I1, v0.7.0)
 
 ### The boundary in three parts
 
