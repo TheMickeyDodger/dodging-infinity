@@ -10,18 +10,103 @@
 
 > **Bounding the infinite to the finite.**
 
-**Any problem. Any repo. Any issue.**
+## What this is
 
-Dodging Infinity is a remote engineering orchestration system that turns human
-intent into bounded, isolated, and verifiable work on a trusted Mac. Codex
-operates the mission lifecycle; the target Herdr Supervisor owns engineering
-strategy and delegates through Lead, Executor, and Reviewer.
+Dodging Infinity is a governed mission fabric for giving AI real work
+without giving AI uncontrolled authority.
 
-[v0.6.1](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.1) established the repository-level Codex Operator contract, explicit operating protocol, and strictly read-only health and observability surfaces.
+**[IMPLEMENTED / PROVEN]** A person states an objective. In v0.7.0 the
+system turns it into one bounded remote mission: an exact target and
+baseline, explicit rules, a one-shot human approval bound to the exact
+rendered mission text before anything consequential runs, evidence-gated
+verification before the work can be called finished, and separate local
+human gates for commit, push, and release tag. The person can start the
+mission from a phone, ask what is happening without interrupting the
+work, and receive a verified result, returned exactly once.
 
-[v0.6.2](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.2) added **Codex Gateway v0.1**.
+**[PLANNED / TARGET]** The target adds a durable `M-####` mission record
+with budgets and checkpoints under the Mission Harness, and a human
+approval at every consequential boundary, including PR, merge, release,
+and deploy gates with exact one-shot remote delivery approvals. It adds a
+standing Observation Service that answers what is happening without
+touching the work. Nothing in the tree implements the mission record, the
+remote delivery approvals, or the Observation Service.
 
-[v0.6.3](https://github.com/TheMickeyDodger/dodging-infinity/releases/tag/v0.6.3) adds the implemented **Telegram Remote Operator MVP**. A trusted, allowlisted Telegram user can submit intent from a phone, receive and approve or reject a Codex plan, resume the same Codex session, query status, and receive the verified result. The adapter has no direct path to Herdr or `herdctl`.
+The labels are defined under [How to read this](#how-to-read-this); the
+full split is in [Current vs End State](docs/wiki/Current-vs-End-State.md).
+
+The design keeps five things apart and never lets one stand in for another:
+
+- **Intent.** What the human asked for. Intent is not permission.
+- **Reasoning.** The Operator role, which reads evidence and chooses bounded
+  work for one mission. It is a role, not a model brand.
+- **Execution.** The engineering organization that does the work inside an
+  engineering mission. It never governs the mission.
+- **Proof.** Declared before execution and produced by tests, independent
+  review, and verification gates. A result is verified because a gate
+  passed, not because a model said so.
+- **Authority.** Held by humans, at every consequential boundary, separately.
+  Approval for one step never carries to the next.
+
+The end-state operating model, in one line:
+
+> **Grok Bot converses. Operator operates. Herdr engineers. Dodging Infinity governs. Humans authorize. The Reconciler keeps truth current. The Ops Steward learns. The world observes.**
+
+Most agent systems ask a model to do more. Dodging Infinity makes the
+problem smaller. A large objective becomes bounded units with explicit
+scope, rules, ownership, and validation, so the system scales outward
+without silently expanding the authority of any single agent.
+
+The intelligence is replaceable.
+
+**The orchestration contract is not.**
+
+## What it is not
+
+Dodging Infinity is not a wrapper around a chat app, a model provider, or a
+coding agent. It is not a persona collection, a multi-agent chat demo, a
+task board, a generic workflow engine, or an autonomous Git bot. It is not
+merely the engineering organization that runs inside its missions, and it
+is not a UI for that organization. It is not a visual simulation that
+controls agents.
+
+Each of those can be an interface, an implementation, a dependency, a
+candidate, or a reference. The product is the governed mission fabric that
+joins them. [Current vs End State](docs/wiki/Current-vs-End-State.md) names
+every third party in the design and states what it is not.
+
+## How to read this
+
+Every major claim in this document and in the wiki carries one of six
+labels. A section's first paragraph or its status table carries the label
+for that section.
+
+| Label | Meaning |
+|---|---|
+| IMPLEMENTED / PROVEN | Exists in this repository and is pinned by a named test, a CHANGELOG entry, a CI run, or a release evidence identifier. |
+| IN PROGRESS | Phase 1 work that exists in this checkout and does not yet implement its target design. |
+| PLANNED / TARGET | Design intent. Nothing in the tree implements it. |
+| CANDIDATE | A third party under evaluation for a target role. Not selected and not depended on. |
+| REFERENCE / FALLBACK | The current implementation of a role that the target design makes replaceable. Telegram as transport and Codex as Operator carry this label. Neither is permanent architecture. |
+| DESIGN REFERENCE | A project whose ideas are borrowed. It is not a backend and it carries no authority. |
+
+## Where to go next
+
+| If you want | Read |
+|---|---|
+| The whole picture and a map of every page | [Wiki home](docs/wiki/Home.md) |
+| What exists, what is in progress, and what is target, one table per subsystem | [Current vs End State](docs/wiki/Current-vs-End-State.md) |
+| The target stack and where this checkout sits inside it | [Architecture](docs/wiki/Architecture.md) |
+| Who may do what, and why the gates are separate | [Authority and Safety](docs/wiki/Authority-and-Safety.md) |
+| Phase 0 to Phase 11 | [Roadmap](docs/wiki/Roadmap.md) |
+| Five end-state scenarios, each labelled as target | [Examples](docs/wiki/Examples.md) |
+| Every operating command and setting that ships today | [Operational reference](docs/reference/README.md) |
+
+## What works today (v0.7.0)
+
+**[IMPLEMENTED / PROVEN]** Everything in this section is pinned by
+`tests/test_release_narrative.py`, the v0.7.0 entry in
+[CHANGELOG.md](CHANGELOG.md), and GitHub CI run `33330263889`.
 
 **v0.7.0 adds DI-REMOTE-2 Remote Target Repository Routing.** A natural-language
 Telegram request can produce a separately planned, one-shot Mission
@@ -29,35 +114,57 @@ Authorization that the independent Runtime advances through an isolated managed
 target workspace into a real Herdr. No manual clone, target registration,
 terminal bootstrap, or manual Herdr setup is required.
 
-One historical external-target mountain exercised the real cross-repository
-path through target Herdr COMPLETE and then exposed genuine post-dispatch
-policy drift and correctly terminated BLOCKED. The corrected final-result path
-was subsequently certified hermetically and adversarially for v0.7.0. A fresh
-post-fix live mountain is not used as release evidence, and separate artifact
-delivery is not claimed by that certification.
+The release proves these behaviors:
+
+- Remote mission authorization. A natural-language request produces a
+  closed-schema Mission Authorization. Approval is one-shot and bound to the
+  exact rendered mission text. Typed chat text carries no authority.
+- Remote target routing, route (b). The legacy Operator turn's marker is a
+  routing signal only. A separate fresh planning turn produces the
+  authorization.
+- Telegram as the reference transport. Allowlisted numeric user ids, private
+  chats only, and authentication before any content is parsed.
+- Isolated managed target materialization, verified for containment,
+  canonical remote identity, and the approved baseline.
+- Unattended target Herdr bootstrap: Supervisor, Lead, Executor, and Reviewer.
+- Independent Reviewer decisions, canonical and persisted.
+- Evidence-gated verification. A verified result is gated, not declared.
+- Exactly-once final Telegram result: never twice and never silently dropped.
+- Ambiguity that fails closed rather than replaying an external effect.
+- Separate human Git gates. Commit, push, and release tag are three different
+  one-shot approvals.
+- Codex as the current reference Operator behind a Gateway with no path to
+  the engineering layer.
+- Deterministic Runtime and Broker boundaries, with protected workflow
+  authority state.
+
+One historical external-target mountain (workflow
+`wf-2c901885473fc4781bf82296`, target Herdr task `20260830-094026-9fef2d`)
+exercised the real cross-repository path from the exact phone request
+through target Herdr execution to a target task COMPLETE and a canonical
+target Reviewer APPROVE. It then exposed genuine post-dispatch policy drift
+and correctly terminated BLOCKED at `broker_verification_policy_drift`:
+`verified_result` and `result_delivery` stayed null, and no target Git
+delivery occurred. Those downstream stages did not run in that historical
+execution. The corrected verification and exactly-once final-result path
+was subsequently certified hermetically and adversarially for v0.7.0. A
+fresh post-fix live mountain is not used as release evidence. Separate
+artifact delivery and Telegram-native delivery authorization remain outside
+that certification.
+
+Remote mission execution authority exists today. Remote delivery authority
+does not. Current Telegram missions carry `delivery_authority = none`, and
+commit and push remain separate local require-human gates. The chain is
+deliberately broken at every link: mission authorization does not authorize
+a commit; a commit does not authorize a push; a push does not authorize a
+merge; a merge does not authorize a release; a release does not authorize
+deployment. Exact, one-shot Telegram-native commit, push, and PR
+authorization is planned Phase-I work, not implemented behavior. See the
+[Remote Mission Fabric roadmap](docs/remote-mission-fabric-roadmap.md).
 
 The operating model is deliberate. In v0.7.0 the principal operating model is Remote Target Repository Routing (DI-REMOTE-2):
 
 **Phone → Telegram → Mission Authorization → approval → Runtime → Broker → isolated managed target → target Herdr → evidence verification → Telegram result → human-gated delivery**
-
-One historical external-target mountain (workflow
-`wf-2c901885473fc4781bf82296`, target Herdr task `20260830-094026-9fef2d`)
-exercised this path from the exact phone request through target Herdr
-execution to a target task COMPLETE and a canonical target Reviewer APPROVE.
-It then exposed genuine post-dispatch policy drift and correctly terminated
-BLOCKED at `broker_verification_policy_drift`: `verified_result` and
-`result_delivery` stayed null, and no target Git delivery occurred. Those
-downstream stages did not run in that historical execution. The corrected
-verification and exactly-once final-result path is now certified hermetically
-and adversarially for v0.7.0; a fresh post-fix live mountain is not used as
-release evidence. Separate artifact delivery and Telegram-native delivery
-authorization remain outside that certification.
-
-Remote mission execution authority exists today; remote delivery authority does
-not. Current Telegram missions carry `delivery_authority = none`, and commit and
-push remain separate local require-human gates. Exact, one-shot Telegram-native
-commit, push, and PR authorization is planned Phase-I work, not implemented
-behavior. See the [Remote Mission Fabric roadmap](docs/remote-mission-fabric-roadmap.md).
 
 The released v0.6.3 operating model remains the local-mission path (a mission against this repository):
 
@@ -109,30 +216,13 @@ see "Claim-to-pin map" below for which one.
   mountain is not used as release evidence. Separate artifact delivery and
   Telegram-native delivery authorization remain outside that certification.
 
-
-## Why Dodging Infinity?
-
-Most agent systems ask a model to do more.
-
-Dodging Infinity does something different:
-
-**it makes the problem smaller.**
-
-Instead of giving one model an expanding context and hoping it can reason across everything, Dodging Infinity recursively turns a large objective into bounded units with explicit scope, rules, ownership, dependencies, and validation.
-
-That means the system can scale outward without silently expanding the authority of any individual agent.
-
-The intelligence is replaceable.
-
-**The orchestration contract is not.**
-
 ---
 
 # Architecture
 
 ## Current architecture on `main`: remote target routing (DI-REMOTE-2, v0.7.0)
 
-DI-REMOTE-2 is the v0.7.0 remote-target architecture. It runs one exact
+**[IMPLEMENTED / PROVEN]** DI-REMOTE-2 is the v0.7.0 remote-target architecture. It runs one exact
 bounded mission against a remote GitHub target repository while this
 repository remains the permanent control and policy repository. The v0.6.3
 local-mission path remains preserved compatibility behavior underneath it.
@@ -143,7 +233,7 @@ control repository (this repo: pinned control + policy, never the work target)
     |
     v
 fresh Codex turns (read-only sandbox, no resume/fork; the Mission
-Authorization comes only from a separate fresh planning turn — route (b))
+Authorization comes only from a separate fresh planning turn, route (b))
     |
     v
 Runtime (`dirun`, a separate deterministic process)
@@ -161,7 +251,7 @@ target Herdr (Supervisor -> Lead -> Executor / Reviewer)
 evidence verification (a verified result is gated, not declared)
     |
     v
-Telegram result (the verified result, exactly once — see caveat below)
+Telegram result (the verified result, exactly once; see caveat below)
     |
     v
 human delivery gate (commit/push/PR/tag/release/merge stay local human actions)
@@ -169,21 +259,21 @@ human delivery gate (commit/push/PR/tag/release/merge stay local human actions)
 
 Each component, precisely:
 
-- **Control repository** — this repository is the permanently pinned
+- **Control repository**: this repository is the permanently pinned
   control and policy repository, never the work target; target
   engineering can never modify it through this path.
-- **Telegram transport boundary** — Telegram and the adapter are
+- **Telegram transport boundary**: Telegram and the adapter are
   transport only; there is no direct path from them to Herdr or
   `herdctl` (the same boundary as the released local flow below).
-- **Fresh restricted Codex turns** — every DI-REMOTE-2 role turn is a
+- **Fresh restricted Codex turns**: every DI-REMOTE-2 role turn is a
   distinct fresh process with a read-only sandbox and no resume or
   fork; the Mission Authorization is produced only by a separate fresh
-  planning turn (route (b) — the legacy turn's marker is a routing
+  planning turn (route (b); the legacy turn's marker is a routing
   signal with no authority).
-- **Deterministic Runtime (`dirun`)** — a separate process, coupled to
+- **Deterministic Runtime (`dirun`)**: a separate process, coupled to
   the control chain only through the durable workflow authority store;
   Telegram, the Gateway, and Codex never invoke it in-process.
-- **Target Broker** — privileged and fixed-action: nine fixed
+- **Target Broker**: privileged and fixed-action: nine fixed
   lifecycle actions; `perform` takes exactly
   `(workflow_id, action, revision, capability)`, where the capability
   is the Runtime-minted one-shot token bound to exactly that
@@ -191,19 +281,19 @@ Each component, precisely:
   URLs, baselines, handoff bytes) are resolved from the protected
   workflow record, never supplied by the caller; capabilities are
   minted by the Runtime, never by Codex.
-- **Managed isolated targets** — managed workspaces under the
+- **Managed isolated targets**: managed workspaces under the
   protected per-user root, materialized only after one-shot approval
   consumption, with containment, canonical-remote, and baseline
   verification.
-- **Target Herdr, Supervisor-first** — the Broker's first dispatch is
+- **Target Herdr, Supervisor-first**: the Broker's first dispatch is
   the byte-exact stored handoff (a corrective follow-up is a bounded
   corrective brief, never a technical solution); the target Herdr
   Supervisor is the first strategy-bearing component (the Mission
   Authorization binds
   destination and boundaries, never implementation strategy), and the
-  existing Herdr organization — Supervisor -> Lead -> Executor /
-  Reviewer — runs unchanged inside the target.
-- **Evidence verification** — a verified result is gated, not
+  existing Herdr organization (Supervisor -> Lead -> Executor /
+  Reviewer) runs unchanged inside the target.
+- **Evidence verification**: a verified result is gated, not
   declared: the fresh verification turn's `verified_result` is
   necessary, never sufficient, and the full gate (eight conjuncts, ten
   independent problem codes) is described in "Remote Target Repository
@@ -214,7 +304,7 @@ Each component, precisely:
   creation fails closed before dispatch, crash-after-edit recovery reconciles
   against that same object, and a placeholder-bound workflow can never fall
   back to a second result `sendMessage`.
-- **Human delivery gate** — no delivery authority exists anywhere in
+- **Human delivery gate**: no delivery authority exists anywhere in
   the machine path; commit, push, PR, tag, release, and merge remain
   local, human-authorized actions. Telegram-native exact delivery approvals are
   planned in the roadmap, not available today.
@@ -223,7 +313,7 @@ Each component, precisely:
 
 ## Released architecture (v0.6.3): local missions
 
-This is what the released v0.6.3 tag does, and it remains the
+**[IMPLEMENTED / PROVEN]** This is what the released v0.6.3 tag does, and it remains the
 local-mission path on `main` (a mission against this repository).
 It is preserved compatibility behavior, not the principal `main`
 architecture above.
@@ -267,586 +357,113 @@ The architecture deliberately separates responsibilities:
 - **Reviewer** challenges the result independently.
 - **Git gates** enforce human authorization at delivery boundaries.
 
-The gateway boundary is intentionally strict:
-
-```text
-Phone / human interface
-        |
-        v
-     Telegram
-        |
-        v
-Telegram Adapter
-        |
-        v
- Codex Gateway
-        |
-        v
- Codex Operator
-        |
-        v
- Herdr Handoff
-        |
-        v
-      Herdr
-```
-
 The gateway must never become an alternate execution path around Codex.
+The trust boundaries of this path (phone, MacBook, Gateway, Operator,
+Herdr, human) are in [docs/wiki/Authority-and-Safety.md](docs/wiki/Authority-and-Safety.md),
+and the target stack that grows around it is in
+[docs/wiki/Architecture.md](docs/wiki/Architecture.md).
 
-# End-state architecture
+## Where this is going
 
-The destination for Dodging Infinity is a remotely accessible autonomous engineering system in which the **MacBook remains the trusted execution node**.
+**[IN PROGRESS]** Phase 1 is host survival and provider-neutral seams, with
+v0.7.0 behavior preserved underneath. Two initial seams are now on `main`.
+`OperatorSession` provides the provider-neutral `prepare()` / `execute()`
+boundary around the current Codex path. `HumanInteractionAdapter` provides
+the provider-neutral human interaction boundary, with
+`TelegramHumanInteractionAdapter` as the current reference implementation.
+The production Telegram controller routes transport operations through that
+seam while durable cursor state, queueing, approval validation, Mission
+Authorization, result-delivery state, `OperatorSession`, Runtime, Herdr, and
+Git authority remain outside it. Both seams stay IN PROGRESS because they are
+initial abstractions, not the complete target lifecycles. They are pinned by
+`tests/test_operator_session.py` and `tests/test_human_interaction.py`. See
+[OperatorSession](docs/wiki/OperatorSession.md) and
+[Architecture](docs/wiki/Architecture.md).
 
-DI-REMOTE-2 on `main` implements the remote-target portion of this destination; the chain below is the local-mission spine that remains underneath it.
-
-The phone does not run Herdr.
-
-Telegram and the Telegram Adapter never invoke Herdr or `herdctl` directly.
-
-The gateway does not run Herdr.
-
-They deliver human intent to Codex.
-
-Codex remains the operator.
-
-Herdr remains the engineering organization underneath it.
-
-```text
-Phone
-  -> Telegram
-  -> Telegram Adapter
-  -> Codex Gateway
-  -> Codex Operator
-  -> Herdr
-       Supervisor -> Lead -> Executor / Reviewer
-  -> verified result
-  -> Codex Operator
-  -> human-gated delivery
-```
-
-Every component from the adapter onward runs on the trusted MacBook. Telegram is a remote control surface, not an execution node. In v0.1, the remote surface stops at plan decisions, status, and verified-result delivery; commit, push, PR, tag, release, deployment, and merge authority remain outside the Telegram protocol.
-
-## Trust boundaries
-
-### Phone / Telegram
-
-The phone is a remote human interface.
-
-It may:
-
-- submit human intent
-- receive Codex plans
-- approve bounded execution plans
-- reject bounded execution plans
-- query mission status with `/status` (each answer is explicitly
-  requested and queued behind active Gateway work — never streamed)
-- receive restart and recovery notices about work it sent that was
-  interrupted
-- receive verification results
-
-It must not:
-
-- receive arbitrary shell access
-- invoke Herdr directly
-- construct Herdr missions itself
-- bypass Codex reasoning
-- silently broaden permissions
-- expose Mac credentials or repository secrets
-- authorize commits, pushes, PRs, tags, releases, deployments, or merges in v0.1
-
-### MacBook
-
-The MacBook is the trusted execution node.
-
-It owns:
-
-- repositories
-- Git credentials
-- Codex credentials/session state
-- Codex Gateway
-- Herdr runtime
-- Herdr agents
-- local test environments
-- repository-scoped `.herd` state
-- commit/push authorization gates
-
-All engineering execution remains local to this trusted node unless a future architecture explicitly changes that boundary.
-
-### Codex Gateway
-
-The gateway is a transport-neutral front door.
-
-It:
-
-- accepts human intent
-- validates the target repository
-- starts or resumes Codex Operator sessions
-- returns structured Codex results
-- preserves source/request identity
-- fails closed on malformed Codex output
-
-It does **not**:
-
-- import Herdr
-- call `HerdrControlPlane`
-- invoke `herdctl`
-- prompt Herdr agents
-- create Herdr missions
-- dispatch engineering work
-- grant approvals
-- commit
-- push
-- merge
-- release
-
-### Codex Operator
-
-Codex owns the human-to-engineering boundary.
-
-Codex:
-
-1. understands human intent
-2. inspects the target repository
-3. gathers context
-4. resolves genuine ambiguity
-5. proposes a bounded execution plan
-6. receives human approval
-7. creates the Herdr handoff
-8. dispatches Herdr
-9. manages routine execution and recovery inside the approved scope
-10. monitors Herdr
-11. independently inspects the result
-12. creates bounded follow-up Herdr work when necessary
-13. prepares verified work for delivery
-14. requests protected human authorization
-
-Codex does not become the Executor.
-
-### Herdr
-
-Herdr owns engineering.
-
-The Supervisor determines the engineering route.
-
-```text
-Herdr Handoff
-      |
-      v
-Supervisor
-      |
-      v
-Lead
-   /      \
-  v        v
-Executor  Reviewer
-   \        /
-    \      /
-      v
-Verified Result
-```
-
-The Supervisor owns:
-
-- decomposition
-- role assignment
-- execution planning
-- sequencing
-- engineering strategy
-- validation workflow
-
-The Lead owns acceptance.
-
-The Executor implements.
-
-The Reviewer adversarially validates.
-
-Rejection can cause additional engineering iterations until the work genuinely satisfies the mission.
-
-### Human
-
-The human remains the ultimate delivery authority.
-
-Normal engineering execution should require one bounded-plan approval.
-
-Delivery remains separately protected.
-
-The human explicitly authorizes:
-
-- commit
-- push
-- pull-request publication where required
-- tag
-- release
-- destructive or materially expanded authority
-
-The intended operating principle is:
-
-> **The human approves the plan. Codex operates. Herdr engineers. The human authorizes delivery.**
+**[PLANNED / TARGET]** The target is a mission fabric in which canonical
+state, not a conversation or a model process, is the durable truth. That
+means a Mission Harness that owns identity, lifecycle, authority, evidence,
+blockers, artifacts, budgets, checkpoints, and delivery receipts; a
+deterministic Reconciler that compares expected state with reality; a
+pull-based Observation Service and a push-based Attention Router; a full
+`OperatorSession` lifecycle behind which Pi is the candidate runtime and
+Codex is the reference; capability-aware Workers, of which the trusted Mac
+is Worker 1; a BrowserCapability that splits reads from writes; true
+multi-mission execution; an Ops Steward that learns across missions and
+cannot expand its own authority; and, last, a Visual Mission OS that
+projects canonical state and is never the backend. None of that is in the
+tree. [Current vs End State](docs/wiki/Current-vs-End-State.md) has the
+per-subsystem table and [Roadmap](docs/wiki/Roadmap.md) has the phases.
 
 ---
 
-# Foundation available by v0.6.1
+## Quick start
 
-- **Operational readiness** — `herdctl health [--repo NAME]` checks configuration, server reachability, runtime state, expected live agents, and task-state readability without repairing or mutating the repository.
-- **Read-only observability** — `herdctl observe [--repo NAME] [--json]` projects repository identity, workforce configuration, mission and task state, runtime topology, child dependencies, reviews, artifacts, and recent task summaries through a schema-versioned snapshot.
-- **Bounded diagnostics** — Health and observation probes cap reads, scans, and live-agent queries; missing or malformed inputs become actionable diagnostics instead of unbounded work or tracebacks.
-- **Codex Operator contract** — Repository-level `AGENTS.md` defines Codex as the persistent human-facing operator and Herdr as the engineering execution layer.
-- **Operator protocol** — `OPERATOR_PROTOCOL.md` defines bounded handoffs, plan-scoped autonomy, completion review, recovery, and separate human delivery authorization.
-- **Operator-to-Herdr mission boundary** — A durable mission contract carries objective, constraints, rules, acceptance criteria, and verification requirements into Herdr.
-- **Mission CLI** — `herdctl mission create`, `herdctl mission show`, and `herdctl task --mission`.
-- **Herdr execution ownership** — Herdr remains the canonical engineering engine through Supervisor, Lead, Executor, and Reviewer roles.
-- **Simplified orchestration model** — The abandoned Mission Control layer was removed rather than creating a second engineering orchestration system beside Herdr.
-- **Full mission envelope delivery** — The complete structured mission is delivered to the Supervisor while mission rules remain enforceable through task policy.
-- **Stronger bootstrap boundaries** — Agents are explicitly prevented from inferring engineering work from repository state, verification commands, or shared memory before receiving an explicit task or delegation.
-- **Deterministic review protocol** — Reviewer decisions remain canonical, persisted, and validated through Herdr's review gates.
-- **Human-controlled delivery** — Commit, branch push, and release-tag push operations remain protected behind deterministic one-shot human authorization gates.
-- **Improved push approval lifecycle** — `git push --dry-run` no longer consumes a one-shot approval.
-- **Release-tag authorization** — Annotated tag pushes can be bound to the exact tag ref and tag-object SHA through `herdctl approve-push --tag` and `herdctl push-tag`.
-- **Repository isolation** — Agents remain bounded to their assigned repository and task scope.
-- **Model/runtime flexibility** — Operator and Herdr runtimes remain replaceable components behind stable orchestration contracts.
+**[IMPLEMENTED / PROVEN]** Every command below was checked against
+`herdctl.py --help` and the subcommand help in this checkout.
 
----
-
-# Codex Gateway v0.1 (released in v0.6.2)
-
-Codex Gateway v0.1 adds a local, transport-neutral interface boundary in front of the existing Codex Operator workflow.
-
-Its job is intentionally narrow:
-
-```text
-Human intent
-    |
-    v
-codexgw
-    |
-    v
-Codex Gateway
-    |
-    v
-Local Codex CLI
-    |
-    v
-AGENTS.md + OPERATOR_PROTOCOL.md
-    |
-    v
-Existing Codex Operator workflow
-    |
-    v
-Herdr only when Codex decides to dispatch engineering work
-```
-
-Gateway v0.1 provides:
-
-- **Versioned request/response contracts**
-- **Local terminal entry point**
-- **New Codex Operator sessions**
-- **Resumed Codex Operator sessions**
-- **Repository/operator-contract validation**
-- **Subprocess argument isolation**
-- **Fail-closed structured output**
-- **Strict UTF-8 boundaries**
-- **Bounded errors**
-- **Hermetic regression coverage**
-- **Static enforcement of the gateway/Herdr architectural boundary**
-
-The gateway invokes the installed Codex CLI.
-
-It never becomes an engineering runtime.
-
-## Gateway isolation
-
-Gateway source must not:
-
-- import `herdr`
-- call `HerdrControlPlane`
-- invoke `herdctl`
-- manipulate `.herd`
-- construct mission envelopes
-- prompt Supervisor, Lead, Executor, or Reviewer
-- grant execution approval
-- perform Git delivery
-
-Engineering remains downstream of Codex.
-
-## Gateway v0.1 non-goals
-
-Gateway v0.1 intentionally does not provide:
-
-- remote networking
-- Telegram
-- authentication
-- a daemon
-- HTTP
-- sockets
-- queues
-- mission construction
-- Herdr dispatch
-- Herdr lifecycle management
-- commit/push/tag/release authority
-
-Those responsibilities remain outside the Gateway itself. The Telegram adapter supplies Telegram transport, allowlist authentication, and the optional long-running LaunchAgent process as a client of the Gateway; it does not add those capabilities to the Gateway. Mission construction, Herdr dispatch and lifecycle management, and delivery authority remain downstream or separately deferred.
-
-## Live compatibility validation
-
-Gateway tests remain hermetic and mock Codex rather than consuming a real Codex engineering turn.
-
-Before the Telegram adapter was enabled, the installed Codex CLI was separately checked against the declared compatibility boundary. That validation covered:
-
-- new Codex sessions work
-- resumed Codex sessions work
-- `AGENTS.md` is loaded from the target repository
-- `OPERATOR_PROTOCOL.md` remains authoritative
-- clarification responses round-trip correctly
-- approval requests round-trip correctly
-- real Codex structured events match the gateway parser
-- malformed/unexpected events fail closed
-- no direct Herdr path exists through the gateway
-
----
-
-# Direct Herdr mission workflow
-
-A mission can still be explicitly created through the deterministic Herdr primitives:
+Install the command wrappers once (`herdctl`, `codexgw`, `tgop`, `dirun`
+into `~/.local/bin`):
 
 ```bash
-herdctl mission create \
-  "Fix the authentication bug" \
-  --constraint "Do not change the database schema" \
-  --rule "Preserve backward compatibility" \
-  --acceptance "Authentication tests pass" \
-  --verification "python3 -m unittest discover -s tests"
+bash scripts/install.sh
 ```
 
-Inspect it:
+Initialize a repository. `ALIAS` is the name you will use to address it,
+`CMD` is its verification command:
 
 ```bash
-herdctl mission show
+herdctl init --alias ALIAS --preset max-quality --test-command 'CMD'
 ```
 
-Dispatch it:
+If the verification command is not known yet:
 
 ```bash
-herdctl task --mission
+herdctl init --alias ALIAS --preset max-quality
+herdctl set-test 'CMD' --repo ALIAS
 ```
 
-Herdr receives:
+Install the runtime command guard once per Mac, then check the repository:
 
-```text
-OBJECTIVE
-Fix the authentication bug
-
-CONSTRAINTS
-- Do not change the database schema
-
-RULES
-- Preserve backward compatibility
-
-ACCEPTANCE CRITERIA
-- Authentication tests pass
-
-VERIFICATION
-- python3 -m unittest discover -s tests
+```bash
+herdctl safety-install
+herdctl doctor --repo ALIAS
+herdctl health --repo ALIAS
 ```
 
-The Supervisor then owns engineering execution.
+Dispatch a bounded task and watch it:
 
-In normal operator use, however, humans should not need to manually construct this envelope.
-
-Codex handles the translation from human intent into the Herdr handoff.
-
----
-
-# How Dodging Infinity works
-
-This section describes the local-mission path — the released flow that
-remains on `main` for missions against this repository. A remote target
-mission follows the DI-REMOTE-2 chain in "Current architecture on
-`main`" instead.
-
-Dodging Infinity starts with an unbounded human objective and turns it into bounded, independently reviewed engineering work.
-
-The human can enter through any of these paths:
-
-```text
-Direct Codex CLI
-
-Local codexgw -> Codex Gateway
-
-Phone -> Telegram -> Telegram Adapter -> Codex Gateway
+```bash
+herdctl task 'OBJECTIVE. Do not commit.' --repo ALIAS
+herdctl status --repo ALIAS
+herdctl observe --repo ALIAS --json
 ```
 
-All three paths terminate at the same authority boundary:
+Upgrade an initialized repository after pulling a new version:
 
-**Codex Operator.**
-
-The gateway does not construct or dispatch Herdr work.
-
-It delivers human intent to Codex.
-
-Codex is responsible for:
-
-1. understanding the objective
-2. investigating the repository
-3. gathering context
-4. resolving genuine ambiguity with the human
-5. constructing a bounded Herdr handoff
-6. presenting an execution plan
-7. receiving human plan approval
-8. dispatching Herdr
-9. monitoring Herdr without becoming the Executor
-10. handling routine recovery inside approved scope
-11. inspecting Herdr's result
-12. independently validating evidence
-13. issuing bounded follow-up Herdr work when necessary
-14. preparing verified work for delivery
-
-Herdr remains responsible for engineering execution.
-
-The Supervisor coordinates.
-
-The Lead owns acceptance.
-
-Executors implement.
-
-Reviewers challenge the result.
-
-Each Herdr owns a finite scope:
-
-- one repository
-- one top-level task
-- one effective rule set
-- one runtime state
-- explicit acceptance criteria
-- observable verification evidence
-
-The core loop is:
-
-**understand -> define -> decompose -> solve -> challenge -> validate -> deliver**
-
----
-
-# Telegram remote operator experience
-
-This is the released v0.6.3 (v0.1 adapter) experience for a mission
-against the configured local repository; a remote target mission adds
-the one-shot Approve Mission flow described in "Remote Target
-Repository Routing" below.
-
-The implemented v0.1 interaction is deliberately simpler than the machinery underneath it.
-
-You are away from the Mac.
-
-You open Telegram on your phone.
-
-You send:
-
-```text
-Fix issue #702 in the external target repository.
-
-Investigate the actual cause, preserve the repository contribution rules,
-add the necessary verification, and prepare the result for delivery.
+```bash
+herdctl upgrade --repo ALIAS
+herdctl doctor --repo ALIAS
 ```
 
-Telegram forwards the intent to the trusted Mac.
-
-Codex investigates.
-
-Your phone receives:
-
-```text
-PLAN READY
-
-Repository:
-external-target
-
-Objective:
-Resolve issue #702
-
-Constraints:
-- preserve compatibility
-- follow contribution rules
-- add regression coverage
-- no delivery without separate approval
-
-Proceed?
-
-[Approve]
-[Reject]
-```
-
-You approve once. That one-shot decision authorizes only the exact plan presented for that Telegram user, private chat, repository, Gateway request, Codex session, Telegram message, and plan digest. Ordinary Telegram text grants no authority.
-
-Then you can put the phone away.
-
-Codex:
-
-- starts/restores required local execution components
-- creates the Herdr handoff
-- dispatches Herdr
-- monitors progress
-- handles routine recovery
-- creates bounded follow-up missions when necessary
-- independently verifies the final result
-
-Herdr:
-
-- decomposes
-- implements
-- tests
-- reviews
-- rejects when necessary
-- corrects
-- re-reviews
-- produces evidence
-
-While the mission runs, your phone receives no unsolicited progress
-delivery: v0.1 has no proactive progress streaming. (The one
-unsolicited message class is a restart/recovery notice about work you
-sent that was interrupted, if the adapter restarts mid-mission.) If
-you want to know how things are going, you send:
-
-```text
-/status
-```
-
-The adapter acknowledges immediately, and the answer — durable
-lifecycle state plus a read-only Operator status snapshot — arrives
-when it reaches the front of the queue behind the active engineering
-work.
-
-When the engineering turn you approved completes, its reply is the
-verified result:
-
-```text
-MISSION COMPLETE
-
-Reviewer:
-APPROVE
-
-Tests:
-Passed
-
-Changed files:
-4
-
-Delivery:
-Awaiting a separate human-controlled local Git authorization
-```
-
-Telegram v0.1 does not authorize or perform a commit, push, PR, tag, release, deployment, or merge. Those actions remain behind the existing explicit human gates outside the Telegram adapter.
-
-Your Mac did the engineering.
-
-Your phone was the intent, plan, status, and result control surface.
+Commit, push, and release-tag stay behind the human gates described below.
+The full command surface, presets, rules, the mission contract, and the
+task lifecycle are in
+[docs/reference/herdr-operations.md](docs/reference/herdr-operations.md).
 
 ---
 
 # Telegram Remote Operator
 
-Telegram is the first remote client, shipped as an MVP adapter
-(`telegram_operator/` package, `tgop` entry script).
-
-It is an adapter, not an execution system.
+**[REFERENCE / FALLBACK]** Telegram is the current reference transport,
+shipped as an MVP adapter (`telegram_operator/` package, `tgop` entry
+script). It is an adapter, not an execution system. Current `main` routes
+its transport operations through the initial provider-neutral
+`HumanInteractionAdapter` seam via `TelegramHumanInteractionAdapter`.
+Telegram remains the reference and fallback transport while Grok and the
+broader interaction plane remain planned. The adapter has no direct path to
+Herdr or `herdctl`; it authenticates allowlisted users and carries intent,
+plans, status, and results between the phone and the Gateway.
 
 ```text
 Telegram
@@ -865,7 +482,7 @@ Codex Operator
 
 Configuration lives OUTSIDE any repository, in
 `~/Library/Application Support/DodgingInfinity/telegram/config.json`
-(directory mode `700`, file mode `600` — the adapter refuses to load a
+(directory mode `700`, file mode `600`; the adapter refuses to load a
 group/other-readable config because it holds the bot token):
 
 ```json
@@ -881,37 +498,10 @@ group/other-readable config because it holds the bot token):
 - Durable adapter state (`state.json`) sits next to the config, also
   outside the repository, written atomically.
 
-Run in the foreground with `tgop run`, or install the optional
-per-user LaunchAgent with `tgop install-agent` (absolute paths,
-RunAtLoad, KeepAlive with a restart throttle; logs in the protected
-state directory, which the installer creates at mode `700`). An
-explicit `--config PATH` given to `install-agent` is propagated into
-the installed job as an absolute path, so the agent runs exactly the
-named configuration, and the job's logs, state, and lock all live in
-that config's directory (the default protected state directory
-otherwise) — never split across two locations. Because launchd does
-not inherit your shell PATH, the installer resolves the `codex`
-binary at INSTALL time and bakes its directory into the job's PATH
-FIRST, ahead of a fixed constant list — never your ambient PATH — so
-the exact validated binary always wins; installation refuses
-with an actionable message when `codex` cannot be resolved, and the
-agent must be reinstalled if the `codex` binary later moves. Disable
-with `tgop uninstall-agent` — it unloads and removes exactly the
-per-user plist the installer created. A single-instance lock refuses
-a second concurrent adapter.
-
-## Transport
-
-The adapter uses genuine outbound Telegram Bot API long polling:
-`getUpdates` with a positive server-side long-poll duration, and a
-client socket deadline that is strictly LONGER than the long poll by a
-hard constant margin (so the server always answers an idle poll before
-the client gives up; a deadline firing on an idle poll is treated as a
-normal empty poll, never an error and never a reason to disturb the
-update offset). Failed polls recover with capped exponential backoff.
-There is no webhook, no public listener, and no inbound port. These
-deadlines exist ONLY in the Telegram transport; the Codex Gateway's
-subprocess keeps its no-deadline behavior unchanged.
+Run in the foreground with `tgop run`, or install the optional per-user
+LaunchAgent with `tgop install-agent` and remove it with
+`tgop uninstall-agent`. A single-instance lock refuses a second concurrent
+adapter.
 
 ## Interaction
 
@@ -919,103 +509,25 @@ subprocess keeps its no-deadline behavior unchanged.
   authenticates the sender BEFORE parsing any content, then routes the
   intent through the Codex Gateway into a new or resumed Codex
   Operator session.
-- The Operator answers through a versioned remote protocol envelope
-  (plan / status / result / error). A free-form model message is never
-  reinterpreted as an approved plan or a verified result.
 - A `plan` reply is displayed first, with no controls; its one-shot
-  **Approve / Reject** inline buttons are attached to the plan message
-  only after complete delivery is proven and the exact message binding
-  has been durably persisted.
-- `/status` reports durable adapter lifecycle state first — the last
-  gateway turn, queued items besides the status request itself,
-  in-flight dispatch, approvable plans awaiting decision (counted
-  across all chats; expired, consumed, and superseded approvals are
-  excluded), and session-map evictions since first run, each an exact
-  labelled count — then fetches engineering status through a
-  separately constrained READ-ONLY Operator turn.
-- `/status` is acknowledged immediately ("Gathering status…") but is
-  ANSWERED through the same single worker that serializes every
-  Gateway turn: a status request queues behind any active or
-  already-queued Gateway work and is answered only when it reaches
-  the front. Visibility is polled and lifecycle-based — there is no
-  proactive progress streaming; send `/status` again for a fresh
-  snapshot.
+  **Approve / Reject** inline buttons are attached only after complete
+  delivery is proven and the exact message binding has been durably
+  persisted.
+- `/status` reports durable adapter lifecycle state, then fetches
+  engineering status through a separately constrained READ-ONLY Operator
+  turn. It is answered behind any active Gateway work, never streamed.
 - `/help` (or `/start`) describes the commands.
 
-## Approval binding
-
-Plan approval is ONE-SHOT and bound to ALL of: the exact Telegram user
-id, the private chat, the configured repository realpath, the Gateway
-request, the Codex session, the Telegram plan message, the sha256
-digest of the exact plan text, a random adapter-held nonce, and an
-`expires_at` validity bound. No approval CONTROL exists before proof:
-the plan text is sent with no keyboard, and the Approve / Reject
-buttons are offered — on exactly the bound plan message — only after
-the send outcome proves the complete plan text was displayed and the
-message binding has been durably persisted. A plan too long to display
-within the Telegram chunk cap is refused with no approval armed; a
-truncated, partial, failed, or unverifiable plan delivery voids the
-approval with an explanation and offers no buttons; and a failed or
-unverifiable button offer voids the approval too — an actionable
-approval binds exactly what was displayed, never undisplayed text. A
-revised plan invalidates every prior
-approval in the thread, and any intervening engineering turn in the
-chat invalidates a still-pending approval at dispatch time (checking
-/status does not). Replays, mismatches, expiry, and duplicates
-all fail closed. The nonce never leaves the Mac: inline buttons carry
-only an opaque approval id, and typed chat text can never forge the
-adapter's decision envelope (marker-bearing user lines are visibly
-quoted before forwarding).
-
-## Recovery
-
-Authority-bearing state is persisted before any external action, and
-the Telegram offset advances only after accepted state is durably
-stored. After a crash or restart the adapter reports
-queued-but-undispatched work as dropped (re-send it) and
-dispatched-but-unconfirmed work as AMBIGUOUS — it is never replayed
-automatically.
-
-## Delivery authority — local today, Telegram-native planned
-
-Remote delivery authority is not implemented today. No Telegram
-message — plain text or approval callback — can commit, push, open a
-PR, tag, release, or deploy. The adapter's decision envelope states
-explicitly that it grants no delivery authority. Commit, push, PR,
-tag, and release remain separate, human-authorized, local actions.
-
-Telegram-native delivery authorization is now a Phase-I product requirement.
-It will require exact mission/result/diff/ref binding, expiring one-shot human
-approval, durable receipts, replay protection, and separate authorization at
-each commit, push, PR, tag, release, deploy, or merge boundary. The design is
-tracked in the [Remote Mission Fabric roadmap](docs/remote-mission-fabric-roadmap.md).
-
-## Telegram security requirements
-
-The adapter enforces, with static and behavioral regression tests:
-
-- allowlist trusted NUMERIC Telegram user IDs, private chats only
-- authenticate every update BEFORE parsing or persisting content
-- reject unknown senders with no reply; nothing they send is parsed
-  or persisted — no content, intent, approval, work, or session
-  state. The only durable effect of a denied update is the transport
-  update-offset advance (intended poll-loop bookkeeping, so a denied
-  update is not re-fetched and cannot wedge the poller)
-- never expose arbitrary shell execution
-- never forward raw shell commands directly
-- never invoke Herdr, never read orchestration state — not even a
-  path string (isolation is enforced by the static suite)
-- never bypass Codex
-- never silently interpret chat text as Git authorization
-- bind approval actions to a known Codex request/session and the
-  exact bounded plan
-- redact the bot token from every error and diagnostic surface
+Transport, approval binding, crash recovery, the adapter's delivery
+authority today, and the security requirements the static and behavioral
+suites enforce are in
+[docs/reference/telegram-remote-operator.md](docs/reference/telegram-remote-operator.md).
 
 ---
 
 # Remote Target Repository Routing (DI-REMOTE-2, v0.7.0)
 
-DI-REMOTE-2 is the v0.7.0 remote-target capability. It extends the Telegram
+**[IMPLEMENTED / PROVEN]** DI-REMOTE-2 is the v0.7.0 remote-target capability. It extends the Telegram
 remote experience from a local configured repository to one exact bounded
 mission against a remote GitHub target while Dodging Infinity remains the
 permanent control and policy repository. The historical external-target mountain
@@ -1066,11 +578,11 @@ Deliberate properties:
   handoff, revision, `delivery_authority: none`, plus the exact human
   request). Implementation-strategy fields are refused by name; the
   target Herdr Supervisor owns the engineering route. Validation is
-  structural — see SECURITY.md for the stated limit and the structural
+  structural; see SECURITY.md for the stated limit and the structural
   protections around it.
 - **The user's exact typed message is stored**, not just the Operator's
   paraphrase: it is recorded verbatim in the workflow record
-  (`human_intent`, adapter-stamped — an Operator that supplies it is
+  (`human_intent`, adapter-stamped; an Operator that supplies it is
   refused), rendered quoted into the approved mission text, bound by its
   own sha256, and therefore shown to every role turn via the rendered
   text. This is what makes "the Operator can never change what the human
@@ -1096,7 +608,7 @@ Deliberate properties:
   (`reserved` / `partial`) are AT-MOST-ONCE and are never re-sent either.
 - The initial dispatch is the **byte-exact stored handoff**; corrective
   follow-ups are a separate path bounded (2) as an **authorization-scope
-  bound, not a review-round limit** — exceeding it transitions durably
+  bound, not a review-round limit**; exceeding it transitions durably
   to NEEDS_REAUTHORIZATION.
 - The durable workflow store is **schema-2**; a schema-1 record is
   retired (never upgraded) by `tgop migrate-workflows`, which preserves
@@ -1115,8 +627,8 @@ Deliberate properties:
   SUFFICIENT: eight conjuncts (ten independent problem codes) are
   applied against a fresh disk read, the canonical target Reviewer
   APPROVE among them as TARGET-PRODUCED evidence that the target's
-  own review process ran and concluded — never independent
-  verification — and Herdr lifecycle COMPLETE alone can never
+  own review process ran and concluded (never independent
+  verification), and Herdr lifecycle COMPLETE alone can never
   verify. Observation completeness is SOURCE-SCOPED (ruling R-6):
   the raw global completeness is rendered unaltered, and an
   agents-unprobed global PARTIAL is EXPECTED in production.
@@ -1151,7 +663,7 @@ Deliberate properties:
 - **How the historical mountain ended:** it exposed genuine post-dispatch
   policy drift and correctly terminated BLOCKED at
   `broker_verification_policy_drift`. `verified_result` and `result_delivery`
-  remained null. No target Git delivery occurred — the target stayed at
+  remained null. No target Git delivery occurred: the target stayed at
   baseline `3e1833d930723ef4f7220698c98155a925591d4d` carrying an
   implementation diff only.
 - **Final-result release certification:** the corrected independent
@@ -1160,7 +672,7 @@ Deliberate properties:
   post-fix live mountain is not used as release evidence. Separate artifact
   delivery and Telegram-native commit/push/PR/tag/release/deploy/merge
   authorization remain outside this certification.
-- **Historical Runtime stabilization — integrated:** stabilization commit
+- **Historical Runtime stabilization, integrated:** stabilization commit
   `d8ec2af409e4086f985be03371a872a84a3767ec` on branch
   `fix/runtime-terminal-reconciliation` (Herdr task `20260830-185309-4c3db7`,
   COMPLETE, final canonical Reviewer round 6 APPROVE) was reviewed and pushed
@@ -1193,7 +705,7 @@ single-instance lock (the same lock `/status` probes).
 ## Upgrading: explicit state migration (breaking)
 
 The adapter state schema moved from version 1 to 2. An existing v1
-`state.json` fails closed until the human runs `tgop migrate-state` —
+`state.json` fails closed until the human runs `tgop migrate-state`:
 the adapter refuses to start against the old schema rather than
 migrating silently, because the migration marks every pre-existing
 approval superseded FOR V2 PURPOSES ONLY (an old approval must never
@@ -1229,201 +741,12 @@ verbatim in SECURITY.md.
 
 ---
 
-# Always-on Mac host
-
-Remote operation requires the trusted Mac to remain available.
-
-The MVP includes an optional per-user macOS LaunchAgent installed by `tgop install-agent`. It runs the outbound long-polling adapter at login, uses `RunAtLoad` and `KeepAlive` with restart throttling, stores logs and durable state in the protected configuration directory, embeds the validated Codex executable path, and refuses concurrent adapter instances. `tgop uninstall-agent` unloads and removes that exact job.
-
-This is the current always-on process model, not a cloud service: Telegram sends updates to the Bot API, and the adapter on the MacBook polls outbound for them. There is no webhook, public listener, or inbound port. The MacBook remains the trusted execution node and must be awake, online, authenticated, and able to access the configured repository.
-
-The remaining always-on work is operational reliability validation and productization while preserving existing execution semantics.
-
-The Mac should:
-
-- remain powered on
-- remain connected to the internet
-- retain local repository access
-- retain Codex authentication
-- retain Git authentication
-- retain Herdr runtime access
-- start the remote adapter automatically at user login
-- expose health/status locally
-- recover the adapter process if it exits
-
-This does not require moving Herdr into the cloud.
-
-The Mac remains the engineering node.
-
----
-
-# Model and runtime agnosticity
-
-Dodging Infinity separates **responsibilities from models**.
-
-The outer operator and Herdr roles are logical responsibilities rather than permanent model assignments.
-
-Any model/runtime supported by Herdr can be assigned to an execution layer:
-
-```text
-Supervisor  -> Model A
-Lead        -> Model B
-Executor    -> Model C
-Reviewer    -> Model D
-```
-
-or:
-
-```text
-Supervisor  -> Model X
-Lead        -> Model X
-Executor    -> Model X
-Reviewer    -> Model X
-```
-
-The orchestration contract belongs to the role.
-
-The model is a replaceable execution engine.
-
-Presets such as:
-
-```text
-max-quality
-all-claude
-conservative
-```
-
-are convenience configurations rather than architectural requirements.
-
----
-
-# Target max-quality topology
-
-```text
-Human
- |
-Phone / Terminal
- |
-Codex Gateway or direct Codex CLI
- |
-Codex Operator
- |
-Herdr Handoff
- |
-Claude Fable 5 — Supervisor
- |
-Claude Opus 5 — Lead
- |
- +---------------------------------+
- | Adversarial Executor Pod        |
- |                                 |
- | Claude Fable 5 — Executor       |
- |              ↕                  |
- | GPT-5.6 Sol High — Reviewer     |
- | Read-only validation role       |
- +---------------------------------+
- |
-Lead verification
- |
-Codex independent inspection
- |
-Human commit gate
- |
-Codex commit
- |
-Human push / PR gate
- |
-Codex delivery
- |
-GitHub
-```
-
-The Reviewer remains read-only.
-
-The deterministic harness/Lead persists review evidence; the Reviewer does not need write access to `.herd/state/`.
-
----
-
-# Repository setup
-
-Initialize a repository:
-
-```bash
-herdctl init \
-  --alias my-repo \
-  --preset max-quality \
-  --test-command 'npm test && npm run build'
-```
-
-If the verification command is not known yet:
-
-```bash
-herdctl init --alias my-repo --preset max-quality
-herdctl set-test 'npm test && npm run build' --repo my-repo
-```
-
-The repository receives isolated Herdr runtime configuration and Git authorization boundaries.
-
----
-
-# Upgrade an existing repository
-
-```bash
-cd ~/code/internal
-
-herdctl upgrade --repo example-repo
-herdctl doctor --repo example-repo
-```
-
-Existing Herdr safety boundaries, repository isolation, review validation, and Git authorization controls remain intact.
-
----
-
-# Presets
-
-List presets:
-
-```bash
-herdctl presets
-```
-
-Current built-ins:
-
-```text
-max-quality   Multi-model configuration optimized for adversarial execution and review
-all-claude    Claude-based runtime configuration
-conservative  Explicit approval-focused configuration
-```
-
-Apply one:
-
-```bash
-herdctl preset max-quality --repo example-repo
-```
-
-Presets assign runtimes/models/permissions.
-
-They do not alter the orchestration hierarchy.
-
----
-
 # Strict Reviewer protocol
 
-The Reviewer contract requires exactly one canonical terminal decision:
-
-```text
-HERD_DECISION: APPROVE
-```
-
-or:
-
-```text
-HERD_DECISION: REJECT
-```
-
-Synonyms are not accepted.
-
-After a Reviewer turn:
+**[IMPLEMENTED / PROVEN]** The Reviewer contract requires exactly one
+canonical terminal decision, `HERD_DECISION: APPROVE` or
+`HERD_DECISION: REJECT`. Synonyms are not accepted. After a Reviewer turn
+the Lead validates and persists the decision:
 
 ```bash
 herdctl review-decision \
@@ -1443,450 +766,42 @@ Example:
 }
 ```
 
-Malformed output produces:
-
-```json
-{
-  "valid": false
-}
-```
-
-The Lead re-prompts the same Reviewer session rather than interpreting malformed output itself.
+Malformed output returns `"valid": false`, and the Lead re-prompts the same
+Reviewer session rather than interpreting malformed output itself. The
+Reviewer is read-only; the deterministic harness persists review evidence.
+Reviewer independence and what an APPROVE does and does not mean are in
+[docs/wiki/Herdr.md](docs/wiki/Herdr.md); the full protocol is in
+[docs/reference/herdr-operations.md](docs/reference/herdr-operations.md).
 
 ---
 
-# Mission contract
+# Human delivery gates
 
-Mission state is persisted under:
-
-```text
-.herd/state/mission.json
-```
-
-Conceptually:
-
-```json
-{
-  "version": 1,
-  "objective": "Fix authentication bug",
-  "constraints": [
-    "Do not change database schema"
-  ],
-  "rules": [
-    "Preserve backward compatibility"
-  ],
-  "acceptance_criteria": [
-    "Authentication tests pass"
-  ],
-  "verification": [
-    "python3 -m unittest discover -s tests"
-  ]
-}
-```
-
-Create:
+**[IMPLEMENTED / PROVEN]** Three gates, three separate one-shot human
+authorizations. Commit approval does not imply push approval, and push
+approval does not imply tag approval. Each is bound to exact state and a
+short TTL, and any change to that state invalidates it.
 
 ```bash
-herdctl mission create \
-  "Fix authentication bug" \
-  --constraint "Do not change database schema" \
-  --rule "Preserve backward compatibility" \
-  --acceptance "Authentication tests pass" \
-  --verification "python3 -m unittest discover -s tests"
+herdctl approve-commit --repo example-repo     # bound to worktree, branch, HEAD, staged diff hash
+herdctl approve-push --repo example-repo       # then: git push
+herdctl approve-push --tag vX.Y.Z              # then: herdctl push-tag vX.Y.Z
 ```
 
-Inspect:
-
-```bash
-herdctl mission show
-```
-
-Dispatch:
-
-```bash
-herdctl task --mission
-```
-
----
-
-# Human commit gate
-
-Stage the exact desired result.
-
-Then:
-
-```bash
-herdctl approve-commit --repo example-repo
-```
-
-Authorization is bound to:
-
-- repository/worktree
-- branch
-- HEAD
-- exact staged diff hash
-- short TTL
-
-A changed staged diff, branch, or HEAD invalidates the approval.
-
-For Codex Operator flows after explicit human confirmation:
-
-```bash
-herdctl approve-commit --yes
-```
-
-Codex may then execute the exact commit.
-
----
-
-# Human push gate
-
-Inspect:
-
-```bash
-git status -sb
-git log --oneline origin/main..HEAD
-```
-
-Authorize:
-
-```bash
-herdctl approve-push --repo example-repo
-```
-
-Then:
-
-```bash
-git push
-```
-
-A dry run does not consume approval:
-
-```bash
-git push --dry-run
-```
-
-Push remains independently authorized from commit.
-
----
-
-# Human release-tag gate
-
-Create an annotated tag:
-
-```bash
-git tag -a vX.Y.Z -m "Dodging Infinity vX.Y.Z"
-```
-
-Authorize exactly that tag:
-
-```bash
-herdctl approve-push --tag vX.Y.Z
-```
-
-Push:
-
-```bash
-herdctl push-tag vX.Y.Z
-```
-
-Authorization binds to the exact tag ref and object.
-
----
-
-# Runtime command safety
-
-Git itself permits bypass forms such as:
-
-```bash
-git push --no-verify
-```
-
-Runtime-level command protections and role contracts complement the deterministic Git guards.
-
-The Codex Gateway preserves the operator boundary.
-
-It does not become a replacement delivery authority.
-
----
-
-# Claude Auto Mode setup
-
-Run once per Mac after installing/upgrading Herdr:
-
-```bash
-herdctl safety-install
-```
-
-This maintains the Claude runtime command guard while preserving existing user Auto Mode configuration.
-
----
-
-# Rules and constraints
-
-Repository rules persist:
-
-```bash
-herdctl rules --repo example-repo
-
-herdctl rules add \
-  "Never modify migrations" \
-  --repo example-repo
-
-herdctl rules remove \
-  "Never modify migrations" \
-  --repo example-repo
-```
-
-Task-local rules:
-
-```bash
-herdctl task "Implement X" \
-  --repo example-repo \
-  --rule "Only modify README.md" \
-  --rule "Do not commit"
-```
-
-Mission rules remain scoped to the dispatched mission.
-
----
-
-# Task lifecycle
-
-```text
-IDLE -> ACTIVE -> COMPLETE
-               -> ABORTED
-               -> ERROR
-```
-
-Start:
-
-```bash
-herdctl task \
-  'Implement X. Do not commit.' \
-  --repo example-repo
-```
-
-Or:
-
-```bash
-herdctl task --mission --repo example-repo
-```
-
-Inspect:
-
-```bash
-herdctl task-status --repo example-repo
-herdctl status --repo example-repo
-```
-
-Complete:
-
-```bash
-herdctl task-complete \
-  --repo example-repo \
-  --checkpoint-file .herd/state/task-checkpoint.md
-```
-
-Completed context is checkpointed to:
-
-```text
-.herd/memory/task-history.md
-```
-
-Long-running rejection/correction loops are intentional when they continue producing useful engineering evidence.
-
----
-
-# Idle-aware heartbeat
-
-```text
-15-minute tick
- |
- +-- no ACTIVE task ------------------> skip
- |
- +-- Supervisor working/blocked ------> skip
- |
- +-- ACTIVE + Supervisor idle/done ---> health-check
-```
-
-The heartbeat observes active work without inventing work when no task exists.
-
----
-
-# Multi-repo usage
-
-```bash
-herdctl task 'Fix auth' --repo example-repo
-herdctl task 'Improve onboarding' --repo another-repo
-herdctl status --repo third-repo
-```
-
-Every repository receives isolated:
-
-- Herdr workspace
-- task state
-- mission state
-- context
-- memory
-- runtime configuration
-- Git approval tokens
-
-The Telegram Remote Operator preserves this same isolation: one configured repository per adapter instance, with session and approval state bound to that repository's resolved path.
-
----
-
-# Main Herdr commands
-
-```text
-herdctl init [--alias NAME] [--preset PRESET] [--test-command COMMAND]
-
-herdctl presets
-herdctl preset PRESET --repo NAME
-herdctl set-test COMMAND --repo NAME
-
-herdctl upgrade --repo NAME [--preset PRESET]
-herdctl repos [--prune]
-
-herdctl safety-install
-herdctl doctor --repo NAME
-herdctl health --repo NAME
-herdctl integrations --repo NAME
-
-herdctl bootstrap --repo NAME [--force]
-
-herdctl mission create "OBJECTIVE" \
-  [--repo NAME] \
-  [--constraint CONSTRAINT ...] \
-  [--rule RULE ...] \
-  [--acceptance CRITERION ...] \
-  [--verification COMMAND ...]
-
-herdctl mission show [--repo NAME]
-
-herdctl task "..." \
-  --repo NAME \
-  [--rule RULE ...] \
-  [--rejection-drill]
-
-herdctl task --mission \
-  --repo NAME \
-  [--rule RULE ...] \
-  [--rejection-drill]
-
-herdctl task-status --repo NAME
-herdctl task-complete --repo NAME --checkpoint-file FILE
-herdctl task-abort --repo NAME [--reason REASON]
-
-herdctl rules --repo NAME
-herdctl rules add RULE --repo NAME
-herdctl rules remove RULE --repo NAME
-
-herdctl review-decision --repo NAME --reviewer reviewer1
-
-herdctl clear-contexts --repo NAME
-
-herdctl approve-commit --repo NAME
-herdctl approve-commit --repo NAME --yes
-
-herdctl approve-push \
-  --repo NAME \
-  [--remote origin] \
-  [--target-branch BRANCH]
-
-herdctl approve-push \
-  --repo NAME \
-  [--remote origin] \
-  --tag TAG
-
-herdctl push-tag TAG --repo NAME
-
-herdctl status --repo NAME
-herdctl observe --repo NAME [--json]
-herdctl read ROLE --repo NAME
-herdctl prompt ROLE "..." --repo NAME
-
-herdctl heartbeat --once --repo NAME
-herdctl restart-heartbeat --repo NAME
-```
-
----
-
-# Codex Gateway
-
-The Codex Gateway is a separate outer interface.
-
-Installed CLI:
-
-```text
-codexgw
-```
-
-Inspect installed options:
-
-```bash
-codexgw --help
-```
-
-The gateway intentionally remains separate from `herdctl`.
-
-That separation is architectural, not cosmetic.
-
----
-
-# Inspecting a herd
-
-Four commands answer four different questions:
-
-- `doctor` — are the environment, binaries, runtime kinds, and Git guards installed?
-- `status` — what is the Herdr currently doing?
-- `health` — is this repository's Herdr operational and usable right now?
-- `observe` — what does all bounded persisted and live-queryable state say right now?
-
----
-
-# `herdctl health`
-
-```text
-herdctl health [--repo NAME]
-```
-
-`health` is strictly read-only.
-
-It checks:
-
-- Herdr configuration
-- server reachability
-- runtime state
-- expected/live agents
-- task-state readability
-
-Valid workflow states such as:
-
-```text
-idle
-working
-done
-blocked
-```
-
-are informational rather than infrastructure failures.
-
-Missing, unreachable, malformed, or unknown required infrastructure fails with actionable diagnostics and a nonzero exit.
-
-Healthy state returns:
-
-```text
-Health: READY
-```
-
-with exit `0`.
-
-Agent probing remains bounded.
+`git push --dry-run` does not consume a push approval. Git itself permits
+bypass forms such as `git push --no-verify`; runtime-level command
+protections and role contracts complement the deterministic Git guards, and
+no machine path in this repository holds delivery authority. Commands,
+bindings, and what each gate does not authorize are in
+[docs/reference/human-git-gates.md](docs/reference/human-git-gates.md).
 
 ---
 
 # `herdctl observe`
+
+**[IMPLEMENTED / PROVEN]** Pinned by `tests/test_docs_i8.py` against the
+production projection. `doctor`, `status`, and `health` are in
+[docs/reference/observability.md](docs/reference/observability.md).
 
 ```text
 herdctl observe [--repo NAME] [--json]
@@ -2005,162 +920,46 @@ Bounds are disclosed rather than silently presenting partial information as comp
 
 It is an instrument panel.
 
----
-
-# Distribution end state
-
-Once the architecture has been externally validated, the final productization stage is to turn Dodging Infinity into a plug-and-play installable system.
-
-The intended experience:
-
-```text
-Install Dodging Infinity
-        |
-        v
-Installer verifies host
-        |
-        +--> Herdr runtime
-        +--> herdctl
-        +--> Codex Gateway
-        +--> Codex integration
-        +--> operator contracts
-        +--> safety guards
-        +--> Telegram adapter
-        +--> Mac background service
-        |
-        v
-Ready
-```
-
-A new user should not need to manually assemble Python packages, shell wrappers, hooks, contracts, or background services.
-
-The installer should:
-
-- detect supported macOS/Linux environment
-- install required runtime dependencies
-- install/verify Codex CLI
-- install/verify Herdr runtime
-- install `herdctl`
-- install `codexgw`
-- install safety guards
-- initialize user configuration
-- provide Telegram setup when requested
-- install/start the local background host
-- run a deterministic health check
-- confirm the system is ready
-
-Repository onboarding should then be simple:
-
-```bash
-cd my-repository
-herdctl init
-```
-
-and normal operation should become:
-
-```text
-Phone or terminal
-      |
-      v
-Human intent
-      |
-      v
-Codex
-      |
-      v
-Herdr
-      |
-      v
-Verified engineering result
-```
 
 ---
 
-# Roadmap
+# Documentation map
 
-The detailed [Remote Mission Fabric roadmap](docs/remote-mission-fabric-roadmap.md)
-preserves the historical BLOCKED mountain as diagnostic evidence, records the
-v0.7.0 certification and release gate, and defines the Phase-I requirement for
-exact Telegram-native delivery authorization.
+The wiki is the canonical reviewed source for architecture and direction.
+The reference set preserves the complete v0.7.0 operating surface.
 
-## Completed foundations
+| Wiki page | What it answers |
+|---|---|
+| [Home](docs/wiki/Home.md) | The entry point, the truth-label legend, and the map of every page. |
+| [Architecture](docs/wiki/Architecture.md) | The full target stack and where this checkout sits inside it. |
+| [Current vs End State](docs/wiki/Current-vs-End-State.md) | One table per subsystem: proven, in progress, or target. |
+| [Authority and Safety](docs/wiki/Authority-and-Safety.md) | Intent versus authority, the separate chain, trust boundaries, ambiguous effects. |
+| [Missions and Lifecycle](docs/wiki/Missions-and-Lifecycle.md) | The durable mission record, mainline and side states, what ends a mission. |
+| [OperatorSession](docs/wiki/OperatorSession.md) | The provider-neutral reasoning seam: built and designed. |
+| [Herdr](docs/wiki/Herdr.md) | The engineering organization inside an engineering mission. |
+| [Evidence and Verification](docs/wiki/Evidence-and-Verification.md) | Proof contracts and why a verified result is gated. |
+| [Observation and Recovery](docs/wiki/Observation-and-Recovery.md) | Reading state without steering it, and surviving failure. |
+| [Capabilities and Workers](docs/wiki/Capabilities-and-Workers.md) | Bounded execution hosts and brokered capabilities. |
+| [Roadmap](docs/wiki/Roadmap.md) | Phase 0 to Phase 11 and the detailed near-term plan. |
+| [Examples](docs/wiki/Examples.md) | Five end-state scenarios, each labelled as target. |
+| [Glossary](docs/wiki/Glossary.md) | One definition per term, each labelled. |
 
-- durable Herdr mission boundary
-- Supervisor → Lead → Executor → Reviewer orchestration
-- repository isolation
-- deterministic review protocol
-- human commit/push/tag gates
-- Codex Operator contract
-- plan-scoped operator protocol
-- `herdctl health`
-- `herdctl observe`
-- schema-versioned observation model
-- Codex Gateway v0.1 local intent boundary
-- live Codex Gateway compatibility validation
-- Telegram Remote Operator MVP
-- trusted Telegram identity allowlist and private-chat enforcement
-- one-shot, fully bound plan approval and rejection
-- resumed Codex sessions, status, meaningful errors, and verified-result delivery
-- optional per-user macOS LaunchAgent baseline
-- DI-REMOTE-2 Remote Target Repository Routing (part of v0.7.0;
-  hermetically verified and historically exercised through target Herdr
-  COMPLETE before the live mountain exposed post-dispatch policy drift and
-  terminated BLOCKED; the corrected final-result path is now certified
-  hermetically and adversarially, while separate artifact delivery remains
-  outside that certification)
+| Reference page | Contents |
+|---|---|
+| [Reference index](docs/reference/README.md) | What the reference set covers and what it does not. |
+| [Herdr operations](docs/reference/herdr-operations.md) | Setup, presets, rules, mission contract, task lifecycle, Reviewer protocol, heartbeat, multi-repo, the full command surface. |
+| [Human Git gates](docs/reference/human-git-gates.md) | Commit, push, and release-tag gates and their bindings. |
+| [Telegram Remote Operator](docs/reference/telegram-remote-operator.md) | Setup detail, transport, interaction, approval binding, recovery, security. |
+| [Codex Gateway](docs/reference/codex-gateway.md) | The Gateway boundary, isolation, non-goals, live compatibility validation. |
+| [Runtime and host](docs/reference/runtime-and-host.md) | The `dirun` service and the always-on Mac host. |
+| [Observability](docs/reference/observability.md) | `doctor`, `status`, `health`, and how they relate to `observe`. |
+| [Release evidence v0.7.0](docs/reference/release-evidence-v0.7.0.md) | The release lineage and evidence trail from v0.6.1 to v0.7.0. |
 
-Real Telegram setup and traffic validation shipped in v0.6.3. The
-adapter was exercised from an allowlisted private Telegram user against
-the trusted MacBook with:
-
-- real outbound Bot API traffic
-- new and resumed Codex sessions
-- bounded Codex plan generation
-- the live Approve / Reject callback path
-- live `editMessageReplyMarkup` approval attachment after complete plan
-  delivery and durable binding
-- status and verified-result delivery
-- the fail-closed Telegram → Codex Gateway → Codex Operator boundary,
-  with no direct Telegram path to Herdr or `herdctl`
-
-Remote commit, push, PR, tag, release, deployment, and merge authorization are
-not implemented today. Exact Telegram-native delivery approvals are planned
-Phase-I work in the Remote Mission Fabric roadmap.
-
-## 1. Always-on Mac reliability
-
-Exercise and harden the shipped LaunchAgent model while the trusted Mac is powered on.
-
-Validate:
-
-- login startup and restart-on-failure behavior
-- sleep, wake, reboot, network loss, and recovery
-- protected configuration, logs, lock, and durable state over long runtimes
-- Telegram ↔ Codex session continuity and crash ambiguity reporting
-- actionable local health and diagnostics
-
-Do not move engineering execution out of the trusted Mac.
-
-## 2. Broaden external-repository validation
-
-Repeat the certified DI-REMOTE-2 workflow against unrelated repositories and
-real issues, then exercise multi-mission and hostile recovery conditions.
-
-A fresh post-fix live mountain may provide useful additional production
-evidence, but it is not used as the v0.7.0 release prerequisite or release
-proof. Remote delivery remains a separately authorized roadmap stage.
-
-## 3. Distribution / productization
-
-Package the entire system into an installable, dependency-aware distribution.
-
-The end goal:
-
-> Install once. Connect Telegram. Point Dodging Infinity at a repository. Start engineering.
-
-## 4. Desktop app later
-
-After the remote workflow and distribution model are proven, consider a desktop app for local setup, health, configuration, and status. It must remain a client of the same operator boundaries, not a replacement execution path around Codex or Herdr.
+Other documents: the detailed
+[Remote Mission Fabric roadmap](docs/remote-mission-fabric-roadmap.md),
+[CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md),
+[OPERATOR_PROTOCOL.md](OPERATOR_PROTOCOL.md), and
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -2170,17 +969,10 @@ Everything in the roadmap is subordinate to one architectural rule:
 
 > **Codex operates. Herdr engineers. Humans authorize delivery.**
 
-Remote interfaces must not bypass Codex.
-
-Gateway code must not become Herdr.
-
-Observability must not become control.
-
-Distribution must not weaken the safety boundaries.
-
-The interface gets simpler.
-
-The system underneath stays rigorous.
+Remote interfaces must not bypass the Operator. Gateway code must not
+become Herdr. Observability must not become control. Distribution must not
+weaken the safety boundaries. The interface gets simpler. The system
+underneath stays rigorous.
 
 ---
 
