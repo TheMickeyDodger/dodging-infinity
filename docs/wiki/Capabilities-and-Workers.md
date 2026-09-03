@@ -8,7 +8,13 @@ Everything on this page is design unless a paragraph says otherwise. The v0.7.0 
 
 **[PLANNED / TARGET]** A Capability is a specific thing a mission is allowed to do: inspect a repository, edit an isolated worktree, run tests, benchmark, drive a browser, call an external API, dispatch Herdr. Every capability is brokered by Dodging Infinity against the mission's authorization at the moment of use. A capability being installed on a worker does not mean a mission may invoke it. An Action Risk Envelope classifies each proposed external action by confidence, blast radius, reversibility, external effect, credential scope, ambiguity risk, and data sensitivity; the classification can raise required review, supervision cadence, rollback and reconciliation requirements, model choice, and human escalation. It cannot create missing authority.
 
-**[IMPLEMENTED / PROVEN]** The ancestor in the tree is the v0.7.0 Target Broker: privileged, fixed-action, nine fixed lifecycle actions, each performed only against a Runtime-minted one-shot capability bound to exactly one `(workflow_id, action, revision)` tuple. Sensitive values are resolved from the protected workflow record and never supplied by the caller. Capabilities are minted by the Runtime, never by Codex. The contract is stated in the [README](../../README.md#current-architecture-on-main-remote-target-routing-di-remote-2-v070) and pinned against the code by the release narrative suite.
+**[IMPLEMENTED / PROVEN]** The ancestor in the tree is the v0.7.0 Target Broker: privileged, fixed-action, nine fixed lifecycle actions, each performed only against a Runtime-minted one-shot capability bound to exactly one `(workflow_id, action, revision)` tuple. Sensitive values are resolved from the protected workflow record and never supplied by the caller. Capabilities are minted by the Runtime, never by Codex. The contract is stated on this page, in the paragraph below, and pinned against the code by the release narrative suite; the [README](../../README.md#current-architecture-on-main-remote-target-routing-di-remote-2-v070) keeps the architectural summary.
+
+**[IMPLEMENTED / PROVEN]** The Broker has nine fixed lifecycle actions, each performed as
+`(workflow_id, action, revision, capability)` with a Runtime-minted one-shot
+capability bound to exactly that `(workflow_id, action, revision)` tuple;
+sensitive values are never supplied by the caller, and capabilities are
+minted by the Runtime, never by Codex.
 
 ## Workers are capability-aware hosts
 

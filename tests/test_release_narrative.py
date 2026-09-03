@@ -252,6 +252,14 @@ RECONCILED_DOCS = (
     "CHANGELOG.md",
     "docs/remote-mission-fabric-roadmap.md",
 )
+# README is de-identified by the public-safety boundary adopted during the
+# README rewrite: it carries the terminal FRAMING but not the raw
+# identifiers. The identifiers stay pinned, at unchanged strength, in the
+# two documents that hold the historical evidence record.
+EVIDENCE_IDENTIFIER_DOCS = (
+    "CHANGELOG.md",
+    "docs/remote-mission-fabric-roadmap.md",
+)
 # SECURITY.md carries the same evidence boundary in narrower form: it
 # states the terminal framing but not the release gate or the CI run,
 # so it joins the ANCHORED negative pin and nothing else.
@@ -1646,6 +1654,10 @@ ALLOWED_START_TAGS = {
         '<intent>',
         '<task>',
     ),
+    "docs/reference/telegram-remote-operator.md": (
+        '<token from @BotFather>',
+        '<intent>',
+    ),
     "SECURITY.md": (
         '<config>',
         '<config>',
@@ -1691,10 +1703,12 @@ ALLOWED_START_TAGS = {
 # such an edit fails here until its entry is deliberately updated and
 # re-reviewed, the same discipline as the I1/I8 maps.
 SENDMESSAGE_MENTION_UNITS = {
-    "README.md": (
-        # "**Telegram result** — ... can never fall back to a second
-        # result `sendMessage`." (principal-flow bullet)
-        "12ff6a9e14f2b616bcd5542a4e934c91f680145222595d94f877cc7aca972d1e",
+    # README carries no sendMessage mention since the product-story rewrite:
+    # the principal-flow bullet was reworded in plain words (its old digest
+    # 12ff6a9e... is retired) and the exactly-once caveat moved, byte-for-
+    # byte, to docs/reference/telegram-remote-operator.md below.
+    "README.md": (),
+    "docs/reference/telegram-remote-operator.md": (
         # "Approval is **one-shot** ... a placeholder-bound workflow can
         # never fall back to a second result `sendMessage`, so the result
         # is **not re-sent automatically** ..." (exactly-once caveat)
@@ -2025,7 +2039,8 @@ class DocsAccuracyPinTests(unittest.TestCase):
             wa_record.PLACEHOLDER_INDEFINITE,
         )
         legacy_framing = "legacy lane (`reserved` / `partial`)"
-        for name in ("README.md", "SECURITY.md"):
+        for name in ("docs/reference/telegram-remote-operator.md",
+                     "SECURITY.md"):
             # Normalize wrapping so line breaks inside a phrase don't
             # hide it.
             doc = " ".join(read_doc(name).lower().split())
@@ -2314,6 +2329,10 @@ class CorrectnessDocsPinTests(unittest.TestCase):
 
     ALL_DOCS = ("OPERATOR_PROTOCOL.md", "README.md", "SECURITY.md",
                 "CHANGELOG.md")
+    # README is a product front door, not a claim binder as of the README
+    # rewrite. These four phrase families stay pinned at unchanged
+    # strength in the three documents that carry the normative record.
+    CLAIM_RECORD_DOCS = ("OPERATOR_PROTOCOL.md", "SECURITY.md", "CHANGELOG.md")
 
     @staticmethod
     def flat(name):
@@ -2323,7 +2342,7 @@ class CorrectnessDocsPinTests(unittest.TestCase):
         # doc<->code: "eight conjuncts" / "ten independent problem
         # codes" in every doc, against the DERIVED registry shape —
         # ten gates/codes grouping into eight conjunct families.
-        for name in self.ALL_DOCS:
+        for name in self.CLAIM_RECORD_DOCS:
             flat = self.flat(name).lower()
             self.assertIn("eight conjuncts", flat, name)
             self.assertIn("ten independent problem codes", flat, name)
@@ -2463,7 +2482,7 @@ class CorrectnessDocsPinTests(unittest.TestCase):
         # the term, and the ruling citation together. The R-3 wording
         # cannot satisfy it.
         r6_anchor = "observation completeness is source-scoped (ruling r-6)"
-        for name in self.ALL_DOCS:
+        for name in self.CLAIM_RECORD_DOCS:
             flat = self.flat(name).lower()
             self.assertIn(r6_anchor, flat, name)
             self.assertIn("rendered unaltered", flat, name)
@@ -2472,14 +2491,13 @@ class CorrectnessDocsPinTests(unittest.TestCase):
     def test_r3_framing_pins(self):
         # framing: ruling R-3's boundary in every doc; "never
         # spawns" where the recovery flow is described in full.
-        for name in self.ALL_DOCS:
+        for name in self.CLAIM_RECORD_DOCS:
             flat = self.flat(name).lower()
             self.assertIn("reads nothing outside this repository",
                           flat, name)
             self.assertIn("never binding evidence", flat, name)
             self.assertIn("accepted cost", flat, name)
-        for name in ("OPERATOR_PROTOCOL.md", "README.md",
-                     "SECURITY.md"):
+        for name in ("OPERATOR_PROTOCOL.md", "SECURITY.md"):
             self.assertIn("never spawns", self.flat(name).lower(),
                           name)
 
@@ -2488,7 +2506,7 @@ class CorrectnessDocsPinTests(unittest.TestCase):
         # the accepted task by id in every doc, and the containment
         # class is attributed to its two increments where the story
         # is told in full.
-        for name in self.ALL_DOCS:
+        for name in [doc for doc in self.ALL_DOCS if doc != "README.md"]:
             flat = self.flat(name)
             self.assertIn("20260826-022933", flat, name)
             self.assertIn("inherited", flat.lower(), name)
@@ -2565,6 +2583,12 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
 
     def test_v070_release_framing(self):
         readme = self.flat()
+        # Since the README rewrite, the live-mountain evidence boundary is
+        # release-evidence prose, not front-door prose; it is asserted
+        # against the release evidence document at unchanged strength.
+        release_evidence = " ".join(
+            read_doc("docs/reference/release-evidence-v0.7.0.md").split()
+        )
         self.assertIn("# Dodging Infinity v0.7.0", readme)
         self.assertIn(
             "v0.7.0 adds DI-REMOTE-2 Remote Target Repository Routing",
@@ -2572,7 +2596,7 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         )
         self.assertIn(
             "fresh post-fix live mountain is not used as release evidence",
-            readme,
+            release_evidence,
         )
         self.assertNotIn(
             "v0.6.3 remains the latest tagged release", readme
@@ -2621,7 +2645,13 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         # added, removed, or renamed (capability included) fails this
         # pin (round-05 F-1: the earlier defaulted-parameter filter
         # excluded exactly the parameter that falsified the sentence).
-        readme = self.flat()
+        # The sentence is read from docs/wiki/Capabilities-and-Workers.md
+        # (a deliberate decision during the product-story rewrite): README
+        # keeps the architectural meaning and the exact contract lives in
+        # the doc that describes the Broker.
+        readme = " ".join(
+            read_doc("docs/wiki/Capabilities-and-Workers.md").split()
+        )
         count_words = {8: "eight", 9: "nine", 10: "ten"}
         self.assertIn(
             "%s fixed lifecycle actions"
@@ -2807,9 +2837,13 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
     def test_supervisor_first_framing(self):
         # framing: the target Herdr Supervisor is the first
         # strategy-bearing component. Code side: the Supervisor-first
-        # narrative assertions in ReleaseNarrativeTests.
+        # narrative assertions in ReleaseNarrativeTests. The phrase is
+        # read from docs/wiki/Herdr.md since the README rewrite: README is
+        # a product front door and this binder phrase lives in the doc
+        # that describes Herdr.
         self.assertIn(
-            "first strategy-bearing component", self.flat().lower()
+            "first strategy-bearing component",
+            " ".join(read_doc("docs/wiki/Herdr.md").split()).lower()
         )
 
     def test_runtime_minted_capability_framing(self):
@@ -2840,7 +2874,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
             )
 
     def test_every_reconciled_doc_carries_the_exact_evidence_identifiers(self):
-        for name in RECONCILED_DOCS:
+        for name in EVIDENCE_IDENTIFIER_DOCS:
             doc = flat(read_doc(name))
             for identifier in (
                 MOUNTAIN_WORKFLOW_ID,
@@ -2863,7 +2897,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
         # target Git delivery occurred: the three facts that separate a
         # BLOCKED mountain from a completed one. SECURITY.md states
         # the same boundary and is held to it too.
-        for name in CLAIM_DISCIPLINED_DOCS:
+        for name in EVIDENCE_IDENTIFIER_DOCS + ("SECURITY.md",):
             doc = flat_lower(read_doc(name))
             self.assertIn("`verified_result`", doc, name)
             self.assertIn("`result_delivery`", doc, name)
@@ -2871,7 +2905,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
             self.assertIn("no target git delivery occurred", doc, name)
 
     def test_the_target_stayed_at_baseline_with_a_diff_only(self):
-        for name in RECONCILED_DOCS:
+        for name in EVIDENCE_IDENTIFIER_DOCS:
             doc = flat_lower(read_doc(name))
             self.assertIn("implementation diff only", doc, name)
             self.assertIn(MOUNTAIN_BASELINE, doc, name)
@@ -2882,7 +2916,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
         # its stale ACTIVE reading. Understating this is as wrong as
         # overstating the stages that never ran. The anchors are exact
         # phrases: a bare "complete" occurs all over these documents.
-        for name in RECONCILED_DOCS:
+        for name in EVIDENCE_IDENTIFIER_DOCS:
             doc = flat_lower(read_doc(name))
             self.assertIn("reached complete", doc, name)
             self.assertIn("canonical target reviewer approve", doc, name)
@@ -2926,7 +2960,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
     }
 
     def test_stabilization_history_is_preserved_and_integration_is_current(self):
-        for name in RECONCILED_DOCS:
+        for name in EVIDENCE_IDENTIFIER_DOCS:
             doc = flat(read_doc(name))
             self.assertIn(STABILIZATION_SHA, doc, name)
             self.assertIn(STABILIZATION_BRANCH, doc, name)
@@ -2936,14 +2970,14 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
                     flat_lower(phrase), lowered,
                     "%s: %s" % (name, phrase),
                 )
-        for name in ("README.md", "CHANGELOG.md"):
+        for name in ("CHANGELOG.md",):
             doc = flat_lower(read_doc(name))
             self.assertIn(STABILIZATION_TASK, doc, name)
             self.assertIn("round 6 approve", doc, name)
             self.assertIn("pushed", doc, name)
 
     def test_stabilization_validation_results_are_pinned(self):
-        for name in ("README.md", "CHANGELOG.md"):
+        for name in ("CHANGELOG.md",):
             doc = flat_lower(read_doc(name))
             for result in (
                 "159/159",
@@ -2960,7 +2994,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
         # NOT a regression introduced by that task: two pre-existing
         # live `.herd` specimen assertions predate it. Naming both
         # files is the point — a bare "35/37" is not the disclosure.
-        for name in ("README.md", "CHANGELOG.md"):
+        for name in ("CHANGELOG.md",):
             doc = flat_lower(read_doc(name))
             self.assertIn("35/37", doc, name)
             self.assertIn("tests/test_hermetic_git.py", doc, name)
@@ -2969,7 +3003,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
 
     # ---- C. clean-clone CI evidence ----------------------------------
     def test_clean_clone_ci_evidence_is_exact_and_not_stale(self):
-        for name in RECONCILED_DOCS:
+        for name in EVIDENCE_IDENTIFIER_DOCS:
             doc = flat(read_doc(name))
             self.assertIn(CI_RUN_ID, doc, name)
             for sha in CI_COMMITS:
@@ -2981,8 +3015,6 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
 
     def test_all_four_ci_jobs_are_described(self):
         for name, phrase in (
-            ("README.md",
-             "all four macOS/Ubuntu x Python 3.9/3.13 jobs green"),
             ("CHANGELOG.md",
              "green across all four macOS/Ubuntu x Python 3.9/3.13 jobs"),
             ("docs/remote-mission-fabric-roadmap.md",
@@ -3058,7 +3090,7 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
         self.assertIn("v0.7.0 release tree", roadmap)
 
     def test_post_fix_live_mountain_is_not_release_evidence(self):
-        for name in ("README.md",
+        for name in ("docs/reference/release-evidence-v0.7.0.md",
                      "docs/remote-mission-fabric-roadmap.md"):
             doc = flat_lower(read_doc(name))
             self.assertIn(flat_lower(TERMINAL_ANCHOR), doc, name)

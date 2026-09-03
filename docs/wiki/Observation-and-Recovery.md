@@ -30,7 +30,7 @@ Back to [Home](Home.md). Labels are defined on the Home page.
 - A role with no turn recorded is omitted from the listing rather than rendered as healthy.
 - An agents-unprobed global PARTIAL is expected in production; completeness describes visibility, not health.
 
-The exact wording of these limits is in the [README](../../README.md#what-this-system-does-not-tell-you).
+The exact wording of these limits is on the [observability](../reference/observability.md#what-observation-does-not-tell-you) reference page.
 
 ## The Reconciler
 
