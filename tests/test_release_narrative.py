@@ -1895,6 +1895,7 @@ class DocsAccuracyPinTests(unittest.TestCase):
         doc = read_doc("CONTRIBUTING.md")
         for token in (
             "workflow_authority/", "target_runtime/", "dirun.py",
+            "operator_session/",
         ):
             self.assertIn(token, doc)
 
@@ -2295,7 +2296,7 @@ class DocsAccuracyPinTests(unittest.TestCase):
             if "py_compile" in line
         ][-1]
         for token in ("workflow_authority/", "target_runtime/",
-                      "dirun.py"):
+                      "dirun.py", "operator_session/"):
             self.assertIn(token, py_compile_line)
 
 

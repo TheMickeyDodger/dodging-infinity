@@ -34,6 +34,7 @@ Key components include:
 - `workflow_authority/` — durable, closed-schema, fail-closed storage and validation of DI-REMOTE-2 Mission Authorization workflows (records, digests, store, state migration); herdr-free like the adapter and gateway
 - `target_runtime/` — the DI-REMOTE-2 Runtime and Target Broker: claims durably authorized workflows, materializes isolated managed target workspaces, and dispatches the exact stored handoff through the existing spawn bridge; the only package allowed to import `herdr`, and structurally unreachable from the control chain
 - `dirun.py` — repository-root entry script for the Runtime CLI
+- `operator_session/` — provider-neutral operator session seam (prepare a turn, then execute it with one provider call per execute invocation); the base and function-backed sessions are provider-free, only the Codex-backed session imports the Codex Gateway, and the seam owns no authority or lifecycle
 - `scripts/dirun-agent.sh` — optional per-user LaunchAgent installer for the Runtime service
 - `roles/` — logical role contracts
 - `tests/` — regression coverage
@@ -79,7 +80,7 @@ fail fast instead of hanging the suite (or escaping to the network).
 Compile-check the Python sources:
 
 ```bash
-python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py dirun.py target_runtime/*.py
+python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py dirun.py target_runtime/*.py operator_session/*.py
 ```
 
 ## Model and runtime contributions
