@@ -147,9 +147,6 @@ I1_DOCUMENT_UNIT_DIGESTS = {
 }
 
 I8_DOCUMENT_UNIT_DIGESTS = {
-    "README.md": frozenset({
-        "5aa6c9204d5fdab16e7883ed37e33bfc7980ebd8ab410170e51469bc9babc678",
-    }),
     # The exactly-once caveat bullet moved out of README byte-for-byte during
     # the product-story rewrite; the digest is unchanged because the text is.
     "docs/reference/telegram-remote-operator.md": frozenset({

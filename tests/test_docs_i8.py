@@ -39,7 +39,7 @@ from test_workspace_trust import (CLAIM_PIN_MAP, REPO_ROOT, document_units,
 from _di_remote2_surface import (I8_DOCUMENT_UNIT_DIGESTS,
                                  protected_document_units, unit_digest)
 
-I8_DOCS = ("README.md", "SECURITY.md", "OPERATOR_PROTOCOL.md",
+I8_DOCS = ("SECURITY.md", "OPERATOR_PROTOCOL.md",
            "CHANGELOG.md", "docs/reference/observability.md",
            "docs/reference/telegram-remote-operator.md")
 
@@ -108,8 +108,9 @@ I8_CLAIM_PIN_MAP = (
      "A verdict cannot distinguish a model substitution from a restart",
      "test_model_substitution.SubstitutionWithSessionPRESERVEDTests."
      "test_the_two_scenarios_are_UNREPRESENTABLY_DIFFERENT"),
-    # -- README.md ---------------------------------------------------
-    ("README.md", "fact-only",
+    # README carries no I8-protected unit since the plain-language README
+    # rewrite; the observation claim is read from the observability page.
+    ("docs/reference/observability.md", "fact-only",
      "Observation is a reporting surface, not a gate",
      "test_observe.NonMutationTests.test_no_write_path_is_reachable"),
     ("docs/reference/observability.md", "doc<->code",
@@ -117,16 +118,6 @@ I8_CLAIM_PIN_MAP = (
      " and the build on disk",
      "OperatorLimitsAreProductionsTests."
      "test_operator_skew_label_is_the_one_the_render_emits"),
-    ("README.md", "fact-only",
-     "DI-REMOTE-2 has both hermetic proof and bounded live proof",
-     "NO PIN — DISCLOSED AS UNPINNED. The automated proof is covered"
-     " by the suite, but the bounded production evidence is an external"
-     " human validation fact listed in CHANGELOG.md under the LIVE"
-     " mountain entry. The bullet's TERMINAL framing (BLOCKED at"
-     " broker_verification_policy_drift, and the final Reviewer NOT"
-     " among the unproven stages) IS pinned, by"
-     " TerminalMountainDocsPinTests in tests/test_release_narrative.py;"
-     " what stays unpinned is the external evidence itself"),
     ("docs/reference/observability.md", "doc<->code",
      "The projection is schema version 3",
      "SchemaSurfaceIsProductionsTests."
@@ -270,7 +261,7 @@ class ClaimPinMapI8Tests(unittest.TestCase):
 
     def test_the_committed_domain_resists_mutation_and_self_observation(self):
         """A changed document unit disappears; prose here is not evidence."""
-        document = "README.md"
+        document = "docs/reference/observability.md"
         units, missing = added_units(document)
         self.assertFalse(missing)
         expected = {unit_digest(units[0])}
@@ -298,10 +289,7 @@ class ClaimPinMapI8Tests(unittest.TestCase):
             row[2] for row in I8_CLAIM_PIN_MAP
             if row[3].startswith("NO PIN")
         )
-        self.assertEqual(
-            disclosed,
-            ("DI-REMOTE-2 has both hermetic proof and bounded live proof",),
-        )
+        self.assertEqual(disclosed, ())
 
 
 class SchemaSurfaceIsProductionsTests(unittest.TestCase):

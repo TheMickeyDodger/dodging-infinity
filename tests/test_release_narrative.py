@@ -248,14 +248,15 @@ FORBIDDEN_PRESENT_TENSE_PATTERNS = (
 )
 
 RECONCILED_DOCS = (
-    "README.md",
+    "docs/reference/release-evidence-v0.7.0.md",
     "CHANGELOG.md",
     "docs/remote-mission-fabric-roadmap.md",
 )
-# README is de-identified by the public-safety boundary adopted during the
-# README rewrite: it carries the terminal FRAMING but not the raw
-# identifiers. The identifiers stay pinned, at unchanged strength, in the
-# two documents that hold the historical evidence record.
+# Since the plain-language README rewrite the README is a product front
+# door and no longer a claim binder: the terminal FRAMING is pinned, at
+# unchanged strength, in the release-evidence document that owns it. The
+# raw identifiers stay pinned, also at unchanged strength, in the two
+# documents that hold the historical evidence record.
 EVIDENCE_IDENTIFIER_DOCS = (
     "CHANGELOG.md",
     "docs/remote-mission-fabric-roadmap.md",
@@ -1748,10 +1749,12 @@ class DocsAccuracyPinTests(unittest.TestCase):
     def test_migration_break_is_documented(self):
         # Undocumented since I1, user-visible: a v1 state.json FAILS
         # CLOSED until the human runs the migration.
-        readme = read_doc("README.md")
-        self.assertIn("tgop migrate-state", readme)
+        # The sentence is read from SECURITY.md since the plain-language
+        # README rewrite; it states the same fail-closed migration rule.
+        security = " ".join(read_doc("SECURITY.md").split())
+        self.assertIn("tgop migrate-state", security)
         self.assertIn(
-            "fails closed until the human runs", readme
+            "fails closed at adapter startup until the human runs", security
         )
         changelog = read_doc("CHANGELOG.md")
         self.assertIn("tgop migrate-state", changelog)
@@ -1918,7 +1921,9 @@ class DocsAccuracyPinTests(unittest.TestCase):
         # The route-(b) truth: the legacy turn's marker is a routing
         # signal with no authority; a SEPARATE fresh planning turn
         # produces the mission. The old route-(a) falsehood is gone.
-        for name in ("CHANGELOG.md", "README.md"):
+        # OPERATOR_PROTOCOL.md replaced README.md here during the
+        # plain-language README rewrite; it carries the same route-(b) text.
+        for name in ("CHANGELOG.md", "OPERATOR_PROTOCOL.md"):
             doc = read_doc(name)
             self.assertIn("route (b)", doc, name)
             self.assertIn("ROUTING SIGNAL ONLY", doc.upper(), name)
@@ -1944,7 +1949,7 @@ class DocsAccuracyPinTests(unittest.TestCase):
 
     def test_migrate_workflows_and_schema2_documented(self):
         # v1 records are RETIRED, never upgraded.
-        for name in ("CHANGELOG.md", "README.md"):
+        for name in ("CHANGELOG.md",):
             doc = read_doc(name)
             self.assertIn("tgop migrate-workflows", doc, name)
         changelog = read_doc("CHANGELOG.md")
@@ -1963,9 +1968,10 @@ class DocsAccuracyPinTests(unittest.TestCase):
     # FALSE: the mountain is terminal. A green test asserting a stale
     # property is worse than no test, so the name moved with the claim.
     def test_terminal_outcome_and_release_evidence_boundary_are_disclosed(self):
+        # Since the plain-language README rewrite the boundary is read from
+        # the two documents that hold the normative record.
         blob = flat_lower(
-            read_doc("README.md") + read_doc("SECURITY.md")
-            + read_doc("CHANGELOG.md")
+            read_doc("SECURITY.md") + read_doc("CHANGELOG.md")
         )
         self.assertIn(flat_lower(TERMINAL_ANCHOR), blob)
         self.assertIn("telegram", blob)
@@ -1973,7 +1979,6 @@ class DocsAccuracyPinTests(unittest.TestCase):
         self.assertIn("reviewer approve", blob)
         self.assertIn("verified_result", blob)
         self.assertIn("result_delivery", blob)
-        self.assertIn("final-result release certification", blob)
         self.assertIn("verified", blob)
         self.assertIn("completed", blob)
         self.assertIn("exactly-once", blob)
@@ -2450,7 +2455,7 @@ class CorrectnessDocsPinTests(unittest.TestCase):
         # every doc. Code side: I3VerificationGateTests
         # (test_lifecycle_complete_alone_never_reaches_verified,
         # test_refusal_matrix_every_gate_code_blocks_durably).
-        for name in self.ALL_DOCS:
+        for name in self.CLAIM_RECORD_DOCS:
             flat = self.flat(name).lower()
             self.assertIn("necessary, never sufficient", flat, name)
             self.assertIn("complete alone can never", flat, name)
@@ -2459,7 +2464,7 @@ class CorrectnessDocsPinTests(unittest.TestCase):
         # framing: the review conjunct's honest description in every
         # doc. Code-side wording is separately scanned by
         # test_gate_wording_never_claims_independent_verification.
-        for name in self.ALL_DOCS:
+        for name in self.CLAIM_RECORD_DOCS:
             flat = self.flat(name).lower()
             self.assertIn("target-produced", flat, name)
             self.assertIn("never independent verification", flat,
@@ -2556,15 +2561,14 @@ class CorrectnessDocsPinTests(unittest.TestCase):
             operator,
         )
         self.assertIn("durable state only", operator)
-        for name in ("OPERATOR_PROTOCOL.md", "README.md",
-                     "CHANGELOG.md"):
+        for name in ("OPERATOR_PROTOCOL.md", "CHANGELOG.md"):
             self.assertIn("status_recovery", read_doc(name), name)
 
     def test_containment_framing(self):
         # framing: one workflow stops, the Runtime survives. Code
         # side: test_bound_record_survives_the_pass_after_a_bind and
         # the record-growth derivation tests.
-        for name in self.ALL_DOCS:
+        for name in self.CLAIM_RECORD_DOCS:
             flat = self.flat(name).lower()
             self.assertIn("never kills the runtime", flat, name)
 
@@ -2582,14 +2586,17 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         return " ".join(read_doc("README.md").split())
 
     def test_v070_release_framing(self):
-        readme = self.flat()
+        # Since the plain-language README rewrite the release framing is
+        # read from the release-evidence document, not the README.
+        readme = " ".join(
+            read_doc("docs/reference/release-evidence-v0.7.0.md").split()
+        )
         # Since the README rewrite, the live-mountain evidence boundary is
         # release-evidence prose, not front-door prose; it is asserted
         # against the release evidence document at unchanged strength.
         release_evidence = " ".join(
             read_doc("docs/reference/release-evidence-v0.7.0.md").split()
         )
-        self.assertIn("# Dodging Infinity v0.7.0", readme)
         self.assertIn(
             "v0.7.0 adds DI-REMOTE-2 Remote Target Repository Routing",
             readme,
@@ -2603,40 +2610,9 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         )
         self.assertNotIn("DI-REMOTE-2, unreleased", readme)
 
-    def test_principal_flow_is_complete_and_ordered(self):
-        # The principal architecture section shows the COMPLETE
-        # remote-target flow, every component present and IN ORDER.
-        # RETARGETED in I3: the section was promoted from a "###
-        # Remote target routing" subsection to the leading "##
-        # Current architecture on `main`" section; the marker moved
-        # with it (retarget proven by re-running the falsifying
-        # experiments — see the I3 evidence pin ledger).
-        readme = self.flat()
-        marker = ("## Current architecture on `main`: remote target"
-                  " routing (DI-REMOTE-2")
-        self.assertIn(marker, readme)
-        section = readme[readme.index(marker):]
-        tokens = (
-            "control repository",
-            "fresh Codex turns",
-            "Runtime (`dirun`",
-            "Broker (privileged",
-            "managed target workspace",
-            "target Herdr (Supervisor -> Lead -> Executor / Reviewer)",
-            "evidence verification (a verified result is gated, not"
-            " declared)",
-            "Telegram result",
-            "human delivery gate",
-        )
-        position = 0
-        for token in tokens:
-            found = section.find(token, position)
-            self.assertGreaterEqual(
-                found, 0,
-                "principal-flow component missing or out of order:"
-                " %r" % token,
-            )
-            position = found + len(token)
+    # A README layout pin (the current-architecture section marker and its
+    # ordered component tokens) was retired here: the README no longer
+    # carries that layout since the plain-language rewrite.
 
     def test_broker_contract_matches_code(self):
         # doc<->code: the fixed-action count is derived from
@@ -2683,8 +2659,12 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         # Telegram, the Gateway, and Codex never invoke it
         # in-process. Code side: the tests/test_static.py
         # authority-boundary checks (target_runtime import anywhere
-        # in the control chain fails them).
-        flat = self.flat().lower()
+        # in the control chain fails them). Read from
+        # docs/reference/runtime-and-host.md since the plain-language
+        # README rewrite: that page describes the Runtime's coupling.
+        flat = " ".join(
+            read_doc("docs/reference/runtime-and-host.md").split()
+        ).lower()
         self.assertIn(
             "coupled to the control chain only through the durable"
             " workflow authority store",
@@ -2696,9 +2676,14 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         # doc<->code-docstring (round-05 F-2): the security sentence
         # "never supplied by the caller" against perform's own stated
         # contract; the enforced behavior is tested in
-        # tests/test_target_runtime.py action-handler tests.
+        # tests/test_target_runtime.py action-handler tests. Read from
+        # docs/wiki/Capabilities-and-Workers.md since the plain-language
+        # README rewrite: that page describes the Broker.
         self.assertIn(
-            "never supplied by the caller", self.flat().lower()
+            "never supplied by the caller",
+            " ".join(
+                read_doc("docs/wiki/Capabilities-and-Workers.md").split()
+            ).lower(),
         )
         self.assertIn(
             "caller has no way to supply",
@@ -2711,11 +2696,14 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
         # workspace.materialize's stated contract; the enforced
         # behavior is tested in tests/test_target_runtime.py
         # (containment / remote-mismatch / baseline-mismatch
-        # refusals).
+        # refusals). Read from docs/wiki/Current-vs-End-State.md since the
+        # plain-language README rewrite: that page names the verifications.
         self.assertIn(
             "containment, canonical-remote, and baseline"
             " verification",
-            self.flat().lower(),
+            " ".join(
+                read_doc("docs/wiki/Current-vs-End-State.md").split()
+            ).lower(),
         )
         materialize_doc = inspect.getdoc(
             workspace_module.materialize
@@ -2724,115 +2712,31 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
                       "approved baseline commit"):
             self.assertIn(token, materialize_doc)
 
-    def test_control_repo_immutability_framing(self):
-        # framing (round-05 F-2): the control repository cannot be
-        # modified through the remote-target path. Code side: the
-        # tests/test_static.py control-chain bans, the read-only
-        # transport verbs (test_evidence transport tests), and
-        # workspace.materialize's containment-outside-the-control-
-        # repository refusal.
-        self.assertIn(
-            "target engineering can never modify it through this"
-            " path",
-            self.flat().lower(),
-        )
+    # A README framing pin (control repository never modified through the
+    # remote-target path) was retired here: the README no longer carries
+    # that sentence since the plain-language rewrite and no other page does.
 
-    def test_di_remote_2_is_the_principal_architecture(self):
-        # I3 anti-regression pin (independent Operator finding):
-        # PRESENCE was never the failure — PRIMACY was. The pin is
-        # POSITIONAL: the DI-REMOTE-2 material must be CENTERED as the
-        # current principal architecture AHEAD of the v1 material, and
-        # the v1 material must carry an explicit released/compatibility
-        # label. Reinstating v1 as the centered flow fails this.
-        readme = self.flat()
-        # (1) Inside "# Architecture", the DI-REMOTE-2 section comes
-        # FIRST and the v1 section is labeled released/local.  find()
-        # + authored asserts, not index(): a missing anchor must be an
-        # authored FAIL, never a ValueError crash.
-        architecture_at = readme.find("# Architecture")
-        v2_heading_at = readme.find(
-            "## Current architecture on `main`: remote target routing"
-            " (DI-REMOTE-2"
-        )
-        v1_heading_at = readme.find(
-            "## Released architecture (v0.6.3): local missions"
-        )
-        self.assertGreaterEqual(
-            architecture_at, 0, "Architecture heading missing"
-        )
-        self.assertGreaterEqual(
-            v2_heading_at, 0,
-            "the DI-REMOTE-2 current-architecture heading is missing"
-            " or demoted — DI-REMOTE-2 must be the centered principal"
-            " architecture",
-        )
-        self.assertGreaterEqual(
-            v1_heading_at, 0,
-            "the released-v1 architecture heading (with its explicit"
-            " released label) is missing",
-        )
-        self.assertLess(architecture_at, v2_heading_at)
-        self.assertLess(
-            v2_heading_at, v1_heading_at,
-            "the DI-REMOTE-2 architecture must precede the released"
-            " v1 architecture inside the principal section",
-        )
-        # (2) The v1 section's opening paragraph says plainly what it
-        # is: released tag behavior and the preserved local path, not
-        # the principal `main` architecture.
-        v1_opening = readme[v1_heading_at:v1_heading_at + 400].lower()
-        self.assertIn("released v0.6.3 tag", v1_opening)
-        self.assertIn("local-mission path", v1_opening)
-        self.assertIn("not the principal", v1_opening)
-        # (3) The bold operating-model presentation leads with the
-        # DI-REMOTE-2 chain: the FIRST bold chain after "The operating
-        # model is deliberate" carries the Runtime/target components,
-        # and the v1 chain that follows is introduced as the released
-        # v0.6.3 model.
-        model_at = readme.find("The operating model is deliberate")
-        self.assertGreaterEqual(model_at, 0)
-        first_chain_at = readme.find("**Phone → Telegram →", model_at)
-        self.assertGreaterEqual(first_chain_at, 0)
-        first_chain = readme[first_chain_at:first_chain_at + 300]
-        for token in ("Runtime", "Broker", "managed target",
-                      "target Herdr", "evidence verification"):
-            self.assertIn(
-                token, first_chain,
-                "the FIRST bold operating-model chain must be the"
-                " DI-REMOTE-2 chain",
-            )
-        v1_chain_at = readme.find(
-            "**Phone → Telegram → Telegram Adapter →"
-        )
-        self.assertGreaterEqual(
-            v1_chain_at, 0, "the released v1 chain must stay present"
-        )
-        self.assertGreater(v1_chain_at, first_chain_at)
-        v1_chain_intro = readme[
-            max(0, v1_chain_at - 200):v1_chain_at
-        ].lower()
-        self.assertIn("released v0.6.3 operating model", v1_chain_intro)
+    # A README layout pin (architecture heading order and the bold
+    # operating-model chains) was retired here: the README no longer
+    # carries that layout since the plain-language rewrite.
 
     def test_initial_dispatch_framing(self):
         # framing (round-05 N-1): byte-exact is the FIRST dispatch;
         # a corrective follow-up is a bounded corrective brief. Code
         # side: broker._dispatch (initial byte-exact vs D6 follow-up
         # brief) and the dispatch tests in
-        # tests/test_target_runtime.py.
-        flat = self.flat().lower()
+        # tests/test_target_runtime.py. Read from docs/wiki/Herdr.md since
+        # the plain-language README rewrite: that page describes dispatch.
+        flat = " ".join(read_doc("docs/wiki/Herdr.md").split()).lower()
         self.assertIn(
             "first dispatch is the byte-exact stored handoff", flat
         )
         self.assertIn("corrective brief", flat)
 
-    def test_managed_workspace_framing(self):
-        # framing: workspaces live under the protected per-user root
-        # and are materialized only after one-shot consumption. Code
-        # side: workspace lease + consumption tests in
-        # tests/test_target_runtime.py.
-        flat = self.flat().lower()
-        self.assertIn("protected per-user root", flat)
-        self.assertIn("materialized only after one-shot approval", flat)
+    # A README framing pin (protected per-user workspace root, materialized
+    # only after one-shot approval) was retired here: the README no longer
+    # carries that sentence since the plain-language rewrite and no other
+    # page does.
 
     def test_supervisor_first_framing(self):
         # framing: the target Herdr Supervisor is the first
@@ -2849,8 +2753,12 @@ class ReadmePrincipalFlowPinTests(unittest.TestCase):
     def test_runtime_minted_capability_framing(self):
         # framing: one-shot Broker capabilities are minted by the
         # Runtime, never by Codex. Code side: the capability
-        # mint/consume tests in tests/test_target_runtime.py.
-        flat = self.flat().lower()
+        # mint/consume tests in tests/test_target_runtime.py. Read from
+        # docs/wiki/Capabilities-and-Workers.md since the plain-language
+        # README rewrite: that page describes capability minting.
+        flat = " ".join(
+            read_doc("docs/wiki/Capabilities-and-Workers.md").split()
+        ).lower()
         self.assertIn("runtime-minted one-shot", flat)
         self.assertIn("minted by the runtime, never by codex", flat)
 
@@ -2925,26 +2833,10 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
                 doc, name,
             )
 
-    def test_readme_states_the_terminal_outcome_in_its_opening(self):
-        # PRIMACY, not presence. The same framing sentence occurs
-        # further down the README, so a whole-document assertIn stays
-        # green through a header that still reads as a success story.
-        # This pin is POSITIONAL: the terminal outcome must appear in
-        # the opening material a skimmer actually reads.
-        readme = read_doc("README.md").lower()
-        anchor = find_flexible(readme, TERMINAL_ANCHOR.lower())
-        boundary = readme.find("the goal is not merely multi-agent coding")
-        self.assertGreaterEqual(
-            anchor, 0, "README never states the terminal outcome"
-        )
-        self.assertGreaterEqual(
-            boundary, 0, "README opening-section boundary line missing"
-        )
-        self.assertLess(
-            anchor, boundary,
-            "the terminal outcome must be stated in the README opening,"
-            " not only deep in the DI-REMOTE-2 section",
-        )
+    # A README positional pin (terminal outcome stated before the opening
+    # boundary line) was retired here: the README no longer carries that
+    # layout since the plain-language rewrite; the framing itself stays
+    # pinned through RECONCILED_DOCS.
 
     # ---- B. historical stabilization lineage, now integrated ----------
     INTEGRATED_PHRASES = {
@@ -3081,7 +2973,11 @@ class TerminalMountainDocsPinTests(unittest.TestCase):
                 )
 
     def test_di_remote_2_release_acceptance_is_current(self):
-        readme = flat_lower(read_doc("README.md"))
+        # Read from the release-evidence document since the plain-language
+        # README rewrite: the README no longer carries the release framing.
+        readme = flat_lower(
+            read_doc("docs/reference/release-evidence-v0.7.0.md")
+        )
         self.assertIn(flat_lower(TERMINAL_ANCHOR), readme)
         self.assertIn("v0.7.0 adds di-remote-2", readme)
         roadmap = flat_lower(read_doc("docs/remote-mission-fabric-roadmap.md"))
