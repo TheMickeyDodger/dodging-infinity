@@ -35,9 +35,10 @@ Ordering and durability rules enforced here:
 - On restart, dispatched-but-unconfirmed work is reported honestly as
   interrupted/ambiguous and is NEVER automatically replayed.
 
-The adapter talks ONLY to the injected Telegram API client and to the
-Codex Gateway; it never imports or invokes any orchestration machinery
-and never touches orchestration state on disk.
+The adapter talks ONLY to the injected Telegram API client (through
+the provider-neutral human-interaction seam) and to the Codex Gateway;
+it never imports or invokes any orchestration machinery and never
+touches orchestration state on disk.
 """
 
 import queue
@@ -49,12 +50,18 @@ from codex_gateway import build_request as gateway_build_request
 from codex_gateway import submit as gateway_submit
 from codex_gateway import role_turn as role_turn_module
 from codex_gateway.contract import STATUS_COMPLETED
+from human_interaction import (
+    EVENT_MESSAGE,
+    SEND_APPLIED,
+    SEND_DEFINITE_ZERO,
+    Control,
+)
 from operator_session import CodexOperatorSession, FunctionOperatorSession
 
 from telegram_operator import approval as approval_module
-from telegram_operator import authz, protocol, state as state_module
+from telegram_operator import protocol, state as state_module
 from telegram_operator import mission as mission_module
-from telegram_operator import telegram_api
+from telegram_operator.interaction import TelegramHumanInteractionAdapter
 from workflow_authority import digest as wa_digest
 from workflow_authority import record as wa_record
 from workflow_authority import store as workflow_store_module
@@ -430,10 +437,19 @@ class Adapter(object):
                  build_request_fn=None, clock=None, failure_sleeper=None,
                  error_writer=None, workflow_store=None,
                  workflow_id_factory=None, mission_nonce_factory=None,
-                 planning_turn_fn=None, operator_session=None):
+                 planning_turn_fn=None, operator_session=None,
+                 interaction=None):
         self.config = config
         self.store = store
-        self.api = api
+        self._api = api
+        # The human-interaction seam. An explicit interaction is
+        # authoritative; otherwise the Telegram implementation over the
+        # injected client, which the ``api`` setter keeps in step.
+        self._interaction_defaulted = interaction is None
+        self._interaction = (
+            interaction if interaction is not None
+            else TelegramHumanInteractionAdapter(api, config.allowed_user_ids)
+        )
         # The operator session seam. An explicit session wins; an
         # injected callable pair (either half may be absent — each
         # half defaults to the gateway independently) becomes a
@@ -475,6 +491,18 @@ class Adapter(object):
         )
 
     # -- persistence helpers --------------------------------------------
+
+    @property
+    def api(self):
+        return self._api
+
+    @api.setter
+    def api(self, value):
+        # A post-construction rebind reaches the DEFAULT interaction
+        # too; an explicitly injected interaction is left untouched.
+        self._api = value
+        if self._interaction_defaulted:
+            self._interaction.api = value
 
     def _save(self):
         """Persist the current document (caller holds the lock)."""
@@ -552,7 +580,7 @@ class Adapter(object):
                     )
                 )
         for chat_id, texts in notices.items():
-            self.api.send_message(chat_id, "\n".join(texts))
+            self._interaction.send(chat_id, "\n".join(texts))
         return notices
 
     # -- poller side -----------------------------------------------------
@@ -566,24 +594,22 @@ class Adapter(object):
         """
         with self._state_lock:
             offset = self._document["update_offset"]
-        outcome = self.api.poll_updates(offset)
+        outcome = self._interaction.receive(offset)
         if outcome.problem is not None:
             # Kept for the run loop's failure reporting (R2-N1); the
             # problem text is already redacted and bounded upstream.
             self._last_poll_problem = outcome.problem
             return False
-        for update in outcome.updates:
-            self.process_update(update)
-        # Advance past every update whose id is readable, so a batch
-        # containing malformed-but-identified updates cannot wedge the
-        # poller. Per-update accepted state was already persisted above;
-        # this final advance is idempotent for those.
+        for event in outcome.events:
+            self.process_event(event)
+        # Advance past every event whose sequence is readable, so a
+        # batch containing malformed-but-identified events cannot wedge
+        # the poller. Per-event accepted state was already persisted
+        # above; this final advance is idempotent for those.
         batch_ids = [
-            update["update_id"]
-            for update in outcome.updates
-            if isinstance(update, dict)
-            and isinstance(update.get("update_id"), int)
-            and not isinstance(update.get("update_id"), bool)
+            event.sequence
+            for event in outcome.events
+            if event.sequence is not None
         ]
         if batch_ids:
             with self._state_lock:
@@ -592,65 +618,76 @@ class Adapter(object):
         return True
 
     def process_update(self, update):
-        """Authenticate, then route one update. See the module rules."""
-        decision = authz.authenticate_update(
-            update, self.config.allowed_user_ids
+        """Telegram-native compatibility entry: authenticate, then route
+        one raw update through ``process_event``. See the module rules."""
+        event_from_update = getattr(
+            self._interaction, "event_from_update", None
         )
-        if decision.update_id is not None:
+        if event_from_update is None:
+            raise TypeError(
+                "process_update needs a Telegram interaction with"
+                " event_from_update; use process_event with an"
+                " InteractionEvent instead"
+            )
+        self.process_event(event_from_update(update))
+
+    def process_event(self, event):
+        """Route one already-authenticated event. See the module rules."""
+        if event.sequence is not None:
             with self._state_lock:
                 offset = self._document["update_offset"]
-            if offset is not None and decision.update_id < offset:
+            if offset is not None and event.sequence < offset:
                 # Duplicate delivery of an already-accepted update
                 # (Telegram redelivers when an offset is not yet
                 # advanced); processing it again could double-queue.
                 return
-        if not decision.allowed:
+        if not event.allowed:
             # Authorization precedes ALL content handling: nothing the
             # sender supplied is parsed or persisted, and no reply is
             # sent (an unknown sender learns nothing). The ONLY durable
             # effect is the transport update-offset advance below —
             # intended, so a denied update cannot wedge the poll loop.
-            if decision.update_id is not None:
+            if event.sequence is not None:
                 with self._state_lock:
-                    self._advance_offset(decision.update_id)
+                    self._advance_offset(event.sequence)
                     self._save()
             return
-        if decision.kind == authz.KIND_MESSAGE:
-            self._process_message(update, decision)
+        if event.kind == EVENT_MESSAGE:
+            self._process_message(event)
         else:
-            self._process_callback(update, decision)
+            self._process_callback(event)
 
     def _advance_offset(self, update_id):
         current = self._document["update_offset"]
         if current is None or update_id + 1 > current:
             self._document["update_offset"] = update_id + 1
 
-    def _process_message(self, update, decision):
-        text = authz.message_text(update, decision)
+    def _process_message(self, event):
+        text = event.content
         if text is None:
             with self._state_lock:
-                self._advance_offset(decision.update_id)
+                self._advance_offset(event.sequence)
                 self._save()
-            self.api.send_message(
-                decision.chat_id,
+            self._interaction.send(
+                event.conversation_id,
                 "Only plain text is supported. Send intent as text.",
             )
             return
         stripped = text.strip()
         if stripped == "/start" or stripped == "/help":
             with self._state_lock:
-                self._advance_offset(decision.update_id)
+                self._advance_offset(event.sequence)
                 self._save()
-            self.api.send_message(decision.chat_id, _HELP_TEXT)
+            self._interaction.send(event.conversation_id, _HELP_TEXT)
             return
         if stripped == "/status":
             self._enqueue_or_report(
-                decision,
+                event,
                 {
                     "kind": "status",
-                    "chat_id": decision.chat_id,
-                    "user_id": decision.user_id,
-                    "update_id": decision.update_id,
+                    "chat_id": event.conversation_id,
+                    "user_id": event.principal_id,
+                    "update_id": event.sequence,
                 },
                 acknowledgement="Gathering status…",
             )
@@ -660,7 +697,7 @@ class Adapter(object):
         ok, problem = protocol.validate_intent(stripped)
         if not ok:
             with self._state_lock:
-                self._advance_offset(decision.update_id)
+                self._advance_offset(event.sequence)
                 self._save()
             if problem == protocol.INTENT_PROBLEM_TOO_LONG:
                 reply = (
@@ -671,46 +708,46 @@ class Adapter(object):
                 )
             else:
                 reply = "Empty intent. Send the request as text."
-            self.api.send_message(decision.chat_id, reply)
+            self._interaction.send(event.conversation_id, reply)
             return
         self._enqueue_or_report(
-            decision,
+            event,
             {
                 "kind": "intent",
-                "chat_id": decision.chat_id,
-                "user_id": decision.user_id,
+                "chat_id": event.conversation_id,
+                "user_id": event.principal_id,
                 "text": stripped,
-                "update_id": decision.update_id,
+                "update_id": event.sequence,
             },
             acknowledgement="Received. Routing to the Codex Operator…",
         )
 
-    def _enqueue_or_report(self, decision, item, acknowledgement):
+    def _enqueue_or_report(self, event, item, acknowledgement):
         with self._state_lock:
             accepted = state_module.enqueue(self._document, item)
             depth = len(self._document["queue"])
-            self._advance_offset(decision.update_id)
+            self._advance_offset(event.sequence)
             self._save()
         if not accepted:
-            self.api.send_message(
-                decision.chat_id,
+            self._interaction.send(
+                event.conversation_id,
                 "Work queue is full (%d of %d pending). This message"
                 " was NOT queued; try again after pending work"
                 " finishes." % (depth, state_module.MAX_QUEUE_DEPTH),
             )
             return
         self._work_signals.put(item)
-        self.api.send_message(decision.chat_id, acknowledgement)
+        self._interaction.send(event.conversation_id, acknowledgement)
 
-    def _process_callback(self, update, decision):
-        data = authz.callback_data(update, decision)
+    def _process_callback(self, event):
+        data = event.content
         if isinstance(data, str) and (
             data.startswith(mission_module.CALLBACK_MISSION_APPROVE_PREFIX)
             or data.startswith(
                 mission_module.CALLBACK_MISSION_REJECT_PREFIX
             )
         ):
-            self._process_mission_callback(decision, data)
+            self._process_mission_callback(event, data)
             return
         chosen = None
         approval_id = None
@@ -723,10 +760,10 @@ class Adapter(object):
                 approval_id = data[len(CALLBACK_REJECT_PREFIX):]
         if chosen is None or not approval_id:
             with self._state_lock:
-                self._advance_offset(decision.update_id)
+                self._advance_offset(event.sequence)
                 self._save()
-            self.api.answer_callback_query(
-                decision.callback_id, "Unrecognized action; ignored."
+            self._interaction.acknowledge(
+                event.action_id, "Unrecognized action; ignored."
             )
             return
         now = self._clock()
@@ -734,10 +771,10 @@ class Adapter(object):
             record, problem = approval_module.evaluate_callback(
                 self._document,
                 approval_id=approval_id,
-                user_id=decision.user_id,
-                chat_id=decision.chat_id,
+                user_id=event.principal_id,
+                chat_id=event.conversation_id,
                 repository=self.config.repository,
-                message_id=decision.message_id,
+                message_id=event.message_id,
                 now=now,
             )
             if problem is None and len(
@@ -751,7 +788,7 @@ class Adapter(object):
                     self._document,
                     approval_id,
                     chosen,
-                    update_id=decision.update_id,
+                    update_id=event.sequence,
                     now=now,
                 )
                 if not consumed:
@@ -760,33 +797,33 @@ class Adapter(object):
             if problem is None:
                 item = {
                     "kind": "decision",
-                    "chat_id": decision.chat_id,
-                    "user_id": decision.user_id,
+                    "chat_id": event.conversation_id,
+                    "user_id": event.principal_id,
                     "approval_id": approval_id,
                     "decision": chosen,
-                    "update_id": decision.update_id,
+                    "update_id": event.sequence,
                 }
                 state_module.enqueue(self._document, item)
-            self._advance_offset(decision.update_id)
+            self._advance_offset(event.sequence)
             # One durable save carries consumption + queue + offset,
             # BEFORE any external acknowledgement or dispatch.
             self._save()
         if problem is not None:
-            self.api.answer_callback_query(
-                decision.callback_id,
+            self._interaction.acknowledge(
+                event.action_id,
                 "Decision refused (%s). Nothing was dispatched." % problem,
             )
             return
         self._work_signals.put(item)
-        self.api.answer_callback_query(
-            decision.callback_id,
+        self._interaction.acknowledge(
+            event.action_id,
             "Decision recorded (%s). Dispatching…" % chosen,
         )
-        self.api.edit_message_reply_markup(
-            decision.chat_id, decision.message_id, None
+        self._interaction.offer_controls(
+            event.conversation_id, event.message_id, None
         )
 
-    def _process_mission_callback(self, decision, data):
+    def _process_mission_callback(self, event, data):
         """One-shot v2 mission decision, completed HERE, in full.
 
         A v2 approval dispatches NO gateway turn (plan determination
@@ -805,10 +842,10 @@ class Adapter(object):
         ):]
         if not workflow_id:
             with self._state_lock:
-                self._advance_offset(decision.update_id)
+                self._advance_offset(event.sequence)
                 self._save()
-            self.api.answer_callback_query(
-                decision.callback_id, "Unrecognized action; ignored."
+            self._interaction.acknowledge(
+                event.action_id, "Unrecognized action; ignored."
             )
             return
         now = self._clock()
@@ -831,17 +868,17 @@ class Adapter(object):
                             mission_module.evaluate_mission_callback(
                                 workflows,
                                 workflow_id,
-                                user_id=decision.user_id,
-                                chat_id=decision.chat_id,
+                                user_id=event.principal_id,
+                                chat_id=event.conversation_id,
                                 repository=self.config.repository,
-                                message_id=decision.message_id,
+                                message_id=event.message_id,
                                 now=now,
                             )
                         )
                         if problem is None:
                             ok = mission_module.consume_mission(
                                 workflows, workflow_id, chosen,
-                                update_id=decision.update_id, now=now,
+                                update_id=event.sequence, now=now,
                             )
                             if not ok:
                                 problem = (
@@ -876,22 +913,22 @@ class Adapter(object):
                     # nothing is readable, so nothing is decidable —
                     # a clean refusal, never a crashed poller.
                     problem = mission_module.PROBLEM_STORE_UNREADABLE
-            self._advance_offset(decision.update_id)
+            self._advance_offset(event.sequence)
             self._save()
         if not consumed:
-            self.api.answer_callback_query(
-                decision.callback_id,
+            self._interaction.acknowledge(
+                event.action_id,
                 "Mission decision refused (%s). Nothing was authorized"
                 " or dispatched." % problem,
             )
             return
         if chosen == wa_record.DECISION_APPROVE:
-            self.api.answer_callback_query(
-                decision.callback_id,
+            self._interaction.acknowledge(
+                event.action_id,
                 "Mission AUTHORIZED (one-shot consumed).",
             )
-            self.api.send_message(
-                decision.chat_id,
+            self._interaction.send(
+                event.conversation_id,
                 "Mission %s AUTHORIZED and durably recorded. NO"
                 " gateway turn was dispatched: the Runtime service"
                 " picks the authorization up from the workflow store."
@@ -900,16 +937,16 @@ class Adapter(object):
                 " approval." % workflow_id,
             )
         else:
-            self.api.answer_callback_query(
-                decision.callback_id, "Mission rejected."
+            self._interaction.acknowledge(
+                event.action_id, "Mission rejected."
             )
-            self.api.send_message(
-                decision.chat_id,
+            self._interaction.send(
+                event.conversation_id,
                 "Mission %s REJECTED and closed. Nothing was"
                 " authorized and nothing will run." % workflow_id,
             )
-        self.api.edit_message_reply_markup(
-            decision.chat_id, decision.message_id, None
+        self._interaction.offer_controls(
+            event.conversation_id, event.message_id, None
         )
 
     # -- worker side -----------------------------------------------------
@@ -1036,7 +1073,7 @@ class Adapter(object):
             detail = " %s: %s" % (result.error.code, result.error.detail)
             if result.error.detail_truncated:
                 detail += " [detail truncated]"
-        self.api.send_message(
+        self._interaction.send(
             chat_id,
             "Gateway turn failed (%s).%s Nothing further was done."
             % (result.status, detail),
@@ -1067,7 +1104,7 @@ class Adapter(object):
                 " authority.)\n"
             )
         if not parsed.ok:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The Operator reply did not pass protocol"
                 " validation (%s). No plan is available from this turn"
@@ -1086,7 +1123,7 @@ class Adapter(object):
                 # envelope marker.
                 self._run_planning_and_offer(item, prefix)
             else:
-                self.api.send_message(
+                self._interaction.send(
                     chat_id,
                     prefix + "The Operator returned an unexpected v2"
                     " envelope kind (%s) on an intent turn; it was"
@@ -1097,7 +1134,7 @@ class Adapter(object):
         if parsed.kind == protocol.KIND_PLAN:
             self._offer_plan(item, result, parsed, prefix)
         else:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id, prefix + "[%s]\n%s" % (parsed.kind, parsed.body)
             )
 
@@ -1133,7 +1170,7 @@ class Adapter(object):
             # never seen the plan — so no approval record is created
             # and no buttons are offered. Fail closed, tell the user
             # plainly.
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The Operator returned a plan, but the turn"
                 " completed WITHOUT a resumable Codex session handle,"
@@ -1145,14 +1182,14 @@ class Adapter(object):
             )
             return
         plan_text = prefix + PLAN_MESSAGE_HEADER + parsed.body
-        if telegram_api.would_truncate(plan_text):
+        if self._interaction.would_truncate(plan_text):
             # Refuse-before-send: the FULL text to display (prefix and
             # header included) exceeds what the chunk cap can deliver,
             # so an approval could only bind text the human never saw.
             # No approval record is created at all; the preview below
             # carries no buttons and send_message labels its own cut
             # inline.
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The Operator returned a plan too long to"
                 " display completely (%d characters; at most %d can be"
@@ -1161,7 +1198,7 @@ class Adapter(object):
                 " buttons are offered. Re-send your intent asking for"
                 " a more concise plan.\n"
                 "Undeliverable plan preview (NOT approvable):\n%s"
-                % (len(plan_text), telegram_api.MAX_DELIVERABLE_CHARS,
+                % (len(plan_text), self._interaction.max_deliverable_chars,
                    parsed.body),
             )
             return
@@ -1182,7 +1219,7 @@ class Adapter(object):
             # message (the external action) is sent.
             self._save()
         if problem is not None:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "Plan received but the approval store is full (%s);"
                 " approval buttons were NOT offered. Resolve pending"
@@ -1192,8 +1229,8 @@ class Adapter(object):
         # The plan text goes out with NO reply_markup: at this instant
         # no actionable control exists anywhere — not on the phone, not
         # in the record (plan_message_id is still None).
-        outcome = self.api.send_message(chat_id, plan_text)
-        expected_chunks = telegram_api.chunk_count(plan_text)
+        outcome = self._interaction.send(chat_id, plan_text)
+        expected_chunks = self._interaction.chunk_count(plan_text)
         complete = (
             outcome.ok
             and outcome.truncated_chars == 0
@@ -1219,7 +1256,7 @@ class Adapter(object):
                 # Belt: the record vanished between creation and
                 # arming. No binding was persisted, so no control may
                 # be offered.
-                self.api.send_message(
+                self._interaction.send(
                     chat_id,
                     "The plan was displayed, but its approval record"
                     " vanished before it could be armed, so no"
@@ -1228,22 +1265,18 @@ class Adapter(object):
                     " fresh plan.",
                 )
                 return
-            keyboard = {
-                "inline_keyboard": [[
-                    {
-                        "text": "Approve plan",
-                        "callback_data": CALLBACK_APPROVE_PREFIX
-                        + record["approval_id"],
-                    },
-                    {
-                        "text": "Reject plan",
-                        "callback_data": CALLBACK_REJECT_PREFIX
-                        + record["approval_id"],
-                    },
-                ]]
-            }
-            offered, offer_problem = self.api.edit_message_reply_markup(
-                chat_id, plan_message_id, keyboard
+            controls = (
+                Control(
+                    "Approve plan",
+                    CALLBACK_APPROVE_PREFIX + record["approval_id"],
+                ),
+                Control(
+                    "Reject plan",
+                    CALLBACK_REJECT_PREFIX + record["approval_id"],
+                ),
+            )
+            offered, offer_problem = self._interaction.offer_controls(
+                chat_id, plan_message_id, controls
             )
             if offered is True:
                 return
@@ -1261,7 +1294,7 @@ class Adapter(object):
                 offer_problem = (
                     "the keyboard offer outcome could not be verified"
                 )
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "The plan was displayed completely, but its approval"
                 " buttons could not be attached (%s). Its approval was"
@@ -1322,7 +1355,7 @@ class Adapter(object):
                 "Plan delivery could not be verified as complete (no"
                 " usable message binding was returned)."
             )
-        self.api.send_message(
+        self._interaction.send(
             chat_id,
             explanation + " Its approval was voided and cannot be"
             " decided. Re-send your intent for a fresh plan.",
@@ -1507,7 +1540,7 @@ class Adapter(object):
             if claim is None:
                 continue
             chat_id, text, digest = claim
-            outcome = self.api.send_message_once(chat_id, text)
+            outcome = self._interaction.send_once(chat_id, text)
             if not self._record_placeholder_outcome(
                 workflow_id, digest, outcome
             ):
@@ -1551,7 +1584,7 @@ class Adapter(object):
                     return True
                 now = self._clock()
                 if (
-                    classification == telegram_api.SEND_APPLIED
+                    classification == SEND_APPLIED
                     and isinstance(message_id, int)
                     and not isinstance(message_id, bool)
                     and message_id >= 1
@@ -1559,7 +1592,7 @@ class Adapter(object):
                     placeholder["state"] = wa_record.PLACEHOLDER_BOUND
                     placeholder["message_id"] = message_id
                     placeholder["bound_at"] = now
-                elif classification == telegram_api.SEND_DEFINITE_ZERO:
+                elif classification == SEND_DEFINITE_ZERO:
                     # Proved no message exists. Retry is SAFE and the
                     # next pass will re-claim this record.
                     placeholder["state"] = (
@@ -1652,7 +1685,7 @@ class Adapter(object):
         # "the result this record renders does not fit ONE Telegram
         # message". Trust it as terminal ONLY when the receipt's
         # rendered_digest matches THIS record's current rendering AND
-        # that rendering genuinely exceeds telegram_api.MAX_MESSAGE_CHARS.
+        # that rendering genuinely exceeds the seam's max_message_chars.
         # A receipt marking a result unrenderable when the current render
         # is not actually oversized (a false terminal, or stale on the
         # render even at the same verified_result revision) is NOT proof:
@@ -1666,7 +1699,7 @@ class Adapter(object):
             premise_holds = (
                 delivery.get("rendered_digest")
                 == wa_digest.text_digest(text)
-                and len(text) > telegram_api.MAX_MESSAGE_CHARS
+                and len(text) > self._interaction.max_message_chars
             )
             return not premise_holds
         # `edit_pending` and `edit_indefinite` are RETRYABLE, because an
@@ -1759,7 +1792,7 @@ class Adapter(object):
                 # Fail CLOSED: never chunk, never truncate. The result
                 # path does not call the chunking `send_message` at
                 # all.
-                if len(text) > telegram_api.MAX_MESSAGE_CHARS:
+                if len(text) > self._interaction.max_message_chars:
                     entry["result_delivery"] = self._delivery_marker(
                         entry,
                         state=(
@@ -1776,7 +1809,7 @@ class Adapter(object):
                             " the single-message limit is %d; delivery"
                             " fails closed — it is never chunked and"
                             " never truncated"
-                            % (len(text), telegram_api.MAX_MESSAGE_CHARS)
+                            % (len(text), self._interaction.max_message_chars)
                         ),
                     )
                     self.workflow_store.save(workflows)
@@ -1846,7 +1879,7 @@ class Adapter(object):
         them entirely, so byte-identity across replays holds BY
         CONSTRUCTION rather than by care (R-1).
         """
-        outcome = self.api.edit_message_text(
+        outcome = self._interaction.edit(
             claim["chat_id"], claim["message_id"], claim["text"]
         )
         detail = getattr(outcome, "detail", None)
@@ -1941,9 +1974,15 @@ class Adapter(object):
         #   3. the description matches the message-not-modified
         #      condition rigorously — exact membership of a named
         #      closed set on the NORMALIZED description, never a loose
-        #      substring scan (telegram_api.is_message_not_modified);
+        #      substring scan;
         #   4. it is a genuine structured ok=false body, not an
-        #      inferred one — also enforced by that same predicate.
+        #      inferred one.
+        # Clauses 3 and 4 are the provider-proof half: they are decided
+        # by the provider implementation behind the seam from the
+        # structured detail and arrive here as ``already_applied``
+        # (``target_missing`` likewise carries the R-3 proof below).
+        # ``detail`` is retained for callers and no longer interpreted
+        # here.
         verified = entry.get("verified_result") or {}
         digest_matches = (
             verified.get("digest") == claim["verified_result_digest"]
@@ -1951,7 +1990,7 @@ class Adapter(object):
                 claim["text"]
             )
         )
-        if telegram_api.is_message_not_modified(detail):
+        if getattr(outcome, "already_applied", False) is True:
             if binding_matches and digest_matches:
                 return (
                     wa_record.DELIVERY_DELIVERED_BY_EDIT, None,
@@ -1971,7 +2010,7 @@ class Adapter(object):
         # Fail CLOSED. NO replacement message is EVER sent: silently
         # sending a fresh result is the exact duplicate-presentation
         # bug this whole task exists to remove.
-        if telegram_api.is_message_to_edit_not_found(detail) or (
+        if getattr(outcome, "target_missing", False) is True or (
             not binding_matches
         ):
             return (
@@ -2103,7 +2142,7 @@ class Adapter(object):
         # has always sent.
         chat_id = entry["telegram"]["chat_id"]
         text = render_result_text(entry)
-        outcome = self.api.send_message(chat_id, text)
+        outcome = self._interaction.send(chat_id, text)
         # Resolve the send against BOTH axes of exactly-once:
         #  - complete send -> DELIVERED with the real message id;
         #  - PARTIAL send (some chunks displayed, ok=False) -> a
@@ -2208,7 +2247,7 @@ class Adapter(object):
                 detail = " %s" % result.error.detail
                 if getattr(result.error, "detail_truncated", False):
                     detail += " [detail truncated]"
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The fresh planning turn did not complete"
                 " (%s: %s).%s NO mission was recorded and nothing was"
@@ -2231,7 +2270,7 @@ class Adapter(object):
                 if not routed.ok
                 else "wrong_kind:%s" % routed.kind
             )
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The fresh planning turn did not return a"
                 " valid Mission Authorization envelope (%s). NO"
@@ -2272,7 +2311,7 @@ class Adapter(object):
             mission_module.MissionError,
             mission_module.AuthorizationError,
         ) as exc:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The Operator returned a Mission Authorization"
                 " that failed validation (%s): %s. NO mission was"
@@ -2302,7 +2341,7 @@ class Adapter(object):
                 entry["codex_turns"] = [dict(planning_turn)]
                 wa_record.validate_record(entry)
         except wa_record.RecordError as exc:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The Mission Authorization exceeds a hard"
                 " bound (%s): %s. It was refused, not truncated;"
@@ -2313,8 +2352,8 @@ class Adapter(object):
         mission_text = (
             prefix + mission_module.MISSION_MESSAGE_HEADER + rendered
         )
-        if telegram_api.would_truncate(mission_text):
-            self.api.send_message(
+        if self._interaction.would_truncate(mission_text):
+            self._interaction.send(
                 chat_id,
                 prefix + "The Mission Authorization is too long to"
                 " display completely (%d characters; at most %d can be"
@@ -2322,7 +2361,7 @@ class Adapter(object):
                 " text you saw, so NOTHING was recorded and no buttons"
                 " are offered." % (
                     len(mission_text),
-                    telegram_api.MAX_DELIVERABLE_CHARS,
+                    self._interaction.max_deliverable_chars,
                 ),
             )
             return
@@ -2347,7 +2386,7 @@ class Adapter(object):
                     # durable save.
                     self.workflow_store.save(workflows)
         except workflow_store_module.StoreError as exc:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "The workflow store could not be read or"
                 " written (%s); NOTHING was recorded and no approval"
@@ -2356,22 +2395,22 @@ class Adapter(object):
             )
             return
         if superseded:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "Note: %d earlier unapproved mission(s) in this chat"
                 " were voided by this new mission (exact count)."
                 % superseded,
             )
         if not ok:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 prefix + "Mission received but the workflow store"
                 " refused it (%s); no approval buttons were offered."
                 % add_problem,
             )
             return
-        outcome = self.api.send_message(chat_id, mission_text)
-        expected_chunks = telegram_api.chunk_count(mission_text)
+        outcome = self._interaction.send(chat_id, mission_text)
+        expected_chunks = self._interaction.chunk_count(mission_text)
         complete = (
             outcome.ok
             and outcome.truncated_chars == 0
@@ -2403,7 +2442,7 @@ class Adapter(object):
                 # later decision on this store fails closed too).
                 armed = False
             if not armed:
-                self.api.send_message(
+                self._interaction.send(
                     chat_id,
                     "The mission was displayed, but its workflow record"
                     " vanished before it could be armed; no approval"
@@ -2411,26 +2450,20 @@ class Adapter(object):
                     " accepted. Re-send your intent.",
                 )
                 return
-            keyboard = {
-                "inline_keyboard": [[
-                    {
-                        "text": "Approve mission",
-                        "callback_data": (
-                            mission_module.CALLBACK_MISSION_APPROVE_PREFIX
-                            + workflow_id
-                        ),
-                    },
-                    {
-                        "text": "Reject mission",
-                        "callback_data": (
-                            mission_module.CALLBACK_MISSION_REJECT_PREFIX
-                            + workflow_id
-                        ),
-                    },
-                ]]
-            }
-            offered, offer_problem = self.api.edit_message_reply_markup(
-                chat_id, mission_message_id, keyboard
+            controls = (
+                Control(
+                    "Approve mission",
+                    mission_module.CALLBACK_MISSION_APPROVE_PREFIX
+                    + workflow_id,
+                ),
+                Control(
+                    "Reject mission",
+                    mission_module.CALLBACK_MISSION_REJECT_PREFIX
+                    + workflow_id,
+                ),
+            )
+            offered, offer_problem = self._interaction.offer_controls(
+                chat_id, mission_message_id, controls
             )
             if offered is True:
                 return
@@ -2439,7 +2472,7 @@ class Adapter(object):
                 offer_problem = (
                     "the keyboard offer outcome could not be verified"
                 )
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "The mission was displayed completely, but its approval"
                 " buttons could not be attached (%s). The mission was"
@@ -2483,7 +2516,7 @@ class Adapter(object):
                 "Mission delivery could not be verified as complete"
                 " (no usable message binding was returned)."
             )
-        self.api.send_message(
+        self._interaction.send(
             chat_id,
             explanation + " The mission was voided and cannot be"
             " decided. Re-send your intent.",
@@ -2497,7 +2530,7 @@ class Adapter(object):
             session = self._document["sessions"].get(str(chat_id))
         if record is None:
             self._finish_item(item)
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "Recorded decision could not be dispatched: approval"
                 " record vanished. Nothing was sent.",
@@ -2542,7 +2575,7 @@ class Adapter(object):
                     " unusable"
                 ),
             }
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "Decision NOT dispatched (%s): %s. Ask for a fresh"
                 " plan." % (
@@ -2560,7 +2593,7 @@ class Adapter(object):
             return
         parsed = protocol.parse_routed_operator_response(result.message)
         if not parsed.ok:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "Decision was dispatched, but the Operator reply did"
                 " not pass protocol validation (%s). Use /status to"
@@ -2568,7 +2601,7 @@ class Adapter(object):
             )
             return
         if parsed.protocol_version == 2:
-            self.api.send_message(
+            self._interaction.send(
                 chat_id,
                 "Decision was dispatched, but the Operator returned an"
                 " unexpected v2 envelope (%s) on a v1 decision turn;"
@@ -2576,7 +2609,7 @@ class Adapter(object):
                 " up." % parsed.kind,
             )
             return
-        self.api.send_message(
+        self._interaction.send(
             chat_id, "[%s]\n%s" % (parsed.kind, parsed.body)
         )
 
@@ -2716,7 +2749,7 @@ class Adapter(object):
             " unsolicited streaming; re-send /status to refresh."
         )
         self._finish_item(item)
-        self.api.send_message(chat_id, "\n".join(lines))
+        self._interaction.send(chat_id, "\n".join(lines))
 
     # -- threads ---------------------------------------------------------
 

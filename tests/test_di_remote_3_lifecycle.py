@@ -1717,7 +1717,7 @@ class AuthorityBoundaryTests(LifecycleCase):
         # Anti-vacuity: the scan really found this module's imports, in
         # both syntactic forms.
         self.assertIn("workflow_authority.store", imported)
-        self.assertIn("telegram_operator.telegram_api", imported)
+        self.assertIn("telegram_operator.interaction", imported)
         self.assertIn("threading", imported)
         for module_name in imported:
             for root in forbidden_roots:

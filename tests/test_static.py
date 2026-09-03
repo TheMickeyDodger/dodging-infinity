@@ -178,7 +178,7 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
-    'operator_session',
+    'operator_session', 'human_interaction',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -194,6 +194,9 @@ assert any('workflow_authority' in str(p) for p in gateway_files), (
 )
 assert any('operator_session' in str(p) for p in gateway_files), (
     'operator_session sources not found'
+)
+assert any('human_interaction' in str(p) for p in gateway_files), (
+    'human_interaction sources not found'
 )
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
@@ -460,6 +463,9 @@ probe = subprocess.run(
             'import operator_session\n'
             'import operator_session.session\n'
             'import operator_session.codex\n'
+            'import human_interaction\n'
+            'import human_interaction.contract\n'
+            'import telegram_operator.interaction\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
