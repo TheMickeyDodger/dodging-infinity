@@ -49,6 +49,7 @@ from codex_gateway import build_request as gateway_build_request
 from codex_gateway import submit as gateway_submit
 from codex_gateway import role_turn as role_turn_module
 from codex_gateway.contract import STATUS_COMPLETED
+from operator_session import CodexOperatorSession, FunctionOperatorSession
 
 from telegram_operator import approval as approval_module
 from telegram_operator import authz, protocol, state as state_module
@@ -429,12 +430,23 @@ class Adapter(object):
                  build_request_fn=None, clock=None, failure_sleeper=None,
                  error_writer=None, workflow_store=None,
                  workflow_id_factory=None, mission_nonce_factory=None,
-                 planning_turn_fn=None):
+                 planning_turn_fn=None, operator_session=None):
         self.config = config
         self.store = store
         self.api = api
-        self._submit = submit_fn or gateway_submit
-        self._build_request = build_request_fn or gateway_build_request
+        # The operator session seam. An explicit session wins; an
+        # injected callable pair (either half may be absent — each
+        # half defaults to the gateway independently) becomes a
+        # function-backed session; otherwise the Codex-backed one.
+        if operator_session is not None:
+            self._session = operator_session
+        elif submit_fn is not None or build_request_fn is not None:
+            self._session = FunctionOperatorSession(
+                build_request_fn or gateway_build_request,
+                submit_fn or gateway_submit,
+            )
+        else:
+            self._session = CodexOperatorSession()
         self._clock = clock or time.time
         self._failure_sleeper = failure_sleeper or time.sleep
         self._error_writer = error_writer or sys.stderr.write
@@ -927,7 +939,7 @@ class Adapter(object):
         after it returns, so a crash in between leaves honest evidence
         of an ambiguous dispatch.
         """
-        request = self._build_request(
+        prepared = self._session.prepare(
             text,
             self.config.repository,
             session_id=session_id,
@@ -937,14 +949,14 @@ class Adapter(object):
             self._document["in_flight"] = {
                 "kind": item["kind"],
                 "chat_id": item["chat_id"],
-                "request_id": request.request_id,
+                "request_id": prepared.request_id,
                 "approval_id": item.get("approval_id"),
                 "update_id": item.get("update_id"),
                 "dispatched_at": self._clock(),
             }
             self._document["last_request"] = {
                 "kind": item["kind"],
-                "request_id": request.request_id,
+                "request_id": prepared.request_id,
                 "status": "dispatched",
                 "session_id": session_id,
                 "updated_at": self._clock(),
@@ -971,12 +983,12 @@ class Adapter(object):
                             previous.get("session_id")
                             if previous else None
                         ),
-                        "request_id": request.request_id,
+                        "request_id": prepared.request_id,
                         "updated_at": self._clock(),
                     },
                 )
             self._save()
-        result = self._submit(request)
+        result = self._session.execute(prepared)
         with self._state_lock:
             self._document["in_flight"] = None
             self._document["last_request"] = {
@@ -1001,7 +1013,7 @@ class Adapter(object):
                 if previous:
                     carried_request = previous.get("request_id")
                 elif item["kind"] != "status":
-                    carried_request = request.request_id
+                    carried_request = prepared.request_id
                 else:
                     carried_request = None
                 state_module.record_session(

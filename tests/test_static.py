@@ -176,7 +176,10 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
         p.relative_to(R).as_posix() == known for p in product_files
     ), ('derived product set lost a known member', known)
 
-_HERDR_FREE_ROOTS = ('codex_gateway', 'telegram_operator', 'workflow_authority')
+_HERDR_FREE_ROOTS = (
+    'codex_gateway', 'telegram_operator', 'workflow_authority',
+    'operator_session',
+)
 gateway_files = sorted(
     p for p in product_files
     if p.relative_to(R).parts[0] in _HERDR_FREE_ROOTS
@@ -188,6 +191,9 @@ assert any('telegram_operator' in str(p) for p in gateway_files), (
 )
 assert any('workflow_authority' in str(p) for p in gateway_files), (
     'workflow_authority sources not found'
+)
+assert any('operator_session' in str(p) for p in gateway_files), (
+    'operator_session sources not found'
 )
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
@@ -451,6 +457,9 @@ probe = subprocess.run(
             'import workflow_authority.authorization\n'
             'import workflow_authority.canonical\n'
             'import workflow_authority.rendering\n'
+            'import operator_session\n'
+            'import operator_session.session\n'
+            'import operator_session.codex\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
