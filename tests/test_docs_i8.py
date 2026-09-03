@@ -40,7 +40,8 @@ from _di_remote2_surface import (I8_DOCUMENT_UNIT_DIGESTS,
                                  protected_document_units, unit_digest)
 
 I8_DOCS = ("README.md", "SECURITY.md", "OPERATOR_PROTOCOL.md",
-           "CHANGELOG.md")
+           "CHANGELOG.md", "docs/reference/observability.md",
+           "docs/reference/telegram-remote-operator.md")
 
 def doc_text(document):
     with open(os.path.join(REPO_ROOT, document), encoding="utf-8") as fh:
@@ -93,23 +94,25 @@ def one_line(document):
 # ---------------------------------------------------------------- map
 
 I8_CLAIM_PIN_MAP = (
-    # -- README.md ---------------------------------------------------
-    ("README.md", "fact-only",
+    # -- docs/reference/observability.md (moved out of README byte-for-byte,
+    # -- during the README rewrite) -----------------------------------------
+    ("docs/reference/observability.md", "fact-only",
      "Read this before the architecture, not after it",
      "ClaimPinMapI8Tests.test_every_added_unit_has_a_row"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "The model a RUNNING agent uses is not observable through the"
      " agent interface (F1)",
      "ModelHonestyIsProductionsTests."
      "test_readme_forbidden_field_names_are_absent_from_the_projection"),
-    ("README.md", "fact-only",
+    ("docs/reference/observability.md", "fact-only",
      "A verdict cannot distinguish a model substitution from a restart",
      "test_model_substitution.SubstitutionWithSessionPRESERVEDTests."
      "test_the_two_scenarios_are_UNREPRESENTABLY_DIFFERENT"),
+    # -- README.md ---------------------------------------------------
     ("README.md", "fact-only",
      "Observation is a reporting surface, not a gate",
      "test_observe.NonMutationTests.test_no_write_path_is_reachable"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "Skew is reported, naming both the build that wrote the record"
      " and the build on disk",
      "OperatorLimitsAreProductionsTests."
@@ -124,37 +127,37 @@ I8_CLAIM_PIN_MAP = (
      " among the unproven stages) IS pinned, by"
      " TerminalMountainDocsPinTests in tests/test_release_narrative.py;"
      " what stays unpinned is the external evidence itself"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "The projection is schema version 3",
      "SchemaSurfaceIsProductionsTests."
      "test_readme_schema_version_is_the_one_production_emits"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "schema_version generated_at completeness repository config",
      "SchemaSurfaceIsProductionsTests."
      "test_readme_top_level_keys_are_the_keys_production_emits"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "`vintage`, `checkpoint`, `roles` and `turns` arrived after"
      " schema v1",
      "SchemaSurfaceIsProductionsTests."
      "test_readme_named_new_sections_are_in_the_projection"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "A role's model appears in the projection under the key"
      " `configured_model`",
      "ModelHonestyIsProductionsTests."
      "test_readme_model_key_is_the_key_production_emits"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "The projection also carries the limit itself as a diagnostic",
      "ModelHonestyIsProductionsTests."
      "test_readme_quoted_diagnostic_is_the_delivered_sentence"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "NO running-model value exists in this document",
      "ModelHonestyIsProductionsTests."
      "test_readme_quoted_diagnostic_is_the_delivered_sentence"),
-    ("README.md", "doc<->code",
+    ("docs/reference/observability.md", "doc<->code",
      "A role whose configuration names no model renders `(unset)`",
      "ModelHonestyIsProductionsTests."
      "test_readme_unset_marker_is_the_one_production_writes"),
-    ("README.md", "doc<->code",
+    ("docs/reference/telegram-remote-operator.md", "doc<->code",
      "Approval is **one-shot** and bound to the exact rendered mission text",
      "test_release_narrative.DocsAccuracyPinTests."
      "test_exactly_once_discloses_the_not_retried_states"),
@@ -304,14 +307,17 @@ class ClaimPinMapI8Tests(unittest.TestCase):
 class SchemaSurfaceIsProductionsTests(unittest.TestCase):
     """EXECUTED PIN: each test parses its document, then drives
     `observe` and asserts on the projection production actually emits.
-    Falsifying the sentence fails the test."""
+    Falsifying the sentence fails the test. The `readme_` methods keep
+    their names; the sentences they parse moved byte-for-byte from
+    README.md to docs/reference/observability.md during the README
+    rewrite and are parsed there."""
 
     def observation(self):
         return observe.observe(herd_fixture(self), probe_agents=False)
 
     def test_readme_schema_version_is_the_one_production_emits(self):
         match = re.search(r"The projection is schema version (\d+)",
-                          one_line("README.md"))
+                          one_line("docs/reference/observability.md"))
         self.assertIsNotNone(match, "README names no schema version")
         self.assertEqual(
             int(match.group(1)), self.observation()["schema_version"],
@@ -334,7 +340,7 @@ class SchemaSurfaceIsProductionsTests(unittest.TestCase):
         still mislead a reader following it down the page."""
         block = re.search(
             r"emits them:\s*```text\n(.*?)```",
-            doc_text("README.md"), re.S,
+            doc_text("docs/reference/observability.md"), re.S,
         )
         self.assertIsNotNone(block, "README lists no top-level keys")
         listed = [line.strip() for line in block.group(1).splitlines()
@@ -347,7 +353,7 @@ class SchemaSurfaceIsProductionsTests(unittest.TestCase):
     def test_readme_named_new_sections_are_in_the_projection(self):
         match = re.search(
             r"((?:`[a-z_]+`(?:, | and )?)+) arrived after schema v1",
-            one_line("README.md"),
+            one_line("docs/reference/observability.md"),
         )
         self.assertIsNotNone(match, "README names no new sections")
         named = re.findall(r"`([a-z_]+)`", match.group(1))
@@ -364,8 +370,10 @@ class SchemaSurfaceIsProductionsTests(unittest.TestCase):
 
 class ModelHonestyIsProductionsTests(unittest.TestCase):
     """EXECUTED PIN: for F1 and F3, each test parses the model claim
-    out of README or CHANGELOG and drives it against a live
-    projection. Falsifying the sentence fails the test."""
+    out of docs/reference/observability.md (the `readme_` methods,
+    whose sentences moved there byte-for-byte from README.md) or
+    CHANGELOG and drives it against a live projection. Falsifying the
+    sentence fails the test."""
 
     def observation(self, **kwargs):
         return observe.observe(herd_fixture(self, **kwargs),
@@ -373,7 +381,8 @@ class ModelHonestyIsProductionsTests(unittest.TestCase):
 
     def test_readme_model_key_is_the_key_production_emits(self):
         match = re.search(
-            r"under the key `([a-z_]+)`", one_line("README.md")
+            r"under the key `([a-z_]+)`",
+            one_line("docs/reference/observability.md")
         )
         self.assertIsNotNone(match, "README names no model key")
         parsed = match.group(1)
@@ -392,7 +401,7 @@ class ModelHonestyIsProductionsTests(unittest.TestCase):
     def test_readme_render_qualifier_is_the_one_production_writes(self):
         match = re.search(
             r"in the human render as `([A-Za-z-]+=)`",
-            one_line("README.md"),
+            one_line("docs/reference/observability.md"),
         )
         self.assertIsNotNone(match, "README names no render qualifier")
         text = observe.render_observation(self.observation())
@@ -413,7 +422,7 @@ class ModelHonestyIsProductionsTests(unittest.TestCase):
         """
         sentence = re.search(
             r"The projection carries no (.*?), because such a field",
-            one_line("README.md"),
+            one_line("docs/reference/observability.md"),
         )
         self.assertIsNotNone(sentence, "README states no F1 absence")
         forbidden = re.findall(r"`([a-z_]+)`", sentence.group(1))
@@ -434,7 +443,7 @@ class ModelHonestyIsProductionsTests(unittest.TestCase):
         quoted block is compared to the delivered detail."""
         block = re.search(
             r"reading this document:\s*```text\n(.*?)```",
-            doc_text("README.md"), re.S,
+            doc_text("docs/reference/observability.md"), re.S,
         )
         self.assertIsNotNone(block, "README quotes no diagnostic")
         quoted = " ".join(block.group(1).split())
@@ -457,13 +466,13 @@ class ModelHonestyIsProductionsTests(unittest.TestCase):
     def test_readme_unset_marker_is_the_one_production_writes(self):
         match = re.search(
             r"names no model renders `(\([a-z]+\))`",
-            one_line("README.md"),
+            one_line("docs/reference/observability.md"),
         )
         self.assertIsNotNone(match, "README names no unset marker")
         text = observe.render_observation(self.observation(args=[]))
         qualifier = re.search(
             r"in the human render as `([A-Za-z-]+=)`",
-            one_line("README.md"),
+            one_line("docs/reference/observability.md"),
         )
         self.assertIsNotNone(qualifier)
         # The marker is asserted IN THE MODEL FIELD, not merely
@@ -581,13 +590,15 @@ class OperatorLimitsAreProductionsTests(unittest.TestCase):
 
 class BoundsAreProductionsTests(unittest.TestCase):
     """EXECUTED PIN: on the two documented bounds a consumer is most
-    likely to rely on: the numbers are parsed from README, compared to
-    the constants production enforces, and the string bound is driven
-    through a real projection."""
+    likely to rely on: the numbers are parsed from
+    docs/reference/observability.md (the `readme_` methods keep their
+    names; the bounds list moved there byte-for-byte from README.md),
+    compared to the constants production enforces, and the string
+    bound is driven through a real projection."""
 
     def test_readme_string_bound_is_the_one_production_enforces(self):
         match = re.search(r"(\d+)-character projected strings",
-                          one_line("README.md"))
+                          one_line("docs/reference/observability.md"))
         self.assertIsNotNone(match, "README states no string bound")
         bound = int(match.group(1))
         self.assertEqual(bound, observe._OBSERVE_MAX_STRING)
@@ -606,7 +617,7 @@ class BoundsAreProductionsTests(unittest.TestCase):
 
     def test_readme_probe_bound_is_the_one_production_enforces(self):
         match = re.search(r"(\d+) live agent probes",
-                          one_line("README.md"))
+                          one_line("docs/reference/observability.md"))
         self.assertIsNotNone(match, "README states no probe bound")
         self.assertEqual(int(match.group(1)),
                          observe._OBSERVE_MAX_AGENT_PROBES)

@@ -38,9 +38,9 @@ help output wins and this page is stale.
 ## What is not here
 
 - The `herdctl observe` schema v3 contract, the model-observability
-  statement, and the hard observation bounds stay in the
-  [README](../../README.md#herdctl-observe), where they are pinned by
-  `tests/test_docs_i8.py`.
+  statement, and the hard observation bounds are not in the README; they
+  are on the [observability](observability.md#herdctl-observe-schema-v3)
+  page, where they are pinned by `tests/test_docs_i8.py`.
 - The DI-REMOTE-2 architecture and its proof boundary stay in the
   [README](../../README.md#remote-target-repository-routing-di-remote-2-v070).
 - Target design lives in the [wiki](../wiki/Home.md), not here.

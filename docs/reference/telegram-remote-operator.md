@@ -255,6 +255,33 @@ queued-but-undispatched work as dropped (re-send it) and
 dispatched-but-unconfirmed work as AMBIGUOUS; it is never replayed
 automatically.
 
+## Remote mission result delivery (DI-REMOTE-2)
+
+**[IMPLEMENTED / PROVEN]** A remote target mission returns its verified
+result to Telegram exactly once, by editing one bot-owned placeholder that
+was bound before dispatch. The exact delivery contract, pinned by the
+release narrative suite:
+
+- Approval is **one-shot** and bound to the exact rendered mission
+  text; a v2 approval dispatches no Codex turn — the Runtime, a
+  separate process, claims the durably consumed authorization on its
+  own. After Approve Mission there is **no manual Mac, clone,
+  registration, Herdr-setup, configuration-switching, or terminal
+  step**, and the lifecycle runs all the way to a **verified result
+  returned to Telegram exactly once** (verified end to end by the
+  hermetic release-narrative test). "Exactly once" means never twice and
+  never silently dropped — NOT that it always eventually arrives: a
+  placeholder-bound workflow can never fall back to a second result
+  `sendMessage`, so the result is **not re-sent automatically** in any
+  state. An ambiguous edit outcome (durable state `edit_indefinite`) is
+  retried only as an idempotent edit of the same bound message; a result
+  that does not fit one Telegram message (`degraded_unrenderable`), a
+  bound placeholder that is gone or no longer matches (`degraded_unbindable`),
+  and an ambiguous placeholder creation before dispatch (placeholder state
+  `indefinite`) are terminal; `/status` says so, and recovering a terminal
+  outcome is a human step. Records from the pre-DI-REMOTE-3 legacy lane
+  (`reserved` / `partial`) are AT-MOST-ONCE and are never re-sent either.
+
 ## Delivery authority: local today, Telegram-native planned
 
 **[IMPLEMENTED / PROVEN]** Remote delivery authority is not implemented today. No Telegram

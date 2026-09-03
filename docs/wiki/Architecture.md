@@ -106,7 +106,7 @@ The Attention Router answers "what needs a human?" for outbound attention: autho
 
 **[PLANNED / TARGET]** Every consequential thing a mission can do is a Capability, brokered by Dodging Infinity against the mission's authorization. BrowserCapability splits read operations from write operations and hands off to a human for MFA, CAPTCHA, or takeover. Research, document, and operations tools are bounded mission tools. Engineering is a capability that hands off to Herdr. Credential availability on a worker never grants a mission permission to use it. See [Capabilities and Workers](Capabilities-and-Workers.md).
 
-**[IMPLEMENTED / PROVEN]** The v0.7.0 Target Broker is the narrow ancestor: privileged and fixed-action, nine fixed lifecycle actions, each performed against a Runtime-minted one-shot capability bound to exactly one `(workflow_id, action, revision)` tuple, with sensitive values resolved from the protected workflow record and never supplied by the caller. The README states that contract and the release narrative suite pins it against the code.
+**[IMPLEMENTED / PROVEN]** The v0.7.0 Target Broker is the narrow ancestor: privileged and fixed-action, nine fixed lifecycle actions, each performed against a Runtime-minted one-shot capability bound to exactly one `(workflow_id, action, revision)` tuple, with sensitive values resolved from the protected workflow record and never supplied by the caller. [Capabilities and Workers](Capabilities-and-Workers.md) states that contract and the release narrative suite pins it against the code.
 
 ## Engineering handoff to Herdr
 
