@@ -32,6 +32,14 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+from human_interaction.contract import EditOutcome as _EditOutcome
+from human_interaction.contract import SEND_APPLIED as _SEND_APPLIED
+from human_interaction.contract import SEND_CLASSIFICATIONS as _SEND_CLASSIFICATIONS
+from human_interaction.contract import SEND_DEFINITE_ZERO as _SEND_DEFINITE_ZERO
+from human_interaction.contract import SEND_INDEFINITE as _SEND_INDEFINITE
+from human_interaction.contract import SendOnceOutcome as _SendOnceOutcome
+from human_interaction.contract import SendOutcome as _SendOutcome
+
 TELEGRAM_API_BASE = "https://api.telegram.org"
 
 # --- Hard constants, never derived from input ---------------------------
@@ -112,13 +120,15 @@ CALL_OUTCOMES = (
     CALL_REQUEST_NOT_SENT,
 )
 
-# The three-valued send classification (R-5). Never two-valued.
-SEND_APPLIED = "applied"
-# The ONLY class that permits a retried sendMessage, so the only class
-# that can ever manufacture a duplicate placeholder (R-7).
-SEND_DEFINITE_ZERO = "definite_zero"
-SEND_INDEFINITE = "indefinite"
-SEND_CLASSIFICATIONS = (SEND_APPLIED, SEND_DEFINITE_ZERO, SEND_INDEFINITE)
+# The three-valued send classification (R-5). Never two-valued. Re-homed
+# in the provider-neutral ``human_interaction`` contract and aliased here
+# under the same names (identical values); SEND_DEFINITE_ZERO remains the
+# ONLY class that permits a retried sendMessage, so the only class that
+# can ever manufacture a duplicate placeholder (R-7).
+SEND_APPLIED = _SEND_APPLIED
+SEND_DEFINITE_ZERO = _SEND_DEFINITE_ZERO
+SEND_INDEFINITE = _SEND_INDEFINITE
+SEND_CLASSIFICATIONS = _SEND_CLASSIFICATIONS
 
 
 @dataclass(frozen=True)
@@ -259,23 +269,12 @@ def is_message_to_edit_not_found(detail):
     return _matches_forms(detail, MESSAGE_TO_EDIT_NOT_FOUND_FORMS)
 
 
-@dataclass(frozen=True)
-class SendOnceOutcome:
-    """Result of ONE placeholder send attempt (never retried here)."""
-
-    classification: str
-    message_id: Optional[int] = None
-    problem: Optional[str] = None
-    detail: Optional[CallDetail] = None
-
-
-@dataclass(frozen=True)
-class EditOutcome:
-    """Result of a bounded editMessageText."""
-
-    ok: bool
-    problem: Optional[str] = None
-    detail: Optional[CallDetail] = None
+# ``SendOnceOutcome`` (one placeholder send attempt, never retried here)
+# and ``EditOutcome`` (a bounded editMessageText) are re-homed in the
+# provider-neutral ``human_interaction`` contract and aliased here under
+# the same names; ``detail`` carries this module's ``CallDetail``.
+SendOnceOutcome = _SendOnceOutcome
+EditOutcome = _EditOutcome
 
 
 @dataclass(frozen=True)
@@ -293,20 +292,11 @@ class PollOutcome:
     problem: Optional[str]
 
 
-@dataclass(frozen=True)
-class SendOutcome:
-    """Result of one send-side API call (possibly chunked).
-
-    ``truncated_chars`` is the EXACT number of characters omitted when
-    the chunk cap bit (0 when nothing was omitted); the omission is
-    also labelled inline in the delivered text.
-    """
-
-    ok: bool
-    message_ids: Tuple[int, ...]
-    chunks_sent: int
-    truncated_chars: int
-    problem: Optional[str]
+# ``SendOutcome`` (one send-side API call, possibly chunked; its
+# ``truncated_chars`` is the EXACT number of characters omitted when the
+# chunk cap bit) is re-homed in the provider-neutral ``human_interaction``
+# contract and aliased here under the same name.
+SendOutcome = _SendOutcome
 
 
 def redact(text, token):
