@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -178,7 +179,7 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
-    'operator_session', 'human_interaction',
+    'operator_session', 'human_interaction', 'durable_execution',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -197,6 +198,9 @@ assert any('operator_session' in str(p) for p in gateway_files), (
 )
 assert any('human_interaction' in str(p) for p in gateway_files), (
     'human_interaction sources not found'
+)
+assert any('durable_execution' in str(p) for p in gateway_files), (
+    'durable_execution sources not found'
 )
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
@@ -218,6 +222,57 @@ for path in gateway_files:
             assert name not in {'__import__', 'import_module'}, (path, name)
         elif isinstance(node, ast.Name):
             assert node.id != '__import__', path
+
+# 1b. Neutral import boundary for the durable-execution seam, STATIC.
+# The shared scan above forbids only the orchestration roots; the
+# neutral seam must additionally import NOTHING from the substrate,
+# the control chain, or the transport seam. Two checks per import,
+# both required: the root must be in an explicit ALLOWLIST (the
+# contract is standard-library `abc` plus the package's own module and
+# nothing else), and it must not be one of the roots named in the
+# FORBIDDEN set, whose assertion message is what states the boundary.
+# The allowlist is written out rather than derived from the
+# interpreter's own stdlib table because the CI matrix includes an
+# interpreter that has no such table, and an explicit set is stricter
+# anyway. Relative imports (level > 0) carry no root name a root
+# check could see, so they are forbidden outright. Filtered from the
+# SAME shared derivation, so a new file under durable_execution/ is
+# inside the pin the moment it exists.
+DURABLE_EXECUTION_ALLOWED_IMPORT_ROOTS = {'abc', 'durable_execution'}
+DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS = {
+    'target_runtime', 'workflow_authority', 'telegram_operator',
+    'codex_gateway', 'operator_session', 'human_interaction',
+    'herdr', 'herdctl', 'git_transport',
+}
+durable_execution_files = sorted(
+    p for p in product_files
+    if p.relative_to(R).parts[0] == 'durable_execution'
+)
+assert durable_execution_files, 'durable_execution sources not found'
+for path in durable_execution_files:
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            imported = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0, (
+                path, node.level,
+                'durable_execution may not use a relative import',
+            )
+            imported = [node.module or '']
+        else:
+            continue
+        for name in imported:
+            root = name.split('.')[0]
+            assert root not in DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS, (
+                path, name,
+                'durable_execution must not import the substrate, the'
+                ' control chain, the orchestration engine, or the'
+                ' transport seam',
+            )
+            assert root in DURABLE_EXECUTION_ALLOWED_IMPORT_ROOTS, (
+                path, name,
+                'durable_execution imports only abc and its own package',
+            )
 
 # 2. Token scan: outside comments and docstrings, no identifier token and
 # no string literal may reference herdr/herdctl — matched as a
@@ -435,6 +490,119 @@ for path in target_runtime_files + [R / 'dirun.py']:
                     path, token.start, 'no transport-named option or config key'
                 )
 
+# 2d. Neutral vocabulary pin for the durable-execution seam, over ALL
+# tokens INCLUDING docstrings and comments. Section 2 exempts
+# docstring prose on purpose: the control-chain packages explain their
+# boundary in terms of the thing they exclude. The neutral seam is
+# different. Its contract has to read the same under any substrate, so
+# no product, provider, sibling-seam, orchestration, or delivery term
+# may appear anywhere in it, prose included. Two matchers, both
+# required:
+#   (a) WORD match: the token is lowercased and split into runs of
+#       ASCII letters; a run equal to a forbidden word fails. So
+#       `target_runtime` splits to `target` + `runtime` and `runtime`
+#       catches it, while `stage` yields `stage` (not `tag`) and
+#       `digit` yields `digit` (not `git`): ordinary words are not
+#       false positives.
+#   (b) NORMALIZED-PHRASE match: the token is lowercased and every
+#       non-alphanumeric character deleted; a forbidden phrase found
+#       as a substring fails. That catches a multi-word name written
+#       any way at all: human_interaction, human-interaction,
+#       `human interaction` and HumanInteraction all normalize to
+#       humaninteraction.
+# Three checks per file, all required, because a forbidden term need
+# not be spelled inside any single source token:
+#   1. STRUCTURAL: the file contains no f-string (`ast.JoinedStr`) at
+#      all. The neutral package is docstrings and `abc`; it holds
+#      plain literals only, so no term can be split across formatted
+#      parts and nothing here has to evaluate one.
+#   2. RAW TOKEN pass: every token's source text, both matchers. This
+#      is the only view of COMMENT and NAME tokens, which have no AST
+#      node.
+#   3. DECODED VALUE pass: both matchers over the value of every `str`
+#      `ast.Constant`. The parser folds implicit concatenation
+#      (`"Her" "dr"`) into one Constant and decodes escapes
+#      (`"He\x72dr"`) before the value is seen, so both are closed by
+#      the plain value.
+# There is NO carve-out. The package raises nothing. If a future error
+# description genuinely needs one of these terms, that is a
+# deliberate, reviewed change to this pin, not a pre-built exemption.
+# STATED LIMIT: a value computed at run time (chr(), "".join(...), a
+# name built by concatenating variables) is beyond ANY static pin;
+# this closes literal spellings only.
+# Anti-vacuity, all required: the scanned set is non-empty, contains
+# both package files, and yields a nonzero token count and a nonzero
+# string-value count, so an empty or mis-filtered scope can never pass
+# silently.
+# Set literal on purpose: the hermetic-git guard in tests/test_hermetic_git.py
+# flattens list/tuple call arguments as a git argv (so the subcommand words
+# below would read as an identity-requiring invocation) while a set literal is
+# opaque to it; this matches the guard's own IDENTITY_SUBCOMMANDS =
+# frozenset({...}) idiom. This is an unordered word list, not an argv.
+DURABLE_EXECUTION_FORBIDDEN_WORDS = frozenset({
+    'herdr', 'herdctl', 'codex', 'telegram', 'github', 'git', 'operator',
+    'commit', 'push', 'tag', 'release', 'deploy', 'merge', 'dbos',
+    'runtime', 'broker', 'workflow', 'mission',
+})
+DURABLE_EXECUTION_FORBIDDEN_PHRASES = (
+    'targetruntime', 'workflowauthority', 'telegramoperator',
+    'codexgateway', 'operatorsession', 'humaninteraction', 'gittransport',
+)
+
+
+def _neutral_vocabulary_violations(token_text):
+    lowered = token_text.lower()
+    words = set(re.findall(r'[a-z]+', lowered))
+    normalized = re.sub(r'[^a-z0-9]', '', lowered)
+    return sorted(words & DURABLE_EXECUTION_FORBIDDEN_WORDS) + [
+        phrase for phrase in DURABLE_EXECUTION_FORBIDDEN_PHRASES
+        if phrase in normalized
+    ]
+
+
+neutral_scan_files = durable_execution_files
+neutral_scan_names = {p.relative_to(R).as_posix() for p in neutral_scan_files}
+assert neutral_scan_names, 'neutral vocabulary scan set is empty'
+for required_file in (
+    'durable_execution/contract.py', 'durable_execution/__init__.py',
+):
+    assert required_file in neutral_scan_names, (
+        'neutral vocabulary scan lost a package file', required_file
+    )
+neutral_tokens_scanned = 0
+neutral_values_scanned = 0
+for path in neutral_scan_files:
+    source = path.read_text()
+    tree = ast.parse(source)
+    joined = [node for node in ast.walk(tree) if isinstance(node, ast.JoinedStr)]
+    assert not joined, (
+        path, [(node.lineno, node.col_offset) for node in joined],
+        'durable_execution holds plain string literals only: no f-string,'
+        ' so no forbidden term can be split across formatted parts',
+    )
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        neutral_tokens_scanned += 1
+        violations = _neutral_vocabulary_violations(token.string)
+        assert not violations, (
+            path, token.start, token.string, violations,
+            'neutral seam vocabulary: no product, provider, sibling-seam,'
+            ' orchestration, or delivery term anywhere in'
+            ' durable_execution, docstrings and comments included',
+        )
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            neutral_values_scanned += 1
+            violations = _neutral_vocabulary_violations(node.value)
+            assert not violations, (
+                path, (node.lineno, node.col_offset), node.value, violations,
+                'neutral seam vocabulary (decoded string value): no product,'
+                ' provider, sibling-seam, orchestration, or delivery term'
+                ' may be assembled by implicit concatenation or an escape'
+                ' sequence',
+            )
+assert neutral_tokens_scanned > 0, 'neutral vocabulary scan saw no tokens'
+assert neutral_values_scanned > 0, 'neutral vocabulary scan saw no string values'
+
 # 3. Behavioral: importing the gateway, the Telegram adapter, the
 # workflow authority layer, and their entry scripts must not load any
 # herdr/herdctl module. The same probe asserts that none of them loads
@@ -466,6 +634,8 @@ probe = subprocess.run(
             'import human_interaction\n'
             'import human_interaction.contract\n'
             'import telegram_operator.interaction\n'
+            'import durable_execution\n'
+            'import durable_execution.contract\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
@@ -480,5 +650,39 @@ probe = subprocess.run(
     text=True,
 )
 assert probe.returncode == 0, (probe.returncode, probe.stdout, probe.stderr)
+
+# 3b. Discriminating behavioral probe for the neutral seam. The probe
+# above loads the whole control chain in ONE interpreter, so it cannot
+# tell whether durable_execution pulled in a control-chain package
+# itself: those packages are in sys.modules either way. This SECOND,
+# SEPARATE interpreter imports ONLY durable_execution and its contract
+# module, then asserts that no module whose root is any forbidden root
+# (the static set from 1b, transport seam included) was loaded. The
+# probe above stays as it is; this one is the discriminating half.
+neutral_probe = subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            'import sys\n'
+            'import durable_execution\n'
+            'import durable_execution.contract\n'
+            'roots = ' + repr(sorted(DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS)) + '\n'
+            'bad = sorted(\n'
+            '    name for name in sys.modules\n'
+            '    if name.split(".")[0] in roots\n'
+            ')\n'
+            'print("\\n".join(bad))\n'
+            'sys.exit(1 if bad else 0)\n'
+        ),
+    ],
+    cwd=str(R),
+    capture_output=True,
+    text=True,
+)
+assert neutral_probe.returncode == 0, (
+    'durable_execution alone loaded a forbidden root',
+    neutral_probe.returncode, neutral_probe.stdout, neutral_probe.stderr,
+)
 
 print('static tests: OK')

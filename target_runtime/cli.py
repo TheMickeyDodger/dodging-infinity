@@ -25,12 +25,17 @@ from telegram_operator.state import (
     default_state_dir,
 )
 
+# ``runtime_module`` stays bound here even though this module no longer
+# calls it directly: it is the one module object the seam adapter
+# resolves its functions from at call time, and the CLI tests replace
+# those functions through this name (``cli.runtime_module.<fn>``).
 from target_runtime import runtime as runtime_module
 from target_runtime import workspace_ownership
 from target_runtime.broker import (
     TargetBroker,
     _production_live_workspaces,
 )
+from target_runtime.durable_execution import RuntimeDurableExecution
 from target_runtime.git_transport import GitTransport
 from target_runtime.workspace import default_workspaces_root
 from target_runtime.workspace_trust import default_config_path
@@ -274,10 +279,15 @@ def _build_broker(namespace):
     return broker, state_directory
 
 
-def main(argv=None, sleeper=None, passes=None):
+def main(argv=None, sleeper=None, passes=None, execution=None):
     """CLI entry. ``sleeper``/``passes`` exist ONLY for tests (an
     injected pacing bound); production callers pass nothing and run
-    unbounded — pacing, not a mission timeout."""
+    unbounded — pacing, not a mission timeout. ``execution`` likewise
+    exists ONLY for tests: a ``DurableExecution`` that replaces the
+    three Runtime calls and nothing else (config load, lock, exit
+    codes, printing, and pacing are the real code either way);
+    production callers pass nothing and get the Runtime-backed adapter
+    built from ``_build_broker``."""
     parser = _build_parser()
     try:
         namespace = parser.parse_args(argv)
@@ -292,6 +302,8 @@ def main(argv=None, sleeper=None, passes=None):
     except ConfigError as exc:
         print("dirun: config: %s" % exc, file=sys.stderr)
         return EXIT_CONFIG
+    if execution is None:
+        execution = RuntimeDurableExecution(broker, state_directory)
     lock_descriptor = acquire_runtime_lock(state_directory)
     if lock_descriptor is None:
         print(
@@ -316,9 +328,7 @@ def main(argv=None, sleeper=None, passes=None):
     # # Unattributed directories are REPORTED and left alone — WITH THE
     # REASON, so a forged assignment is distinguishable in the log
     # from a stray directory (R-43 AG-2).
-    recovered_rows, unattributed = (
-        runtime_module.recover_inherited_processes(state_directory)
-    )
+    recovered_rows, unattributed = execution.recover_inherited_processes()
     for row in recovered_rows:
         identity, reaped, stuck, unstamped, uncorroborated = row
         print(
@@ -356,7 +366,7 @@ def main(argv=None, sleeper=None, passes=None):
     # The DENOMINATOR is printed even when no row needs attention, so
     # an empty result reads as "the enumeration ran and found none"
     # rather than leaving a reader to wonder whether it ran at all.
-    attention, total = runtime_module.readiness_attention(state_directory)
+    attention, total = execution.readiness_attention()
     if total is None:
         print(
             "dirun: readiness could not be enumerated (store"
@@ -381,7 +391,7 @@ def main(argv=None, sleeper=None, passes=None):
             )
     try:
         if namespace.command == "once":
-            processed = runtime_module.process_once(broker)
+            processed = execution.process_once()
             _report_new_refusals(processed)
             print(
                 "dirun: processed %d workflow(s) (exact)"
@@ -393,7 +403,7 @@ def main(argv=None, sleeper=None, passes=None):
         remaining = passes
         reported_refusals = set()
         while True:
-            processed = runtime_module.process_once(broker)
+            processed = execution.process_once()
             reported_refusals = _report_new_refusals(
                 processed, reported_refusals
             )
