@@ -147,14 +147,12 @@ I1_DOCUMENT_UNIT_DIGESTS = {
 }
 
 I8_DOCUMENT_UNIT_DIGESTS = {
-    # The exactly-once caveat bullet moved out of README byte-for-byte during
-    # the product-story rewrite; the digest is unchanged because the text is.
-    "docs/reference/telegram-remote-operator.md": frozenset({
+    # The exactly-once caveat bullet and the observability units moved out of
+    # README byte-for-byte during the product-story rewrite, and moved again,
+    # byte-for-byte, into the consolidated docs/operations.md; the digests are
+    # unchanged because the text is.
+    "docs/operations.md": frozenset({
         "ffbd6266ae2091f31b5dddeb6bf2a74a0a9a1b9922576d1a4f77a1a5e3144229",
-    }),
-    # The observability units moved out of README byte-for-byte during the
-    # README rewrite; the digests are unchanged because the text is.
-    "docs/reference/observability.md": frozenset({
         "e843bcad540db023866357a159aba7355e43d61fb923c1e4e3c42059c3c85001", "ef642453a8384806ee3447f4bb65bb15f4a0d855cedae9f81657b084bc97ae9b", "c58203f1ee8c3117e88abc0a4fa058d130176a7e5771e0e9ed368442bb6eca7f", "1e4d44205b7bf99ec6bcbae873b0ef35b856cc57760a05cfb62c28b8ae3f3a0a", "1dd632c26f655ea893da84ca68d328d0045aa3fef5543ebf1eee7b86a3391b1b", "972f8f4fc3dc629f537a14c8db94b421a3e7090806eb827952a5782e1e6c8043", "82fc7cc0401f4d709f67f55194c4108aa66082d9ad127725d81b6c509bbf76f8", "f655f5c1b1d8039502cbe15a385aee31a40651a2d6bc2f543153ea84409920e6", "f6dbdac7ac58392f8c25dc2f0bad3bcdadfd4a8ce8a63e7f338ae9b17b3aaee7", "7e4477cb2c823e03761899642ac17dafd3f13563ac5c4c7ee2a07d3d7e6e57ea", "864c2d2e76e77e190ca718066efe08ebd8e9b14785c05527a6f5e16aec11e9ad",
     }),
     "CHANGELOG.md": frozenset({
