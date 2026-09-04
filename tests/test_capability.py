@@ -654,11 +654,18 @@ class BrokerSeamTests(_BrokerCase):
             and any(arg.arg == "store_directory" for arg in node.args.args)
         )
         names = [arg.arg for arg in init.args.args]
-        self.assertEqual(names[-1], "capability_authority")
         self.assertEqual(names.count("capability_authority"), 1)
-        last_default = init.args.defaults[-1]
-        self.assertIsInstance(last_default, ast.Constant)
-        self.assertIsNone(last_default.value)
+        # The keyword's default is located by NAME rather than by
+        # position: the worker seam added its own trailing keyword
+        # after this one, and this pin is about the capability
+        # keyword existing exactly once with a None default.
+        defaults = dict(zip(
+            names[len(names) - len(init.args.defaults):],
+            init.args.defaults,
+        ))
+        default = defaults["capability_authority"]
+        self.assertIsInstance(default, ast.Constant)
+        self.assertIsNone(default.value)
         constructions = [
             node for node in ast.walk(tree)
             if isinstance(node, ast.Call)

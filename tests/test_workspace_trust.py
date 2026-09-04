@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(
 )))
 
 from target_runtime import broker as broker_module
+from target_runtime import worker as worker_module
 from target_runtime import workspace as workspace_module
 from target_runtime import workspace_trust as trust_module
 from workflow_authority import record as record_module
@@ -1051,7 +1052,9 @@ class BrokerOrderingTests(runtime_harness.RuntimeCase):
 
         self.setUp()
         self.put_record(self.authorized_record())
-        self.broker.claude_config_path = os.path.join(
+        # Trust establishment reads the worker's bound config path,
+        # so the substitution point moved with the seam.
+        self.broker.worker.config_path = os.path.join(
             self.base, "no-such-config.json"
         )
         broken = self.perform(
@@ -1077,20 +1080,22 @@ class BrokerSourceOrderTests(unittest.TestCase):
         source = inspect.getsource(
             broker_module.TargetBroker._materialize
         )
-        trust_at = source.find("workspace_trust_module.establish")
+        trust_at = source.find("worker.establish_workspace_trust")
         ready_at = source.find("PHASE_WORKSPACE_READY")
-        materialize_at = source.find("workspace_module.materialize")
+        materialize_at = source.find("worker.materialize_workspace")
         self.assertNotEqual(trust_at, -1)
         self.assertLess(materialize_at, trust_at)
         self.assertLess(trust_at, ready_at)
 
 
 class SeamPinTests(unittest.TestCase):
-    """The call surface between the Broker and workspace_trust,
-    pinned BOTH ways and by execution."""
+    """The call surface between the Broker path and workspace_trust,
+    pinned BOTH ways and by execution. The one production call into
+    `establish` lives in the worker adapter (`target_runtime.worker`),
+    which the Broker reaches through its bound seam instance."""
 
     def caller_keywords(self):
-        tree = ast.parse(inspect.getsource(broker_module))
+        tree = ast.parse(inspect.getsource(worker_module))
         found = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -4069,7 +4074,7 @@ class ClaimPinMapTests(TrustFixture):
             broker_module.TargetBroker._release
         )
         self.assertIn(
-            "workspace_trust_module", release_source,
+            "worker.revoke_workspace_trust", release_source,
             "release no longer touches trust; the revocation"
             " disclosure is stale",
         )
