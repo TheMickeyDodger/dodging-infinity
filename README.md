@@ -1,136 +1,462 @@
 <p align="center">
-  <img src="assets/brand/banner.svg" alt="Dodging Infinity — AI orchestration and mission control for agents" width="100%">
+  <img src="assets/brand/banner.svg" alt="Dodging Infinity" width="100%">
 </p>
 
 # Dodging Infinity
 
-[![CI](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml/badge.svg)](https://github.com/TheMickeyDodger/dodging-infinity/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/TheMickeyDodger/dodging-infinity)](https://github.com/TheMickeyDodger/dodging-infinity/releases/latest)
+**AI orchestration and mission control for agents.**
 
-**An AI orchestration system and mission control for agents.**
-
-Dodging Infinity turns an objective written in ordinary language into a **Mission**: a bounded, explicitly authorized unit of work with a fixed scope, a required standard of proof, and a list of things it may not do. Models, bots and agent frameworks then work inside that boundary. The Mission itself — its identity, state, evidence and authority — belongs to Dodging Infinity, not to whichever tool happens to be doing the work.
-
-That separation is the point. Bots converse and collaborate, Dodging Infinity governs, capabilities do bounded work, workers execute, humans authorize. Capability is never authority: permission to solve a problem is not permission to ship the result.
-
----
-
-## What it does today
-
-Released behavior as of v0.7.0. The current-vs-target status and supporting evidence for these capabilities are tracked in [Current vs End State](docs/wiki/Current-vs-End-State.md).
-
-- **Turns a request into a bounded Mission you explicitly approve.** A natural-language message becomes a Mission bound to the exact plan text you were shown, and nothing starts until you approve that plan. The approval covers the mission itself and never any later delivery action; typed text carries no authority.
-- **Isolates the work to the intended target.** Each remote mission runs in its own managed workspace, checked against the intended repository and the approved starting point before any work begins.
-- **Runs engineering through Herdr.** Supervisor, Lead, Executor and Reviewer are bootstrapped inside that target. The Reviewer is independent and read-only, and can reject work and force another round.
-- **Requires evidence, not an agent's word.** A mission is verified only when the required evidence is present, checked against a fresh read of disk. Herdr reporting COMPLETE can never verify a mission on its own.
-- **Fails closed rather than repeating itself.** The verified result is delivered once. If an external effect may already have happened, the mission stops and reports that rather than retrying blind.
-- **Stays observable without becoming steerable.** `herdctl observe` is a strictly read-only projection and `herdctl health` a readiness probe. Neither mutates, repairs, prompts, or gates anything.
-- **Keeps delivery in human hands.** Commit, branch push and release-tag push are three separate one-shot local approvals. No remote message can operate any of them.
-
----
-
-## How it works
+Dodging Infinity is built for work that is too large, too long-running, or too important to live inside one chat session.
 
 ```text
-You
- │   objective · approval · status question
- ▼
-Interaction plane           Telegram today · Coordinator Grok Bot target
- │
- ▼
-DODGING INFINITY            mission truth · authorization · routing
-                            observation · evidence · verification · delivery gates
- │
- ▼
-Operator / model routing    Codex today · provider-neutral by design
- │
- ▼
-Bounded capabilities        engineering today · research, browser, document/ops,
- │                          media and publishing in the target architecture
- ▼
-Workers                     one trusted Mac today · more hosts later
- │
- ▼
-GitHub · web · SaaS · APIs · devices
+o──o──o
+      \
+       o──[ DI ]──o
 ```
 
-Everything below Dodging Infinity is meant to be replaceable. Model routing picks a provider; it does not acquire the Mission. A capability does bounded work; it cannot widen its own scope. A worker's readiness describes what it is able to run, never what it is allowed to do. Swapping the bot, the provider, the engineering system, the durability substrate or the worker should never change what a Mission is.
+---
 
-Engineering is the most developed capability, and Herdr is how it executes:
+# 1. What is Dodging Infinity?
+
+Dodging Infinity is an orchestration layer for AI agents doing real work.
+
+The unit of work is a **Mission**.
+
+A Mission keeps the objective, scope, authorization, state, evidence, artifacts, and delivery decisions together while different models, agents, tools, and machines do their part.
+
+That starts to matter once the job gets bigger than:
 
 ```text
-Engineering capability
-        │
-        ▼
-      Herdr
-
-   Supervisor
-        ↓
-      Lead
-        ↓
-   Executor ↔ Reviewer
+"Write this function."
 ```
 
-Herdr performs the engineering. Dodging Infinity owns the Mission around it: the authorization Herdr runs under, the evidence its work has to produce, and the gates its result still has to pass. Herdr is not the control plane and not the product.
+A real job might need research first. It might need engineering after that. It might involve a browser, a PDF, a screenshot, a simulator, several models, a second machine, a restart, a human approval, and finally a pull request.
 
-The full picture is in [Architecture](docs/wiki/Architecture.md); what is built versus what is designed is in [Current vs End State](docs/wiki/Current-vs-End-State.md).
+Dodging Infinity keeps that work together instead of treating each chat or agent session as a separate universe.
 
----
+The basic rule is:
 
-## Today, and where it is going
+> **Bots converse and collaborate. Dodging Infinity governs. Capabilities do bounded work. Workers execute. Humans authorize.**
 
-**Today — the reference implementation**
+The Mission stays the same even when the tools underneath it change.
 
-| Layer | Current |
-|---|---|
-| Remote interaction | Telegram adapter, allowlisted private chats |
-| Operator | Codex CLI, behind a gateway with no path to Herdr |
-| Capability | Engineering, via Herdr |
-| Worker | One trusted local Mac |
-| Delivery | Local human commit / push / tag gates; remote missions carry `delivery_authority = none` |
-
-**Direction — target architecture, not implemented**
-
-A Coordinator Grok Bot as the universal, multimodal front door, with specialist bots collaborating over mission and artifact references rather than borrowed authority. Provider-neutral operator and model routing behind `OperatorSession`. Mission types beyond engineering — research, browser, document and ops, media, publishing — reached through a capability broker. A capability-aware worker registry spanning several machines. Durable multi-mission orchestration, reconciliation against real-world state, and exact one-shot delivery approval from a phone.
-
-Each item on both lists carries its real status in [Current vs End State](docs/wiki/Current-vs-End-State.md), and the sequencing is in [Roadmap](docs/wiki/Roadmap.md).
+```text
+      01001        10110
+          \        /
+           \      /
+            [ DI ]
+           /      \
+          /        \
+      10110        01001
+```
 
 ---
 
-## Requirements
+# 2. How does it work?
 
-**Required**
+At a high level:
 
-- **macOS or Linux.** There is no Windows support. Linux is covered for development and CI; the full remote workflow is macOS-first, because the background services install as per-user LaunchAgents.
-- **Python 3.9 or newer.** Standard library only — there is nothing to `pip install`. CI covers macOS and Ubuntu on Python 3.9 and 3.13.
-- **Git.**
-- **[Herdr](https://github.com/herdrdev/herdr)**, available on `PATH` as `herdr`.
-- **The agent CLI your preset uses,** installed and signed in: `claude` for the `all-claude` and `conservative` presets, `claude` and `codex` for `max-quality`. `herdctl doctor` names anything missing.
-- **Read/write access** to the repositories you want missions to run in.
+```text
+                                  HUMAN
+                                    │
+                    text / voice / image / file
+                    requests / approvals / status
+                                    │
+                                    ▼
+              ┌──────────────────────────────────────┐
+              │             INTERACTION              │
+              │                                      │
+              │   Coordinator Grok Bot               │
+              │   Telegram                           │
+              │   CLI                                │
+              │   Specialist bots                    │
+              └──────────────────┬───────────────────┘
+                                 │
+                                 ▼
+      ┌─────────────────────────────────────────────────────────┐
+      │                   DODGING INFINITY                      │
+      │                                                         │
+      │   Missions                Authorization                  │
+      │   Routing                 Evidence                       │
+      │   State                   Artifacts                      │
+      │   Observation             Verification                   │
+      │   Reconciliation          Delivery gates                 │
+      └───────────────────────────┬─────────────────────────────┘
+                                  │
+                                  ▼
+              ┌──────────────────────────────────────┐
+              │       OPERATOR + MODEL ROUTING       │
+              │                                      │
+              │   Pi                                 │
+              │   Codex                              │
+              │   GPT / Claude / Grok / Muse         │
+              │   Local / future models              │
+              └──────────────────┬───────────────────┘
+                                 │
+                                 ▼
+      ┌─────────────────────────────────────────────────────────┐
+      │                  BOUNDED CAPABILITIES                   │
+      │                                                         │
+      │   Engineering ───────────────────────► Herdr            │
+      │   Research                                              │
+      │   Browser                                               │
+      │   Document / Ops                                        │
+      │   Media / Multimodal                                    │
+      │   Publishing / Messaging                                │
+      └───────────────────────────┬─────────────────────────────┘
+                                  │
+                                  ▼
+              ┌──────────────────────────────────────┐
+              │               WORKERS                │
+              │                                      │
+              │   Trusted Mac                        │
+              │   GPU / simulator host               │
+              │   Browser / SaaS worker              │
+              │   Other hosts                        │
+              └──────────────────┬───────────────────┘
+                                 │
+                                 ▼
+                  GitHub / Web / SaaS / APIs
+                   Simulators / GPUs / Devices
+```
 
-**Additionally required for the remote workflow (macOS)**
+Dodging Infinity sits in the middle because that is where the Mission lives.
 
-- **Codex CLI**, signed in — Codex is the current reference Operator implementation.
-- A **Telegram bot token** and your numeric Telegram user id.
-- A Mac that stays awake, online and authenticated for as long as the mission runs. There is no cloud service behind this: the adapter polls outbound, so nothing listens on an inbound port.
+The interface can change. The model can change. The work can move between capabilities or machines. None of that should require starting the Mission over from scratch.
 
-### Recommended system
+## Interaction
 
-Practical guidance, not hard or benchmarked minimums.
+The interaction layer is how you talk to the system.
+
+That can be as simple as sending a request from your phone:
+
+```text
+You:
+"The export path is timing out.
+Figure out why, fix it, and prove the fix.
+Do not commit anything."
+```
+
+Telegram can carry that request into Dodging Infinity today. The larger interaction layer is built around a Coordinator Grok Bot that can sit across many Missions and work with specialist bots.
+
+The conversation can get more interesting than one request at a time:
+
+```text
+You:
+"Research Bot, did anything from the DBOS comparison
+get handed to engineering?"
+
+Research Bot:
+"Yes. The durability findings are attached to Mission #202.
+Engineering is using them in the worker design review."
+```
+
+Or:
+
+```text
+You:
+"What needs me?"
+
+Grok Bot:
+"Mission #144 is waiting on content approval.
+Mission #145 needs credentials.
+Engineering and research are still running."
+```
+
+The point is not to make the bots sound clever. The point is that they can all reference the same Missions, artifacts, evidence, and status instead of making up their own version of what is happening.
+
+```text
+       .----.           .----.
+      | •  • |  ─────  | •  • |
+      |  --  |   ref   |  --  |
+       '----'           '----'
+         BOT              BOT
+```
+
+## Operator and model routing
+
+The Operator handles reasoning for a Mission step.
+
+Dodging Infinity does not need every job to run through the same model. A research step may want one provider. A code change may want another. A small classification job may be cheaper somewhere else. A privacy-sensitive task may eventually stay local.
+
+```text
+                         Mission step
+                              │
+                              ▼
+                       OperatorSession
+                              │
+                              ▼
+                        Model routing
+                              │
+             ┌────────────────┼────────────────┐
+             ▼                ▼                ▼
+            Pi              Codex          Other adapter
+             │                │                │
+        GPT / Claude      GPT / Claude      local model
+        Grok / Muse                         future model
+```
+
+Codex is the current reference Operator path in the repo.
+
+`OperatorSession` is the seam that keeps the Mission logic separate from the provider doing the reasoning. Codex sits behind an adapter instead of being spread throughout the control plane.
+
+Pi fits at the same boundary. The integration is designed around an adapter/RPC path so Pi can provide its model and tool runtime without becoming responsible for Mission identity, authority, evidence, or delivery.
+
+That lets the model runtime change without changing the Mission format.
+
+## Capabilities
+
+Capabilities are the kinds of work Dodging Infinity can hand out.
+
+Engineering is one capability. Research is another. Browser work, document work, media, publishing, and operations can follow the same pattern.
+
+### Engineering through Herdr
+
+Engineering routes through Herdr.
+
+```text
+                   Engineering Mission
+                           │
+                           ▼
+                         Herdr
+                           │
+                           ▼
+                      Supervisor
+                           │
+                           ▼
+                         Lead
+                           │
+                           ▼
+                       Executor
+                           │
+                    ┌──────┴──────┐
+                    ▼             ▼
+                  Tests        Reviewer
+                    │             │
+                    └──────┬──────┘
+                           ▼
+                        Evidence
+                           │
+                           ▼
+                  Dodging Infinity
+```
+
+Herdr was adapted around a bounded engineering handoff.
+
+The Supervisor receives the objective, repository context, constraints, rules, desired outcome, and unresolved questions. From there, Herdr owns the engineering route.
+
+The roles are deliberately separate:
+
+- **Supervisor** owns engineering direction and decomposition.
+- **Lead** coordinates the work and decides when the engineering task is ready to close.
+- **Executor** implements and tests.
+- **Reviewer** checks the result independently and can reject it.
+
+The Reviewer is read-only. It does not grade its own work because it did not write the work.
+
+Each Herdr instance is scoped to a repository and top-level engineering task. The result comes back with review and verification evidence for Dodging Infinity to evaluate as part of the larger Mission.
+
+### Example: engineering
+
+```text
+You:
+"Fix Mitiq issue #2802.
+Do not ship it."
+          │
+          ▼
+Dodging Infinity creates the Mission
+          │
+          ├─ target repository
+          ├─ objective
+          ├─ constraints
+          ├─ proof requirements
+          └─ no delivery authority
+          │
+          ▼
+You approve
+          │
+          ▼
+Engineering Capability
+          │
+          ▼
+Herdr
+          │
+Supervisor → Lead → Executor ↔ Reviewer
+          │
+          ▼
+tests + evidence
+          │
+          ▼
+Dodging Infinity verifies
+          │
+          ▼
+result comes back to you
+```
+
+If the work is good, you decide what happens next.
+
+Fixing the issue did not automatically authorize a commit, push, merge, release, or deployment.
+
+### Example: research
+
+```text
+You:
+"Compare DBOS, Temporal, and Postgres
+for durable execution."
+          │
+          ▼
+Research Mission
+          │
+      ┌───┴───┐
+      ▼       ▼
+  Research   Browser
+      │       │
+      └───┬───┘
+          ▼
+       Evidence
+          │
+          ▼
+  Research artifact
+          │
+     ┌────┴──────────────┐
+     ▼                   ▼
+    You           Engineering Mission
+```
+
+A follow-up can be simple:
+
+```text
+"Ask Engineering Bot whether the DBOS research
+changes how we should build the worker layer."
+```
+
+The research artifact can move directly into that Mission instead of being flattened into a pasted summary.
+
+### Example: multimodal
+
+```text
+   screenshot
+       +
+ screen recording
+       +
+   voice note
+       +
+    log file
+       │
+       ▼
+ Mission intake
+       │
+  ┌────┼──────────────┐
+  ▼    ▼              ▼
+file  transcription  visual analysis
+  │    │              │
+  └────┴──────┬───────┘
+              ▼
+         Mission context
+              │
+              ▼
+      appropriate capability
+```
+
+If the problem is visual, show it. If the evidence is a PDF, image, recording, log, source archive, or CSV, attach it.
+
+The original material stays with the Mission.
+
+## Workers
+
+Workers are the machines or environments that run capabilities.
+
+A trusted Mac can handle the normal local workflow. A simulation Mission may need a GPU host. Browser-heavy work may run somewhere else.
+
+```text
+Mission:
+"Run the quantum simulation."
+
+Needs:
+- repository access
+- simulator
+- GPU
+
+Worker A              Worker B
+Mac                   GPU host
+repo = yes            repo = yes
+GPU  = no             GPU  = yes
+                      simulator = yes
+
+                         │
+                         ▼
+                     Worker B
+```
+
+Worker selection answers where the work can run. The Mission already defines what the work is allowed to do.
+
+## How the pieces fit
+
+**Herdr** runs the engineering organization: Supervisor, Lead, Executor, Reviewer. Dodging Infinity gives it a bounded engineering handoff and consumes the evidence that comes back.
+
+**Pi** fits behind the Operator boundary as a provider-neutral runtime. Dodging Infinity keeps the Mission model; Pi focuses on reasoning and tools.
+
+**Codex** is the current reference Operator path. It sits behind the Codex Gateway and `OperatorSession` instead of owning orchestration directly.
+
+**Claude** is used heavily inside the engineering stack and can also be used as a reasoning provider.
+
+**Grok / Grok Bot** have two different jobs. Grok is a model option. Grok Bot is the conversation layer across Missions and specialist bots.
+
+**Telegram** is the current phone interface for remote Mission requests, approval, status, and verified results.
+
+**GitHub** is a common source and delivery target for engineering Missions. Delivery actions stay behind separate human gates.
+
+**DBOS, browsers, GPU hosts, SaaS APIs, and future workers** can be added underneath the same Mission and capability boundaries as the system expands.
+
+```text
+      o────o────o────o
+           \        /
+            o──────o
+               │
+            .------.
+           |  •  •  |
+           |   __   |
+            '------'
+```
+
+---
+
+# 3. System Requirements
+
+Dodging Infinity runs locally. The full remote workflow is built around a machine that stays available while Missions are running.
+
+## Computer requirements
 
 | Component | Recommendation |
 |---|---|
-| Machine | Apple Silicon Mac — where the full remote workflow is developed and run |
-| Memory | 16 GB as a practical starting point |
-| Heavier use | 24–32 GB when several agent processes run concurrently |
-| Storage | SSD, with room for one isolated workspace per mission |
-| Network | Stable broadband; model providers have to stay reachable |
-| Unattended missions | A dedicated always-on Mac — a Mac mini works well |
+| **OS** | macOS for the full remote workflow; Linux is covered for development and CI |
+| **CPU** | Apple Silicon or a modern multi-core system |
+| **Memory** | 16 GB is a reasonable starting point |
+| **Heavier use** | 24–32 GB gives multiple agent processes more room |
+| **Storage** | SSD recommended; Missions may create isolated repository workspaces |
+| **Network** | Stable internet access for GitHub and model providers |
+| **Always-on use** | A dedicated Mac or Mac mini works well for unattended Missions |
 
----
+These are practical recommendations, not hard hardware limits.
 
-## Install
+## Software requirements
+
+| Software | What Dodging Infinity uses it for | Needed when |
+|---|---|---|
+| [Python 3.9+](https://www.python.org/downloads/) | Dodging Infinity runtime and CLI | Core |
+| [Git](https://git-scm.com/downloads) | Repository state and delivery | Core |
+| [Herdr](https://github.com/herdrdev/herdr) | Engineering capability | Engineering Missions |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) | Herdr roles and Claude-backed presets | Depends on preset |
+| [Codex CLI](https://github.com/openai/codex) | Current reference Operator and Codex-backed roles | Current Operator / `max-quality` |
+| [Pi](https://github.com/earendil-works/pi) | Provider-neutral Operator runtime path | Pi integration |
+| Grok / xAI access | Grok model routing and Grok Bot interaction layer | Grok workflows |
+| Telegram bot | Remote phone interface | Remote Mission control |
+| GitHub credentials | Repository access and delivery targets | GitHub Missions |
+| Tailscale / SSH | Break-glass remote access to a trusted worker | Optional |
+
+Dodging Infinity itself uses the Python standard library; there is no separate `pip install` step for the project.
+
+## Install Dodging Infinity
 
 ```bash
 git clone https://github.com/TheMickeyDodger/dodging-infinity.git
@@ -138,25 +464,34 @@ cd dodging-infinity
 bash scripts/install.sh
 ```
 
-That installs `herdctl`, `codexgw`, `tgop` and `dirun` into `~/.local/bin`. Put it on your `PATH` if it is not there already:
+The installer adds:
+
+```text
+herdctl
+codexgw
+tgop
+dirun
+```
+
+to:
+
+```text
+~/.local/bin
+```
+
+If needed:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Then install the local command guard once:
+Install the local Git safety guard:
 
 ```bash
 herdctl safety-install
 ```
 
-It configures the global Claude Code commit/push guard. The per-repository Git guards are installed by `herdctl init` and `herdctl upgrade`.
-
----
-
-## Quick start
-
-Initialize a repository you want missions to run in:
+## Set up a repository
 
 ```bash
 cd /path/to/your/repository
@@ -167,114 +502,122 @@ herdctl init \
   --test-command 'python3 -m pytest'
 ```
 
-`herdctl presets` lists the presets. If the verification command is not known yet, initialize without it and set it later with `herdctl set-test 'YOUR_TEST_COMMAND' --repo my-repo`.
-
-Check readiness:
+Check the machine and repository:
 
 ```bash
-herdctl doctor --repo my-repo   # tooling, agent CLIs, Git guards
-herdctl health --repo my-repo   # this repository's herd
+herdctl doctor --repo my-repo
+herdctl health --repo my-repo
 ```
 
-Start the herd, then run a first mission:
+Start Herdr:
 
 ```bash
 herdctl bootstrap --repo my-repo
+```
 
+Start a Mission:
+
+```bash
 herdctl task \
-  'Find the failing test, determine the cause, fix it, and verify the result. Do not commit.' \
+  'Find the failing test, explain what is wrong, fix it, and verify the result. Do not commit.' \
   --repo my-repo
 ```
 
 Watch it:
 
 ```bash
-herdctl status  --repo my-repo
+herdctl status --repo my-repo
+```
+
+or:
+
+```bash
 herdctl observe --repo my-repo --json
 ```
 
-The guarded workflow cannot commit without separate human approval. The full command surface is in [Herdr operations](docs/reference/herdr-operations.md).
+## Remote setup
 
----
+Create:
 
-## Remote control
-
-Optional, and macOS-only today.
-
-Telegram is the current reference transport for remote intent, plan approval, status and verified results. It is an adapter, not an execution system: it has no direct path to Herdr or `herdctl`, and the static suite enforces that isolation.
-
-Create a bot with @BotFather and get your numeric Telegram user id, then write a config **outside any repository**, readable only by you (directory `700`, file `600`), at `~/Library/Application Support/DodgingInfinity/telegram/config.json`:
+```text
+~/Library/Application Support/DodgingInfinity/telegram/config.json
+```
 
 ```json
 {
-  "bot_token": "<token from @BotFather>",
+  "bot_token": "YOUR_BOT_TOKEN",
   "allowed_user_ids": [123456789],
   "repository": "/path/to/your/repository"
 }
 ```
 
-Run the adapter, and the Runtime that advances authorized missions beside it:
+Run the Telegram adapter and Mission runtime:
 
 ```bash
-tgop run     # foreground; tgop install-agent installs the LaunchAgent
-dirun run    # foreground; scripts/dirun-agent.sh install installs the LaunchAgent
+tgop run
+dirun run
 ```
 
-In the chat, send an objective in plain language (or `/mission <intent>`), then approve or reject the returned plan **with its inline buttons** — typed text never approves anything. `/status` reports the current state, `/help` lists the surface. Only the numeric ids in `allowed_user_ids` are served, in private chats only.
-
-What remote deliberately does not do today: no message can commit, push, tag, release or deploy. There is no continuous progress streaming today; use `/status` for current state. Details are in [Telegram remote operator](docs/reference/telegram-remote-operator.md) and [Runtime and host](docs/reference/runtime-and-host.md).
-
-In the target architecture, Coordinator Grok Bot becomes the preferred universal front door: multimodal intake, mission requests, approvals, status across many missions at once, and collaboration with specialist bots. It is the interaction and conversation plane, not an authority holder — it owns no Mission authority, and canonical Mission truth remains in Dodging Infinity. It is not implemented today; Telegram remains the current reference transport and the fallback until a replacement is proven.
-
----
-
-## Human control
-
-> **Permission to solve the problem is not permission to ship the result.**
-
-Three deterministic one-shot gates are enforced today by the installed Git guards:
+Or install them as macOS background services:
 
 ```bash
-herdctl approve-commit --repo my-repo   # binds repo, branch, HEAD, exact staged diff, short TTL
-herdctl approve-push   --repo my-repo   # binds the commit and the remote ref
-herdctl approve-push --tag vX.Y.Z       # binds one annotated tag object
-herdctl push-tag vX.Y.Z
+tgop install-agent
+scripts/dirun-agent.sh install
 ```
 
-No approval inherits from another and none is reusable. Mission authorization does not authorize a commit, a commit does not authorize a push, a push does not authorize a merge, a merge does not authorize a release, and a release does not authorize a deploy. PR creation, merge, release and deploy remain outside the current automated delivery path.
+Then from Telegram:
 
-These are deterministic controls, not a sandbox: Git's own bypass forms still exist, and runtime protections and role contracts complement human authorization rather than replace it. See [Human Git gates](docs/reference/human-git-gates.md) and [Authority and Safety](docs/wiki/Authority-and-Safety.md).
-
----
-
-## Documentation
-
-| Page | What it covers |
-|---|---|
-| [Wiki home](docs/wiki/Home.md) | Index, and the status label attached to every claim |
-| [Architecture](docs/wiki/Architecture.md) | The full system picture |
-| [Current vs End State](docs/wiki/Current-vs-End-State.md) | What is built and what is designed, one row per subsystem |
-| [Missions and Lifecycle](docs/wiki/Missions-and-Lifecycle.md) · [Evidence and Verification](docs/wiki/Evidence-and-Verification.md) | What a Mission is, and what counts as done |
-| [Authority and Safety](docs/wiki/Authority-and-Safety.md) | The authority model |
-| [Capabilities and Workers](docs/wiki/Capabilities-and-Workers.md) · [OperatorSession](docs/wiki/OperatorSession.md) · [Herdr](docs/wiki/Herdr.md) | The layers below the Mission |
-| [Operational reference](docs/reference/README.md) | Commands, Telegram, host, delivery gates, observability |
-| [Roadmap](docs/wiki/Roadmap.md) · [CHANGELOG](CHANGELOG.md) · [Security](SECURITY.md) | Direction, history, disclosure |
-
----
-
-## Development
-
-The test suite is standard-library only and runs from the repository root:
-
-```bash
-PYTHONPATH="$PWD" python3 tests/test_static.py
-PYTHONPATH="$PWD" python3 tests/test_release_narrative.py
+```text
+/mission <intent>
+/status
+/help
 ```
 
-CI runs every suite on macOS and Ubuntu against Python 3.9 and 3.13. Start with [CONTRIBUTING.md](CONTRIBUTING.md), and report security issues through [SECURITY.md](SECURITY.md).
+For the full operating surface, see [Operational Reference](docs/operations.md).
 
 ---
+
+# 4. Closing note
+
+I built Dodging Infinity because I wanted to hand AI a real problem, walk away, and come back to something I could inspect without treating a chat transcript as the source of truth.
+
+A Mission might start from Telegram, move through an Operator, hand engineering to Herdr, use several models, survive a restart, pick up evidence from another Mission, run on a different worker, and eventually come back ready for a delivery decision.
+
+It should still be the same Mission when it gets there.
+
+That is what this project is trying to make normal.
+
+```text
+                  .        .        .
+             .       0 1 0 1 0       .
+          .      1 0         0 1       .
+        .      0       .---.      0       .
+       .      1       | • • |      1       .
+      .      0        |  ^  |       0       .
+       .      1        '---'       1       .
+        .      0         |        0       .
+          .      1 0     |    0 1       .
+             .       0 1 | 1 0       .
+                  .      |      .
+                         |
+                     .---+---.
+                    /    |    \
+                  01     |     10
+                 /       |       \
+               10        |        01
+                         / \
+                        /   \
+                      01     10
+
+                 o────o────o
+                      \
+                       o────o
+
+                DODGING INFINITY
+```
+
+[Architecture](docs/architecture.md) · [Current vs End State](docs/architecture.md#16-current-implementation-notes) · [Roadmap](docs/roadmap.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](LICENSE).

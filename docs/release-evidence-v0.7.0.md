@@ -1,15 +1,15 @@
 # Release evidence v0.7.0
 
-Back to [Wiki home](../wiki/Home.md) · [Reference index](README.md)
+Back to [Architecture](architecture.md) · [Operations](operations.md) · [Roadmap](roadmap.md)
 
 **[IMPLEMENTED / PROVEN]** The release lineage from v0.6.1 to v0.7.0 and
 the evidence behind each step, preserved in full. The authoritative
-record is [CHANGELOG.md](../../CHANGELOG.md); the near-term plan that
+record is [CHANGELOG.md](../CHANGELOG.md); the near-term plan that
 carries the release gate is the
-[Remote Mission Fabric roadmap](../remote-mission-fabric-roadmap.md). How
+[roadmap](roadmap.md). How
 verification is gated, and why a Reviewer APPROVE is necessary but not
 sufficient, is on the wiki
-[Evidence and Verification](../wiki/Evidence-and-Verification.md) page.
+[architecture.md](architecture.md#10-evidence-and-verification) page.
 
 ## Foundation by v0.6.1
 
@@ -43,7 +43,7 @@ added Codex Gateway v0.1: a local, transport-neutral interface boundary in
 front of the existing Codex Operator workflow, with versioned
 request/response contracts, fail-closed structured output, hermetic
 regression coverage, and static enforcement of the gateway/Herdr
-architectural boundary. Detail is in [codex-gateway.md](codex-gateway.md).
+architectural boundary. Detail is in [operations.md](operations.md#the-codex-gateway).
 
 ## v0.6.3: Telegram Remote Operator MVP
 
@@ -191,4 +191,4 @@ A fresh post-fix live mountain is not used as release evidence.
   interface, and the observation surface says so.
 - Any claim about a mission other than the one historical mountain and the
   hermetic suites. The recorded codex-cli 0.149.0 telemetry limitation (A0)
-  is stated verbatim in [SECURITY.md](../../SECURITY.md).
+  is stated verbatim in [SECURITY.md](../SECURITY.md).
