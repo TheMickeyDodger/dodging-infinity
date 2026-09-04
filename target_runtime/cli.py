@@ -31,12 +31,10 @@ from telegram_operator.state import (
 # those functions through this name (``cli.runtime_module.<fn>``).
 from target_runtime import runtime as runtime_module
 from target_runtime import workspace_ownership
-from target_runtime.broker import (
-    TargetBroker,
-    _production_live_workspaces,
-)
+from target_runtime.broker import TargetBroker
 from target_runtime.durable_execution import RuntimeDurableExecution
 from target_runtime.git_transport import GitTransport
+from target_runtime.worker import _production_live_workspaces
 from target_runtime.workspace import default_workspaces_root
 from target_runtime.workspace_trust import default_config_path
 
@@ -243,7 +241,8 @@ def _build_broker(namespace):
     # within such a run the developer's real ~/.claude.json is not
     # the write target. Outside that, and enforced separately: such a
     # run is refused at dispatch, because the child would read a
-    # different configuration (see _trust_still_consumable).
+    # different configuration (see
+    # RuntimeWorker.workspace_trust_consumable).
     claude_config_path = os.path.join(
         state_directory, ".claude.json"
     ) if config_path else default_config_path()

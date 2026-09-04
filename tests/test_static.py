@@ -180,7 +180,7 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
     'operator_session', 'human_interaction', 'durable_execution',
-    'capability',
+    'capability', 'worker',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -206,6 +206,9 @@ assert any('durable_execution' in str(p) for p in gateway_files), (
 assert any(
     p.relative_to(R).parts[0] == 'capability' for p in gateway_files
 ), 'capability sources not found'
+assert any(
+    p.relative_to(R).parts[0] == 'worker' for p in gateway_files
+), 'worker sources not found'
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
 # 1. AST: no Import/ImportFrom naming herdr/herdctl, and no dynamic-import
@@ -244,12 +247,40 @@ for path in gateway_files:
 # inside the pin the moment it exists. The check is a function of the
 # (package name, allowlist, forbidden set) so every neutral seam runs
 # the SAME scan rather than a copy of it.
-DURABLE_EXECUTION_ALLOWED_IMPORT_ROOTS = {'abc', 'durable_execution'}
-DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS = {
+#
+# Each neutral seam's forbidden set is the shared non-seam set PLUS
+# the OTHER neutral seams: the three neutral packages have no
+# relationship, and none may name another. The sibling half is
+# derived per package from ONE roster (`NEUTRAL_SEAM_ROOTS`) minus the
+# package's own root, and each derived set is asserted to hold exactly
+# the two siblings and never the package itself, so adding a fourth
+# seam to the roster closes it against all three at once and a seam
+# can never be made to forbid its own package.
+NEUTRAL_SEAM_ROOTS = frozenset({
+    'durable_execution', 'capability', 'worker',
+})
+NON_SEAM_FORBIDDEN_IMPORT_ROOTS = frozenset({
     'target_runtime', 'workflow_authority', 'telegram_operator',
     'codex_gateway', 'operator_session', 'human_interaction',
     'herdr', 'herdctl', 'git_transport',
-}
+})
+assert not (NEUTRAL_SEAM_ROOTS & NON_SEAM_FORBIDDEN_IMPORT_ROOTS)
+
+
+def _neutral_forbidden_import_roots(package):
+    assert package in NEUTRAL_SEAM_ROOTS, package
+    siblings = NEUTRAL_SEAM_ROOTS - {package}
+    assert len(siblings) == 2, (package, siblings)
+    forbidden = NON_SEAM_FORBIDDEN_IMPORT_ROOTS | siblings
+    assert package not in forbidden, (package, 'forbids its own root')
+    assert forbidden & NEUTRAL_SEAM_ROOTS == siblings, (package, forbidden)
+    return forbidden
+
+
+DURABLE_EXECUTION_ALLOWED_IMPORT_ROOTS = {'abc', 'durable_execution'}
+DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS = (
+    _neutral_forbidden_import_roots('durable_execution')
+)
 
 
 def _neutral_package_files(package):
@@ -297,17 +328,31 @@ _assert_neutral_import_boundary(
 )
 
 # 1c. The same neutral import boundary for the one-shot capability
-# seam. The forbidden set is the durable-execution set PLUS that
-# sibling seam itself: the two neutral packages have no relationship,
-# and neither may name the other.
+# seam. The forbidden set is the shared non-seam set PLUS both sibling
+# seams (`durable_execution`, `worker`), derived from the one roster
+# above so it can never contain `capability` itself.
 CAPABILITY_ALLOWED_IMPORT_ROOTS = {'abc', 'capability'}
 CAPABILITY_FORBIDDEN_IMPORT_ROOTS = (
-    DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS | {'durable_execution'}
+    _neutral_forbidden_import_roots('capability')
 )
 capability_files = _neutral_package_files('capability')
 _assert_neutral_import_boundary(
     'capability', capability_files,
     CAPABILITY_ALLOWED_IMPORT_ROOTS, CAPABILITY_FORBIDDEN_IMPORT_ROOTS,
+)
+
+# 1d. The same neutral import boundary for the worker seam. The
+# forbidden set is the shared non-seam set PLUS both sibling seams
+# (`durable_execution`, `capability`), derived from the one roster so
+# it can never contain `worker` itself. Filtered from the same shared
+# derivation, so a new file under worker/ is inside the pin the moment
+# it exists.
+WORKER_ALLOWED_IMPORT_ROOTS = {'abc', 'worker'}
+WORKER_FORBIDDEN_IMPORT_ROOTS = _neutral_forbidden_import_roots('worker')
+worker_files = _neutral_package_files('worker')
+_assert_neutral_import_boundary(
+    'worker', worker_files,
+    WORKER_ALLOWED_IMPORT_ROOTS, WORKER_FORBIDDEN_IMPORT_ROOTS,
 )
 
 # 2. Token scan: outside comments and docstrings, no identifier token and
@@ -676,6 +721,23 @@ _scan_neutral_vocabulary(
     CAPABILITY_FORBIDDEN_WORDS,
 )
 
+# 2g. The same neutral vocabulary pin for the worker seam, with NO
+# word removed. The contract names its inputs `record`, `workspace`
+# and `now`, and the lease-ending operation is `relinquish_workspace`
+# rather than a delivery word, so the full durable-execution set
+# applies unchanged. The equality is asserted explicitly so a later
+# carve-out (`release` above all, which is delivery vocabulary the
+# guard exists to keep out of a neutral seam) cannot be added
+# silently.
+WORKER_FORBIDDEN_WORDS = DURABLE_EXECUTION_FORBIDDEN_WORDS
+assert WORKER_FORBIDDEN_WORDS == DURABLE_EXECUTION_FORBIDDEN_WORDS
+assert 'release' in WORKER_FORBIDDEN_WORDS
+_scan_neutral_vocabulary(
+    'worker', worker_files,
+    ('worker/contract.py', 'worker/__init__.py'),
+    WORKER_FORBIDDEN_WORDS,
+)
+
 # 2f. Production wiring of the capability seam, STATIC. Inside
 # target_runtime/, the persistence module `target_runtime.capability`
 # is imported by exactly ONE production module, the adapter, and the
@@ -751,6 +813,233 @@ assert capability_seam_callers == {
     'target_runtime/runtime.py': {'mint': 2, 'compact': 1},
 }, capability_seam_callers
 
+# 2h. Production wiring of the worker seam, STATIC, on the AST. Call
+# nodes only, never text occurrences, so an attribute READ of a
+# `PROBLEM_*` constant on `workspace` or `workspace_trust` stays legal
+# anywhere while a CALL of a host operation does not. Inside
+# target_runtime/:
+#   - the host operations behind the seam (`workspace.materialize`,
+#     `.verify_leased_workspace`, `.release`; `workspace_trust
+#     .establish`, `.revoke`, `.resolve_config_path`, `.is_trusted`)
+#     are called ONLY in the adapter, exactly once each;
+#   - `workspace_trust.default_config_path` is called in the adapter
+#     and in `cli.py` (which resolves the production configuration
+#     path for `_build_broker`; not a seam call), once each;
+#   - `workspace_trust.trust_key` is deliberately NOT restricted: it
+#     is a pure helper for the ownership predicate, not a seam
+#     operation;
+#   - `workspace_ownership.production_close` is never CALLED by name
+#     anywhere, and `cli.py` remains the only module that references
+#     it, exactly once (the hand-in to the Broker);
+#   - the Broker reaches the nine seam operations and the two
+#     presence facts through its bound `worker` attribute with EXACT
+#     counts (`close_workspace` is handed on as `close_fn`, never
+#     called in the Broker), and no other module reaches them at all;
+#   - the adapter is the only module that defines the two production
+#     host readers, and `broker.py` keeps no copy, no re-export, and
+#     no `_trust_still_consumable`;
+#   - the reference implementation is constructed exactly once, inside
+#     the Broker constructor.
+# Both module aliases (`from target_runtime import workspace as X`,
+# `import target_runtime.workspace as X`) and from-imported names
+# (`from target_runtime.workspace_trust import default_config_path`)
+# are resolved per file on the AST, never by substring. Anti-vacuity:
+# every expected count is non-zero and asserted by equality, and the
+# adapter file must be in the scanned set.
+WORKER_ADAPTER_FILE = 'target_runtime/worker.py'
+WORKER_BROKER_FILE = 'target_runtime/broker.py'
+WORKER_CLI_FILE = 'target_runtime/cli.py'
+WORKER_SEAM_OPERATIONS = (
+    'materialize_workspace', 'verify_workspace', 'relinquish_workspace',
+    'establish_workspace_trust', 'workspace_trust_consumable',
+    'revoke_workspace_trust', 'probe_readiness', 'live_workspaces',
+    'close_workspace',
+)
+WORKER_SEAM_PRESENCE = ('observes_live_workspaces', 'closes_workspaces')
+WORKER_HOST_OPERATIONS = {
+    'workspace': ('materialize', 'verify_leased_workspace', 'release'),
+    'workspace_trust': (
+        'establish', 'revoke', 'resolve_config_path', 'is_trusted',
+        'default_config_path',
+    ),
+}
+WORKER_EXPECTED_HOST_CALLS = {
+    WORKER_ADAPTER_FILE: {
+        ('workspace', 'materialize'): 1,
+        ('workspace', 'verify_leased_workspace'): 1,
+        ('workspace', 'release'): 1,
+        ('workspace_trust', 'establish'): 1,
+        ('workspace_trust', 'revoke'): 1,
+        ('workspace_trust', 'resolve_config_path'): 2,
+        ('workspace_trust', 'is_trusted'): 1,
+        ('workspace_trust', 'default_config_path'): 1,
+    },
+    WORKER_CLI_FILE: {('workspace_trust', 'default_config_path'): 1},
+}
+WORKER_EXPECTED_BROKER_REFERENCES = {
+    'verify_workspace': 5, 'materialize_workspace': 1,
+    'relinquish_workspace': 1, 'establish_workspace_trust': 1,
+    'workspace_trust_consumable': 1, 'revoke_workspace_trust': 1,
+    'probe_readiness': 1, 'live_workspaces': 3, 'close_workspace': 1,
+    'observes_live_workspaces': 2, 'closes_workspaces': 2,
+}
+WORKER_MOVED_READERS = (
+    '_production_readiness_probe', '_production_live_workspaces',
+)
+assert all(WORKER_EXPECTED_BROKER_REFERENCES.values())
+assert all(
+    count for counts in WORKER_EXPECTED_HOST_CALLS.values()
+    for count in counts.values()
+)
+assert any(
+    p.relative_to(R).as_posix() == WORKER_ADAPTER_FILE
+    for p in target_runtime_files
+), 'target_runtime scan lost the worker adapter'
+worker_host_callers = {}
+worker_seam_referrers = {}
+worker_seam_calls_in_broker = {}
+worker_close_references = {}
+worker_close_calls = 0
+worker_reader_definitions = {}
+worker_constructions = {}
+for path in target_runtime_files:
+    relpath = path.relative_to(R).as_posix()
+    tree = ast.parse(path.read_text())
+    module_aliases = {}
+    from_names = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module == 'target_runtime':
+                for alias in node.names:
+                    if alias.name in WORKER_HOST_OPERATIONS:
+                        module_aliases[alias.asname or alias.name] = (
+                            alias.name
+                        )
+            elif node.module and node.module.startswith('target_runtime.'):
+                short = node.module.split('.', 1)[1]
+                if short in WORKER_HOST_OPERATIONS:
+                    for alias in node.names:
+                        from_names[alias.asname or alias.name] = (
+                            short, alias.name,
+                        )
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith('target_runtime.'):
+                    short = alias.name.split('.', 1)[1]
+                    if short in WORKER_HOST_OPERATIONS and alias.asname:
+                        module_aliases[alias.asname] = short
+    if relpath in ('target_runtime/workspace.py',
+                   'target_runtime/workspace_trust.py'):
+        own = relpath.rsplit('/', 1)[1][:-3]
+        assert own not in module_aliases.values(), (
+            relpath, 'a host module imports itself'
+        )
+    host_calls = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            if node.name in WORKER_MOVED_READERS or (
+                node.name == '_trust_still_consumable'
+            ):
+                worker_reader_definitions.setdefault(
+                    relpath, []
+                ).append(node.name)
+            continue
+        if isinstance(node, ast.Attribute):
+            owner = node.value
+            if isinstance(owner, ast.Attribute) and owner.attr == 'worker':
+                if node.attr in WORKER_SEAM_OPERATIONS + WORKER_SEAM_PRESENCE:
+                    counts = worker_seam_referrers.setdefault(relpath, {})
+                    counts[node.attr] = counts.get(node.attr, 0) + 1
+            if node.attr == 'production_close':
+                worker_close_references[relpath] = (
+                    worker_close_references.get(relpath, 0) + 1
+                )
+        if isinstance(node, ast.Name) and node.id == 'production_close':
+            worker_close_references[relpath] = (
+                worker_close_references.get(relpath, 0) + 1
+            )
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            owner = func.value
+            if isinstance(owner, ast.Name) and owner.id in module_aliases:
+                module = module_aliases[owner.id]
+                if func.attr in WORKER_HOST_OPERATIONS[module]:
+                    key = (module, func.attr)
+                    host_calls[key] = host_calls.get(key, 0) + 1
+            if isinstance(owner, ast.Attribute) and owner.attr == 'worker':
+                if relpath == WORKER_BROKER_FILE and (
+                    func.attr in WORKER_SEAM_OPERATIONS
+                ):
+                    worker_seam_calls_in_broker[func.attr] = (
+                        worker_seam_calls_in_broker.get(func.attr, 0) + 1
+                    )
+            if func.attr == 'production_close':
+                worker_close_calls += 1
+        elif isinstance(func, ast.Name):
+            if func.id in from_names:
+                module, name = from_names[func.id]
+                if name in WORKER_HOST_OPERATIONS[module]:
+                    key = (module, name)
+                    host_calls[key] = host_calls.get(key, 0) + 1
+            if func.id == 'production_close':
+                worker_close_calls += 1
+            if func.id == 'RuntimeWorker':
+                worker_constructions[relpath] = (
+                    worker_constructions.get(relpath, 0) + 1
+                )
+    if host_calls:
+        worker_host_callers[relpath] = host_calls
+assert worker_host_callers == WORKER_EXPECTED_HOST_CALLS, (
+    'a host operation behind the worker seam is called outside the'
+    ' adapter, or the adapter no longer carries exactly one delegation'
+    ' per operation', worker_host_callers,
+)
+assert worker_seam_referrers == {
+    WORKER_BROKER_FILE: WORKER_EXPECTED_BROKER_REFERENCES,
+}, (
+    'the Broker seam reference counts changed, or a module other than'
+    ' the Broker reaches the worker seam', worker_seam_referrers,
+)
+assert 'close_workspace' not in worker_seam_calls_in_broker, (
+    'the Broker calls close_workspace itself instead of handing it to'
+    ' the proof as close_fn', worker_seam_calls_in_broker,
+)
+assert worker_close_calls == 0, (
+    'production_close is called by name; it must only be handed in'
+)
+assert worker_close_references == {WORKER_CLI_FILE: 1}, (
+    'production_close is referenced somewhere other than the one'
+    ' hand-in in cli.py', worker_close_references,
+)
+assert worker_reader_definitions == {
+    WORKER_ADAPTER_FILE: list(WORKER_MOVED_READERS),
+}, (
+    'the production host readers must be defined exactly once, in the'
+    ' adapter, and _trust_still_consumable must not return to the'
+    ' Broker', worker_reader_definitions,
+)
+broker_tree = ast.parse((R / WORKER_BROKER_FILE).read_text())
+for node in ast.walk(broker_tree):
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        for alias in node.names:
+            assert alias.name not in WORKER_MOVED_READERS, (
+                WORKER_BROKER_FILE, alias.name,
+                'the Broker re-exports a moved host reader',
+            )
+broker_init = next(
+    node for node in ast.walk(broker_tree)
+    if isinstance(node, ast.FunctionDef) and node.name == '__init__'
+    and any(arg.arg == 'store_directory' for arg in node.args.args)
+)
+assert worker_constructions == {WORKER_BROKER_FILE: 1}, worker_constructions
+assert any(
+    isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    and node.func.id == 'RuntimeWorker'
+    for node in ast.walk(broker_init)
+), 'RuntimeWorker is constructed outside the Broker constructor'
+
 # 3. Behavioral: importing the gateway, the Telegram adapter, the
 # workflow authority layer, and their entry scripts must not load any
 # herdr/herdctl module. The same probe asserts that none of them loads
@@ -786,6 +1075,8 @@ probe = subprocess.run(
             'import durable_execution.contract\n'
             'import capability\n'
             'import capability.contract\n'
+            'import worker\n'
+            'import worker.contract\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
@@ -865,6 +1156,37 @@ assert capability_probe.returncode == 0, (
     'capability alone loaded a forbidden root',
     capability_probe.returncode, capability_probe.stdout,
     capability_probe.stderr,
+)
+
+# 3d. The same discriminating probe for the worker seam: a separate
+# interpreter imports ONLY worker and its contract module, then
+# asserts that no module whose root is any forbidden root (the static
+# set from 1d, both sibling seams and the transport seam included)
+# was loaded.
+worker_probe = subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            'import sys\n'
+            'import worker\n'
+            'import worker.contract\n'
+            'roots = ' + repr(sorted(WORKER_FORBIDDEN_IMPORT_ROOTS)) + '\n'
+            'bad = sorted(\n'
+            '    name for name in sys.modules\n'
+            '    if name.split(".")[0] in roots\n'
+            ')\n'
+            'print("\\n".join(bad))\n'
+            'sys.exit(1 if bad else 0)\n'
+        ),
+    ],
+    cwd=str(R),
+    capture_output=True,
+    text=True,
+)
+assert worker_probe.returncode == 0, (
+    'worker alone loaded a forbidden root',
+    worker_probe.returncode, worker_probe.stdout, worker_probe.stderr,
 )
 
 print('static tests: OK')

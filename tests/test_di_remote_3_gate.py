@@ -2,7 +2,9 @@
 
 Scope of THIS file: Layer 2 of plan §1.1 — the tri-state placeholder
 precondition on initial dispatch, living in `target_runtime/broker.py`
-beside `_trust_still_consumable` and the protected-surface refusal.
+beside the point-of-use trust check
+(`RuntimeWorker.workspace_trust_consumable`, reached through the
+Broker's worker seam) and the protected-surface refusal.
 The adapter is untouched and gains no authority; the edit-based
 delivery engine is I5.
 

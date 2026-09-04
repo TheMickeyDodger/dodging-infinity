@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from target_runtime import broker as broker_module     # noqa: E402
 from target_runtime import readiness as readiness_module  # noqa: E402
 from target_runtime import runtime as runtime_module   # noqa: E402
+from target_runtime import worker as worker_module     # noqa: E402
 from workflow_authority import record as wa_record     # noqa: E402
 
 from test_target_runtime import NOW, RuntimeCase       # noqa: E402
@@ -790,7 +791,7 @@ class ProductionProbeTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as base:
             self.assertIsNone(
-                broker_module._production_readiness_probe(base)
+                worker_module._production_readiness_probe(base)
             )
 
     def test_a_malformed_runtime_state_is_unobservable(self):
@@ -801,7 +802,7 @@ class ProductionProbeTests(unittest.TestCase):
             with open(os.path.join(state, "runtime.json"), "w") as handle:
                 handle.write("{ not json")
             self.assertIsNone(
-                broker_module._production_readiness_probe(base)
+                worker_module._production_readiness_probe(base)
             )
 
     def test_an_agents_mapping_that_is_not_a_mapping_is_unobservable(self):
@@ -812,7 +813,7 @@ class ProductionProbeTests(unittest.TestCase):
             with open(os.path.join(state, "runtime.json"), "w") as handle:
                 json.dump({"agents": ["not", "a", "mapping"]}, handle)
             self.assertIsNone(
-                broker_module._production_readiness_probe(base)
+                worker_module._production_readiness_probe(base)
             )
 
 

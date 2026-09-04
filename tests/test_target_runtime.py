@@ -1689,7 +1689,11 @@ class TransportVerificationTests(RuntimeCase):
                 run_git("clone", "-q", self.fixtures[url], path)
                 # no set-url: origin stays the fixture path
 
-        self.broker.transport = UnstampedTransport(transport.fixtures)
+        # The materialize path reads the worker's bound transport,
+        # so the substitution point moved with the seam.
+        self.broker.worker.transport = UnstampedTransport(
+            transport.fixtures
+        )
         self.put_record(self.authorized_record())
         outcome = self.perform_materialize()
         self.assertFalse(outcome.ok)
@@ -1714,7 +1718,7 @@ class TransportVerificationTests(RuntimeCase):
                 self.calls.append(("checkout", path, commit_sha))
                 # silently does nothing
 
-        self.broker.transport = NoopCheckoutTransport(
+        self.broker.worker.transport = NoopCheckoutTransport(
             self.transport.fixtures
         )
         self.put_record(self.authorized_record())
@@ -1732,7 +1736,7 @@ class TransportVerificationTests(RuntimeCase):
                 with open(os.path.join(path, "junk.txt"), "w") as f:
                     f.write("dirty\n")
 
-        self.broker.transport = DirtyingTransport(
+        self.broker.worker.transport = DirtyingTransport(
             self.transport.fixtures
         )
         self.put_record(self.authorized_record())
@@ -8340,8 +8344,8 @@ class J3TerminalCleanupUnstrandingTests(RuntimeCase):
         """A Broker with the SINGLE clock at ``now`` and NO
         workspace-close capability (R-06)."""
         broker = self.broker_at(now)
-        self.assertIsNone(
-            broker._workspace_close,
+        self.assertFalse(
+            broker.worker.closes_workspaces,
             "R-06: this Broker must have no workspace-close"
             " capability at all",
         )

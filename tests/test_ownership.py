@@ -54,6 +54,7 @@ from target_runtime import evidence_preservation as preserve_module  # noqa: E40
 from target_runtime import ownership as ownership_module  # noqa: E402
 from target_runtime import process_ownership as proc_module  # noqa: E402
 from target_runtime import spawn_stamp as stamp_module      # noqa: E402
+from target_runtime import worker as worker_module          # noqa: E402
 from target_runtime import workspace as workspace_module  # noqa: E402
 from target_runtime import workspace_ownership as ws_module  # noqa: E402
 from target_runtime import workspace_trust as trust_module  # noqa: E402
@@ -3436,7 +3437,8 @@ class WorkspaceOwnershipTests(unittest.TestCase):
 class ProductionLiveWorkspaceProjectionTests(unittest.TestCase):
     """R-32 X-1/X-2/X-3: the REAL production projection callable.
 
-    `_build_broker` hands `_production_live_workspaces` to the Broker,
+    `_build_broker` hands `target_runtime.worker`'s
+    `_production_live_workspaces` to the Broker,
     so this is the shape Domain B's proof actually consumes. These
     tests drive that callable with `herdr.tasks.run` replaced, so no
     Herdr command is executed and no workspace is touched.
@@ -3455,7 +3457,7 @@ class ProductionLiveWorkspaceProjectionTests(unittest.TestCase):
             self.reply({"result": {"agents": agents}}),
         ]
         with patch("herdr.tasks.run", side_effect=replies):
-            return broker_module._production_live_workspaces()
+            return worker_module._production_live_workspaces()
 
     def test_an_exact_join_produces_the_agent_NAME_SET(self):
         projection = self.run_with(
@@ -3567,7 +3569,7 @@ class ProductionLiveWorkspaceProjectionTests(unittest.TestCase):
                    side_effect=[SimpleNamespace(returncode=1,
                                                 stdout="", stderr="x")]):
             self.assertIsNone(
-                broker_module._production_live_workspaces()
+                worker_module._production_live_workspaces()
             )
 
 
@@ -4385,10 +4387,17 @@ class DestructiveOrderingClosureTests(unittest.TestCase):
     function in the wrong order.
     """
 
-    #: Calls that destroy, kill, or irreversibly remove.
+    #: Calls that destroy, kill, or irreversibly remove. The Broker
+    #: reaches the directory removal and the trust-entry removal
+    #: through its worker seam (`relinquish_workspace`,
+    #: `revoke_workspace_trust`), so those two seam names are listed
+    #: beside the module operations they delegate to: the release
+    #: path stays inside this domain at depth ZERO rather than
+    #: dropping out because its destructive call moved behind a seam.
     DESTRUCTIVE = (
         "rmtree", "unlink", "remove", "killpg", "kill", "close_fn",
         "release", "revoke", "terminate",
+        "relinquish_workspace", "revoke_workspace_trust",
     )
 
     #: Every destructive operation in the I5 production surface,
