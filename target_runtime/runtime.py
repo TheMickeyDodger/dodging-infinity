@@ -60,8 +60,8 @@ from telegram_operator.protocol import (
     OUTCOME_VERIFIED_RESULT,
 )
 
+from capability import contract as capability_contract
 from target_runtime import broker as broker_module
-from target_runtime import capability as capability_module
 from target_runtime import dispatch as dispatch_module
 
 # How long one structured Codex proposal stays actionable. A stale
@@ -521,11 +521,10 @@ def advance_workflow(broker, workflow_id, revision):
                     return results
         for action in step["actions"]:
             try:
-                token = capability_module.mint(
-                    broker.store.directory, workflow_id, action,
-                    revision, now_fn(),
+                token = broker.capability_authority.mint(
+                    workflow_id, action, revision, now_fn(),
                 )
-            except capability_module.CapabilityError as exc:
+            except capability_contract.CapabilityError as exc:
                 results.append((action, _refusal(
                     PROBLEM_CAPABILITY_MINT, str(exc)
                 )))
@@ -595,11 +594,10 @@ def _perform_capability_action(broker, workflow_id, revision, action,
     recording the outcome. Returns the BrokerOutcome, or None on a
     capability-mint failure (already recorded)."""
     try:
-        token = capability_module.mint(
-            broker.store.directory, workflow_id, action, revision,
-            now_fn(),
+        token = broker.capability_authority.mint(
+            workflow_id, action, revision, now_fn(),
         )
-    except capability_module.CapabilityError as exc:
+    except capability_contract.CapabilityError as exc:
         results.append((action, _refusal(
             PROBLEM_CAPABILITY_MINT, str(exc)
         )))
@@ -1207,15 +1205,15 @@ def compact_capabilities(broker):
                 # nothing rather than guess.
                 return []
             oracle_errors = []
-            removed = capability_module.compact(
-                broker.store.directory, broker._clock(),
+            removed = broker.capability_authority.compact(
+                broker._clock(),
                 capability_actionability_oracle(workflows),
                 oracle_errors,
             )
             if oracle_errors:
                 _report_oracle_failures(oracle_errors)
             return removed
-    except capability_module.CapabilityError:
+    except capability_contract.CapabilityError:
         # Malformed/unreadable capability store: surfaced by the
         # actions themselves, never erased here.
         return []

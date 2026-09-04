@@ -180,6 +180,7 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
     'operator_session', 'human_interaction', 'durable_execution',
+    'capability',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -202,6 +203,9 @@ assert any('human_interaction' in str(p) for p in gateway_files), (
 assert any('durable_execution' in str(p) for p in gateway_files), (
     'durable_execution sources not found'
 )
+assert any(
+    p.relative_to(R).parts[0] == 'capability' for p in gateway_files
+), 'capability sources not found'
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
 # 1. AST: no Import/ImportFrom naming herdr/herdctl, and no dynamic-import
@@ -237,42 +241,74 @@ for path in gateway_files:
 # anyway. Relative imports (level > 0) carry no root name a root
 # check could see, so they are forbidden outright. Filtered from the
 # SAME shared derivation, so a new file under durable_execution/ is
-# inside the pin the moment it exists.
+# inside the pin the moment it exists. The check is a function of the
+# (package name, allowlist, forbidden set) so every neutral seam runs
+# the SAME scan rather than a copy of it.
 DURABLE_EXECUTION_ALLOWED_IMPORT_ROOTS = {'abc', 'durable_execution'}
 DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS = {
     'target_runtime', 'workflow_authority', 'telegram_operator',
     'codex_gateway', 'operator_session', 'human_interaction',
     'herdr', 'herdctl', 'git_transport',
 }
-durable_execution_files = sorted(
-    p for p in product_files
-    if p.relative_to(R).parts[0] == 'durable_execution'
+
+
+def _neutral_package_files(package):
+    files = sorted(
+        p for p in product_files
+        if p.relative_to(R).parts[0] == package
+    )
+    assert files, '%s sources not found' % package
+    return files
+
+
+def _assert_neutral_import_boundary(package, files, allowed_roots,
+                                    forbidden_roots):
+    for path in files:
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Import):
+                imported = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                assert node.level == 0, (
+                    path, node.level,
+                    '%s may not use a relative import' % package,
+                )
+                imported = [node.module or '']
+            else:
+                continue
+            for name in imported:
+                root = name.split('.')[0]
+                assert root not in forbidden_roots, (
+                    path, name,
+                    '%s must not import the substrate, the control'
+                    ' chain, the orchestration engine, a sibling seam,'
+                    ' or the transport seam' % package,
+                )
+                assert root in allowed_roots, (
+                    path, name,
+                    '%s imports only abc and its own package' % package,
+                )
+
+
+durable_execution_files = _neutral_package_files('durable_execution')
+_assert_neutral_import_boundary(
+    'durable_execution', durable_execution_files,
+    DURABLE_EXECUTION_ALLOWED_IMPORT_ROOTS,
+    DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS,
 )
-assert durable_execution_files, 'durable_execution sources not found'
-for path in durable_execution_files:
-    for node in ast.walk(ast.parse(path.read_text())):
-        if isinstance(node, ast.Import):
-            imported = [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom):
-            assert node.level == 0, (
-                path, node.level,
-                'durable_execution may not use a relative import',
-            )
-            imported = [node.module or '']
-        else:
-            continue
-        for name in imported:
-            root = name.split('.')[0]
-            assert root not in DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS, (
-                path, name,
-                'durable_execution must not import the substrate, the'
-                ' control chain, the orchestration engine, or the'
-                ' transport seam',
-            )
-            assert root in DURABLE_EXECUTION_ALLOWED_IMPORT_ROOTS, (
-                path, name,
-                'durable_execution imports only abc and its own package',
-            )
+
+# 1c. The same neutral import boundary for the one-shot capability
+# seam. The forbidden set is the durable-execution set PLUS that
+# sibling seam itself: the two neutral packages have no relationship,
+# and neither may name the other.
+CAPABILITY_ALLOWED_IMPORT_ROOTS = {'abc', 'capability'}
+CAPABILITY_FORBIDDEN_IMPORT_ROOTS = (
+    DURABLE_EXECUTION_FORBIDDEN_IMPORT_ROOTS | {'durable_execution'}
+)
+capability_files = _neutral_package_files('capability')
+_assert_neutral_import_boundary(
+    'capability', capability_files,
+    CAPABILITY_ALLOWED_IMPORT_ROOTS, CAPABILITY_FORBIDDEN_IMPORT_ROOTS,
+)
 
 # 2. Token scan: outside comments and docstrings, no identifier token and
 # no string literal may reference herdr/herdctl — matched as a
@@ -550,58 +586,170 @@ DURABLE_EXECUTION_FORBIDDEN_PHRASES = (
 )
 
 
-def _neutral_vocabulary_violations(token_text):
+def _neutral_vocabulary_violations(token_text, forbidden_words):
     lowered = token_text.lower()
     words = set(re.findall(r'[a-z]+', lowered))
     normalized = re.sub(r'[^a-z0-9]', '', lowered)
-    return sorted(words & DURABLE_EXECUTION_FORBIDDEN_WORDS) + [
+    return sorted(words & forbidden_words) + [
         phrase for phrase in DURABLE_EXECUTION_FORBIDDEN_PHRASES
         if phrase in normalized
     ]
 
 
-neutral_scan_files = durable_execution_files
-neutral_scan_names = {p.relative_to(R).as_posix() for p in neutral_scan_files}
-assert neutral_scan_names, 'neutral vocabulary scan set is empty'
-for required_file in (
-    'durable_execution/contract.py', 'durable_execution/__init__.py',
-):
-    assert required_file in neutral_scan_names, (
-        'neutral vocabulary scan lost a package file', required_file
-    )
-neutral_tokens_scanned = 0
-neutral_values_scanned = 0
-for path in neutral_scan_files:
-    source = path.read_text()
-    tree = ast.parse(source)
-    joined = [node for node in ast.walk(tree) if isinstance(node, ast.JoinedStr)]
-    assert not joined, (
-        path, [(node.lineno, node.col_offset) for node in joined],
-        'durable_execution holds plain string literals only: no f-string,'
-        ' so no forbidden term can be split across formatted parts',
-    )
-    for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        neutral_tokens_scanned += 1
-        violations = _neutral_vocabulary_violations(token.string)
-        assert not violations, (
-            path, token.start, token.string, violations,
-            'neutral seam vocabulary: no product, provider, sibling-seam,'
-            ' orchestration, or delivery term anywhere in'
-            ' durable_execution, docstrings and comments included',
+def _scan_neutral_vocabulary(package, files, required_files,
+                             forbidden_words):
+    # One scan, parametrized by package and word set, so every neutral
+    # seam runs the SAME three checks with the SAME anti-vacuity
+    # counters rather than a copy that could drift.
+    scan_names = {p.relative_to(R).as_posix() for p in files}
+    assert scan_names, '%s vocabulary scan set is empty' % package
+    for required_file in required_files:
+        assert required_file in scan_names, (
+            '%s vocabulary scan lost a package file' % package,
+            required_file,
         )
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            neutral_values_scanned += 1
-            violations = _neutral_vocabulary_violations(node.value)
-            assert not violations, (
-                path, (node.lineno, node.col_offset), node.value, violations,
-                'neutral seam vocabulary (decoded string value): no product,'
-                ' provider, sibling-seam, orchestration, or delivery term'
-                ' may be assembled by implicit concatenation or an escape'
-                ' sequence',
+    tokens_scanned = 0
+    values_scanned = 0
+    for path in files:
+        source = path.read_text()
+        tree = ast.parse(source)
+        joined = [
+            node for node in ast.walk(tree) if isinstance(node, ast.JoinedStr)
+        ]
+        assert not joined, (
+            path, [(node.lineno, node.col_offset) for node in joined],
+            '%s holds plain string literals only: no f-string, so no'
+            ' forbidden term can be split across formatted parts' % package,
+        )
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            tokens_scanned += 1
+            violations = _neutral_vocabulary_violations(
+                token.string, forbidden_words
             )
-assert neutral_tokens_scanned > 0, 'neutral vocabulary scan saw no tokens'
-assert neutral_values_scanned > 0, 'neutral vocabulary scan saw no string values'
+            assert not violations, (
+                path, token.start, token.string, violations,
+                'neutral seam vocabulary: no product, provider,'
+                ' sibling-seam, orchestration, or delivery term anywhere'
+                ' in %s, docstrings and comments included' % package,
+            )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                values_scanned += 1
+                violations = _neutral_vocabulary_violations(
+                    node.value, forbidden_words
+                )
+                assert not violations, (
+                    path, (node.lineno, node.col_offset), node.value,
+                    violations,
+                    'neutral seam vocabulary (decoded string value): no'
+                    ' product, provider, sibling-seam, orchestration, or'
+                    ' delivery term may be assembled by implicit'
+                    ' concatenation or an escape sequence',
+                )
+    assert tokens_scanned > 0, (
+        '%s vocabulary scan saw no tokens' % package
+    )
+    assert values_scanned > 0, (
+        '%s vocabulary scan saw no string values' % package
+    )
+
+
+_scan_neutral_vocabulary(
+    'durable_execution', durable_execution_files,
+    ('durable_execution/contract.py', 'durable_execution/__init__.py'),
+    DURABLE_EXECUTION_FORBIDDEN_WORDS,
+)
+
+# 2e. The same neutral vocabulary pin for the one-shot capability
+# seam, with ONE word removed from the set: `workflow`. The seam's
+# three calls are the production call graph with the bound directory
+# removed, and `workflow_id` is the binding field every token is
+# keyed on; the contract cannot state its own binding without naming
+# it. Every other word stays forbidden, and so does every joined
+# phrase (so `workflowauthority` is still caught).
+CAPABILITY_FORBIDDEN_WORDS = DURABLE_EXECUTION_FORBIDDEN_WORDS - {'workflow'}
+assert 'workflow' in DURABLE_EXECUTION_FORBIDDEN_WORDS
+assert len(CAPABILITY_FORBIDDEN_WORDS) == len(DURABLE_EXECUTION_FORBIDDEN_WORDS) - 1
+_scan_neutral_vocabulary(
+    'capability', capability_files,
+    ('capability/contract.py', 'capability/__init__.py'),
+    CAPABILITY_FORBIDDEN_WORDS,
+)
+
+# 2f. Production wiring of the capability seam, STATIC. Inside
+# target_runtime/, the persistence module `target_runtime.capability`
+# is imported by exactly ONE production module, the adapter, and the
+# three seam operations attributed to it (`mint`,
+# `validate_and_consume`, `compact`) are called through that module
+# object ONLY there. `broker.py` and `runtime.py` reach them solely
+# through the Broker's bound seam instance. The import is matched on
+# the AST (module name plus alias name), never on a substring, because
+# `target_runtime.capability_authority` shares the prefix. Anti-vacuity:
+# the adapter must carry exactly one such call per operation, and the
+# two wired modules must carry exactly the production call counts.
+CAPABILITY_ADAPTER_FILE = 'target_runtime/capability_authority.py'
+CAPABILITY_SEAM_OPERATIONS = ('mint', 'validate_and_consume', 'compact')
+capability_module_callers = {}
+capability_seam_callers = {}
+for path in target_runtime_files:
+    relpath = path.relative_to(R).as_posix()
+    tree = ast.parse(path.read_text())
+    aliases = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == 'target_runtime':
+            for alias in node.names:
+                if alias.name == 'capability':
+                    aliases.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and (
+            node.module == 'target_runtime.capability'
+        ):
+            aliases.add('<from-import>')
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == 'target_runtime.capability':
+                    aliases.add(alias.asname or 'target_runtime')
+    if relpath == 'target_runtime/capability.py':
+        assert not aliases, (relpath, 'the persistence module imports itself')
+        continue
+    if aliases:
+        capability_module_callers[relpath] = sorted(aliases)
+    through_module = {}
+    through_seam = {}
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in CAPABILITY_SEAM_OPERATIONS
+        ):
+            continue
+        owner = node.func.value
+        if isinstance(owner, ast.Name) and owner.id in aliases:
+            through_module[node.func.attr] = (
+                through_module.get(node.func.attr, 0) + 1
+            )
+        elif isinstance(owner, ast.Attribute) and (
+            owner.attr == 'capability_authority'
+        ):
+            through_seam[node.func.attr] = through_seam.get(node.func.attr, 0) + 1
+    if through_module:
+        assert relpath == CAPABILITY_ADAPTER_FILE, (
+            relpath, through_module,
+            'a capability operation is called on the persistence module'
+            ' outside the adapter',
+        )
+    if through_seam:
+        capability_seam_callers[relpath] = through_seam
+    if relpath == CAPABILITY_ADAPTER_FILE:
+        assert through_module == {
+            'mint': 1, 'validate_and_consume': 1, 'compact': 1,
+        }, (relpath, through_module)
+assert capability_module_callers == {
+    CAPABILITY_ADAPTER_FILE: ['capability_module'],
+}, capability_module_callers
+assert capability_seam_callers == {
+    'target_runtime/broker.py': {'validate_and_consume': 1},
+    'target_runtime/runtime.py': {'mint': 2, 'compact': 1},
+}, capability_seam_callers
 
 # 3. Behavioral: importing the gateway, the Telegram adapter, the
 # workflow authority layer, and their entry scripts must not load any
@@ -636,6 +784,8 @@ probe = subprocess.run(
             'import telegram_operator.interaction\n'
             'import durable_execution\n'
             'import durable_execution.contract\n'
+            'import capability\n'
+            'import capability.contract\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
@@ -683,6 +833,38 @@ neutral_probe = subprocess.run(
 assert neutral_probe.returncode == 0, (
     'durable_execution alone loaded a forbidden root',
     neutral_probe.returncode, neutral_probe.stdout, neutral_probe.stderr,
+)
+
+# 3c. The same discriminating probe for the capability seam: a
+# separate interpreter imports ONLY capability and its contract
+# module, then asserts that no module whose root is any forbidden
+# root (the static set from 1c, sibling seam and transport seam
+# included) was loaded.
+capability_probe = subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            'import sys\n'
+            'import capability\n'
+            'import capability.contract\n'
+            'roots = ' + repr(sorted(CAPABILITY_FORBIDDEN_IMPORT_ROOTS)) + '\n'
+            'bad = sorted(\n'
+            '    name for name in sys.modules\n'
+            '    if name.split(".")[0] in roots\n'
+            ')\n'
+            'print("\\n".join(bad))\n'
+            'sys.exit(1 if bad else 0)\n'
+        ),
+    ],
+    cwd=str(R),
+    capture_output=True,
+    text=True,
+)
+assert capability_probe.returncode == 0, (
+    'capability alone loaded a forbidden root',
+    capability_probe.returncode, capability_probe.stdout,
+    capability_probe.stderr,
 )
 
 print('static tests: OK')

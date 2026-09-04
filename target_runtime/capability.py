@@ -72,6 +72,8 @@ import os
 import secrets
 import tempfile
 
+from capability import contract as capability_contract
+
 CAPABILITIES_FILE_NAME = "capabilities.json"
 CAPABILITY_STORE_SCHEMA_VERSION = 1
 
@@ -82,13 +84,24 @@ MAX_CAPABILITIES = 256
 # authority, not a mission timeout — nothing is cancelled by it.
 CAPABILITY_VALIDITY_SECONDS = 900
 
-PROBLEM_CAPABILITY_MISSING = "capability_missing"
-PROBLEM_CAPABILITY_UNKNOWN = "capability_unknown"
-PROBLEM_CAPABILITY_CONSUMED = "capability_already_consumed"
-PROBLEM_CAPABILITY_EXPIRED = "capability_expired"
-PROBLEM_CAPABILITY_MISMATCH = "capability_binding_mismatch"
-PROBLEM_CAPABILITY_STORE = "capability_store_unreadable"
-PROBLEM_CAPABILITY_STORE_FULL = "capability_store_full"
+# The refusal vocabulary is OWNED by the neutral ``capability.contract``
+# seam, because a caller reads ``problem`` through the seam whichever
+# implementation produced it. The names here are rebound to the SAME
+# string objects, so every existing comparison and every persisted
+# value is unchanged; nothing observable moves.
+PROBLEM_CAPABILITY_MISSING = capability_contract.PROBLEM_CAPABILITY_MISSING
+PROBLEM_CAPABILITY_UNKNOWN = capability_contract.PROBLEM_CAPABILITY_UNKNOWN
+PROBLEM_CAPABILITY_CONSUMED = (
+    capability_contract.PROBLEM_CAPABILITY_CONSUMED
+)
+PROBLEM_CAPABILITY_EXPIRED = capability_contract.PROBLEM_CAPABILITY_EXPIRED
+PROBLEM_CAPABILITY_MISMATCH = (
+    capability_contract.PROBLEM_CAPABILITY_MISMATCH
+)
+PROBLEM_CAPABILITY_STORE = capability_contract.PROBLEM_CAPABILITY_STORE
+PROBLEM_CAPABILITY_STORE_FULL = (
+    capability_contract.PROBLEM_CAPABILITY_STORE_FULL
+)
 
 _ENTRY_KEYS = frozenset(
     ("workflow_id", "action", "revision", "issued_at", "expires_at",
@@ -97,8 +110,14 @@ _ENTRY_KEYS = frozenset(
 _TOP_LEVEL_KEYS = ("capability_store_schema_version", "capabilities")
 
 
-class CapabilityError(Exception):
-    """The capability store is unusable; message is actionable."""
+class CapabilityError(capability_contract.CapabilityError):
+    """The capability store is unusable; message is actionable.
+
+    A subclass of the neutral seam's ``CapabilityError`` so the
+    Runtime, which mints and compacts through the seam, catches the
+    neutral type and still catches every error this module raises;
+    ``str(exc)`` and the type this module raises are unchanged.
+    """
 
 
 def _default_nonce_factory():

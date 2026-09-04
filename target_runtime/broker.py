@@ -92,7 +92,6 @@ def _bounded_detail(result):
 
 from workflow_authority import canonical as canonical_module
 
-from target_runtime import capability as capability_module
 from target_runtime import dispatch as dispatch_module
 from target_runtime import evidence as evidence_module
 from target_runtime import prepare as prepare_module
@@ -100,6 +99,7 @@ from target_runtime import ownership as ownership_module
 from target_runtime import readiness as readiness_module
 from target_runtime import workspace as workspace_module
 from target_runtime import workspace_trust as workspace_trust_module
+from target_runtime.capability_authority import RuntimeCapabilityAuthority
 
 ACTION_MATERIALIZE = "materialize_workspace"
 ACTION_PREPARE = "prepare"
@@ -736,9 +736,22 @@ class TargetBroker(object):
                  claude_config_path,
                  spawn_fn=None, clock=None, observer_fn=None,
                  spawn_records_fn=None, readiness_probe_fn=None,
-                 workspace_close_fn=None, live_workspaces_fn=None):
+                 workspace_close_fn=None, live_workspaces_fn=None,
+                 capability_authority=None):
         import time
         self.store = store_module.WorkflowStore(store_directory)
+        # The one-shot capability seam (I3, behind the neutral
+        # ``capability`` contract). ONE instance per Broker, bound to
+        # THIS store's directory, so the Runtime's mint and this
+        # Broker's consume read the same store; the production
+        # default does no I/O at construction. Injected only so a
+        # hermetic test can prove ``perform`` reaches no capability
+        # function except through the seam.
+        self.capability_authority = (
+            capability_authority
+            if capability_authority is not None
+            else RuntimeCapabilityAuthority(self.store.directory)
+        )
         self.control_realpath = control_repository_realpath
         self.transport = transport
         self.workspaces_root = workspaces_root
@@ -1040,9 +1053,9 @@ class TargetBroker(object):
             # store, so an unreadable store cannot leak a live
             # capability either.
             consumed, problem, detail = (
-                capability_module.validate_and_consume(
-                    self.store.directory, capability, workflow_id,
-                    action, revision, self._clock(),
+                self.capability_authority.validate_and_consume(
+                    capability, workflow_id, action, revision,
+                    self._clock(),
                 )
             )
             if not consumed:
