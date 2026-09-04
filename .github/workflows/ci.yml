@@ -51,4 +51,4 @@ jobs:
         run: PYTHONPATH="$PWD" python tests/test_static.py
 
       - name: Compile Python sources
-        run: python -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py target_runtime/*.py dirun.py operator_session/*.py human_interaction/*.py durable_execution/*.py
+        run: python -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py target_runtime/*.py dirun.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py

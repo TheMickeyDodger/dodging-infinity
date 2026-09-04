@@ -8235,8 +8235,14 @@ class J2CompactionTests(RuntimeCase):
                     forbidden, name,
                     "capability.py must not import %r" % forbidden,
                 )
+        # The neutral ``capability`` contract is the ONE non-stdlib
+        # import: the module rebinds its error type and refusal codes
+        # to the seam's. It is substrate-free (standard library only),
+        # so it can bring in neither the store nor the Broker.
         self.assertEqual(
-            imported, {"json", "os", "secrets", "tempfile"}
+            imported,
+            {"json", "os", "secrets", "tempfile", "capability",
+             "capability.contract"},
         )
 
     # == THE RUNTIME PASS ACTUALLY COMPACTS ============================
