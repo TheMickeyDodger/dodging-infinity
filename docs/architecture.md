@@ -1077,6 +1077,23 @@ another delivery action. Every attempt writes a durable receipt (`prepared`,
 `authorized`, `executing`, `succeeded`, `failed`, `ambiguous`) and reconciles
 uncertain external effects before another attempt is allowed.
 
+The pull-request link of that chain is implemented (P1-A6, `pr_delivery/`). A
+PR Delivery Authorization is a separate durable human authority record, minted
+only by a local terminal ceremony in which the human types the exact reviewed
+candidate identity. It binds the candidate's changed paths, statuses, modes
+and content digests; the recorded Herdr COMPLETE, canonical Reviewer APPROVE
+and independent verification evidence; the repository, remote, source and base
+branches, baseline and committer; the closed action set BASE_REFRESH, COMMIT,
+PUSH, PR_CREATE; an absolute expiry; and a revocation state. Trusted system
+logic derives one-shot receipts from it, and the installed git guards accept an
+exact executing receipt as a second path beside the manual `approve-commit`
+and `approve-push` tokens, which stay as they are. A disjoint fast-forward
+advance of the base is refreshed automatically with the candidate identity
+re-proven; every effect reconciles after a crash without a duplicate; delivery
+stops at an open pull request, and no merge, tag, release, deploy or publish
+verb exists on that path. It does not read Herdr state and cannot be driven by
+a model, a transport, a Worker or a Capability.
+
 ### The Authority Ledger and remote authorization
 
 The Authority Ledger is the durable record of every authorization and its
