@@ -297,40 +297,57 @@ class WorkflowStore(object):
         document can never clobber a valid store.
         """
         _validate_document(document, self.path)
-        os.makedirs(self.directory, mode=0o700, exist_ok=True)
-        descriptor, temp_path = tempfile.mkstemp(
-            prefix=".workflows-", suffix=".tmp", dir=self.directory
-        )
+        atomic_write_json(self.directory, self.path, document,
+                          temp_prefix=".workflows-")
+
+
+def atomic_write_json(directory, path, document, temp_prefix):
+    """The ONE atomic-replace primitive for every protected store.
+
+    Temp file created in the same directory, ``fchmod`` 600,
+    ``json.dump``, flush, ``fsync``, ``os.replace``, then an fsync of
+    the directory. A crash never leaves a torn file and an interrupted
+    write leaves the previous file byte-identical. Extracted verbatim
+    from ``WorkflowStore.save`` (P1-A6) so the sibling PR delivery
+    store shares it instead of copying it; the caller validates the
+    document before calling this — nothing here validates.
+    """
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    descriptor, temp_path = tempfile.mkstemp(
+        prefix=temp_prefix, suffix=".tmp", dir=directory
+    )
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(document, handle, sort_keys=True, indent=1)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    except BaseException:
         try:
-            os.fchmod(descriptor, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                json.dump(document, handle, sort_keys=True, indent=1)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_path, self.path)
-        except BaseException:
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                pass
-            raise
-        directory_descriptor = os.open(self.directory, os.O_RDONLY)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+    directory_descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
 
 
 @contextlib.contextmanager
-def exclusive_store_lock(directory):
+def exclusive_store_lock(directory, lock_file_name=WORKFLOWS_LOCK_FILE_NAME):
     """Blocking cross-process lock over the workflow store.
 
     Hold this around every load-modify-save cycle. The lock file is
     separate from the store file so ``os.replace`` never invalidates
-    the held descriptor.
+    the held descriptor. ``lock_file_name`` defaults to the workflow
+    store's lock; the sibling PR delivery store passes its own name so
+    the two stores never serialize against each other.
     """
     os.makedirs(directory, mode=0o700, exist_ok=True)
-    lock_path = os.path.join(directory, WORKFLOWS_LOCK_FILE_NAME)
+    lock_path = os.path.join(directory, lock_file_name)
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)

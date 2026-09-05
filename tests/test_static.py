@@ -1081,6 +1081,7 @@ probe = subprocess.run(
             '    name for name in sys.modules\n'
             '    if name == "herdctl" or name == "herdr" or name.startswith("herdr.")\n'
             '    or name == "target_runtime" or name.startswith("target_runtime.")\n'
+            '    or name == "pr_delivery" or name.startswith("pr_delivery.")\n'
             ')\n'
             'print("\\n".join(bad))\n'
             'sys.exit(1 if bad else 0)\n'
@@ -1188,5 +1189,544 @@ assert worker_probe.returncode == 0, (
     'worker alone loaded a forbidden root',
     worker_probe.returncode, worker_probe.stdout, worker_probe.stderr,
 )
+
+# --- 2i. P1-A6 Verified PR Delivery: the new authority path -------------
+# Ten pins over the `pr_delivery/` package, the guard's second path, the
+# Mission Authorization boundary, the test fakes, and the CI shape. Each
+# is written with the anti-vacuity posture of the sections above: the
+# scanned sets are derived, the expected counts are non-zero and asserted
+# by equality, and a pin that finds nothing fails.
+from pr_delivery import authorization as pr_authorization
+from pr_delivery import receipts as pr_receipts
+from pr_delivery import transport as pr_transport
+from workflow_authority import authorization as wa_authorization
+from workflow_authority import digest as wa_digest
+from workflow_authority import record as wa_record
+
+pr_delivery_files = sorted(
+    p for p in product_files if p.relative_to(R).parts[0] == 'pr_delivery'
+)
+pr_delivery_names = {p.relative_to(R).as_posix() for p in pr_delivery_files}
+PR_DELIVERY_REQUIRED_FILES = {
+    'pr_delivery/__init__.py', 'pr_delivery/__main__.py',
+    'pr_delivery/authorization.py', 'pr_delivery/boundary.py',
+    'pr_delivery/candidate.py', 'pr_delivery/cli.py',
+    'pr_delivery/errors.py', 'pr_delivery/machine.py',
+    'pr_delivery/pr_text.py', 'pr_delivery/receipts.py',
+    'pr_delivery/store.py', 'pr_delivery/transport.py',
+}
+assert PR_DELIVERY_REQUIRED_FILES <= pr_delivery_names, (
+    'pr_delivery scan lost a package file',
+    sorted(PR_DELIVERY_REQUIRED_FILES - pr_delivery_names),
+)
+PR_DELIVERY_TRANSPORT_FILE = 'pr_delivery/transport.py'
+PR_DELIVERY_CLI_FILE = 'pr_delivery/cli.py'
+PR_DELIVERY_MACHINE_FILE = 'pr_delivery/machine.py'
+PR_DELIVERY_RECEIPTS_FILE = 'pr_delivery/receipts.py'
+PR_DELIVERY_TEXT_FILE = 'pr_delivery/pr_text.py'
+
+
+def _docstring_positions_of(tree):
+    positions = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            body = getattr(node, 'body', [])
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                positions.add((body[0].value.lineno,
+                               body[0].value.col_offset))
+    return positions
+
+
+# (1) Process confinement: `subprocess` only in the transport; no shell,
+#     no dynamic import, no environment read, no network module anywhere.
+# (2) The real transport is constructed with zero arguments exactly once,
+#     in cli.py, and cli.py carries no transport-named option string.
+# (3) Verb closure: no merge/tag/release/deploy/reset/rebase/checkout/
+#     force/no-verify/delete/mirror literal anywhere in the package.
+PR_DELIVERY_FORBIDDEN_LITERALS = {
+    '"merge"', "'merge'", '"tag"', "'tag'", '"release"', "'release'",
+    '"deploy"', "'deploy'", '"publish"', "'publish'", '"reset"', "'reset'",
+    '"rebase"', "'rebase'", '"checkout"', "'checkout'", '"--force"',
+    "'--force'", '"--force-with-lease"', "'--force-with-lease'", '"-f"',
+    "'-f'", '"--no-verify"', "'--no-verify'", '"--delete"', "'--delete'",
+    '"--mirror"', "'--mirror'", '"POST"', "'POST'", '"PUT"', "'PUT'",
+    '"PATCH"', "'PATCH'", '"DELETE"', "'DELETE'",
+}
+PR_DELIVERY_FORBIDDEN_IMPORT_ROOTS = {
+    'socket', 'urllib', 'http', 'requests', 'ssl', 'herdr', 'herdctl',
+    'target_runtime', 'telegram_operator', 'codex_gateway',
+    'operator_session', 'human_interaction', 'durable_execution',
+    'capability', 'worker',
+}
+pr_transport_constructions = {}
+pr_new_authorization_calls = {}
+pr_reverification_calls = {}
+for path in pr_delivery_files:
+    relpath = path.relative_to(R).as_posix()
+    source = path.read_text()
+    assert 'shell=True' not in source, (relpath, 'shell=True')
+    tree = ast.parse(source)
+    docstring_positions = _docstring_positions_of(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            assert name not in {'system', '__import__', 'import_module',
+                                'popen', 'spawn', 'execv', 'execvp'}, (
+                relpath, name,
+            )
+            if name == 'DeliveryTransport':
+                assert not node.args and not node.keywords, (
+                    relpath, 'DeliveryTransport must take no arguments'
+                )
+                pr_transport_constructions[relpath] = (
+                    pr_transport_constructions.get(relpath, 0) + 1
+                )
+            if name == 'new_authorization':
+                pr_new_authorization_calls[relpath] = (
+                    pr_new_authorization_calls.get(relpath, 0) + 1
+                )
+            if name == 'run_reverification':
+                pr_reverification_calls[relpath] = (
+                    pr_reverification_calls.get(relpath, 0) + 1
+                )
+        if isinstance(node, ast.Attribute):
+            assert node.attr not in {'environ', 'getenv', 'putenv'}, (
+                relpath, node.attr,
+            )
+        if isinstance(node, ast.Name):
+            assert node.id not in {'environ', 'getenv', 'putenv'}, (
+                relpath, node.id,
+            )
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if isinstance(node, ast.Import):
+                roots = [alias.name.split('.')[0] for alias in node.names]
+            else:
+                assert node.level == 0, (relpath, 'no relative import')
+                roots = [(node.module or '').split('.')[0]]
+            for root in roots:
+                assert root not in PR_DELIVERY_FORBIDDEN_IMPORT_ROOTS, (
+                    relpath, root,
+                    'pr_delivery imports no network module, no'
+                    ' orchestration engine, no control-chain package, and'
+                    ' no neutral seam',
+                )
+                if root == 'subprocess':
+                    assert relpath == PR_DELIVERY_TRANSPORT_FILE, (
+                        relpath, 'subprocess only in the delivery transport'
+                    )
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.STRING and (
+            token.start not in docstring_positions
+        ):
+            assert token.string not in PR_DELIVERY_FORBIDDEN_LITERALS, (
+                relpath, token.start, token.string,
+                'no merge, tag, release, deploy, publish, reset, rebase,'
+                ' checkout, force, hook-bypass, or mutating HTTP verb'
+                ' literal exists in the delivery package',
+            )
+            if relpath == PR_DELIVERY_CLI_FILE:
+                assert 'transport' not in token.string.lower(), (
+                    relpath, token.start,
+                    'no transport-named option or config key',
+                )
+assert pr_transport_constructions == {PR_DELIVERY_CLI_FILE: 1}, (
+    'the real delivery transport must be constructed exactly once, in'
+    ' cli.py', pr_transport_constructions,
+)
+assert pr_new_authorization_calls == {PR_DELIVERY_CLI_FILE: 1}, (
+    'a PR Delivery Authorization is minted only by the terminal ceremony',
+    pr_new_authorization_calls,
+)
+# (M4) `run_reverification` has exactly one call site, in the machine.
+assert pr_reverification_calls == {PR_DELIVERY_MACHINE_FILE: 1}, (
+    pr_reverification_calls,
+)
+assert pr_transport.ALLOWED_GIT_VERBS == (
+    'rev-parse', 'symbolic-ref', 'config', 'remote', 'status', 'diff',
+    'diff-index', 'diff-tree', 'write-tree', 'ls-remote', 'fetch',
+    'merge-base', 'update-index', 'read-tree', 'update-ref', 'commit',
+    'push',
+), pr_transport.ALLOWED_GIT_VERBS
+# update-index is issued in exactly one form, the stat refresh: no
+# --cacheinfo/--add/--remove/--force-remove literal exists in the package.
+for _forbidden in ('"--cacheinfo"', '"--force-remove"', '"--add"',
+                   '"--remove"', '"--index-info"'):
+    assert _forbidden not in (R / PR_DELIVERY_TRANSPORT_FILE).read_text(), (
+        _forbidden,
+    )
+# (N1) The verb set is enforced at call time: _git names ALLOWED_GIT_VERBS
+# and raises.
+_git_function = next(
+    node for node in ast.walk(
+        ast.parse((R / PR_DELIVERY_TRANSPORT_FILE).read_text())
+    )
+    if isinstance(node, ast.FunctionDef) and node.name == '_git'
+)
+assert any(
+    isinstance(node, ast.Name) and node.id == 'ALLOWED_GIT_VERBS'
+    for node in ast.walk(_git_function)
+), '_git must check ALLOWED_GIT_VERBS at call time'
+assert any(
+    isinstance(node, ast.Raise) for node in ast.walk(_git_function)
+), '_git must refuse a verb outside the set'
+assert pr_transport.ALLOWED_GH_ARGV == (
+    ('pr', 'list'), ('pr', 'create'), ('pr', 'view'),
+    ('api', '--method', 'GET'),
+), pr_transport.ALLOWED_GH_ARGV
+assert pr_transport.CHECK_RUNS_ENDPOINT == 'repos/%s/%s/commits/%s/check-runs'
+
+# (4) Receipt binding closure: the four tuples by exact value, the
+#     guard-observable subsets inside them, and the machine constructing
+#     each binding with EXACTLY those keys (anti-vacuity: all four found).
+assert pr_authorization.BASE_REFRESH_RECEIPT_BINDING_FIELDS == (
+    'repository_realpath', 'git_dir_realpath', 'remote_name',
+    'remote_url_exact', 'remote_url_fetch', 'source_ref', 'base_ref',
+    'old_base_oid', 'new_base_oid', 'fast_forward',
+    'base_changed_paths_digest', 'candidate_identity_digest',
+)
+assert pr_authorization.COMMIT_RECEIPT_BINDING_FIELDS == (
+    'repository_realpath', 'git_dir_realpath', 'branch', 'source_ref',
+    'head_before', 'staged_sha256', 'candidate_identity_digest',
+    'expected_tree_oid', 'committer_name', 'committer_email',
+    'message_sha256',
+)
+assert pr_authorization.PUSH_RECEIPT_BINDING_FIELDS == (
+    'repository_realpath', 'remote_name', 'remote_url_exact',
+    'remote_url_push', 'source_ref', 'source_commit', 'destination_ref',
+    'expected_remote_old_oid', 'candidate_identity_digest',
+)
+# (B2) The hook compares the URL git hands it against the BOUND push URL.
+assert 'remote_url_push' in pr_receipts.LIVE_FACT_FIELDS['PUSH']
+assert 'remote_url_exact' in pr_receipts.LIVE_FACT_FIELDS['PUSH']
+assert pr_authorization.PR_CREATE_RECEIPT_BINDING_FIELDS == (
+    'owner', 'repo', 'remote_url_exact', 'head_branch', 'head_sha',
+    'base_branch', 'title_sha256', 'body_sha256',
+    'candidate_identity_digest',
+)
+for step, fields in pr_receipts.LIVE_FACT_FIELDS.items():
+    assert set(fields) <= set(pr_authorization.RECEIPT_BINDING_FIELDS[step])
+    assert 'repository_realpath' in fields, step
+assert set(pr_receipts.LIVE_FACT_FIELDS) == {
+    'BASE_REFRESH', 'COMMIT', 'PUSH',
+}
+machine_tree = ast.parse((R / PR_DELIVERY_MACHINE_FILE).read_text())
+binding_shapes_found = set()
+for node in ast.walk(machine_tree):
+    if not isinstance(node, ast.Dict):
+        continue
+    keys = {
+        key.value for key in node.keys
+        if isinstance(key, ast.Constant) and isinstance(key.value, str)
+    }
+    if 'candidate_identity_digest' not in keys:
+        continue
+    matched = [
+        step for step, fields in
+        pr_authorization.RECEIPT_BINDING_FIELDS.items()
+        if keys == set(fields)
+    ]
+    assert len(matched) == 1, (
+        'a binding dict in machine.py does not match exactly one closed'
+        ' binding tuple', sorted(keys),
+    )
+    binding_shapes_found.add(matched[0])
+assert binding_shapes_found == set(pr_authorization.STEPS), (
+    binding_shapes_found,
+)
+
+# (5) Guard wiring: herdr/guards.py imports the receipt module LAZILY
+#     inside `_delivery_receipt_decision`, inside a try that catches
+#     Exception; `guard_decision` is called exactly once there; the
+#     helper is consulted exactly four times (pre-commit 1,
+#     reference-transaction 2, pre-push 1); the legacy validators keep
+#     their call counts; the pre-tool guard never consults receipts.
+guards_tree = ast.parse((R / 'herdr' / 'guards.py').read_text())
+for node in guards_tree.body:
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        names = [alias.name for alias in node.names]
+        module = getattr(node, 'module', None) or ''
+        assert 'pr_delivery' not in module and not any(
+            name.startswith('pr_delivery') for name in names
+        ), 'herdr.guards must not import pr_delivery at module scope'
+guard_functions = {
+    node.name: node for node in guards_tree.body
+    if isinstance(node, ast.FunctionDef)
+}
+helper = guard_functions['_delivery_receipt_decision']
+helper_try = [node for node in ast.walk(helper) if isinstance(node, ast.Try)]
+assert len(helper_try) == 1
+try_body_nodes = [
+    inner for body_node in helper_try[0].body for inner in ast.walk(body_node)
+]
+assert any(
+    isinstance(node, ast.ImportFrom) and node.module == 'pr_delivery'
+    and [alias.name for alias in node.names] == ['receipts']
+    for node in try_body_nodes
+), 'the receipt import must be inside the try body'
+assert any(
+    isinstance(handler.type, ast.Name) and handler.type.id == 'Exception'
+    for handler in helper_try[0].handlers
+), 'the helper must catch Exception and return a refusal'
+
+
+def _call_count(function_node, callee):
+    return sum(
+        1 for node in ast.walk(function_node)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, 'id', getattr(node.func, 'attr', None))
+        == callee
+    )
+
+
+assert _call_count(helper, 'guard_decision') == 1
+assert _call_count(guard_functions['guard_precommit'],
+                   '_delivery_receipt_decision') == 1
+assert _call_count(guard_functions['guard_reference_transaction'],
+                   '_delivery_receipt_decision') == 2
+assert _call_count(guard_functions['guard_prepush'],
+                   '_delivery_receipt_decision') == 1
+assert _call_count(guard_functions['guard_pretool'],
+                   '_delivery_receipt_decision') == 0
+assert _call_count(guard_functions['guard_precommit'], 'approval_valid') == 1
+assert _call_count(guard_functions['guard_reference_transaction'],
+                   'approval_valid') == 1
+assert _call_count(guard_functions['guard_pretool'], 'approval_valid') == 1
+assert _call_count(guard_functions['guard_prepush'],
+                   'push_approval_valid') == 1
+assert _call_count(guard_functions['guard_pretool'],
+                   'push_approval_valid') == 1
+guards_calls_total = sum(
+    _call_count(function, 'guard_decision')
+    for function in guard_functions.values()
+)
+assert guards_calls_total == 1, guards_calls_total
+
+# (6) Minting boundary: nothing outside pr_delivery/ imports pr_delivery
+#     except herdr/guards.py (lazily, above) — not the CLI entry points,
+#     not the control chain, not the Runtime, not the neutral seams.
+pr_delivery_importers = {}
+for path in product_files + sorted((R / 'herdr').glob('*.py')):
+    relpath = path.relative_to(R).as_posix()
+    if relpath.startswith('pr_delivery/'):
+        continue
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or '']
+        else:
+            continue
+        if any(name.split('.')[0] == 'pr_delivery' for name in names):
+            pr_delivery_importers[relpath] = (
+                pr_delivery_importers.get(relpath, 0) + 1
+            )
+assert pr_delivery_importers == {'herdr/guards.py': 1}, (
+    'only the git guard may reach the delivery package',
+    pr_delivery_importers,
+)
+
+# (7) Mission Authorization separation: the workflow record's key set,
+#     the Mission Authorization's key set, and the policy record are
+#     byte-for-byte what they were; pr_delivery takes only named
+#     helpers from workflow_authority and never touches its store or
+#     record mutators; workflow_authority never imports pr_delivery.
+assert wa_record._TOP_LEVEL_KEYS == (
+    'schema_version', 'workflow_id', 'human_intent', 'control_identity',
+    'target', 'approved_baseline', 'mission_authorization', 'telegram',
+    'approval', 'handoff', 'phase', 'workspace_lease', 'receipts',
+    'codex_turns', 'ambiguity', 'target_engine', 'verified_result',
+    'result_placeholder', 'result_delivery', 'last_observation',
+    'delivery_authority',
+), wa_record._TOP_LEVEL_KEYS
+assert wa_authorization.ALLOWED_AUTHORIZATION_KEYS == frozenset((
+    'objective', 'constraints', 'rules', 'desired_outcome', 'acceptance',
+    'unresolved_questions', 'execution_scope', 'control', 'target',
+    'issue_or_pr', 'baseline', 'handoff', 'telegram_approval',
+    'workflow_id', 'human_intent', 'revision', 'delivery_authority',
+))
+assert wa_digest.EFFECTIVE_POLICY_RECORD == {
+    'policy_version': 1,
+    'delivery_authority': 'none',
+    'policy_documents': ['AGENTS.md', 'OPERATOR_PROTOCOL.md'],
+}
+assert wa_record.DELIVERY_AUTHORITY_NONE == 'none'
+PR_DELIVERY_ALLOWED_WA_IMPORTS = {
+    'workflow_authority': {'canonical'},
+    'workflow_authority.canonical': set(),
+    'workflow_authority.digest': {
+        'json_digest', 'framed_digest', 'sha256_hex', 'text_digest',
+    },
+    'workflow_authority.record': {
+        'MAX_ID_CHARS', 'WORKFLOW_ID_ALPHABET',
+        'baseline_ref_grammar_problem', 'path_character_problem',
+    },
+    'workflow_authority.store': {
+        'atomic_write_json', 'default_store_dir', 'exclusive_store_lock',
+    },
+}
+for path in pr_delivery_files:
+    relpath = path.relative_to(R).as_posix()
+    source = path.read_text()
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (
+            node.module or ''
+        ).startswith('workflow_authority'):
+            allowed = PR_DELIVERY_ALLOWED_WA_IMPORTS.get(node.module)
+            assert allowed is not None, (relpath, node.module)
+            for alias in node.names:
+                assert alias.name in allowed, (
+                    relpath, node.module, alias.name,
+                    'pr_delivery takes only named, non-mutating helpers'
+                    ' from workflow_authority',
+                )
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert not alias.name.startswith('workflow_authority'), (
+                    relpath, alias.name, 'import the named helpers only'
+                )
+    docstring_positions = _docstring_positions_of(tree)
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME:
+            assert token.string not in {
+                'WorkflowStore', 'WORKFLOWS_FILE_NAME', 'new_record',
+                'add_workflow',
+            }, (relpath, token.start, token.string)
+        elif token.type == tokenize.STRING and (
+            token.start not in docstring_positions
+        ):
+            # Docstring prose may name the file it must never open;
+            # a non-docstring literal may not.
+            assert 'workflows.json' not in token.string, (
+                relpath, token.start,
+            )
+for path in product_files:
+    relpath = path.relative_to(R).as_posix()
+    if not relpath.startswith('workflow_authority/'):
+        continue
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name for alias in node.names]
+            module = getattr(node, 'module', None) or ''
+            assert 'pr_delivery' not in module and not any(
+                name.startswith('pr_delivery') for name in names
+            ), (relpath, 'workflow_authority never imports pr_delivery')
+
+# (8) Fake isolation: a separate interpreter importing the machine, the
+#     receipts, and the boundary (everything but the transport and the
+#     CLI) loads neither `subprocess` nor `pr_delivery.transport` nor any
+#     orchestration/Runtime module; and the delivery test modules import
+#     no process- or network-starting module themselves.
+pr_delivery_probe = subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            'import sys\n'
+            'import pr_delivery.authorization, pr_delivery.candidate\n'
+            'import pr_delivery.store, pr_delivery.receipts\n'
+            'import pr_delivery.machine, pr_delivery.boundary\n'
+            'import pr_delivery.pr_text\n'
+            'bad = sorted(\n'
+            '    name for name in sys.modules\n'
+            '    if name in ("subprocess", "pr_delivery.transport",'
+            ' "pr_delivery.cli", "socket")\n'
+            '    or name.split(".")[0] in ("herdr", "herdctl",'
+            ' "target_runtime")\n'
+            ')\n'
+            'print("\\n".join(bad))\n'
+            'sys.exit(1 if bad else 0)\n'
+        ),
+    ],
+    cwd=str(R),
+    capture_output=True,
+    text=True,
+)
+assert pr_delivery_probe.returncode == 0, (
+    'pr_delivery logic modules loaded a process or orchestration module',
+    pr_delivery_probe.returncode, pr_delivery_probe.stdout,
+    pr_delivery_probe.stderr,
+)
+for test_name in ('test_pr_delivery.py', 'test_pr_delivery_guards.py'):
+    test_tree = ast.parse((R / 'tests' / test_name).read_text())
+    for node in ast.walk(test_tree):
+        if isinstance(node, ast.Import):
+            roots = [alias.name.split('.')[0] for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            roots = [(node.module or '').split('.')[0]]
+        else:
+            continue
+        for root in roots:
+            assert root not in {'subprocess', 'socket', 'urllib', 'http',
+                                'requests', 'ssl'}, (
+                test_name, root,
+                'the delivery tests start no process and open no socket of'
+                ' their own; git runs only through the production transport'
+                ' and _hermetic_git, and gh never runs',
+            )
+    # The GitHub half is structurally replaced: a module either defines
+    # or constructs a transport, and then must override `_gh`, or it
+    # defines and constructs none and takes its transport from the
+    # fixture of a module that does. The same condition applies to every
+    # file; no file is exempted by name (round-01 N7).
+    test_source = (R / 'tests' / test_name).read_text()
+    defines_transport = any(
+        isinstance(node, ast.ClassDef) and any(
+            (isinstance(base, ast.Attribute)
+             and base.attr == 'DeliveryTransport')
+            or (isinstance(base, ast.Name) and base.id == 'DeliveryTransport')
+            for base in node.bases
+        )
+        for node in ast.walk(test_tree)
+    )
+    constructs_transport = any(
+        isinstance(node, ast.Call) and (
+            getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            == 'DeliveryTransport'
+        )
+        for node in ast.walk(test_tree)
+    )
+    if defines_transport or constructs_transport:
+        assert 'def _gh(' in test_source, (
+            test_name, 'a test transport must override _gh so no gh'
+            ' process can start',
+        )
+    else:
+        assert 'DeliveryTransport' not in test_source, (
+            test_name, 'a module without its own transport must not name'
+            ' the real one',
+        )
+
+# (9) PR text hygiene: no provenance or co-author token anywhere in the
+#     renderer's literals (decoded values, case-insensitive). The tuple
+#     below is a set literal of plain words so the hermetic-git guard
+#     does not read it as an argv, and each entry is a whole token, not a
+#     substring an ordinary English word could produce.
+PR_TEXT_FORBIDDEN_FRAGMENTS = frozenset({
+    'co-authored-by', 'generated with', 'claude', 'codex', 'chatgpt',
+    'anthropic', 'openai', 'grok', 'gpt-', 'signed-off-by',
+})
+pr_text_tree = ast.parse((R / PR_DELIVERY_TEXT_FILE).read_text())
+pr_text_values = 0
+for node in ast.walk(pr_text_tree):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        pr_text_values += 1
+        lowered = node.value.lower()
+        for fragment in PR_TEXT_FORBIDDEN_FRAGMENTS:
+            assert fragment not in lowered, (
+                PR_DELIVERY_TEXT_FILE, node.lineno, fragment,
+            )
+assert pr_text_values > 10, pr_text_values
+
+# (10) CI shape: the package is compiled and whitespace is checked.
+ci_text = (R / '.github' / 'workflows' / 'ci.yml').read_text()
+assert 'pr_delivery/*.py' in ci_text, 'CI must compile pr_delivery'
+assert 'git diff --check' in ci_text, 'CI must run git diff --check'
 
 print('static tests: OK')

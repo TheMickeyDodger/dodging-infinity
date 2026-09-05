@@ -1843,6 +1843,16 @@ def review_decision_cmd(args):
     print(json.dumps(result, indent=2))
 
 
+def delivery_evidence_cmd(args):
+    r = resolve_repo_ref(args.repo)
+    from herdr import delivery_evidence
+    try:
+        document = delivery_evidence.collect(r)
+    except delivery_evidence.EvidenceError as exc:
+        raise SystemExit(f"delivery evidence unavailable: {exc}")
+    print(json.dumps(document, indent=2, sort_keys=True))
+
+
 def prompt_cmd(args):
     r = resolve_repo_ref(args.repo)
     c = cfg(r)
@@ -2149,6 +2159,10 @@ def main():
     q.add_argument("--reviewer", default="reviewer1")
     q.add_argument("--lines", type=int, default=500)
     q.set_defaults(fn=review_decision_cmd)
+
+    q = sp.add_parser("delivery-evidence")
+    q.add_argument("--repo")
+    q.set_defaults(fn=delivery_evidence_cmd)
 
     q = sp.add_parser("prompt")
     q.add_argument("role")

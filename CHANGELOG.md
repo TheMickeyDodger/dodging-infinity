@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **P1-A6 Verified PR Delivery.** A separate durable human PR Delivery
+  Authorization (`pr_delivery/`, minted only by a terminal ceremony) binds the
+  exact reviewed candidate identity, the recorded Herdr COMPLETE, canonical
+  Reviewer APPROVE and independent verification evidence, and the closed action
+  set BASE_REFRESH, COMMIT, PUSH, PR_CREATE. One-shot receipts derived from it
+  are accepted by the installed git guards as a second path beside the manual
+  `approve-commit`/`approve-push` tokens; disjoint fast-forward base drift is
+  refreshed automatically with the candidate re-proven; every effect
+  reconciles after a crash without a duplicate; delivery stops at an open pull
+  request with no merge, tag, release, deploy or publish verb. `herdctl
+  delivery-evidence` emits the Herdr evidence the ceremony binds.
+
 ## v0.7.0
 
 - **AUTOMATED — unattended remote runtime hardening.** Added managed workspace

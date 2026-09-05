@@ -745,6 +745,57 @@ def guard_pretool() -> int:
     return 0
 
 
+DELIVERY_STEP_BASE_REFRESH = "BASE_REFRESH"
+DELIVERY_STEP_COMMIT = "COMMIT"
+DELIVERY_STEP_PUSH = "PUSH"
+
+
+def _delivery_receipt_decision(
+    repo: str | Path,
+    step: str,
+    live: dict,
+):
+    """The SECOND guard-valid path: an exact, executing PR delivery
+    receipt for this repository and step (P1-A6).
+
+    Consulted only after the legacy token path has refused, and never
+    widening it. The import is LAZY and every failure — import,
+    store location, permissions, parse, ambiguity — is a refusal
+    reason on this path only, so a git hook in any repository on this
+    machine never pays the delivery package's import cost when no
+    receipt is in play and never sees a traceback from it (Lead M1).
+    """
+    try:
+        from pr_delivery import receipts as delivery_receipts
+
+        return delivery_receipts.guard_decision(
+            Path(repo).resolve(),
+            step,
+            live,
+            time.time(),
+        )
+    except Exception as exc:  # never propagate out of a hook
+        return (
+            False,
+            "delivery receipt path unavailable "
+            f"({type(exc).__name__}: {str(exc)[:300]})",
+        )
+
+
+def _delivery_commit_live(
+    repo: str | Path,
+) -> dict:
+    ident = repo_identity(repo)
+    return {
+        "repository_realpath": ident["repo_root"],
+        "git_dir_realpath": ident["git_dir"],
+        "branch": ident["branch"],
+        "source_ref": f"refs/heads/{ident['branch']}",
+        "head_before": ident["head"],
+        "staged_sha256": ident["staged_sha256"],
+    }
+
+
 def guard_precommit(
     repo: str | Path,
 ) -> int:
@@ -754,11 +805,26 @@ def guard_precommit(
     )
 
     if not valid:
+        receipt_ok, receipt_message = _delivery_receipt_decision(
+            repo,
+            DELIVERY_STEP_COMMIT,
+            _delivery_commit_live(repo),
+        )
+
+        if not receipt_ok:
+            print(
+                f"HERD COMMIT BLOCKED: {message} "
+                f"(delivery receipt: {receipt_message})",
+                file=sys.stderr,
+            )
+            return 1
+
         print(
-            f"HERD COMMIT BLOCKED: {message}",
+            f"HERD COMMIT PRE-CHECK AUTHORIZED BY {receipt_message}: "
+            f"{Path(repo).resolve()}",
             file=sys.stderr,
         )
-        return 1
+        return 0
 
     print(
         f"HERD COMMIT PRE-CHECK AUTHORIZED: "
@@ -819,12 +885,48 @@ def guard_reference_transaction(
         )
 
         if not valid:
-            print(
-                f"HERD HISTORY UPDATE BLOCKED: "
-                f"{message}",
-                file=sys.stderr,
+            # Second path, in order: an executing COMMIT receipt bound
+            # to the live identity, else an executing BASE_REFRESH
+            # receipt bound to EXACTLY this (ref, old, new) update line.
+            receipt_ok, receipt_message = _delivery_receipt_decision(
+                repo,
+                DELIVERY_STEP_COMMIT,
+                _delivery_commit_live(repo),
             )
-            return 1
+
+            if not receipt_ok:
+                head_updates = [
+                    (old, new)
+                    for old, new, ref in updates
+                    if ref == head_ref
+                ]
+                if len(head_updates) == 1:
+                    old_oid, new_oid = head_updates[0]
+                    receipt_ok, receipt_message = (
+                        _delivery_receipt_decision(
+                            repo,
+                            DELIVERY_STEP_BASE_REFRESH,
+                            {
+                                "repository_realpath": str(
+                                    Path(repo).resolve()
+                                ),
+                                "source_ref": head_ref,
+                                "old_base_oid": old_oid,
+                                "new_base_oid": new_oid,
+                            },
+                        )
+                    )
+
+            if not receipt_ok:
+                print(
+                    f"HERD HISTORY UPDATE BLOCKED: "
+                    f"{message} "
+                    f"(delivery receipt: {receipt_message})",
+                    file=sys.stderr,
+                )
+                return 1
+
+            return 0
 
         return 0
 
@@ -868,11 +970,57 @@ def guard_prepush(
     )
 
     if not valid:
+        receipt_ok, receipt_message = False, "no single ref update"
+
+        # The receipt binds BOTH the configured remote URL and the
+        # expanded push URL recorded at authorization. The hook is
+        # handed the expanded push URL git will actually contact, so
+        # it is compared against the BOUND value, never against another
+        # live read: a url.<base>.insteadOf, pushInsteadOf or pushurl
+        # added after authorization no longer matches (round-01 B2).
+        configured_url = gitout(
+            repo,
+            "config",
+            "--get",
+            f"remote.{remote_name}.url",
+            allow_fail=True,
+        )
+
+        if len(updates) == 1 and configured_url:
+            local_ref, local_oid, remote_ref, remote_oid = updates[0]
+            receipt_ok, receipt_message = _delivery_receipt_decision(
+                repo,
+                DELIVERY_STEP_PUSH,
+                {
+                    "repository_realpath": str(Path(repo).resolve()),
+                    "remote_name": remote_name,
+                    "remote_url_exact": configured_url,
+                    "remote_url_push": remote_url,
+                    "source_ref": local_ref,
+                    "source_commit": local_oid,
+                    "destination_ref": remote_ref,
+                    "expected_remote_old_oid": remote_oid,
+                },
+            )
+        elif len(updates) == 1:
+            receipt_message = (
+                f"{remote_name!r} is not a configured remote name"
+            )
+
+        if not receipt_ok:
+            print(
+                f"HERD PUSH BLOCKED: {message} "
+                f"(delivery receipt: {receipt_message})",
+                file=sys.stderr,
+            )
+            return 1
+
         print(
-            f"HERD PUSH BLOCKED: {message}",
+            f"HERD PUSH AUTHORIZED BY {receipt_message}: "
+            f"{Path(repo).resolve()} -> {remote_name}",
             file=sys.stderr,
         )
-        return 1
+        return 0
 
     # Do not consume here: git also runs pre-push for `git push --dry-run`
     # and gives this hook no way to tell a rehearsal from a real transfer.

@@ -97,7 +97,6 @@ KNOWN_DUPLICATES_AT_I2_START = frozenset({
     "effective_policy",
     "ensure_local_herd_exclude",
     "gitout",
-    "guard_precommit_cmd",
     "heartbeat",
     "human_duration",
     "install_git_guard",

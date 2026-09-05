@@ -51,4 +51,9 @@ jobs:
         run: PYTHONPATH="$PWD" python tests/test_static.py
 
       - name: Compile Python sources
-        run: python -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py target_runtime/*.py dirun.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py worker/*.py
+        run: python -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py target_runtime/*.py dirun.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py worker/*.py pr_delivery/*.py
+
+      - name: Check for whitespace errors
+        # Against the empty tree, so every tracked file is checked on a
+        # clean checkout (a bare `git diff --check` would be vacuous).
+        run: git diff --check "$(git hash-object -t tree /dev/null)"

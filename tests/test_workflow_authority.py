@@ -2090,6 +2090,33 @@ class BoundConstantPinTests(unittest.TestCase):
         "workflow_authority/store.py": {
             "MAX_WORKFLOW_RECORDS": 64,
         },
+        # P1-A6 Verified PR Delivery. Every bound is a hard constant of
+        # the delivery record, the sibling store, or the transport.
+        "pr_delivery/authorization.py": {
+            "MAX_CANDIDATE_ENTRIES": 4096,
+            "MAX_PR_TITLE_CHARS": 256,
+            "MAX_PR_BODY_CHARS": 16384,
+            "MAX_AUTHORIZATION_VALIDITY_SECONDS": 604800,
+            "DEFAULT_AUTHORIZATION_VALIDITY_SECONDS": 86400,
+            "MAX_HUMAN_TEXT_CHARS": 8000,
+            "MAX_EVIDENCE_TEXT_CHARS": 4000,
+            "MAX_STEP_ATTEMPTS": 8,
+            # The canonical URL bound plus the optional ".git" suffix.
+            "MAX_REMOTE_URL_CHARS": 516,
+            "MAX_REVERIFICATION_ARGV": 64,
+        },
+        "pr_delivery/store.py": {
+            "MAX_PR_DELIVERY_RECORDS": 64,
+        },
+        "pr_delivery/transport.py": {
+            "MAX_TRANSPORT_OUTPUT_BYTES": 1048576,
+        },
+        "pr_delivery/cli.py": {
+            # Not a bound: the number of candidate-identity hex characters
+            # the human types in the ceremony (a confirmation, not a
+            # credential). Pinned because the name matches the convention.
+            "CONFIRMATION_CHARS": 12,
+        },
         "target_runtime/cli.py": {
             "RUNTIME_POLL_INTERVAL_SECONDS": 5,
         },
