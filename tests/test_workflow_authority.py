@@ -2066,6 +2066,11 @@ class BoundConstantPinTests(unittest.TestCase):
         "codex_gateway/role_turn.py": {
             "MAX_EVIDENCE_SECTION_CHARS": 262144,
         },
+        "operator_session/pi.py": {
+            "DEFAULT_TIMEOUT_SECONDS": 600.0,
+            "TERMINATE_GRACE_SECONDS": 5.0,
+            "ERROR_DETAIL_MAX_CHARS": 2000,
+        },
         "workflow_authority/authorization.py": {
             "MAX_AUTHORIZATION_DEPTH": 8,
             "MAX_AUTHORIZATION_NODES": 512,

@@ -593,7 +593,8 @@ class ProviderFreeBoundaryTests(unittest.TestCase):
     def test_no_module_in_the_package_imports_forbidden_roots(self):
         files = sorted(PACKAGE_DIR.glob("*.py"))
         self.assertEqual(
-            [p.name for p in files], ["__init__.py", "codex.py", "session.py"]
+            [p.name for p in files],
+            ["__init__.py", "codex.py", "pi.py", "session.py"],
         )
         for path in files:
             self.assertEqual(
@@ -615,6 +616,20 @@ class ProviderFreeBoundaryTests(unittest.TestCase):
             self._import_roots(PACKAGE_DIR / "codex.py") & self.PROVIDER_ROOTS,
             {"codex_gateway"},
         )
+        # The Pi module is a substitute for the provider, so it may not
+        # import the provider it substitutes for, nor any orchestration,
+        # authority, runtime, capability, worker, delivery, durable
+        # execution, or git transport root.
+        pi_roots = self._import_roots(PACKAGE_DIR / "pi.py")
+        self.assertEqual(pi_roots & self.PROVIDER_ROOTS, set())
+        self.assertEqual(
+            pi_roots & {
+                "herdr", "herdctl", "workflow_authority", "target_runtime",
+                "capability", "worker", "pr_delivery", "durable_execution",
+                "git_transport", "codex_gateway", "telegram_operator",
+            },
+            set(),
+        )
 
     def test_importing_the_package_loads_no_forbidden_module(self):
         probe = subprocess.run(
@@ -626,6 +641,7 @@ class ProviderFreeBoundaryTests(unittest.TestCase):
                     "import operator_session\n"
                     "import operator_session.session\n"
                     "import operator_session.codex\n"
+                    "import operator_session.pi\n"
                     "bad = sorted(\n"
                     "    name for name in sys.modules\n"
                     "    if name.split('.')[0] in\n"
@@ -678,6 +694,7 @@ class StaticProbePinTests(unittest.TestCase):
             "import operator_session",
             "import operator_session.session",
             "import operator_session.codex",
+            "import operator_session.pi",
         ):
             self.assertIn(required, lines)
         # And the probe still treats these roots as forbidden.
@@ -784,6 +801,26 @@ class TelegramAdapterWiringTests(unittest.TestCase):
             operator_session=explicit,
             submit_fn=SubmitSpy(), build_request_fn=BuilderSpy(),
         )
+        self.assertIs(adapter._session, explicit)
+
+    def test_no_selection_selects_the_codex_session_not_pi(self):
+        from operator_session.pi import PiOperatorSession
+        adapter = self.build()
+        self.assertIsInstance(adapter._session, CodexOperatorSession)
+        self.assertNotIsInstance(adapter._session, PiOperatorSession)
+
+    def test_explicit_pi_selection_selects_the_pi_session(self):
+        from operator_session import pi as pi_module
+        explicit = pi_module.PiOperatorSession()
+        with patch.object(pi_module, "run_process") as run_process:
+            adapter = self.build(operator_session=explicit)
+        self.assertIs(adapter._session, explicit)
+        self.assertIsInstance(adapter._session, pi_module.PiOperatorSession)
+        self.assertEqual(run_process.call_count, 0)
+
+    def test_codex_stays_explicitly_selectable(self):
+        explicit = CodexOperatorSession()
+        adapter = self.build(operator_session=explicit)
         self.assertIs(adapter._session, explicit)
 
 
