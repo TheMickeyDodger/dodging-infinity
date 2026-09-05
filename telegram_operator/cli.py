@@ -5,7 +5,11 @@ Subcommands: ``run`` (foreground adapter), ``install-agent`` /
 ``migrate-state`` (the explicit adapter-state schema 1 -> 2
 migration; never automatic), and ``migrate-workflows`` (the explicit
 workflow-store schema 1 -> 2 migration; never automatic; retires v1
-records rather than fabricating authority fields). The CLI loads
+records rather than fabricating authority fields), and
+``runtime-service`` (the per-user LaunchAgent that supervises the DI
+Runtime, ``dirun run``: install / status / start / stop / restart /
+uninstall / doctor; a thin adapter over
+``telegram_operator.runtime_service``). The CLI loads
 config from outside the
 repository, takes the single-instance lock, and starts the adapter;
 it interprets no approval, mission, or delivery semantics itself and
@@ -13,7 +17,7 @@ touches no orchestration state.
 
 Exit codes: 0 success, 2 configuration or usage problem, 3 another
 adapter instance already holds the single-instance lock, 4 agent
-install/uninstall failure.
+install/uninstall failure (also runtime-service lifecycle failure).
 """
 
 import argparse
@@ -21,6 +25,7 @@ import os
 import sys
 
 from telegram_operator import launchagent
+from telegram_operator import runtime_service
 from telegram_operator.adapter import Adapter
 from telegram_operator.config import ConfigError, load_config
 from telegram_operator.state import (
@@ -42,6 +47,10 @@ EXIT_OK = 0
 EXIT_CONFIG = 2
 EXIT_LOCKED = 3
 EXIT_AGENT = 4
+
+RUNTIME_SERVICE_ACTIONS = (
+    "install", "status", "start", "stop", "restart", "uninstall", "doctor",
+)
 
 
 def _build_parser():
@@ -84,6 +93,30 @@ def _build_parser():
         " preserved byte-exact backup — their missing authority"
         " fields are never fabricated; each retired workflow needs a"
         " fresh Mission Authorization)",
+    )
+    service = subparsers.add_parser(
+        "runtime-service",
+        help="supervise the DI Runtime (dirun run) as a per-user"
+        " LaunchAgent: install, status, start, stop, restart,"
+        " uninstall, doctor",
+    )
+    service.add_argument(
+        "action",
+        choices=RUNTIME_SERVICE_ACTIONS,
+    )
+    service.add_argument(
+        "--root",
+        metavar="PATH",
+        default=None,
+        help="stable production checkout the job binds (default:"
+        " this checkout; refused when it is a temp path, a git"
+        " worktree, or otherwise unstable)",
+    )
+    service.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="install only: explicitly replace an existing differing"
+        " or unparseable job definition under the same label",
     )
     return parser
 
@@ -218,6 +251,57 @@ def _run(namespace):
         os.close(lock_descriptor)
 
 
+def _repository_root():
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _runtime_service(namespace):
+    # Thin adapter: parse, call, print, map to exit codes. Every
+    # decision (stable root, reconcile, state machine) lives in
+    # telegram_operator.runtime_service.
+    config_path = (
+        os.path.abspath(namespace.config) if namespace.config else None
+    )
+    action = namespace.action
+    if action == "install":
+        root = (
+            os.path.abspath(namespace.root) if namespace.root
+            else _repository_root()
+        )
+        # Validate the EXACT config the KeepAlive job will run BEFORE
+        # anything is written (the install-agent precedent): same
+        # diagnostic path and exit code as `run`.
+        try:
+            load_config(config_path)
+        except ConfigError as exc:
+            print("tgop: config: %s" % exc, file=sys.stderr)
+            return EXIT_CONFIG
+        ok, message = runtime_service.install_service(
+            sys.executable, root, config_path=config_path,
+            reconcile=namespace.reconcile,
+        )
+    elif action == "uninstall":
+        ok, message = runtime_service.uninstall_service()
+    elif action == "start":
+        ok, message = runtime_service.start_service()
+    elif action == "stop":
+        ok, message = runtime_service.stop_service()
+    elif action == "restart":
+        ok, message = runtime_service.restart_service()
+    elif action == "status":
+        report = runtime_service.service_status(config_path=config_path)
+        sys.stdout.write(runtime_service.render_status_text(report))
+        return EXIT_OK
+    elif action == "doctor":
+        report = runtime_service.doctor(config_path=config_path)
+        sys.stdout.write(runtime_service.render_doctor_text(report))
+        return EXIT_OK
+    else:  # unreachable: argparse restricts the choices
+        return EXIT_CONFIG
+    print("tgop: runtime-service: %s" % message, file=sys.stderr)
+    return EXIT_OK if ok else EXIT_AGENT
+
+
 def main(argv=None):
     parser = _build_parser()
     try:
@@ -265,5 +349,7 @@ def main(argv=None):
         return _migrate_state(namespace)
     if namespace.command == "migrate-workflows":
         return _migrate_workflows(namespace)
+    if namespace.command == "runtime-service":
+        return _runtime_service(namespace)
     parser.print_help(sys.stderr)
     return EXIT_CONFIG

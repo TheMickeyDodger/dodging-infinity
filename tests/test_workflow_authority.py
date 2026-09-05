@@ -2031,6 +2031,12 @@ class BoundConstantPinTests(unittest.TestCase):
         "telegram_operator/launchagent.py": {
             "THROTTLE_SECONDS": 10,
         },
+        "telegram_operator/runtime_service.py": {
+            # The Runtime LaunchAgent's relaunch throttle and the
+            # explicit bound on graceful stop (SIGTERM -> SIGKILL).
+            "THROTTLE_SECONDS": 10,
+            "EXIT_TIMEOUT_SECONDS": 30,
+        },
         "telegram_operator/mission.py": {
             "MISSION_APPROVAL_VALIDITY_SECONDS": 900,
             "CANONICAL_TARGET_HOST": "github.com",
