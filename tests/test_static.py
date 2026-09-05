@@ -1068,6 +1068,7 @@ probe = subprocess.run(
             'import operator_session\n'
             'import operator_session.session\n'
             'import operator_session.codex\n'
+            'import operator_session.pi\n'
             'import human_interaction\n'
             'import human_interaction.contract\n'
             'import telegram_operator.interaction\n'

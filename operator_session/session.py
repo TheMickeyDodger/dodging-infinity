@@ -1,8 +1,11 @@
 """Operator session seam: prepare one turn, then execute it.
 
 This module is PROVIDER-FREE. It imports no provider, no orchestration
-machinery, no authority store, and no transport adapter; the only
-provider-aware module in the package is ``operator_session.codex``.
+machinery, no authority store, and no transport adapter; the
+provider-aware modules in the package are the adapter modules
+``operator_session.codex`` (the reference, the only one that imports a
+provider package) and ``operator_session.pi`` (a substitute built on the
+standard library).
 
 The seam is a two-step boundary between a caller (a transport adapter,
 a CLI) and whatever operator provider carries the turn:

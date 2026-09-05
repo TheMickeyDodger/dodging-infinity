@@ -20,6 +20,7 @@ import argparse
 import os
 import sys
 
+from operator_session.pi import PiOperatorSession
 from telegram_operator import launchagent
 from telegram_operator.adapter import Adapter
 from telegram_operator.config import ConfigError, load_config
@@ -43,6 +44,21 @@ EXIT_CONFIG = 2
 EXIT_LOCKED = 3
 EXIT_AGENT = 4
 
+# The operator runtimes `tgop run --operator-provider` may select. The
+# reference provider is the default; selecting it explicitly passes NO
+# session to the Adapter, so the Adapter's own default (the Codex-backed
+# session) is what runs either way. Only the non-default choice
+# constructs a session here. Not a config key on purpose: the choice is
+# per invocation, and the LaunchAgent job THIS CLI installs carries no
+# such flag, so it runs the reference provider unless someone edits the
+# job definition by hand — a claim about what this CLI writes, not about
+# every plist that may exist.
+DEFAULT_OPERATOR_PROVIDER = "codex"
+OPERATOR_PROVIDERS = {
+    DEFAULT_OPERATOR_PROVIDER: None,
+    "pi": PiOperatorSession,
+}
+
 
 def _build_parser():
     parser = argparse.ArgumentParser(
@@ -62,7 +78,23 @@ def _build_parser():
         " location under ~/Library/Application Support)",
     )
     subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("run", help="run the adapter in the foreground")
+    run_parser = subparsers.add_parser(
+        "run", help="run the adapter in the foreground"
+    )
+    run_parser.add_argument(
+        "--operator-provider",
+        choices=sorted(OPERATOR_PROVIDERS),
+        default=DEFAULT_OPERATOR_PROVIDER,
+        help="which locally installed operator runtime backs the"
+        " OperatorSession, i.e. the intent and decision turns (default:"
+        " %s, the reference provider). Selects that session ONLY: the"
+        " pre-record restrictive planning turn that produces a Mission"
+        " Authorization always runs on the reference provider through"
+        " its own seam, whatever this flag says. The LaunchAgent job"
+        " this CLI installs does not pass this flag, so it runs the"
+        " default unless its job definition is edited by hand."
+        % DEFAULT_OPERATOR_PROVIDER,
+    )
     subparsers.add_parser(
         "install-agent",
         help="install and load the optional per-user LaunchAgent",
@@ -205,7 +237,18 @@ def _run(namespace):
         return EXIT_LOCKED
     try:
         store = StateStore(state_dir)
-        adapter = Adapter(loaded, store, TelegramApi(loaded.bot_token))
+        # Absent or reference provider: no session keyword at all, so
+        # the Adapter's existing selection order is untouched.
+        provider = getattr(
+            namespace, "operator_provider", DEFAULT_OPERATOR_PROVIDER
+        )
+        session_class = OPERATOR_PROVIDERS[provider]
+        session_kwargs = {}
+        if session_class is not None:
+            session_kwargs["operator_session"] = session_class()
+        adapter = Adapter(
+            loaded, store, TelegramApi(loaded.bot_token), **session_kwargs
+        )
         try:
             adapter.run()
         except KeyboardInterrupt:
