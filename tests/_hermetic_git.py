@@ -20,6 +20,11 @@ execution that this helper commits successfully under a fully scrubbed
 identity environment, and proves by AST scan that no identity-requiring
 Git invocation in tests/ bypasses this module.
 
+Automatic maintenance/GC is disabled on these fixture invocations.
+Otherwise a fixture commit can leave a detached writer changing .git
+after the command returns, racing the byte-for-byte refusal assertions.
+This is invocation-local: no host or production Git config is changed.
+
 This module is deliberately not named ``test_*.py``: it is a helper, not
 a test module, and must not be collected by the suite loop.
 """
@@ -34,6 +39,8 @@ HERMETIC_GIT_ARGS = (
     "-c", "user.name=%s" % IDENTITY_NAME,
     "-c", "user.email=%s" % IDENTITY_EMAIL,
     "-c", "commit.gpgsign=false",
+    "-c", "maintenance.auto=false",
+    "-c", "gc.auto=0",
 )
 
 

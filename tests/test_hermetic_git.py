@@ -239,6 +239,34 @@ class HermeticExecutionTests(unittest.TestCase):
         )
         self.assertNotEqual(completed.returncode, 0)
 
+    def test_fixture_commits_suppress_automatic_maintenance(self):
+        # Force maintenance eligibility even in a tiny repo. Foreground
+        # execution makes the negative control deterministic; without
+        # the helper's override a normal fixture commit writes a graph.
+        for key, value in (
+            ("maintenance.auto", "true"),
+            ("maintenance.autoDetach", "false"),
+            ("gc.autoDetach", "false"),
+            ("maintenance.gc.enabled", "false"),
+            ("maintenance.commit-graph.enabled", "true"),
+            ("maintenance.commit-graph.auto", "1"),
+        ):
+            run_git("-C", self.repo, "config", key, value, env=self.env)
+        graph = os.path.join(self.repo, ".git", "objects", "info",
+                             "commit-graphs", "commit-graph-chain")
+        run_git("-C", self.repo, "commit", "-qm", "fixture", env=self.env)
+        run_git_completed(
+            ["-C", self.repo, "commit", "--allow-empty", "-qm", "second"],
+            env=self.env,
+        )
+        self.assertFalse(os.path.exists(graph))
+        # Deliberately override ONLY the maintenance switch: this proves
+        # the absence above is suppression, not an ineligible fixture.
+        run_git("-C", self.repo, "-c", "maintenance.auto=true",
+                "commit", "--allow-empty", "-qm", "negative control",
+                env=self.env)
+        self.assertTrue(os.path.exists(graph))
+
 
 class HermeticArgvTests(unittest.TestCase):
     """The identity rides the EXECUTED argv (not source text)."""
@@ -262,6 +290,8 @@ class HermeticArgvTests(unittest.TestCase):
         self.assertIn("user.name=%s" % IDENTITY_NAME, argv)
         self.assertIn("user.email=%s" % IDENTITY_EMAIL, argv)
         self.assertIn("commit.gpgsign=false", argv)
+        self.assertIn("maintenance.auto=false", argv)
+        self.assertIn("gc.auto=0", argv)
 
     def test_run_git_executes_identity_argv(self):
         argv = self._captured_argv(
