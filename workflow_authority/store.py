@@ -45,14 +45,21 @@ cannot make room the new record is REFUSED explicitly. Counts
 reported by this module are exact (standing truthfulness rule).
 """
 
-import contextlib
-import fcntl
 import json
 import os
 import stat
-import tempfile
 
 from telegram_operator.config import CONFIG_DIR_RELATIVE
+# The atomic-replace write and the cross-process lock live in the
+# stdlib-only ``workflow_authority.atomic`` (extracted verbatim) and
+# are re-exported here under their original names, so every existing
+# ``store.atomic_write_json`` / ``store.exclusive_store_lock`` reference
+# keeps working unchanged.
+from workflow_authority.atomic import (  # noqa: F401 (re-exported)
+    WORKFLOWS_LOCK_FILE_NAME,
+    atomic_write_json,
+    exclusive_store_lock,
+)
 from workflow_authority.record import (
     RESULT_DELIVERY_ADDITIVE_KEYS,
     TERMINAL_PHASES,
@@ -74,8 +81,8 @@ WORKFLOWS_FILE_NAME = "workflows.json"
 # Runtime (a separate process, later increment) both mutate
 # workflows.json. Every writer MUST hold this flock around its whole
 # load-modify-save cycle — this is a binding part of the store's
-# concurrency contract.
-WORKFLOWS_LOCK_FILE_NAME = "workflows.lock"
+# concurrency contract. ``WORKFLOWS_LOCK_FILE_NAME`` is defined in
+# ``workflow_authority.atomic`` and re-exported above.
 
 # Hard cap on stored workflow records, never derived from input.
 MAX_WORKFLOW_RECORDS = 64
@@ -299,64 +306,6 @@ class WorkflowStore(object):
         _validate_document(document, self.path)
         atomic_write_json(self.directory, self.path, document,
                           temp_prefix=".workflows-")
-
-
-def atomic_write_json(directory, path, document, temp_prefix):
-    """The ONE atomic-replace primitive for every protected store.
-
-    Temp file created in the same directory, ``fchmod`` 600,
-    ``json.dump``, flush, ``fsync``, ``os.replace``, then an fsync of
-    the directory. A crash never leaves a torn file and an interrupted
-    write leaves the previous file byte-identical. Extracted verbatim
-    from ``WorkflowStore.save`` (P1-A6) so the sibling PR delivery
-    store shares it instead of copying it; the caller validates the
-    document before calling this — nothing here validates.
-    """
-    os.makedirs(directory, mode=0o700, exist_ok=True)
-    descriptor, temp_path = tempfile.mkstemp(
-        prefix=temp_prefix, suffix=".tmp", dir=directory
-    )
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(document, handle, sort_keys=True, indent=1)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-    except BaseException:
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass
-        raise
-    directory_descriptor = os.open(directory, os.O_RDONLY)
-    try:
-        os.fsync(directory_descriptor)
-    finally:
-        os.close(directory_descriptor)
-
-
-@contextlib.contextmanager
-def exclusive_store_lock(directory, lock_file_name=WORKFLOWS_LOCK_FILE_NAME):
-    """Blocking cross-process lock over the workflow store.
-
-    Hold this around every load-modify-save cycle. The lock file is
-    separate from the store file so ``os.replace`` never invalidates
-    the held descriptor. ``lock_file_name`` defaults to the workflow
-    store's lock; the sibling PR delivery store passes its own name so
-    the two stores never serialize against each other.
-    """
-    os.makedirs(directory, mode=0o700, exist_ok=True)
-    lock_path = os.path.join(directory, lock_file_name)
-    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-    try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
-        yield
-    finally:
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-        finally:
-            os.close(descriptor)
 
 
 def is_active(record):

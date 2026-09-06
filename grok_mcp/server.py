@@ -50,6 +50,15 @@ client's next request parses cleanly; a body that cannot be drained
 (oversize, negative, or non-integer ``Content-Length``) is answered
 with ``Connection: close`` instead, on every method.
 
+Authenticated ingress for the Mission tools: once the bearer check
+passes, the handler builds ONE neutral ``AuthenticatedContext`` for that
+request — transport ``grok_mcp``, principal kind "configured connector
+credential ordinal", the ordinal of the matched credential, no
+configured subject — and hands it to the controller per call. It is
+built only here, only after the check, and never from anything in the
+request body. It records that a configured credential was verified; it
+is not proof of the human behind it.
+
 Binding defaults to 127.0.0.1 (the CLI's default); this module creates
 no tunnel and knows nothing about Grok accounts. Session ids are
 random visible-ASCII tokens held in a bounded in-memory LRU table
@@ -65,6 +74,8 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from mission import record as mission_record
+
 from grok_mcp import controller as controller_module
 from grok_mcp import protocol
 from grok_mcp.protocol import MAX_REQUEST_BYTES
@@ -76,6 +87,10 @@ BEARER_SCHEME = "bearer "
 
 # Bound on live MCP sessions (LRU eviction). Exact-value pinned.
 MAX_SESSIONS = 256
+
+# The one configured connector credential this endpoint verifies. The
+# authenticated ingress names its ORDINAL, never a Grok identity.
+CONNECTOR_CREDENTIAL_ORDINAL = 1
 
 
 class GrokMcpServer(ThreadingHTTPServer):
@@ -157,6 +172,8 @@ class GrokMcpRequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "DodgingInfinityMCP/1"
     sys_version = ""
+    # Set per request by ``_gate`` after the bearer check; never before.
+    ingress = None
 
     # -- logging: request line and status only -------------------------
 
@@ -201,6 +218,10 @@ class GrokMcpRequestHandler(BaseHTTPRequestHandler):
         client's next request is parsed cleanly; a body that cannot be
         drained (oversize or undeclared) closes the connection instead.
         """
+        # A handler instance serves every request on a keep-alive
+        # connection: clear the previous request's ingress first, so a
+        # refused request can never inherit an earlier context.
+        self.ingress = None
         if self.path != self.server.endpoint_path:
             self._refuse(404, b"not found")
             return False
@@ -213,6 +234,13 @@ class GrokMcpRequestHandler(BaseHTTPRequestHandler):
             self._refuse(401, b"unauthorized",
                          headers=(("WWW-Authenticate", "Bearer"),))
             return False
+        # The bearer check passed: this request's authenticated ingress.
+        self.ingress = mission_record.AuthenticatedContext(
+            transport=protocol.SOURCE,
+            principal_kind=mission_record.PRINCIPAL_KIND_CONNECTOR_CREDENTIAL,
+            principal_ref=str(CONNECTOR_CREDENTIAL_ORDINAL),
+            configured_subject=None,
+        )
         origin = self.headers.get("Origin")
         if origin is not None and origin.strip() not in self.server.allowed_origins:
             self._refuse(403, b"forbidden origin")
@@ -371,7 +399,8 @@ class GrokMcpRequestHandler(BaseHTTPRequestHandler):
             )
         try:
             result = self.server.controller.call_tool(
-                params.get("name"), params.get("arguments")
+                params.get("name"), params.get("arguments"),
+                ingress=self.ingress,
             )
         except controller_module.UnknownToolError:
             return _jsonrpc_error(

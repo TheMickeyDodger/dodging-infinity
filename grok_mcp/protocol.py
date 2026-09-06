@@ -1,22 +1,32 @@
 """MCP wire shapes for the Grok Bot connector: JSON-RPC 2.0 framing,
 the bounded tool table, and schema validation.
 
-This module is stdlib only and PROVIDER-FREE in the other direction:
-it imports no operator session, no interaction seam, no transport, and
-no orchestration machinery. It knows the Model Context Protocol
-(legacy initialize-handshake era, Streamable HTTP) and nothing about
-who is on either side of it.
+This module is PROVIDER-FREE in the other direction: it imports the
+standard library and the neutral Mission Core's record vocabulary (for
+the exact Mission id grammar and text bounds the Mission tools relay),
+and no operator session, no interaction seam, no transport, and no
+orchestration machinery. It knows the Model Context Protocol (legacy
+initialize-handshake era, Streamable HTTP) and nothing about who is on
+either side of it.
 
 What it owns:
 
 - The supported protocol revisions and the version-negotiation rule
   (echo a supported request, otherwise answer the newest supported).
-- The three-tool table. Every tool carries an exact ``inputSchema``
-  and ``outputSchema`` with ``additionalProperties: false``, an
-  explicit ``required`` list, and explicit bounds. There is no shell
-  tool, no run-command tool, no file tool, no path, URL, argv, or
-  repository argument, and no field that names or accepts a Grok
-  conversation id, message id, user id, or thread id.
+- The eight-tool table: the three original tools plus the five bounded
+  Mission tools (propose, get, edit, approve, deny). Every tool carries
+  an exact ``inputSchema`` and ``outputSchema`` with
+  ``additionalProperties: false``, an explicit ``required`` list, and
+  explicit bounds. There is no shell tool, no run-command tool, no file
+  tool, no dispatch, capability, Git, delivery, merge, release, or
+  deploy tool, no path, argv, or shell argument, and no field that
+  names or accepts a Grok conversation id, message id, user id, or
+  thread id. No Mission tool input names a principal, actor, subject,
+  provenance, decision id, or authorization id: the authenticated
+  context comes from the server's own bearer check, never from a
+  payload. The only URL-shaped input is the Mission proposal's
+  canonical GitHub repository identity, which the neutral core
+  validates strictly and which nothing here opens, fetches, or runs.
 - ``schema_problems``: a validator for exactly the JSON-schema subset
   the table uses. Its problem strings name the offending path and the
   violated constraint only — never the caller's value — so a refusal
@@ -30,6 +40,8 @@ no HTTP.
 
 import re
 
+from mission import record as mission_record
+
 JSONRPC_VERSION = "2.0"
 
 # Newest first. A supported requested version is echoed; anything
@@ -40,18 +52,33 @@ CONTRACT_VERSION = 1
 SERVER_NAME = "dodging-infinity"
 SERVER_VERSION = "1"
 SERVER_INSTRUCTIONS = (
-    "Dodging Infinity exposes three tools: di_status and di_ping are"
+    "Dodging Infinity exposes eight tools: di_status and di_ping are"
     " pure liveness/readiness checks; di_operator_turn sends one bounded"
     " text turn to the local operator and returns its reply. Continue"
     " an operator session by passing back the session_ref this server"
     " returned; repeat a turn's recorded result by passing back its"
-    " turn_ref. No other references are accepted."
+    " turn_ref. The five di_mission_* tools propose, read, edit, approve"
+    " and deny a Mission in the Dodging Infinity Mission registry; a"
+    " decision binds the exact revision you pass, approval records"
+    " authority and starts nothing, and github_pr names only the"
+    " Mission's later delivery scope. Pass back the request_id a"
+    " propose call returned to retry it safely. No other references"
+    " are accepted."
 )
 
 TOOL_STATUS = "di_status"
 TOOL_PING = "di_ping"
 TOOL_OPERATOR_TURN = "di_operator_turn"
-TOOL_NAMES = (TOOL_STATUS, TOOL_PING, TOOL_OPERATOR_TURN)
+TOOL_MISSION_PROPOSE = "di_mission_propose"
+TOOL_MISSION_GET = "di_mission_get"
+TOOL_MISSION_EDIT = "di_mission_edit"
+TOOL_MISSION_APPROVE = "di_mission_approve"
+TOOL_MISSION_DENY = "di_mission_deny"
+MISSION_TOOL_NAMES = (
+    TOOL_MISSION_PROPOSE, TOOL_MISSION_GET, TOOL_MISSION_EDIT,
+    TOOL_MISSION_APPROVE, TOOL_MISSION_DENY,
+)
+TOOL_NAMES = (TOOL_STATUS, TOOL_PING, TOOL_OPERATOR_TURN) + MISSION_TOOL_NAMES
 
 # Bounds. Every one is exact-value pinned in the test suite.
 MAX_TURN_TEXT_CHARS = 4000
@@ -65,6 +92,15 @@ REF_CHARS = 35
 REF_PREFIX = "di-"
 REF_PATTERN = "^di-[0-9a-f]{32}$"
 _REF_RE = re.compile(REF_PATTERN)
+
+# Mission Core identifiers as relayed on the wire: distinct prefixes
+# from the transport reference, so one can never pass for the other.
+MISSION_ID_PATTERN = "^mn-[0-9a-f]{32}$"
+REQUEST_ID_PATTERN = "^mq-[0-9a-f]{32}$"
+DECISION_ID_PATTERN = "^md-[0-9a-f]{32}$"
+AUTHORIZATION_ID_PATTERN = "^ma-[0-9a-f]{32}$"
+MISSION_TOKEN_CHARS = 35
+DIGEST_CHARS = 64
 
 # JSON-RPC 2.0 error codes.
 PARSE_ERROR = -32700
@@ -216,6 +252,291 @@ def _build_tools(bounds):
                 ],
                 "additionalProperties": False,
             },
+        },
+    ) + _build_mission_tools()
+
+
+def _token_schema(pattern):
+    return {
+        "type": "string", "minLength": MISSION_TOKEN_CHARS,
+        "maxLength": MISSION_TOKEN_CHARS, "pattern": pattern,
+    }
+
+
+def _nullable_token_schema(pattern):
+    return {
+        "type": ["string", "null"], "minLength": MISSION_TOKEN_CHARS,
+        "maxLength": MISSION_TOKEN_CHARS, "pattern": pattern,
+    }
+
+
+def _nullable_digest_schema():
+    return {
+        "type": ["string", "null"], "minLength": DIGEST_CHARS,
+        "maxLength": DIGEST_CHARS, "pattern": "^[0-9a-f]{64}$",
+    }
+
+
+def _string_list_schema():
+    return {"type": "array", "items": {"type": "string"}}
+
+
+def _nullable_string_list_schema():
+    return {"type": ["array", "null"], "items": {"type": "string"}}
+
+
+def _proposal_properties():
+    """The proposal fields as tool INPUT properties. Bounds are the
+    Mission Core's own; the core re-validates every value strictly."""
+    return {
+        "objective": {
+            "type": "string", "minLength": 1,
+            "maxLength": mission_record.MAX_OBJECTIVE_CHARS,
+        },
+        "target_context": {
+            "type": "string", "minLength": 0,
+            "maxLength": mission_record.MAX_TARGET_CONTEXT_CHARS,
+        },
+        "repository_url": {
+            "type": ["string", "null"], "minLength": 1,
+            "maxLength": 512,
+        },
+        "requested_scope": {
+            "type": "string", "minLength": 1,
+            "maxLength": mission_record.MAX_SCOPE_TEXT_CHARS,
+        },
+        "requested_action_scope": _string_list_schema(),
+        "requested_delivery_target": {
+            "type": ["string", "null"], "minLength": 1, "maxLength": 64,
+        },
+    }
+
+
+PROPOSAL_INPUT_NAMES = tuple(mission_record.PROPOSAL_KEYS)
+
+
+def _proposal_output_schema():
+    properties = dict(_proposal_properties())
+    return {
+        "type": ["object", "null"],
+        "properties": properties,
+        "required": list(PROPOSAL_INPUT_NAMES),
+        "additionalProperties": False,
+    }
+
+
+def _decision_output(extra_properties, extra_required):
+    """Decision tool output. ``revision``, ``state`` and
+    ``proposal_digest_sha256`` are the HISTORICAL result of the decision
+    (what it did when applied; unchanged on an idempotent replay);
+    ``current_revision`` and ``current_state`` are the Mission NOW."""
+    properties = {
+        "ok": {"type": "boolean"},
+        "reason": {"type": ["string", "null"]},
+        "status": {"type": "string"},
+        "problem": {"type": ["string", "null"]},
+        "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+        "revision": {"type": ["integer", "null"], "minimum": 1},
+        "state": {"type": ["string", "null"]},
+        "decision_id": _nullable_token_schema(DECISION_ID_PATTERN),
+        "proposal_digest_sha256": _nullable_digest_schema(),
+        "idempotent": {"type": "boolean"},
+        "current_revision": {"type": ["integer", "null"], "minimum": 1},
+        "current_state": {"type": ["string", "null"]},
+        "call_ref": _ref_schema(),
+    }
+    properties.update(extra_properties)
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": [
+            "ok", "reason", "status", "problem", "mission_id", "revision",
+            "state", "decision_id", "proposal_digest_sha256", "idempotent",
+            "current_revision", "current_state", "call_ref",
+        ] + list(extra_required),
+        "additionalProperties": False,
+    }
+
+
+def _build_mission_tools():
+    proposal_inputs = _proposal_properties()
+    return (
+        {
+            "name": TOOL_MISSION_PROPOSE,
+            "title": "Dodging Infinity Mission proposal",
+            "description": (
+                "Propose a new Mission: objective, target context, the exact"
+                " canonical GitHub repository URL when one applies (or"
+                " null), requested scope text, requested action scope"
+                " (engineering_change, repository_read, verification_run),"
+                " and an optional delivery target (github_pr names only the"
+                " Mission's later delivery scope, never a Git action)."
+                " Returns the stable Mission id, the DI-issued request_id,"
+                " and one coherent triple: the current revision, its exact"
+                " canonical proposal, and that proposal's digest. Pass the"
+                " request_id back to retry safely; a retry reports the"
+                " Mission as it is now. A Mission awaits a human decision"
+                " and carries no authority."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": dict(
+                    proposal_inputs,
+                    request_id=_token_schema(REQUEST_ID_PATTERN),
+                ),
+                "required": list(PROPOSAL_INPUT_NAMES),
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": ["integer", "null"], "minimum": 1},
+                    "state": {"type": ["string", "null"]},
+                    "request_id": _nullable_token_schema(REQUEST_ID_PATTERN),
+                    "idempotent": {"type": "boolean"},
+                    "proposal": _proposal_output_schema(),
+                    "proposal_digest_sha256": _nullable_digest_schema(),
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "mission_id",
+                    "revision", "state", "request_id", "idempotent",
+                    "proposal", "proposal_digest_sha256", "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": TOOL_MISSION_GET,
+            "title": "Dodging Infinity Mission read",
+            "description": (
+                "Read one Mission by id: current revision, state, the exact"
+                " current proposal, revision and decision counts, and the"
+                " active authorization id if the current revision is"
+                " approved. Read-only; safe to retry."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                },
+                "required": ["mission_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": ["integer", "null"], "minimum": 1},
+                    "state": {"type": ["string", "null"]},
+                    "proposal": _proposal_output_schema(),
+                    "proposal_digest_sha256": _nullable_digest_schema(),
+                    "revision_count": {"type": "integer", "minimum": 0},
+                    "decision_count": {"type": "integer", "minimum": 0},
+                    "active_authorization_id": _nullable_token_schema(
+                        AUTHORIZATION_ID_PATTERN
+                    ),
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "mission_id",
+                    "revision", "state", "proposal", "proposal_digest_sha256",
+                    "revision_count", "decision_count",
+                    "active_authorization_id", "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": TOOL_MISSION_EDIT,
+            "title": "Dodging Infinity Mission edit",
+            "description": (
+                "Replace the proposal of a Mission with a new exact revision."
+                " Pass the revision you last read as expected_revision; a"
+                " stale value is refused. Editing an approved revision"
+                " invalidates its authority and returns the Mission to"
+                " awaiting decision."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": dict(
+                    proposal_inputs,
+                    mission_id=_token_schema(MISSION_ID_PATTERN),
+                    expected_revision={"type": "integer", "minimum": 1},
+                ),
+                "required": ["mission_id", "expected_revision"]
+                + list(PROPOSAL_INPUT_NAMES),
+                "additionalProperties": False,
+            },
+            "outputSchema": _decision_output(
+                {"invalidated_authorization_ids": _string_list_schema()},
+                ("invalidated_authorization_ids",),
+            ),
+        },
+        {
+            "name": TOOL_MISSION_APPROVE,
+            "title": "Dodging Infinity Mission approval",
+            "description": (
+                "Record the human's approval of exactly the revision passed,"
+                " with exactly its requested action scope and delivery"
+                " target. Issues a durable Mission Authorization and moves"
+                " the Mission to AUTHORIZED. It dispatches nothing, runs"
+                " nothing, and performs no Git action."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": "integer", "minimum": 1},
+                },
+                "required": ["mission_id", "revision"],
+                "additionalProperties": False,
+            },
+            "outputSchema": _decision_output(
+                {
+                    "authorization_id": _nullable_token_schema(
+                        AUTHORIZATION_ID_PATTERN
+                    ),
+                    "authorization_digest_sha256": _nullable_digest_schema(),
+                    "authorized_action_scope": _nullable_string_list_schema(),
+                    "authorized_delivery_targets": (
+                        _nullable_string_list_schema()
+                    ),
+                    "authorization_live": {"type": ["boolean", "null"]},
+                    "authorization_problem": {"type": ["string", "null"]},
+                },
+                ("authorization_id", "authorization_digest_sha256",
+                 "authorized_action_scope", "authorized_delivery_targets",
+                 "authorization_live", "authorization_problem"),
+            ),
+        },
+        {
+            "name": TOOL_MISSION_DENY,
+            "title": "Dodging Infinity Mission denial",
+            "description": (
+                "Record the human's denial of exactly the revision passed."
+                " Issues no authority; only a new revision and a new"
+                " approval can proceed."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": "integer", "minimum": 1},
+                },
+                "required": ["mission_id", "revision"],
+                "additionalProperties": False,
+            },
+            "outputSchema": _decision_output({}, ()),
         },
     )
 

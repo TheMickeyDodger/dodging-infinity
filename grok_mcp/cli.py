@@ -3,9 +3,11 @@
 ``main`` is the ONLY place configuration is read and the only module
 in the package that imports the operator provider. It wires, in
 order: ``load_config`` (file plus the environment mapping passed in)
--> ``CodexOperatorSession`` -> ``GrokMcpController`` ->
-``GrokMcpServer`` -> ``serve_forever``. Every one of those seams is
-injectable for tests; the defaults are the production objects.
+-> ``CodexOperatorSession`` -> optional Mission service (only when the
+config names ``mission_store_dir``; constructing it reads and writes
+nothing) -> ``GrokMcpController`` -> ``GrokMcpServer`` ->
+``serve_forever``. Every one of those seams is injectable for tests;
+the defaults are the production objects.
 
 The server binds the configured host (default 127.0.0.1) and port.
 Exposing it publicly is an external tunnel concern outside this
@@ -16,7 +18,10 @@ prints the bearer token.
 import argparse
 import os
 import sys
+import time
 
+from mission import service as mission_service_module
+from mission import store as mission_store_module
 from operator_session import CodexOperatorSession
 
 from grok_mcp import config as config_module
@@ -32,7 +37,7 @@ def _build_parser():
         prog="grokmcp",
         description=(
             "Dodging Infinity MCP endpoint for the Grok Bot custom"
-            " connector: three bounded tools, no shell, no file, no"
+            " connector: eight bounded tools, no shell, no file, no"
             " delivery surface."
         ),
     )
@@ -41,6 +46,10 @@ def _build_parser():
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("serve", help="serve the MCP endpoint in the foreground")
     return parser
+
+
+def _unix_seconds():
+    return int(time.time())
 
 
 def _default_serve_forever(server):
@@ -70,7 +79,15 @@ def main(argv=None, session_factory=None, serve_forever=None, environ=None,
         write("grokmcp: config: %s\n" % exc)
         return EXIT_CONFIG
     session = (session_factory or CodexOperatorSession)()
-    controller = controller_module.GrokMcpController(session, config.repository)
+    mission_service = None
+    if config.mission_store_dir is not None:
+        mission_service = mission_service_module.MissionService(
+            mission_store_module.MissionStore(config.mission_store_dir),
+            _unix_seconds,
+        )
+    controller = controller_module.GrokMcpController(
+        session, config.repository, mission_service=mission_service
+    )
     server = server_module.GrokMcpServer(
         (config.bind_host, config.port), controller,
         bearer_token=config.bearer_token,

@@ -51,6 +51,11 @@ from grok_mcp import server as server_module  # noqa: E402
 TOKEN = "test-bearer-token"
 REPOSITORY = "/repo/example"
 REF_RE = re.compile(r"^di-[0-9a-f]{32}$")
+EXPECTED_TOOL_NAMES = (
+    "di_status", "di_ping", "di_operator_turn", "di_mission_propose",
+    "di_mission_get", "di_mission_edit", "di_mission_approve",
+    "di_mission_deny",
+)
 
 GROK_MCP_FILES = sorted((REPO_ROOT / "grok_mcp").glob("*.py"))
 FORBIDDEN_IMPORT_ROOTS = (
@@ -521,19 +526,25 @@ class AProtocolOverTheWireTests(ServerFixture):
         self.assertEqual(status, 200)
         self.assertEqual(body["result"], {})
 
-    def test_A4_tools_list_enumerates_exactly_three_tools(self):
+    def test_A4_tools_list_enumerates_exactly_eight_tools(self):
         client, _, _ = self.ready_client()
         status, headers, body = client.rpc("tools/list")
         self.assertEqual(status, 200)
         names = [tool["name"] for tool in body["result"]["tools"]]
-        self.assertEqual(names, ["di_status", "di_ping", "di_operator_turn"])
+        self.assertEqual(names, list(EXPECTED_TOOL_NAMES))
         self.assertNotIn("nextCursor", body["result"])
 
     def test_A5_schemas_are_exact(self):
         client, _, _ = self.ready_client()
         status, headers, body = client.rpc("tools/list")
-        self.assertEqual(body["result"]["tools"], expected_tools())
-        for tool in body["result"]["tools"]:
+        served = body["result"]["tools"]
+        # The three original tools are byte-exact against the hand-written
+        # table; the five Mission tools are exact against the protocol
+        # table as served over the wire (their shapes are pinned in G).
+        self.assertEqual(served[:3], expected_tools())
+        self.assertEqual(served[3:], [dict(t) for t in protocol.TOOLS[3:]])
+        self.assertEqual(len(served), 8)
+        for tool in served:
             for key in ("inputSchema", "outputSchema"):
                 self.assertIs(tool[key]["additionalProperties"], False)
                 self.assertIsInstance(tool[key]["required"], list)
@@ -1337,17 +1348,27 @@ class EAuthorityAndSecurityTests(ServerFixture):
                 self.assertNotIn(".herd", token.string, (path, token.start))
 
     def test_E26_tool_table_is_narrow(self):
-        self.assertEqual(len(protocol.TOOLS), 3)
+        self.assertEqual(len(protocol.TOOLS), 8)
         self.assertEqual(
-            [t["name"] for t in protocol.TOOLS],
-            ["di_status", "di_ping", "di_operator_turn"],
+            [t["name"] for t in protocol.TOOLS], list(EXPECTED_TOOL_NAMES),
         )
         for tool in protocol.TOOLS:
             names = set(tool["inputSchema"]["properties"])
             for banned in ("command", "cmd", "argv", "args", "path", "url",
-                           "repository", "repo", "file", "shell", "script"):
+                           "repository", "repo", "file", "shell", "script",
+                           "principal", "actor", "subject", "provenance",
+                           "authorized_by", "on_behalf_of", "issued_by",
+                           "decision_id", "authorization_id"):
                 self.assertNotIn(banned, names, tool["name"])
+            self.assertIs(tool["inputSchema"]["additionalProperties"], False)
             self.assertIn("outputSchema", tool)
+        # No run, dispatch, capability, shell, Git, delivery, merge,
+        # release, or deploy tool exists.
+        for name in protocol.TOOL_NAMES:
+            for word in ("run", "dispatch", "capabilit", "shell", "git",
+                         "deliver", "merge", "release", "deploy", "push",
+                         "commit", "publish", "cancel", "revoke"):
+                self.assertNotIn(word, name, name)
 
     def test_E27_auth_failures_refuse_before_the_controller(self):
         controller, operator = make_controller()
@@ -1467,20 +1488,37 @@ class EAuthorityAndSecurityTests(ServerFixture):
         # http.server itself imports shutil (for its file-serving
         # handler, which grok_mcp never uses); the static ban above
         # covers shutil, so the behavioral probe lists the remaining
-        # roots.
+        # roots. The neutral Mission Core the Mission tools relay into
+        # shares three stdlib-only helpers from workflow_authority
+        # (atomic, digest, canonical — the lazy package __init__ loads
+        # nothing else) and the atomic write uses tempfile.mkstemp; those
+        # exact modules are the ONLY tolerated members of the closure,
+        # and the control-chain halves (store, record, the Telegram
+        # adapter) are asserted absent explicitly.
         roots = tuple(r for r in FORBIDDEN_IMPORT_ROOTS if r != "shutil")
+        tolerated = (
+            "workflow_authority", "workflow_authority.atomic",
+            "workflow_authority.digest", "workflow_authority.canonical",
+            "tempfile",
+        )
         code = (
             "import sys\n"
             "import grok_mcp\n"
             "import grok_mcp.server, grok_mcp.controller, grok_mcp.adapter\n"
             "import grok_mcp.protocol, grok_mcp.config\n"
+            "import grok_mcp.mission_tools\n"
             "roots = %r\n"
+            "tolerated = %r\n"
             "bad = sorted(name for name in sys.modules if any(\n"
-            "    name == r or name.startswith(r + '.') for r in roots))\n"
+            "    name == r or name.startswith(r + '.') for r in roots)\n"
+            "    and name not in tolerated)\n"
+            "for name in ('workflow_authority.store',\n"
+            "             'workflow_authority.record', 'telegram_operator'):\n"
+            "    assert name not in sys.modules, name\n"
             "print('\\n'.join(bad))\n"
             "print('LOADED', 'grok_mcp.server' in sys.modules)\n"
             "sys.exit(1 if bad else 0)\n"
-        ) % (roots,)
+        ) % (roots, tolerated)
         probe = subprocess.run(
             [sys.executable, "-c", code], cwd=str(REPO_ROOT),
             capture_output=True, text=True,
@@ -1600,6 +1638,518 @@ class FRegressionTests(unittest.TestCase):
         self.assertIn("from grok_mcp.cli import main", source)
         self.assertFalse((REPO_ROOT / "grok_mcp.py").exists())
         self.assertEqual(threading.active_count(), 1)
+
+
+# ====================================================================
+# G. Mission tools: bounded relay into the neutral Mission Core
+# ====================================================================
+
+
+def mission_proposal_arguments(**overrides):
+    base = {
+        "objective": "Investigate and resolve the flaky readiness probe",
+        "target_context": "control repository, readiness subsystem",
+        "repository_url": "https://github.com/Example/Repo",
+        "requested_scope": "readiness probe and its tests",
+        "requested_action_scope": ["engineering_change", "repository_read"],
+        "requested_delivery_target": "github_pr",
+    }
+    base.update(overrides)
+    return base
+
+
+class MissionFixture(ServerFixture):
+
+    def setUp(self):
+        super(MissionFixture, self).setUp()
+        from mission import record as mission_record
+        from mission import service as mission_service
+        from mission import store as mission_store
+        self.mission_record = mission_record
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.directory = os.path.join(self.tmp.name, "protected")
+        self.store = mission_store.MissionStore(self.directory)
+        self.now = [1_000_000]
+        self.service = mission_service.MissionService(
+            self.store, lambda: self.now[0]
+        )
+        self.ingress = mission_record.AuthenticatedContext(
+            transport="grok_mcp",
+            principal_kind=mission_record.PRINCIPAL_KIND_CONNECTOR_CREDENTIAL,
+            principal_ref="1",
+        )
+
+    def store_bytes(self):
+        if not os.path.exists(self.store.path):
+            return None
+        with open(self.store.path, "rb") as handle:
+            return handle.read()
+
+    def wired(self, operator=None):
+        controller, operator = make_controller(
+            operator, mission_service=self.service
+        )
+        client = self.serve(controller)
+        status, headers, body = client.initialize()
+        self.assertEqual(status, 200, body)
+        return client, controller, operator
+
+    def structured(self, client, name, arguments):
+        status, body = client.call(name, arguments)
+        self.assertEqual(status, 200, body)
+        result = body["result"]
+        structured = result["structuredContent"]
+        schema = protocol.tool_by_name(name)["outputSchema"]
+        self.assertTrue(conforms(schema, structured), (name, structured))
+        self.assertEqual(result.get("isError", False), not structured["ok"])
+        return structured
+
+
+class GMissionToolTests(MissionFixture):
+
+    def test_G1_without_a_wired_service_every_mission_tool_refuses(self):
+        client, controller, operator = self.ready_client()
+        for name, arguments in (
+            ("di_mission_propose", mission_proposal_arguments()),
+            ("di_mission_get", {"mission_id": "mn-" + "0" * 32}),
+            ("di_mission_edit", dict(mission_proposal_arguments(),
+                                     mission_id="mn-" + "0" * 32,
+                                     expected_revision=1)),
+            ("di_mission_approve", {"mission_id": "mn-" + "0" * 32,
+                                    "revision": 1}),
+            ("di_mission_deny", {"mission_id": "mn-" + "0" * 32,
+                                 "revision": 1}),
+        ):
+            structured = self.structured(client, name, arguments)
+            self.assertFalse(structured["ok"], name)
+            self.assertEqual(structured["status"], "refused", name)
+            self.assertIn("not wired", structured["reason"], name)
+        # The existing operator turn is untouched.
+        structured = self.structured(client, "di_operator_turn",
+                                     {"text": "hello"})
+        self.assertTrue(structured["ok"])
+        self.assertEqual(operator.calls, 1)
+        self.assertIsNone(self.store_bytes())
+
+    def test_G2_full_relay_over_the_wire_records_truthful_provenance(self):
+        client, controller, operator = self.wired()
+        proposed = self.structured(client, "di_mission_propose",
+                                   mission_proposal_arguments())
+        self.assertTrue(proposed["ok"], proposed)
+        self.assertEqual(proposed["revision"], 1)
+        self.assertEqual(proposed["state"], "AWAITING_DECISION")
+        self.assertFalse(proposed["idempotent"])
+        mission_id = proposed["mission_id"]
+        self.assertRegex(mission_id, r"^mn-[0-9a-f]{32}$")
+        self.assertRegex(proposed["request_id"], r"^mq-[0-9a-f]{32}$")
+        got = self.structured(client, "di_mission_get",
+                              {"mission_id": mission_id})
+        self.assertTrue(got["ok"], got)
+        self.assertEqual(got["proposal"]["objective"],
+                         mission_proposal_arguments()["objective"])
+        self.assertEqual(got["revision_count"], 1)
+        self.assertIsNone(got["active_authorization_id"])
+        edited = self.structured(client, "di_mission_edit", dict(
+            mission_proposal_arguments(objective="Narrower objective"),
+            mission_id=mission_id, expected_revision=1,
+        ))
+        self.assertTrue(edited["ok"], edited)
+        self.assertEqual(edited["revision"], 2)
+        self.assertRegex(edited["decision_id"], r"^md-[0-9a-f]{32}$")
+        stale = self.structured(client, "di_mission_approve",
+                                {"mission_id": mission_id, "revision": 1})
+        self.assertFalse(stale["ok"])
+        self.assertEqual(stale["problem"], "mission_stale_revision")
+        approved = self.structured(client, "di_mission_approve",
+                                   {"mission_id": mission_id, "revision": 2})
+        self.assertTrue(approved["ok"], approved)
+        self.assertEqual(approved["state"], "AUTHORIZED")
+        self.assertRegex(approved["authorization_id"], r"^ma-[0-9a-f]{32}$")
+        self.assertEqual(approved["authorized_delivery_targets"], ["github_pr"])
+        self.assertEqual(approved["authorized_action_scope"],
+                         ["engineering_change", "repository_read"])
+        got = self.structured(client, "di_mission_get",
+                              {"mission_id": mission_id})
+        self.assertEqual(got["state"], "AUTHORIZED")
+        self.assertEqual(got["active_authorization_id"],
+                         approved["authorization_id"])
+        # Provenance in the durable record states only what is known.
+        stored = self.service.get(mission_id)
+        principal = stored["authorizations"][0]["human_principal"]
+        self.assertEqual(principal["transport"], "grok_mcp")
+        self.assertEqual(principal["principal_kind"],
+                         "configured_connector_credential_ordinal")
+        self.assertEqual(principal["principal_ref"], "1")
+        self.assertIsNone(principal["configured_subject"])
+        self.assertIsNone(principal["human_identity_proof"])
+        self.assertEqual(principal["proof"], "transport_credential_only")
+        self.assertEqual(principal["reference_id"], approved["decision_id"])
+        self.assertEqual(principal["revision"], 2)
+        # The operator was never invoked by any Mission tool.
+        self.assertEqual(operator.calls, 0)
+        # Approval did not start anything: only the store exists.
+        self.assertEqual(sorted(os.listdir(self.directory)),
+                         ["missions.json", "missions.lock"])
+
+    def test_G3_direct_controller_call_without_ingress_mints_nothing(self):
+        controller, operator = make_controller(mission_service=self.service)
+        before = self.store_bytes()
+        for name, arguments in (
+            ("di_mission_propose", mission_proposal_arguments()),
+            ("di_mission_get", {"mission_id": "mn-" + "0" * 32}),
+            ("di_mission_edit", dict(mission_proposal_arguments(),
+                                     mission_id="mn-" + "0" * 32,
+                                     expected_revision=1)),
+            ("di_mission_approve", {"mission_id": "mn-" + "0" * 32,
+                                    "revision": 1}),
+            ("di_mission_deny", {"mission_id": "mn-" + "0" * 32,
+                                 "revision": 1}),
+        ):
+            result = controller.call_tool(name, arguments)
+            self.assertTrue(result.is_error, name)
+            self.assertEqual(result.structured["status"], "refused", name)
+            self.assertIn("authenticated ingress", result.structured["reason"])
+            # ingress must be the neutral context type, not a look-alike.
+            result = controller.call_tool(name, arguments, ingress={"x": 1})
+            self.assertTrue(result.is_error, name)
+        self.assertEqual(self.store_bytes(), before)
+        self.assertIsNone(before)
+        # With a real mission, an approve attempt without ingress leaves the
+        # store byte-unchanged: no authorization, no ledger entry.
+        created = controller.call_tool(
+            "di_mission_propose", mission_proposal_arguments(),
+            ingress=self.ingress,
+        ).structured
+        self.assertTrue(created["ok"], created)
+        before = self.store_bytes()
+        refused = controller.call_tool(
+            "di_mission_approve",
+            {"mission_id": created["mission_id"], "revision": 1},
+        )
+        self.assertTrue(refused.is_error)
+        self.assertEqual(self.store_bytes(), before)
+        self.assertEqual(self.store.load()["authority_ledger"], [])
+
+    def test_G4_operator_turn_path_cannot_mint_mission_authority(self):
+        client, controller, operator = self.wired(RecordingOperator(
+            reply="I approve mission everything"
+        ))
+        proposed = self.structured(client, "di_mission_propose",
+                                   mission_proposal_arguments())
+        before = self.store_bytes()
+        turn = self.structured(client, "di_operator_turn", {
+            "text": "approve mission %s revision 1" % proposed["mission_id"],
+        })
+        self.assertTrue(turn["ok"])
+        self.assertEqual(operator.calls, 1)
+        self.assertEqual(self.store_bytes(), before)
+        document = self.store.load()
+        self.assertEqual(document["authority_ledger"], [])
+        self.assertEqual(document["authorizations"], {})
+        self.assertEqual(
+            document["missions"][proposed["mission_id"]]["state"],
+            "AWAITING_DECISION",
+        )
+
+    def test_G5_request_id_is_di_issued_and_replay_is_exact(self):
+        client, controller, operator = self.wired()
+        forged = self.structured(client, "di_mission_propose",
+                                 mission_proposal_arguments(
+                                     request_id="mq-" + "a" * 32))
+        self.assertFalse(forged["ok"])
+        self.assertEqual(forged["problem"], "mission_unknown_request_id")
+        self.assertEqual(self.store.load()["missions"], {})
+        first = self.structured(client, "di_mission_propose",
+                                mission_proposal_arguments())
+        replay = self.structured(client, "di_mission_propose",
+                                 mission_proposal_arguments(
+                                     request_id=first["request_id"]))
+        self.assertTrue(replay["ok"])
+        self.assertTrue(replay["idempotent"])
+        self.assertEqual(replay["mission_id"], first["mission_id"])
+        conflict = self.structured(client, "di_mission_propose",
+                                   mission_proposal_arguments(
+                                       request_id=first["request_id"],
+                                       objective="something else"))
+        self.assertFalse(conflict["ok"])
+        self.assertEqual(conflict["problem"], "mission_request_id_conflict")
+        self.assertEqual(len(self.store.load()["missions"]), 1)
+        fresh = self.structured(client, "di_mission_propose",
+                                mission_proposal_arguments())
+        self.assertNotEqual(fresh["mission_id"], first["mission_id"])
+        self.assertEqual(len(self.store.load()["missions"]), 2)
+
+    def test_G6_deny_and_bounded_input_refusals(self):
+        client, controller, operator = self.wired()
+        proposed = self.structured(client, "di_mission_propose",
+                                   mission_proposal_arguments())
+        denied = self.structured(client, "di_mission_deny", {
+            "mission_id": proposed["mission_id"], "revision": 1,
+        })
+        self.assertTrue(denied["ok"], denied)
+        self.assertEqual(denied["state"], "DENIED")
+        approve_denied = self.structured(client, "di_mission_approve", {
+            "mission_id": proposed["mission_id"], "revision": 1,
+        })
+        self.assertFalse(approve_denied["ok"])
+        self.assertEqual(approve_denied["problem"], "mission_invalid_transition")
+        before = self.store_bytes()
+        cases = [
+            ("di_mission_propose", mission_proposal_arguments(principal="me")),
+            ("di_mission_approve", {"mission_id": proposed["mission_id"],
+                                    "revision": 1, "actor": "human"}),
+            ("di_mission_approve", {"mission_id": "di-" + "0" * 32,
+                                    "revision": 1}),
+            ("di_mission_approve", {"mission_id": proposed["mission_id"],
+                                    "revision": 0}),
+            ("di_mission_propose", mission_proposal_arguments(
+                objective="x" * (self.mission_record.MAX_OBJECTIVE_CHARS + 1))),
+            ("di_mission_propose", mission_proposal_arguments(
+                repository_url="https://github.com/Example/Repo.git")),
+            ("di_mission_propose", mission_proposal_arguments(
+                requested_action_scope=["deploy"])),
+            ("di_mission_get", {"mission_id": "mn-" + "f" * 32}),
+        ]
+        for name, arguments in cases:
+            structured = self.structured(client, name, arguments)
+            self.assertFalse(structured["ok"], (name, arguments))
+            self.assertEqual(structured["status"], "refused")
+            self.assertTrue(structured["reason"])
+        # Refusals that never reached the core wrote nothing; the ones that
+        # did reached only a reservation, never authority.
+        document = self.store.load()
+        self.assertEqual(document["authorizations"], {})
+        self.assertEqual([e["kind"] for e in document["authority_ledger"]],
+                         ["DENIED"])
+        self.assertEqual(operator.calls, 0)
+        self.assertIsNotNone(before)
+
+    def test_G7_mission_tool_schemas_carry_no_principal_and_bounded_text(self):
+        for name in protocol.MISSION_TOOL_NAMES:
+            tool = protocol.tool_by_name(name)
+            properties = tool["inputSchema"]["properties"]
+            self.assertIs(tool["inputSchema"]["additionalProperties"], False)
+            for banned in ("principal", "actor", "subject", "provenance",
+                           "authorized_by", "on_behalf_of", "issued_by",
+                           "authorization", "decision_id", "authorization_id",
+                           "expires_at"):
+                self.assertNotIn(banned, properties, name)
+            for prop in properties.values():
+                if prop.get("type") == "string" or prop.get("type") == [
+                    "string", "null",
+                ]:
+                    self.assertTrue("maxLength" in prop or "pattern" in prop,
+                                    (name, prop))
+        propose = protocol.tool_by_name("di_mission_propose")["inputSchema"]
+        self.assertNotIn("request_id", propose["required"])
+        self.assertEqual(propose["properties"]["request_id"]["pattern"],
+                         "^mq-[0-9a-f]{32}$")
+        self.assertEqual(propose["properties"]["objective"]["maxLength"],
+                         self.mission_record.MAX_OBJECTIVE_CHARS)
+        for name in ("di_mission_approve", "di_mission_deny"):
+            schema = protocol.tool_by_name(name)["inputSchema"]
+            self.assertEqual(sorted(schema["properties"]),
+                             ["mission_id", "revision"])
+            self.assertEqual(sorted(schema["required"]),
+                             ["mission_id", "revision"])
+
+    def test_G9_cli_wires_a_mission_service_only_when_configured(self):
+        built = []
+        operator = RecordingOperator()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chmod(tmp, 0o700)
+            path = os.path.join(tmp, "config.json")
+            store_dir = os.path.join(tmp, "missions")
+            for mission_store_dir in (None, store_dir):
+                raw = {"repository": REPOSITORY, "port": 0}
+                if mission_store_dir is not None:
+                    raw["mission_store_dir"] = mission_store_dir
+                with open(path, "w") as handle:
+                    json.dump(raw, handle)
+                os.chmod(path, 0o600)
+                code = cli_module.main(
+                    ["--config", path, "serve"],
+                    session_factory=operator.session,
+                    serve_forever=built.append,
+                    environ={config_module.BEARER_TOKEN_ENV: TOKEN},
+                    error_writer=lambda text: None,
+                )
+                self.assertEqual(code, cli_module.EXIT_OK)
+            self.assertEqual(len(built), 2)
+            unwired, wired = built
+            self.assertIsNone(unwired.controller._mission_service)
+            service = wired.controller._mission_service
+            self.assertIsNotNone(service)
+            # Construction reads and writes nothing: the store directory
+            # does not exist until a Mission operation needs it.
+            self.assertFalse(os.path.exists(store_dir))
+            self.assertEqual(service._store.directory, store_dir)
+            self.assertIsInstance(service.now(), int)
+            # A relative or non-string directory is a config error.
+            raw = {"repository": REPOSITORY, "port": 0,
+                   "mission_store_dir": "relative/dir"}
+            with open(path, "w") as handle:
+                json.dump(raw, handle)
+            code = cli_module.main(
+                ["--config", path, "serve"],
+                session_factory=operator.session,
+                serve_forever=built.append,
+                environ={config_module.BEARER_TOKEN_ENV: TOKEN},
+                error_writer=lambda text: None,
+            )
+            self.assertEqual(code, cli_module.EXIT_CONFIG)
+            self.assertEqual(len(built), 2)
+
+    def test_G10_get_never_advertises_authority_the_validator_refuses(self):
+        from mission import decision as mission_decision
+        client, controller, operator = self.wired()
+        proposed = self.structured(client, "di_mission_propose",
+                                   mission_proposal_arguments())
+        mission_id = proposed["mission_id"]
+        # Approve through the real service with an expiry (the Grok tool
+        # approves without one), then read through the tool.
+        decision_id = self.service.mint_decision_id(self.ingress)
+        current = self.service.get(mission_id)["record"]["revisions"][-1]
+        self.service.apply_human_decision(mission_decision.HumanDecisionEnvelope(
+            context=self.ingress, decision_id=decision_id,
+            mission_id=mission_id, revision=1,
+            decision=mission_decision.DECISION_APPROVE,
+            received_at=self.now[0],
+            approved_action_scope=current["proposal"]["requested_action_scope"],
+            approved_delivery_targets=["github_pr"],
+            expires_at=self.now[0] + 30,
+        ))
+        got = self.structured(client, "di_mission_get",
+                              {"mission_id": mission_id})
+        self.assertEqual(got["state"], "AUTHORIZED")
+        self.assertIsNotNone(got["active_authorization_id"])
+        self.now[0] += 60
+        got = self.structured(client, "di_mission_get",
+                              {"mission_id": mission_id})
+        self.assertEqual(got["state"], "AUTHORIZED")
+        self.assertIsNone(got["active_authorization_id"])
+        # A fresh approval through the tool reports live authority, and an
+        # edit that revokes it is reflected by the central check.
+        second = self.structured(client, "di_mission_propose",
+                                 mission_proposal_arguments())
+        approved = self.structured(client, "di_mission_approve", {
+            "mission_id": second["mission_id"], "revision": 1,
+        })
+        self.assertTrue(approved["authorization_live"])
+        self.assertIsNone(approved["authorization_problem"])
+        self.assertFalse(approved["idempotent"])
+        self.assertEqual(approved["current_state"], "AUTHORIZED")
+
+    def test_G11_relay_works_with_a_clock_that_ticks_between_reads(self):
+        from mission import service as mission_service
+        ticks = [1_000_000]
+
+        def ticking():
+            ticks[0] += 1
+            return ticks[0]
+
+        self.service = mission_service.MissionService(self.store, ticking)
+        client, controller, operator = self.wired()
+        proposed = self.structured(client, "di_mission_propose",
+                                   mission_proposal_arguments())
+        self.assertTrue(proposed["ok"], proposed)
+        edited = self.structured(client, "di_mission_edit", dict(
+            mission_proposal_arguments(objective="v2"),
+            mission_id=proposed["mission_id"], expected_revision=1,
+        ))
+        self.assertTrue(edited["ok"], edited)
+        approved = self.structured(client, "di_mission_approve", {
+            "mission_id": proposed["mission_id"], "revision": 2,
+        })
+        self.assertTrue(approved["ok"], approved)
+        self.assertTrue(approved["authorization_live"])
+        got = self.structured(client, "di_mission_get",
+                              {"mission_id": proposed["mission_id"]})
+        self.assertEqual(got["active_authorization_id"],
+                         approved["authorization_id"])
+        record_ = self.service.get(proposed["mission_id"])["record"]
+        for decision in record_["decisions"]:
+            self.assertLess(decision["received_at"], decision["decided_at"])
+
+    def test_G12_propose_returns_the_exact_proposal_as_a_coherent_triple(self):
+        from mission import record as mission_record
+        client, controller, operator = self.wired()
+        raw = mission_proposal_arguments(
+            requested_action_scope=["repository_read", "engineering_change"]
+        )
+        proposed = self.structured(client, "di_mission_propose", raw)
+        self.assertTrue(proposed["ok"], proposed)
+        canonical = mission_record.validate_proposal(
+            dict((k, raw[k]) for k in mission_record.PROPOSAL_KEYS)
+        )
+        self.assertEqual(proposed["proposal"], canonical)
+        self.assertEqual(proposed["revision"], 1)
+        self.assertEqual(proposed["proposal_digest_sha256"],
+                         mission_record.proposal_digest(proposed["proposal"]))
+        # Exact retry: same triple.
+        retry = self.structured(client, "di_mission_propose",
+                                dict(raw, request_id=proposed["request_id"]))
+        self.assertTrue(retry["idempotent"])
+        for key in ("mission_id", "revision", "proposal",
+                    "proposal_digest_sha256"):
+            self.assertEqual(retry[key], proposed[key], key)
+        # Retry after an edit: current, coherent, same Mission id.
+        edited = self.structured(client, "di_mission_edit", dict(
+            mission_proposal_arguments(objective="edited objective"),
+            mission_id=proposed["mission_id"], expected_revision=1,
+        ))
+        self.assertTrue(edited["ok"], edited)
+        later = self.structured(client, "di_mission_propose",
+                                dict(raw, request_id=proposed["request_id"]))
+        self.assertTrue(later["idempotent"])
+        self.assertEqual(later["mission_id"], proposed["mission_id"])
+        self.assertEqual(later["revision"], 2)
+        self.assertEqual(later["proposal"]["objective"], "edited objective")
+        self.assertEqual(later["proposal_digest_sha256"],
+                         mission_record.proposal_digest(later["proposal"]))
+        self.assertEqual(later["proposal_digest_sha256"],
+                         edited["proposal_digest_sha256"])
+        # A refusal carries no proposal, and the schema pins the shape.
+        refused = self.structured(client, "di_mission_propose",
+                                  dict(raw, request_id="mq-" + "a" * 32))
+        self.assertFalse(refused["ok"])
+        self.assertIsNone(refused["proposal"])
+        schema = protocol.tool_by_name("di_mission_propose")["outputSchema"]
+        self.assertIn("proposal", schema["required"])
+        self.assertIs(schema["additionalProperties"], False)
+        self.assertEqual(schema["properties"]["proposal"]["type"],
+                         ["object", "null"])
+        self.assertIs(schema["properties"]["proposal"]["additionalProperties"],
+                      False)
+        self.assertEqual(sorted(schema["properties"]["proposal"]["required"]),
+                         sorted(mission_record.PROPOSAL_KEYS))
+
+    def test_G8_server_builds_ingress_after_bearer_check_only(self):
+        # The ingress context is built by the server per request from its
+        # own authenticated state; the controller never defaults one.
+        source = (REPO_ROOT / "grok_mcp" / "controller.py").read_text()
+        self.assertNotIn("AuthenticatedContext(", source)
+        server_source = (REPO_ROOT / "grok_mcp" / "server.py").read_text()
+        self.assertEqual(server_source.count("AuthenticatedContext("), 1)
+        gate = server_source.index("def _gate(")
+        build = server_source.index("AuthenticatedContext(")
+        bearer = server_source.index("bearer_matches(supplied)")
+        self.assertLess(gate, bearer)
+        self.assertLess(bearer, build)
+        # And behaviorally: an unauthenticated request never reaches it.
+        controller, operator = make_controller(mission_service=self.service)
+        client = self.serve(controller)
+        wrong = McpClient(int(client.url.rsplit(":", 1)[1].split("/")[0]),
+                          token="wrong")
+        status, headers, body = wrong.raw({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "di_mission_propose",
+                       "arguments": mission_proposal_arguments()},
+        })
+        self.assertEqual(status, 401)
+        self.assertIsNone(self.store_bytes())
+        self.assertEqual(controller.calls_received, 0)
 
 
 if __name__ == "__main__":
