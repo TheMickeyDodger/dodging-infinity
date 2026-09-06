@@ -611,7 +611,8 @@ def runtime_status(state_directory):
             "Runtime is NOT installed or has never run (no %s in %s)."
             " Authorized missions will NOT start. Install and start"
             " the Runtime service: run scripts/dirun-agent.sh install"
-            " from the control repository (or start it in the"
+            " from the control repository, or tgop runtime-service"
+            " install --root <control repository> (or start it in the"
             " foreground with: dirun run)." % (
                 RUNTIME_LOCK_FILE_NAME, state_directory,
             )
@@ -634,7 +635,8 @@ def runtime_status(state_directory):
             "Runtime is NOT running (its lock file %s exists but no"
             " process holds it). Authorized missions will NOT start."
             " Start the Runtime service: scripts/dirun-agent.sh"
-            " install, or in the foreground: dirun run." % lock_path
+            " install or tgop runtime-service start, or in the"
+            " foreground: dirun run." % lock_path
         )
     finally:
         os.close(descriptor)
