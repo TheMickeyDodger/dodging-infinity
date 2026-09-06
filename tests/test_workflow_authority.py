@@ -2206,6 +2206,28 @@ class BoundConstantPinTests(unittest.TestCase):
             # `test_no_mission_timer_behavioral` both drive.
             "BOOTSTRAP_MAX_SECONDS": 900,
         },
+        # Grok Bot MCP transport (grok_mcp). Every bound is exact-value
+        # pinned; the spike writes no durable state, so the two table
+        # bounds cap in-memory FIFO tables only.
+        "grok_mcp/protocol.py": {
+            "MAX_TURN_TEXT_CHARS": 4000,
+            "MAX_ECHO_CHARS": 200,
+            "MAX_REQUEST_BYTES": 65536,
+            "REF_HEX_CHARS": 32,
+            "REF_CHARS": 35,
+        },
+        "grok_mcp/adapter.py": {
+            "MAX_MESSAGE_CHARS": 4000,
+            "MAX_MESSAGE_CHUNKS": 4,
+            "TRUNCATION_NOTICE_RESERVE_CHARS": 64,
+        },
+        "grok_mcp/controller.py": {
+            "MAX_REPLAY_ENTRIES": 64,
+            "MAX_SESSION_ENTRIES": 64,
+        },
+        "grok_mcp/server.py": {
+            "MAX_SESSIONS": 256,
+        },
     }
 
     # (module relpath, constant name) -> NON-EMPTY justification.
