@@ -57,19 +57,25 @@ DEFAULT = {
     },
     "roles": {
         "supervisor": {
-            "kind": "claude",
+            "kind": "codex",
             "args": [
-                "--model",
-                "fable",
-                "--permission-mode",
-                "acceptEdits",
+                "-m",
+                "gpt-6-astra",
+                "-c",
+                'model_reasoning_effort="xhigh"',
+                "--sandbox",
+                "workspace-write",
+                "--ask-for-approval",
+                "on-request",
             ],
         },
         "lead": {
             "kind": "claude",
             "args": [
                 "--model",
-                "opus",
+                "claude-opus-5",
+                "--effort",
+                "high",
                 "--permission-mode",
                 "acceptEdits",
             ],
@@ -78,18 +84,24 @@ DEFAULT = {
             "kind": "claude",
             "args": [
                 "--model",
-                "fable",
+                "claude-fable-5-1",
+                "--effort",
+                "high",
                 "--permission-mode",
                 "acceptEdits",
             ],
         },
         "reviewer": {
-            "kind": "claude",
+            "kind": "codex",
             "args": [
-                "--model",
-                "opus",
-                "--permission-mode",
-                "default",
+                "-m",
+                "gpt-6-astra",
+                "-c",
+                'model_reasoning_effort="xhigh"',
+                "-c",
+                'sandbox_mode="read-only"',
+                "-c",
+                'approval_policy="never"',
             ],
         },
     },
@@ -99,24 +111,29 @@ DEFAULT = {
 PRESETS = {
     "max-quality": {
         "description": (
-            "Claude Fable supervisor/executor + Opus lead + "
-            "GPT-5.6 Sol high read-only reviewer"
+            "GPT-6 Astra xhigh supervisor/reviewer + Claude Opus 5 "
+            "high lead + Claude Fable 5.1 high executor"
         ),
         "roles": {
             "supervisor": {
-                "kind": "claude",
+                "kind": "codex",
                 "args": [
-                    "--model",
-                    "fable",
-                    "--permission-mode",
-                    "auto",
+                    "-m",
+                    "gpt-6-astra",
+                    "-c",
+                    'model_reasoning_effort="xhigh"',
+                    "--sandbox",
+                    "workspace-write",
+                    "--approve-for-me",
                 ],
             },
             "lead": {
                 "kind": "claude",
                 "args": [
                     "--model",
-                    "opus",
+                    "claude-opus-5",
+                    "--effort",
+                    "high",
                     "--permission-mode",
                     "auto",
                 ],
@@ -125,7 +142,9 @@ PRESETS = {
                 "kind": "claude",
                 "args": [
                     "--model",
-                    "fable",
+                    "claude-fable-5-1",
+                    "--effort",
+                    "high",
                     "--permission-mode",
                     "auto",
                 ],
@@ -134,9 +153,9 @@ PRESETS = {
                 "kind": "codex",
                 "args": [
                     "-m",
-                    "gpt-5.6-sol",
+                    "gpt-6-astra",
                     "-c",
-                    'model_reasoning_effort="high"',
+                    'model_reasoning_effort="xhigh"',
                     "-c",
                     'sandbox_mode="read-only"',
                     "-c",
@@ -191,7 +210,7 @@ PRESETS = {
     },
     "conservative": {
         "description": (
-            "Claude-only herd retaining explicit edit approvals"
+            "Default roster retaining conservative permission modes"
         ),
         "roles": copy.deepcopy(
             DEFAULT["roles"]

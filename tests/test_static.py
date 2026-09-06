@@ -55,8 +55,10 @@ assert config['version'] == 4
 assert config['preset'] == 'max-quality'
 assert config['context']['clear_before_new_task'] is True
 assert config['context']['reset_commands']['codex'] == '/new'
+assert config['roles']['supervisor']['kind'] == 'codex'
 assert config['roles']['reviewer']['kind'] == 'codex'
-assert 'gpt-5.6-sol' in config['roles']['reviewer']['args']
+assert 'gpt-6-astra' in config['roles']['supervisor']['args']
+assert 'gpt-6-astra' in config['roles']['reviewer']['args']
 
 for n in ['supervisor', 'lead', 'executor', 'reviewer']:
     assert (R / 'roles' / f'{n}.md').exists()
@@ -65,7 +67,7 @@ assert (R / 'memory' / 'task-history.md').exists()
 for required in [
     'approve-commit', 'approve-push', 'reference-transaction', 'pre-push', '_guard-pretool',
     'resolve_repo_ref', 'task-complete', 'clear-contexts', 'restart-heartbeat',
-    'rejection-drill', 'review-decision', 'gpt-5.6-sol', 'max-quality', '/new',
+    'rejection-drill', 'review-decision', 'gpt-6-astra', 'max-quality', '/new',
 ]:
     assert required in src, required
 
@@ -84,7 +86,8 @@ assert cur['context']['reset_commands']['codex'] == '/new'
 d = json.loads(json.dumps(h.DEFAULT))
 h.apply_preset_to_config(d, 'max-quality')
 assert d['roles']['reviewer']['kind'] == 'codex'
-assert 'gpt-5.6-sol' in d['roles']['reviewer']['args']
+assert 'gpt-6-astra' in d['roles']['supervisor']['args']
+assert 'gpt-6-astra' in d['roles']['reviewer']['args']
 assert h.preset_name_from_config(d) == 'max-quality'
 
 # Strict review protocol accepts only canonical tokens; last token wins.

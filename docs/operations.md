@@ -26,7 +26,7 @@ machine that stays available while Missions run.
 | macOS | Required for the full remote workflow, which uses per-user LaunchAgents. Linux is covered for development and CI. |
 | [Herdr](https://github.com/herdrdev/herdr) on `PATH` | The engineering capability. Required for engineering Missions. |
 | Claude Code | Herdr roles on Claude-backed presets. |
-| Codex CLI | The current reference Operator, and the Reviewer role in the `max-quality` preset. |
+| Codex CLI | The current reference Operator, plus Supervisor and Reviewer roles in the default roster and `max-quality` preset. |
 | GitHub credentials | Repository access and delivery targets. |
 | A Telegram bot token | Remote Mission control. Optional. |
 | Tailscale / SSH | Break-glass access to the trusted host. Optional. |
@@ -79,18 +79,19 @@ Initialize a repository:
 ```bash
 herdctl init \
   --alias my-repo \
-  --preset max-quality \
   --test-command 'npm test && npm run build'
 ```
 
 If the verification command is not known yet:
 
 ```bash
-herdctl init --alias my-repo --preset max-quality
+herdctl init --alias my-repo
 herdctl set-test 'npm test && npm run build' --repo my-repo
 ```
 
-The repository receives isolated Herdr runtime configuration and Git authorization boundaries.
+Omitting `--preset` uses the default GPT-6 Astra / Claude Opus 5 / Claude
+Fable 5.1 roster. The repository receives isolated Herdr runtime configuration
+and Git authorization boundaries.
 
 
 ### Upgrade an existing repository
@@ -116,8 +117,8 @@ Current built-ins:
 
 ```text
 all-claude       Claude-only subscription herd using Fable/Opus with auto mode
-conservative     Claude-only herd retaining explicit edit approvals
-max-quality      Claude Fable supervisor/executor + Opus lead + GPT-5.6 Sol high read-only reviewer
+conservative     Default roster retaining conservative permission modes
+max-quality      GPT-6 Astra xhigh supervisor/reviewer + Claude Opus 5 high lead + Claude Fable 5.1 high executor
 ```
 
 Apply one:
@@ -584,16 +585,16 @@ Codex Operator
  |
 Herdr Handoff
  |
-Claude Fable 5: Supervisor
+GPT-6 Astra XHigh: Supervisor
  |
-Claude Opus 5: Lead
+Claude Opus 5 High: Lead
  |
  +---------------------------------+
  | Adversarial Executor Pod        |
  |                                 |
- | Claude Fable 5: Executor        |
+ | Claude Fable 5.1 High: Executor |
  |              ↕                  |
- | GPT-5.6 Sol High: Reviewer      |
+ | GPT-6 Astra XHigh: Reviewer     |
  | Read-only validation role       |
  +---------------------------------+
  |

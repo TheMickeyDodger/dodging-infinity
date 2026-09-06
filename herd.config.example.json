@@ -52,19 +52,24 @@
   },
   "roles": {
     "supervisor": {
-      "kind": "claude",
+      "kind": "codex",
       "args": [
-        "--model",
-        "claude-fable-5-1",
-        "--permission-mode",
-        "auto"
+        "-m",
+        "gpt-6-astra",
+        "-c",
+        "model_reasoning_effort=\"xhigh\"",
+        "--sandbox",
+        "workspace-write",
+        "--approve-for-me"
       ]
     },
     "lead": {
       "kind": "claude",
       "args": [
         "--model",
-        "opus",
+        "claude-opus-5",
+        "--effort",
+        "high",
         "--permission-mode",
         "auto"
       ]
@@ -74,6 +79,8 @@
       "args": [
         "--model",
         "claude-fable-5-1",
+        "--effort",
+        "high",
         "--permission-mode",
         "auto"
       ]
@@ -82,9 +89,9 @@
       "kind": "codex",
       "args": [
         "-m",
-        "gpt-5.6-sol",
+        "gpt-6-astra",
         "-c",
-        "model_reasoning_effort=\"high\"",
+        "model_reasoning_effort=\"xhigh\"",
         "-c",
         "sandbox_mode=\"read-only\"",
         "-c",

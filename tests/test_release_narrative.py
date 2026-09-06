@@ -976,7 +976,7 @@ class ReleaseNarrativeTests(unittest.TestCase):
             request["preset"], dispatch_module.DI_TARGET_EXECUTION_PRESET
         )
         self.assertEqual(
-            dispatch_module.DI_TARGET_EXECUTION_PRESET, "all-claude"
+            dispatch_module.DI_TARGET_EXECUTION_PRESET, "max-quality"
         )
         self.assertEqual(request["task"], TARGET_HANDOFF)
         self.assertEqual(

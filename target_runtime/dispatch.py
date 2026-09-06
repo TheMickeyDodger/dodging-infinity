@@ -38,7 +38,7 @@ ALIAS_PREFIX = "di-remote-2-"
 # Herdr. This is trusted Runtime configuration: it is deliberately
 # not read from Mission Authorization, handoff text, role output,
 # user text, target instructions, or any mutable workflow field.
-DI_TARGET_EXECUTION_PRESET = "all-claude"
+DI_TARGET_EXECUTION_PRESET = "max-quality"
 
 # The SINGLE source of the unresolved-task-id sentinel (I4):
 # ``target_identity_from_spawn`` NEVER returns None — a spawn result
