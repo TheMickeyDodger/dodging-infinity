@@ -45,6 +45,17 @@ could carry anything.
 
 The operator session is consumed through its neutral ``prepare`` /
 ``execute`` interface by duck typing; this module imports no provider.
+
+Mission tools. The five ``di_mission_*`` tools are relayed by
+``grok_mcp.mission_tools`` into an INJECTED neutral Mission service
+(``mission_service``; when absent every Mission tool refuses with an
+observable reason and nothing else changes). Their authenticated
+context is NOT this controller's ``principal_id`` and not a constructor
+default: the server builds an ``AuthenticatedContext`` after its bearer
+check and passes it per request as ``ingress``; a call without one
+refuses and mints nothing. ``di_operator_turn`` keeps its existing
+principal semantics unchanged. This controller writes no durable state
+itself; the Mission service owns its own store.
 """
 
 import collections
@@ -56,6 +67,7 @@ import threading
 from human_interaction import EVENT_MESSAGE, InteractionEvent
 
 from grok_mcp import adapter as adapter_module
+from grok_mcp import mission_tools
 from grok_mcp import protocol
 
 # Bounded in-memory tables (FIFO eviction). Exact-value pinned.
@@ -105,11 +117,12 @@ class GrokMcpController(object):
     """Dispatch one validated tool call; own every DI-minted reference."""
 
     def __init__(self, session, repository, principal_id=DEFAULT_PRINCIPAL_ID,
-                 mint_ref=None):
+                 mint_ref=None, mission_service=None):
         self._session = session
         self._repository = repository
         self._principal_id = principal_id
         self._mint_ref = mint_ref or default_mint_ref
+        self._mission_service = mission_service
         self._counter = itertools.count(1)
         self._counter_lock = threading.Lock()
         self._turn_lock = threading.Lock()
@@ -147,7 +160,10 @@ class GrokMcpController(object):
 
     # -- dispatch -------------------------------------------------------
 
-    def call_tool(self, name, arguments):
+    def call_tool(self, name, arguments, ingress=None):
+        """Dispatch one tool call. ``ingress`` is the per-request
+        authenticated context the server built after its bearer check;
+        only the Mission tools consume it, and they refuse without it."""
         tool = protocol.tool_by_name(name)
         if tool is None:
             raise UnknownToolError("unknown tool")
@@ -162,6 +178,12 @@ class GrokMcpController(object):
             return self._status(reason)
         if name == protocol.TOOL_PING:
             return self._ping(arguments, reason)
+        if name in protocol.MISSION_TOOL_NAMES:
+            structured, is_error = mission_tools.relay(
+                name, arguments, reason, ingress, self._mission_service,
+                self._mint_ref(),
+            )
+            return self._finish(name, structured, is_error)
         return self._operator_turn(arguments, reason)
 
     def _finish(self, tool_name, structured, is_error):

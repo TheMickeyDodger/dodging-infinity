@@ -2221,6 +2221,34 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_REQUEST_BYTES": 65536,
             "REF_HEX_CHARS": 32,
             "REF_CHARS": 35,
+            # Mission Core identifiers and digests as relayed on the wire.
+            "MISSION_TOKEN_CHARS": 35,
+            "DIGEST_CHARS": 64,
+        },
+        # Mission Core (mission). Every bound is exact-value pinned; the
+        # store caps REFUSE at the bound and never evict or prune.
+        "mission/record.py": {
+            "ID_HEX_CHARS": 32,
+            "MAX_OBJECTIVE_CHARS": 8000,
+            "MAX_TARGET_CONTEXT_CHARS": 4000,
+            "MAX_SCOPE_TEXT_CHARS": 4000,
+            "MAX_TRANSPORT_CHARS": 64,
+            "MAX_PRINCIPAL_REF_CHARS": 128,
+            "MAX_SUBJECT_CHARS": 256,
+        },
+        "mission/manifest.py": {
+            "MAX_MISSION_REVISIONS": 64,
+            "MAX_MISSION_DECISIONS": 256,
+        },
+        "mission/authorization.py": {
+            "MAX_LEDGER_REASON_CHARS": 256,
+        },
+        "mission/store.py": {
+            "MAX_MISSION_RECORDS": 1024,
+            "MAX_AUTHORIZATION_RECORDS": 4096,
+            "MAX_AUTHORITY_LEDGER_ENTRIES": 16384,
+            "MAX_RESERVED_REQUEST_IDS": 4096,
+            "MAX_RESERVED_DECISION_IDS": 4096,
         },
         "grok_mcp/adapter.py": {
             "MAX_MESSAGE_CHARS": 4000,

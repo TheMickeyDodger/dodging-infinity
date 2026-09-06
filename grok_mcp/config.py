@@ -16,6 +16,11 @@ Keys (all optional except ``repository``):
 - ``bearer_token``: the static connector credential. It may instead
   come from the environment mapping the CLI passes in
   (``GROK_MCP_BEARER_TOKEN``), so the file need not hold a secret.
+- ``mission_store_dir`` (optional): the absolute protected directory of
+  the Mission Core store. When present the CLI wires a Mission service
+  into the controller so the ``di_mission_*`` tools work; when absent
+  those tools refuse with an observable reason and nothing else changes.
+  Loading the config creates nothing there.
 
 The config file and its directory must not be group- or
 world-accessible; an open mode is refused before the file is read.
@@ -27,7 +32,7 @@ import json
 import os
 import stat
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
 
 BEARER_TOKEN_ENV = "GROK_MCP_BEARER_TOKEN"
 DEFAULT_BIND_HOST = "127.0.0.1"
@@ -47,6 +52,7 @@ class ServerConfig:
     bearer_token: str = field(repr=False)
     allowed_origins: Tuple[str, ...]
     repository: str
+    mission_store_dir: Optional[str] = None
 
 
 def _refuse_open_permissions(path, kind):
@@ -110,6 +116,15 @@ def load_config(path, environment):
         raise ConfigError(
             "config key allowed_origins must be a list of non-empty strings"
         )
+    mission_store_dir = raw.get("mission_store_dir")
+    if mission_store_dir is not None and (
+        not isinstance(mission_store_dir, str)
+        or not os.path.isabs(mission_store_dir)
+        or any(ch.isspace() or ord(ch) < 32 for ch in mission_store_dir)
+    ):
+        raise ConfigError(
+            "config key mission_store_dir must be an absolute directory path"
+        )
     token = raw.get("bearer_token")
     if token is None:
         token = environment.get(BEARER_TOKEN_ENV)
@@ -130,4 +145,5 @@ def load_config(path, environment):
         bearer_token=token,
         allowed_origins=tuple(item.strip() for item in origins),
         repository=repository,
+        mission_store_dir=mission_store_dir,
     )

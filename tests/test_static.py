@@ -183,7 +183,7 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
     'operator_session', 'human_interaction', 'durable_execution',
-    'capability', 'worker', 'grok_mcp',
+    'capability', 'worker', 'grok_mcp', 'mission',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -218,6 +218,9 @@ assert any(
 assert any(p.name == 'grokmcp.py' for p in gateway_files), (
     'grokmcp.py entry script not found'
 )
+assert any(
+    p.relative_to(R).parts[0] == 'mission' for p in gateway_files
+), 'mission sources not found'
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
 # 1. AST: no Import/ImportFrom naming herdr/herdctl, and no dynamic-import
@@ -1222,8 +1225,9 @@ PR_DELIVERY_REQUIRED_FILES = {
     'pr_delivery/authorization.py', 'pr_delivery/boundary.py',
     'pr_delivery/candidate.py', 'pr_delivery/cli.py',
     'pr_delivery/errors.py', 'pr_delivery/machine.py',
-    'pr_delivery/pr_text.py', 'pr_delivery/receipts.py',
-    'pr_delivery/store.py', 'pr_delivery/transport.py',
+    'pr_delivery/mission_parent.py', 'pr_delivery/pr_text.py',
+    'pr_delivery/receipts.py', 'pr_delivery/store.py',
+    'pr_delivery/transport.py',
 }
 assert PR_DELIVERY_REQUIRED_FILES <= pr_delivery_names, (
     'pr_delivery scan lost a package file',
@@ -1642,7 +1646,7 @@ pr_delivery_probe = subprocess.run(
             'import pr_delivery.authorization, pr_delivery.candidate\n'
             'import pr_delivery.store, pr_delivery.receipts\n'
             'import pr_delivery.machine, pr_delivery.boundary\n'
-            'import pr_delivery.pr_text\n'
+            'import pr_delivery.pr_text, pr_delivery.mission_parent\n'
             'bad = sorted(\n'
             '    name for name in sys.modules\n'
             '    if name in ("subprocess", "pr_delivery.transport",'
@@ -1757,7 +1761,8 @@ grok_mcp_names = {p.relative_to(R).as_posix() for p in grok_mcp_files}
 GROK_MCP_REQUIRED_FILES = {
     'grok_mcp/__init__.py', 'grok_mcp/adapter.py', 'grok_mcp/cli.py',
     'grok_mcp/config.py', 'grok_mcp/controller.py',
-    'grok_mcp/protocol.py', 'grok_mcp/server.py',
+    'grok_mcp/mission_tools.py', 'grok_mcp/protocol.py',
+    'grok_mcp/server.py',
 }
 assert GROK_MCP_REQUIRED_FILES <= grok_mcp_names, (
     'grok_mcp scan lost a package file',
@@ -1864,5 +1869,37 @@ for _package in ('human_interaction', 'operator_session'):
         )
 assert 'grok_mcp/*.py' in ci_text, 'CI must compile grok_mcp'
 assert 'grokmcp.py' in ci_text, 'CI must compile grokmcp.py'
+
+# (12) mission: the neutral Mission Core. It sits in _HERDR_FREE_ROOTS
+#      above (AST, token and behavioral herdr-isolation scans), its own
+#      suite pins the fresh-subprocess provider-free import closure and
+#      the single authorization issuance point, and CI must compile it.
+#      One direction only: mission never imports pr_delivery (the
+#      consumer imports the core, never the reverse).
+mission_files = sorted(
+    p for p in product_files if p.relative_to(R).parts[0] == 'mission'
+)
+assert {p.relative_to(R).as_posix() for p in mission_files} >= {
+    'mission/__init__.py', 'mission/record.py', 'mission/decision.py',
+    'mission/manifest.py', 'mission/authorization.py', 'mission/store.py',
+    'mission/service.py',
+}, 'mission scan lost a package file'
+for path in mission_files:
+    relpath = path.relative_to(R).as_posix()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name for alias in node.names]
+            module = getattr(node, 'module', None) or ''
+            for root in [module.split('.')[0]] + [
+                n.split('.')[0] for n in names
+            ]:
+                assert root not in {
+                    'pr_delivery', 'grok_mcp', 'telegram_operator',
+                    'codex_gateway', 'operator_session', 'target_runtime',
+                    'capability', 'worker', 'durable_execution',
+                    'human_interaction', 'herdr', 'herdctl', 'subprocess',
+                }, (relpath, root, 'mission imports no adapter, provider,'
+                    ' seam, or orchestration module')
+assert 'mission/*.py' in ci_text, 'CI must compile mission'
 
 print('static tests: OK')
