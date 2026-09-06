@@ -769,10 +769,11 @@ and each Mission's Supervisor coordinates engineering inside it.
 ### Reviewer independence
 
 The Reviewer is a separate role in a separate session, ideally on a different
-model. The `max-quality` preset pairs a Claude Executor with a GPT Reviewer for
-that reason, and the v0.7.0 certification herd ran its independent Reviewer on
-`gpt-5.6-sol` while Supervisor and Executor ran on `claude-fable-5-1`. The
-Reviewer contract requires exactly one canonical terminal decision,
+model. The default roster and `max-quality` preset pair a Claude Executor with
+a GPT Reviewer for that reason, and the v0.7.0 certification herd ran its
+independent Reviewer on `gpt-5.6-sol` while Supervisor and Executor ran on
+`claude-fable-5-1`. The Reviewer contract requires exactly one canonical
+terminal decision,
 `HERD_DECISION: APPROVE` or `HERD_DECISION: REJECT`; synonyms are not accepted.
 The Lead validates the decision with `herdctl review-decision`, which reads the
 Reviewer's transcript, records a new round, and persists the review file;

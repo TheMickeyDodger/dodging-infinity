@@ -7,6 +7,59 @@ from unittest.mock import patch
 
 from herdr.initialize import initialize_herd
 from herdr.instance import HerdrInstance
+from herdr.runtime import start_agent
+
+
+EXPECTED_DEFAULT_ROSTER = {
+    "supervisor": {
+        "kind": "codex",
+        "args": [
+            "-m",
+            "gpt-6-astra",
+            "-c",
+            'model_reasoning_effort="xhigh"',
+            "--sandbox",
+            "workspace-write",
+            "--ask-for-approval",
+            "on-request",
+        ],
+    },
+    "lead": {
+        "kind": "claude",
+        "args": [
+            "--model",
+            "claude-opus-5",
+            "--effort",
+            "high",
+            "--permission-mode",
+            "acceptEdits",
+        ],
+    },
+    "executor": {
+        "kind": "claude",
+        "args": [
+            "--model",
+            "claude-fable-5-1",
+            "--effort",
+            "high",
+            "--permission-mode",
+            "acceptEdits",
+        ],
+    },
+    "reviewer": {
+        "kind": "codex",
+        "args": [
+            "-m",
+            "gpt-6-astra",
+            "-c",
+            'model_reasoning_effort="xhigh"',
+            "-c",
+            'sandbox_mode="read-only"',
+            "-c",
+            'approval_policy="never"',
+        ],
+    },
+}
 
 
 class HerdrInitializeTests(unittest.TestCase):
@@ -26,6 +79,67 @@ class HerdrInitializeTests(unittest.TestCase):
         )
 
         return temp, repo
+
+    def test_fresh_default_roster_flows_to_distinct_launch_argv(self):
+        temp, repo = self.make_repo()
+        self.addCleanup(temp.cleanup)
+
+        with patch(
+            "herdr.registry.REGISTRY",
+            repo / "test-registry.json",
+        ):
+            initialize_herd(repo)
+
+        config = HerdrInstance(repo).load_config()
+
+        self.assertNotIn("preset", config)
+        self.assertEqual(config["roles"], EXPECTED_DEFAULT_ROSTER)
+
+        successful_start = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+        with patch(
+            "herdr.runtime.run",
+            return_value=successful_start,
+        ) as mock_run:
+            for index, (role, role_config) in enumerate(
+                config["roles"].items(),
+                start=1,
+            ):
+                start_agent(
+                    f"fresh-{role}",
+                    f"pane-{index}",
+                    role_config,
+                    60000,
+                )
+
+        self.assertEqual(mock_run.call_count, 4)
+
+        for index, (role, role_config) in enumerate(
+            config["roles"].items(),
+            start=1,
+        ):
+            self.assertEqual(
+                mock_run.call_args_list[index - 1].args[0],
+                [
+                    "herdr",
+                    "agent",
+                    "start",
+                    f"fresh-{role}",
+                    "--kind",
+                    role_config["kind"],
+                    "--pane",
+                    f"pane-{index}",
+                    "--timeout",
+                    "60000",
+                    "--",
+                    *role_config["args"],
+                ],
+            )
 
     def test_initialize_fresh_repo(self):
         temp, repo = self.make_repo()

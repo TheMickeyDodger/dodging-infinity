@@ -498,7 +498,6 @@ cd /path/to/your/repository
 
 herdctl init \
   --alias my-repo \
-  --preset max-quality \
   --test-command 'python3 -m pytest'
 ```
 
