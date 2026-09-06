@@ -13,7 +13,9 @@ jobs:
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # macOS/Python 3.9 takes about 15 minutes including the nested Git
+    # hermeticity sweep. Leave room for hosted-runner timing variance.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -89,6 +89,47 @@ def tree_hash(root):
     return hasher.hexdigest()
 
 
+def tree_snapshot(root):
+    """Per-path evidence for refusal checks, including ALL Git metadata.
+
+    Keep hashes rather than file contents so a failure identifies the
+    changed paths without dumping fixture data. No .git exclusions: a
+    background writer must be removed from the fixture, not hidden here.
+    """
+    if not os.path.lexists(root):
+        return {}
+    entries = {}
+    for base, dirs, files in os.walk(root):
+        entries[os.path.relpath(base, root)] = ("directory",)
+        for name in dirs + files:
+            path = os.path.join(base, name)
+            relative = os.path.relpath(path, root)
+            if os.path.islink(path):
+                entries[relative] = ("symlink", os.readlink(path))
+            if name in files:
+                with open(path, "rb") as handle:
+                    entries[relative] = entries.get(relative, ("file",)) + (
+                        hashlib.sha256(handle.read()).hexdigest(),
+                    )
+    return entries
+
+
+def assert_tree_unchanged(case, root, before, label):
+    after = tree_snapshot(root)
+    changes = []
+    for path in sorted(set(before) | set(after)):
+        if path not in before:
+            changes.append("added: %s" % path)
+        elif path not in after:
+            changes.append("removed: %s" % path)
+        elif before[path] != after[path]:
+            changes.append("modified: %s" % path)
+    if changes:
+        case.fail("%s changed (%d paths):\n%s" % (
+            label, len(changes), "\n".join(changes[:20])
+        ))
+
+
 TARGET_TASK_ID = "20260826-000000-target1"
 
 
@@ -425,6 +466,57 @@ class FakeRoleTurn(object):
             recorded_at_offset=template.recorded_at_offset,
             detail=template.detail,
         )
+
+
+class TreeSnapshotTests(unittest.TestCase):
+    def test_file_symlink_contents_remain_covered(self):
+        with tempfile.TemporaryDirectory() as base:
+            root = os.path.join(base, "workspace")
+            os.mkdir(root)
+            target = os.path.join(base, "target")
+            with open(target, "w") as handle:
+                handle.write("before")
+            os.symlink(target, os.path.join(root, "link"))
+            before = tree_snapshot(root)
+            with open(target, "w") as handle:
+                handle.write("after")
+            with self.assertRaises(self.failureException) as raised:
+                assert_tree_unchanged(self, root, before, "fixture")
+            self.assertIn("modified: link", str(raised.exception))
+
+    def test_reports_added_removed_and_modified_paths_without_contents(self):
+        with tempfile.TemporaryDirectory() as root:
+            for name in ("removed", "modified"):
+                with open(os.path.join(root, name), "w") as handle:
+                    handle.write("private fixture before")
+            before = tree_snapshot(root)
+            assert_tree_unchanged(self, root, before, "fixture")
+            os.unlink(os.path.join(root, "removed"))
+            for name in ("added", "modified"):
+                with open(os.path.join(root, name), "w") as handle:
+                    handle.write("private fixture after")
+            with self.assertRaises(self.failureException) as raised:
+                assert_tree_unchanged(self, root, before, "fixture")
+            message = str(raised.exception)
+            for change in ("added: added", "removed: removed",
+                           "modified: modified"):
+                self.assertIn(change, message)
+            self.assertNotIn("private fixture", message)
+
+    def test_worktree_refs_objects_and_index_mutations_are_all_detected(self):
+        for name in ("README.md", ".git/HEAD", ".git/index",
+                     ".git/refs/heads/main", ".git/objects/ab/object"):
+            with self.subTest(path=name), tempfile.TemporaryDirectory() as root:
+                path = os.path.join(root, name)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "wb") as handle:
+                    handle.write(b"before")
+                before = tree_snapshot(root)
+                with open(path, "wb") as handle:
+                    handle.write(b"after")
+                with self.assertRaises(self.failureException) as raised:
+                    assert_tree_unchanged(self, root, before, "fixture")
+                self.assertIn("modified: " + name, str(raised.exception))
 
 
 class RuntimeCase(unittest.TestCase):
@@ -841,8 +933,8 @@ class RuntimeCase(unittest.TestCase):
     def assert_zero_side_effect(self, perform, expected_problem,
                                 allow_read_verbs=False, label="",
                                 allow_capability_consumption=False):
-        control_before = tree_hash(self.control)
-        workspaces_before = tree_hash(self.workspaces)
+        control_before = tree_snapshot(self.control)
+        workspaces_before = tree_snapshot(self.workspaces)
         store_before = self.store_bytes()
         capability_before = self.capability_bytes()
         capability_entries_before = self.capability_entries()
@@ -861,13 +953,13 @@ class RuntimeCase(unittest.TestCase):
             )
         self.assertFalse(outcome.ok, label)
         self.assertEqual(outcome.problem, expected_problem, label)
-        self.assertEqual(
-            tree_hash(self.control), control_before,
-            "%s: control repository changed" % label,
+        assert_tree_unchanged(
+            self, self.control, control_before,
+            "%s: control repository" % label,
         )
-        self.assertEqual(
-            tree_hash(self.workspaces), workspaces_before,
-            "%s: managed workspace root changed" % label,
+        assert_tree_unchanged(
+            self, self.workspaces, workspaces_before,
+            "%s: managed workspace root" % label,
         )
         self.assertEqual(
             self.store_bytes(), store_before,
