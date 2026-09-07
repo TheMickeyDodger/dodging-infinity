@@ -1902,4 +1902,168 @@ for path in mission_files:
                     ' seam, or orchestration module')
 assert 'mission/*.py' in ci_text, 'CI must compile mission'
 
+# (12b) mission (Task 5, Mission State): a data-authority layer and
+#       nothing more. Four pins, each with the anti-vacuity posture of the
+#       neutral-vocabulary scans above (derived file set, non-zero
+#       counters, and a planted-probe self-check proving the detector
+#       would fire), so none can pass on an empty or mis-filtered scope.
+#       (a) import roots: no network, process, filesystem-tree, clock,
+#           dynamic-import or serialization root anywhere in mission/;
+#       (b) call names: no fetch / execute / publish / process / tree
+#           mutation call; the ONE permitted open() is the store's
+#           read-mode load, everything else goes through the shared
+#           workflow_authority.atomic primitives;
+#       (c) vocabulary: no routing, dispatch, scheduler, observer,
+#           reconciler, ingestion, merge, release, deploy, DBOS, fetch or
+#           execute term in any identifier or non-docstring string literal
+#           (docstring prose that DENIES those surfaces is allowed, exactly
+#           as (12) and the mission suite's E4 allow it);
+#       (d) consumers: the product files importing mission are exactly the
+#           Task 4 set — the Grok relay and the P1-A6 parent seam — so no
+#           router, scheduler, observation service, reconciler, worker,
+#           capability or delivery module gained a dependency on it.
+MISSION_FORBIDDEN_IMPORT_ROOTS = frozenset({
+    'urllib', 'http', 'socket', 'ssl', 'select', 'selectors', 'asyncio',
+    'concurrent', 'subprocess', 'multiprocessing', 'signal', 'ctypes',
+    'shutil', 'tempfile', 'glob', 'pathlib', 'time', 'datetime', 'sched',
+    'importlib', 'pickle', 'marshal', 'shelve', 'sqlite3', 'requests',
+    'pr_delivery', 'grok_mcp', 'telegram_operator', 'codex_gateway',
+    'operator_session', 'target_runtime', 'capability', 'worker',
+    'durable_execution', 'human_interaction', 'herdr', 'herdctl',
+})
+MISSION_FORBIDDEN_CALL_NAMES = frozenset({
+    'system', 'popen', 'Popen', 'run', 'call', 'check_call', 'check_output',
+    'spawn', 'spawnv', 'fork', 'execv', 'execve', 'execvp', 'kill',
+    'urlopen', 'urlretrieve', 'connect', 'send', 'recv', 'remove', 'unlink',
+    'rmtree', 'rename', 'replace_file', 'makedirs', 'mkdir', 'rmdir',
+    'chmod', 'chown', 'eval', 'exec', 'compile', '__import__',
+    'import_module', 'fetch', 'publish', 'dispatch',
+})
+# Set literal on purpose (see DURABLE_EXECUTION_FORBIDDEN_WORDS): an
+# unordered word list, never an argv.
+MISSION_FORBIDDEN_WORDS = frozenset({
+    'fetch', 'fetcher', 'download', 'upload', 'execute', 'executor',
+    'exec', 'publish', 'publisher', 'route', 'router', 'routing',
+    'dispatch', 'dispatcher', 'scheduler', 'schedule', 'observer',
+    'reconciler', 'ingest', 'ingestion', 'merge', 'release', 'deploy',
+    'deployment', 'dbos', 'subprocess', 'popen', 'urlopen', 'spawn',
+    'fork', 'socket', 'http', 'https', 'network', 'launch', 'worker',
+    'capability',
+})
+MISSION_ALLOWED_CONSUMERS = frozenset({
+    'grok_mcp/cli.py', 'grok_mcp/mission_tools.py', 'grok_mcp/protocol.py',
+    'grok_mcp/server.py', 'pr_delivery/mission_parent.py',
+})
+MISSION_READ_ONLY_OPEN_FILE = 'mission/store.py'
+
+
+def _mission_word_violations(token_text):
+    return sorted(
+        set(re.findall(r'[a-z]+', token_text.lower())) & MISSION_FORBIDDEN_WORDS
+    )
+
+
+# Planted-probe self-checks: the detectors fire on what they exist to catch.
+assert _mission_word_violations('dispatch_mission') == ['dispatch']
+assert _mission_word_violations('"fetch the artifact"') == ['fetch']
+assert _mission_word_violations('MissionRouter') == []  # camel-case: see normalized scan
+assert not _mission_word_violations('reconcile_registry')
+assert not _mission_word_violations('observe_resource_readiness')
+assert 'mission/store.py' in {p.relative_to(R).as_posix() for p in mission_files}
+assert len(mission_files) >= 10, 'mission scan lost files'
+
+_mission_imports_seen = 0
+_mission_calls_seen = 0
+_mission_tokens_seen = 0
+_mission_values_seen = 0
+for path in mission_files:
+    relpath = path.relative_to(R).as_posix()
+    source = path.read_text()
+    tree = ast.parse(source)
+    docstring_positions = _docstring_positions_of(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name for alias in node.names]
+            module = getattr(node, 'module', None) or ''
+            for root in [module.split('.')[0]] + [n.split('.')[0] for n in names]:
+                _mission_imports_seen += 1
+                assert root not in MISSION_FORBIDDEN_IMPORT_ROOTS, (
+                    relpath, root, 'mission imports no network, process,'
+                    ' filesystem-tree, clock, dynamic-import, serialization,'
+                    ' adapter, seam or orchestration root')
+        elif isinstance(node, ast.Call):
+            _mission_calls_seen += 1
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            assert name not in MISSION_FORBIDDEN_CALL_NAMES, (
+                relpath, node.lineno, name,
+                'mission performs no fetch, execute, publish, process or'
+                ' tree-mutation call')
+            if name == 'open':
+                assert relpath == MISSION_READ_ONLY_OPEN_FILE, (
+                    relpath, node.lineno, 'open() only in the store load path')
+                modes = [a.value for a in node.args[1:2] if isinstance(a, ast.Constant)]
+                modes += [k.value.value for k in node.keywords
+                          if k.arg == 'mode' and isinstance(k.value, ast.Constant)]
+                assert modes == ['r'], (relpath, node.lineno, modes,
+                                        'the one open() is read-only')
+        # CamelCase CLASS names are checked on the normalized form too,
+        # so a MissionRouter class cannot hide from the word split.
+        # Function names are snake_case and fully covered by the
+        # word-split scan (a substring check on them would misfire on
+        # Task 4's reconcile_registry and on observe_resource_readiness).
+        if isinstance(node, ast.ClassDef):
+            normalized = re.sub(r'[^a-z0-9]', '', node.name.lower())
+            for word in ('router', 'dispatcher', 'scheduler', 'observer',
+                         'reconciler', 'ingest', 'publisher', 'fetcher',
+                         'executor', 'deploy'):
+                assert word not in normalized, (relpath, node.name, word)
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME or (
+            token.type == tokenize.STRING
+            and token.start not in docstring_positions
+        ):
+            _mission_tokens_seen += 1
+            violations = _mission_word_violations(token.string)
+            assert not violations, (
+                relpath, token.start, token.string, violations,
+                'no routing, dispatch, scheduler, observer, reconciler,'
+                ' ingestion, merge, release, deploy, DBOS, fetch or execute'
+                ' surface in mission identifiers or literals')
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and (
+            (node.lineno, node.col_offset) not in docstring_positions
+        ):
+            _mission_values_seen += 1
+            assert not _mission_word_violations(node.value), (
+                relpath, (node.lineno, node.col_offset), node.value)
+assert _mission_imports_seen > 20, 'mission import scan saw too few imports'
+assert _mission_calls_seen > 200, 'mission call scan saw too few calls'
+assert _mission_tokens_seen > 5000, 'mission token scan saw too few tokens'
+assert _mission_values_seen > 200, 'mission literal scan saw too few literals'
+assert any(
+    isinstance(node, ast.Call) and getattr(node.func, 'id', None) == 'open'
+    for node in ast.walk(ast.parse((R / MISSION_READ_ONLY_OPEN_FILE).read_text()))
+), 'the read-only open() pin must actually see the store load path'
+
+# (d) exactly the Task 4 consumer set; a new importer of mission anywhere
+#     in the product tree (router, scheduler, observation service,
+#     reconciler, worker, capability, delivery) fails this pin.
+_mission_consumers = set()
+for path in product_files:
+    relpath = path.relative_to(R).as_posix()
+    if relpath.startswith('mission/'):
+        continue
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or '']
+        else:
+            continue
+        if any(n.split('.')[0] == 'mission' for n in names):
+            _mission_consumers.add(relpath)
+assert _mission_consumers == MISSION_ALLOWED_CONSUMERS, (
+    'mission gained or lost a consumer', sorted(_mission_consumers))
+assert all((R / rel).exists() for rel in MISSION_ALLOWED_CONSUMERS)
+
 print('static tests: OK')

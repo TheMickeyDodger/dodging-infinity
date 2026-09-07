@@ -316,7 +316,14 @@ PROPOSAL_INPUT_NAMES = tuple(mission_record.PROPOSAL_KEYS)
 
 
 def _proposal_output_schema():
+    """The proposal as the Mission Core RETURNS it. The core's normalized
+    proposal may carry the additive-optional ``proof_contract`` key when a
+    revision was proposed with one, so the OUTPUT schema declares it as an
+    optional property; it is never a tool INPUT here (no transport tool
+    authors a proof contract yet), so ``_proposal_properties`` and
+    ``required`` are unchanged."""
     properties = dict(_proposal_properties())
+    properties["proof_contract"] = {"type": ["object", "null"]}
     return {
         "type": ["object", "null"],
         "properties": properties,

@@ -230,6 +230,34 @@ release evidence. Separate artifact delivery remains outside that
 certification. DI-REMOTE-2 acceptance is COMPLETE for the v0.7.0 release
 candidate.
 
+## Mission Core and Mission State progress
+
+Two provider-neutral Mission layers now exist under `mission/`, in
+different states of delivery. The distinction matters and is recorded
+exactly:
+
+-   **Task 4, Mission Core: MERGED to `main`** (PR #33). Stable Mission
+    identity, exact revisioned proposals, transport-neutral human
+    APPROVE / EDIT / DENY decisions with truthful provenance, exact Mission
+    Authorization, the append-only Authority Ledger, and the one
+    fail-closed validation path. Approval moves a Mission to AUTHORIZED
+    and starts nothing.
+-   **Task 5, Mission State: IMPLEMENTED and VERIFIED on branch
+    `phase1/mission-state`, NOT delivered.** It extends the same
+    `missions.json` document and `MissionService` with the proof contract
+    (approved inside the proposal and bound by its digest, so changing it
+    is an EDIT plus a fresh APPROVE), the Evidence Graph with separate
+    submission and acceptance, the Artifact Registry with original-input
+    linkage, the Blocker Ledger, restart-safe checkpoints, bounded
+    continuation and closure, and Mission-safe dependency and readiness
+    state. Evidence is deterministic proof; narrative claims and process
+    exit can never satisfy a requirement. Nothing in it routes,
+    dispatches, schedules, observes, reconciles, fetches, executes or
+    delivers, and no Mission Router, Observation Service, Reconciler or
+    scheduler exists yet. It has not been merged, released or run live;
+    its acceptance rests on the focused hermetic suite and the single
+    serialized full CI-shaped validation of the frozen candidate.
+
 ## Immediate release gate: DI-REMOTE-2 acceptance before Phase I
 
 The remote mission fabric does not begin from an unaccepted moving target.

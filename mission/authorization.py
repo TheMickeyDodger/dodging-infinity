@@ -406,6 +406,11 @@ def reconcile_registry(document):
                                    decisions[decision["decision_id"]],
                                    mission_id))
             decisions[decision["decision_id"]] = mission_id
+    applied = {}
+    for state in document.get("mission_state", {}).values():
+        for operation in state.get("applied_operations", []):
+            applied[operation["operation_id"]] = applied.get(
+                operation["operation_id"], 0) + 1
     for reserved_id, reservation in document.get("reservations", {}).items():
         consumed_by = reservation.get("consumed_by")
         if consumed_by is None:
@@ -415,6 +420,13 @@ def reconcile_registry(document):
                 return _history("request reservation %s is marked consumed by"
                                 " %s but no mission with that id was created"
                                 " from it" % (reserved_id, consumed_by))
+        elif reservation.get("kind") == "state_operation":
+            # Mission State (Task 5): a consumed state operation appears
+            # exactly once across all state records' applied operations.
+            if consumed_by != reserved_id or applied.get(reserved_id) != 1:
+                return _history("state_operation reservation %s is marked"
+                                " consumed but %d state records apply it"
+                                % (reserved_id, applied.get(reserved_id, 0)))
         elif consumed_by != reserved_id or reserved_id not in decisions:
             return _history("decision reservation %s is marked consumed but no"
                             " mission records a decision with that id"

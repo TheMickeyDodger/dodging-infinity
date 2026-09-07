@@ -54,6 +54,7 @@ from mission import authorization as authorization_module
 from mission import decision as decision_module
 from mission import manifest
 from mission import record
+from mission import state_service
 from mission import store as store_module
 
 PROBLEM_UNKNOWN_REQUEST_ID = "mission_unknown_request_id"
@@ -69,8 +70,10 @@ _DENIAL_REASON = "denied by human decision"
 _EXPIRY_REASON = "expires_at passed"
 
 
-class MissionService(object):
-    """Propose, read, edit, decide, and validate Missions."""
+class MissionService(state_service.MissionStateOperations):
+    """Propose, read, edit, decide, and validate Missions; the Mission
+    State operations (Task 5) are mixed in from ``mission.state_service``
+    and share this lock, store, clock and id minter."""
 
     def __init__(self, store, clock, mint_id=None):
         self._store = store
@@ -97,12 +100,8 @@ class MissionService(object):
 
     def _reserve(self, kind, context):
         record.require_context(context)
-        prefix = (record.REQUEST_ID_PREFIX
-                  if kind == store_module.RESERVATION_KIND_REQUEST
-                  else record.DECISION_ID_PREFIX)
-        cap = (store_module.MAX_RESERVED_REQUEST_IDS
-               if kind == store_module.RESERVATION_KIND_REQUEST
-               else store_module.MAX_RESERVED_DECISION_IDS)
+        prefix = store_module.RESERVATION_PREFIXES[kind]
+        cap = store_module.RESERVATION_CAPS[kind]
         with self._store.lock():
             document = self._store.load()
             reservations = document["reservations"]
