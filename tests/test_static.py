@@ -183,7 +183,7 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
     'operator_session', 'human_interaction', 'durable_execution',
-    'capability', 'worker', 'grok_mcp', 'mission',
+    'capability', 'worker', 'grok_mcp', 'mission', 'coordination',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -221,6 +221,9 @@ assert any(p.name == 'grokmcp.py' for p in gateway_files), (
 assert any(
     p.relative_to(R).parts[0] == 'mission' for p in gateway_files
 ), 'mission sources not found'
+assert any(
+    p.relative_to(R).parts[0] == 'coordination' for p in gateway_files
+), 'coordination sources not found'
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
 # 1. AST: no Import/ImportFrom naming herdr/herdctl, and no dynamic-import
@@ -2065,5 +2068,212 @@ for path in product_files:
 assert _mission_consumers == MISSION_ALLOWED_CONSUMERS, (
     'mission gained or lost a consumer', sorted(_mission_consumers))
 assert all((R / rel).exists() for rel in MISSION_ALLOWED_CONSUMERS)
+
+# (12c) coordination (Task 6: Mission Routing + Attention + Bot
+#       Coordination): route decisions, bounded conversation bindings,
+#       attention records and bot handoffs over a read-only observation
+#       contract. It sits in _HERDR_FREE_ROOTS above (AST, token and
+#       behavioral herdr-isolation scans). Same anti-vacuity posture as
+#       (12b): derived file set, non-zero counters with thresholds below
+#       the measured counts, planted-probe self-checks.
+#       (a) import roots: everything (12b) forbids PLUS `mission` — the
+#           A2 boundary. Mission facts reach this package only as
+#           observation VALUES a caller injects, so it can never become a
+#           consumer the (12b)(d) pin would have to admit;
+#       (b) call names: the same no-fetch / execute / publish / process /
+#           tree-mutation set; the ONE permitted open() is the store's
+#           read-mode load;
+#       (c) vocabulary: `route`, `router` and `routing` are LEGITIMATE
+#           here (this package IS the Mission Router's deterministic
+#           tiers) and are deliberately absent from the forbidden set;
+#           what is forbidden is the execution, dispatch, scheduler,
+#           reconciler, journal, worker, network and process vocabulary.
+#           `release` is DELIBERATELY EXCLUDED from this set, unlike (12b):
+#           `RELEASE` is an architecture §3 specialist-participant name
+#           (`record.PARTICIPANT_RELEASE`) and must remain a legal
+#           identifier here — do not "fix" this by adding it back;
+#       (d) consumers: NO product file imports coordination — no adapter
+#           wiring is in scope for Task 6 — so any new importer (a
+#           transport, a scheduler, an observation service) fails here;
+#       (e) a fresh interpreter importing every coordination module loads
+#           no mission, telegram_operator, grok_mcp, pr_delivery, herdr,
+#           herdctl, target_runtime, subprocess or socket module.
+coordination_files = sorted(
+    p for p in product_files if p.relative_to(R).parts[0] == 'coordination'
+)
+assert {p.relative_to(R).as_posix() for p in coordination_files} >= {
+    'coordination/__init__.py', 'coordination/record.py',
+    'coordination/observation.py', 'coordination/binding.py',
+    'coordination/routing.py', 'coordination/attention.py',
+    'coordination/handoff.py', 'coordination/store.py',
+    'coordination/service.py',
+}, 'coordination scan lost a package file'
+assert len(coordination_files) >= 9, 'coordination scan lost files'
+COORDINATION_FORBIDDEN_IMPORT_ROOTS = MISSION_FORBIDDEN_IMPORT_ROOTS | {'mission'}
+COORDINATION_FORBIDDEN_CALL_NAMES = MISSION_FORBIDDEN_CALL_NAMES
+# Set literal on purpose: an unordered word list, never an argv. NOTE
+# the deliberate absences: route/router/routing (legitimate here) and
+# release (a §3 participant name) — see (c) above.
+COORDINATION_FORBIDDEN_WORDS = frozenset({
+    'fetch', 'fetcher', 'download', 'upload', 'execute', 'executor',
+    'exec', 'publish', 'publisher', 'launch', 'deploy', 'deployment',
+    'merge', 'dbos', 'subprocess', 'popen', 'urlopen', 'spawn', 'fork',
+    'socket', 'http', 'https', 'network', 'scheduler', 'schedule',
+    'reconciler', 'journal', 'ingest', 'ingestion', 'dispatch',
+    'dispatcher', 'worker', 'placement',
+})
+assert 'release' not in COORDINATION_FORBIDDEN_WORDS
+assert not {'route', 'router', 'routing'} & COORDINATION_FORBIDDEN_WORDS
+COORDINATION_ALLOWED_CONSUMERS = frozenset()
+COORDINATION_READ_ONLY_OPEN_FILE = 'coordination/store.py'
+
+
+def _coordination_word_violations(token_text):
+    return sorted(
+        set(re.findall(r'[a-z]+', token_text.lower()))
+        & COORDINATION_FORBIDDEN_WORDS
+    )
+
+
+# Planted-probe self-checks: the detectors fire on what they exist to catch.
+assert _coordination_word_violations('dispatch_route') == ['dispatch']
+assert _coordination_word_violations('"launch the worker"') == ['launch', 'worker']
+assert _coordination_word_violations('derive_route') == []
+assert _coordination_word_violations('PARTICIPANT_RELEASE') == []
+assert _coordination_word_violations('MissionScheduler') == []  # see class scan
+assert 'mission' in COORDINATION_FORBIDDEN_IMPORT_ROOTS
+assert 'coordination/store.py' in {
+    p.relative_to(R).as_posix() for p in coordination_files
+}
+
+_coordination_imports_seen = 0
+_coordination_calls_seen = 0
+_coordination_tokens_seen = 0
+_coordination_values_seen = 0
+_coordination_classes_seen = 0
+for path in coordination_files:
+    relpath = path.relative_to(R).as_posix()
+    source = path.read_text()
+    tree = ast.parse(source)
+    docstring_positions = _docstring_positions_of(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name for alias in node.names]
+            module = getattr(node, 'module', None) or ''
+            for root in [module.split('.')[0]] + [n.split('.')[0] for n in names]:
+                _coordination_imports_seen += 1
+                assert root not in COORDINATION_FORBIDDEN_IMPORT_ROOTS, (
+                    relpath, root, 'coordination imports no network, process,'
+                    ' filesystem-tree, clock, dynamic-import, serialization,'
+                    ' adapter, seam, orchestration root — and never mission')
+        elif isinstance(node, ast.Call):
+            _coordination_calls_seen += 1
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            assert name not in COORDINATION_FORBIDDEN_CALL_NAMES, (
+                relpath, node.lineno, name,
+                'coordination performs no fetch, execute, publish, process or'
+                ' tree-mutation call')
+            if name == 'open':
+                assert relpath == COORDINATION_READ_ONLY_OPEN_FILE, (
+                    relpath, node.lineno, 'open() only in the store load path')
+                modes = [a.value for a in node.args[1:2] if isinstance(a, ast.Constant)]
+                modes += [k.value.value for k in node.keywords
+                          if k.arg == 'mode' and isinstance(k.value, ast.Constant)]
+                assert modes == ['r'], (relpath, node.lineno, modes,
+                                        'the one open() is read-only')
+        # CamelCase CLASS names are checked on the normalized form too.
+        # `Router` is NOT in this list: a router class is legitimate here.
+        if isinstance(node, ast.ClassDef):
+            _coordination_classes_seen += 1
+            normalized = re.sub(r'[^a-z0-9]', '', node.name.lower())
+            for word in ('dispatcher', 'scheduler', 'reconciler', 'journal',
+                         'ingest', 'publisher', 'fetcher', 'executor',
+                         'deploy', 'worker', 'launcher'):
+                assert word not in normalized, (relpath, node.name, word)
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME or (
+            token.type == tokenize.STRING
+            and token.start not in docstring_positions
+        ):
+            _coordination_tokens_seen += 1
+            violations = _coordination_word_violations(token.string)
+            assert not violations, (
+                relpath, token.start, token.string, violations,
+                'no execution, dispatch, scheduler, reconciler, journal,'
+                ' worker, network or process surface in coordination'
+                ' identifiers or literals')
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and (
+            (node.lineno, node.col_offset) not in docstring_positions
+        ):
+            _coordination_values_seen += 1
+            assert not _coordination_word_violations(node.value), (
+                relpath, (node.lineno, node.col_offset), node.value)
+# Thresholds sit well below the counts measured when the pin was written
+# (90 / 1109 / 11079 / 1567 / 20), so the scans cannot pass on an empty or
+# mis-filtered scope.
+assert _coordination_imports_seen > 40, 'coordination import scan saw too few'
+assert _coordination_calls_seen > 500, 'coordination call scan saw too few calls'
+assert _coordination_tokens_seen > 5000, 'coordination token scan saw too few'
+assert _coordination_values_seen > 700, 'coordination literal scan saw too few'
+assert _coordination_classes_seen > 10, 'coordination class scan saw too few'
+assert any(
+    isinstance(node, ast.Call) and getattr(node.func, 'id', None) == 'open'
+    for node in ast.walk(ast.parse((R / COORDINATION_READ_ONLY_OPEN_FILE).read_text()))
+), 'the read-only open() pin must actually see the store load path'
+
+# (d) exactly no consumer: nothing in the product tree imports coordination.
+_coordination_consumers = set()
+for path in product_files:
+    relpath = path.relative_to(R).as_posix()
+    if relpath.startswith('coordination/'):
+        continue
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or '']
+        else:
+            continue
+        if any(n.split('.')[0] == 'coordination' for n in names):
+            _coordination_consumers.add(relpath)
+assert _coordination_consumers == COORDINATION_ALLOWED_CONSUMERS, (
+    'coordination gained a consumer; no adapter wiring is in scope',
+    sorted(_coordination_consumers))
+assert 'coordination/*.py' in ci_text, 'CI must compile coordination'
+
+# (e) fresh-interpreter import closure: the A2 boundary and the
+#     no-live-effects rule, behaviorally.
+coordination_probe = subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            'import sys\n'
+            'import coordination\n'
+            'import coordination.record, coordination.observation\n'
+            'import coordination.binding, coordination.routing\n'
+            'import coordination.attention, coordination.handoff\n'
+            'import coordination.store, coordination.service\n'
+            'bad = sorted(\n'
+            '    name for name in sys.modules\n'
+            '    if name in ("subprocess", "socket")\n'
+            '    or name.split(".")[0] in ("mission", "telegram_operator",'
+            ' "grok_mcp", "pr_delivery", "herdr", "herdctl", "target_runtime")\n'
+            ')\n'
+            'print("\\n".join(bad))\n'
+            'sys.exit(1 if bad else 0)\n'
+        ),
+    ],
+    cwd=str(R),
+    capture_output=True,
+    text=True,
+)
+assert coordination_probe.returncode == 0, (
+    'coordination loaded mission, a transport, a delivery, an orchestration,'
+    ' a process or a network module',
+    coordination_probe.returncode, coordination_probe.stdout,
+    coordination_probe.stderr,
+)
 
 print('static tests: OK')

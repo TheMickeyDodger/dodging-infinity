@@ -413,8 +413,11 @@ bot deciding for itself.
 
 Today, durable `wf-*` workflow identity, Telegram message binding, target
 identity, and task identity exist and survive independently of the Gateway
-turn. The first-class `M-####` registry and the natural-language router remain
-open, as Iteration 1 on the [roadmap](roadmap.md).
+turn. The first-class registry is the merged Mission Core (`mn-*` identities).
+The deterministic routing tiers, the attention projection, and bot
+coordination are implemented in `coordination/` on branch
+`phase1/mission-routing` and NOT delivered; the bounded natural-language
+routing turn remains open, as Iteration 1 on the [roadmap](roadmap.md).
 
 ## 5. Mission Harness
 

@@ -232,9 +232,10 @@ candidate.
 
 ## Mission Core and Mission State progress
 
-Two provider-neutral Mission layers now exist under `mission/`, in
-different states of delivery. The distinction matters and is recorded
-exactly:
+Two provider-neutral Mission layers now exist under `mission/`, and a third
+that consumes them only through a read-only observation contract exists
+under `coordination/`, in different states of delivery. The distinction
+matters and is recorded exactly:
 
 -   **Task 4, Mission Core: MERGED to `main`** (PR #33). Stable Mission
     identity, exact revisioned proposals, transport-neutral human
@@ -242,21 +243,53 @@ exactly:
     Authorization, the append-only Authority Ledger, and the one
     fail-closed validation path. Approval moves a Mission to AUTHORIZED
     and starts nothing.
--   **Task 5, Mission State: IMPLEMENTED and VERIFIED on branch
-    `phase1/mission-state`, NOT delivered.** It extends the same
-    `missions.json` document and `MissionService` with the proof contract
-    (approved inside the proposal and bound by its digest, so changing it
-    is an EDIT plus a fresh APPROVE), the Evidence Graph with separate
-    submission and acceptance, the Artifact Registry with original-input
-    linkage, the Blocker Ledger, restart-safe checkpoints, bounded
-    continuation and closure, and Mission-safe dependency and readiness
-    state. Evidence is deterministic proof; narrative claims and process
-    exit can never satisfy a requirement. Nothing in it routes,
-    dispatches, schedules, observes, reconciles, fetches, executes or
-    delivers, and no Mission Router, Observation Service, Reconciler or
-    scheduler exists yet. It has not been merged, released or run live;
-    its acceptance rests on the focused hermetic suite and the single
-    serialized full CI-shaped validation of the frozen candidate.
+-   **Task 5, Mission State: MERGED to `main`** (PR #34, merge commit
+    `5ff9ff3`). It extends the same `missions.json` document and
+    `MissionService` with the proof contract (approved inside the proposal
+    and bound by its digest, so changing it is an EDIT plus a fresh
+    APPROVE), the Evidence Graph with separate submission and acceptance,
+    the Artifact Registry with original-input linkage, the Blocker Ledger,
+    restart-safe checkpoints, bounded continuation and closure, and
+    Mission-safe dependency and readiness state. Evidence is deterministic
+    proof; narrative claims and process exit can never satisfy a
+    requirement. Nothing in it routes, dispatches, schedules, observes,
+    reconciles, fetches, executes or delivers. It has not been released or
+    run live; its acceptance rested on the focused hermetic suite and the
+    single serialized full CI-shaped validation of the frozen candidate.
+-   **Task 6, Mission Routing + Attention + Bot Coordination: IMPLEMENTED
+    on branch `phase1/mission-routing`, NOT delivered.** A separate
+    provider-neutral package, `coordination/`, that never imports
+    `mission`: canonical Mission facts reach it only as observation values
+    a caller injects through one narrow read-only contract (exact Mission
+    and proposal revision, a decimal state cursor, freshness and
+    provenance, conditions, and Mission-local evidence/artifact reference
+    records carrying their validity provenance). It holds its own atomic
+    document (`coordination.json`, own lock, closed keys, schema version,
+    write-sequence conflict guard, hard caps, fail-closed load) with four
+    record families: bounded conversation bindings (every kind
+    revision-exact; stale context clarifies, and rebinding is a separate
+    act routing never performs), durable route decisions (context-bound
+    idempotent replay; the deterministic tiers of Iteration 1 — explicit
+    Mission id, reply-to, approval/result presentation, exact repository
+    or issue reference, known project, durable alias, unique conversation
+    match — with the closed outcomes `existing_mission` / `new_mission` /
+    `clarification_required`, and the engineering lane selected as a
+    VALUE with explicit refusal reasons), attention records (BLOCKED,
+    NEEDS_HUMAN, AUTHORIZATION_READY, RESULT_READY with deterministic
+    priority, durable duplicate suppression, and presentation only under a
+    fresh matching observation; acknowledgment records the human act and
+    resolves nothing), and bot handoffs (eligible roster participants,
+    citations only at the validity level the observation proves, one
+    proven forwarding path, exact revision compatibility on every
+    transition; a handoff transfers context and request only). Every
+    record carries `authority: "none"`. The **bounded natural-language
+    routing turn (Iteration 1 step 8) is NOT implemented**, and neither
+    are the Event Journal, the Mission Observation Service (the binding of
+    the observation contract to the live Mission store), the Reconciler, a
+    scheduler, live bot messaging or live dispatch; those remain Task 7
+    and later. Nothing in it launches a Mission or Capability, sends a
+    message, starts Herdr work or performs delivery. It has not been
+    merged, released or run live.
 
 ## Immediate release gate: DI-REMOTE-2 acceptance before Phase I
 
@@ -372,7 +405,15 @@ which one rather than guessing.
 
 Progress: durable `wf-*` workflow identity, Telegram binding, target identity,
 and task identity now exist and survive independently of the Gateway turn. The
-first-class `M-####` registry and natural-language Mission Router remain open.
+first-class Mission registry is the merged Mission Core (`mn-*` identities,
+Task 4). The deterministic routing tiers 1 to 7 above, the closed outcomes,
+bounded conversation bindings, durable idempotent route decisions, the
+Attention Router's projection of what needs a human, and bot coordination
+against a per-Mission roster are implemented in `coordination/` on branch
+`phase1/mission-routing` (Task 6, not delivered; see "Mission Core and Mission
+State progress"). Step 8, the bounded natural-language routing-model turn,
+remains open: when no deterministic tier resolves, Task 6 clarifies rather
+than guessing.
 
 Acceptance: the historical external target, Silvi, and another mission can all be active and
 natural-language follow-ups reliably reach the right mission.

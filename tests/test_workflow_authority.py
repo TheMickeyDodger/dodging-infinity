@@ -2285,6 +2285,62 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_RESERVED_STATE_OPERATION_IDS": 65536,
             "MAX_MISSION_STATE_RECORDS": 1024,
         },
+        # Coordination (Task 6: Mission Routing + Attention + Bot
+        # Coordination). Every bound is exact-value pinned; the store caps
+        # REFUSE at the bound and never evict (evicting the inbound-turn
+        # ledger would silently break route idempotency). Values reuse
+        # existing pinned bounds for the same kind of quantity wherever
+        # one exists.
+        "coordination/record.py": {
+            # Same identity grammar and context bounds as Mission Core.
+            "ID_HEX_CHARS": 32,
+            "MAX_TRANSPORT_CHARS": 64,
+            "MAX_PRINCIPAL_REF_CHARS": 128,
+            "MAX_SUBJECT_CHARS": 256,
+            # Opaque transport references (= MAX_ID_CHARS).
+            "MAX_CONVERSATION_REF_CHARS": 128,
+            "MAX_MESSAGE_REF_CHARS": 128,
+            # Canonical URL bound (512) + "#" + up to 15 issue digits.
+            "MAX_SELECTOR_CHARS": 528,
+            # Keys: project, alias, condition, idempotency (= contract key).
+            "MAX_KEY_CHARS": 128,
+            "MAX_DETAIL_CHARS": 2000,
+            "MAX_REQUEST_TEXT_CHARS": 4000,
+            "MAX_CONDITION_DETAIL_CHARS": 1000,
+            "MAX_STATE_CURSOR_CHARS": 128,
+            "MAX_OBSERVATION_SOURCE_CHARS": 128,
+            # Not a char bound: references cited on one handoff or one
+            # condition (= MAX_ARTIFACT_LINKS). Pinned because the name
+            # matches the convention.
+            "MAX_REFERENCE_LIST": 64,
+        },
+        "coordination/observation.py": {
+            # The repository's established human-scale validity window.
+            "MAX_OBSERVATION_AGE_SECONDS": 900,
+            "MAX_OBSERVED_CONDITIONS": 64,
+            "MAX_OBSERVED_REFERENCES": 512,
+        },
+        "coordination/binding.py": {
+            "MAX_BINDINGS_PER_MISSION": 64,
+            "MAX_BINDINGS_PER_CONVERSATION": 256,
+            # Ten years (= MAX_STALENESS_BOUND_SECONDS).
+            "MAX_BINDING_VALIDITY_SECONDS": 315360000,
+        },
+        "coordination/routing.py": {
+            "MAX_ROUTE_CANDIDATES": 16,
+        },
+        "coordination/handoff.py": {
+            "MAX_PARTICIPANTS_PER_MISSION": 16,
+            "MAX_HANDOFF_FORWARD_DEPTH": 4,
+            "MAX_HANDOFF_TRANSITIONS": 8,
+        },
+        "coordination/store.py": {
+            "MAX_BINDING_RECORDS": 4096,
+            "MAX_ROUTE_DECISION_RECORDS": 16384,
+            "MAX_ATTENTION_RECORDS": 16384,
+            "MAX_HANDOFF_RECORDS": 4096,
+            "MAX_PARTICIPANT_ROSTERS": 1024,
+        },
         "grok_mcp/adapter.py": {
             "MAX_MESSAGE_CHARS": 4000,
             "MAX_MESSAGE_CHUNKS": 4,
