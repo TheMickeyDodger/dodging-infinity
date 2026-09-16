@@ -2275,6 +2275,9 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_STATE_REASON_CHARS": 1000,
             "MAX_RESOURCE_REFERENCE_CHARS": 512,
             "MAX_REFUSAL_DETAIL_CHARS": 2000,
+            # Task 7, Stage 2: every string field of a receipt attestation,
+            # equal to the delivery layer's own id bound (MAX_ID_CHARS).
+            "MAX_RECEIPT_ATTESTATION_FIELD_CHARS": 128,
         },
         "mission/store.py": {
             "MAX_MISSION_RECORDS": 1024,
@@ -2284,6 +2287,41 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_RESERVED_DECISION_IDS": 4096,
             "MAX_RESERVED_STATE_OPERATION_IDS": 65536,
             "MAX_MISSION_STATE_RECORDS": 1024,
+        },
+        "mission/journal.py": {
+            # The journal is the applied-operation ledger: one shared cap.
+            "MAX_JOURNAL_EVENTS": 4096,
+            "MAX_JOURNAL_PAGE_EVENTS": 256,
+        },
+        "mission/observation.py": {
+            # Re-exported from reconciliation, pinned at the same value.
+            "REPORTED_FRESHNESS_BOUND_SECONDS": 600,
+            "MAX_REPORT_DETAIL_CHARS": 500,
+            "MAX_OBSERVATION_INPUT_ITEMS": 512,
+            "MAX_OBSERVATION_INPUT_DEPTH": 6,
+            "MAX_OBSERVATION_INPUT_STR_CHARS": 2048,
+            "MAX_OBSERVATION_INPUT_KEY_CHARS": 128,
+            "MAX_OBSERVATION_INPUT_INT_BITS": 63,
+            "MAX_MISSION_ID_CHARS": 64,
+            "MAX_CONTEXT_FIELD_CHARS": 256,
+        },
+        "mission/reconciliation.py": {
+            "MAX_RECONCILIATION_RECORDS": 256,
+            "MAX_RECONCILIATION_FINDINGS": 512,
+            "MAX_FINDING_DETAIL_CHARS": 500,
+            "MAX_OBSERVED_CANDIDATE_KEYS": 64,
+            "REPORTED_FRESHNESS_BOUND_SECONDS": 600,
+        },
+        "pr_delivery/mission_parent.py": {
+            # Task 7, Stage 2 (round 07): the seam's preflight bounds on the
+            # caller's delivery document, wider than the delivery contract's
+            # own limits and applied before the document is copied or
+            # validated.
+            "MAX_DELIVERY_DOCUMENT_ITEMS": 65536,
+            "MAX_DELIVERY_DOCUMENT_DEPTH": 8,
+            "MAX_DELIVERY_DOCUMENT_STR_CHARS": 16384,
+            "MAX_DELIVERY_DOCUMENT_KEY_CHARS": 128,
+            "MAX_DELIVERY_DOCUMENT_INT_BITS": 63,
         },
         # Coordination (Task 6: Mission Routing + Attention + Bot
         # Coordination). Every bound is exact-value pinned; the store caps

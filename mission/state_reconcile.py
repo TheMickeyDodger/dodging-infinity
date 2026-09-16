@@ -47,9 +47,23 @@ appends at ``expected_sequence + 1``), ``activate_proof_contract`` takes
 no arguments, a ``bind_dependency`` operation is re-derived as
 ``declare_dependency(kind, reference)`` when the record's slot key is
 None and as ``bind_dependency(slot_key, reference)`` otherwise (the
-no-op from the outcome), and every other kind's arguments are the
-stored effect fields. No kind is partially derivable: there is no
-stated hole.
+no-op from the outcome), an ``attest_delivery_receipt`` operation is
+re-derived as the closed attestation input rebuilt from its attested
+artifact and marker (Task 7, Stage 2; the resolved authorization id is
+bound by marker/outcome agreement and the store's cross-document check
+instead), and every other kind's arguments are the stored effect
+fields. No kind is partially derivable: there is no stated hole.
+
+Attested artifacts (Task 7, Stage 2). The marker decides the producing
+kind: an artifact carrying ``receipt_attestation`` must be the ONE
+effect of an ``attest_delivery_receipt`` operation whose outcome names
+it and agrees with the marker field by field; an artifact without it
+must be the one effect of a ``record_artifact`` operation. A marker on a
+generic artifact, an attesting operation whose artifact has no marker,
+two artifacts for one operation, and a marker with no producing
+operation all refuse ``mission_state_effect_inconsistent``: presence of
+a receipt-reference artifact never implies attestation, and the attested
+form cannot be created or promoted by any other kind.
 
 Historical service preconditions (R-39). Service rules that are
 reconstructible from stored state hold in history too, evaluated against
@@ -82,6 +96,8 @@ recomputes; ``attempts_remaining`` is reconciled by the store against the
 contract bound at that operation (the store holds the contracts). The
 per-field classification is in the task evidence.
 """
+
+import copy
 
 from mission import progress as progress_module
 from mission import record
@@ -120,7 +136,8 @@ _OUTCOME_ID_PREFIXES = {
     "checkpoint_id": record.CHECKPOINT_ID_PREFIX,
 }
 _OUTCOME_BOOL_KEYS = ("accepted", "invalidated", "resolved", "new_binding")
-_OUTCOME_INT_KEYS = ("attempt", "attempts_remaining", "revision")
+_OUTCOME_INT_KEYS = ("attempt", "attempts_remaining", "revision",
+                     "observed_position", "observed_revision", "finding_count")
 _OUTCOME_OPTIONAL_STR_KEYS = ("key", "slot_key", "next_permitted_step", "detail")
 
 
@@ -224,6 +241,13 @@ def _invocation_arguments(kind, effect, outcome, state):
                 "content_digest_sha256": effect["content_digest_sha256"],
                 "available": effect["available"],
                 "derived_from": list(effect["derived_from"])}
+    if kind == state_module.OPERATION_ATTEST_DELIVERY_RECEIPT:
+        # Task 7, Stage 2: the invocation is the closed attestation input,
+        # rebuilt from the attested artifact and its marker; the
+        # authorization id is resolved, never supplied, so it is bound by
+        # the marker/outcome agreement and the store's cross-document
+        # check instead.
+        return {"attestation": state_module.attestation_input_of(effect)}
     if kind == state_module.OPERATION_SUBMIT_EVIDENCE:
         return {"requirement_key": effect["requirement_key"], "kind": effect["kind"],
                 "content_digest_sha256": effect["content_digest_sha256"],
@@ -263,6 +287,11 @@ def _invocation_arguments(kind, effect, outcome, state):
         return {"detail": effect["detail"]}
     if kind == state_module.OPERATION_CLOSE_UNSUCCESSFUL:
         return {"reason": effect["reason"], "detail": effect["detail"]}
+    if kind == state_module.OPERATION_RECONCILE:
+        # Task 7, Stage 2: the invocation is the normalized sources and
+        # their provenance; the pass's meaning is decided elsewhere.
+        return {"sources": copy.deepcopy(effect["sources"]),
+                "source_provenance": copy.deepcopy(effect["source_provenance"])}
     return {"detail": effect["detail"]}
 
 
@@ -294,6 +323,11 @@ def reconcile_effects(state, location):
     for name in by_operation:
         for entry in state[name]:
             by_operation[name].setdefault(entry["operation_id"], []).append(entry)
+    # Task 7, Stage 2: the additive-optional reconciliation records.
+    by_operation["reconciliations"] = {}
+    for entry in state.get("reconciliations", []):
+        by_operation["reconciliations"].setdefault(
+            entry["operation_id"], []).append(entry)
     for index, operation in enumerate(state["applied_operations"]):
         where = "%s.applied_operations[%d]" % (location, index)
         outcome = _validate_outcome_shape(where, operation)
@@ -340,6 +374,23 @@ def reconcile_effects(state, location):
             effect = direct("artifacts")
             for key in ("artifact_id", "key", "role"):
                 _require_equal(where, outcome, key, effect[key])
+            # Task 7, Stage 2: the generic kind never produces the attested
+            # form; a marker on its artifact is a promotion and refuses.
+            if state_module.has_receipt_attestation(effect):
+                _inconsistent(where, "a record_artifact operation produced an"
+                              " artifact carrying a receipt attestation; only"
+                              " the attesting operation kind records that"
+                              " marker")
+        elif kind == state_module.OPERATION_ATTEST_DELIVERY_RECEIPT:
+            effect = direct("artifacts")
+            if not state_module.has_receipt_attestation(effect):
+                _inconsistent(where, "an attesting operation produced an"
+                              " artifact with no receipt attestation marker")
+            marker = effect[state_module.ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+            _require_equal(where, outcome, "artifact_id", effect["artifact_id"])
+            for key in ("delivery_id", "step", "receipt_state", "step_state",
+                        "authorization_id"):
+                _require_equal(where, outcome, key, marker[key])
         elif kind == state_module.OPERATION_SUBMIT_EVIDENCE:
             effect = direct("evidence")
             for key in ("evidence_id", "requirement_key", "kind"):
@@ -432,6 +483,13 @@ def reconcile_effects(state, location):
             for key in ("checkpoint_id", "next_permitted_step", "refusal", "budget",
                         "active_blocker_ids", "outstanding_dependency_ids"):
                 _require_equal(where, outcome, key, effect[key])
+        elif kind == state_module.OPERATION_RECONCILE:
+            effect = direct("reconciliations")
+            _require_equal(where, outcome, "observed_position",
+                           effect["observed_position"])
+            _require_equal(where, outcome, "observed_revision",
+                           effect["observed_revision"])
+            _require_equal(where, outcome, "finding_count", len(effect["findings"]))
         else:
             closure = state["closure"]
             if closure is None or closure["operation_id"] != operation_id:
@@ -460,18 +518,34 @@ def reconcile_effects(state, location):
     # Reverse: every effect record and nested event has exactly one
     # producing operation of the right kind (the per-record binding
     # checks above guarantee existence and kind; here the COUNT).
+    ledger = dict((e["operation_id"], e["kind"]) for e in state["applied_operations"])
+    # Task 7, Stage 2: an artifact's producing kind is decided by its
+    # marker — attest_delivery_receipt with one, record_artifact without —
+    # and either way exactly one artifact names the operation.
+    for operation_id, entries in by_operation["artifacts"].items():
+        marked = [e for e in entries if state_module.has_receipt_attestation(e)]
+        if marked:
+            wanted = state_module.OPERATION_ATTEST_DELIVERY_RECEIPT
+        else:
+            wanted = state_module.OPERATION_RECORD_ARTIFACT
+        if ledger.get(operation_id) != wanted or len(entries) != 1 or (
+            len(marked) not in (0, len(entries))
+        ):
+            _inconsistent("%s.artifacts" % location,
+                          "%d record(s) (%d attested) attributed to operation %s"
+                          " (%s)" % (len(entries), len(marked), operation_id,
+                                     ledger.get(operation_id)))
     expected_kind = {
         "contract_activations": state_module.OPERATION_ACTIVATE_CONTRACT,
         "claims": state_module.OPERATION_RECORD_CLAIM,
-        "artifacts": state_module.OPERATION_RECORD_ARTIFACT,
         "evidence": state_module.OPERATION_SUBMIT_EVIDENCE,
         "blockers": state_module.OPERATION_OPEN_BLOCKER,
         "dependencies": state_module.OPERATION_BIND_DEPENDENCY,
         "resource_readiness": state_module.OPERATION_OBSERVE_RESOURCE_READINESS,
         "checkpoints": state_module.OPERATION_RECORD_CHECKPOINT,
         "continuations": state_module.OPERATION_RECORD_CONTINUATION,
+        "reconciliations": state_module.OPERATION_RECONCILE,
     }
-    ledger = dict((e["operation_id"], e["kind"]) for e in state["applied_operations"])
     for name, kind in expected_kind.items():
         for operation_id, entries in by_operation[name].items():
             if ledger.get(operation_id) != kind or len(entries) != 1:

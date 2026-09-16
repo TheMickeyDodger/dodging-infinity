@@ -53,15 +53,48 @@ NO dependency record naming it and an existing dependency for that slot,
 under the same activation, bound at an EARLIER sequence. Budget is derived
 from the ledger the reconciliation proves.
 
+Journal snapshot (Task 7). When the record carries the additive-optional
+``snapshot`` key with a value, ``mission.journal.validate_snapshot_shape``
+checks its closed, typed shape here; its bindings to THIS ledger (schema
+version, Mission, a held position, the revision in force there, the
+chain digest there) and its recomputation are derived checks the store
+runs after every primary check. An absent key or None is "no snapshot".
+
+Reconciliation records (Task 7, Stage 2). When the record carries the
+additive-optional ``reconciliations`` key, each entry is checked here
+for its closed, typed shape (``mission.reconciliation``), for naming an
+applied ``reconcile`` operation with that operation's sequence,
+provenance and recording time, and for observing exactly the position
+before its own event; the chain binding and the recomputation of its
+findings are derived checks the store runs LAST. An absent key is "no
+reconciliation".
+
+Attested receipt references (Task 7, Stage 2). An artifact MAY carry
+the additive-optional ``receipt_attestation`` marker (``mission.state``).
+Its presence decides the producing kind: a marked artifact must name an
+applied ``attest_delivery_receipt`` operation and a generic one a
+``record_artifact`` operation (``mission_state_operation_binding``
+otherwise), the marker must be the closed bounded shape and the marked
+artifact must be exactly what the attesting operation records — a
+delivery-receipt reference bounded like the delivery layer's ids, with
+the receipt's digest, available, a VERIFICATION artifact under no
+contract key, deriving from nothing (``mission_state_receipt_attestation``
+otherwise). An artifact without the key is UNATTESTED; nothing supplies
+the key on load. The ledger / effect count and the marker / outcome
+agreement are ``state_reconcile``'s; the marker's binding to a stored
+Mission Authorization of this Mission at the cited revision, inside its
+recorded window, is the store's.
+
 Cross-DOCUMENT bindings (the Mission, its revisions and authorizations,
 the contract content, foreign Missions, reservations) are the store's
 job (``mission.store``), which calls this first.
 """
 
+from mission import journal
+from mission import reconciliation
 from mission import record
 from mission import state as state_module
 from mission import state_reconcile
-
 
 
 
@@ -281,8 +314,11 @@ def _validate_activations(bindings):
         previous = entry
 
 
-def _validate_ordered(bindings, name, max_items, keys, validator):
-    """A list of closed records in strictly increasing sequence order."""
+def _validate_ordered(bindings, name, max_items, keys, validator, optional=()):
+    """A list of closed records in strictly increasing sequence order.
+    ``optional`` names the additive-optional keys a record of this list
+    MAY carry (the artifact attestation marker); everything else is
+    closed exactly as before."""
     state = bindings.state
     location = "%s.%s" % (bindings.location, name)
     entries = _bound_list(state[name], location, max_items)
@@ -290,7 +326,7 @@ def _validate_ordered(bindings, name, max_items, keys, validator):
     for index, entry in enumerate(entries):
         where = "%s[%d]" % (location, index)
         record.require_dict(entry, where)
-        record.require_closed_keys(entry, keys, where)
+        record.require_closed_keys(entry, keys, where, optional=optional)
         record.require_int(entry["sequence"], where + ".sequence", minimum=1)
         if entry["sequence"] <= last_sequence:
             record.fail(state_module.PROBLEM_SEQUENCE,
@@ -312,8 +348,23 @@ def _validate_claim(bindings, entry, where):
 def _validate_artifact(bindings, entry, where):
     artifact_id = record.require_id(entry["artifact_id"], record.ARTIFACT_ID_PREFIX,
                                     where + ".artifact_id")
-    _require_operation(bindings, entry, state_module.OPERATION_RECORD_ARTIFACT, where,
-                       time_field="recorded_at")
+    # Task 7, Stage 2: the marker's PRESENCE decides the producing kind.
+    # A marked artifact names an attest_delivery_receipt operation and a
+    # generic one names a record_artifact operation; the reverse count
+    # (exactly one marked artifact per attesting operation, none per
+    # generic one) is proved by ``state_reconcile``.
+    if not state_module.has_receipt_attestation(entry):
+        _require_operation(bindings, entry, state_module.OPERATION_RECORD_ARTIFACT,
+                           where, time_field="recorded_at")
+    else:
+        # The KEY is present: it must be the closed marker (a present
+        # null or any other shape refuses; absence is the only way to be
+        # a generic artifact) and the producing kind is the attesting one.
+        attestation = entry[state_module.ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+        _validate_attested_artifact(entry, attestation, where)
+        _require_operation(bindings, entry,
+                           state_module.OPERATION_ATTEST_DELIVERY_RECEIPT, where,
+                           time_field="recorded_at")
     if entry["key"] is not None:
         record.require_contract_key(entry["key"], where + ".key")
     record.require_member(entry["role"], record.ARTIFACT_ROLES, where + ".role")
@@ -347,6 +398,40 @@ def _validate_artifact(bindings, entry, where):
         record.fail(record.PROBLEM_BAD_VALUE,
                     "%s repeats artifact id %s" % (where, artifact_id))
     bindings.artifact_ids.append(artifact_id)
+
+
+def _validate_attested_artifact(entry, attestation, where):
+    """An attested artifact is exactly what ``new_attested_artifact``
+    records: the closed marker, a delivery-receipt reference bounded
+    like the delivery layer's ids, a content digest (the receipt's), a
+    VERIFICATION artifact under no contract key, available, deriving
+    from nothing. Anything else refuses
+    ``mission_state_receipt_attestation``."""
+    marker = "%s.%s" % (where, state_module.ARTIFACT_MARKER_RECEIPT_ATTESTATION)
+    state_module.validate_receipt_attestation(attestation, marker)
+    fixed = (
+        ("key", None),
+        ("role", record.ARTIFACT_ROLE_VERIFICATION),
+        ("locator_kind", state_module.LOCATOR_KIND_DELIVERY_RECEIPT_REFERENCE),
+        ("available", True),
+        ("derived_from", []),
+    )
+    for field, expected in fixed:
+        if entry[field] != expected or type(entry[field]) is not type(expected):
+            record.fail(state_module.PROBLEM_RECEIPT_ATTESTATION,
+                        "%s.%s must be %r on an attested artifact" % (where, field,
+                                                                      expected))
+    if not isinstance(entry["locator"], str) or (
+        len(entry["locator"]) > state_module.MAX_RECEIPT_ATTESTATION_FIELD_CHARS
+    ):
+        record.fail(state_module.PROBLEM_RECEIPT_ATTESTATION,
+                    "%s.locator must be a receipt reference of at most %d"
+                    " characters" % (where,
+                                     state_module.MAX_RECEIPT_ATTESTATION_FIELD_CHARS))
+    if not isinstance(entry["content_digest_sha256"], str):
+        record.fail(state_module.PROBLEM_RECEIPT_ATTESTATION,
+                    "%s.content_digest_sha256 must be the receipt's digest on an"
+                    " attested artifact" % where)
 
 
 def _validate_evidence(bindings, entry, where):
@@ -555,6 +640,12 @@ def _validate_continuation(bindings, entry, where, expected_attempt):
     record.require_str(entry["reason"], where + ".reason", state_module.MAX_STATE_REASON_CHARS)
 
 
+def _validate_reconciliation(bindings, entry, where):
+    reconciliation.validate_record_shape(entry, where)
+    _require_operation(bindings, entry, state_module.OPERATION_RECONCILE, where,
+                       time_field="reconciled_at")
+
+
 def _validate_work_items(value, where):
     items = _bound_list(value, where, state_module.MAX_WORK_ITEMS, record.PROBLEM_TOO_LARGE)
     for index, item in enumerate(items):
@@ -726,7 +817,8 @@ def validate_state_record(value, location="mission state"):
     document bindings (the mission, its revisions, its authorizations,
     the contract content, foreign missions) are checked by the store."""
     record.require_dict(value, location)
-    record.require_closed_keys(value, state_module.STATE_RECORD_KEYS, location)
+    record.require_closed_keys(value, state_module.STATE_RECORD_REQUIRED_KEYS, location,
+                               optional=state_module.STATE_RECORD_OPTIONAL_KEYS)
     record.require_int(value["schema_version"], location + ".schema_version")
     if value["schema_version"] != state_module.STATE_SCHEMA_VERSION:
         record.fail(record.PROBLEM_BAD_VALUE,
@@ -745,7 +837,7 @@ def validate_state_record(value, location="mission state"):
     _validate_activations(bindings)
     _validate_ordered(bindings, "claims", state_module.MAX_CLAIMS, state_module.CLAIM_KEYS, _validate_claim)
     _validate_ordered(bindings, "artifacts", state_module.MAX_ARTIFACT_RECORDS, state_module.ARTIFACT_KEYS,
-                      _validate_artifact)
+                      _validate_artifact, optional=state_module.ARTIFACT_OPTIONAL_KEYS)
     _validate_ordered(bindings, "evidence", state_module.MAX_EVIDENCE_RECORDS, state_module.EVIDENCE_KEYS,
                       _validate_evidence)
     _validate_ordered(bindings, "blockers", state_module.MAX_BLOCKER_RECORDS, state_module.BLOCKER_KEYS,
@@ -768,7 +860,17 @@ def validate_state_record(value, location="mission state"):
                       state_module.CONTINUATION_KEYS, continuation)
     _validate_ordered(bindings, "checkpoints", state_module.MAX_CHECKPOINT_RECORDS,
                       state_module.CHECKPOINT_KEYS, _validate_checkpoint)
+    # Task 7, Stage 2: reconciliation records, when the key is present.
+    if "reconciliations" in value:
+        _validate_ordered(bindings, "reconciliations",
+                          reconciliation.MAX_RECONCILIATION_RECORDS,
+                          reconciliation.RECONCILIATION_KEYS, _validate_reconciliation)
     _validate_closure(bindings)
     _validate_progress_consistency(bindings)
     state_reconcile.reconcile_effects(value, location)
+    # Task 7: the journal snapshot's closed, typed shape. Its ledger
+    # bindings and its recomputation are derived checks the store runs
+    # LAST, so a tampered history reports its own problem first.
+    if value.get("snapshot") is not None:
+        journal.validate_snapshot_shape(value["snapshot"], location + ".snapshot")
     return value

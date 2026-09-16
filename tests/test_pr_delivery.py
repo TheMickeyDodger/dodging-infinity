@@ -1595,5 +1595,174 @@ class CliTests(unittest.TestCase):
         self.assertEqual(fx.store.load()["deliveries"], {})
 
 
+class MissionParentAttestationTests(unittest.TestCase):
+    """Task 7, Stage 2 (Supervisor scope decision, condition 7): the receipt
+    attestation path run END TO END through the REAL delivery machine —
+    a Mission approved for ``github_pr``, a delivery authorized with that
+    Mission as its parent, the machine driven to COMPLETE through the
+    installed guards, and every stored receipt then attested through
+    ``pr_delivery.mission_parent.attest_validated_receipt``: the unchanged
+    ``validate_authorization`` / ``validate_receipt`` first, the read-only
+    parent check, then the Mission Core's distinct operation. No mocked
+    VALID string anywhere: the receipts are the machine's own. The
+    attestation performs zero repository or transport action and changes
+    no delivery record and no Mission authority."""
+
+    def setUp(self):
+        from test_mission_core import Clock, make_context, proposal
+        from test_mission_state import contract
+        from mission import decision as mission_decision
+        from mission import service as mission_service
+        from mission import store as mission_store
+        self.fx = DeliveryFixture(self, hooks=True)
+        self.mission_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.mission_dir.cleanup)
+        self.mission_store = mission_store.MissionStore(
+            os.path.join(self.mission_dir.name, "protected"))
+        self.mission_clock = Clock(int(_NOW))
+        self.mission_service = mission_service.MissionService(
+            self.mission_store, self.mission_clock)
+        self.context = make_context("1")
+        request_id = self.mission_service.mint_request_id(self.context)
+        self.mission_id = self.mission_service.propose(
+            request_id, proposal(proof_contract=contract()), self.context)["mission_id"]
+        envelope = mission_decision.HumanDecisionEnvelope(
+            context=self.context,
+            decision_id=self.mission_service.mint_decision_id(self.context),
+            mission_id=self.mission_id, revision=1,
+            decision=mission_decision.DECISION_APPROVE,
+            received_at=self.mission_clock(),
+            approved_action_scope=["engineering_change", "repository_read"],
+            approved_delivery_targets=["github_pr"], expires_at=None)
+        self.approved = self.mission_service.apply_human_decision(envelope)
+        self.mission_clock.advance(1)
+        self.mission_service.activate_proof_contract(
+            self.mission_id, self.mission_service.mint_state_operation_id(self.context),
+            0, self.context)
+        # The delivery record names the Mission as its parent: the SAME
+        # two-key optional block the P1-A6 seam has always read.
+        self.fx.authorize(
+            mission_workflow_id=self.mission_id,
+            mission_authorization_digest=self.approved["authorization_digest_sha256"])
+
+    def mission_bytes(self):
+        with open(self.mission_store.path, "rb") as handle:
+            return handle.read()
+
+    def test_every_machine_receipt_is_attested_through_the_real_path(self):
+        from pr_delivery import mission_parent
+        from mission import state as mission_state
+        outcome = self.fx.machine.advance("prd-test")
+        record = self.fx.record()
+        self.assertEqual(outcome, machine_module.OUTCOME_COMPLETE, record)
+        self.assertEqual(record["phase"], auth.PHASE_COMPLETE)
+        auth.validate_authorization(record)
+        head = self.fx.head()
+        created = len(self.fx.transport.created)
+        delivery_bytes = self.fx.store.load()
+        parent = mission_parent.parent_mission_authority(record, self.mission_service)
+        self.assertTrue(parent["valid"], parent)
+        authority_before = json.dumps({
+            "a": self.mission_store.load()["authorizations"],
+            "l": self.mission_store.load()["authority_ledger"]}, sort_keys=True)
+        attested = {}
+        for step in (COMMIT_STEP, PUSH_STEP, PR_CREATE):
+            receipt = record["steps"][step]["receipt"]
+            self.assertEqual(receipt["state"], auth.RECEIPT_SUCCEEDED, step)
+            sequence = self.mission_service.get_state(self.mission_id)["sequence"]
+            result = mission_parent.attest_validated_receipt(
+                record, step, self.mission_service,
+                self.mission_service.mint_state_operation_id(self.context), sequence,
+                self.context)
+            self.assertTrue(result["valid"], result)
+            self.assertTrue(result["succeeded"], step)
+            self.assertEqual(result["receipt_id"], receipt["receipt_id"])
+            self.assertEqual(result["receipt_state"], auth.RECEIPT_SUCCEEDED)
+            self.assertEqual(result["mission_id"], self.mission_id)
+            self.assertEqual(result["authorization_id"], self.approved["authorization_id"])
+            attested[step] = result["outcome"]["artifact_id"]
+        # BASE_REFRESH was not needed: no receipt, so nothing to attest,
+        # and the refusal is a projection, not a Mission call.
+        absent = mission_parent.attest_validated_receipt(
+            record, BASE_REFRESH, self.mission_service,
+            self.mission_service.mint_state_operation_id(self.context),
+            self.mission_service.get_state(self.mission_id)["sequence"], self.context)
+        self.assertFalse(absent["valid"])
+        self.assertEqual(absent["problem"], mission_parent.PROBLEM_RECEIPT_ABSENT)
+        # The Mission holds exactly three attested references, each bound
+        # to the machine's receipt by id and by the receipt contract's own
+        # digest, to this delivery, to the record's authority digest and
+        # to the Mission Authorization; all three are completed effects.
+        state = self.mission_service.get_state(self.mission_id)["record"]
+        marked = mission_state.attested_artifacts(state)
+        self.assertEqual(sorted(a["artifact_id"] for a in marked), sorted(attested.values()))
+        for step, artifact_id in attested.items():
+            artifact = [a for a in marked if a["artifact_id"] == artifact_id][0]
+            receipt = record["steps"][step]["receipt"]
+            self.assertEqual(artifact["locator"], receipt["receipt_id"])
+            self.assertEqual(artifact["content_digest_sha256"], auth.receipt_digest(receipt))
+            marker = artifact["receipt_attestation"]
+            self.assertEqual(marker["delivery_id"], record["delivery_id"])
+            self.assertEqual(marker["step"], step)
+            self.assertEqual(marker["receipt_state"], auth.RECEIPT_SUCCEEDED)
+            self.assertEqual(marker["step_state"], auth.STEP_SUCCEEDED)
+            self.assertEqual(marker["parent_authority_digest_sha256"],
+                             record["authority_digest_sha256"])
+            self.assertEqual(marker["authorization_digest_sha256"],
+                             self.approved["authorization_digest_sha256"])
+            self.assertTrue(mission_state.receipt_effect_completed(marker))
+        head_cursor = self.mission_service.get_journal(self.mission_id)["cursor"]
+        report = self.mission_service.observe(self.mission_id,
+                                              {"cursor": head_cursor, "reports": {}})
+        value = report["delivery_receipts"]["value"]
+        self.assertEqual(sorted(value["effects_completed"]), sorted(attested.values()))
+        self.assertEqual(value["unattested"], [])
+        # Zero external action and no delivery-side change: the working
+        # tree, the remote, the created PR count and the delivery store
+        # are exactly as the machine left them; the Mission authority is
+        # unchanged; the parent check is still read-only.
+        self.assertEqual(self.fx.head(), head)
+        self.assertEqual(self.fx.remote_oid("refs/heads/" + SOURCE_BRANCH), head)
+        self.assertEqual(len(self.fx.transport.created), created)
+        self.assertEqual(self.fx.store.load(), delivery_bytes)
+        self.assertEqual(git("status", "--porcelain", cwd=self.fx.work), "")
+        self.assertEqual(json.dumps({
+            "a": self.mission_store.load()["authorizations"],
+            "l": self.mission_store.load()["authority_ledger"]}, sort_keys=True),
+            authority_before)
+        before = self.mission_bytes()
+        self.assertTrue(mission_parent.parent_mission_authority(
+            record, self.mission_service)["valid"])
+        self.assertEqual(self.mission_bytes(), before)
+        # A receipt tampered after the machine wrote it is refused by the
+        # unchanged validator before any Mission call; the Mission store
+        # is byte-identical afterwards.
+        tampered = copy.deepcopy(record)
+        tampered["steps"][PUSH_STEP]["receipt"]["binding"]["source_commit"] = "0" * 40
+        operation_id = self.mission_service.mint_state_operation_id(self.context)
+        before = self.mission_bytes()
+        with self.assertRaises(auth.AuthorizationError):
+            mission_parent.attest_validated_receipt(
+                tampered, PUSH_STEP, self.mission_service, operation_id,
+                self.mission_service.get_state(self.mission_id)["sequence"], self.context)
+        self.assertEqual(self.mission_bytes(), before)
+        # Re-labelling the record as standalone after the fact (dropping the
+        # Mission block and recomputing the authority digest) is refused by
+        # the unchanged validator first: every stored receipt is bound to
+        # the ORIGINAL authority digest. The genuine standalone shape is
+        # covered by the P1-A6 regressions (test_mission_core F2) and the
+        # consumer refusals (F7): it never reaches the Mission call.
+        relabelled = dict(record, mission=None)
+        relabelled["authority_digest_sha256"] = auth.authority_digest(relabelled)
+        before = self.mission_bytes()
+        with self.assertRaises(auth.AuthorizationError):
+            mission_parent.attest_validated_receipt(
+                relabelled, PUSH_STEP, self.mission_service, operation_id,
+                self.mission_service.get_state(self.mission_id)["sequence"], self.context)
+        self.assertEqual(self.mission_bytes(), before)
+        self.assertEqual(len(mission_state.attested_artifacts(
+            self.mission_service.get_state(self.mission_id)["record"])), 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

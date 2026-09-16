@@ -80,6 +80,54 @@ effect records on every load and save (``mission.state_reconcile``). An
 exact replay returns the stored outcome unchanged: genuine history,
 validated, never recomputed from later or current state (R-31.4).
 
+Journal (Task 7, Stage 1). Every accepted mutation also re-binds the
+state record's ``snapshot`` to the new journal head inside the SAME
+save, so the ledger entry (the journal event), the effect, the consumed
+reservation and the snapshot commit in one ``os.replace`` or not at all.
+``get_journal`` and ``reload_supported_state`` are read-only views over
+the stored record (``mission.journal``): no lock, no write, no minted id,
+no authority read beyond the activation binding the record already holds.
+
+Observation and reconciliation (Task 7, Stage 2). ``observe`` is a
+bounded read and a pure function of the loaded document plus the
+caller's pre-materialized observation input: one document load, no
+lock, no write, no minted id, no authority mutation, and NOTHING
+consulted — no caller-supplied callable is ever invoked on the read
+path (``mission.observation.normalize_inputs`` refuses anything that
+is not plain data, with ``mission_observation_input``). ``reconcile``
+takes the same input, which must name the head cursor the reports were
+collected at; it validates the reserved id, the calling context,
+``expected_sequence`` and that cursor FIRST, on the no-op path as much
+as the write path, then plans read-only. When the plan is not a
+meaningful change it returns without taking the lock or writing
+anything at all (the reserved id stays unconsumed); when it is, it goes
+through ``_apply`` as the ``reconcile`` operation
+(``mission.reconciliation``): reserved id, ``expected_sequence``,
+replay idempotency, one ledger entry, one reconciliation record and
+the re-bound snapshot in one save, with the collected-at cursor
+re-checked against the locked document
+(``mission_reconciliation_moved``). A pass that turns out unchanged
+inside the lock refuses ``mission_reconciliation_unchanged`` without
+mutation.
+
+Receipt attestation (Task 7, Stage 2, the receipt criterion).
+``attest_delivery_receipt`` is one more ordinary state operation through
+``_apply``: reserved id, context, ``expected_sequence``, active contract
+at the current revision, replay idempotency, one ledger entry, one
+effect (an artifact carrying the ``receipt_attestation`` marker,
+``mission.state``) and the re-bound snapshot in one save. It is a LOCAL
+EVIDENCE WRITE and nothing more: it records that the delivery layer's
+one permitted calling function — which runs the delivery layer's
+existing receipt validator and the read-only parent-authority check
+first — accepted a receipt for this Mission, and inside the lock it
+re-validates the named parent authorization through the one validation
+path for the delivery target at the current revision. It grants no
+permission, changes no progress, accepts no proof, resolves nothing,
+mints nothing, and the existing read-only parent check
+(``MissionService.check_parent_authority``) is untouched. Nothing here
+sees a receipt or a delivery record; the marker's digests are binding
+values, not credentials.
+
 Nothing here starts, hands off, runs, reads a locator, or performs any
 external effect; a replay has no external effect to repeat.
 """
@@ -87,8 +135,11 @@ external effect; a replay has no external effect to repeat.
 import copy
 
 from mission import authorization as authorization_module
+from mission import journal
 from mission import manifest
+from mission import observation
 from mission import progress as progress_module
+from mission import reconciliation
 from mission import record
 from mission import state as state_module
 from mission import store as store_module
@@ -112,6 +163,13 @@ PROBLEM_DEPENDENCY_UNKNOWN_MISSION = "mission_state_dependency_unknown_mission"
 PROBLEM_DEPENDENCY_ALREADY_RESOLVED = "mission_state_dependency_already_resolved"
 PROBLEM_CHECKPOINT_BUDGET_EXHAUSTED = "mission_state_checkpoint_budget_exhausted"
 PROBLEM_ARTIFACT_ROLE_MISMATCH = "mission_state_artifact_role_mismatch"
+# Task 7, Stage 2: the receipt attestation's parent authority does not
+# validate inside the locked write; the same receipt in the same state is
+# already attested; or the receipt reference is already attested with a
+# different content digest.
+PROBLEM_RECEIPT_ATTESTATION_AUTHORITY = "mission_state_receipt_attestation_authority"
+PROBLEM_RECEIPT_ALREADY_ATTESTED = "mission_state_receipt_already_attested"
+PROBLEM_RECEIPT_ATTESTATION_CONFLICT = "mission_state_receipt_attestation_conflict"
 
 
 def _normalized_ids(value):
@@ -328,9 +386,228 @@ class MissionStateOperations(object):
             outcome["sequence"] = operation.sequence
             entry["outcome"] = outcome
             reservation["consumed_by"] = operation_id
+            # Task 7: the journal snapshot is re-bound to the new head in
+            # this same document, so it commits in the same os.replace as
+            # the ledger entry, the effect and the consumed reservation.
+            state["snapshot"] = None
+            state["snapshot"] = journal.new_snapshot(
+                state, self._activation_contract(document, mission, state))
             document["mission_state"][mission_id] = state
             self._store.save(document)
         return dict(copy.deepcopy(outcome), idempotent=False)
+
+    @staticmethod
+    def _activation_contract(document, mission, state):
+        """The contract of the latest activation, re-derived from the
+        bound revision's approved proposal (None before any activation).
+        Historical: an EDIT after the activation does not change it."""
+        activation = state_module.latest_activation(state)
+        if activation is None:
+            return None
+        return store_module.activation_contract(document, mission, activation,
+                                                "activation")
+
+    # -- journal (Task 7, Stage 1) ----------------------------------------------
+
+    def get_journal(self, mission_id, after_position=0,
+                    limit=journal.MAX_JOURNAL_PAGE_EVENTS):
+        """A bounded page of the Mission's journal events after
+        ``after_position``, the head cursor, and the stored snapshot's
+        bindings. Read-only: no lock, no write, no id."""
+        document = self._store.load()
+        mission = self._mission(document, mission_id)
+        state = document["mission_state"].get(mission_id)
+        if state is None:
+            state = state_module.new_state_record(mission_id, 0)
+        page, next_after = journal.page_events(state, after_position, limit)
+        return {
+            "mission_id": mission_id,
+            "cursor": journal.head_cursor(mission, state),
+            "events": page,
+            "next_after_position": next_after,
+            "snapshot": journal.snapshot_view(mission, state),
+        }
+
+    def reload_supported_state(self, mission_id):
+        """Supported state and cursor at the head from the stored record
+        and journal: the snapshot when its bindings are the head, else a
+        replay (``mission.journal.reload``). Read-only."""
+        document = self._store.load()
+        mission = self._mission(document, mission_id)
+        state = document["mission_state"].get(mission_id)
+        contract = None
+        if state is not None:
+            contract = self._activation_contract(document, mission, state)
+        return journal.reload(mission, state, contract)
+
+    # -- observation and reconciliation (Task 7, Stage 2) ----------------------
+
+    def _contract_status(self, document, mission, state, now):
+        """The service's liveness view of the latest activation, for the
+        observation report: the same question ``get_state`` asks."""
+        status = {"active": False, "current": False, "authority_live": False,
+                  "problem": None,
+                  "live_authorization": (
+                      self._live_authorization(document, mission, now) is not None)}
+        activation = state_module.latest_activation(state)
+        if activation is None:
+            return status
+        status["active"] = True
+        status["current"] = activation["revision"] == mission["current_revision"]
+        try:
+            self._bound_contract(document, mission, state, now)
+        except record.MissionError as exc:
+            status["problem"] = exc.problem
+            return status
+        status["authority_live"] = True
+        return status
+
+    def observe(self, mission_id, inputs=None):
+        """The bounded, read-only observation of a Mission at its head
+        cursor (``mission.observation.report``): a pure function of the
+        loaded document and the caller's pre-materialized, validated
+        observation input (``mission.observation.normalize_inputs``).
+        Nothing is consulted, no callable is invoked, no lock is taken,
+        nothing is written or minted. One document load. Every caller
+        argument is established as an exact builtin before any other
+        use (``mission_observation_input``)."""
+        mission_id = observation.require_exact_str(mission_id, "mission_id",
+                                                   observation.MAX_MISSION_ID_CHARS)
+        collected_at, answers = observation.normalize_inputs(inputs)
+        document = self._store.load()
+        mission = self._mission(document, mission_id)
+        now = self._now()
+        state = document["mission_state"].get(mission_id)
+        head = journal.head_cursor(mission, state)
+        collection = observation.collection_provenance(collected_at, head)
+        probe = state
+        if probe is None:
+            probe = state_module.new_state_record(mission_id, 0)
+        contract = self._activation_contract(document, mission, probe)
+        status = self._contract_status(document, mission, probe, now)
+        return observation.report(mission, state, contract, status,
+                                  store_module.registry_view(document), now, answers,
+                                  collection)
+
+    def reconcile(self, mission_id, operation_id, expected_sequence, inputs,
+                  context):
+        """One deterministic reconciliation pass over the caller's
+        pre-materialized observation input, which MUST name the head
+        cursor its reports were collected at. Nothing is consulted.
+        Read-only unless the sources or the derived standing findings
+        differ from the latest recorded reconciliation; then one
+        ``reconcile`` operation through ``_apply``. On BOTH paths the
+        reserved id, the calling context, ``expected_sequence`` and the
+        collected-at cursor are validated first; a document that is not
+        at that cursor refuses ``mission_reconciliation_moved``. Returns
+        ``changed`` False (nothing written, nothing consumed) or the
+        operation's outcome."""
+        mission_id = observation.require_exact_str(mission_id, "mission_id",
+                                                   observation.MAX_MISSION_ID_CHARS)
+        operation_id = observation.require_exact_str(operation_id, "operation_id",
+                                                     observation.MAX_MISSION_ID_CHARS)
+        expected_sequence = observation.require_exact_int(expected_sequence,
+                                                          "expected_sequence")
+        context = observation.require_exact_context(context)
+        collected_at, answers = observation.normalize_inputs(inputs)
+        record.require_context(context)
+        record.require_id(mission_id, record.MISSION_ID_PREFIX, "mission_id")
+        record.require_id(operation_id, record.STATE_OPERATION_ID_PREFIX,
+                          "operation_id")
+        record.require_int(expected_sequence, "expected_sequence", minimum=0)
+        if collected_at is None:
+            record.fail(observation.PROBLEM_OBSERVATION_INPUT,
+                        "a reconciliation input must name the cursor its reports"
+                        " were collected at")
+        sources = observation.sources_of(answers)
+        source_provenance = observation.provenance_of(answers)
+        document = self._store.load()
+        mission = self._mission(document, mission_id)
+        state = document["mission_state"].get(mission_id)
+        reservation = self._reservation(
+            document, operation_id, store_module.RESERVATION_KIND_STATE_OPERATION,
+            context, PROBLEM_UNKNOWN_STATE_OPERATION_ID,
+            PROBLEM_STATE_OPERATION_CONTEXT_CONFLICT)
+        if reservation["consumed_by"] is None:
+            probe = state
+            if probe is None:
+                probe = state_module.new_state_record(mission_id, 0)
+            if expected_sequence != probe["sequence"]:
+                record.fail(PROBLEM_STALE_SEQUENCE,
+                            "expected sequence %d but mission %s state is at"
+                            " sequence %d; re-read the state and retry against"
+                            " the current sequence"
+                            % (expected_sequence, mission_id, probe["sequence"]))
+            self._require_at_cursor(mission, probe, probe["sequence"], collected_at)
+            planned = reconciliation.plan(
+                mission, probe, self._activation_contract(document, mission, probe),
+                probe["sequence"], sources, source_provenance, self._now())
+            if not planned["changed"]:
+                return {
+                    "mission_id": mission_id,
+                    "operation_id": operation_id,
+                    "sequence": probe["sequence"],
+                    "progress": probe["progress"],
+                    "cursor": collected_at,
+                    "changed": False,
+                    "idempotent": False,
+                    "sources": sources,
+                    "source_provenance": source_provenance,
+                    "findings": planned["findings"],
+                    "previous_sequence": planned["previous_sequence"],
+                }
+        recorded = {}
+
+        def apply(op):
+            position = op.sequence - 1
+            self._require_at_cursor(op.mission, op.state, position, collected_at)
+            contract = self._activation_contract(op.document, op.mission, op.state)
+            planned = reconciliation.plan(op.mission, op.state, contract, position,
+                                          sources, source_provenance, op.now)
+            if not planned["changed"]:
+                record.fail(reconciliation.PROBLEM_RECONCILIATION_UNCHANGED,
+                            "the sources and findings equal the latest recorded"
+                            " reconciliation; nothing meaningful to record and"
+                            " nothing was changed")
+            records = dict.setdefault(op.state, "reconciliations", [])
+            if len(records) >= reconciliation.MAX_RECONCILIATION_RECORDS:
+                record.fail(reconciliation.PROBLEM_RECONCILIATION_FULL,
+                            "mission %s holds %d reconciliation records; the hard"
+                            " bound is %d and history is never pruned"
+                            % (mission_id, len(records),
+                               reconciliation.MAX_RECONCILIATION_RECORDS))
+            list.append(records, reconciliation.new_record(
+                op.operation_id, op.sequence, op.now, op.provenance, position,
+                journal.journal_digest_at(op.state, position),
+                op.mission["current_revision"], sources, source_provenance,
+                planned["findings"]))
+            recorded["findings"] = planned["findings"]
+            return {"observed_position": position,
+                    "observed_revision": op.mission["current_revision"],
+                    "finding_count": len(planned["findings"])}
+        outcome = self._apply(state_module.OPERATION_RECONCILE, mission_id,
+                              operation_id, expected_sequence, context,
+                              {"sources": sources,
+                               "source_provenance": source_provenance},
+                              apply, needs_contract=False)
+        return dict(outcome, changed=True, findings=recorded.get("findings"))
+
+    @staticmethod
+    def _require_at_cursor(mission, state, position, collected_at):
+        """The document's head, as it stood at ``position`` under the
+        Mission's CURRENT revision, is exactly the cursor the reports
+        were collected at: same Mission, schema version, revision,
+        position, event and chain digest. Otherwise the reports describe
+        a document that moved, and recording them would stamp facts with
+        a revision or position their sources never saw."""
+        head = dict(journal.cursor_at(state, position),
+                    revision=mission["current_revision"])
+        if collected_at != head:
+            differing = sorted(k for k in head if head[k] != dict.get(collected_at, k))
+            record.fail(reconciliation.PROBLEM_RECONCILIATION_MOVED,
+                        "the reports were collected at a cursor that is not the"
+                        " document's head (differs in %s); re-observe and retry"
+                        % ", ".join(differing))
 
     # -- read -------------------------------------------------------------------
 
@@ -481,6 +758,120 @@ class MissionStateOperations(object):
                                "available": available,
                                "derived_from": derived_from,
                            }, apply)
+
+    def attest_delivery_receipt(self, mission_id, operation_id, expected_sequence,
+                                attestation, context):
+        """Record a delivery receipt in ATTESTED form (Task 7, Stage 2,
+        the receipt criterion): the one artifact-recording operation that
+        adds the ``receipt_attestation`` marker, DISTINCT from
+        ``record_artifact``. Its sole production caller is the delivery
+        layer's parent seam, which runs the delivery layer's existing,
+        unchanged receipt validator and the parent-authority check BEFORE
+        calling here (confined by the static pins to that one calling
+        function); this method itself performs no delivery validation —
+        it cannot see a receipt — and consults nothing outside the store.
+
+        Inside the locked write, on top of every ``_apply`` check
+        (reserved id, context, ``expected_sequence``, active contract at
+        the current revision, replay idempotency): the named Mission
+        Authorization digest is resolved to a stored authorization of
+        THIS Mission and re-validated through the ONE validation path
+        for the delivery target at the Mission's current revision right
+        now (``mission_state_receipt_attestation_authority`` otherwise),
+        so a revision or authority change between the caller's validation
+        and this write refuses with nothing recorded; the same receipt in
+        the same receipt state AND the same step state — the pair that
+        decides completion — is not attested twice
+        (``mission_state_receipt_already_attested``), while the same
+        receipt observed after its step moved is new evidence; and a receipt
+        reference already attested with another content digest refuses
+        (``mission_state_receipt_attestation_conflict``). The input is a
+        closed, bounded plain object established before anything else is
+        read (``mission_state_receipt_attestation``).
+
+        It records evidence and grants nothing: no progress change, no
+        closure, no proof acceptance, no blocker resolution, no budget,
+        no authority read beyond the read-only validation, no external
+        effect. Structural validity is not success: ``receipt_state`` and
+        ``step_state`` are stored verbatim, and only the pinned succeeded
+        receipt state under the pinned succeeded step state is ever read
+        as a completed effect by observation and reconciliation — the
+        seam's own condition, never a more positive one."""
+        # Bounds before work, on every caller argument: exact builtin types
+        # and module-constant sizes (the observation sanitizers), then the
+        # closed attestation input, before anything is loaded or compared.
+        mission_id = observation.require_exact_str(mission_id, "mission_id",
+                                                   observation.MAX_MISSION_ID_CHARS)
+        operation_id = observation.require_exact_str(operation_id, "operation_id",
+                                                     observation.MAX_MISSION_ID_CHARS)
+        expected_sequence = observation.require_exact_int(expected_sequence,
+                                                          "expected_sequence")
+        context = observation.require_exact_context(context)
+        attestation = state_module.validate_receipt_attestation_input(attestation)
+
+        def apply(op):
+            authorization = authorization_module.find_authorization_by_digest(
+                op.document, attestation["authorization_digest_sha256"])
+            if authorization is None or authorization["mission_id"] != mission_id:
+                record.fail(PROBLEM_RECEIPT_ATTESTATION_AUTHORITY,
+                            "the attestation names a Mission Authorization digest"
+                            " that is not a stored authorization of mission %s;"
+                            " nothing was recorded" % mission_id)
+            check = authorization_module.validate_authorization_use(
+                op.document, authorization["authorization_id"], mission_id,
+                authorization["revision"], op.now,
+                required_delivery_target=record.DELIVERY_TARGET_GITHUB_PR)
+            if not check.valid:
+                record.fail(PROBLEM_RECEIPT_ATTESTATION_AUTHORITY,
+                            "the attestation's parent authorization %s does not"
+                            " validate for mission %s at its current revision now"
+                            " (%s: %s); nothing was recorded"
+                            % (authorization["authorization_id"], mission_id,
+                               check.problem, check.detail))
+            for artifact in op.state["artifacts"]:
+                marker = state_module.receipt_attestation_of(artifact)
+                if marker is None or artifact["locator"] != attestation["receipt_id"]:
+                    continue
+                if artifact["content_digest_sha256"] != (
+                    attestation["receipt_digest_sha256"]
+                ):
+                    record.fail(PROBLEM_RECEIPT_ATTESTATION_CONFLICT,
+                                "receipt reference %s is already attested as"
+                                " artifact %s with a different content digest;"
+                                " nothing was recorded"
+                                % (attestation["receipt_id"], artifact["artifact_id"]))
+                # A duplicate is the same receipt (reference and digest)
+                # observed in the same receipt state AND the same step
+                # state: the pair that decides completion. The same receipt
+                # observed under a step that has since moved (pending ->
+                # succeeded) is new evidence and is recorded; nothing here
+                # discards the observation that would complete an effect.
+                if marker["receipt_state"] == attestation["receipt_state"] and (
+                    marker["step_state"] == attestation["step_state"]
+                ):
+                    record.fail(PROBLEM_RECEIPT_ALREADY_ATTESTED,
+                                "receipt reference %s in receipt state %s under"
+                                " step state %s is already attested as artifact"
+                                " %s; a repeated observation records nothing"
+                                % (attestation["receipt_id"],
+                                   attestation["receipt_state"],
+                                   attestation["step_state"],
+                                   artifact["artifact_id"]))
+            artifact_id = self._fresh_id(
+                record.ARTIFACT_ID_PREFIX,
+                set(a["artifact_id"] for a in op.state["artifacts"]))
+            op.state["artifacts"].append(state_module.new_attested_artifact(
+                artifact_id, attestation, authorization["authorization_id"], op.now,
+                op.provenance, op.operation_id, op.sequence))
+            return {"artifact_id": artifact_id,
+                    "delivery_id": attestation["delivery_id"],
+                    "step": attestation["step"],
+                    "receipt_state": attestation["receipt_state"],
+                    "step_state": attestation["step_state"],
+                    "authorization_id": authorization["authorization_id"]}
+        return self._apply(state_module.OPERATION_ATTEST_DELIVERY_RECEIPT, mission_id,
+                           operation_id, expected_sequence, context,
+                           {"attestation": attestation}, apply)
 
     def submit_evidence(self, mission_id, operation_id, expected_sequence,
                         requirement_key, kind, content_digest_sha256, artifact_ids,

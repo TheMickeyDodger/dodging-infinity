@@ -2069,6 +2069,275 @@ assert _mission_consumers == MISSION_ALLOWED_CONSUMERS, (
     'mission gained or lost a consumer', sorted(_mission_consumers))
 assert all((R / rel).exists() for rel in MISSION_ALLOWED_CONSUMERS)
 
+# (12c) mission (Task 7: Event Journal, snapshots, Observation and
+#       Reconciliation). The three Task 7 modules are pure views and
+#       derivations over the Task 5 record, and the exclusions the task
+#       declares are pinned here in the (12b) posture: a derived file
+#       set, planted-probe self-checks, non-zero counters.
+#       (a) scope: no routing, attention routing or bot coordination, no
+#           daemon or scheduler, no live Herdr / Grok / Telegram transport,
+#           no fleet, no DBOS, no delivery / merge / release / deploy
+#           surface, and no later-roadmap surface (browser, installer,
+#           upgrade, priority, capacity, lanes, compound work) in any
+#           identifier or non-docstring literal of a Task 7 module;
+#       (b) imports: a Task 7 module imports only the standard-library
+#           ``copy``, the mission package and the stdlib-only
+#           workflow_authority digest helper — never os, json, the
+#           authorization or decision modules, the store or the service —
+#           so no lock, file, process or authority seam is reachable;
+#       (c) no NEW authority: the single production issuance point is
+#           unchanged, no Task 7 module names it, and the reconcile
+#           operation kind is not contract-dependent (it may never widen
+#           what an activation binds);
+#       (d) the read path is NON-INVOKING and calls no store writer: no
+#           caller-supplied value can be called from the Task 7 modules or
+#           from the service's observe / reconcile, and ``observe``
+#           contains no lock / save / _apply and consults nothing.
+MISSION_TASK7_FILES = frozenset({
+    'mission/journal.py', 'mission/observation.py', 'mission/reconciliation.py',
+})
+MISSION_TASK7_FORBIDDEN_WORDS = frozenset({
+    'attention', 'bot', 'coordination', 'coordinator', 'daemon', 'launchd',
+    'launchagent', 'fleet', 'grok', 'telegram', 'herdr', 'herdctl', 'dbos',
+    'browser', 'installer', 'upgrade', 'upgrader', 'priority', 'capacity',
+    'lane', 'lanes', 'compound', 'cron', 'timer', 'thread', 'threading',
+    'queue', 'enqueue', 'interrupt', 'steer', 'reasoning', 'model', 'prompt',
+    'commit', 'push', 'pull', 'clone', 'checkout', 'rebase', 'tag',
+})
+MISSION_TASK7_ALLOWED_IMPORT_ROOTS = frozenset({'copy', 'mission', 'workflow_authority'})
+MISSION_TASK7_FORBIDDEN_MISSION_MODULES = frozenset({
+    'authorization', 'decision', 'service', 'state_service', 'store', 'manifest',
+})
+
+
+def _task7_word_violations(token_text):
+    return sorted(
+        set(re.findall(r'[a-z]+', token_text.lower())) & MISSION_TASK7_FORBIDDEN_WORDS
+    )
+
+
+# Planted-probe self-checks: the detector fires on what it exists to catch.
+assert _task7_word_violations('attention_router') == ['attention']
+assert _task7_word_violations('"bot coordination"') == ['bot', 'coordination']
+assert _task7_word_violations('run_daemon') == ['daemon']
+assert _task7_word_violations('dbos_workflow') == ['dbos']
+assert _task7_word_violations('git_push') == ['push']
+assert not _task7_word_violations('snapshot_disagreement')
+assert not _task7_word_violations('reconciliation_position')
+assert not _task7_word_violations('observed_journal_digest_sha256')
+_task7_present = {p.relative_to(R).as_posix() for p in mission_files} & MISSION_TASK7_FILES
+assert _task7_present == MISSION_TASK7_FILES, ('Task 7 scan lost a file', _task7_present)
+
+_task7_tokens_seen = 0
+_task7_imports_seen = 0
+for path in mission_files:
+    relpath = path.relative_to(R).as_posix()
+    if relpath not in MISSION_TASK7_FILES:
+        continue
+    source = path.read_text()
+    tree = ast.parse(source)
+    docstring_positions = _docstring_positions_of(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                _task7_imports_seen += 1
+                assert alias.name.split('.')[0] in MISSION_TASK7_ALLOWED_IMPORT_ROOTS, (
+                    relpath, alias.name, 'a Task 7 module imports only copy,'
+                    ' mission and the workflow_authority digest helper')
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ''
+            _task7_imports_seen += 1
+            assert module.split('.')[0] in MISSION_TASK7_ALLOWED_IMPORT_ROOTS, (
+                relpath, module)
+            if module == 'mission':
+                for alias in node.names:
+                    assert alias.name not in MISSION_TASK7_FORBIDDEN_MISSION_MODULES, (
+                        relpath, alias.name, 'a Task 7 module never imports the'
+                        ' authorization, decision, store or service modules')
+            elif module.startswith('workflow_authority'):
+                assert module == 'workflow_authority.digest', (relpath, module)
+        elif isinstance(node, ast.Call):
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            assert name not in {'open', 'save', 'load', 'lock', '_apply', '_reserve',
+                                'mint_id', 'apply_human_decision',
+                                'issue_mission_authorization', 'atomic_write_json',
+                                'exclusive_store_lock', 'sleep', 'wait'}, (
+                relpath, node.lineno, name, 'a Task 7 module reaches no lock, file,'
+                ' wait or authority seam')
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME or (
+            token.type == tokenize.STRING
+            and token.start not in docstring_positions
+        ):
+            _task7_tokens_seen += 1
+            violations = _task7_word_violations(token.string)
+            assert not violations, (
+                relpath, token.start, token.string, violations,
+                'no routing, attention, bot coordination, daemon, scheduler,'
+                ' live transport, fleet, DBOS, delivery, history action or'
+                ' later-roadmap surface in a Task 7 module')
+    assert 'issue_mission_authorization' not in source, relpath
+    assert 'apply_human_decision' not in source, relpath
+assert _task7_imports_seen >= 12, 'Task 7 import scan saw too few imports'
+assert _task7_tokens_seen > 3000, 'Task 7 token scan saw too few tokens'
+
+# (c) the single production issuance point is unchanged and the new
+#     operation kind cannot widen what an activation binds.
+_issuance_sites = [
+    p.relative_to(R).as_posix() for p in mission_files
+    if 'issue_mission_authorization(' in p.read_text()
+    and p.name != 'authorization.py'
+]
+assert _issuance_sites == ['mission/service.py'], _issuance_sites
+_state_source = (R / 'mission' / 'state.py').read_text()
+assert 'OPERATION_RECONCILE = "reconcile"' in _state_source
+assert 'OPERATION_RECONCILE,\n))' in _state_source, (
+    'the reconcile kind must be excluded from CONTRACT_DEPENDENT_KINDS')
+
+# (d) the read path is NON-INVOKING, proven by the shared pin in
+#     tests/_non_invoking.py (its docstring states the exact claim and its
+#     stated limit): the sanitizers read raw values by exact type only,
+#     the raw-surface functions pass each raw parameter to a sanitizer
+#     before any other use, and nowhere on the read path is a method
+#     invoked on a value derived from an argument, a bound name called,
+#     a dunder attribute read, or a dispatching builtin reached from the
+#     raw surface. The detector's own probes (hostile ones must FAIL,
+#     benign ones must pass) run first, so a broken detector cannot pass
+#     the tree.
+import _non_invoking as _ni
+assert _ni.self_check() == len(_ni.PROBES) + len(_ni.PASSING_PROBES)
+assert len(_ni.PROBES) >= 20, 'the non-invocation detector lost probes'
+_hostile_shapes = (
+    'inputs.get(', "inputs['x'].get(", 'list(inputs)', 'type(inputs).__name__',
+    'def f(normalize_inputs)', 'adapter(1)', "x['k'](1)", 'getattr(inputs',
+    'isinstance(inputs', 'str(inputs)', 'y.get(', 'k.strip()',
+    # round 4: implicit truth dispatch, and guards whose body is only pass
+    'if value:\n        pass', 'is not str:\n        pass', 'len(value) > m:\n        pass',
+    'is not dict:\n        pass', 'value == 3', 'for x in value', 'value[0]',
+    'transport=value.transport',
+    # round 6: a sanitizer that returns rejected or raw input, a refusal
+    # helper that returns, and attribute lookup on the exact context
+    'if kind is not dict:\n        return value', 'is not str:\n        return value',
+    'len(value) > m:\n        return value', 'def _input(d):\n    return None',
+    'require_exact_str(value.transport', 'dict.items(value.__dict__)',
+)
+assert len(_ni.PROBES) >= 40, len(_ni.PROBES)
+for _shape in _hostile_shapes:
+    assert any(_shape in source for source, _ in _ni.PROBES), (
+        'a required hostile probe is missing', _shape)
+_observation_tree = ast.parse((R / 'mission' / 'observation.py').read_text())
+assert _ni.check_module(_observation_tree, 'mission/observation.py',
+                        raw_surface=('normalize_inputs',)) >= 20
+_reconciliation_tree = ast.parse((R / 'mission' / 'reconciliation.py').read_text())
+assert _ni.check_module(_reconciliation_tree, 'mission/reconciliation.py') >= 25
+_service_tree = ast.parse((R / 'mission' / 'state_service.py').read_text())
+assert _ni.check_functions(
+    _service_tree, ('observe', 'reconcile', '_require_at_cursor', '_contract_status'),
+    'mission/state_service.py', raw_surface=('observe', 'reconcile')) == 4
+# The sanitizers exist where the pin expects them, and ``observe`` calls
+# no writer and consults nothing.
+assert _ni.TIER1 <= _ni.module_known(_observation_tree), sorted(_ni.TIER1)
+_observe_calls = set()
+for node in ast.walk(_service_tree):
+    if isinstance(node, ast.FunctionDef) and node.name == 'observe':
+        _observe_calls = {
+            getattr(n.func, 'id', getattr(n.func, 'attr', None))
+            for n in ast.walk(node) if isinstance(n, ast.Call)
+        }
+assert _observe_calls, 'the observe method must exist'
+assert not _observe_calls & {'lock', 'save', '_apply', '_reserve', 'open',
+                             'mint_state_operation_id', 'apply_human_decision',
+                             'atomic_write_json', 'collect', 'callable'}, sorted(
+    _observe_calls)
+assert {'load', 'normalize_inputs', 'require_exact_str'} <= _observe_calls, sorted(
+    _observe_calls)
+for relpath in ('mission/observation.py', 'mission/reconciliation.py'):
+    _text = (R / relpath).read_text()
+    for _forbidden in ('callable(', '__name__', '__class__', 'getattr('):
+        assert _forbidden not in _text, (relpath, _forbidden)
+# The one permitted dunder read, ``value.__dict__`` in require_exact_context,
+# is allowed structurally by the pin above (class-level data descriptor on
+# an established exact context, whole value of an assignment); no other
+# ``__dict__`` text may exist in the read-path modules' code.
+_dict_reads = [
+    (rel, n.lineno) for rel in ('mission/observation.py', 'mission/reconciliation.py')
+    for n in ast.walk(ast.parse((R / rel).read_text()))
+    if isinstance(n, ast.Attribute) and n.attr == '__dict__'
+]
+assert len(_dict_reads) == 1 and _dict_reads[0][0] == 'mission/observation.py', _dict_reads
+
+# (12d) Task 7, Stage 2: the receipt attestation (Supervisor scope decision
+#       AUTHORIZE_OPTION_1_WITH_CONDITIONS). Narrow compensating pins; the
+#       call-path confinement itself, with its planted probes, lives in
+#       tests/test_mission_core.py (FReceiptAttestationConfinementTests)
+#       in the PathBindingPinTests idiom over the derived product tree.
+#       (a) the one receipt state read as a completed effect is the delivery
+#           layer's own constant, pinned equal (no drift, no duplicate
+#           vocabulary), and the attestation field bound equals the delivery
+#           layer's id bound;
+#       (b) the attesting kind is contract-dependent (it may never be
+#           applied without an active contract at the current revision) and
+#           is a member of the closed kind and outcome tables;
+#       (c) the marker is the only additive-optional artifact key and no
+#           state-record or store key was added;
+#       (d) the consumer set is unchanged (the seam is still the sole
+#           delivery-package importer of mission, checked above), the seam
+#           imports the unchanged validator module, and the Mission package
+#           never names the validator.
+from mission import state as _mission_state
+assert _mission_state.RECEIPT_STATE_SUCCEEDED == pr_authorization.RECEIPT_SUCCEEDED
+assert _mission_state.RECEIPT_STATE_SUCCEEDED in pr_authorization.RECEIPT_STATES
+# Round 08 finding 5: the completion condition is the seam's — receipt
+# state AND step state, each the delivery layer's own constant.
+assert _mission_state.STEP_STATE_SUCCEEDED == pr_authorization.STEP_SUCCEEDED
+assert _mission_state.STEP_STATE_SUCCEEDED in pr_authorization.STEP_STATES
+assert _mission_state.MAX_RECEIPT_ATTESTATION_FIELD_CHARS == wa_record.MAX_ID_CHARS == 128
+assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT == 'attest_delivery_receipt'
+assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT in _mission_state.OPERATION_KINDS
+assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT in _mission_state.OUTCOME_KEYS_BY_KIND
+assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT in _mission_state.CONTRACT_DEPENDENT_KINDS
+assert 'OPERATION_ATTEST_DELIVERY_RECEIPT,\n))' not in _state_source
+assert _mission_state.ARTIFACT_OPTIONAL_KEYS == ('receipt_attestation',)
+assert _mission_state.STATE_RECORD_OPTIONAL_KEYS == ('snapshot', 'reconciliations')
+assert _mission_state.RECEIPT_ATTESTATION_KEYS == (
+    'delivery_id', 'step', 'receipt_state', 'step_state',
+    'parent_authority_digest_sha256', 'authorization_id',
+    'authorization_digest_sha256')
+assert _mission_state.RECEIPT_ATTESTATION_INPUT_KEYS == (
+    'receipt_id', 'receipt_digest_sha256', 'delivery_id', 'step', 'receipt_state',
+    'step_state', 'parent_authority_digest_sha256', 'authorization_digest_sha256')
+from mission import store as _mission_store
+assert _mission_store.TOP_LEVEL_KEYS == (
+    'mission_store_schema_version', 'missions', 'authorizations',
+    'authority_ledger', 'reservations', 'mission_state'), _mission_store.TOP_LEVEL_KEYS
+assert _mission_store.OPTIONAL_TOP_LEVEL_KEY == 'mission_state'
+_seam_tree = ast.parse((R / 'pr_delivery' / 'mission_parent.py').read_text())
+_seam_imports = sorted(
+    (node.module, alias.name) for node in ast.walk(_seam_tree)
+    if isinstance(node, ast.ImportFrom) for alias in node.names)
+assert _seam_imports == [('dataclasses', 'dataclass'), ('mission', 'record'),
+                         ('pr_delivery', 'authorization')], _seam_imports
+# Round 08: no serialization in the seam — the private copy is structural.
+assert not any(isinstance(node, ast.Import) for node in ast.walk(_seam_tree))
+assert 'json' not in (R / 'pr_delivery' / 'mission_parent.py').read_text()
+assert 'validate_receipt' not in ''.join(
+    (R / rel).read_text() for rel in ('mission/journal.py', 'mission/observation.py',
+                                      'mission/reconciliation.py')
+)
+for _rel in ('mission/state_service.py', 'mission/store.py', 'mission/state.py',
+             'mission/state_validation.py', 'mission/state_reconcile.py'):
+    _text = (R / _rel).read_text()
+    assert 'validate_receipt(' not in _text and 'receipts.derive' not in _text, _rel
+# The attesting kind's invocation is re-derivable (no partial kind) and the
+# seam's Mission call is exactly one attribute call (counted again here in
+# the (12b) posture: non-zero, exact).
+_seam_calls = [
+    node for node in ast.walk(_seam_tree)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    and node.func.attr == 'attest_delivery_receipt'
+]
+assert len(_seam_calls) == 1, len(_seam_calls)
+
 # (12c) coordination (Task 6: Mission Routing + Attention + Bot
 #       Coordination): route decisions, bounded conversation bindings,
 #       attention records and bot handoffs over a read-only observation
