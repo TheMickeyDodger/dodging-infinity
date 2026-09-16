@@ -11,6 +11,9 @@ Sections:
   D  store: the R-3 compatibility rule, cross-reference and cycle
      refusals, fail-closed reload, caps
   E  authorization: the narrow ``state_operation`` reconcile branch (R-6)
+  U  Task 7 Stage 2: the attested receipt form (additive-optional artifact
+     marker, distinct operation kind) fails closed on load and save,
+     legacy records read as unattested, the atomic save holds everything
 """
 
 import json
@@ -3324,6 +3327,32 @@ class ServiceStateFixture(DocumentFixture):
         self.assertEqual(ctx.exception.problem, problem, str(ctx.exception))
         return ctx.exception
 
+    def authorization_digest(self, mission_id):
+        """The digest of the Mission's latest authorization: the binding
+        value a delivery record's ``mission`` block would carry."""
+        document = self.store.load()
+        mission = document["missions"][mission_id]
+        authorization = document["authorizations"][mission["authorization_ids"][-1]]
+        return authorization["authorization_digest_sha256"]
+
+    def attestation(self, mission_id, **overrides):
+        """A closed attestation input (Task 7, Stage 2) naming the
+        Mission's live authorization digest; the receipt fields are plain
+        fixture values — the service never sees a receipt, only what the
+        delivery layer's validating caller bound."""
+        value = {
+            "receipt_id": "rcpt-" + "a" * 24,
+            "receipt_digest_sha256": "d" * 64,
+            "delivery_id": "dlv-task7-fixture",
+            "step": "PR_CREATE",
+            "receipt_state": self.ms.RECEIPT_STATE_SUCCEEDED,
+            "step_state": self.ms.STEP_STATE_SUCCEEDED,
+            "parent_authority_digest_sha256": "1" * 64,
+            "authorization_digest_sha256": self.authorization_digest(mission_id),
+        }
+        value.update(overrides)
+        return value
+
     def authority_bytes(self):
         document = json.loads(self.read_bytes())
         return json.dumps({"a": document["authorizations"],
@@ -3954,6 +3983,7 @@ class FNoWeakeningParameterTests(ServiceStateFixture):
         "resolve_blocker", "bind_dependency", "declare_dependency",
         "resolve_dependency", "observe_resource_readiness", "record_continuation",
         "record_checkpoint", "complete_successfully", "close_unsuccessful", "abandon",
+        "reconcile", "attest_delivery_receipt",
     )
     FORBIDDEN = ("requirements", "budget", "max_", "attempts", "checkpoints",
                  "age", "stale", "degrad", "severity", "required", "permitted",
@@ -4154,8 +4184,41 @@ class GStageTwoGateTests(ServiceStateFixture):
         # updated_at bookkeeping moved.
         changed = sorted(k for k in after_record if after_record[k] != before_record[k])
         self.assertTrue({"applied_operations", "sequence"} <= set(changed))
-        self.assertTrue(set(changed) <= {"applied_operations", "sequence", "updated_at"},
-                        changed)
+        self.assertTrue(set(changed) <= {"applied_operations", "sequence",
+                                         "updated_at", "snapshot"}, changed)
+        # Task 7 (Lead decision 01): the journal snapshot is a derived
+        # projection cache re-bound to the new head in the same save. Across
+        # the no-op only its position / chain binding moved; its supported
+        # state is UNCHANGED field for field, so no meaning moved.
+        from mission import journal
+        self.assertEqual(after_record["snapshot"]["supported_state"],
+                         before_record["snapshot"]["supported_state"])
+        self.assertEqual(after_record["snapshot"]["position"],
+                         before_record["snapshot"]["position"] + 1)
+        self.assertNotEqual(after_record["snapshot"]["journal_digest_sha256"],
+                            before_record["snapshot"]["journal_digest_sha256"])
+        self.assertEqual(after_record["snapshot"]["revision"],
+                         before_record["snapshot"]["revision"])
+        # Derived, not asserted: the stored snapshot recomputes to itself,
+        # and reload yields the SAME supported state and the SAME cursor
+        # with the snapshot present and with it absent.
+        stored = self.store.load()
+        mission_record_ = stored["missions"][d_id]
+        state_record = stored["mission_state"][d_id]
+        contract_ = self.mst.activation_contract(
+            stored, mission_record_, self.ms.latest_activation(state_record),
+            "activation")
+        self.assertIsNone(journal.snapshot_disagreement(
+            state_record["snapshot"], state_record, contract_))
+        with_snapshot = self.service.reload_supported_state(d_id)
+        self.assertEqual(with_snapshot["source"], journal.SOURCE_SNAPSHOT)
+        without = json.loads(json.dumps(state_record))
+        without["snapshot"] = None
+        without_snapshot = journal.reload(mission_record_, without, contract_)
+        self.assertEqual(without_snapshot["source"], journal.SOURCE_REPLAY)
+        self.assertEqual(without_snapshot["supported_state"],
+                         with_snapshot["supported_state"])
+        self.assertEqual(without_snapshot["cursor"], with_snapshot["cursor"])
         self.assertEqual(len(after_record["applied_operations"]),
                          len(before_record["applied_operations"]) + 1)
         self.assertEqual(after_record["sequence"], sequence + 1)
@@ -5009,8 +5072,16 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
         self.call("resolve_dependency", d_id, bound["dependency_id"], evidence["evidence_id"])
         self.call("resolve_dependency", d_id, extra["dependency_id"], evidence["evidence_id"])
         self.call("observe_resource_readiness", d_id, "build_host", "READY", self.clock())
+        # Task 7, Stage 2: one attested receipt reference, named against
+        # the Mission Authorization a delivery record would carry.
+        self.call("attest_delivery_receipt", d_id, self.attestation(d_id))
         self.call("record_continuation", d_id, "one more")
         self.call("record_checkpoint", d_id, ["tests"], ["close"], "retry", "stop")
+        # Task 7, Stage 2: one reconciliation over a pre-materialized task
+        # report, bound to the head cursor it was collected at.
+        self.call("reconcile", d_id, {
+            "cursor": self.service.get_journal(d_id)["cursor"],
+            "reports": {"task": {"value": "ACTIVE", "observed_at": self.clock()}}})
         return t_id, d_id, evidence
 
     def test_T1_invocation_digest_binds_every_payload_field(self):
@@ -5047,6 +5118,10 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
             "continuation reason": ("continuations", 0, "reason", "other"),
             "checkpoint completed work": ("checkpoints", 0, "completed_work", ["all"]),
             "checkpoint stop condition": ("checkpoints", 0, "stop_condition", "never"),
+            # Task 7, Stage 2: the attested artifact's receipt reference and
+            # digest, and every marker field, are payload fields too.
+            "attested receipt reference": ("artifacts", 2, "locator", "rcpt-" + "b" * 24),
+            "attested receipt digest": ("artifacts", 2, "content_digest_sha256", "5" * 64),
         }
         for label, (name, index, field, value) in tampers.items():
             with self.subTest(label):
@@ -5101,6 +5176,7 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
             ms.OPERATION_ACTIVATE_CONTRACT: one("contract_activations"),
             ms.OPERATION_RECORD_CLAIM: one("claims"),
             ms.OPERATION_RECORD_ARTIFACT: one("artifacts"),
+            ms.OPERATION_ATTEST_DELIVERY_RECEIPT: one("artifacts"),
             ms.OPERATION_SUBMIT_EVIDENCE: one("evidence"),
             ms.OPERATION_ACCEPT_EVIDENCE: nested("evidence", "acceptance"),
             ms.OPERATION_INVALIDATE_EVIDENCE: nested("evidence", "invalidation"),
@@ -5111,6 +5187,7 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
             ms.OPERATION_OBSERVE_RESOURCE_READINESS: one("resource_readiness"),
             ms.OPERATION_RECORD_CONTINUATION: one("continuations"),
             ms.OPERATION_RECORD_CHECKPOINT: one("checkpoints"),
+            ms.OPERATION_RECONCILE: one("reconciliations"),
         }
         if kind in table:
             found = table[kind]
@@ -5615,6 +5692,504 @@ class VPreFreezeRoundFourTests(ServiceStateFixture):
         self.assertEqual(self.stable(), good)
         self.call("activate_proof_contract", p)
         self.assertEqual(self.service.get_state(p)["contract"]["revision"], 1)
+
+
+# ====================================================================
+# U. Task 7, Stage 2: the attested receipt form fails closed
+# ====================================================================
+
+
+class UAttestationFailClosedTests(ServiceStateFixture):
+    """Conditions 3, 6 and 8 at the persistence layer: the attested form
+    has exactly one producing operation of the distinct kind with matching
+    provenance, outcome, invocation and cross-document bindings; a marker
+    injected on a generic artifact, a copied digest, a tampered ledger or
+    marker, a duplicate, an orphan and a marker outside its authority
+    window all refuse on load AND save with their own code; old records
+    read as UNATTESTED and are never backfilled; the atomic save holds the
+    operation, the marked artifact, the consumed reservation, the ledger
+    entry and the snapshot together."""
+
+    def setUp(self):
+        super(UAttestationFailClosedTests, self).setUp()
+        self.mission_id = self.ready_mission(required_dependencies=[])
+        self.generic = self.call(
+            "record_artifact", self.mission_id, "pr_receipt",
+            mission_record.ARTIFACT_ROLE_PRODUCED,
+            self.ms.LOCATOR_KIND_DELIVERY_RECEIPT_REFERENCE, "rcpt-" + "b" * 24,
+            "d" * 64, True, [])["artifact_id"]
+        self.clock.advance(1)
+        self.outcome = self.call("attest_delivery_receipt", self.mission_id,
+                                 self.attestation(self.mission_id))
+        self.attested = self.outcome["artifact_id"]
+        self.good = self.stable()
+
+    def tamper(self, mutate):
+        document = json.loads(json.dumps(self.good))
+        state = document["mission_state"][self.mission_id]
+        mutate(document, state)
+        return document
+
+    def artifact(self, state, artifact_id):
+        return [a for a in state["artifacts"] if a["artifact_id"] == artifact_id][0]
+
+    def operation(self, state, operation_id):
+        return [o for o in state["applied_operations"]
+                if o["operation_id"] == operation_id][0]
+
+    def test_U1_the_atomic_save_holds_operation_marker_reservation_ledger_and_snapshot(self):
+        ms = self.ms
+        state = self.state_of(self.good, self.mission_id)
+        artifact = self.artifact(state, self.attested)
+        marker = artifact[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+        self.assertEqual(sorted(marker), sorted(ms.RECEIPT_ATTESTATION_KEYS))
+        self.assertEqual(sorted(artifact),
+                         sorted(ms.ARTIFACT_KEYS + ms.ARTIFACT_OPTIONAL_KEYS))
+        generic = self.artifact(state, self.generic)
+        self.assertNotIn(ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION, generic)
+        self.assertEqual(sorted(generic), sorted(ms.ARTIFACT_KEYS))
+        entry = self.operation(state, self.outcome["operation_id"])
+        self.assertEqual(entry["kind"], ms.OPERATION_ATTEST_DELIVERY_RECEIPT)
+        self.assertEqual(entry["outcome"]["artifact_id"], self.attested)
+        self.assertEqual(entry["outcome"]["authorization_id"], marker["authorization_id"])
+        self.assertEqual(self.good["reservations"][self.outcome["operation_id"]][
+            "consumed_by"], self.outcome["operation_id"])
+        self.assertEqual(state["snapshot"]["position"], entry["sequence"])
+        self.assertEqual(state["sequence"], entry["sequence"])
+        self.assertIn(ms.OPERATION_ATTEST_DELIVERY_RECEIPT, ms.CONTRACT_DEPENDENT_KINDS)
+        self.assertEqual(entry["provenance"]["revision"], 1)
+        # The kind's invocation digest re-derives from the attested
+        # artifact alone, and from nothing else.
+        from mission import state_reconcile as sr
+        args = sr._invocation_arguments(entry["kind"], artifact, entry["outcome"], state)
+        self.assertEqual(args, {"attestation": self.attestation(self.mission_id)})
+        self.assertEqual(ms.invocation_digest(entry["kind"], self.mission_id,
+                                              entry["sequence"] - 1, args),
+                         entry["content_digest_sha256"])
+        # The state record gained no top-level key and no store key.
+        self.assertEqual(set(state), set(ms.STATE_RECORD_KEYS))
+        self.assertEqual(set(self.good), set(self.mst.TOP_LEVEL_KEYS))
+
+    def test_U2_every_tampered_form_refuses_on_load_and_save_with_its_own_code(self):
+        ms = self.ms
+        other_mission = self.ready_mission(required_dependencies=[])
+        other_authorization = self.store.load()["missions"][other_mission][
+            "authorization_ids"][-1]
+        self.good = self.stable()
+        cases = {}
+
+        def case(name, code):
+            def register(mutate):
+                cases[name] = (code, mutate)
+                return mutate
+            return register
+
+        # A present marker is checked for its closed shape and the fixed
+        # attested-artifact fields BEFORE the producing operation is bound
+        # (round 07 finding 6), so a marker copied onto a generic artifact
+        # refuses on the artifact's own fields (a contract key, PRODUCED
+        # role) with the attestation code; the same marker on a generic
+        # artifact whose fields happen to match refuses on the binding.
+        @case("marker injected on a generic artifact", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            source = self.artifact(state, self.attested)
+            self.artifact(state, self.generic)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = (
+                dict(source[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION]))
+
+        @case("marker injected on a look-alike generic artifact",
+              ms.PROBLEM_OPERATION_BINDING)
+        def _(document, state):
+            source = self.artifact(state, self.attested)
+            generic = self.artifact(state, self.generic)
+            generic[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = (
+                dict(source[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION]))
+            generic["key"] = None
+            generic["role"] = mission_record.ARTIFACT_ROLE_VERIFICATION
+
+        @case("marker removed from the attested artifact", ms.PROBLEM_OPERATION_BINDING)
+        def _(document, state):
+            del self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+
+        @case("ledger kind re-labelled generic, marker kept",
+              ms.PROBLEM_OPERATION_BINDING)
+        def _(document, state):
+            self.operation(state, self.outcome["operation_id"])["kind"] = (
+                ms.OPERATION_RECORD_ARTIFACT)
+
+        @case("ledger kind re-labelled generic, marker dropped, outcome kept",
+              ms.PROBLEM_OUTCOME_MALFORMED)
+        def _(document, state):
+            self.operation(state, self.outcome["operation_id"])["kind"] = (
+                ms.OPERATION_RECORD_ARTIFACT)
+            del self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+
+        @case("marker state changed", ms.PROBLEM_EFFECT_INCONSISTENT)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "receipt_state"] = "derived"
+
+        @case("marker and outcome state changed together",
+              ms.PROBLEM_INVOCATION_MISMATCH)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "receipt_state"] = "derived"
+            self.operation(state, self.outcome["operation_id"])["outcome"][
+                "receipt_state"] = "derived"
+
+        @case("marker step changed", ms.PROBLEM_EFFECT_INCONSISTENT)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "step"] = "PUSH"
+
+        @case("marker delivery changed", ms.PROBLEM_EFFECT_INCONSISTENT)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "delivery_id"] = "dlv-other"
+
+        @case("receipt digest copied from another receipt", ms.PROBLEM_INVOCATION_MISMATCH)
+        def _(document, state):
+            self.artifact(state, self.attested)["content_digest_sha256"] = "5" * 64
+
+        @case("receipt reference changed", ms.PROBLEM_INVOCATION_MISMATCH)
+        def _(document, state):
+            self.artifact(state, self.attested)["locator"] = "rcpt-" + "c" * 24
+
+        @case("parent authority digest changed", ms.PROBLEM_INVOCATION_MISMATCH)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "parent_authority_digest_sha256"] = "5" * 64
+
+        @case("authorization digest changed", ms.PROBLEM_INVOCATION_MISMATCH)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "authorization_digest_sha256"] = "5" * 64
+
+        @case("authorization digest and ledger digest rewritten together",
+              ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            artifact = self.artifact(state, self.attested)
+            artifact[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "authorization_digest_sha256"] = "5" * 64
+            from mission import state_reconcile as sr
+            entry = self.operation(state, self.outcome["operation_id"])
+            entry["content_digest_sha256"] = ms.invocation_digest(
+                entry["kind"], self.mission_id, entry["sequence"] - 1,
+                sr._invocation_arguments(entry["kind"], artifact, entry["outcome"],
+                                         state))
+
+        @case("authorization id points at another mission's authorization",
+              ms.PROBLEM_EFFECT_INCONSISTENT)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "authorization_id"] = other_authorization
+
+        @case("authorization id and outcome point at another mission's authorization",
+              ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "authorization_id"] = other_authorization
+            self.operation(state, self.outcome["operation_id"])["outcome"][
+                "authorization_id"] = other_authorization
+
+        @case("attested artifact duplicated", ms.PROBLEM_SEQUENCE)
+        def _(document, state):
+            # A copy at the same sequence trips the append-only order first;
+            # the effect count itself is proved directly below.
+            copy_ = json.loads(json.dumps(self.artifact(state, self.attested)))
+            copy_["artifact_id"] = hexid("mf", 0xDEAD)
+            state["artifacts"].append(copy_)
+
+        @case("orphan marker: attested artifact names no operation",
+              ms.PROBLEM_OPERATION_BINDING)
+        def _(document, state):
+            self.artifact(state, self.attested)["operation_id"] = hexid("mo", 0xBEEF)
+
+        @case("ledger entry without its marked artifact", ms.PROBLEM_EFFECT_INCONSISTENT)
+        def _(document, state):
+            state["artifacts"] = [a for a in state["artifacts"]
+                                  if a["artifact_id"] != self.attested]
+
+        @case("attested artifact under a contract key", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)["key"] = "test_log"
+
+        @case("attested artifact with another role", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)["role"] = (
+                mission_record.ARTIFACT_ROLE_PRODUCED)
+
+        @case("attested artifact not a receipt reference", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)["locator_kind"] = (
+                ms.LOCATOR_KIND_OPAQUE_REFERENCE)
+
+        @case("attested artifact unavailable", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)["available"] = False
+
+        @case("attested artifact without a digest", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)["content_digest_sha256"] = None
+
+        @case("attested artifact deriving from another", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)["derived_from"] = [self.generic]
+
+        @case("marker with an extra key", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "signed"] = True
+
+        @case("marker missing a key", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            del self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "step"]
+
+        @case("marker with a non-hex digest", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "parent_authority_digest_sha256"] = "z" * 64
+
+        @case("marker that is not an object", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = (
+                "attested")
+
+        @case("marker field over the bound", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION][
+                "step"] = "s" * (ms.MAX_RECEIPT_ATTESTATION_FIELD_CHARS + 1)
+
+        @case("outcome without the artifact id", ms.PROBLEM_OUTCOME_MALFORMED)
+        def _(document, state):
+            del self.operation(state, self.outcome["operation_id"])["outcome"][
+                "artifact_id"]
+
+        @case("outcome naming the generic artifact", ms.PROBLEM_EFFECT_INCONSISTENT)
+        def _(document, state):
+            self.operation(state, self.outcome["operation_id"])["outcome"][
+                "artifact_id"] = self.generic
+
+        @case("generic ledger entry promoted to the attesting kind",
+              ms.PROBLEM_OPERATION_BINDING)
+        def _(document, state):
+            generic = self.artifact(state, self.generic)
+            self.operation(state, generic["operation_id"])["kind"] = (
+                ms.OPERATION_ATTEST_DELIVERY_RECEIPT)
+
+        # Round 07 finding 6: a PRESENT null marker is not absence.
+        @case("null marker on a generic artifact (Reviewer's case)",
+              ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.generic)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = None
+
+        @case("null marker on the attested artifact", ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = None
+
+        @case("empty-object marker on a generic artifact (control)",
+              ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            self.artifact(state, self.generic)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = {}
+
+        @case("marker with ten thousand keys (bounded before formatting)",
+              ms.PROBLEM_RECEIPT_ATTESTATION)
+        def _(document, state):
+            marker = self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+            marker.update(("k%05d" % i, "v") for i in range(10000))
+
+        self.assertGreaterEqual(len(cases), 34)
+        for label, (code, mutate) in cases.items():
+            with self.subTest(label):
+                self.refuse_raw(self.tamper(mutate), code)
+        # The forward and reverse effect counts, proved on the ledger /
+        # effect reconciliation directly (the raw-document path refuses
+        # earlier on sequence order): two marked artifacts naming one
+        # attesting operation, and a marked artifact whose operation is a
+        # generic one, are each exactly-one violations.
+        from mission import state_reconcile
+        state = json.loads(json.dumps(self.state_of(self.good, self.mission_id)))
+        twin = json.loads(json.dumps(self.artifact(state, self.attested)))
+        twin["artifact_id"] = hexid("mf", 0xDEAD)
+        twin["sequence"] = twin["sequence"] + 1
+        state["artifacts"].append(twin)
+        refuses(self, ms.PROBLEM_EFFECT_INCONSISTENT,
+                state_reconcile.reconcile_effects, state, "state")
+        state = json.loads(json.dumps(self.state_of(self.good, self.mission_id)))
+        generic = self.artifact(state, self.generic)
+        generic[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = dict(
+            self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION])
+        refuses(self, ms.PROBLEM_EFFECT_INCONSISTENT,
+                state_reconcile.reconcile_effects, state, "state")
+        # The PURE state validator (the Reviewer's entry point for finding
+        # 6) refuses a present null marker on a generic artifact, and the
+        # refusal for ten thousand marker keys is short: bounded before
+        # any key is formatted.
+        from mission import state_validation
+        state = json.loads(json.dumps(self.state_of(self.good, self.mission_id)))
+        self.artifact(state, self.generic)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION] = None
+        refuses(self, ms.PROBLEM_RECEIPT_ATTESTATION,
+                state_validation.validate_state_record, state)
+        self.assertFalse(ms.has_receipt_attestation(self.artifact(
+            self.state_of(self.good, self.mission_id), self.generic)))
+        self.assertTrue(ms.has_receipt_attestation(
+            {ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION: None}))
+        state = json.loads(json.dumps(self.state_of(self.good, self.mission_id)))
+        marker = self.artifact(state, self.attested)[ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+        marker.update(("k%05d" % i, "v") for i in range(10000))
+        exc = refuses(self, ms.PROBLEM_RECEIPT_ATTESTATION,
+                      state_validation.validate_state_record, state)
+        self.assertLess(len(str(exc)), 300)
+
+    def test_U3_attestation_outside_the_authority_window_refuses(self):
+        # A Mission approved with an expiry; the attestation recorded
+        # inside the window is readable; the same attestation with its
+        # recording time moved past the expiry (every recording timestamp
+        # of the operation moved consistently, so the monotone time base
+        # and the operation/effect time bindings still hold) is refused as
+        # outside the parent authorization's recorded window.
+        ms = self.ms
+        expires_at = self.clock() + 500
+        created = self.propose(proof_contract=contract(required_dependencies=[]))
+        mission_id = created["mission_id"]
+        self.approve(mission_id, 1, expires_at=expires_at)
+        self.clock.advance(1)
+        self.call("activate_proof_contract", mission_id)
+        self.clock.advance(1)
+        outcome = self.call("attest_delivery_receipt", mission_id,
+                            self.attestation(mission_id))
+        good = self.stable()
+        document = json.loads(json.dumps(good))
+        state = document["mission_state"][mission_id]
+        late = expires_at + 10
+        entry = self.operation(state, outcome["operation_id"])
+        entry["applied_at"] = late
+        entry["provenance"]["received_at"] = late
+        artifact = self.artifact(state, outcome["artifact_id"])
+        artifact["recorded_at"] = late
+        artifact["provenance"]["received_at"] = late
+        state["updated_at"] = late
+        self.refuse_raw(document, ms.PROBLEM_AUTHORITY_WINDOW)
+
+    def test_U4_old_records_read_as_unattested_and_are_never_backfilled(self):
+        ms = self.ms
+        # A record written before the marker existed: every artifact lacks
+        # the key. It loads, saves, and still lacks it; observation and
+        # the pure helpers read it as unattested.
+        document = json.loads(json.dumps(self.good))
+        state = document["mission_state"][self.mission_id]
+        state["artifacts"] = [a for a in state["artifacts"]
+                              if a["artifact_id"] != self.attested]
+        state["applied_operations"] = [
+            o for o in state["applied_operations"]
+            if o["operation_id"] != self.outcome["operation_id"]]
+        state["sequence"] -= 1
+        state["updated_at"] = state["applied_operations"][-1]["applied_at"]
+        state["snapshot"] = None
+        del document["reservations"][self.outcome["operation_id"]]
+        self.write_raw(json.dumps(document))
+        loaded = self.store.load()
+        artifacts = loaded["mission_state"][self.mission_id]["artifacts"]
+        self.assertTrue(artifacts)
+        for artifact in artifacts:
+            self.assertNotIn(ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION, artifact)
+            self.assertIsNone(ms.receipt_attestation_of(artifact))
+        self.assertEqual(ms.attested_artifacts(loaded["mission_state"][self.mission_id]),
+                         [])
+        self.store.save(loaded)
+        for artifact in json.loads(self.read_bytes())["mission_state"][self.mission_id][
+            "artifacts"
+        ]:
+            self.assertNotIn(ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION, artifact)
+        self.assertEqual(self.service.get_state(self.mission_id)["record"]["artifacts"],
+                         artifacts)
+        report = self.service.observe(self.mission_id)
+        self.assertEqual(report["delivery_receipts"]["value"]["attested"], [])
+        self.assertEqual(report["delivery_receipts"]["value"]["unattested"],
+                         [self.generic])
+        # The generic path can never add the marker: the service's
+        # record_artifact writes no marker even for a receipt reference
+        # carrying a digest the validator would compute.
+        again = self.call("record_artifact", self.mission_id, None,
+                          mission_record.ARTIFACT_ROLE_VERIFICATION,
+                          ms.LOCATOR_KIND_DELIVERY_RECEIPT_REFERENCE,
+                          "rcpt-" + "a" * 24, "d" * 64, True, [])
+        artifact = [a for a in self.service.get_state(self.mission_id)["record"][
+            "artifacts"] if a["artifact_id"] == again["artifact_id"]][0]
+        self.assertNotIn(ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION, artifact)
+
+    def test_U5_the_service_refuses_a_caller_supplied_marker_or_authorization_id(self):
+        # The input is closed: an ``authorization_id`` or a marker cannot
+        # be supplied; the id is resolved from the digest inside the lock.
+        ms = self.ms
+        # Round 07 finding 5: seven valid fields plus ten thousand unknown
+        # keys (the Reviewer's case) refuse by COUNT, before any key is
+        # walked, sorted or formatted: the message is short.
+        flooded = self.attestation(self.mission_id)
+        flooded.update(("k%05d" % i, "v") for i in range(10000))
+        operation_id = self.oid()
+        before = self.read_bytes()
+        exc = self.assertRefuses(ms.PROBLEM_RECEIPT_ATTESTATION,
+                                 self.service.attest_delivery_receipt, self.mission_id,
+                                 operation_id, self.seq(self.mission_id), flooded,
+                                 self.context)
+        self.assertLess(len(str(exc)), 300)
+        self.assertEqual(self.read_bytes(), before)
+        exc = refuses(self, ms.PROBLEM_RECEIPT_ATTESTATION,
+                      ms.validate_receipt_attestation_input, flooded)
+        self.assertLess(len(str(exc)), 300)
+        # Every scalar argument is established as an exact bounded builtin
+        # before anything else (the observation sanitizers): a str
+        # subclass, an oversized id, a bool sequence and a context that is
+        # not the exact class refuse with the input code, nothing written.
+        from mission import observation
+
+        class Text(str):
+            pass
+
+        for label, args in (
+            ("mission id subclass", (Text(self.mission_id), operation_id, 0, self.context)),
+            ("mission id oversized", ("m" * 65, operation_id, 0, self.context)),
+            ("operation id subclass", (self.mission_id, Text(operation_id), 0, self.context)),
+            ("bool sequence", (self.mission_id, operation_id, True, self.context)),
+            ("context dict", (self.mission_id, operation_id, 0, self.context.as_dict())),
+        ):
+            with self.subTest(label):
+                before = self.read_bytes()
+                self.assertRefuses(observation.PROBLEM_OBSERVATION_INPUT,
+                                   self.service.attest_delivery_receipt, args[0], args[1],
+                                   args[2], self.attestation(self.mission_id), args[3])
+                self.assertEqual(self.read_bytes(), before)
+        for extra in ({"authorization_id": hexid("ma", 1)},
+                      {ms.ARTIFACT_MARKER_RECEIPT_ATTESTATION: {}},
+                      {"succeeded": True}, {"effect_completed": True},
+                      {"valid": True}):
+            operation_id = self.oid()
+            before = self.read_bytes()
+            self.assertRefuses(ms.PROBLEM_RECEIPT_ATTESTATION,
+                               self.service.attest_delivery_receipt, self.mission_id,
+                               operation_id, self.seq(self.mission_id),
+                               dict(self.attestation(self.mission_id), **extra),
+                               self.context)
+            self.assertEqual(self.read_bytes(), before)
+        # An unknown digest, another Mission's digest, and a digest of a
+        # revoked authorization refuse inside the lock with the
+        # attestation's own code, consuming nothing.
+        from mission import state_service
+        other = self.ready_mission(required_dependencies=[])
+        for digest in ("f" * 64, self.authorization_digest(other)):
+            operation_id = self.oid()
+            before = self.read_bytes()
+            self.assertRefuses(state_service.PROBLEM_RECEIPT_ATTESTATION_AUTHORITY,
+                               self.service.attest_delivery_receipt, self.mission_id,
+                               operation_id, self.seq(self.mission_id),
+                               self.attestation(self.mission_id,
+                                                authorization_digest_sha256=digest,
+                                                receipt_id="rcpt-" + "9" * 24),
+                               self.context)
+            self.assertEqual(self.read_bytes(), before)
+            self.assertIsNone(self.store.load()["reservations"][operation_id][
+                "consumed_by"])
 
 
 if __name__ == "__main__":

@@ -82,6 +82,67 @@ rebind and is malformed. A ``MISSION`` dependency may not reference its
 own Mission. Readiness observations are provider-neutral: an opaque
 ``resource_key``, a closed status, an ``observed_at``. Readiness is only
 ever a refusal input, never permission to run anything.
+
+Journal snapshot (Task 7). The applied-operation ledger doubles as the
+Mission's Event Journal (``mission.journal``): each entry is an ordered,
+stable-identity event bound to the revision in force. The record's first
+additive-optional key, ``snapshot``, caches the supported derived state
+at a journal position together with the schema version, revision,
+position and chain digest it was taken at; it is re-derivable from the
+record alone, refused when it does not re-derive, and never a second
+source of truth. A record written before the key existed is read as
+carrying no snapshot; nothing is supplied on load.
+
+Reconciliation (Task 7, Stage 2). ``reconcile`` is an ordinary state
+operation of the ledger (``mission.reconciliation``): it consumes a
+reserved operation id, takes ``expected_sequence``, is replay-idempotent
+on its invocation digest, and its ONE effect is an entry appended to
+the record's second additive-optional key, ``reconciliations``, whose
+findings are derived and re-proved on every load and save. It is not
+contract-dependent (an EDIT may have moved the revision past the
+active contract; recording that drift under the current revision is
+its purpose), it changes no progress and no other record, and a record
+written before the key existed is read as holding no reconciliation.
+
+Receipt attestation (Task 7, Stage 2, the receipt criterion). A
+delivery-receipt reference may be recorded in ATTESTED form: an artifact
+that carries the additive-optional key ``receipt_attestation``, a closed
+bounded block naming the delivery record, the step, the receipt's actual
+state and the step's actual state (both verbatim), the delivery
+record's own authority digest the receipt was bound to, and the Mission Authorization (id and digest) the delivery
+record named as its parent. The attested form is produced by exactly one
+operation kind, ``attest_delivery_receipt``, which is DISTINCT from
+``record_artifact``: the generic kind never adds the marker, the
+attesting kind always does, and the validators refuse a marker with no
+producing operation of the attesting kind, an attesting operation with
+no marked artifact, a marker on a generic artifact, two markers for one
+operation, and a marker whose fields disagree with the operation's
+outcome and invocation. A record written before the marker existed
+carries no marker on any artifact and is read as UNATTESTED: nothing is
+supplied or backfilled on load. Absence is the KEY being absent: a
+present key holding null (or any shape but the closed marker) is a
+malformed marker and refuses on load and save; it is never read as a
+generic artifact.
+
+What the attested form means, exactly. The marker records that the ONE
+production path permitted to call the attesting operation (the delivery
+layer's parent seam, confined by the static pins to a single calling
+function that runs the delivery layer's existing, unchanged receipt
+validator and the parent-authority check FIRST) accepted this receipt
+for this Mission at this revision. It records evidence and grants
+nothing: an attestation cannot approve or close a Mission, alter a human
+decision, waive proof, remove a blocker, raise a budget, or permit any
+delivery action, and it is not cryptographic authenticity: nothing here
+signs anything, and the authority digests it carries are binding values,
+not secrets. Structural validity is not success: ``receipt_state`` and
+``step_state`` are the delivery layer's own vocabulary stored verbatim,
+and only the pair ``RECEIPT_STATE_SUCCEEDED`` / ``STEP_STATE_SUCCEEDED``
+(each pinned equal to the delivery layer's constant by the static
+tests) is read as a completed effect; a receipt attested in any other
+state, or under a step in any other state, proves that the effect was
+NOT completed when attested — the same condition the seam reports. The marker is absent on every generic and legacy
+artifact, so the mere presence of a receipt-reference artifact never
+implies attestation.
 """
 
 from workflow_authority.digest import json_digest
@@ -161,6 +222,7 @@ CLOSURE_REASONS_BY_PROGRESS = {
 # record or one nested event; the table maps the operation kind to the
 # list (or nested event) it may produce.
 OPERATION_ACTIVATE_CONTRACT = "activate_proof_contract"
+OPERATION_ATTEST_DELIVERY_RECEIPT = "attest_delivery_receipt"
 OPERATION_RECORD_CLAIM = "record_claim"
 OPERATION_RECORD_ARTIFACT = "record_artifact"
 OPERATION_SUBMIT_EVIDENCE = "submit_evidence"
@@ -176,14 +238,16 @@ OPERATION_RECORD_CHECKPOINT = "record_checkpoint"
 OPERATION_COMPLETE = "complete"
 OPERATION_CLOSE_UNSUCCESSFUL = "close_unsuccessful"
 OPERATION_ABANDON = "abandon"
+OPERATION_RECONCILE = "reconcile"
 OPERATION_KINDS = (
     OPERATION_ABANDON, OPERATION_ACCEPT_EVIDENCE, OPERATION_ACTIVATE_CONTRACT,
+    OPERATION_ATTEST_DELIVERY_RECEIPT,
     OPERATION_BIND_DEPENDENCY, OPERATION_CLOSE_UNSUCCESSFUL, OPERATION_COMPLETE,
     OPERATION_INVALIDATE_EVIDENCE, OPERATION_OBSERVE_RESOURCE_READINESS,
-    OPERATION_OPEN_BLOCKER, OPERATION_RECORD_ARTIFACT, OPERATION_RECORD_CHECKPOINT,
-    OPERATION_RECORD_CLAIM, OPERATION_RECORD_CONTINUATION,
-    OPERATION_RESOLVE_BLOCKER, OPERATION_RESOLVE_DEPENDENCY,
-    OPERATION_SUBMIT_EVIDENCE,
+    OPERATION_OPEN_BLOCKER, OPERATION_RECONCILE, OPERATION_RECORD_ARTIFACT,
+    OPERATION_RECORD_CHECKPOINT, OPERATION_RECORD_CLAIM,
+    OPERATION_RECORD_CONTINUATION, OPERATION_RESOLVE_BLOCKER,
+    OPERATION_RESOLVE_DEPENDENCY, OPERATION_SUBMIT_EVIDENCE,
 )
 CLOSING_OPERATIONS = {
     OPERATION_COMPLETE: PROGRESS_COMPLETED,
@@ -212,12 +276,20 @@ NEXT_STEPS = (
 
 # -- closed key sets --------------------------------------------------
 
-STATE_RECORD_KEYS = (
+STATE_RECORD_REQUIRED_KEYS = (
     "schema_version", "mission_id", "sequence", "created_at", "updated_at",
     "progress", "contract_activations", "claims", "artifacts", "evidence",
     "blockers", "dependencies", "resource_readiness", "checkpoints",
     "continuations", "closure", "applied_operations",
 )
+# The additive-optional state-record keys (Task 7): the journal
+# snapshot (Stage 1) and the reconciliation records (Stage 2). Each is
+# absent in a record written before it existed and read as "none";
+# every record this layer creates carries both (``snapshot`` None or a
+# closed snapshot, ``mission.journal``; ``reconciliations`` a bounded
+# list, ``mission.reconciliation``). Nothing supplies either on load.
+STATE_RECORD_OPTIONAL_KEYS = ("snapshot", "reconciliations")
+STATE_RECORD_KEYS = STATE_RECORD_REQUIRED_KEYS + STATE_RECORD_OPTIONAL_KEYS
 ACTIVATION_KEYS = (
     "activation_id", "revision", "proposal_digest_sha256", "authorization_id",
     "authorization_digest_sha256", "contract_digest_sha256", "activated_at",
@@ -232,6 +304,40 @@ ARTIFACT_KEYS = (
     "content_digest_sha256", "available", "derived_from", "recorded_at",
     "provenance", "operation_id", "sequence",
 )
+# The additive-optional artifact key (Task 7, Stage 2): present, with a
+# closed bounded block, on exactly the artifacts an
+# ``attest_delivery_receipt`` operation produced; ABSENT (not None) on
+# every artifact a ``record_artifact`` operation produced and on every
+# artifact written before the key existed. Nothing supplies it on load.
+ARTIFACT_MARKER_RECEIPT_ATTESTATION = "receipt_attestation"
+ARTIFACT_OPTIONAL_KEYS = (ARTIFACT_MARKER_RECEIPT_ATTESTATION,)
+# The stored marker: what the delivery layer's validating path bound.
+RECEIPT_ATTESTATION_KEYS = (
+    "delivery_id", "step", "receipt_state", "step_state",
+    "parent_authority_digest_sha256", "authorization_id",
+    "authorization_digest_sha256",
+)
+# The attesting operation's input: the receipt's reference and content
+# digest (which become the artifact's locator and content digest), the
+# delivery record, step and verbatim receipt state, the delivery
+# record's authority digest the receipt is bound to, and the Mission
+# Authorization digest the delivery record names as its parent. The
+# authorization id is resolved from that digest inside the locked write,
+# never supplied.
+RECEIPT_ATTESTATION_INPUT_KEYS = (
+    "receipt_id", "receipt_digest_sha256", "delivery_id", "step",
+    "receipt_state", "step_state", "parent_authority_digest_sha256",
+    "authorization_digest_sha256",
+)
+# The completion condition, exactly the delivery layer's: a completed
+# effect is a receipt in the succeeded RECEIPT state recorded under a
+# step in the succeeded STEP state — both stored verbatim, both pinned
+# equal to that layer's constants by the static tests. Either alone is
+# structural validity, never success: the delivery contract accepts a
+# succeeded receipt under a pending step, and that is attested as NOT
+# completed, exactly as the seam reports it.
+RECEIPT_STATE_SUCCEEDED = "succeeded"
+STEP_STATE_SUCCEEDED = "succeeded"
 EVIDENCE_KEYS = (
     "evidence_id", "activation_id", "requirement_key", "kind",
     "content_digest_sha256", "artifact_ids", "submitted_at", "provenance",
@@ -302,6 +408,10 @@ OUTCOME_KEYS_BY_KIND = {
     ),
     OPERATION_RECORD_CLAIM: ("claim_id", "requirement_key"),
     OPERATION_RECORD_ARTIFACT: ("artifact_id", "key", "role"),
+    OPERATION_ATTEST_DELIVERY_RECEIPT: (
+        "artifact_id", "delivery_id", "step", "receipt_state", "step_state",
+        "authorization_id",
+    ),
     OPERATION_SUBMIT_EVIDENCE: (
         "evidence_id", "requirement_key", "kind", "accepted",
     ),
@@ -322,6 +432,7 @@ OUTCOME_KEYS_BY_KIND = {
     OPERATION_COMPLETE: ("reason", "detail"),
     OPERATION_CLOSE_UNSUCCESSFUL: ("reason", "detail"),
     OPERATION_ABANDON: ("reason", "detail"),
+    OPERATION_RECONCILE: ("observed_position", "observed_revision", "finding_count"),
 }
 # Kinds whose operation is contract-dependent at the service boundary and
 # whose provenance revision must therefore equal the activation current
@@ -329,6 +440,7 @@ OUTCOME_KEYS_BY_KIND = {
 # an asserting reason needs the contract, a caller reason does not (R-36).
 CONTRACT_DEPENDENT_KINDS = frozenset(OPERATION_KINDS) - frozenset((
     OPERATION_ACTIVATE_CONTRACT, OPERATION_ABANDON, OPERATION_CLOSE_UNSUCCESSFUL,
+    OPERATION_RECONCILE,
 ))
 ASSERTING_CLOSURE_REASONS = (
     CLOSURE_REASON_BUDGET_EXHAUSTED, CLOSURE_REASON_HARD_BLOCKER,
@@ -362,6 +474,11 @@ MAX_CONDITION_CHARS = 1000
 MAX_STATE_REASON_CHARS = 1000
 MAX_RESOURCE_REFERENCE_CHARS = 512
 MAX_REFUSAL_DETAIL_CHARS = 2000
+# Every string field of a receipt attestation (the receipt reference,
+# delivery record id, step and receipt state) is bounded here BEFORE it
+# is compared, copied or formatted; the delivery layer bounds its own
+# ids at the same value.
+MAX_RECEIPT_ATTESTATION_FIELD_CHARS = 128
 
 # -- problem codes: one distinct code per failure ---------------------
 
@@ -415,6 +532,10 @@ PROBLEM_REVISION_IMPOSSIBLE = "mission_state_revision_impossible"
 PROBLEM_REVISION_REGRESSED = "mission_state_revision_regressed"
 # R-44: a revision ordinal Task 5 consumes from a Mission record is an int.
 PROBLEM_REVISION_IDENTITY_MALFORMED = "mission_state_revision_identity_malformed"
+# Task 7, Stage 2: a receipt attestation (input or stored marker) that is
+# not the closed bounded shape, or an attested artifact whose own fields
+# are not the ones the attesting operation records.
+PROBLEM_RECEIPT_ATTESTATION = "mission_state_receipt_attestation"
 
 
 # -- invocation identity (R-6, R-34) -------------------------------------
@@ -485,6 +606,8 @@ def new_state_record(mission_id, created_at):
         "continuations": [],
         "closure": None,
         "applied_operations": [],
+        "snapshot": None,
+        "reconciliations": [],
     }
 
 
@@ -562,6 +685,159 @@ def new_artifact(artifact_id, key, role, locator_kind, locator,
         "operation_id": operation_id,
         "sequence": sequence,
     }
+
+
+def _require_attestation_str(value, location):
+    return record.require_str(value, location, MAX_RECEIPT_ATTESTATION_FIELD_CHARS)
+
+
+def validate_receipt_attestation_input(value, location="attestation"):
+    """The attesting operation's closed, bounded input (see
+    ``RECEIPT_ATTESTATION_INPUT_KEYS``): every field is established as
+    an exact bounded builtin before it is compared, copied or formatted.
+    Refuses with ``mission_state_receipt_attestation``."""
+    if type(value) is not dict:
+        record.fail(PROBLEM_RECEIPT_ATTESTATION,
+                    "%s must be a plain object" % location)
+    # Bounds BEFORE work: the key COUNT is checked first, by size alone,
+    # so no number of unknown keys is ever walked, sorted or formatted;
+    # then every key's exact type and length, before any key is compared,
+    # looked up or formatted by the closed-key check.
+    if len(value) != len(RECEIPT_ATTESTATION_INPUT_KEYS):
+        record.fail(PROBLEM_RECEIPT_ATTESTATION,
+                    "%s must carry exactly %d fields"
+                    % (location, len(RECEIPT_ATTESTATION_INPUT_KEYS)))
+    for key in dict.keys(value):
+        if type(key) is not str:
+            record.fail(PROBLEM_RECEIPT_ATTESTATION,
+                        "%s carries a key that is not a string" % location)
+        if len(key) > MAX_RECEIPT_ATTESTATION_FIELD_CHARS:
+            record.fail(PROBLEM_RECEIPT_ATTESTATION,
+                        "%s carries a key longer than %d characters"
+                        % (location, MAX_RECEIPT_ATTESTATION_FIELD_CHARS))
+    try:
+        record.require_closed_keys(value, RECEIPT_ATTESTATION_INPUT_KEYS, location)
+        for key in ("receipt_id", "delivery_id", "step", "receipt_state",
+                    "step_state"):
+            item = value[key]
+            if type(item) is not str:
+                record.fail(record.PROBLEM_BAD_TYPE,
+                            "%s.%s must be a string" % (location, key))
+            _require_attestation_str(item, "%s.%s" % (location, key))
+        for key in ("receipt_digest_sha256", "parent_authority_digest_sha256",
+                    "authorization_digest_sha256"):
+            item = value[key]
+            if type(item) is not str:
+                record.fail(record.PROBLEM_BAD_TYPE,
+                            "%s.%s must be a string" % (location, key))
+            record.require_hex(item, "%s.%s" % (location, key), 64)
+    except record.MissionError as exc:
+        record.fail(PROBLEM_RECEIPT_ATTESTATION, "%s: %s" % (exc.problem, exc))
+    return dict((key, value[key]) for key in RECEIPT_ATTESTATION_INPUT_KEYS)
+
+
+def validate_receipt_attestation(value, location):
+    """The stored marker's closed, bounded, typed shape. The bindings it
+    must satisfy against the ledger, the Mission and its authorizations
+    are checked by ``state_validation`` and the store."""
+    if type(value) is not dict:
+        record.fail(PROBLEM_RECEIPT_ATTESTATION,
+                    "%s must be a plain object; a present marker is never null"
+                    % location)
+    if len(value) != len(RECEIPT_ATTESTATION_KEYS):
+        record.fail(PROBLEM_RECEIPT_ATTESTATION,
+                    "%s must carry exactly %d fields"
+                    % (location, len(RECEIPT_ATTESTATION_KEYS)))
+    for key in dict.keys(value):
+        if type(key) is not str or len(key) > MAX_RECEIPT_ATTESTATION_FIELD_CHARS:
+            record.fail(PROBLEM_RECEIPT_ATTESTATION,
+                        "%s carries a key that is not a bounded string" % location)
+    try:
+        record.require_closed_keys(value, RECEIPT_ATTESTATION_KEYS, location)
+        for key in ("delivery_id", "step", "receipt_state", "step_state"):
+            _require_attestation_str(value[key], "%s.%s" % (location, key))
+        record.require_hex(value["parent_authority_digest_sha256"],
+                           location + ".parent_authority_digest_sha256", 64)
+        record.require_id(value["authorization_id"], record.AUTHORIZATION_ID_PREFIX,
+                          location + ".authorization_id")
+        record.require_hex(value["authorization_digest_sha256"],
+                           location + ".authorization_digest_sha256", 64)
+    except record.MissionError as exc:
+        record.fail(PROBLEM_RECEIPT_ATTESTATION, "%s: %s" % (exc.problem, exc))
+    return value
+
+
+def new_attested_artifact(artifact_id, attestation, authorization_id, recorded_at,
+                          provenance, operation_id, sequence):
+    """The artifact an ``attest_delivery_receipt`` operation records: a
+    delivery-receipt reference (the receipt's reference as the locator,
+    the receipt's own content digest as the artifact digest, available,
+    a VERIFICATION artifact under no contract key, deriving from nothing)
+    carrying the closed marker. Every field is derived from the validated
+    input and the resolved authorization; none is free."""
+    artifact = new_artifact(
+        artifact_id, None, record.ARTIFACT_ROLE_VERIFICATION,
+        LOCATOR_KIND_DELIVERY_RECEIPT_REFERENCE, attestation["receipt_id"],
+        attestation["receipt_digest_sha256"], True, [], recorded_at, provenance,
+        operation_id, sequence)
+    artifact[ARTIFACT_MARKER_RECEIPT_ATTESTATION] = {
+        "delivery_id": attestation["delivery_id"],
+        "step": attestation["step"],
+        "receipt_state": attestation["receipt_state"],
+        "step_state": attestation["step_state"],
+        "parent_authority_digest_sha256": attestation["parent_authority_digest_sha256"],
+        "authorization_id": authorization_id,
+        "authorization_digest_sha256": attestation["authorization_digest_sha256"],
+    }
+    return artifact
+
+
+def has_receipt_attestation(artifact):
+    """Whether the marker KEY is present: the one test the validators use
+    to decide the producing kind. A present key with a null value is not
+    absence — it is a malformed marker and refuses in validation."""
+    return ARTIFACT_MARKER_RECEIPT_ATTESTATION in artifact
+
+
+def receipt_attestation_of(artifact):
+    """The artifact's stored marker on a VALIDATED record, or None for a
+    generic or legacy artifact (key absent). Presence of the KEY decides,
+    never a locator kind; on a validated record a present key is always
+    the closed marker, because a present null refuses on load and save."""
+    if not has_receipt_attestation(artifact):
+        return None
+    return artifact[ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+
+
+def attestation_input_of(artifact):
+    """The attesting operation's input, rebuilt from the attested
+    artifact (the inverse of ``new_attested_artifact``), for the
+    invocation-digest re-derivation."""
+    marker = artifact[ARTIFACT_MARKER_RECEIPT_ATTESTATION]
+    return {
+        "receipt_id": artifact["locator"],
+        "receipt_digest_sha256": artifact["content_digest_sha256"],
+        "delivery_id": marker["delivery_id"],
+        "step": marker["step"],
+        "receipt_state": marker["receipt_state"],
+        "step_state": marker["step_state"],
+        "parent_authority_digest_sha256": marker["parent_authority_digest_sha256"],
+        "authorization_digest_sha256": marker["authorization_digest_sha256"],
+    }
+
+
+def receipt_effect_completed(attestation):
+    """Structural validity is not success: a completed effect is the
+    pinned succeeded RECEIPT state under the pinned succeeded STEP state,
+    the same condition the delivery layer's seam reports as
+    ``succeeded``; the stored answer can never be more positive than the
+    seam's."""
+    return (attestation["receipt_state"] == RECEIPT_STATE_SUCCEEDED
+            and attestation["step_state"] == STEP_STATE_SUCCEEDED)
+
+
+def attested_artifacts(state):
+    return [a for a in state["artifacts"] if has_receipt_attestation(a)]
 
 
 def new_evidence(evidence_id, activation_id, requirement_key, kind,

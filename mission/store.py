@@ -69,6 +69,37 @@ operation is a consumed ``state_operation`` reservation held by the same
 authenticated context. Reservation kind ``state_operation`` (id prefix
 ``mo-``) joins the existing map with its own cap.
 
+Event Journal and snapshots (Task 7). The per-Mission applied-operation
+ledger inside the state record IS the Mission's Event Journal
+(``mission.journal``): ordered, stable-identity events, bound to the
+revision in force, committed in the SAME ``os.replace`` as the effect
+and the consumed reservation they describe, so accepted Mission state
+and journal state can never split. The state record's first additive-
+optional key, ``snapshot``, caches the supported derived state at a
+journal position bound to the schema version, the revision, the
+position and the chain digest; the store re-derives the projection
+under the contract bound at that position on every load and save and
+refuses one that does not recompute (``mission_journal_snapshot_disagrees``),
+exactly as it re-proves checkpoints. No top-level key is added: the
+journal, the snapshot and the cursor live inside ``mission_state``, so
+the R-3 rule above stays the one compatibility rule; a state record
+written before ``snapshot`` existed is read as "no snapshot" and
+nothing is supplied on load.
+
+Observation and reconciliation (Task 7, Stage 2). Observation
+(``mission.observation``) is a read of this document plus caller-
+injected source adapters: no lock, no write, no minted id. A
+reconciliation that records a meaningful change is an ordinary
+``reconcile`` state operation whose one effect is an entry in the state
+record's second additive-optional key, ``reconciliations``
+(``mission.reconciliation``), committed in the same ``os.replace`` as
+its ledger entry, consumed reservation and the re-bound snapshot; the
+store re-derives each record's chain binding and findings on every load
+and save and refuses one that does not recompute
+(``mission_reconciliation_disagrees``). Still no top-level key is added,
+and a state record written before the key existed is read as holding
+no reconciliation.
+
 What the store re-proves from local durable facts alone (R-24, R-25):
 the whole locally provable closure conjunction of every persisted
 COMPLETED closure (proof, required artifacts, HARD blockers, required
@@ -100,6 +131,18 @@ authorization liveness. Those change current eligibility only and belong
 to the service's ``complete`` path and the read-time
 ``closure_eligibility`` projection, so elapsed time and foreign EDITs
 never make a valid historical record unreadable.
+
+Attested receipt references (Task 7, Stage 2). Beside the activation
+bindings, every artifact carrying the ``receipt_attestation`` marker
+must name a stored authorization of ITS Mission with exactly the digest
+the marker holds, bound to the revision the attesting operation cites,
+permitting the delivery target, and recorded inside that authorization's
+recorded window (R-25.1) — the same cross-document discipline an
+activation must satisfy. The marker's digests are binding values, not
+credentials: one that resolves to nothing, to another Mission, to
+another revision or to a non-delivery authorization makes the record
+unreadable. Nothing here validates a receipt; the delivery layer's
+validator is never imported.
 """
 
 import json
@@ -109,8 +152,10 @@ import stat
 from workflow_authority.atomic import atomic_write_json, exclusive_store_lock
 
 from mission import authorization as authorization_module
+from mission import journal
 from mission import manifest
 from mission import progress as progress_module
+from mission import reconciliation
 from mission import record
 from mission import state as state_module
 from mission import state_validation
@@ -501,6 +546,38 @@ def _validate_mission_state(document, mission_id, state, path):
                                      mission_id, activation["revision"]))
         _authority_window(authorization, activation["activated_at"],
                           "activation", sub, path)
+    # Task 7, Stage 2: an attested receipt-reference artifact names a
+    # stored Mission Authorization of THIS mission carrying exactly the
+    # digest the marker holds, bound to the revision the attesting
+    # operation cites, permitting the one delivery target, and recorded
+    # inside that authorization's recorded window (R-25.1) — the same
+    # cross-document discipline an activation binding must satisfy. The
+    # marker is a binding value, not a credential: a digest that resolves
+    # to nothing, to another Mission, to another revision or to a
+    # non-delivery authorization makes the record unreadable.
+    for index, artifact in enumerate(state["artifacts"]):
+        attestation = state_module.receipt_attestation_of(artifact)
+        if attestation is None:
+            continue
+        sub = "%s.artifacts[%d].%s" % (
+            where, index, state_module.ARTIFACT_MARKER_RECEIPT_ATTESTATION)
+        authorization = document["authorizations"].get(attestation["authorization_id"])
+        if authorization is None or (
+            attestation["authorization_id"] not in mission["authorization_ids"]
+            or authorization["authorization_digest_sha256"] != (
+                attestation["authorization_digest_sha256"])
+            or authorization["revision"] != artifact["provenance"]["revision"]
+            or record.DELIVERY_TARGET_GITHUB_PR not in (
+                authorization["authorized_delivery_targets"])
+        ):
+            _unreadable(path, "%s (%s): names authorization %s, which is not a"
+                        " stored authorization of mission %s at revision %d with"
+                        " that digest permitting the delivery target"
+                        % (sub, state_module.PROBLEM_RECEIPT_ATTESTATION,
+                           attestation["authorization_id"], mission_id,
+                           artifact["provenance"]["revision"]))
+        _authority_window(authorization, artifact["recorded_at"],
+                          "receipt attestation", sub, path)
 
     def requirement_of(entry, sub):
         contract = contracts[entry["activation_id"]]
@@ -682,6 +759,38 @@ def _validate_mission_state(document, mission_id, state, path):
             _unreadable(path, "%s operation %s was reserved by a different"
                         " authenticated context than its provenance records"
                         % (sub, operation["operation_id"]))
+    # Task 7, LAST on purpose: a stored journal snapshot is a projection
+    # cache bound to the history proved above. Its bindings (schema
+    # version, Mission, held position, revision in force there, chain
+    # digest there) and its recomputation under the contract bound THEN
+    # are derived checks, so a tampered history reports its own problem
+    # first and a stale-but-consistent snapshot never makes a valid
+    # record unreadable.
+    snapshot = state.get("snapshot")
+    if snapshot is not None:
+        sub = where + ".snapshot"
+        journal.require_snapshot_bindings(snapshot, state, sub)
+        bound = journal.activation_at(state, snapshot["position"])
+        detail = journal.snapshot_disagreement(
+            snapshot, state,
+            None if bound is None else contracts[bound["activation_id"]])
+        if detail is not None:
+            _unreadable(path, "%s does not recompute to itself (%s): %s"
+                        % (sub, journal.PROBLEM_SNAPSHOT_DISAGREES, detail))
+    # Task 7, Stage 2, equally last: every reconciliation record binds
+    # the chain at the position it observed and its findings recompute
+    # from the record as of that position under the contract bound
+    # THEN, the sources it stored and the record before it.
+    for index, entry in enumerate(state.get("reconciliations", [])):
+        sub = "%s.reconciliations[%d]" % (where, index)
+        reconciliation.require_bindings(entry, state, sub)
+        bound = journal.activation_at(state, entry["observed_position"])
+        detail = reconciliation.disagreement(
+            entry, state, None if bound is None else contracts[bound["activation_id"]])
+        if detail is not None:
+            _unreadable(path, "%s does not recompute to itself (%s): %s"
+                        % (sub, reconciliation.PROBLEM_RECONCILIATION_DISAGREES,
+                           detail))
 
 
 def _refuse_open_permissions(path):
