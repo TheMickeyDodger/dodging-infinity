@@ -156,7 +156,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_a_model_switch_alone_does_not_read_as_a_new_identity(self):
         """Adversarial class: model switch. The `all-claude` preset
-        runs supervisor/executor on Fable 5.1 and lead/reviewer on Opus.
+        runs supervisor on Fable 5.1, executor on Opus 5.5, and lead/reviewer on Opus.
         The model is an argv choice; it is not in the agent record, so
         switching it must not by itself look like a replacement."""
         preset = PRESETS["all-claude"]["roles"]

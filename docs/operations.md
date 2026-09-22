@@ -118,8 +118,12 @@ Current built-ins:
 ```text
 all-claude       Claude-only subscription herd using Fable/Opus with auto mode
 conservative     Default roster retaining conservative permission modes
-max-quality      GPT-6 Astra xhigh supervisor/reviewer + Claude Opus 5 high lead + Claude Fable 5.1 high executor
+max-quality      GPT-6 Astra xhigh supervisor/reviewer + Claude Opus 5 high lead + Claude Opus 5.5 xhigh executor
 ```
+
+Executor defaults pin `claude-opus-5-5` with `--effort xhigh` (Extra effort).
+Opus 5.5 requires Claude Code 2.1.280 or newer. Existing herds retain their
+saved `.herd/herd.config.json`; changing defaults does not switch a running agent.
 
 Apply one:
 
@@ -592,7 +596,7 @@ Claude Opus 5 High: Lead
  +---------------------------------+
  | Adversarial Executor Pod        |
  |                                 |
- | Claude Fable 5.1 High: Executor |
+ | Claude Opus 5.5 XHigh: Executor  |
  |              ↕                  |
  | GPT-6 Astra XHigh: Reviewer     |
  | Read-only validation role       |

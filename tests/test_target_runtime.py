@@ -2093,7 +2093,7 @@ class DispatchTests(RuntimeCase):
         expected_models = {
             "supervisor": "gpt-6-astra",
             "lead": "claude-opus-5",
-            "executor": "claude-fable-5-1",
+            "executor": "claude-opus-5-5",
             "reviewer": "gpt-6-astra",
         }
         expected_kinds = {
@@ -2130,7 +2130,7 @@ class DispatchTests(RuntimeCase):
         )
         self.assertEqual(
             result["roles"]["executor"]["args"][2:4],
-            ["--effort", "high"],
+            ["--effort", "xhigh"],
         )
         self.assertIn(
             'sandbox_mode="read-only"',

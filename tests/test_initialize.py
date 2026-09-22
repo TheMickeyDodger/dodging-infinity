@@ -39,9 +39,9 @@ EXPECTED_DEFAULT_ROSTER = {
         "kind": "claude",
         "args": [
             "--model",
-            "claude-fable-5-1",
+            "claude-opus-5-5",
             "--effort",
-            "high",
+            "xhigh",
             "--permission-mode",
             "acceptEdits",
         ],
