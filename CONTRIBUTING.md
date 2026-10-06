@@ -81,7 +81,7 @@ fail fast instead of hanging the suite (or escaping to the network).
 Compile-check the Python sources:
 
 ```bash
-python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py dirun.py target_runtime/*.py operator_session/*.py human_interaction/*.py worker/*.py
+python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py dirun.py target_runtime/*.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py worker/*.py pr_delivery/*.py mission/*.py coordination/*.py local_request/*.py direquest.py
 ```
 
 ## Model and runtime contributions

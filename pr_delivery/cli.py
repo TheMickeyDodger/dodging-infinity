@@ -3,10 +3,23 @@
 This is the ONLY production module that constructs the real
 ``DeliveryTransport()`` (zero arguments, no override) and the
 ``DeliveryMachine``, and the ONLY place a PR Delivery Authorization is
-minted — after a ceremony in which the human sees every binding and
-TYPES the first twelve hex characters of the exact candidate identity.
-No model, transport, Worker, Capability, OperatorSession, or Herdr role
-can drive this ceremony: it reads the confirmation from the terminal.
+minted (one construction site, ``_mint``) — after one of two ceremonies:
+
+- ``authorize`` (``local_terminal``): the human sees every binding and
+  TYPES the first twelve hex characters of the exact candidate identity at
+  an interactive terminal. No model, transport, Worker, Capability,
+  OperatorSession, or Herdr role can drive it: it reads the confirmation
+  from the terminal.
+- ``present-dots`` then ``attest-dots`` (``dots_operator_attested``, Task 8,
+  user decision): the FULL binding is presented for the phone to display,
+  and the human's simple whole-value affirmative is RELAYED by the Outer
+  Operator, linked to that exact proposal by its digest and a reply-to
+  reference. It is Operator-attested and NOT independently verified: every
+  digest and reference is Operator attestation, not verified authorship,
+  and a same-user operator or local process could fabricate the relay. The
+  live candidate must still be exactly the presented one. It never records
+  or claims ``local_terminal``, and an engineering approval alone never
+  produces it.
 
 Evidence transport residual (Lead S1), stated plainly: the engineering
 and reviewer evidence arrives as a JSON document produced by
@@ -89,12 +102,11 @@ def _load_herd_evidence(path):
     return document
 
 
-def assemble_authority(transport, args, now, human_identity,
-                       confirmation_reader, out=None):
-    """Gather every binding from the live repository and the human's
-    inputs, run the ceremony, and return the AUTHORITY dictionary."""
-    out = out if out is not None else sys.stdout
-    repo = os.path.realpath(args.repo)
+def _live_repository(transport, repo_path, base_branch, remote_name):
+    """The LIVE repository facts every ceremony binds, read now: the
+    repository, its remote, the source and base refs, the baseline, and the
+    exact staged candidate with its identity digest."""
+    repo = os.path.realpath(repo_path)
     try:
         toplevel = os.path.realpath(transport.toplevel(repo))
     except DeliveryTransportError as exc:
@@ -109,9 +121,7 @@ def assemble_authority(transport, args, now, human_identity,
     if not head_ref or not head_ref.startswith("refs/heads/"):
         raise CeremonyError("HEAD is not on a named branch")
     source_branch = head_ref[len("refs/heads/"):]
-    base_branch = args.base_branch
     base_ref = "refs/heads/" + base_branch
-    remote_name = args.remote
     url_exact = transport.remote_url(repo, remote_name)
     if not url_exact:
         raise CeremonyError("remote %r has no URL" % remote_name)
@@ -154,6 +164,32 @@ def assemble_authority(transport, args, now, human_identity,
             "git user.name and user.email must be configured for this"
             " repository; the delivery commits under them"
         )
+    return {
+        "repo": repo, "git_dir": git_dir, "head_ref": head_ref,
+        "source_branch": source_branch, "base_branch": base_branch,
+        "base_ref": base_ref, "remote_name": remote_name,
+        "url_exact": url_exact, "url_fetch": url_fetch, "url_push": url_push,
+        "target": target, "head": head, "remote_base": remote_base,
+        "entries": entries, "digest": digest,
+        "committer_name": committer_name, "committer_email": committer_email,
+    }
+
+
+def _gather(transport, args, now):
+    """Every binding from the live repository and the human's inputs, with
+    the display lines that present them: the FULL binding, before any
+    ceremony. Returns ``(binding, lines, digest, validity)``, where
+    ``binding`` holds exactly ``auth.DELIVERY_PROPOSAL_BINDING_KEYS``."""
+    live = _live_repository(transport, args.repo, args.base_branch, args.remote)
+    repo, git_dir, head_ref = live["repo"], live["git_dir"], live["head_ref"]
+    source_branch, base_branch = live["source_branch"], live["base_branch"]
+    base_ref, remote_name = live["base_ref"], live["remote_name"]
+    url_exact, url_fetch = live["url_exact"], live["url_fetch"]
+    url_push, target, head = live["url_push"], live["target"], live["head"]
+    remote_base, entries, digest = (live["remote_base"], live["entries"],
+                                    live["digest"])
+    committer_name = live["committer_name"]
+    committer_email = live["committer_email"]
     herd = _load_herd_evidence(args.herd_evidence)
     with open(args.verification_log, "rb") as handle:
         log = handle.read()
@@ -225,17 +261,8 @@ def assemble_authority(transport, args, now, human_identity,
         "Not allowed   : merge, auto-merge, tag, release, deploy, publish,"
         " force push",
         "Expires       : %d seconds from authorization" % validity,
-        "Human         : %s (local terminal)" % human_identity,
-        "",
     ])
-    out.write("\n".join(lines) + "\n")
-    typed = confirmation_reader(
-        "Type the first %d characters of the candidate identity to"
-        " authorize exactly this delivery: " % CONFIRMATION_CHARS
-    ).strip()
-    if typed != digest[:CONFIRMATION_CHARS]:
-        raise CeremonyError("Not authorized. No delivery record created.")
-    return {
+    binding = {
         "revision": 1,
         "previous_delivery_id": None,
         "workflow_identity": {
@@ -279,17 +306,73 @@ def assemble_authority(transport, args, now, human_identity,
             "architecture_notes": _read_text(args.architecture_notes),
             "nonblocking_risks": _read_text(args.nonblocking_risks),
         },
-        "human_authorization": {
-            "identity": human_identity,
-            "source": auth.AUTHORIZATION_SOURCE_LOCAL_TERMINAL,
-            "authorized_at": now,
-            "confirmation_digest_sha256": text_digest(typed),
-        },
-        "expiration": {
-            "policy": auth.EXPIRATION_POLICY_ABSOLUTE,
-            "expires_at": now + validity,
-        },
     }
+    return binding, lines, digest, validity
+
+
+def assemble_authority(transport, args, now, human_identity,
+                       confirmation_reader, out=None):
+    """Gather every binding from the live repository and the human's
+    inputs, run the LOCAL TERMINAL ceremony, and return the AUTHORITY
+    dictionary. The human TYPES the first characters of the candidate
+    identity; the interactive-terminal requirement is enforced by the
+    reader ``authorize_cmd`` passes."""
+    out = out if out is not None else sys.stdout
+    binding, lines, digest, validity = _gather(transport, args, now)
+    lines = lines + [
+        "Human         : %s (local terminal)" % human_identity,
+        "",
+    ]
+    out.write("\n".join(lines) + "\n")
+    typed = confirmation_reader(
+        "Type the first %d characters of the candidate identity to"
+        " authorize exactly this delivery: " % CONFIRMATION_CHARS
+    ).strip()
+    if typed != digest[:CONFIRMATION_CHARS]:
+        raise CeremonyError("Not authorized. No delivery record created.")
+    authority = dict(binding)
+    authority["human_authorization"] = {
+        "identity": human_identity,
+        "source": auth.AUTHORIZATION_SOURCE_LOCAL_TERMINAL,
+        "authorized_at": now,
+        "confirmation_digest_sha256": text_digest(typed),
+    }
+    authority["expiration"] = {
+        "policy": auth.EXPIRATION_POLICY_ABSOLUTE,
+        "expires_at": now + validity,
+    }
+    return authority
+
+
+def _mint(machine, authority, now, out, one_shot_proposal_digest=None):
+    """The ONE place a PR Delivery Authorization is constructed, for both
+    ceremonies. ``one_shot_proposal_digest`` (the Dots ceremony) refuses,
+    under the store lock, a second authorization of the same presented
+    proposal."""
+    delivery_id = "prd-" + secrets.token_hex(12)
+    record = auth.new_authorization(delivery_id, authority, now)
+    store = machine.store
+    with store.lock():
+        document = store.load()
+        if one_shot_proposal_digest is not None:
+            for existing_id, existing in document["deliveries"].items():
+                attestation = existing["human_authorization"].get("attestation")
+                if attestation and attestation["proposal_digest_sha256"] == (
+                    one_shot_proposal_digest
+                ):
+                    raise CeremonyError(
+                        "delivery proposal %s was already attested as %s; a"
+                        " proposal authorizes once. No delivery record created."
+                        % (one_shot_proposal_digest, existing_id))
+        ok, problem, pruned = add_delivery(document, record)
+        if not ok:
+            raise CeremonyError("store refused the record: %s" % problem)
+        store.save(document)
+    (out if out is not None else sys.stdout).write(
+        "Authorized PR delivery %s (pruned %d terminal record(s)).\n"
+        % (delivery_id, pruned)
+    )
+    return delivery_id
 
 
 def authorize_cmd(args, store_dir=None, confirmation_reader=None, out=None):
@@ -300,20 +383,172 @@ def authorize_cmd(args, store_dir=None, confirmation_reader=None, out=None):
         machine.transport, args, now, getpass.getuser(),
         confirmation_reader or _terminal_confirmation, out=out,
     )
-    delivery_id = "prd-" + secrets.token_hex(12)
-    record = auth.new_authorization(delivery_id, authority, now)
-    store = machine.store
-    with store.lock():
-        document = store.load()
-        ok, problem, pruned = add_delivery(document, record)
-        if not ok:
-            raise CeremonyError("store refused the record: %s" % problem)
-        store.save(document)
+    return _mint(machine, authority, now, out)
+
+
+# -- the Dots operator-attested ceremony (Task 8, user decision) ----------
+#
+# PRESENT shows the FULL binding (candidate, Mission, revision, scope,
+# targets, deadline) for the phone to display; nothing is written. ATTEST
+# relays the human's simple affirmative ("approved" or "approve", the WHOLE
+# reply) for exactly that presented proposal, linked by its digest and the
+# chat reference it replies to. The human never types a digest: every
+# digest and reference here is supplied by the Operator and recorded as
+# Operator attestation, not verified authorship. The live candidate is
+# re-read and must still be exactly the presented one; any mismatch,
+# ambiguity, staleness or repeat refuses with nothing written.
+
+MAX_DOTS_INPUT_CHARS = 4194304
+
+
+def present_dots_cmd(args, store_dir=None, out=None):
+    machine = build_machine(store_dir)
+    now = time.time()
+    binding, lines, digest, validity = _gather(machine.transport, args, now)
+    proposal = auth.delivery_proposal(binding, now, now + validity)
+    # The Dots deadline is fixed AT PRESENTATION, not at approval: show the
+    # absolute deadline (the terminal ceremony's wording is unchanged).
+    terminal_expiry = "Expires       : %d seconds from authorization" % validity
+    lines = [
+        "Expires       : %s (absolute; %d seconds from presentation, not from"
+        " approval)" % (time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                      time.gmtime(proposal["expires_at"])),
+                        validity)
+        if line == terminal_expiry else line
+        for line in lines
+    ]
+    document = {
+        "delivery_proposal": proposal,
+        "proposal_digest_sha256": auth.delivery_proposal_digest(proposal),
+        "display": "\n".join(lines + [
+            "Approver      : the human, by a simple reply relayed by the Outer"
+            " Operator (operator-attested, not independently verified)",
+        ]),
+        "reply": "Reply exactly 'approved' or 'approve' to authorize THIS"
+                 " delivery; no digest is ever typed",
+        "source": auth.AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED,
+        "residual_risk": auth.DOTS_RESIDUAL_RISK,
+    }
     (out if out is not None else sys.stdout).write(
-        "Authorized PR delivery %s (pruned %d terminal record(s)).\n"
-        % (delivery_id, pruned)
-    )
-    return delivery_id
+        json.dumps(document, indent=2, sort_keys=True) + "\n")
+    return document
+
+
+def _live_matches(live, binding):
+    """Which presented binding the LIVE repository no longer matches, or
+    None: a substituted or different candidate is never authorized."""
+    expected = {
+        "repository": binding["repository"]["realpath"],
+        "git_dir": binding["repository"]["git_dir_realpath"],
+        "remote_exact": binding["remote"]["url_exact"],
+        "remote_fetch": binding["remote"]["url_fetch"],
+        "remote_push": binding["remote"]["url_push"],
+        "source_ref": binding["source"]["ref"],
+        "base_ref": binding["target_base"]["ref"],
+        "baseline": binding["original_baseline"]["commit_sha"],
+        "candidate": binding["candidate"]["identity_digest_sha256"],
+        "entries": binding["candidate"]["entries"],
+        "committer": [binding["committer"]["name"],
+                      binding["committer"]["email"]],
+    }
+    actual = {
+        "repository": live["repo"], "git_dir": live["git_dir"],
+        "remote_exact": live["url_exact"], "remote_fetch": live["url_fetch"],
+        "remote_push": live["url_push"], "source_ref": live["head_ref"],
+        "base_ref": live["base_ref"], "baseline": live["head"],
+        "candidate": live["digest"], "entries": live["entries"],
+        "committer": [live["committer_name"], live["committer_email"]],
+    }
+    for key in sorted(expected):
+        if expected[key] != actual[key]:
+            return key
+    return None
+
+
+def attest_dots_cmd(args, stdin_text, store_dir=None, out=None):
+    """Relay the human's affirmative for exactly the presented proposal.
+    ``stdin_text`` carries ``{"delivery_proposal": ..., "relayed_reply": ...}``
+    (both supplied by the Operator)."""
+    if len(stdin_text) > MAX_DOTS_INPUT_CHARS:
+        raise CeremonyError("the attestation input is too large")
+    try:
+        document = json.loads(stdin_text)
+    except ValueError as exc:
+        raise CeremonyError("the attestation input is not JSON (%s)" % exc)
+    if not isinstance(document, dict) or sorted(document) != [
+        "delivery_proposal", "relayed_reply"
+    ]:
+        raise CeremonyError(
+            "the attestation input must carry exactly delivery_proposal and"
+            " relayed_reply")
+    # The WHOLE reply, checked before anything is read or written.
+    if not auth.is_dots_affirmative(document["relayed_reply"]):
+        raise CeremonyError(
+            "the relayed reply is not an exact affirmative: only the whole"
+            " reply 'approved' or 'approve' counts. No delivery record"
+            " created.")
+    for value, name in ((args.reply_to, "--reply-to"),
+                        (args.relay_ref, "--relay-ref"),
+                        (args.proposal_digest, "--proposal-digest")):
+        if not value or "\n" in value or len(value) > auth.MAX_RELAY_REF_CHARS:
+            raise CeremonyError(
+                "%s is required (a reply is never applied to a guessed"
+                " proposal). No delivery record created." % name)
+    proposal = document["delivery_proposal"]
+    if not isinstance(proposal, dict) or sorted(proposal) != [
+        "binding", "expires_at", "presented_at"
+    ] or not isinstance(proposal["binding"], dict) or sorted(
+        proposal["binding"]
+    ) != sorted(auth.DELIVERY_PROPOSAL_BINDING_KEYS):
+        raise CeremonyError("the delivery proposal is not a presented proposal")
+    digest = auth.delivery_proposal_digest(proposal)
+    if digest != args.proposal_digest:
+        raise CeremonyError(
+            "the reply links to proposal %s, not to this presented proposal"
+            " (%s): ambiguous or substituted, refused. No delivery record"
+            " created." % (args.proposal_digest, digest))
+    machine = build_machine(store_dir)
+    now = time.time()
+    expires_at = proposal["expires_at"]
+    if not isinstance(expires_at, (int, float)) or isinstance(expires_at, bool) or (
+        now >= expires_at
+    ):
+        raise CeremonyError(
+            "the presented proposal expired; present it again. No delivery"
+            " record created.")
+    binding = proposal["binding"]
+    live = _live_repository(machine.transport,
+                            binding["repository"]["realpath"],
+                            binding["target_base"]["branch"],
+                            binding["remote"]["name"])
+    mismatch = _live_matches(live, binding)
+    if mismatch is not None:
+        raise CeremonyError(
+            "the live repository no longer matches the presented %s: a"
+            " substituted or different candidate is never authorized. No"
+            " delivery record created." % mismatch)
+    attestation = {
+        "proposal_digest_sha256": digest,
+        "presented_at": proposal["presented_at"],
+        "reply_to": args.reply_to, "relayed_reply": document["relayed_reply"],
+        "relay_ref": args.relay_ref,
+        "confirmation": auth.DOTS_CONFIRMATION,
+        "provenance": auth.DOTS_PROVENANCE,
+        "residual_risk": auth.DOTS_RESIDUAL_RISK,
+    }
+    authority = dict(binding)
+    authority["human_authorization"] = {
+        "identity": auth.DOTS_ATTESTED_IDENTITY,
+        "source": auth.AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED,
+        "authorized_at": now,
+        "confirmation_digest_sha256": auth.dots_confirmation_digest(attestation),
+        "attestation": attestation,
+    }
+    authority["expiration"] = {
+        "policy": auth.EXPIRATION_POLICY_ABSOLUTE,
+        "expires_at": expires_at,
+    }
+    return _mint(machine, authority, now, out, one_shot_proposal_digest=digest)
 
 
 def _terminal_confirmation(prompt):
@@ -344,11 +579,37 @@ def revoke_cmd(args, store_dir=None):
                           args.reason or ""))
 
 
+def _attest_dots_from_stdin(args):
+    return attest_dots_cmd(args, sys.stdin.read(MAX_DOTS_INPUT_CHARS + 1))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="pr_delivery")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    q = sub.add_parser("authorize")
+    for name, fn in (("authorize", authorize_cmd),
+                     ("present-dots", present_dots_cmd)):
+        _ceremony_arguments(sub.add_parser(name), fn)
+
+    q = sub.add_parser("attest-dots")
+    q.add_argument("--proposal-digest", required=True,
+                   help="the presented proposal the human's reply answers")
+    q.add_argument("--reply-to", required=True,
+                   help="the chat reference the reply is linked to")
+    q.add_argument("--relay-ref", required=True)
+    q.set_defaults(fn=_attest_dots_from_stdin)
+
+    for name, fn in (("status", status_cmd), ("advance", advance_cmd),
+                     ("revoke", revoke_cmd)):
+        q = sub.add_parser(name)
+        q.add_argument("--delivery-id", required=True)
+        if name == "revoke":
+            q.add_argument("--reason", default="")
+        q.set_defaults(fn=fn)
+    return parser
+
+
+def _ceremony_arguments(q, fn):
     q.add_argument("--repo", default=os.getcwd())
     q.add_argument("--workflow-id", required=True)
     q.add_argument("--herd-evidence", required=True,
@@ -368,16 +629,7 @@ def build_parser():
                    default=auth.DEFAULT_AUTHORIZATION_VALIDITY_SECONDS)
     q.add_argument("--mission-workflow-id", default=None)
     q.add_argument("--mission-authorization-digest", default=None)
-    q.set_defaults(fn=authorize_cmd)
-
-    for name, fn in (("status", status_cmd), ("advance", advance_cmd),
-                     ("revoke", revoke_cmd)):
-        q = sub.add_parser(name)
-        q.add_argument("--delivery-id", required=True)
-        if name == "revoke":
-            q.add_argument("--reason", default="")
-        q.set_defaults(fn=fn)
-    return parser
+    q.set_defaults(fn=fn)
 
 
 def main(argv=None):

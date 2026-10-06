@@ -183,12 +183,12 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
     'operator_session', 'human_interaction', 'durable_execution',
-    'capability', 'worker', 'grok_mcp', 'mission', 'coordination',
+    'capability', 'worker', 'mission', 'coordination',
 )
 gateway_files = sorted(
     p for p in product_files
     if p.relative_to(R).parts[0] in _HERDR_FREE_ROOTS
-    or p.name in ('codexgw.py', 'tgop.py', 'grokmcp.py')
+    or p.name in ('codexgw.py', 'tgop.py')
 )
 assert gateway_files, 'codex_gateway sources not found'
 assert any('telegram_operator' in str(p) for p in gateway_files), (
@@ -212,12 +212,6 @@ assert any(
 assert any(
     p.relative_to(R).parts[0] == 'worker' for p in gateway_files
 ), 'worker sources not found'
-assert any(
-    p.relative_to(R).parts[0] == 'grok_mcp' for p in gateway_files
-), 'grok_mcp sources not found'
-assert any(p.name == 'grokmcp.py' for p in gateway_files), (
-    'grokmcp.py entry script not found'
-)
 assert any(
     p.relative_to(R).parts[0] == 'mission' for p in gateway_files
 ), 'mission sources not found'
@@ -1746,120 +1740,24 @@ ci_text = (R / '.github' / 'workflows' / 'ci.yml').read_text()
 assert 'pr_delivery/*.py' in ci_text, 'CI must compile pr_delivery'
 assert 'git diff --check' in ci_text, 'CI must run git diff --check'
 
-# (11) grok_mcp: the Grok Bot MCP transport. Modelled on the pr_delivery
-#      block above with the same anti-vacuity posture: the file set is
-#      derived, the required members are asserted present, and every
-#      pin that finds nothing fails. Forbidden import roots (the
-#      control chain, every neutral seam except human_interaction, the
-#      orchestration engine, and every process-spawning or temp-file
-#      module), no shell, no dynamic import, no spawn/exec call, no
-#      environment read outside cli.py, no write-mode open anywhere,
-#      operator_session consumed ONLY by cli.py, and no authority
-#      literal. Then the two neutral seams are asserted never to name
-#      the package, and the CI compile list must cover it.
-grok_mcp_files = sorted(
-    p for p in product_files if p.relative_to(R).parts[0] == 'grok_mcp'
+# (11) grok_mcp RETIRED (Task 8). The Grok Bot MCP interaction surface
+#      is no longer part of the active product: no grok_mcp package, no
+#      grokmcp.py entry script, and neither compile list names them. Its
+#      history stays in docs/roadmap.md and CHANGELOG.md. Grok as a model
+#      or Herdr agent runtime (herdctl.py SUPPORTED / INTEGRATIONS) is a
+#      separate thing and is not retired. The two neutral seams still
+#      never name the package. The behavioral startup-without-Grok proof
+#      is tests/test_grok_bot_retirement.py.
+_grok_bot_files = sorted(
+    p.relative_to(R).as_posix() for p in product_files
+    if p.relative_to(R).parts[0] == 'grok_mcp' or p.name == 'grokmcp.py'
 )
-grok_mcp_names = {p.relative_to(R).as_posix() for p in grok_mcp_files}
-GROK_MCP_REQUIRED_FILES = {
-    'grok_mcp/__init__.py', 'grok_mcp/adapter.py', 'grok_mcp/cli.py',
-    'grok_mcp/config.py', 'grok_mcp/controller.py',
-    'grok_mcp/mission_tools.py', 'grok_mcp/protocol.py',
-    'grok_mcp/server.py',
-}
-assert GROK_MCP_REQUIRED_FILES <= grok_mcp_names, (
-    'grok_mcp scan lost a package file',
-    sorted(GROK_MCP_REQUIRED_FILES - grok_mcp_names),
+assert not _grok_bot_files, (
+    'the retired Grok Bot surface is back in the product tree',
+    _grok_bot_files,
 )
-grok_mcp_entry = [p for p in product_files if p.name == 'grokmcp.py']
-assert len(grok_mcp_entry) == 1, 'grokmcp.py entry script not found'
-assert not (R / 'grok_mcp.py').exists(), 'grok_mcp.py would shadow the package'
-GROK_MCP_FORBIDDEN_IMPORT_ROOTS = {
-    'telegram_operator', 'codex_gateway', 'workflow_authority',
-    'target_runtime', 'pr_delivery', 'capability', 'worker',
-    'durable_execution', 'herdr', 'herdctl', 'git_transport',
-    'subprocess', 'shutil', 'tempfile', 'multiprocessing', 'ctypes',
-}
-GROK_MCP_FORBIDDEN_LITERALS = set()
-for _word in ('commit', 'push', 'merge', 'tag', 'release', 'deploy',
-              'publish', 'dispatch', 'mission', 'capability',
-              'authorization', 'authorize', 'approve', 'git', '--force',
-              '--no-verify', 'sh', 'bash', '/bin/sh'):
-    GROK_MCP_FORBIDDEN_LITERALS.add('"%s"' % _word)
-    GROK_MCP_FORBIDDEN_LITERALS.add("'%s'" % _word)
-grok_mcp_string_values = 0
-for path in grok_mcp_files + grok_mcp_entry:
-    relpath = path.relative_to(R).as_posix()
-    source = path.read_text()
-    assert 'shell=True' not in source, (relpath, 'shell=True')
-    tree = ast.parse(source)
-    docstring_positions = _docstring_positions_of(tree)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
-            assert name not in {'system', '__import__', 'import_module',
-                                'popen', 'spawn', 'execv', 'execvp',
-                                'exec', 'eval', 'fork', 'Popen', 'run',
-                                'check_output', 'check_call'}, (
-                relpath, name,
-            )
-            if name == 'open':
-                modes = [a.value for a in node.args[1:2]
-                         if isinstance(a, ast.Constant)]
-                modes += [k.value.value for k in node.keywords
-                          if k.arg == 'mode'
-                          and isinstance(k.value, ast.Constant)]
-                assert relpath == 'grok_mcp/config.py', (
-                    relpath, 'open() only in the config reader'
-                )
-                for mode in modes:
-                    assert not any(ch in mode for ch in 'wax+'), (
-                        relpath, mode, 'no write-mode open'
-                    )
-        if isinstance(node, ast.Attribute):
-            if node.attr in {'environ', 'getenv', 'putenv'}:
-                assert relpath == 'grok_mcp/cli.py', (
-                    relpath, node.attr, 'environment read only at CLI main'
-                )
-        if isinstance(node, ast.Name):
-            if node.id in {'environ', 'getenv', 'putenv'}:
-                assert relpath == 'grok_mcp/cli.py', (
-                    relpath, node.id, 'environment read only at CLI main'
-                )
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            if isinstance(node, ast.Import):
-                roots = [alias.name.split('.')[0] for alias in node.names]
-            else:
-                assert node.level == 0, (relpath, 'no relative import')
-                roots = [(node.module or '').split('.')[0]]
-            for root in roots:
-                assert root not in GROK_MCP_FORBIDDEN_IMPORT_ROOTS, (
-                    relpath, root,
-                    'grok_mcp imports no control-chain package, no'
-                    ' sibling seam, no orchestration engine, and no'
-                    ' process-spawning or temp-file module',
-                )
-                if root == 'operator_session':
-                    assert relpath == 'grok_mcp/cli.py', (
-                        relpath, 'operator_session is consumed only by cli.py'
-                    )
-    for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        if token.type == tokenize.NAME:
-            assert not _contains_forbidden(token.string), (
-                relpath, token.start, token.string,
-            )
-        elif token.type == tokenize.STRING and (
-            token.start not in docstring_positions
-        ):
-            grok_mcp_string_values += 1
-            assert token.string not in GROK_MCP_FORBIDDEN_LITERALS, (
-                relpath, token.start, token.string,
-                'no delivery, authority, shell, or orchestration literal',
-            )
-            assert not _contains_forbidden(
-                token.string, FORBIDDEN_STRING_SUBSTRINGS
-            ), (relpath, token.start, token.string)
-assert grok_mcp_string_values > 50, grok_mcp_string_values
+for _retired in ('grok_mcp', 'grokmcp.py', 'grok_mcp.py'):
+    assert not (R / _retired).exists(), (_retired, 'retired Grok Bot surface')
 for _package in ('human_interaction', 'operator_session'):
     _seam_files = [
         p for p in product_files if p.relative_to(R).parts[0] == _package
@@ -1870,8 +1768,14 @@ for _package in ('human_interaction', 'operator_session'):
             path.relative_to(R).as_posix(),
             '%s must never name grok_mcp' % _package,
         )
-assert 'grok_mcp/*.py' in ci_text, 'CI must compile grok_mcp'
-assert 'grokmcp.py' in ci_text, 'CI must compile grokmcp.py'
+_contributing_text = (R / 'CONTRIBUTING.md').read_text()
+for _compile_text, _where in ((ci_text, 'ci.yml'),
+                              (_contributing_text, 'CONTRIBUTING.md')):
+    assert 'mission/*.py' in _compile_text, (_where, 'compile list is vacuous')
+    for _retired in ('grok_mcp', 'grokmcp'):
+        assert _retired not in _compile_text, (
+            _where, _retired, 'compile list names the retired Grok Bot surface',
+        )
 
 # (12) mission: the neutral Mission Core. It sits in _HERDR_FREE_ROOTS
 #      above (AST, token and behavioral herdr-isolation scans), its own
@@ -1922,7 +1826,8 @@ assert 'mission/*.py' in ci_text, 'CI must compile mission'
 #           (docstring prose that DENIES those surfaces is allowed, exactly
 #           as (12) and the mission suite's E4 allow it);
 #       (d) consumers: the product files importing mission are exactly the
-#           Task 4 set — the Grok relay and the P1-A6 parent seam — so no
+#           P1-A6 parent seam (Task 4 also had the Grok relay, retired in
+#           Task 8 — so no transport reaches Mission Core today), and no
 #           router, scheduler, observation service, reconciler, worker,
 #           capability or delivery module gained a dependency on it.
 MISSION_FORBIDDEN_IMPORT_ROOTS = frozenset({
@@ -1954,8 +1859,14 @@ MISSION_FORBIDDEN_WORDS = frozenset({
     'capability',
 })
 MISSION_ALLOWED_CONSUMERS = frozenset({
-    'grok_mcp/cli.py', 'grok_mcp/mission_tools.py', 'grok_mcp/protocol.py',
-    'grok_mcp/server.py', 'pr_delivery/mission_parent.py',
+    'pr_delivery/mission_parent.py',
+    # Task 8: the local request surface (proposal, status, withdrawal).
+    'local_request/cli.py', 'local_request/store.py', 'local_request/surface.py',
+    # Task 8 increment 2 (intentional, Lead brief section F): the
+    # authorized-Mission run bridge records run facts through Mission
+    # Core's own methods. It is NOT a delivery seam: it imports nothing
+    # from pr_delivery and delivery_authority stays structurally none.
+    'target_runtime/mission_bridge.py',
 })
 MISSION_READ_ONLY_OPEN_FILE = 'mission/store.py'
 
@@ -2048,7 +1959,7 @@ assert any(
     for node in ast.walk(ast.parse((R / MISSION_READ_ONLY_OPEN_FILE).read_text()))
 ), 'the read-only open() pin must actually see the store load path'
 
-# (d) exactly the Task 4 consumer set; a new importer of mission anywhere
+# (d) exactly the allowed consumer set; a new importer of mission anywhere
 #     in the product tree (router, scheduler, observation service,
 #     reconciler, worker, capability, delivery) fails this pin.
 _mission_consumers = set()

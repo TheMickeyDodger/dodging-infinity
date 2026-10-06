@@ -27,6 +27,7 @@ import shutil
 import stat
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -1762,6 +1763,285 @@ class MissionParentAttestationTests(unittest.TestCase):
         self.assertEqual(self.mission_bytes(), before)
         self.assertEqual(len(mission_state.attested_artifacts(
             self.mission_service.get_state(self.mission_id)["record"])), 3)
+
+
+class DotsAttestedCeremonyTests(unittest.TestCase):
+    """Task 8, user decision: the minimal Dots-attested P1-A6 ceremony,
+    PRESENT plus ATTEST on the existing store, record, expiry, one-shot
+    consumption and revocation. The phone human replies with a simple
+    affirmative and never types a digest; the full binding lives in the
+    presented proposal and the attested record. Operator-attested, NOT
+    independently verified. No live delivery: the real local fixture
+    repositories only, and nothing is advanced, pushed or opened."""
+
+    REPLY_TO = "dots-message-0001"
+    RELAY_REF = "relay-0001"
+
+    def setUp(self):
+        self.fx = DeliveryFixture(self)
+
+    def present(self, **overrides):
+        return cli_module.present_dots_cmd(self.fx.args(**overrides),
+                                           out=io.StringIO())
+
+    def attest(self, presented, reply="approved", digest=None, proposal=None,
+               reply_to=REPLY_TO, relay_ref=RELAY_REF):
+        args = SimpleNamespace(
+            proposal_digest=(presented["proposal_digest_sha256"]
+                             if digest is None else digest),
+            reply_to=reply_to, relay_ref=relay_ref)
+        stdin = json.dumps({
+            "delivery_proposal": (presented["delivery_proposal"]
+                                  if proposal is None else proposal),
+            "relayed_reply": reply})
+        return cli_module.attest_dots_cmd(args, stdin, out=io.StringIO())
+
+    def refused(self, presented, **kwargs):
+        with self.assertRaises(cli_module.CeremonyError) as caught:
+            self.attest(presented, **kwargs)
+        self.assertEqual(self.fx.store.load()["deliveries"], {})
+        return str(caught.exception)
+
+    def test_D1_records_honest_source_identity_and_relayed_confirmation(self):
+        presented = self.present(mission_workflow_id="mn-" + "1" * 32,
+                                 mission_authorization_digest="2" * 64)
+        self.assertIn(presented["delivery_proposal"]["binding"]["candidate"][
+            "identity_digest_sha256"], presented["display"])
+        self.assertIn("no digest is ever typed", presented["reply"])
+        delivery_id = self.attest(presented)
+        record = self.fx.store.load()["deliveries"][delivery_id]
+        auth.validate_authorization(record)
+        human = record["human_authorization"]
+        self.assertEqual(human["source"], "dots_operator_attested")
+        self.assertNotEqual(human["source"], auth.AUTHORIZATION_SOURCE_LOCAL_TERMINAL)
+        self.assertEqual(human["identity"],
+                         "operator_attested_relay:outer_operator_relay")
+        attestation = human["attestation"]
+        self.assertEqual(attestation["confirmation"], "operator_relayed")
+        self.assertEqual(attestation["provenance"],
+                         "operator_attested_not_independently_verified")
+        self.assertIn("could fabricate it", attestation["residual_risk"])
+        self.assertIn("not verified authorship", attestation["residual_risk"])
+        self.assertEqual(attestation["relayed_reply"], "approved")
+        self.assertEqual(attestation["reply_to"], self.REPLY_TO)
+        self.assertEqual(attestation["proposal_digest_sha256"],
+                         presented["proposal_digest_sha256"])
+        # The FULL binding: candidate, Mission, revision, scope, target, expiry.
+        binding = presented["delivery_proposal"]["binding"]
+        self.assertEqual(record["candidate"]["identity_digest_sha256"],
+                         self.fx.live_digest())
+        for key in auth.DELIVERY_PROPOSAL_BINDING_KEYS:
+            self.assertEqual(record[key], binding[key], key)
+        self.assertEqual(record["mission"]["workflow_id"], "mn-" + "1" * 32)
+        self.assertEqual(record["expiration"]["expires_at"],
+                         presented["delivery_proposal"]["expires_at"])
+        self.assertEqual(record["phase"], auth.PHASE_AUTHORIZED)
+
+    def test_D2_only_the_whole_affirmative_counts_and_refusals_write_nothing(self):
+        presented = self.present()
+        digest = presented["proposal_digest_sha256"]
+        for reply in ("no", "not approved", "disapproved", "approved, thanks",
+                      "\"approved\"", "'approved'", "he said approved",
+                      "approved " + digest, digest, "", "   "):
+            with self.subTest(reply=reply):
+                self.assertIn("not an exact affirmative",
+                              self.refused(presented, reply=reply))
+        # The phone human's whole reply is just the word: no digest typed.
+        self.assertTrue(self.attest(presented, reply="  Approved ").startswith("prd-"))
+
+    def test_D3_ambiguous_or_substituted_candidates_are_refused(self):
+        presented = self.present()
+        other = self.present(title="a different delivery")
+        for kwargs in ({"digest": other["proposal_digest_sha256"]},
+                       {"reply_to": ""}, {"relay_ref": ""}):
+            with self.subTest(kwargs=sorted(kwargs)):
+                self.refused(presented, **kwargs)
+        substituted = copy.deepcopy(presented["delivery_proposal"])
+        substituted["binding"]["candidate"]["identity_digest_sha256"] = "9" * 64
+        self.assertIn("ambiguous or substituted",
+                      self.refused(presented, proposal=substituted))
+        # The live candidate changed after presentation: refused even though
+        # the reply links to the presented proposal exactly.
+        (self.fx.work / "late.txt").write_text("staged after presentation\n")
+        git("add", "late.txt", cwd=self.fx.work)
+        self.assertIn("substituted or different candidate",
+                      self.refused(presented))
+
+    def test_D4_expiry_one_shot_and_revocation_still_hold(self):
+        presented = self.present()
+        stale = copy.deepcopy(presented["delivery_proposal"])
+        # A deadline that has passed (deterministic: before presentation).
+        stale["expires_at"] = stale["presented_at"] - 1
+        self.assertIn("expired", self.refused(
+            presented, proposal=stale,
+            digest=auth.delivery_proposal_digest(stale)))
+        delivery_id = self.attest(presented)
+        with self.assertRaises(cli_module.CeremonyError) as caught:
+            self.attest(presented)
+        self.assertIn("already attested", str(caught.exception))
+        self.assertEqual(list(self.fx.store.load()["deliveries"]), [delivery_id])
+        boundary = boundary_module.PrDeliveryBoundary(self.fx.machine)
+        status = boundary.revoke(delivery_id, "human", "not today")
+        self.assertEqual(status["phase"], auth.PHASE_REVOKED)
+
+    def test_D8_capacity_pruning_never_launders_a_revoked_proposal(self):
+        """Round 18: attest, revoke, capacity pruning pressure, restart,
+        then replay the identical proposal and reply BEFORE expiry: refused,
+        no new AUTHORIZED record. Once the proposal's deadline passes, the
+        record is reclaimable again, so capacity is never consumed for good."""
+        presented = self.present()
+        proposal_digest = presented["proposal_digest_sha256"]
+        deadline = presented["delivery_proposal"]["expires_at"]
+        # 1. attest
+        attested_id = self.attest(presented)
+        attested_at = self.fx.store.load()["deliveries"][attested_id][
+            "human_authorization"]["authorized_at"]
+        # 2. revoke
+        self.fx.now[0] = attested_at + 10
+        boundary = boundary_module.PrDeliveryBoundary(self.fx.machine)
+        self.assertEqual(boundary.revoke(attested_id, "human", "no")["phase"],
+                         auth.PHASE_REVOKED)
+        # 3. capacity pruning pressure: fill the store with ordinary
+        # terminal records that are all NEWER than the revoked one (so the
+        # old oldest-first pruning would have evicted it first), then make
+        # an ordinary insertion through the real ceremony.
+        self.fx.now[0] = attested_at + 100
+        self.fx.authorize(title="a filler delivery")
+        boundary.revoke("prd-test", "human", "filler")
+        with self.fx.store.lock():
+            document = self.fx.store.load()
+            filler = document["deliveries"]["prd-test"]
+            for index in range(store_module.MAX_PR_DELIVERY_RECORDS - 2):
+                record = copy.deepcopy(filler)
+                record["delivery_id"] = "prd-filler-%03d" % index
+                record["authority_digest_sha256"] = auth.authority_digest(record)
+                ok, problem, _ = store_module.add_delivery(document, record)
+                self.assertTrue(ok, problem)
+            self.fx.store.save(document)
+        self.assertEqual(len(self.fx.store.load()["deliveries"]),
+                         store_module.MAX_PR_DELIVERY_RECORDS)
+        other = self.present(title="another delivery under pressure")
+        pressure_id = self.attest(other, reply_to="dots-message-0002",
+                                  relay_ref="relay-0002")
+        # 4. restart: a fresh store read from disk still holds the revoked
+        # record (the ordinary insertion pruned a filler instead).
+        restarted = store_module.DeliveryStore(store_module.store_directory())
+        before = restarted.load()["deliveries"]
+        self.assertEqual(len(before), store_module.MAX_PR_DELIVERY_RECORDS)
+        self.assertIn(pressure_id, before)
+        self.assertEqual(before[attested_id]["phase"], auth.PHASE_REVOKED)
+        # 5. replay the identical proposal and reply before expiry.
+        self.assertLess(time.time(), deadline)
+        with self.assertRaises(cli_module.CeremonyError) as caught:
+            self.attest(presented)
+        self.assertIn("already attested", str(caught.exception))
+        after = restarted.load()["deliveries"]
+        self.assertEqual(sorted(after), sorted(before))
+        self.assertEqual([
+            delivery_id for delivery_id, record in after.items()
+            if record["phase"] == auth.PHASE_AUTHORIZED
+            and record["human_authorization"].get("attestation", {}).get(
+                "proposal_digest_sha256") == proposal_digest
+        ], [])
+        # A store full of protected records refuses rather than pruning.
+        protected = {"deliveries": {}}
+        for index in range(store_module.MAX_PR_DELIVERY_RECORDS):
+            record = copy.deepcopy(after[attested_id])
+            record["delivery_id"] = "prd-protected-%03d" % index
+            record["authority_digest_sha256"] = auth.authority_digest(record)
+            protected["deliveries"][record["delivery_id"]] = record
+        incoming = copy.deepcopy(after[pressure_id])
+        incoming["delivery_id"] = "prd-incoming-before"
+        incoming["authority_digest_sha256"] = auth.authority_digest(incoming)
+        self.assertEqual(store_module.add_delivery(protected, incoming),
+                         (False, store_module.PROBLEM_STORE_FULL, 0))
+        # 6. after the deadline the expired record is reclaimable: an
+        # ordinary insertion at deadline+1 evicts it (oldest first).
+        with patch("time.time", return_value=deadline + 1):
+            late = self.present(title="a delivery after the deadline")
+            late_id = self.attest(late, reply_to="dots-message-0003",
+                                  relay_ref="relay-0003")
+        reclaimed = restarted.load()["deliveries"]
+        self.assertNotIn(attested_id, reclaimed)
+        self.assertIn(late_id, reclaimed)
+        incoming = copy.deepcopy(reclaimed[late_id])
+        incoming["delivery_id"] = "prd-incoming-after"
+        incoming["authority_digest_sha256"] = auth.authority_digest(incoming)
+        ok, problem, pruned = store_module.add_delivery(protected, incoming)
+        self.assertEqual((ok, problem, pruned), (True, None, 1))
+        # Replaying the original proposal after its deadline stays refused.
+        with patch("time.time", return_value=deadline + 2):
+            with self.assertRaises(cli_module.CeremonyError) as caught:
+                self.attest(presented)
+        self.assertIn("expired", str(caught.exception))
+
+    def test_D9_the_dots_display_states_the_absolute_presentation_deadline(self):
+        presented = self.present()
+        deadline = presented["delivery_proposal"]["expires_at"]
+        self.assertIn("Expires       : %s (absolute; 3600 seconds from"
+                      " presentation, not from approval)" % time.strftime(
+                          "%Y-%m-%dT%H:%M:%SZ", time.gmtime(deadline)),
+                      presented["display"])
+        self.assertNotIn("from authorization", presented["display"])
+        # The terminal ceremony's wording is unchanged.
+        shown = io.StringIO()
+        digest = self.fx.live_digest()
+        cli_module.assemble_authority(
+            self.fx.transport, self.fx.args(), self.fx.clock(), "human",
+            lambda prompt: digest[:cli_module.CONFIRMATION_CHARS], out=shown)
+        self.assertIn("Expires       : 3600 seconds from authorization",
+                      shown.getvalue())
+
+    def test_D5_no_record_can_claim_local_terminal_or_a_person(self):
+        presented = self.present()
+        delivery_id = self.attest(presented)
+        record = self.fx.store.load()["deliveries"][delivery_id]
+        tampered_cases = (
+            lambda r: r["human_authorization"].update(source="local_terminal"),
+            lambda r: r["human_authorization"].update(identity="alice"),
+            lambda r: r["human_authorization"]["attestation"].update(
+                relayed_reply="not approved"),
+            lambda r: r["human_authorization"]["attestation"].update(
+                provenance="verified_human"),
+            lambda r: r["human_authorization"].update(
+                confirmation_digest_sha256="0" * 64),
+            lambda r: r["candidate"].update(identity_digest_sha256="9" * 64),
+            # A binding field the human never saw: only the proposal-digest
+            # re-proof catches it.
+            lambda r: r["pr_content"].update(title="a substituted title"),
+        )
+        for index, tamper in enumerate(tampered_cases):
+            with self.subTest(case=index):
+                changed = copy.deepcopy(record)
+                tamper(changed)
+                changed["authority_digest_sha256"] = auth.authority_digest(changed)
+                with self.assertRaises(auth.AuthorizationError):
+                    auth.validate_authorization(changed)
+
+    def test_D6_local_terminal_and_its_tty_requirement_are_unchanged(self):
+        with patch("sys.stdin", io.StringIO("000000000000\n")):
+            with self.assertRaises(cli_module.CeremonyError) as caught:
+                cli_module.authorize_cmd(self.fx.args(), out=io.StringIO())
+        self.assertIn("interactive terminal", str(caught.exception))
+        self.assertEqual(self.fx.store.load()["deliveries"], {})
+        self.assertEqual(auth.AUTHORIZATION_SOURCES,
+                         ("local_terminal", "dots_operator_attested"))
+
+    def test_D7_an_engineering_approval_alone_yields_no_delivery(self):
+        # A Mission engineering approval is not a delivery proposal: without
+        # a presented delivery proposal there is nothing to attest, and
+        # nothing is written.
+        presented = self.present(mission_workflow_id="mn-" + "1" * 32,
+                                 mission_authorization_digest="2" * 64)
+        engineering_only = {"mission_id": "mn-" + "1" * 32,
+                            "decision": "APPROVE", "relayed_reply": "approved"}
+        with self.assertRaises(cli_module.CeremonyError):
+            cli_module.attest_dots_cmd(
+                SimpleNamespace(proposal_digest="2" * 64, reply_to="r",
+                                relay_ref="x"),
+                json.dumps(engineering_only), out=io.StringIO())
+        self.assertEqual(self.fx.store.load()["deliveries"], {})
+        self.assertNotIn("delivery_authority", presented["delivery_proposal"])
 
 
 if __name__ == "__main__":

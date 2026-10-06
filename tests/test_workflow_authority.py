@@ -2115,6 +2115,9 @@ class BoundConstantPinTests(unittest.TestCase):
             # The canonical URL bound plus the optional ".git" suffix.
             "MAX_REMOTE_URL_CHARS": 516,
             "MAX_REVERIFICATION_ARGV": 64,
+            # Task 8: the Dots operator-attested delivery ceremony.
+            "MAX_RELAY_TEXT_CHARS": 200,
+            "MAX_RELAY_REF_CHARS": 128,
         },
         "pr_delivery/store.py": {
             "MAX_PR_DELIVERY_RECORDS": 64,
@@ -2127,6 +2130,9 @@ class BoundConstantPinTests(unittest.TestCase):
             # the human types in the ceremony (a confirmation, not a
             # credential). Pinned because the name matches the convention.
             "CONFIRMATION_CHARS": 12,
+            # Task 8: the attest-dots stdin bound (a presented proposal can
+            # carry up to MAX_CANDIDATE_ENTRIES entries).
+            "MAX_DOTS_INPUT_CHARS": 4194304,
         },
         "target_runtime/cli.py": {
             "RUNTIME_POLL_INTERVAL_SECONDS": 5,
@@ -2212,19 +2218,8 @@ class BoundConstantPinTests(unittest.TestCase):
             # `test_no_mission_timer_behavioral` both drive.
             "BOOTSTRAP_MAX_SECONDS": 900,
         },
-        # Grok Bot MCP transport (grok_mcp). Every bound is exact-value
-        # pinned; the spike writes no durable state, so the two table
-        # bounds cap in-memory FIFO tables only.
-        "grok_mcp/protocol.py": {
-            "MAX_TURN_TEXT_CHARS": 4000,
-            "MAX_ECHO_CHARS": 200,
-            "MAX_REQUEST_BYTES": 65536,
-            "REF_HEX_CHARS": 32,
-            "REF_CHARS": 35,
-            # Mission Core identifiers and digests as relayed on the wire.
-            "MISSION_TOKEN_CHARS": 35,
-            "DIGEST_CHARS": 64,
-        },
+        # The Grok Bot MCP transport (grok_mcp) was retired from the
+        # active product in Task 8; its bounds left with its modules.
         # Mission Core (mission). Every bound is exact-value pinned; the
         # store caps REFUSE at the bound and never evict or prune.
         "mission/record.py": {
@@ -2235,6 +2230,10 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_TRANSPORT_CHARS": 64,
             "MAX_PRINCIPAL_REF_CHARS": 128,
             "MAX_SUBJECT_CHARS": 256,
+            # Task 8: a proposal's withdrawal key lifetime (seven days).
+            "WITHDRAWAL_KEY_VALIDITY_SECONDS": 604800,
+            # Task 8: the longest an operator-attested approval stays valid.
+            "MAX_ATTESTED_APPROVAL_VALIDITY_SECONDS": 900,
             # Proof contract bounds (Mission State).
             "MAX_PROOF_REQUIREMENTS": 32,
             "MAX_REQUIRED_ARTIFACTS": 64,
@@ -2246,10 +2245,21 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_STALENESS_BOUND_SECONDS": 315360000,
             "MAX_CONTINUATION_ATTEMPTS": 64,
             "MAX_CONTINUATION_CHECKPOINTS": 256,
+            # Task 8 increment 2: the run record's own bounds.
+            "MAX_RUN_PAUSES": 16,
+            "MAX_RUN_PATH_CHARS": 4096,
+            # Round-15 state truth: the recoverable pending-proof record.
+            "MAX_VERIFICATION_ATTEMPTS": 16,
+            "MAX_PENDING_PROOF_BLOCKERS": 16,
+            "MAX_BLOCKER_DETAIL_CHARS": 2000,
+            "MAX_OBSERVED_STATUS_CHARS": 64,
         },
         "mission/manifest.py": {
             "MAX_MISSION_REVISIONS": 64,
             "MAX_MISSION_DECISIONS": 256,
+            # Task 8 increment 2: AUTHORIZED -> RUNNING -> terminal, at most.
+            "MAX_LIFECYCLE_EVENTS": 2,
+            "MAX_RUN_TASK_ID_CHARS": 128,
         },
         "mission/authorization.py": {
             "MAX_LEDGER_REASON_CHARS": 256,
@@ -2372,24 +2382,27 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_HANDOFF_FORWARD_DEPTH": 4,
             "MAX_HANDOFF_TRANSITIONS": 8,
         },
+        # Task 8: the local request surface.
+        "local_request/store.py": {
+            "TOKEN_HEX_CHARS": 64,
+            "MAX_REQUEST_RECORDS": 1024,
+            "MAX_CONTROL_CAPABILITIES": 1024,
+            "MAX_APPROVAL_REFUSALS": 64,
+            "CONTROL_CAPABILITY_VALIDITY_SECONDS": 604800,
+            # Task 8: the operator-attested approval's relayed evidence.
+            "MAX_RELAYED_REPLY_CHARS": 200,
+            "MAX_RELAY_REF_CHARS": 128,
+        },
+        "local_request/cli.py": {
+            "MAX_REQUEST_CHARS": 65536,
+            "MAX_CAPABILITY_CHARS": 128,
+        },
         "coordination/store.py": {
             "MAX_BINDING_RECORDS": 4096,
             "MAX_ROUTE_DECISION_RECORDS": 16384,
             "MAX_ATTENTION_RECORDS": 16384,
             "MAX_HANDOFF_RECORDS": 4096,
             "MAX_PARTICIPANT_ROSTERS": 1024,
-        },
-        "grok_mcp/adapter.py": {
-            "MAX_MESSAGE_CHARS": 4000,
-            "MAX_MESSAGE_CHUNKS": 4,
-            "TRUNCATION_NOTICE_RESERVE_CHARS": 64,
-        },
-        "grok_mcp/controller.py": {
-            "MAX_REPLAY_ENTRIES": 64,
-            "MAX_SESSION_ENTRIES": 64,
-        },
-        "grok_mcp/server.py": {
-            "MAX_SESSIONS": 256,
         },
     }
 

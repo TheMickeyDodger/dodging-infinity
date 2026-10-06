@@ -896,9 +896,13 @@ class BStateRecordTests(StateFixture):
             self.assertIn(terminal, ms.TERMINAL_PROGRESS_STATES)
             refuses(self, ms.PROBLEM_PROGRESS_TERMINAL,
                     ms.validate_progress_transition, terminal, "IN_PROGRESS")
-        # Task 4's mission["state"] table is untouched by this module.
+        # This module writes no mission["state"] (F13 pins that). INTENTIONAL
+        # PIN CHANGE (Task 8 increment 2): the table itself now also wires
+        # the run transitions, pinned exactly in test_mission_core B5; the
+        # progress vocabulary above is a separate machine and is unchanged.
         self.assertEqual(mission_record.ALLOWED_TRANSITIONS["AUTHORIZED"],
-                         frozenset(("AWAITING_DECISION",)))
+                         frozenset(("AWAITING_DECISION", "RUNNING", "BLOCKED",
+                                    "CANCELLED")))
         refuses(self, ms.PROBLEM_PROGRESS_TRANSITION,
                 ms.validate_progress_transition, "NOT_STARTED", "COMPLETED")
         refuses(self, ms.PROBLEM_PROGRESS_TRANSITION,
@@ -3237,14 +3241,18 @@ class EReconcileRegistryTests(DocumentFixture):
         tree = ast.parse(source)
         names = sorted(n.name for n in tree.body
                        if isinstance(n, (ast.FunctionDef, ast.ClassDef)))
-        # The Task 4 surface is intact; nothing new is defined.
+        # The Task 4 surface is intact. INTENTIONAL PIN CHANGE (Task 8
+        # increment 2c, round-14 BLOCKING 3): exactly one function is added,
+        # the narrowly scoped P1-A6 delivery-parent answer
+        # ``validate_delivery_parent_use``, which delegates to the unchanged
+        # ``validate_authorization_use`` and grants nothing.
         self.assertEqual(names, sorted([
             "AuthorityCheck", "_authorization_agrees", "_history", "_ledger",
             "_mismatch", "_refusal", "_reservation_agrees", "authorization_digest",
             "find_authorization_by_digest", "issue_mission_authorization",
             "new_ledger_entry", "reconcile_mission_history", "reconcile_registry",
             "revoke", "validate_authorization_record", "validate_authorization_use",
-            "validate_ledger_entry",
+            "validate_delivery_parent_use", "validate_ledger_entry",
         ]))
         self.assertEqual(source.count("state_operation"), 2)
         self.assertEqual(source.count("mission_state"), 1)

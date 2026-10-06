@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Local operator request surface (Task 8, increment 2, local candidate).**
+  `direquest.py` / `local_request/`: any local caller proposes a bounded
+  Mission (Mission Core proposal, revision, digest), reads durable status
+  (Mission Core's observation, unchanged), and may withdraw only its own
+  pending revision-1 proposal with the one-time key it received. Approval is
+  always refused (`local_request_approval_unauthenticated`); nothing is
+  dispatched. Mission Core gains the proposal-only principal kind
+  `unauthenticated_local_caller` (refused in the core for every decision,
+  reservation, state operation and authorization) and a durable withdrawal
+  marker its decision path refuses on (`mission_proposal_withdrawn`). The
+  marker is not a lifecycle state: the Mission stays `AWAITING_DECISION`.
+  No running-Mission control; authenticated Dots approval stays NOT
+  ESTABLISHED.
+- **Grok Bot interaction surface retired (Task 8).** The Grok Bot MCP spike,
+  the `grok_mcp` package and the `grokmcp.py` entry script, is removed from the
+  active product and its startup path: no installed console entry, no
+  compile-list entry, no product importer. `tests/test_grok_bot_retirement.py`
+  pins its absence and starts every installed entry with any `grok_mcp` import
+  refused. Neutral coverage it carried moved to Mission Core directly (recorded
+  approval provenance), and two trust pins became exact: no product transport
+  calls `apply_human_decision`, and `pr_delivery/mission_parent.py` is the only
+  product importer of `mission` outside the package. Grok as a model or Herdr
+  agent runtime is unchanged. The docs now name Dots as the human-facing mobile
+  interface, with what is demonstrated (reach, read, and reply; a connected
+  same-task durable status read) separated from what is not established
+  (authenticated exact approval binding, outage and restart recovery,
+  background notification, verified-result delivery fidelity, full live
+  Mission acceptance). Mission approval over Dots fails closed.
 - **P1-A6 Verified PR Delivery.** A separate durable human PR Delivery
   Authorization (`pr_delivery/`, minted only by a terminal ceremony) binds the
   exact reviewed candidate identity, the recorded Herdr COMPLETE, canonical

@@ -1,9 +1,12 @@
 """Transport-neutral human decisions: APPROVE, EDIT, DENY.
 
 A ``HumanDecisionEnvelope`` is the only input from which the service
-applies a decision. It can only be built with an ``AuthenticatedContext``
-(see ``mission.record``) that the transport adapter produced from its
-OWN authenticated state; no field of it comes from a tool payload. The
+applies a decision. It carries either an ``AuthenticatedContext`` (see
+``mission.record``) that the transport adapter produced from its OWN
+authenticated state, or, for an APPROVE only (Task 8), an
+``OperatorAttestedContext``: an Outer Operator's attestation, trusted by
+declared policy and NOT independently verified. No field of either comes
+from a tool payload. The
 envelope binds the Mission id, the EXACT revision the human saw, a
 DI-minted decision id, the decision, and for APPROVE the approved
 action scope and delivery targets (each a subset of what was
@@ -16,16 +19,24 @@ semantic approval scope: a different requested lifetime is a different
 decision), and (for EDIT) the replacement proposal's content digest. It
 excludes the transport and processing timestamps (``received_at``,
 ``decided_at``) and every DI-minted id, so a retry carrying a fresh
-receive time still matches. The authenticated context is not part of
+receive time still matches. The context (of either type) is not part of
 the digest; it is checked separately as the principal binding of the
 reserved decision id. A reserved decision id replayed with
 an identical digest by the same principal returns the recorded outcome
 and issues nothing; the same id with a different digest refuses; the
 same id from a different principal refuses (see ``mission.service``).
 
-Stated limit, repeated where it matters: the provenance a decision
-carries records the transport credential that was verified, never the
-human behind it. Nothing here proves a human's identity.
+Stated limit, repeated where it matters: for an authenticated kind the
+provenance a decision carries records the transport credential that was
+verified, never the human behind it; for the operator-attested kind it
+records an attestation that was NOT independently verified. Nothing here
+proves a human's identity.
+
+Who may decide (Task 8). ``validate`` requires an authenticated principal
+kind, or the operator-attested kind for an APPROVE only (with the exact
+proposal digest and an expiry). A stored decision's provenance must match.
+An ``unauthenticated_local_caller`` context can neither apply nor be
+recorded as an APPROVE, EDIT or DENY (``mission_unauthenticated_principal``).
 """
 
 from dataclasses import dataclass
@@ -62,7 +73,8 @@ PROBLEM_DECISION = "mission_decision"
 class HumanDecisionEnvelope:
     """One human decision as the transport adapter received it."""
 
-    context: record.AuthenticatedContext
+    # An AuthenticatedContext, or (APPROVE only) an OperatorAttestedContext.
+    context: object
     decision_id: str
     mission_id: str
     revision: int
@@ -72,9 +84,26 @@ class HumanDecisionEnvelope:
     approved_delivery_targets: Optional[list] = None
     proposal: Optional[dict] = None
     expires_at: Optional[int] = None
+    # When set, the core refuses unless it equals the current revision's
+    # proposal digest, checked under the store lock. Not part of the decision
+    # digest (the revision already fixes the digest).
+    expected_proposal_digest_sha256: Optional[str] = None
 
     def validate(self):
-        record.require_context(self.context, "envelope.context")
+        # A decision needs an AuthenticatedContext of an authenticated kind,
+        # or (APPROVE only) an OperatorAttestedContext; the unauthenticated
+        # local caller kind is refused here, in the core.
+        record.require_decision_context(
+            self.context, self.decision == DECISION_APPROVE, "envelope.context")
+        if self.expected_proposal_digest_sha256 is not None:
+            record.require_hex(self.expected_proposal_digest_sha256,
+                               "envelope.expected_proposal_digest_sha256", 64)
+        if self.context.principal_kind in record.APPROVE_ONLY_PRINCIPAL_KINDS and (
+            self.expected_proposal_digest_sha256 is None or self.expires_at is None
+        ):
+            record.fail(record.PROBLEM_ATTESTED_APPROVAL,
+                        "an operator-attested APPROVE must bind the exact"
+                        " proposal digest and an expiry")
         record.require_id(self.decision_id, record.DECISION_ID_PREFIX,
                           "envelope.decision_id")
         record.require_id(self.mission_id, record.MISSION_ID_PREFIX,
@@ -221,8 +250,9 @@ def validate_decision_record(value, location="decision"):
             record.fail(PROBLEM_DECISION,
                         "%s.proposal_digest_sha256 must be null for DENY"
                         % location)
-    provenance = record.validate_provenance(value["provenance"],
-                                            location + ".provenance")
+    provenance = record.require_decision_provenance(
+        value["provenance"], value["decision"] == DECISION_APPROVE,
+        location + ".provenance")
     if provenance["reference_kind"] != record.REFERENCE_KIND_DECISION:
         record.fail(record.PROBLEM_PROVENANCE,
                     "%s.provenance must reference the decision" % location)

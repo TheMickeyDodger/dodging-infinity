@@ -12,8 +12,10 @@ DI-issued id reservations:
      "mission_state": {<mission_id>: <Mission State record>}}
 
 Registry and ledger therefore commit in the SAME ``os.replace`` and can
-never tear apart. A reservation records the id's kind, the authenticated
-context that asked for it, and ``consumed_by``: ``null`` while unused,
+never tear apart. A reservation records the id's kind, the context that
+asked for it (authenticated, unauthenticated for a request id, or
+operator-attested for a decision id; Task 8), and ``consumed_by``: ``null``
+while unused,
 the Mission id once a request id created a Mission, the decision id
 itself once a decision id was applied (the decision record then lives in
 its Mission's history). Reservations are never evicted. The file lives in an injected protected directory
@@ -247,7 +249,14 @@ def validate_reservation(value, location):
     record.require_closed_keys(value, RESERVATION_KEYS, location)
     record.require_timestamp(value["reserved_at"], location + ".reserved_at")
     record.require_member(value["kind"], RESERVATION_KINDS, location + ".kind")
-    record.validate_context_dict(value["context"], location + ".context")
+    context = record.context_from_dict(value["context"], location + ".context")
+    if value["kind"] == RESERVATION_KIND_DECISION:
+        # A decision id is reserved only for an authenticated or an
+        # approve-only (operator-attested) kind; never the unauthenticated one.
+        record.require_decision_reservation_context(context, location + ".context")
+    elif value["kind"] != RESERVATION_KIND_REQUEST:
+        # A state-operation id needs an authenticated kind.
+        record.require_authenticated_context(context, location + ".context")
     consumed = value["consumed_by"]
     if consumed is not None:
         prefix = (record.MISSION_ID_PREFIX
@@ -757,7 +766,7 @@ def _validate_mission_state(document, mission_id, state, path):
                        for key in record.CONTEXT_KEYS)
         if reservation["context"] != context:
             _unreadable(path, "%s operation %s was reserved by a different"
-                        " authenticated context than its provenance records"
+                        " context than its provenance records"
                         % (sub, operation["operation_id"]))
     # Task 7, LAST on purpose: a stored journal snapshot is a projection
     # cache bound to the history proved above. Its bindings (schema

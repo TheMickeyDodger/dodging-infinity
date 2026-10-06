@@ -2,7 +2,7 @@
 
 Status: Working roadmap\
 Created: August 27, 2026\
-Updated: September 4, 2026
+Updated: October 3, 2026
 
 This is the single roadmap for Dodging Infinity. It carries the long arc
 (Phase 0 to Phase 11), the detailed near-term sequence (Phase I to Phase V,
@@ -111,7 +111,10 @@ preserved. The list: Tailscale and SSH break-glass recovery; reboot and login
 survival; service identity and readiness; `HumanInteractionAdapter`;
 `OperatorSession`; `DurableExecution`; `Capability`; `Worker`; a DBOS spike; a
 Pi spike; a Grok Bot spike. Telegram and Codex stay reference implementations
-throughout.
+throughout. Correction (Task 8): the Grok Bot spike was built and is now
+retired from the active product; Dots replaces the Grok Bot as the
+human-facing mobile interface, with the limits stated in
+[Task 8](#task-8-dots-as-the-human-facing-mobile-interface-and-grok-bot-retirement).
 
 What exists in this checkout are the initial `OperatorSession`
 `prepare()` / `execute()` seam, the `HumanInteractionAdapter` seam with
@@ -125,7 +128,7 @@ lifecycles, and the rest of the list is open. See
 | Phase | Builds | Proves |
 |---|---|---|
 | 2: Mission Harness | Mission Manifest, Mission Registry, `M-####` identity, PREFLIGHT, the Mission Authorization gate, AWAITING_MISSION_AUTHORIZATION and NEEDS_REAUTHORIZATION, the lifecycle state machine, Authority Ledger, Evidence Graph, Blocker Ledger, proof requirements, Artifact Registry, budgets, continuation and checkpoints, event journal, snapshots, readiness graph, Reconciler, Observation Service. | The actual mission operating system exists and canonical state is the truth. |
-| 3: Routing, attention, and Grok | The natural-language Mission Router with deterministic ambiguity handling, the Attention Router, instant read-only status queries, the Grok interaction adapter with authorization and result cards and exact approval transport, the Telegram fallback adapter, shared-computer security tests, recovery and parity tests. | Grok becomes the preferred front door only once proven; Telegram remains the fallback. |
+| 3: Routing, attention, and Grok (corrected in Task 8: the human interface is Dots) | The natural-language Mission Router with deterministic ambiguity handling, the Attention Router, instant read-only status queries, the Grok interaction adapter with authorization and result cards and exact approval transport (corrected: the Grok Bot surface is retired; Dots is the human-facing mobile interface, and exact approval transport over it needs an authenticated exact approval binding that is NOT ESTABLISHED) (corrected again in Task 8, the ACTIVE policy: Mission approval over Dots is Operator-attested Dots-chat approval. The human replying exactly `approved` or `approve` IS the approval, under the human's declared trust that the Outer Operator relays the reply truthfully. It is recorded as `operator_attested_not_independently_verified`, which is explicitly NOT cryptographic or independently verified human provenance, and it carries a residual same-user fabrication risk. An authenticated exact approval binding remains NOT ESTABLISHED; it is deliberately delegated with that risk accepted, and is not a Task 8 acceptance blocker), the Telegram fallback adapter, shared-computer security tests, recovery and parity tests. | Grok becomes the preferred front door only once proven; Telegram remains the fallback. Corrected: Dots becomes the preferred mobile front door only once proven, and carries a Mission approval only once an authenticated route is demonstrated; Telegram remains the fallback. Corrected again in Task 8 (ACTIVE policy): Dots carries a Mission approval as Operator-attested Dots-chat approval under declared Operator trust, not as authenticated or independently verified human provenance. Full live Mission acceptance with real human participation remains unproven. |
 | 4: Provider-neutral Operator | The full `OperatorSession` lifecycle, the Codex adapter, the Pi RPC adapter, bounded DI tools for Pi, provider and model selection, Domain Operator Profiles, Skill Packs, generated capability documentation, cross-model evaluations. | Provider replacement does not change mission authority or semantics. |
 | 5: True multi-mission execution | Independent execution lanes, bounded admission, the Scheduler, per-mission queues, workspace, artifact, and approval isolation, fair scheduling, P0 to P3 priority, independent Herdr Pods, mission relationships, pause, resume, and abort, expensive-verification deduplication. | Three simultaneous missions with zero cross-contamination. |
 
@@ -133,8 +136,8 @@ lifecycles, and the rest of the list is open. See
 
 | Phase | Builds | Proves |
 |---|---|---|
-| 6: Evidence-native capabilities and delivery | BrowserCapability with read and write classification, stale-reference failure, screenshot and snapshot evidence, console and network evidence, ambiguous side-effect reconciliation, human browser handoff; Artifact Registry delivery and richer file types; the Action Risk Envelope; proof-complete feedback loops; the exact remote delivery ceremony in Grok. | Real user-path evidence and exact remote delivery are first-class. |
-| 7: Chaos and worker fabric | Injected failure of Grok, Telegram, the Runtime, the Operator, Herdr, sleep and wake, reboot, network, GitHub, model, quota, stale process, blocked mission, ambiguous browser action, interrupted result, artifact, and Git or release action, missed events; then the Worker Registry, leases, simulator, VPN, and GPU capability matching, retention, archival, compaction. | Multiple missions survive a hostile day without losing identity, authority, observability, progress, results, artifacts, or recovery information. |
+| 6: Evidence-native capabilities and delivery | BrowserCapability with read and write classification, stale-reference failure, screenshot and snapshot evidence, console and network evidence, ambiguous side-effect reconciliation, human browser handoff; Artifact Registry delivery and richer file types; the Action Risk Envelope; proof-complete feedback loops; the exact remote delivery ceremony in Grok (corrected in Task 8: over an authenticated human interface; over Dots this needs the authenticated exact approval binding that is NOT ESTABLISHED) (corrected again in Task 8: Mission approval over Dots is now Operator-attested Dots-chat approval under declared Operator trust. It is NOT cryptographic or independently verified human provenance, it carries a residual same-user fabrication risk, and it confers NO delivery authority. Delivery stays the separate, exact P1-A6 delivery authorization. Its authenticated remote ceremony over Dots, verified-result delivery fidelity and the live phone-to-PR loop all remain NOT ESTABLISHED). | Real user-path evidence and exact remote delivery are first-class. |
+| 7: Chaos and worker fabric | Injected failure of Grok (corrected in Task 8: of Dots, where offline and revoked access are not cancellation), Telegram, the Runtime, the Operator, Herdr, sleep and wake, reboot, network, GitHub, model, quota, stale process, blocked mission, ambiguous browser action, interrupted result, artifact, and Git or release action, missed events; then the Worker Registry, leases, simulator, VPN, and GPU capability matching, retention, archival, compaction. | Multiple missions survive a hostile day without losing identity, authority, observability, progress, results, artifacts, or recovery information. |
 | 8: Organizational learning | The Ops Steward, repeated-failure and same-mistake-twice detection, repetition-to-automation, bounded nightly missions, recurring monitoring, the postmortem flow, Skill and Profile proposal flow, control metrics, cost reporting. | Recurring interventions become deterministic machinery through a governed path; the Steward cannot change its own authority. |
 | 9: Productization | A deterministic installer and upgrader, migrations, rollback, generalized target onboarding, a safe "go solve this issue" flow, an operational desktop, worker and environment onboarding. | Install once, connect a transport, point at a repository, start engineering, without hand-assembling infrastructure. |
 
@@ -290,6 +293,213 @@ matters and is recorded exactly:
     and later. Nothing in it launches a Mission or Capability, sends a
     message, starts Herdr work or performs delivery. It has not been
     merged, released or run live.
+
+## Task 8: Dots as the human-facing mobile interface, and Grok Bot retirement
+
+**Status: IN PROGRESS (lifecycle ACTIVE), UNACCEPTED, not delivered.** A
+bounded local candidate is reviewed (canonical APPROVE) and Lead accepted as
+a LOCAL candidate only; that is not Task 8 acceptance. [SUPERSEDED: that was
+the earlier local candidate. Since then the operator-attested approval was
+accepted at canonical round 13. The run route was REJECTED at rounds 14 and
+15, and its fixes are in a single final combined candidate awaiting one
+bounded final review. That candidate's exact identity is in the operator
+checkpoint. Task 8 stays ACTIVE and UNACCEPTED.] [Current, 2026-10-04: one
+Operator-mediated live V6 exercise ran end to end, as observation (4)
+below: Dots → Codex → DI → Herdr → Dots, plus a separate standalone P1-A6
+PR. That is not Task 8 acceptance. Task 8 stays ACTIVE and UNACCEPTED until
+the Outer Operator's own confirmation, and nothing here starts Task 9.] The
+position, in full in
+[architecture.md](architecture.md#3-interaction-dots-the-human-facing-mobile-interface):
+Dots is the human-facing mobile interface; Codex is the Outer Operator;
+Dodging Infinity alone owns Mission identity, authority, lifecycle, durable
+state, dispatch, evidence, reconciliation, and delivery gates; Herdr is the
+engineering execution system; Muse is not the Operator. The Grok Bot
+interaction surface is retired; Grok as a model provider is not.
+
+DEMONSTRATED, user-observed and unedited: (1) reach, read, and reply, where a
+phone-initiated local Codex task read a repository file and returned its exact
+content plus session id `01a10275-e9b0-70fd-bc29-9724f5fd60e9`; (2) a
+same-task connected continuation that read `.herd/state/task.json` and returned
+task `20261003-115300-782f3a` / `ACTIVE` with no edits, a status answer from a
+durable record rather than chat history. That is a connected same-task
+continuation and a small durable read only: not a new task, not a reconnect
+after an outage, not a large payload.
+
+(3) Live phone exercise, 2026-10-03, human-reported and independently
+corroborated from the durable stores: phone → Dots → the SAME local Codex task
+→ a local DI proposal (`python3 direquest.py … propose`) → durable status →
+phone, with matching request `lr-06dfa637b5a65affd594b085b5dc6432`, Mission
+`mn-5d9af9029527d73a9b38c22781d9d7a8`, revision 1 and proposal digest
+`90cfd77bf1ef9a32d1a1ec37c6b960ef4f850790197178c589326320c7fedeb0`; the request
+OPEN, the Mission AWAITING_DECISION and NOT_STARTED. There were ZERO approval
+attempts, zero decisions, zero authorization ids, zero authorizations and no
+dispatch. The approval block in the status output describes the fail-closed
+policy; it does not show that `approve` was invoked, and no refusal was
+observed. This establishes proposal identity presentation and connected
+status retrieval only: not authenticated intent, not full-payload or result
+fidelity, not outage recovery. The pending Mission has not executed.
+
+(4) Live V6 exercise, 2026-10-04: Operator-mediated, not Dots-autonomous.
+- Dots (the same local Codex task) showed the exact Mission
+  `mn-079a81327f76cda72d79eb241ada92d3` (revision 1, digest `7a83af04…`), and
+  the human sent a separate `approved` reply.
+- The Outer Operator ran the effectful DI commands; Dots' local command
+  permission repeatedly refused DI propose and approve.
+- The approval is Operator-attested, with the same-user fabrication risk
+  accepted. Independent authenticated human provenance is still NOT
+  ESTABLISHED.
+- DI recorded one dispatch receipt. Herdr child `20261004-172125-960973`
+  completed in an isolated smoke clone (Lead verified, Reviewer round 2
+  APPROVE), changing only the one-line marker `docs/task8-dots-smoke.md`
+  (`15e0281d…`).
+- DI `verify` completed the Mission with `engineering_verified: true`
+  (evidence `mv-5e4e0a62…`).
+- The human reports Dots read the token-free durable files
+  `dots-phone-status-v6.json`, `dots-phone-verified-result-v6.json` and
+  `dots-phone-pr-result-v6.json` and returned them. Dots did not rerun
+  verification or query GitHub or DI.
+- Delivery stayed separate. The standalone P1-A6 delivery
+  `prd-85cad864f6ae89b72c1c483d` (`mission: null`), approved by its own
+  Operator-attested Dots reply, completed COMMIT, PUSH and PR_CREATE and
+  opened PR #37, which is open and not merged.
+- An earlier delivery, `prd-e87f7490…`, is REVOKED (GitHub GH007, private
+  email), with no remote branch or PR.
+- The Outer Operator, not this herd, independently checked GitHub and the
+  delivery store.
+- The Mission's DI status truthfully stays `delivered: false`: there is no
+  Mission-parent receipt.
+- The parent's `.herd/state/children.json` still caches the child as
+  `ACTIVE`, while the copied verified result and checkpoint report it
+  COMPLETE.
+
+Not demonstrated live: an unavailable machine or session, disconnection or
+restart around a decision or dispatch, and live pause or cancel of a running
+Herdr child. Local deterministic tests are not substitutes. DI pause gates
+DI progression only, not worker suspension, and a production Herdr cancel
+can report HOLD.
+
+NOT ESTABLISHED, and blocked wherever success is described: authenticated exact
+approval binding [SUPERSEDED: deliberately delegated under the user's trust
+decision, with the same-user fabrication risk accepted; not a Task 8
+prerequisite or acceptance blocker]; outage and restart recovery; background notification and
+durable event delivery; verified-result delivery fidelity [SUPERSEDED in part
+by (4): one human-reported return read from a durable file]; full live
+Mission acceptance [SUPERSEDED in part by (4): one Operator-mediated live
+run; acceptance itself is still open]. Offline is not revoked, and neither is a cancellation mechanism: a
+running local Dots task may finish after admin access is disabled. The
+structured plugin / MCP route is UNPROVEN, not impossible: the inline or
+file-declared MCP import is Desktop-only and not the mobile surface; a
+connection would need a registered app reference, a Secure MCP Tunnel, or
+public HTTPS (no usable DI connection has been established, and setup is not
+authorized in this task); and OAuth or mTLS alone would
+not prove exact human approval of a Mission revision. No existing Dodging
+Infinity structured connector may be assumed, and the user states there is
+likely none; a catalog search cannot enumerate installed plugins, so no match
+is not absence.
+
+Acceptance criteria, each with its current status:
+
+1.  The Grok Bot interaction surface (`grok_mcp`, `grokmcp.py`) is absent from
+    the active product and startup path; history stays in this roadmap and
+    [CHANGELOG.md](../CHANGELOG.md); Grok model-provider references stay.
+    Status: implemented, locally verified, reviewed and Lead accepted as a
+    local candidate (pinned by `tests/test_grok_bot_retirement.py` and
+    `tests/test_static.py`); not delivered.
+2.  The roadmap, architecture, operations, and README state the position above
+    with the DEMONSTRATED / NOT ESTABLISHED split. Status: the local request
+    surface and its direct `python3 direquest.py` setup are documented and
+    reviewed (local candidate, not delivered); the installer is untouched.
+    [Live V6: the docs now record observation (4) and its limits (local
+    candidate, under review).]
+3.  Mission approval over Dots fails closed until an authenticated exact
+    approval binding is demonstrated, and reports which route is missing what.
+    A typed identity, a synthetic fixture, a local console decision, or a
+    generic Codex task permission never satisfies it. Status: the fail-closed
+    local behaviour is implemented and tested (reviewed local candidate);
+    actual Dots authorization is BLOCKED on a missing authenticated channel
+    and exact decision binding. No Dots adapter, ingress, MCP server, or
+    tunnel is built. Investigation: no supported DI-verifiable route is
+    established in the inspected interfaces (provisional, not universal). A
+    decision-ready DRAFT approval-page design (APPROVE-only; phone browser,
+    transaction-bound WebAuthn assertion, existing `apply_human_decision`;
+    declining stays the existing cancel / withdraw path, which is not a
+    Mission decision) awaits the human's
+    product and setup decisions. Its gates: G1, a privilege-path preflight; G2,
+    the unproven assumption that a same-user agent cannot silently use a
+    synced passkey (a hardware key is the stronger factor). Nothing is built or
+    activated. [SUPERSEDED: the approval-page plan is frozen history; the user
+    chose operator-attested Dots-chat approval. Current status: implemented
+    locally. The whole-string `approved`/`approve` reply is relayed through
+    `attest-approval`, labelled `operator_attested_not_independently_verified`,
+    with the residual same-user fabrication risk recorded, and it is exactly
+    bound with one authorization. Independent authenticated human provenance
+    remains NOT ESTABLISHED and is DELIBERATELY DELEGATED, with the fabrication
+    risk ACCEPTED; it is not a Task 8 prerequisite or acceptance blocker.]
+    [Live V6: the Operator-attested Mission approval and a separate
+    Dots-attested P1-A6 delivery approval were each exercised live once,
+    Operator-mediated.]
+4.  Cancellation and late-write prevention are a durable local Dodging Infinity
+    record that the write and decision paths consult and that fails closed,
+    never the transport, the connection, or the vendor grant. Status:
+    reviewed local candidate (not delivered), synthetic test evidence only, for
+    the creator's own pending revision-1 proposal: `direquest.py cancel` with
+    the one-time control
+    capability cancels the local request and records a withdrawal marker
+    that Mission Core's decision path refuses on. Not a lifecycle state; the
+    Mission stays `AWAITING_DECISION`. Not exercised by the live phone
+    exercise. Control of a running Mission or Herdr work: UNPROVEN, not
+    implemented. [SUPERSEDED, current candidate: `cancel-run` records a durable
+    cancel first, so every later write is refused, and reports which of four
+    achieved states occurred. Quiescence is never claimed when unprovable: a
+    production Herdr target exposes no Dodging Infinity-owned process group,
+    so its cancel reports HOLD. `pause` halts Dodging Infinity's progression
+    only; external in-flight work is NOT suspended, and no supported suspend
+    seam exists.] [Live V6: neither pause nor cancel was exercised against a
+    running Herdr child, so this stays demonstrated locally only.]
+5.  Status answers come from durable records. Status: DEMONSTRATED for
+    connected same-task task status (observation 2) and for proposal and
+    Mission status (observation 3). Reconnect, outage, a missing session,
+    large results and background delivery are not established. [Live V6:
+    the completed Mission's status and verified result were returned from
+    durable files (observation 4). Reconnect, outage and a missing session
+    are still not established.]
+6.  Regression coverage labels synthetic coverage as synthetic, and no fixture
+    simulates an authenticated Dots principal or approval. Status: focused
+    tests and an independent adversarial review passed; fixtures cannot
+    establish a Dots principal. The full per-file suite is NOT green: it fails
+    only in `tests/test_workspace_trust.py` (the promptable-screen assertion),
+    a failure reproduced on the pristine baseline `96c3f47`, whose root cause
+    is UNPROVEN.
+7.  A bounded, reversible live phone acceptance with real user participation.
+    Status: the proposal and status sub-exercise passed (observation 3). Full
+    authorized DI → Herdr execution, progress, review and proof
+    reconciliation, and verified-result return remain NOT ESTABLISHED, so the
+    criterion is not satisfied. A local Reviewer APPROVE is never full Task 8
+    acceptance. [Current candidate: the callable run route exists locally.
+    `direquest.py dispatch | observe | reconcile | prove | verify | result |
+    pause | resume | cancel-run` drives an AUTHORIZED Mission through the real
+    Herdr spawn bridge, tested only with injected recorders. Request
+    compatibility is checked against Herdr's own validator. VERIFIED needs the
+    whole approved contract, with a recoverable pending-proof state. Delivery
+    is derived from attested P1-A6 receipts and stays separately authorized.
+    None of this has run live; real live dispatch and the phone-to-PR loop
+    still need exact human authorization.] [SUPERSEDED, live V6
+    (observation 4): one Operator-mediated live run covered real user
+    participation, one dispatch, the child's review, DI verification
+    (`engineering_verified: true`), a human-reported verified-result return
+    and a separate standalone PR (#37), with the Mission still
+    `delivered: false`. Earlier live attempts (w37, w39 and two later smoke
+    Missions) each exercised HOLD, then `reconcile`, then BLOCKED after a
+    failed start. Disconnection, restart and progress recovery of a running,
+    successful Mission, and live pause or cancel, were not demonstrated. The
+    criterion is not satisfied as Task 8 acceptance until the Outer
+    Operator's own confirmation.]
+
+The local candidate changes 37 files (20 unstaged modifications, ten staged
+deletions, seven untracked files), shown as 34 collapsed `git status
+--porcelain` lines. [SUPERSEDED: that count describes the earlier candidate.
+The final combined candidate's identity, with its untracked hashes and
+covering review rounds, is recorded in the operator checkpoint.]
 
 ## Immediate release gate: DI-REMOTE-2 acceptance before Phase I
 
