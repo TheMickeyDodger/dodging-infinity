@@ -431,10 +431,19 @@ def _finding(kind, subject, detail):
     return {"kind": kind, "subject": subject, "detail": detail}
 
 
-def _latest_artifacts_by_key(state):
+def _under_revision(artifact, revision):
+    """Task 8 S-V (R2-11-a): drift is scoped to the authorized revision
+    the report was collected under — an artifact recorded under an
+    earlier revision (superseded by an EDIT) is neither confirmed nor
+    contradicted by a report at a later one. ``revision`` None keeps the
+    Task 7 behaviour (every recorded artifact counts)."""
+    return revision is None or artifact["provenance"]["revision"] == revision
+
+
+def _latest_artifacts_by_key(state, revision=None):
     latest = {}
     for artifact in state["artifacts"]:
-        if artifact["key"] is not None:
+        if artifact["key"] is not None and _under_revision(artifact, revision):
             latest[artifact["key"]] = artifact
     return latest
 
@@ -453,21 +462,34 @@ def latest_record(state, position=None):
     return records[-1] if records else None
 
 
-def baseline_anchor(records):
-    """The FIRST baseline any reconciliation in ``records`` observed, or
-    None: the identity the Mission's candidate was first seen against."""
-    for entry in records:
+def records_under_revision(records, revision):
+    """The reconciliation records observed under ``revision`` (all of
+    them when ``revision`` is None — the Task 7 behaviour)."""
+    if revision is None:
+        return list(records)
+    return [r for r in records if r["observed_revision"] == revision]
+
+
+def baseline_anchor(records, revision=None):
+    """The FIRST baseline any reconciliation in ``records`` observed
+    UNDER ``revision``, or None: the identity the Mission's candidate was
+    first seen against under that authorized revision. THE RULE (Task 8
+    S-V, R2-11-a): an anchor is per authorized revision. A human EDIT
+    (a new revision, newly approved) legitimately re-bases and starts a
+    fresh anchor — no drift; a baseline that moves WITHIN a revision has
+    no authorization behind it — drift. Never a hash of a live HEAD."""
+    for entry in records_under_revision(records, revision):
         candidate = reported_value(entry["sources"], SOURCE_CANDIDATE)
         if candidate is not None and candidate["baseline_digest_sha256"] is not None:
             return candidate["baseline_digest_sha256"]
     return None
 
 
-def _evidence_referenced_by_key(as_of):
+def _evidence_referenced_by_key(as_of, revision=None):
     """Every keyed, digested artifact that ACCEPTED evidence references,
     grouped by key (round 12): a key may hold several recorded artifacts,
     proof binds the one the evidence references, and that one may not be
-    the latest under its key."""
+    the latest under its key. Scoped to ``revision`` when given."""
     referenced = {}
     for evidence in as_of["evidence"]:
         if not state_module.is_accepted(evidence):
@@ -476,14 +498,14 @@ def _evidence_referenced_by_key(as_of):
             artifact = state_module.artifact_by_id(as_of, artifact_id)
             if artifact is None or artifact["key"] is None or (
                 artifact["content_digest_sha256"] is None
-            ):
+            ) or not _under_revision(artifact, revision):
                 continue
             group = referenced.setdefault(artifact["key"], {})
             group[artifact["artifact_id"]] = artifact
     return referenced
 
 
-def candidate_drift(as_of, candidate, unobserved=True):
+def candidate_drift(as_of, candidate, unobserved=True, revision=None):
     """Over the RECORDED artifacts, never only the reported keys: for
     every key that has a recorded digest — on the latest artifact under
     the key OR on an artifact accepted evidence references (round 12: a
@@ -499,8 +521,8 @@ def candidate_drift(as_of, candidate, unobserved=True):
     rests on; a stale or moved report neither confirms nor creates,
     exactly as no report."""
     findings = []
-    latest = _latest_artifacts_by_key(as_of)
-    referenced = _evidence_referenced_by_key(as_of)
+    latest = _latest_artifacts_by_key(as_of, revision)
+    referenced = _evidence_referenced_by_key(as_of, revision)
     for key in sorted(set(latest) | set(referenced)):
         must_match = {}
         newest = dict.get(latest, key)
@@ -604,18 +626,128 @@ def combine_drift(live, carried):
                   key=lambda f: (f["kind"], f["subject"] or "", f["detail"]))
 
 
-def drift_findings(as_of, previous, candidate, applicable):
+# Task 8 S-V (R2-11-a/b): WITHIN one authorized revision an observed
+# identity moves only by an authorized delivery step. The authorization
+# is the delivery layer's validated step receipt ATTESTED here by the
+# Mission Core's own non-authorizing ``attest_delivery_receipt`` (the
+# artifact's content digest IS the receipt digest), effect completed,
+# under that revision — and RELATED by the reporter to the observed move
+# (it reports the receipt's digest under the key of the identity it
+# moved). Which attested steps authorize which identity is the state
+# module's (``BASELINE_TRANSITION_STEPS`` / ``HEAD_TRANSITION_STEPS``).
+# The observed head (labelled as such; never the candidate identity).
+OBSERVED_HEAD_KEY = "observed_head"
+# The reported receipt digests that authorize the observed baseline and
+# the observed head.
+BASELINE_RECEIPT_KEY = "baseline_receipt"
+HEAD_RECEIPT_KEY = "head_receipt"
+
+
+def attested_receipt_digests(as_of, steps, revision=None):
+    """The receipt digests of every ATTESTED, effect-completed delivery
+    receipt of one of ``steps`` recorded under ``revision``."""
+    digests = []
+    for artifact in state_module.attested_artifacts(as_of):
+        attestation = state_module.receipt_attestation_of(artifact)
+        if attestation["step"] not in steps:
+            continue
+        if not state_module.receipt_effect_completed(attestation):
+            continue
+        if not _under_revision(artifact, revision):
+            continue
+        digests.append(artifact["content_digest_sha256"])
+    return digests
+
+
+def _reported_digest(candidate, key):
+    digests = candidate["artifact_digests"]
+    return digests[key] if key in digests else None
+
+
+def _observed_identity(candidate, key):
+    """The observed baseline (``key`` None) or the observed artifact."""
+    if key is None:
+        return candidate["baseline_digest_sha256"]
+    return _reported_digest(candidate, key)
+
+
+def authorized_anchor(records, key, authorized, receipt_key):
+    """The identity (baseline for ``key`` None, else the artifact under
+    ``key``) the observation is anchored to within the records' revision:
+    the FIRST observed one, then each later observation whose report
+    carried an ``authorized`` receipt digest under ``receipt_key`` (an
+    attested, completed transition of that identity). An observation that
+    moved without one never re-anchors."""
+    anchor = None
+    for entry in records:
+        candidate = reported_value(entry["sources"], SOURCE_CANDIDATE)
+        if candidate is None:
+            continue
+        observed = _observed_identity(candidate, key)
+        if observed is None:
+            continue
+        if anchor is None or _reported_digest(candidate, receipt_key) in authorized:
+            anchor = observed
+    return anchor
+
+
+def head_drift(anchor, observed):
+    """An observed head that moved from its anchor without an attested
+    transition is drift (under the candidate drift kind, subject
+    ``observed_head``); no anchor or no observation decides nothing."""
+    if anchor is None or observed is None or observed == anchor:
+        return []
+    return [_finding(FINDING_CANDIDATE_DRIFT, OBSERVED_HEAD_KEY,
+                     "the observed head identity moved from %s to %s without an"
+                     " attested, completed delivery transition receipt authorizing"
+                     " the move" % (anchor, observed))]
+
+
+def drift_findings(as_of, previous, candidate, applicable, revision=None):
     """The candidate and baseline drift a pass records: live findings
     from the report in hand (when reported), merged with the previous
     pass's unresolved findings, which only an APPLICABLE report (fresh,
-    collected at this head) resolves."""
+    collected at this head) resolves.
+
+    THE RULE (Task 8 S-V, R2-11-a/b), with ``revision``:
+    - anchors and compared artifacts are those of the authorized revision
+      only: an EDIT re-bases under a new revision with a fresh anchor (no
+      drift), and an earlier revision's records are never relabelled;
+    - within a revision the BASELINE is anchored to the first baseline
+      observed, and re-anchored only by an observation whose report
+      carries, under ``baseline_receipt``, the digest of an ATTESTED,
+      effect-completed base-refresh receipt of this revision: an
+      authorized refresh is no drift; the same move without it drifts;
+    - the observed head (``observed_head``) likewise, re-anchored only by
+      an attested completed base-refresh or commit-step receipt digest
+      reported under ``head_receipt``;
+    - a Mission ``record_artifact``, an EDIT or any other recorded flag
+      never authorizes a transition: only an attested receipt does.
+    Without ``revision`` (Task 7 callers) the anchor is the first
+    baseline ever observed and no HEAD is compared — exactly as before."""
+    scoped = records_under_revision(previous, revision)
     live = []
     if candidate is not None:
-        live.extend(candidate_drift(as_of, candidate, unobserved=applicable))
-        live.extend(baseline_drift(baseline_anchor(previous),
-                                   candidate["baseline_digest_sha256"],
-                                   unobserved=applicable))
-    last = previous[-1] if previous else None
+        live.extend(candidate_drift(as_of, candidate, unobserved=applicable,
+                                    revision=revision))
+        if revision is None:
+            live.extend(baseline_drift(baseline_anchor(scoped),
+                                       candidate["baseline_digest_sha256"],
+                                       unobserved=applicable))
+        else:
+            refreshes = attested_receipt_digests(
+                as_of, state_module.BASELINE_TRANSITION_STEPS, revision)
+            if _reported_digest(candidate, BASELINE_RECEIPT_KEY) not in refreshes:
+                live.extend(baseline_drift(
+                    authorized_anchor(scoped, None, refreshes, BASELINE_RECEIPT_KEY),
+                    candidate["baseline_digest_sha256"], unobserved=applicable))
+            moves = attested_receipt_digests(
+                as_of, state_module.HEAD_TRANSITION_STEPS, revision)
+            if _reported_digest(candidate, HEAD_RECEIPT_KEY) not in moves:
+                live.extend(head_drift(
+                    authorized_anchor(scoped, OBSERVED_HEAD_KEY, moves, HEAD_RECEIPT_KEY),
+                    _reported_digest(candidate, OBSERVED_HEAD_KEY)))
+    last = scoped[-1] if scoped else None
     return combine_drift(live, carried_drift(last, candidate if applicable else None))
 
 
@@ -787,7 +919,10 @@ def derive_findings(state, contract, position, current_revision, sources,
     applicable = candidate is not None and is_fresh(
         evaluated_at, source_provenance[SOURCE_CANDIDATE]["observed_at"],
         REPORTED_FRESHNESS_BOUND_SECONDS)
-    findings.extend(drift_findings(as_of, previous, candidate, applicable))
+    # Task 8 S-V (R2-11-a): drift is scoped to the authorized revision the
+    # pass observes under (see ``baseline_anchor`` for the rule).
+    findings.extend(drift_findings(as_of, previous, candidate, applicable,
+                                   revision=current_revision))
     findings.extend(attested_findings(as_of))
     if delivery is not None:
         findings.extend(delivery_findings(

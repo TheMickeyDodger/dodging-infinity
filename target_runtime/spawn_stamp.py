@@ -31,10 +31,18 @@ The ``p`` variant preserves the PATH lookup that a direct
 What is still true of the child, stated with it: a program that changes its own process group after exec moves outside
 the group this stamp names, and where the root is unwritable no stamp is
 written — in which case this exits non-zero rather than exec'ing an
-unattributable process.
+unattributable process. Task 8 R26: so is a record path that names
+something this writer must not write (``_write_record``) — a FIFO, a
+symbolic link (where the platform provides ``O_NOFOLLOW``), a hard link, a
+directory: the child refuses to exec, and nothing is written there. Task 8
+R27-1: each record is replaced ATOMICALLY, so any later failure — before its
+publication, or after it (``PublicationUnproven``) — also refuses the exec and
+leaves that record complete; what it leaves is stated at ``_write_record``.
 """
 
+import errno
 import os
+import stat
 import subprocess
 import sys
 
@@ -57,6 +65,244 @@ PGID_FILE = "pgid"
 START_FILE = "leader-start"
 EXIT_UNSTAMPABLE = 71
 
+#: Task 8 R27-1: how what ALREADY stands at a stamp record's path is EXAMINED
+#: before any replacement is made — R26's open, WITHOUT ``O_CREAT``: for
+#: writing, with ``O_NONBLOCK`` (an open of a FIFO with no reader fails at once,
+#: ``ENXIO``, instead of waiting; this bounds nothing else) and, WHERE THE
+#: PLATFORM PROVIDES IT, ``O_NOFOLLOW`` (a symbolic link refuses, ``ELOOP``).
+#: Nothing is ever written, truncated or created through it. Where
+#: ``os.O_NOFOLLOW`` is absent the fallback is 0, and the link is caught by the
+#: last examination (``_examine_name``) instead.
+_EXAMINE_FLAGS = os.O_WRONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
+#: Task 8 R27-1: how a record's REPLACEMENT is created — a NEW name in the
+#: record's own directory (so the rename stays on one filesystem), EXCLUSIVELY
+#: (``O_EXCL``: never an object that already exists, never through a link),
+#: ``O_NONBLOCK``, and ``O_NOFOLLOW`` where provided. Every byte this writer
+#: writes goes into the object it creates here, and nowhere else.
+_REPLACEMENT_FLAGS = (os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NONBLOCK
+                      | getattr(os, "O_NOFOLLOW", 0))
+#: Task 8 R27-1: the prefix of a replacement's name (``.stamp-replacement-
+#: <record>-<16 hex>``) — never a record's name. Every reader opens a record by
+#: its own fixed name, so no reader ever opens a replacement, published or not.
+REPLACEMENT_PREFIX = ".stamp-replacement-"
+
+
+class UnsupportedRecord(OSError):
+    """Task 8 R26: a stamp record path that opened as something this writer
+    must not write — not a regular file (a FIFO that has a reader, a device),
+    or a regular file that has another name (a hard link). Raised before
+    any byte is written or truncated. An ``OSError``, so the child refuses
+    to exec (``main``) exactly as for an unwritable root. (Task 8 R27-1: also
+    raised by the LAST examination, before the rename, and then for a
+    symbolic link too; nothing is ever written through what it names.)"""
+
+
+class PublicationUnproven(OSError):
+    """Task 8 R27-1: the replacement WAS renamed into place — the record IS
+    PUBLISHED, complete — and what followed could not be proven: the record's
+    name was not observed to refer to the very single-named object this writer
+    wrote, or the directory's ``fsync`` (the rename's durability) failed.
+    Raised AFTER the publication and NEVER undone: no rollback deletes, renames
+    or rewrites a published record (an undo would destroy a valid published
+    identity). An ``OSError``, so the child refuses to exec (``main``) and the
+    parent reports the spawn UNRESOLVED (``SpawnUnconfirmed``) — truthful
+    unresolved, never a clean report."""
+
+
+def _close_quietly(descriptor):
+    """Close ``descriptor``; a failure is dropped, because it runs only while
+    another failure is in flight, and that one is the one raised."""
+    try:
+        os.close(descriptor)
+    except OSError:
+        pass
+
+
+def _single_regular(info, path):
+    """Refuse (``UnsupportedRecord``) anything but a regular file with exactly
+    ONE name."""
+    if not stat.S_ISREG(info.st_mode):
+        raise UnsupportedRecord(errno.EINVAL, "not a regular file", path)
+    if info.st_nlink != 1:
+        raise UnsupportedRecord(errno.EMLINK, "a regular file with %d names"
+                                % info.st_nlink, path)
+
+
+def _examine(path):
+    """Task 8 R27-1: the FIRST examination of what stands at ``path``, BEFORE
+    anything is created — R26's refusals, errno for errno: a symbolic link
+    (``ELOOP``), a FIFO with no reader (``ENXIO``, at once), a directory
+    (``EISDIR``), and, judged on the OPENED descriptor, a FIFO with a reader or
+    a hard link (``UnsupportedRecord``). An absent record is no refusal: the
+    replacement creates it (and an absent ROOT refuses the replacement's own
+    creation, ``ENOENT``, with nothing created). This proves what stood there
+    WHEN EXAMINED, and nothing about any later instant."""
+    try:
+        descriptor = os.open(path, _EXAMINE_FLAGS)
+    except FileNotFoundError:
+        return
+    try:
+        _single_regular(os.fstat(descriptor), path)
+    except BaseException:
+        _close_quietly(descriptor)
+        raise
+    os.close(descriptor)
+
+
+def _examine_name(path):
+    """Task 8 R27-1: the LAST examination before the rename, by ``lstat`` (no
+    link followed, nothing opened): absent, or a regular file with exactly ONE
+    name — otherwise ``UnsupportedRecord`` (a symbolic link: ``ELOOP``) and no
+    rename. It NARROWS the window in which a substituted object could be
+    replaced; it does NOT prove the state at the rename (see
+    ``_write_record``)."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(info.st_mode):
+        raise UnsupportedRecord(errno.ELOOP, "a symbolic link", path)
+    _single_regular(info, path)
+
+
+def _sync_directory(directory, path):
+    """Task 8 R27-1: ``fsync`` the directory the record was renamed into, so
+    the rename itself is durable. Runs AFTER the publication: a failure raises
+    ``PublicationUnproven`` (the record IS published) and undoes nothing."""
+    try:
+        descriptor = os.open(directory or os.curdir,
+                             os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError as exc:
+        raise PublicationUnproven(exc.errno, "published; its directory could not be"
+                                  " opened to make the rename durable (%s)"
+                                  % (exc.strerror or exc), path) from exc
+    try:
+        os.fsync(descriptor)
+    except OSError as exc:
+        _close_quietly(descriptor)
+        raise PublicationUnproven(exc.errno, "published; the rename's durability is"
+                                  " UNPROVEN: the directory's fsync failed (%s)"
+                                  % (exc.strerror or exc), path) from exc
+    except BaseException:
+        _close_quietly(descriptor)
+        raise
+    os.close(descriptor)
+
+
+def _write_record(path, text):
+    """Task 8 R27-1: replace ONE stamp record with ``text`` ATOMICALLY — the
+    record is always EITHER its previous object OR ``text``, complete: never
+    empty, never a fragment that reads as a different group or start time.
+    R26's in-place writer truncated first, so a failed or interrupted
+    replacement — the PARENT's confirmation after the child had stamped itself
+    — destroyed the child's valid record; a short write could leave ``446`` of
+    ``44603``, a valid-looking, unrelated, probably gone group.
+
+    THE STEPS:
+    1. EXAMINE what stands at ``path`` (``_examine``): R26's refusals, errno
+       for errno, BEFORE anything is created.
+    2. CREATE a replacement beside it (``_REPLACEMENT_FLAGS``: exclusive,
+       never through a link, never waiting), check it is a single-named
+       regular file, write ``text`` whole, ``fsync`` it. Its descriptor stays
+       OPEN until the end.
+    3. EXAMINE the name again (``_examine_name``), then RENAME the replacement
+       over ``path`` — the publication.
+    4. CONFIRM, through the still-open descriptor, that ``path`` now names THE
+       VERY OBJECT written (same device and inode) and that it has exactly one
+       name; then ``fsync`` the directory (``_sync_directory``).
+
+    WHAT HOLDS AT THE REPLACEMENT BOUNDARY. ``rename(2)`` takes no identity
+    predicate: it replaces whatever entry stands at ``path`` at that instant.
+    So:
+    - NOTHING is ever written to, truncated, opened for data or followed
+      through ANY object at ``path`` — whenever it was put there. Every byte
+      goes into the object this writer created exclusively. A FIFO, a link or
+      an extra name planted at ANY moment never receives a byte, never makes
+      this wait, and never becomes part of the published record.
+    - An object present at an EXAMINATION is REFUSED (steps 1 and 3) and left
+      exactly as it is. The examinations prove what stood there WHEN EXAMINED,
+      not at the rename.
+    - An entry substituted AFTER the last examination and BEFORE the rename is
+      REPLACED by the rename: that name now refers to the published record. The
+      substituted object is never opened or written; it survives under any
+      other name it has. (A DIRECTORY there makes the rename fail: nothing is
+      published.)
+    - The writer reports SUCCESS only if, after the rename, ``path`` was
+      observed naming THE VERY single-named object it wrote. Otherwise it
+      raises ``PublicationUnproven``: the record WAS published, and is never
+      rolled back.
+
+    WHAT A FAILURE LEAVES. Every failure is an ``OSError``.
+    - BEFORE the rename (an examination's refusal, the replacement's creation,
+      write, ``fsync``, the last examination, the rename itself): ``path`` is
+      UNTOUCHED — its previous object, complete, or still absent. A replacement
+      created is DISCARDED (its own name unlinked — never ``path``).
+    - AFTER the rename (the confirmation, the directory's ``fsync``):
+      ``PublicationUnproven``. ``path`` holds ``text``, complete, unless
+      something else replaced it since. Across a crash it is the previous
+      object or ``text``, each complete. NEVER undone.
+    - A writer KILLED mid-way cannot discard: ``path`` is still its previous
+      object or ``text``, complete, and a replacement may remain beside it
+      under ``REPLACEMENT_PREFIX`` — published by nobody, opened by no reader.
+    If closing a descriptor fails while another failure is in flight, the
+    in-flight failure is the one raised.
+
+    CONCURRENCY. Two writers of one record (the child's stamp and the parent's
+    confirmation) each publish a COMPLETE record; the later rename wins. A
+    reader that opens a record by name gets the previous object or the new
+    one, each complete. A reader that compares an ``lstat`` with what it then
+    opened (``process_ownership._open_examined``) can see the record replaced
+    in between, and refuses — unavailable, never settlement.
+
+    "Never waits" means only that no open waits on a FIFO: this bounds nothing
+    about a regular file's write, ``fsync`` or rename latency. It makes no
+    claim about the directories above the record."""
+    directory, name = os.path.split(path)
+    _examine(path)
+    replacement = os.path.join(directory, "%s%s-%s" % (
+        REPLACEMENT_PREFIX, name, os.urandom(8).hex()))
+    descriptor = os.open(replacement, _REPLACEMENT_FLAGS, 0o666)
+    try:
+        try:
+            _single_regular(os.fstat(descriptor), replacement)
+            data = memoryview(text.encode("utf-8"))
+            while data:
+                data = data[os.write(descriptor, data):]
+            os.fsync(descriptor)
+            _examine_name(path)
+            os.rename(replacement, path)                 # THE PUBLICATION
+        except BaseException:
+            try:
+                os.unlink(replacement)                   # its OWN name: never ``path``
+            except OSError:
+                pass                       # the in-flight failure is the one raised
+            raise
+        try:
+            published, written = os.lstat(path), os.fstat(descriptor)
+        except OSError as exc:
+            raise PublicationUnproven(exc.errno, "published; the record could not be"
+                                      " observed after the rename (%s)"
+                                      % (exc.strerror or exc), path) from exc
+        if (published.st_dev, published.st_ino) != (written.st_dev, written.st_ino):
+            raise PublicationUnproven(errno.ESTALE, "published; the record no longer names"
+                                      " the object written", path)
+        if written.st_nlink != 1:
+            raise PublicationUnproven(errno.EMLINK, "published; the object written has"
+                                      " %d names" % written.st_nlink, path)
+    except BaseException:
+        _close_quietly(descriptor)
+        raise
+    os.close(descriptor)
+    _sync_directory(directory, path)
+
+
+#: Task 8 R28-1: the leader-start query, and its BOUND (seconds). The query runs
+#: inside the reap's proof->signal span when the not-held proof corroborates a
+#: group, so it is bounded: one that has not answered within the bound is None —
+#: the same fail-closed answer as a gone process or a failed query.
+LEADER_QUERY = ("ps", "-o", "lstart=", "-p")
+LEADER_QUERY_SECONDS = 5.0
+
 
 def leader_start_time(pid):
     """The kernel's start time for ``pid``, as an exact string.
@@ -71,13 +317,21 @@ def leader_start_time(pid):
     itself fails. A None is NOT evidence: callers treat an
     uncorroborated group as not ours, which is the fail-closed
     direction.
+
+    Task 8 R28-1: BOUNDED by ``LEADER_QUERY_SECONDS``; a query that has not
+    answered by then is None, like any failed query — never "the spawn
+    failed" (the stamp then writes no start record, so the group is never
+    corroborated). ``subprocess.run`` kills that query's OWN child on expiry
+    and then waits for it without a bound: a query that a SIGKILL cannot end
+    is outside this bound.
     """
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
         return None
     try:
         completed = subprocess.run(
-            ["ps", "-o", "lstart=", "-p", str(pid)],
+            list(LEADER_QUERY) + [str(pid)],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=LEADER_QUERY_SECONDS,
         )
     except Exception:                             # noqa: BLE001
         # A failure to ask the OS yields None, and the breadth is
@@ -108,20 +362,27 @@ def stamp(root, pid=None):
     readable and uncorroborated, and a reader in that window would
     have to choose between refusing a live record and trusting an
     uncorroborated one.
+
+    Task 8 R26: each record is written by ``_write_record`` — validated
+    before any write; a FIFO open never waits for a reader (this bounds no
+    regular-file write or ``fsync`` latency); never through a symbolic link
+    where the platform provides ``O_NOFOLLOW`` — each ``fsync``-ed, START
+    first. A START refused BEFORE its write therefore leaves no pgid written
+    at all.
+
+    Task 8 R27-1: each record is REPLACED ATOMICALLY (``_write_record``), so a
+    failed or interrupted stamp — the PARENT's confirmation after the child
+    stamped itself, above all — leaves each record its previous object or the
+    new one, complete: the child's valid stamp is never truncated, emptied or
+    cut to a different number. A failure after a record's publication
+    (``PublicationUnproven``) leaves it published, never undone.
     """
     group = os.getpgrp() if pid is None else pid
     started = leader_start_time(group)
     if started is not None:
-        start_path = os.path.join(root, START_FILE)
-        with open(start_path, "w", encoding="utf-8") as handle:
-            handle.write(started)
-            handle.flush()
-            os.fsync(handle.fileno())
+        _write_record(os.path.join(root, START_FILE), started)
     path = os.path.join(root, PGID_FILE)
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(str(group))
-        handle.flush()
-        os.fsync(handle.fileno())
+    _write_record(path, str(group))
     return path
 
 

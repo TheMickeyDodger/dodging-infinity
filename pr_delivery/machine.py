@@ -43,8 +43,35 @@ Base drift (request: "routine fast-forward target-base advancement"):
 
 Delivery ends at PR_OPENED -> COMPLETE. There is no merge step, no merge
 verb, and no way to widen the action set from here.
+
+EFFECT ADMISSION (Task 8 S-VI, prep Q5/Q6). Every irreversible effect —
+fetch, write-tree, the index refresh + two-way read-tree, every
+compare-and-swap ref move (reconciliation's included), commit, push,
+``gh pr create`` and the reverification argv — is ADMITTED immediately
+before it runs (``_effect``): the durable record is re-read (revocation,
+expiry), the delivery's owned effect children must be proven settled
+(``transport.unsettled_children``), and the injected ``effect_gate`` (the
+Mission gate for a Mission-bound record) must admit that exact effect.
+Admission is per effect, so a change during blocking work (a fetch, a
+reverification) stops the NEXT effect. A refusal performs nothing more:
+a receipt persisted as executing for an effect that never started is
+voided, a receipt whose earlier effect may have landed stays executing for
+reconciliation, and the outcome is ``held``. A client-confirmed record is
+never driven without a gate (``gate_required``, nothing changes): the
+default CLI and a bare machine cannot bypass the Mission. One driver at a
+time holds the per-delivery drive lock across ``advance_once`` (``busy``
+otherwise); ``_persist`` folds a revocation written meanwhile rather than
+overwriting it.
+
+``advance_after_commit`` (Task 8 S-VI decision): a post-commit base
+advance moves no ref and performs no effect beyond the admitted fetch; it
+is a recorded, reported observation of the remote base (the pull request
+targets a ref, not an OID), so it carries no step receipt and needs no
+attestation — the COMMIT, PUSH and PR_CREATE receipts it sits between are
+what is attested.
 """
 
+import contextlib
 import os
 
 from workflow_authority import canonical
@@ -55,7 +82,7 @@ from pr_delivery import candidate as candidate_module
 from pr_delivery import pr_text
 from pr_delivery import receipts
 from pr_delivery.errors import DeliveryTransportError
-from pr_delivery.store import DeliveryStore
+from pr_delivery.store import DeliveryStore, DriveBusy
 
 PROBLEM_WRONG_REPOSITORY = "pr_delivery_wrong_repository"
 PROBLEM_BRANCH_NOT_CHECKED_OUT = "pr_delivery_branch_not_checked_out"
@@ -77,6 +104,9 @@ PROBLEM_BASE_ADVANCED_OVERLAPPING_AFTER_COMMIT = (
     "pr_delivery_base_advanced_overlapping_after_commit"
 )
 PROBLEM_MISSING_RECORD = "pr_delivery_missing_record"
+# Task 8 S-VI: a client-confirmed (Mission-bound) record is driven only
+# through a Mission effect gate.
+PROBLEM_MISSION_GATE_REQUIRED = "pr_delivery_mission_gate_required"
 
 BASE_CI_GREEN = "green"
 BASE_CI_RED = "red"
@@ -93,6 +123,11 @@ OUTCOME_RETRY = "retry"
 OUTCOME_REVOKED = "revoked"
 OUTCOME_COMPLETE = "complete"
 OUTCOME_NO_STEP = "no_step"
+# Task 8 S-VI: an effect admission refused (nothing more performed), the
+# drive lock held by another owner, a Mission-bound record without a gate.
+OUTCOME_HELD = "held"
+OUTCOME_BUSY = "busy"
+OUTCOME_GATE_REQUIRED = "gate_required"
 
 
 class MachineError(Exception):
@@ -119,6 +154,18 @@ class _Retry(Exception):
         self.detail = detail
 
 
+class _Held(Exception):
+    """Internal: an effect admission refused; nothing more is performed.
+    ``terminal`` is the gate's classification (the authority is gone for
+    good — the caller revokes; otherwise the refusal is reversible)."""
+
+    def __init__(self, problem, detail, terminal):
+        super(_Held, self).__init__(detail)
+        self.problem = problem
+        self.detail = detail
+        self.terminal = terminal
+
+
 def _porcelain_unstaged(text):
     """The first porcelain line that is not a fully staged A/M/D entry."""
     for line in text.splitlines():
@@ -131,15 +178,29 @@ def _porcelain_unstaged(text):
 
 class DeliveryMachine(object):
     """Drives one delivery record through its steps. Takes the store and
-    the transport at construction; constructs neither."""
+    the transport at construction; constructs neither. ``effect_gate``
+    (optional) is ``gate(record, step, effect) -> (ok, problem, detail,
+    terminal)``, consulted before every effect (see the module docstring)."""
 
-    def __init__(self, store, transport, clock):
+    def __init__(self, store, transport, clock, effect_gate=None):
         if not isinstance(store, DeliveryStore):
             raise MachineError("store must be a DeliveryStore",
                                auth.PROBLEM_BAD_TYPE)
         self.store = store
         self.transport = transport
         self.clock = clock
+        self.effect_gate = effect_gate
+        # The last refused admission (problem, detail, terminal), for the
+        # caller that records it; None after any other outcome.
+        self.last_refusal = None
+        # The last retryable failure (step, detail) — a transport failure
+        # included, before or during a step — for the caller that names
+        # it; None after any other outcome. Memory only: the record is
+        # unchanged by it.
+        self.last_retry = None
+        bind = getattr(transport, "bind_child_ledger", None)
+        if bind is not None:
+            bind(store.directory)
 
     # -- persistence --------------------------------------------------
 
@@ -154,10 +215,25 @@ class DeliveryMachine(object):
         return record
 
     def _persist(self, record):
-        record["updated_at"] = self.clock()
-        auth.validate_authorization(record)
+        """Save the working record — never over a revocation written since
+        it was read (prep Q6): under the store lock the durable revocation
+        is FOLDED into the working copy (and a non-terminal phase becomes
+        REVOKED) before the save, so a stale driver can never erase a
+        stop."""
         with self.store.lock():
             document = self.store.load()
+            durable = document["deliveries"].get(record["delivery_id"])
+            if durable is None:
+                raise MachineError(
+                    "PR delivery %r vanished from the store while being driven"
+                    % (record["delivery_id"],), PROBLEM_MISSING_RECORD)
+            if auth.is_revoked(durable) and not auth.is_revoked(record):
+                record["revocation"] = durable["revocation"]
+                if record["phase"] not in auth.TERMINAL_PHASES:
+                    auth.apply_transition(record, auth.PHASE_REVOKED,
+                                          self.clock())
+            record["updated_at"] = self.clock()
+            auth.validate_authorization(record)
             document["deliveries"][record["delivery_id"]] = record
             self.store.save(document)
 
@@ -203,6 +279,19 @@ class DeliveryMachine(object):
                 return outcome
 
     def advance_once(self, delivery_id):
+        """One step, under the per-delivery drive lock (``busy`` without
+        performing anything when another driver holds it)."""
+        self.last_refusal = None
+        self.last_retry = None
+        try:
+            with self.store.drive_lock(delivery_id):
+                return self._advance_once(delivery_id)
+        except DriveBusy as exc:
+            self.last_refusal = (
+                "pr_delivery_drive_busy", str(exc), False)
+            return OUTCOME_BUSY
+
+    def _advance_once(self, delivery_id):
         record = self.load(delivery_id)
         now = self.clock()
         if record["phase"] in auth.TERMINAL_PHASES:
@@ -210,6 +299,15 @@ class DeliveryMachine(object):
                 OUTCOME_COMPLETE
                 if record["phase"] == auth.PHASE_COMPLETE else OUTCOME_BLOCKED
             )
+        if auth.is_client_confirmed(record) and self.effect_gate is None:
+            # A Mission-bound record is driven only through its Mission
+            # gate: the default CLI and a bare machine change NOTHING.
+            self.last_refusal = (
+                PROBLEM_MISSION_GATE_REQUIRED,
+                "PR delivery %s is Mission-bound (client-confirmed); it is"
+                " advanced only by the Runtime's Mission-gated driver"
+                % delivery_id, False)
+            return OUTCOME_GATE_REQUIRED
         if auth.is_revoked(record):
             auth.apply_transition(record, auth.PHASE_REVOKED, now)
             self._persist(record)
@@ -227,6 +325,9 @@ class DeliveryMachine(object):
         }[step]
         try:
             handler(record)
+        except _Held as held:
+            self.last_refusal = (held.problem, held.detail, held.terminal)
+            return OUTCOME_HELD
         except _Block as block:
             self._block(record, block.problem, block.detail)
             return OUTCOME_BLOCKED
@@ -235,8 +336,11 @@ class DeliveryMachine(object):
             return OUTCOME_RETRY
         except receipts.ReceiptError as exc:
             if exc.problem == receipts.PROBLEM_REVOKED:
-                auth.apply_transition(record, auth.PHASE_REVOKED,
-                                      self.clock())
+                # ``_persist`` may already have folded a durable revocation
+                # into the working record (and moved it to REVOKED).
+                if record["phase"] != auth.PHASE_REVOKED:
+                    auth.apply_transition(record, auth.PHASE_REVOKED,
+                                          self.clock())
                 self._persist(record)
                 return OUTCOME_REVOKED
             self._block(record, exc.problem, str(exc))
@@ -270,6 +374,7 @@ class DeliveryMachine(object):
         self._persist(record)
 
     def _retry(self, record, step, detail):
+        self.last_retry = (step, str(detail)[:auth.MAX_EVIDENCE_TEXT_CHARS])
         entry = record["steps"][step]
         receipt = entry["receipt"]
         if receipt is not None and receipt["state"] == auth.RECEIPT_EXECUTING:
@@ -317,6 +422,55 @@ class DeliveryMachine(object):
                 else receipts.PROBLEM_EXPIRED,
             )
         return receipt
+
+    def _admit(self, record, step, effect, void_on_refusal):
+        """Admit ONE effect now, or raise without performing it (see the
+        module docstring). ``void_on_refusal``: the step's receipt was
+        persisted as executing but its effect has not started, so a refusal
+        voids it; otherwise an earlier effect of the step may have landed and
+        the receipt stays for reconciliation."""
+        if self._refresh(record):
+            # Revoked or expired: the existing durable handling (REVOKED /
+            # expiry block) applies, exactly as at derivation.
+            if void_on_refusal:
+                self._void(record, step)
+                self._persist(record)
+            raise receipts.ReceiptError(
+                "revoked or expired before the %s effect of %s" % (effect, step),
+                receipts.PROBLEM_REVOKED if auth.is_revoked(record)
+                else receipts.PROBLEM_EXPIRED,
+            )
+        refusal = None
+        if refusal is None:
+            unsettled = getattr(self.transport, "unsettled_children", None)
+            problems = unsettled(record["delivery_id"]) if unsettled else []
+            if problems:
+                refusal = (problems[0][0], "; ".join(
+                    detail for _problem, detail in problems)[:2000], False)
+        if refusal is None and self.effect_gate is not None:
+            ok, problem, detail, terminal = self.effect_gate(record, step, effect)
+            if not ok:
+                refusal = (problem, detail, bool(terminal))
+        if refusal is None:
+            return
+        if void_on_refusal:
+            self._void(record, step)
+            self._persist(record)
+        raise _Held(*refusal)
+
+    @contextlib.contextmanager
+    def _effect(self, record, step, effect, void_on_refusal=False):
+        """Admit ``effect`` of ``step``, then run the body with the delivery
+        named as the owner of every effect child it starts."""
+        self._admit(record, step, effect, void_on_refusal)
+        previous = getattr(self.transport, "effect_owner", None)
+        self.transport.effect_owner = {
+            "delivery_id": record["delivery_id"], "step": step,
+            "effect": effect}
+        try:
+            yield
+        finally:
+            self.transport.effect_owner = previous
 
     def _succeed(self, record, step, observed, new_phase):
         entry = record["steps"][step]
@@ -393,12 +547,13 @@ class DeliveryMachine(object):
                              record["target_base"]["ref"]))
         return oid
 
-    def _prove_disjoint_advance(self, record, old_oid, new_oid):
+    def _prove_disjoint_advance(self, record, old_oid, new_oid, step):
         """Fetch the new base, prove fast-forward, prove disjointness.
         Returns the digest of the sorted base-changed path list."""
         path = record["repository"]["realpath"]
-        self.transport.fetch_ref(path, record["remote"]["name"],
-                                 record["target_base"]["ref"])
+        with self._effect(record, step, "fetch"):
+            self.transport.fetch_ref(path, record["remote"]["name"],
+                                     record["target_base"]["ref"])
         if self.transport.rev_parse(path, new_oid) != new_oid:
             raise _Block(PROBLEM_BASE_REF_MISSING,
                          "fetched base %s is not present locally" % new_oid)
@@ -446,9 +601,10 @@ class DeliveryMachine(object):
 
     def _reverify(self, record):
         path = record["repository"]["realpath"]
-        code, log, truncated = self.transport.run_reverification(
-            list(record["reverification"]["argv"]), path,
-        )
+        with self._effect(record, auth.STEP_BASE_REFRESH, "reverification"):
+            code, log, truncated = self.transport.run_reverification(
+                list(record["reverification"]["argv"]), path,
+            )
         observed = {
             "reverification_exit_status": code,
             "reverification_log_sha256": sha256_hex(log),
@@ -493,7 +649,7 @@ class DeliveryMachine(object):
             self._persist(record)
             return
         changed_digest = self._prove_disjoint_advance(record, current,
-                                                      remote_base)
+                                                      remote_base, step)
         binding = {
             "repository_realpath": path,
             "git_dir_realpath": record["repository"]["git_dir_realpath"],
@@ -512,9 +668,11 @@ class DeliveryMachine(object):
         }
         self._start(record, step, binding)
         try:
-            self.transport.read_tree_two_way(path, current, remote_base)
-            self.transport.update_ref(path, record["source"]["ref"],
-                                      remote_base, current)
+            with self._effect(record, step, "read_tree", void_on_refusal=True):
+                self.transport.read_tree_two_way(path, current, remote_base)
+            with self._effect(record, step, "update_ref"):
+                self.transport.update_ref(path, record["source"]["ref"],
+                                          remote_base, current)
         except DeliveryTransportError as exc:
             raise _Retry("base refresh effect failed: %s" % exc)
         self._finish_base_refresh(record, remote_base)
@@ -541,8 +699,9 @@ class DeliveryMachine(object):
                                     live_new) == (None, None):
             receipt["state"] = auth.RECEIPT_EXECUTING
             try:
-                self.transport.update_ref(path, record["source"]["ref"],
-                                          new, old)
+                with self._effect(record, auth.STEP_BASE_REFRESH, "update_ref"):
+                    self.transport.update_ref(path, record["source"]["ref"],
+                                              new, old)
             except DeliveryTransportError as exc:
                 raise _Retry("base refresh ref move failed: %s" % exc)
             self._finish_base_refresh(record, new)
@@ -596,6 +755,9 @@ class DeliveryMachine(object):
             self._live_candidate(record, current), record,
         )
         message = pr_text.revision_message(record)
+        # write-tree writes tree objects: an admitted effect of its own.
+        with self._effect(record, step, "write_tree"):
+            expected_tree = self.transport.write_tree(path)
         binding = {
             "repository_realpath": path,
             "git_dir_realpath": record["repository"]["git_dir_realpath"],
@@ -606,17 +768,18 @@ class DeliveryMachine(object):
             "candidate_identity_digest": record["candidate"][
                 "identity_digest_sha256"
             ],
-            "expected_tree_oid": self.transport.write_tree(path),
+            "expected_tree_oid": expected_tree,
             "committer_name": record["committer"]["name"],
             "committer_email": record["committer"]["email"],
             "message_sha256": pr_text.message_digest(record),
         }
         self._start(record, step, binding)
         try:
-            self.transport.commit(
-                path, record["committer"]["name"],
-                record["committer"]["email"], message,
-            )
+            with self._effect(record, step, "commit", void_on_refusal=True):
+                self.transport.commit(
+                    path, record["committer"]["name"],
+                    record["committer"]["email"], message,
+                )
         except DeliveryTransportError as exc:
             raise _Retry("commit effect failed: %s" % exc)
         self._observe_commit(record, binding)
@@ -666,13 +829,13 @@ class DeliveryMachine(object):
 
     # -- post-commit base advance (M2) --------------------------------
 
-    def _handle_post_commit_advance(self, record, commit_oid):
+    def _handle_post_commit_advance(self, record, commit_oid, step):
         current = record["base_state"]["current_base_oid"]
         remote_base = self._remote_base(record)
         if remote_base == current:
             return
         try:
-            self._prove_disjoint_advance(record, current, remote_base)
+            self._prove_disjoint_advance(record, current, remote_base, step)
         except _Block as block:
             if block.problem == PROBLEM_BASE_OVERLAP:
                 raise _Block(PROBLEM_BASE_ADVANCED_OVERLAPPING_AFTER_COMMIT,
@@ -720,7 +883,7 @@ class DeliveryMachine(object):
             raise _Block(PROBLEM_UNEXPECTED_REF_MOVEMENT,
                          "HEAD %s is not the delivered commit %s"
                          % (head, commit_oid))
-        self._handle_post_commit_advance(record, commit_oid)
+        self._handle_post_commit_advance(record, commit_oid, step)
         remote = record["remote"]["name"]
         destination = record["source"]["ref"]
         expected_old = self.transport.ls_remote(path, remote, destination)
@@ -757,8 +920,9 @@ class DeliveryMachine(object):
             return
         self._start(record, step, binding)
         try:
-            self.transport.push(path, remote, record["source"]["ref"],
-                                destination)
+            with self._effect(record, step, "push", void_on_refusal=True):
+                self.transport.push(path, remote, record["source"]["ref"],
+                                    destination)
         except DeliveryTransportError as exc:
             raise _Retry("push effect failed: %s" % exc)
         self._observe_push(record, binding)
@@ -887,7 +1051,7 @@ class DeliveryMachine(object):
         ):
             if self._reconcile_pr_create(record, receipt):
                 return
-        self._handle_post_commit_advance(record, head_sha)
+        self._handle_post_commit_advance(record, head_sha, step)
         remote_oid = self.transport.ls_remote(
             path, record["remote"]["name"], record["source"]["ref"],
         )
@@ -914,11 +1078,12 @@ class DeliveryMachine(object):
             self._adopt_pr(record, existing, reconciled=True)
             return
         try:
-            self.transport.gh_pr_create(
-                binding["owner"], binding["repo"], binding["head_branch"],
-                binding["base_branch"], pr_text.title(record),
-                pr_text.body(record),
-            )
+            with self._effect(record, step, "pr_create", void_on_refusal=True):
+                self.transport.gh_pr_create(
+                    binding["owner"], binding["repo"], binding["head_branch"],
+                    binding["base_branch"], pr_text.title(record),
+                    pr_text.body(record),
+                )
         except DeliveryTransportError as exc:
             raise _Retry("pull request creation failed: %s" % exc)
         created = self._pr_disposition(record, head_sha)

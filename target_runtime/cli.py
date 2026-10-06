@@ -20,6 +20,10 @@ import time
 
 from codex_gateway import role_turn as role_turn_module
 from telegram_operator.config import ConfigError, load_config
+from mission_control import attention as mission_attention_module
+from mission_control import delivery as mission_delivery_module
+from mission_control import gate as mission_gate_module
+from mission_control import readiness as mission_readiness_module
 from telegram_operator.state import (
     RUNTIME_LOCK_FILE_NAME,
     default_state_dir,
@@ -157,6 +161,60 @@ def _report_new_refusals(processed, previously_reported=None):
     return reported
 
 
+def report_inherited_recovery(recovery, stream=None):
+    """Print restart recovery's result (``recover_inherited_processes``).
+
+    Unattributed directories are REPORTED and left alone — WITH THE REASON,
+    so a forged assignment is distinguishable in the log from a stray
+    directory (R-43 AG-2). Task 8 R21-2: so is every observation recovery
+    could NOT make (``recovery.unavailable``: an unreadable scope base or
+    entry, owned-root prefix, root or group record) — reported as
+    UNAVAILABLE, never as absent, and nothing it covers was acted on. For a
+    report that carries ``unavailable`` the count is printed even when it is
+    zero, so a clean line reads as "every observation was made", not as
+    silence."""
+    stream = sys.stderr if stream is None else stream
+    recovered_rows, unattributed = recovery
+    for row in recovered_rows:
+        identity, reaped, stuck, unstamped, uncorroborated = row
+        print(
+            "dirun: inherited processes for %s %s/%s (control %s):"
+            " reaped %d, stuck %d, unstamped %d, uncorroborated %d"
+            % (identity.owner_type, identity.owner_id,
+               identity.unit_id, identity.control_digest,
+               len(reaped), len(stuck), len(unstamped),
+               len(uncorroborated)),
+            file=stream,
+        )
+        # R-54 AR-3: an unproven LIVE group is named, within this
+        # line, with its REASON. Within a receipt
+        # "uncorroborated 1" leaves an operator unable to act; "group
+        # 44603 has been REUSED" does not, and that is the difference
+        # between a number and a process.
+        for directory, pgid, reason in uncorroborated:
+            print(
+                "dirun: group %d under %s is REPORTED and left alone"
+                " (%s)" % (pgid, directory, reason),
+                file=stream,
+            )
+    for directory, reason in unattributed:
+        print(
+            "dirun: unattributed process record directory REPORTED and"
+            " left alone (%s): %s" % (reason, directory),
+            file=stream,
+        )
+    unavailable = getattr(recovery, "unavailable", None)
+    if unavailable is None:
+        return
+    print(
+        "dirun: recovery observations UNAVAILABLE: %d (reported, never read"
+        " as absent; nothing they cover was acted on)" % len(unavailable),
+        file=stream,
+    )
+    for path, reason in unavailable:
+        print("dirun: UNAVAILABLE (%s): %s" % (reason, path), file=stream)
+
+
 def acquire_runtime_lock(state_directory):
     """Hold the Runtime's single-instance lock, or return None.
 
@@ -180,8 +238,11 @@ def _build_parser():
         description=(
             "DI-REMOTE-2 Runtime: claim durably authorized missions"
             " from the workflow store and advance them through the"
-            " fixed target lifecycle. Carries NO delivery authority:"
-            " no commit, push, PR, tag, release, deploy, or merge can"
+            " fixed target lifecycle. Carries NO delivery authority of"
+            " its own: a commit, push or PR results only from a"
+            " Mission-bound delivery the human separately approved"
+            " (a client-confirmed P1-A6 authorization, with a Mission"
+            " store configured); no tag, release, deploy, or merge can"
             " result from anything this process does."
         ),
     )
@@ -246,6 +307,20 @@ def _build_broker(namespace):
     claude_config_path = os.path.join(
         state_directory, ".claude.json"
     ) if config_path else default_config_path()
+    mission_gate = (
+        None if loaded.mission_store_dir is None
+        else mission_gate_module.production_gate(loaded.mission_store_dir, "dirun")
+    )
+    # Task 8 S-VI: the Mission-bound delivery driver, wired beside the gate
+    # (and only with it). Its P1-A6 store lives in this state directory, the
+    # same protected directory as the workflow store (the P1-A6 default
+    # convention; the two files never overlap). Composed by the Mission
+    # control layer: this module imports no delivery package.
+    mission_delivery = (
+        None if mission_gate is None
+        else mission_delivery_module.production_delivery(
+            mission_gate, state_directory, state_directory)
+    )
 
     broker = TargetBroker(
         store_directory=state_directory,
@@ -274,7 +349,25 @@ def _build_broker(namespace):
         # and destroying somebody else's live sessions.
         live_workspaces_fn=_production_live_workspaces,
         workspace_close_fn=workspace_ownership.production_close,
+        # Task 8 S-IV: the Mission effect gate, wired ONLY when the config
+        # names a Mission store; absent, every Mission-origin record is
+        # refused (fail closed) and v2 records are unaffected. Composed by
+        # the Mission control layer (this module never imports the core).
+        mission_gate=mission_gate,
+        mission_delivery=mission_delivery,
+        delivery_store_directory=(
+            None if mission_delivery is None else state_directory),
     )
+    # Task 8 S-VII: with the gate, the Runtime refreshes the engineering-
+    # runtime readiness its Missions' contracts require (a non-destructive
+    # probe of its own lock in this state directory); with a coordination
+    # store too, it projects the client attention after each reconciliation.
+    if mission_gate is not None:
+        broker.mission_readiness = mission_readiness_module.RuntimeReadinessProducer(
+            mission_gate.service, state_directory)
+        if loaded.coordination_store_dir is not None:
+            broker.mission_attention = mission_attention_module.AttentionDesk(
+                mission_gate.service, loaded.coordination_store_dir)
     return broker, state_directory
 
 
@@ -327,35 +420,8 @@ def main(argv=None, sleeper=None, passes=None, execution=None):
     # # Unattributed directories are REPORTED and left alone — WITH THE
     # REASON, so a forged assignment is distinguishable in the log
     # from a stray directory (R-43 AG-2).
-    recovered_rows, unattributed = execution.recover_inherited_processes()
-    for row in recovered_rows:
-        identity, reaped, stuck, unstamped, uncorroborated = row
-        print(
-            "dirun: inherited processes for %s %s/%s (control %s):"
-            " reaped %d, stuck %d, unstamped %d, uncorroborated %d"
-            % (identity.owner_type, identity.owner_id,
-               identity.unit_id, identity.control_digest,
-               len(reaped), len(stuck), len(unstamped),
-               len(uncorroborated)),
-            file=sys.stderr,
-        )
-        # R-54 AR-3: an unproven LIVE group is named, within this
-        # line, with its REASON. Within a receipt
-        # "uncorroborated 1" leaves an operator unable to act; "group
-        # 44603 has been REUSED" does not, and that is the difference
-        # between a number and a process.
-        for directory, pgid, reason in uncorroborated:
-            print(
-                "dirun: group %d under %s is REPORTED and left alone"
-                " (%s)" % (pgid, directory, reason),
-                file=sys.stderr,
-            )
-    for directory, reason in unattributed:
-        print(
-            "dirun: unattributed process record directory REPORTED and"
-            " left alone (%s): %s" % (reason, directory),
-            file=sys.stderr,
-        )
+    recovery = execution.recover_inherited_processes()
+    report_inherited_recovery(recovery)
     # R-12 CONDITION: BOOTSTRAP_UNOBSERVABLE is SURFACED, not merely
     # stored. It is deliberately not a stopping state — bounding on
     # absence of evidence would expire a mission that is only

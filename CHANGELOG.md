@@ -13,6 +13,12 @@
   reconciles after a crash without a duplicate; delivery stops at an open pull
   request with no merge, tag, release, deploy or publish verb. `herdctl
   delivery-evidence` emits the Herdr evidence the ceremony binds.
+- **Task 8 (in progress) — read-only candidate identity observation.** The
+  Runtime's pinned git transport gained ONE read-only verb,
+  `diff_index_raw_readonly` (`diff-index --cached --raw --abbrev=40
+  --no-renames -z` under `--no-optional-locks`), and is now an eight-verb git
+  transport seam: the Runtime observes a Mission-origin workflow's candidate by
+  its P1-A6 staged identity with it, never writing or refreshing the index.
 
 ## v0.7.0
 

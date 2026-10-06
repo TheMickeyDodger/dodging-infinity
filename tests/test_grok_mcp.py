@@ -54,7 +54,20 @@ REF_RE = re.compile(r"^di-[0-9a-f]{32}$")
 EXPECTED_TOOL_NAMES = (
     "di_status", "di_ping", "di_operator_turn", "di_mission_propose",
     "di_mission_get", "di_mission_edit", "di_mission_approve",
-    "di_mission_deny",
+    "di_mission_deny", "di_mission_decide",
+    # Task 8, slice S-VI: the client-mediated delivery decision rides the
+    # decision-tool path beside the Mission decision.
+    "di_delivery_decide",
+    # Task 8, slice S-IV: the engineering engagement tool (refusing in
+    # this build until the integrated controls exist).
+    "di_mission_dispatch",
+    # Task 8, slice S-VI: the pure delivery status read.
+    "di_delivery_status",
+    # Task 8, slice S-VII: the pure Mission status read, the client-mediated
+    # Mission control (hold / resume / cancel), the attention pull and the
+    # client-mediated attention acknowledgment.
+    "di_mission_status", "di_mission_control", "di_attention_pull",
+    "di_attention_ack",
 )
 
 GROK_MCP_FILES = sorted((REPO_ROOT / "grok_mcp").glob("*.py"))
@@ -526,7 +539,7 @@ class AProtocolOverTheWireTests(ServerFixture):
         self.assertEqual(status, 200)
         self.assertEqual(body["result"], {})
 
-    def test_A4_tools_list_enumerates_exactly_eight_tools(self):
+    def test_A4_tools_list_enumerates_exactly_nine_tools(self):
         client, _, _ = self.ready_client()
         status, headers, body = client.rpc("tools/list")
         self.assertEqual(status, 200)
@@ -539,11 +552,14 @@ class AProtocolOverTheWireTests(ServerFixture):
         status, headers, body = client.rpc("tools/list")
         served = body["result"]["tools"]
         # The three original tools are byte-exact against the hand-written
-        # table; the five Mission tools are exact against the protocol
-        # table as served over the wire (their shapes are pinned in G).
+        # table; the five Mission tools and the decision tool are exact
+        # against the protocol table as served over the wire (their
+        # shapes are pinned in G and in tests/test_grok_elicitation.py).
         self.assertEqual(served[:3], expected_tools())
         self.assertEqual(served[3:], [dict(t) for t in protocol.TOOLS[3:]])
-        self.assertEqual(len(served), 8)
+        # Task 8 S-IV: + di_mission_dispatch; S-VI: + the two delivery tools;
+        # S-VII: + status, control, attention pull and acknowledgment.
+        self.assertEqual(len(served), 16)
         for tool in served:
             for key in ("inputSchema", "outputSchema"):
                 self.assertIs(tool[key]["additionalProperties"], False)
@@ -1348,7 +1364,12 @@ class EAuthorityAndSecurityTests(ServerFixture):
                 self.assertNotIn(".herd", token.string, (path, token.start))
 
     def test_E26_tool_table_is_narrow(self):
-        self.assertEqual(len(protocol.TOOLS), 8)
+        # Task 8 S-IV: +1 (dispatch); S-VI: +2 (the delivery decision and
+        # the delivery status read); S-VII: +4 (the pure Mission status, the
+        # client-mediated control whose ``control`` input names hold, resume
+        # or cancel — NO tool name carries "cancel" — the attention pull and
+        # the client-mediated attention acknowledgment).
+        self.assertEqual(len(protocol.TOOLS), 16)
         self.assertEqual(
             [t["name"] for t in protocol.TOOLS], list(EXPECTED_TOOL_NAMES),
         )
@@ -1362,12 +1383,34 @@ class EAuthorityAndSecurityTests(ServerFixture):
                 self.assertNotIn(banned, names, tool["name"])
             self.assertIs(tool["inputSchema"]["additionalProperties"], False)
             self.assertIn("outputSchema", tool)
-        # No run, dispatch, capability, shell, Git, delivery, merge,
-        # release, or deploy tool exists.
+        # No run, capability, shell, Git, delivery, merge, release, or
+        # deploy tool exists. Task 8 S-IV adds EXACTLY ONE tool whose name
+        # carries "dispatch": the brief-mandated ``di_mission_dispatch``
+        # relay, which starts nothing itself (it relays to the local
+        # bootstrap, refusing while unwired — pinned in test_grok_elicitation
+        # and tests/test_mission_engagement.py); every other name stays
+        # clear of the word, and no second such tool may appear.
+        self.assertEqual(
+            [n for n in protocol.TOOL_NAMES if "dispatch" in n],
+            [protocol.TOOL_MISSION_DISPATCH])
+        # Task 8 S-VI adds EXACTLY TWO tools whose names carry "deliver":
+        # the brief-mandated ``di_delivery_decide`` (the human's
+        # client-mediated decision — it performs no effect) and the pure
+        # ``di_delivery_status`` read; the delivery EFFECTS stay the
+        # Runtime's, gated, and no merge/tag/release/deploy tool exists.
+        self.assertEqual(
+            [n for n in protocol.TOOL_NAMES if "deliver" in n],
+            [protocol.TOOL_DELIVERY_DECIDE, protocol.TOOL_DELIVERY_STATUS])
         for name in protocol.TOOL_NAMES:
-            for word in ("run", "dispatch", "capabilit", "shell", "git",
-                         "deliver", "merge", "release", "deploy", "push",
-                         "commit", "publish", "cancel", "revoke"):
+            banned = ("run", "capabilit", "shell", "git", "merge",
+                      "release", "deploy", "push", "commit", "publish",
+                      "cancel", "revoke")
+            if name != protocol.TOOL_MISSION_DISPATCH:
+                banned = banned + ("dispatch",)
+            if name not in (protocol.TOOL_DELIVERY_DECIDE,
+                            protocol.TOOL_DELIVERY_STATUS):
+                banned = banned + ("deliver",)
+            for word in banned:
                 self.assertNotIn(word, name, name)
 
     def test_E27_auth_failures_refuse_before_the_controller(self):

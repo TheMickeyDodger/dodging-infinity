@@ -267,7 +267,8 @@ def real_shaped_spawn_result(repo, task_id, parent_repo,
 # escape). This allowlist is NOT the detection mechanism; the full
 # recorded argv log is.
 _FAKE_EXECUTABLE_GIT_SUBCOMMANDS = frozenset(
-    ("clone", "remote", "rev-parse", "checkout", "status", "diff")
+    ("clone", "remote", "rev-parse", "checkout", "status", "diff",
+     "diff-index")
 )
 
 
@@ -366,6 +367,22 @@ class FakeGitTransport(object):
             "total_bytes": len(data),
             "digest": hashlib.sha256(data).hexdigest(),
         }
+
+    def diff_index_raw_readonly(self, path, base_oid):
+        # Task 8 S-V (R2-11-b): the real verb's argv, executed as plain
+        # local git (bytes, exactly as the real capture returns them).
+        self.calls.append(("diff_index_raw_readonly", path, base_oid))
+        self.argv_log.append(["git", "--no-optional-locks", "-C", path, "diff-index",
+                              "--cached", "--raw", "--abbrev=40", "--no-renames",
+                              "-z", base_oid])
+        from _hermetic_git import hermetic_git_argv
+        completed = subprocess.run(hermetic_git_argv([
+            "--no-optional-locks", "-C", path, "diff-index", "--cached", "--raw",
+            "--abbrev=40", "--no-renames", "-z", base_oid]), capture_output=True)
+        if completed.returncode != 0:
+            raise GitTransportError("fake transport: diff-index failed (%d)"
+                                    % completed.returncode)
+        return completed.stdout
 
     def status_porcelain_readonly(self, path):
         # --no-optional-locks mirrors the real verb's non-mutation
@@ -675,9 +692,17 @@ class RuntimeCase(unittest.TestCase):
         self.observer = observer
         self.spawn_record_overrides = {}
         self.spawn_record_calls = []
+        # Task 8 cap correction: the Broker scopes each read to one lease
+        # (``relevant``). This double RECORDS the rule it was handed and
+        # returns the configured projection VERBATIM — the tests keep
+        # exercising the Broker's own matchers; the production scoping is
+        # exercised through the real projection (test_observe and the
+        # production-composition loop tests).
+        self.spawn_record_scopes = []
 
-        def spawn_records(repo_path):
+        def spawn_records(repo_path, relevant=None):
             self.spawn_record_calls.append(repo_path)
+            self.spawn_record_scopes.append(relevant)
             return real_shaped_spawn_records(
                 **self.spawn_record_overrides
             )
@@ -1691,9 +1716,12 @@ class GitTransportArgvPinTests(unittest.TestCase):
     # closing pass): a SIXTH method fails the suite until it is added
     # here AND exercised by the argv pin below — the same
     # derive-then-require-each-member shape as the bound registry.
+    # Task 8 S-V (R2-11-b): the staged-candidate read (P1-A6 identity)
+    # is the eighth verb, pinned here and in the argv pin below.
     PINNED_METHODS = (
-        "checkout_detached", "clone", "diff_head", "head_commit",
-        "remote_url", "status_porcelain", "status_porcelain_readonly",
+        "checkout_detached", "clone", "diff_head", "diff_index_raw_readonly",
+        "head_commit", "remote_url", "status_porcelain",
+        "status_porcelain_readonly",
     )
 
     def test_transport_method_set_is_pinned(self):
@@ -1739,6 +1767,7 @@ class GitTransportArgvPinTests(unittest.TestCase):
         transport.status_porcelain("P")
         transport.diff_head("P")
         transport.status_porcelain_readonly("P")
+        transport.diff_index_raw_readonly("P", "BASE")
         self.assertEqual(recorded, [
             ["git", "clone", "--quiet", "--", "URL", "PATH"],
             ["git", "-C", "P", "remote", "get-url", "origin"],
@@ -1754,6 +1783,11 @@ class GitTransportArgvPinTests(unittest.TestCase):
             ["git", "--no-optional-locks", "-c",
              "core.quotePath=true", "-C", "P", "status",
              "--porcelain"],
+            # Task 8 S-V (R2-11-b): the P1-A6 staged-candidate read —
+            # the delivery transport's exact argv, index-lock free.
+            ["git", "--no-optional-locks", "-C", "P", "diff-index",
+             "--cached", "--raw", "--abbrev=40", "--no-renames", "-z",
+             "BASE"],
         ])
         # Cross-check: every pinned method was exercised above, so
         # the method-set pin and the argv pin can never drift apart.
@@ -2093,7 +2127,7 @@ class DispatchTests(RuntimeCase):
         expected_models = {
             "supervisor": "gpt-6-astra",
             "lead": "claude-opus-5",
-            "executor": "claude-fable-5-1",
+            "executor": "claude-opus-5-5",
             "reviewer": "gpt-6-astra",
         }
         expected_kinds = {
@@ -2130,7 +2164,7 @@ class DispatchTests(RuntimeCase):
         )
         self.assertEqual(
             result["roles"]["executor"]["args"][2:4],
-            ["--effort", "high"],
+            ["--effort", "xhigh"],
         )
         self.assertIn(
             'sandbox_mode="read-only"',
@@ -4731,6 +4765,75 @@ class I5ReconcileTests(RuntimeCase):
             wa_record.PHASE_BLOCKED,
         )
 
+    # -- Task 8 cap correction: reconcile through the production projection --
+
+    def reconcile_with_history(self, relevant, prefix=40):
+        """The r6 production shape, with ``prefix`` UNRELATED spawn records
+        persisted BEFORE the ones naming this lease (``relevant``: their task
+        ids), read through the PRODUCTION projection. Returns the lease."""
+        from herdr.observe import (
+            observe as real_observe,
+            observe_spawn_records as real_spawn_records,
+        )
+        entry = self.unresolved_dispatched()
+        lease_real = os.path.realpath(entry["workspace_lease"]["path_realpath"])
+        with open(os.path.join(lease_real, ".herd", "state", "task.json"), "w") as handle:
+            handle.write(json.dumps({"id": TARGET_TASK_ID, "status": "ACTIVE",
+                                     "started_at": 1}))
+
+        def child(repo, task_id, n):
+            return {"requested_at": 1 + n, "parent_repo": self.control,
+                    "parent_task_id": None, "dependency": False, "repo": repo,
+                    "task_id": task_id, "task_status": "ACTIVE",
+                    "workspace_id": "w-%d" % n, "agents": {}}
+        history = [child(os.path.join(self.base, "old", "wf-old-%03d" % n),
+                         "20260801-0000%02d-%06x" % (n % 60, n), n) for n in range(prefix)]
+        history += [child(lease_real, task_id, 100 + n) for n, task_id in enumerate(relevant)]
+        control_state = os.path.join(self.control, ".herd", "state")
+        os.makedirs(control_state)
+        with open(os.path.join(control_state, "children.json"), "w") as handle:
+            handle.write(json.dumps({"version": 1, "children": history}))
+        self.broker._observe = lambda repo: real_observe(repo, now=NOW, probe_agents=False)
+        self.broker._spawn_records = real_spawn_records
+        # The unscoped (default) projection is truncated in file order and
+        # never reaches the lease's records — the defect's precondition.
+        unscoped = real_spawn_records(self.control)
+        self.assertEqual((unscoped["truncated"], unscoped["count"]),
+                         (True, prefix + len(relevant)))
+        self.assertNotIn(lease_real, [r["repo"] for r in unscoped["listed"]])
+        return lease_real
+
+    def test_CAP_reconcile_binds_the_relevant_record_beyond_an_unrelated_prefix(self):
+        self.reconcile_with_history([TARGET_TASK_ID])
+        spawns_before = len(self.spawn_requests)
+        outcome = self.reconcile()
+        self.assertTrue(outcome.ok, (outcome.problem, outcome.detail))
+        self.assertEqual(outcome.outcome, broker_module.OUTCOME_RECONCILED)
+        self.assertEqual(self.fresh_workflows()["workflows"]["wf-0001"]
+                         ["target_engine"]["task_id"], TARGET_TASK_ID)
+        self.assertEqual(len(self.spawn_requests), spawns_before)
+
+    def test_CAP_reconcile_a_differently_tasked_same_lease_record_still_conflicts(self):
+        """The scope is the LEASE, never the task: a record of this lease
+        under another task, sitting past the unrelated prefix, stays in the
+        evidence and still refuses the binding."""
+        self.reconcile_with_history([TARGET_TASK_ID, "20260901-000001-eeeeee"])
+        outcome = self.reconcile()
+        self.assertEqual(outcome.problem, broker_module.PROBLEM_RECONCILE_CONFLICT)
+        entry = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual((entry["phase"], entry["target_engine"]),
+                         (wa_record.PHASE_BLOCKED, None))
+
+    def test_CAP_reconcile_a_genuinely_over_bound_relevant_set_blocks_as_truncated(self):
+        self.reconcile_with_history([TARGET_TASK_ID] * 33)
+        spawns_before = len(self.spawn_requests)
+        outcome = self.reconcile()
+        self.assertEqual(outcome.problem, broker_module.PROBLEM_RECONCILE_TRUNCATED)
+        entry = self.fresh_workflows()["workflows"]["wf-0001"]
+        self.assertEqual((entry["phase"], entry["target_engine"]),
+                         (wa_record.PHASE_BLOCKED, None))
+        self.assertEqual(len(self.spawn_requests), spawns_before)
+
     def test_child_field_names_derived_from_herd_writer(self):
         # CONTRACT: the field names consumed (`repo`, `task_id`)
         # come from herd's OWN writer — derived from
@@ -5151,13 +5254,19 @@ class RecordGrowthContainmentDerivationTests(unittest.TestCase):
                     % (module, class_name, function),
                 )
 
+    # The Broker's public entries, each a containment boundary. Task 8
+    # S-V added ``maintain`` (the Runtime pass's recovery / retention /
+    # candidate maintenance, which has no lifecycle capability) beside
+    # ``perform``; every property below is derived for EACH entry.
+    PUBLIC_ENTRIES = ("maintain", "perform")
+
     def test_the_perform_boundary_actually_covers_the_growers(self):
-        # The claim "a TargetBroker method is contained by perform"
-        # holds only if (a) perform is the SOLE public entry, (b) a
-        # try in perform catches BOTH StoreError and RecordError,
-        # and (c) every perform call into a method that can reach
-        # an uncontained save lies INSIDE that try. All three are
-        # derived, not assumed.
+        # The claim "a TargetBroker method is contained by its entry"
+        # holds only if (a) the public entries are exactly
+        # PUBLIC_ENTRIES, (b) each entry holds exactly ONE try catching
+        # BOTH StoreError and RecordError, and (c) every call an entry
+        # makes into a method that can reach an uncontained save lies
+        # INSIDE that entry's try. All three are derived, not assumed.
         import ast
         sites, trees = self._analyze()
         tree, parents = trees["broker.py"]
@@ -5170,32 +5279,15 @@ class RecordGrowthContainmentDerivationTests(unittest.TestCase):
             node.name: node for node in target_broker.body
             if isinstance(node, ast.FunctionDef)
         }
-        public = [name for name in methods
-                  if not name.startswith("_")]
+        public = sorted(name for name in methods
+                        if not name.startswith("_"))
         self.assertEqual(
-            public, ["perform"],
+            public, sorted(self.PUBLIC_ENTRIES),
             "a new public TargetBroker entry point bypasses the"
-            " perform containment boundary",
+            " containment boundaries",
         )
-        # (b) exactly one containment try.
-        perform = methods["perform"]
-        containment = [
-            node for node in ast.walk(perform)
-            if isinstance(node, ast.Try)
-            and {"StoreError", "RecordError"} <= set().union(
-                *(self._handler_names(handler)
-                  for handler in node.handlers)
-            )
-        ]
-        self.assertEqual(
-            len(containment), 1,
-            "perform must hold exactly ONE try catching both"
-            " StoreError and RecordError",
-        )
-        boundary = containment[0]
-        boundary_nodes = set(ast.walk(boundary))
         # (c) methods with an uncontained save, plus everything
-        # that can transitively reach one.
+        # that can transitively reach one (never through an entry).
         uncontained = {
             function for module, class_name, function, _, contained,
             _ in sites
@@ -5216,34 +5308,58 @@ class RecordGrowthContainmentDerivationTests(unittest.TestCase):
         while True:
             grown = reach | {
                 name for name in methods
-                if name != "perform" and calls[name] & reach
+                if name not in self.PUBLIC_ENTRIES and calls[name] & reach
             }
             if grown == reach:
                 break
             reach = grown
-        for call in ast.walk(perform):
-            if (isinstance(call, ast.Call)
-                    and isinstance(call.func, ast.Attribute)
-                    and isinstance(call.func.value, ast.Name)
-                    and call.func.value.id == "self"
-                    and call.func.attr in reach):
-                self.assertIn(
-                    call, boundary_nodes,
-                    "perform calls self.%s — which can grow the"
-                    " record and save — OUTSIDE the containment"
-                    " try" % call.func.attr,
+        # Anti-vacuity for the maintenance entry: its handlers reach
+        # record-growing saves (recovery settles starts, the candidate
+        # observation appends a receipt).
+        self.assertTrue({"_maintain_recovery", "_maintain_candidate"} <= reach)
+        for entry_name in self.PUBLIC_ENTRIES:
+            with self.subTest(entry=entry_name):
+                entry = methods[entry_name]
+                # (b) exactly one containment try.
+                containment = [
+                    node for node in ast.walk(entry)
+                    if isinstance(node, ast.Try)
+                    and {"StoreError", "RecordError"} <= set().union(
+                        *(self._handler_names(handler)
+                          for handler in node.handlers)
+                    )
+                ]
+                self.assertEqual(
+                    len(containment), 1,
+                    "%s must hold exactly ONE try catching both"
+                    " StoreError and RecordError" % entry_name,
                 )
-        # The boundary handler routes to the containment routine,
-        # and that routine's own save is locally contained (found
-        # by the derivation, not assumed).
-        handler_calls = {
-            call.func.attr
-            for handler in boundary.handlers
-            for call in ast.walk(handler)
-            if isinstance(call, ast.Call)
-            and isinstance(call.func, ast.Attribute)
-        }
-        self.assertIn("_contain_unsavable_record", handler_calls)
+                boundary = containment[0]
+                boundary_nodes = set(ast.walk(boundary))
+                reached = 0
+                for call in ast.walk(entry):
+                    if (isinstance(call, ast.Call)
+                            and isinstance(call.func, ast.Attribute)
+                            and isinstance(call.func.value, ast.Name)
+                            and call.func.value.id == "self"
+                            and call.func.attr in reach):
+                        reached += 1
+                        self.assertIn(
+                            call, boundary_nodes,
+                            "%s calls self.%s — which can grow the"
+                            " record and save — OUTSIDE the containment"
+                            " try" % (entry_name, call.func.attr),
+                        )
+                self.assertGreater(reached, 0)  # anti-vacuity
+                # The boundary handler routes to the containment routine.
+                handler_calls = {
+                    call.func.attr
+                    for handler in boundary.handlers
+                    for call in ast.walk(handler)
+                    if isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                }
+                self.assertIn("_contain_unsavable_record", handler_calls)
         self.assertIn(
             ("broker.py", "TargetBroker",
              "_contain_unsavable_record", True),

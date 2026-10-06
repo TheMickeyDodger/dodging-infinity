@@ -736,6 +736,9 @@ class AllSpawnRecordProjectionTests(unittest.TestCase):
             self.assert_projection_shape(projection)
             self.assertEqual(projection["state"], "available")
             self.assertEqual(projection["count"], 1)
+            # Task 8 ownership correction (cause 3): the recorded workspace
+            # id is carried exactly; the EMPTY agent mapping is not a usable
+            # agent set and projects as None.
             self.assertEqual(projection["listed"], [{
                 "parent_task_id": None,
                 "dependency": False,
@@ -743,6 +746,8 @@ class AllSpawnRecordProjectionTests(unittest.TestCase):
                 "task_id": "target-task-exact",
                 "recorded_status": "ACTIVE",
                 "role": None,
+                "workspace_id": "w",
+                "agents": None,
             }])
             # Canonical observe remains current-task-correlated: no
             # current task means zero children, even though the narrow
@@ -752,6 +757,90 @@ class AllSpawnRecordProjectionTests(unittest.TestCase):
             self.assertEqual(canonical["children"]["state"], "empty")
             self.assertEqual(canonical["children"]["count"], 0)
             self.assertEqual(canonical["children"]["listed"], [])
+
+    def spawn_record(self, **overrides):
+        """The record ``HerdrControlPlane.spawn_child`` writes, key for key."""
+        record = {
+            "requested_at": 1,
+            "parent_repo": "/control",
+            "parent_task_id": None,
+            "dependency": False,
+            "repo": "/managed/lease-realpath",
+            "task_id": "target-task-exact",
+            "task_status": "ACTIVE",
+            "workspace_id": "ws-started-1",
+            "agents": {"supervisor": "sup-1", "lead": "lead-1", "pod": "pod-1"},
+        }
+        record.update(overrides)
+        return record
+
+    def project(self, *records):
+        with tempfile.TemporaryDirectory() as td:
+            repo = make_git_repo(td)
+            write_json(repo / ".herd" / "state" / "children.json", {
+                "version": 1, "children": list(records),
+            })
+            return observe_spawn_records(repo)
+
+    def test_the_spawned_workspace_and_agents_are_projected_exactly(self):
+        """Task 8 ownership correction (cause 3): the ordinary spawn's child
+        record names its runtime workspace and agents, and the release's
+        child-record proof reads both — the projection carries them exactly,
+        so an ordinary spawn is provable rather than degraded."""
+        projection = self.project(self.spawn_record())
+        self.assertEqual(projection["state"], "available")
+        (listed,) = projection["listed"]
+        self.assertEqual(
+            (listed.get("workspace_id"), listed.get("agents")),
+            ("ws-started-1", {"supervisor": "sup-1", "lead": "lead-1", "pod": "pod-1"}))
+
+    def test_an_unusable_workspace_identity_projects_as_none_never_truncated(self):
+        """Fail closed per FIELD: an identity that is absent, not a string,
+        empty or beyond the string bound, or an agent mapping that is absent,
+        empty, oversized or holds any non-exact entry, projects as None — a
+        truncated id or a partial agent set would describe another workspace.
+        The record itself (its repo and task) stays projected and the
+        projection stays ``available``: the proof then reports no workspace
+        id / no usable agents, never a match."""
+        long_id = "w" * (_OBSERVE_MAX_STRING + 1)
+        too_many = dict(("r%d" % i, "a%d" % i)
+                        for i in range(_OBSERVE_MAX_LISTED_AGENTS + 1))
+        cases = (
+            ({"workspace_id": None}, "workspace_id"),
+            ({"workspace_id": 7}, "workspace_id"),
+            ({"workspace_id": ""}, "workspace_id"),
+            ({"workspace_id": long_id}, "workspace_id"),
+            ({"agents": None}, "agents"),
+            ({"agents": {}}, "agents"),
+            ({"agents": ["sup-1", "lead-1"]}, "agents"),
+            ({"agents": too_many}, "agents"),
+            ({"agents": {"supervisor": "sup-1", "lead": 3}}, "agents"),
+            ({"agents": {"supervisor": "sup-1", "lead": ""}}, "agents"),
+            ({"agents": {"supervisor": "sup-1", "lead": long_id}}, "agents"),
+        )
+        for overrides, field in cases:
+            with self.subTest(overrides=repr(overrides)[:80]):
+                projection = self.project(self.spawn_record(**overrides))
+                self.assertEqual(projection["state"], "available")
+                (listed,) = projection["listed"]
+                self.assertIsNone(listed[field])
+                other = "agents" if field == "workspace_id" else "workspace_id"
+                self.assertIsNotNone(listed[other])
+                self.assertEqual((listed["repo"], listed["task_id"]),
+                                 ("/managed/lease-realpath", "target-task-exact"))
+        # A record without either key (a pre-correction writer) projects
+        # both as None; it is still listed, not malformed.
+        legacy = self.spawn_record()
+        del legacy["workspace_id"], legacy["agents"]
+        (listed,) = self.project(legacy)["listed"]
+        self.assertEqual((listed["workspace_id"], listed["agents"]), (None, None))
+        # Exactly at the bounds, both are carried.
+        at_bound = dict(("r%d" % i, "a" * _OBSERVE_MAX_STRING)
+                        for i in range(_OBSERVE_MAX_LISTED_AGENTS))
+        (listed,) = self.project(self.spawn_record(
+            workspace_id="w" * _OBSERVE_MAX_STRING, agents=at_bound))["listed"]
+        self.assertEqual((listed["workspace_id"], listed["agents"]),
+                         ("w" * _OBSERVE_MAX_STRING, at_bound))
 
     def test_malformed_json_object_list_and_record_fail_closed(self):
         payloads = (
@@ -814,6 +903,620 @@ class AllSpawnRecordProjectionTests(unittest.TestCase):
                 % (_OBSERVE_MAX_CHILDREN, total),
                 projection["detail"],
             )
+
+
+class ScopedSpawnRecordProjectionTests(unittest.TestCase):
+    """Task 8 cap correction: ``observe_spawn_records(repo, relevant=…)``
+    classifies EVERY record and bounds only the RELEVANT set, so unrelated
+    history can neither hide a relevant record nor truncate it."""
+
+    LEASE = "/managed/workspaces/wf-m-lease"
+
+    def record(self, repo, task_id, n=0, **overrides):
+        """The record ``HerdrControlPlane.spawn_child`` writes, key for key."""
+        record = {
+            "requested_at": 1000 + n, "parent_repo": "/control",
+            "parent_task_id": None, "dependency": False, "repo": repo,
+            "task_id": task_id, "task_status": "ACTIVE",
+            "workspace_id": "ws-%d" % n,
+            "agents": {"supervisor": "sup-%d" % n, "lead": "lead-%d" % n},
+        }
+        record.update(overrides)
+        return record
+
+    def unrelated(self, count, start=0):
+        return [self.record("/managed/workspaces/wf-old-%03d" % n,
+                            "20260901-0000%02d-%06x" % (n % 60, n), n)
+                for n in range(start, start + count)]
+
+    def project(self, records, relevant):
+        with tempfile.TemporaryDirectory() as td:
+            repo = make_git_repo(td)
+            write_json(repo / ".herd" / "state" / "children.json",
+                       {"version": 1, "children": list(records)})
+            return observe_spawn_records(repo), observe_spawn_records(repo, relevant=relevant)
+
+    def names_lease(self, calls=None):
+        def rule(repo):
+            if calls is not None:
+                calls.append(repo)
+            return repo == self.LEASE
+        return rule
+
+    def listed(self, record):
+        return {"parent_task_id": None, "dependency": False, "repo": record["repo"],
+                "task_id": record["task_id"], "recorded_status": "ACTIVE", "role": None,
+                "workspace_id": record["workspace_id"], "agents": record["agents"]}
+
+    def test_relevant_records_beyond_an_unrelated_prefix_are_listed_completely(self):
+        first = self.record(self.LEASE, "20260924-133512-aaaaaa", 100)
+        # A differently-tasked record of the SAME lease stays relevant: the
+        # scope is the lease, never the task.
+        second = self.record(self.LEASE, "20260924-140000-bbbbbb", 101)
+        records = self.unrelated(40) + [first, second] + self.unrelated(3, start=40)
+        calls = []
+        unscoped, scoped = self.project(records, self.names_lease(calls))
+        # The default projection is unchanged: global count, truncated at
+        # 32 in file order — neither relevant record is visible there.
+        self.assertEqual((unscoped["state"], unscoped["count"], unscoped["truncated"],
+                          len(unscoped["listed"])), ("available", 45, True, 32))
+        self.assertNotIn(self.LEASE, [r["repo"] for r in unscoped["listed"]])
+        self.assertNotIn("scope", unscoped)
+        # Scoped: every record classified once, by its repo STRING, in order;
+        # the relevant set complete and exact.
+        self.assertEqual(calls, [r["repo"] for r in records])
+        self.assertEqual(scoped, {
+            "state": "available", "count": 2, "truncated": False,
+            "listed": [self.listed(first), self.listed(second)],
+            "detail": None, "scope": {"records": 45}})
+
+    def test_a_genuinely_over_bound_relevant_set_is_truncated(self):
+        relevant = [self.record(self.LEASE, "20260924-1400%02d-cccccc" % n, 200 + n)
+                    for n in range(_OBSERVE_MAX_CHILDREN + 1)]
+        records = self.unrelated(10) + relevant + self.unrelated(7, start=10)
+        _unscoped, scoped = self.project(records, self.names_lease())
+        self.assertEqual((scoped["state"], scoped["count"], scoped["truncated"]),
+                         ("available", _OBSERVE_MAX_CHILDREN + 1, True))
+        self.assertEqual(scoped["listed"], [self.listed(r)
+                                            for r in relevant[:_OBSERVE_MAX_CHILDREN]])
+        self.assertEqual(scoped["detail"],
+                         "relevant spawn records truncated to %d of %d (%d records in"
+                         " the file)" % (_OBSERVE_MAX_CHILDREN, _OBSERVE_MAX_CHILDREN + 1,
+                                         len(records)))
+        # Exactly at the bound: complete, not truncated.
+        _unscoped, scoped = self.project(
+            self.unrelated(40) + relevant[:_OBSERVE_MAX_CHILDREN], self.names_lease())
+        self.assertEqual((scoped["count"], scoped["truncated"], len(scoped["listed"])),
+                         (_OBSERVE_MAX_CHILDREN, False, _OBSERVE_MAX_CHILDREN))
+
+    def test_undecidable_relevance_fails_closed_wherever_it_sits(self):
+        """A record whose relevance cannot be decided might be relevant: it
+        is never passed over as unrelated — the projection is malformed, with
+        no count and no listing."""
+        def raises_on_nul(repo):
+            if "\0" in repo:
+                raise ValueError("embedded null byte")
+            return False
+
+        cases = (
+            ("not an object", ["not-a-record"], self.names_lease(),
+             "child record 40 is not a JSON object"),
+            ("no repo", [self.record(None, "t", 1)], self.names_lease(),
+             "child record 40 names no repository, so its relevance cannot be decided"),
+            ("blank repo", [self.record("  ", "t", 1)], self.names_lease(),
+             "child record 40 names no repository, so its relevance cannot be decided"),
+            ("the rule raises", [self.record("/x\0y", "t", 1)], raises_on_nul,
+             "child record 40: its relevance could not be decided (ValueError)"),
+            ("the rule answers neither yes nor no", [self.record("/elsewhere", "t", 1)],
+             lambda repo: None if repo == "/elsewhere" else False,
+             "child record 40: its relevance could not be decided (NoneType)"),
+        )
+        for label, odd, rule, detail in cases:
+            with self.subTest(label):
+                _unscoped, scoped = self.project(self.unrelated(40) + odd, rule)
+                self.assertEqual(scoped, {"state": "malformed", "count": None,
+                                          "truncated": False, "listed": [],
+                                          "detail": detail})
+
+    def test_a_malformed_relevant_record_fails_closed_an_unrelated_one_does_not(self):
+        good = self.record(self.LEASE, "20260924-133512-aaaaaa", 100)
+        broken_unrelated = self.record("/managed/workspaces/wf-old-x", None, 5,
+                                       dependency="no")
+        _unscoped, scoped = self.project([broken_unrelated, good], self.names_lease())
+        self.assertEqual((scoped["state"], scoped["count"], scoped["listed"]),
+                         ("available", 1, [self.listed(good)]))
+        broken_relevant = self.record(self.LEASE, None, 6)
+        _unscoped, scoped = self.project([good, broken_relevant], self.names_lease())
+        self.assertEqual(scoped, {"state": "malformed", "count": None, "truncated": False,
+                                  "listed": [], "detail":
+                                  "child record 1 has malformed identity fields"})
+
+    def test_no_relevant_record_is_a_clean_empty_scope(self):
+        _unscoped, scoped = self.project(self.unrelated(50), self.names_lease())
+        self.assertEqual(scoped, {"state": "empty", "count": 0, "truncated": False,
+                                  "listed": [], "detail": None, "scope": {"records": 50}})
+
+
+class IncrementalScopedReadTests(unittest.TestCase):
+    """Task 8 input-size correction: a SCOPED read of ``children.json`` is
+    incremental and bounded PER VALUE (``_SpawnRecordStream``), so a valid
+    UNRELATED prefix that pushes the file past ``_OBSERVE_MAX_FILE_BYTES``
+    no longer makes a small RELEVANT set unobservable; the UNSCOPED read
+    keeps the whole-file bound and its refusal exactly. Files are written in
+    the writer's own format (``json.dumps(…, indent=2) + "\\n"``)."""
+
+    LEASE = ScopedSpawnRecordProjectionTests.LEASE
+    record = ScopedSpawnRecordProjectionTests.record
+    unrelated = ScopedSpawnRecordProjectionTests.unrelated
+    names_lease = ScopedSpawnRecordProjectionTests.names_lease
+    listed = ScopedSpawnRecordProjectionTests.listed
+
+    def setUp(self):
+        self.base = Path(tempfile.mkdtemp(prefix="is-observe-"))
+        self.addCleanup(shutil.rmtree, str(self.base), True)
+        self.path = self.base / ".herd" / "state" / "children.json"
+        self.path.parent.mkdir(parents=True)
+
+    @staticmethod
+    def text(records, **document):
+        document = dict({"version": 1}, **document)
+        document["children"] = list(records)
+        return json.dumps(document, indent=2) + "\n"
+
+    def write(self, records=None, raw=None):
+        data = raw if raw is not None else self.text(records).encode("ascii")
+        self.path.write_bytes(data)
+        return len(data)
+
+    def relevant_pair(self):
+        return [self.record(self.LEASE, "20260924-133512-aaaaaa", 9001),
+                self.record(self.LEASE, "20260924-140000-bbbbbb", 9002)]
+
+    def past_the_bound(self, relevant, before=5, over=64 * 1024):
+        """Records whose file is ``over`` bytes past the bound: the relevant
+        ones placed after ``before`` unrelated records and after the bulk."""
+        head = self.unrelated(before)
+        count = 0
+        records = head + [relevant[0]]
+        while True:
+            count += 500
+            records = head + [relevant[0]] + self.unrelated(count, start=before) + relevant[1:]
+            if len(self.text(records)) > _OBSERVE_MAX_FILE_BYTES + over:
+                return records
+
+    def sized(self, relevant, size):
+        """Records whose writer-format text is EXACTLY ``size`` bytes: the
+        bulk padded through an UNRELATED record's extra field."""
+        bulk = self.unrelated(2)
+        while len(self.text(bulk + relevant)) < size - 4096:
+            bulk = bulk + self.unrelated(200, start=len(bulk))
+        while len(self.text(bulk + relevant)) > size - 64:
+            bulk = bulk[:-1]
+        bulk[0] = dict(bulk[0], pad="")
+        missing = size - len(self.text(bulk + relevant))
+        bulk[0]["pad"] = "x" * missing
+        records = bulk + relevant
+        self.assertEqual(len(self.text(records)), size)
+        return records
+
+    def scoped(self):
+        return observe_spawn_records(self.base, relevant=self.names_lease())
+
+    def expected(self, relevant, total):
+        return {"state": "available", "count": len(relevant), "truncated": False,
+                "listed": [self.listed(r) for r in relevant], "detail": None,
+                "scope": {"records": total}}
+
+    # -- the positive past the bound, and the unscoped read unchanged -------------
+
+    def test_IS1_past_the_bound_the_relevant_set_is_observed_and_unscoped_still_refuses(self):
+        relevant = self.relevant_pair()
+        records = self.past_the_bound(relevant)
+        size = self.write(records)
+        self.assertGreater(size, _OBSERVE_MAX_FILE_BYTES)
+        # The same-lease record of ANOTHER task stays relevant (the scope is
+        # the lease, never the task): both are listed, in file order.
+        self.assertEqual(self.scoped(), self.expected(relevant, len(records)))
+        unscoped = observe_spawn_records(self.base)
+        self.assertEqual(unscoped, {
+            "state": "unreadable", "count": None, "truncated": False, "listed": [],
+            "detail": "children.json is %d bytes (observation limit %d)"
+                      % (size, _OBSERVE_MAX_FILE_BYTES)})
+
+    def test_IS2_below_at_and_above_the_bound_the_relevant_set_is_observed(self):
+        relevant = self.relevant_pair()
+        for label, size in (("below", _OBSERVE_MAX_FILE_BYTES - 1),
+                            ("at", _OBSERVE_MAX_FILE_BYTES),
+                            ("above", _OBSERVE_MAX_FILE_BYTES + 1)):
+            with self.subTest(label):
+                records = self.sized(relevant, size)
+                self.assertEqual(self.write(records), size)
+                self.assertEqual(self.scoped(), self.expected(relevant, len(records)))
+                unscoped = observe_spawn_records(self.base)
+                if label == "above":
+                    self.assertEqual((unscoped["state"], unscoped["detail"]),
+                                     ("unreadable", "children.json is %d bytes (observation"
+                                      " limit %d)" % (size, _OBSERVE_MAX_FILE_BYTES)))
+                else:
+                    self.assertEqual((unscoped["state"], unscoped["count"],
+                                      unscoped["truncated"]),
+                                     ("available", len(records), True))
+
+    def test_IS7_unrelated_observation_clients_keep_the_whole_file_bound(self):
+        """The canonical ``observe`` children section (task-correlated,
+        unscoped) keeps today's refusal past the bound too."""
+        records = self.past_the_bound(self.relevant_pair())
+        size = self.write(records)
+        diags = []
+        section = obs_mod._children_section(self.base, "some-task", diags)
+        self.assertEqual((section["state"], section["count"]), ("unreadable", None))
+        self.assertEqual(diags[-1]["detail"], "children.json is %d bytes (observation"
+                         " limit %d)" % (size, _OBSERVE_MAX_FILE_BYTES))
+
+    # -- the bounded-resource guarantee ------------------------------------------
+
+    def test_IS3_one_pass_with_memory_independent_of_the_file(self):
+        import tracemalloc
+        relevant = self.relevant_pair()
+        records = self.past_the_bound(relevant, over=7 * 1024 * 1024)
+        size = self.write(records)
+        self.assertGreater(size, 8 * _OBSERVE_MAX_FILE_BYTES)
+        stream, state, detail = obs_mod._SpawnRecordStream.open(self.path)
+        try:
+            count = sum(1 for _record in stream)
+        finally:
+            stream.close()
+        longest = max(len(json.dumps(r, indent=2)) for r in records) + 64
+        # ONE forward pass over every byte; the text held never exceeds one
+        # chunk plus the longest value (here small records).
+        self.assertEqual((state, count, stream.bytes_read), ("available", len(records), size))
+        self.assertLessEqual(stream.peak_chars, obs_mod._OBSERVE_SCAN_CHUNK_BYTES + longest)
+        # The REAL projection's peak Python allocation stays far below the
+        # file (a whole-file read would hold the text and every record).
+        tracemalloc.start()
+        try:
+            projection = self.scoped()
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(projection, self.expected(relevant, len(records)))
+        self.assertLess(peak, 2 * _OBSERVE_MAX_FILE_BYTES, peak)
+
+    def test_IS3b_the_per_value_ceiling_holds_for_the_largest_admissible_value(self):
+        relevant = self.relevant_pair()
+        big = dict(self.unrelated(1, start=77)[0], pad="y" * (_OBSERVE_MAX_FILE_BYTES - 4096))
+        records = [big] + relevant + self.unrelated(10)
+        size = self.write(records)
+        stream, state, _detail = obs_mod._SpawnRecordStream.open(self.path)
+        try:
+            self.assertEqual(sum(1 for _record in stream), len(records))
+        finally:
+            stream.close()
+        self.assertEqual(stream.bytes_read, size)
+        self.assertLessEqual(stream.peak_chars,
+                             _OBSERVE_MAX_FILE_BYTES + obs_mod._OBSERVE_SCAN_CHUNK_BYTES)
+        self.assertEqual(self.scoped(), self.expected(relevant, len(records)))
+
+    def test_IS4_a_value_over_the_per_value_bound_fails_closed(self):
+        relevant = self.relevant_pair()
+        big = dict(self.unrelated(1, start=77)[0], pad="y" * (_OBSERVE_MAX_FILE_BYTES + 1))
+        self.write(relevant[:1] + [big] + relevant[1:])
+        self.assertEqual(self.scoped(), {
+            "state": "malformed", "count": None, "truncated": False, "listed": [],
+            "detail": "a value in children.json does not complete within %d characters"
+                      " (not valid JSON, or longer than the per-value bound); its"
+                      " relevance cannot be decided" % _OBSERVE_MAX_FILE_BYTES})
+
+    def test_IS4b_a_completed_value_below_at_and_above_the_per_value_bound(self):
+        """A value that COMPLETES is measured too: its text of bound − 1 and
+        bound characters is read; bound + 1 is refused (the check runs on
+        every successful decode, not only on a value still incomplete)."""
+        relevant = self.relevant_pair()
+        base = dict(self.unrelated(1, start=88)[0], pad="")
+        for label, length, admitted in (("below", _OBSERVE_MAX_FILE_BYTES - 1, True),
+                                        ("at", _OBSERVE_MAX_FILE_BYTES, True),
+                                        ("above", _OBSERVE_MAX_FILE_BYTES + 1, False)):
+            with self.subTest(label):
+                big = dict(base, pad="z" * (length - len(json.dumps(base))))
+                self.assertEqual(len(json.dumps(big)), length)
+                raw = ('{"version": 1, "children": [%s, %s, %s]}\n' % (
+                    json.dumps(relevant[0]), json.dumps(big), json.dumps(relevant[1])))
+                self.write(raw=raw.encode("ascii"))
+                if admitted:
+                    self.assertEqual(self.scoped(), self.expected(relevant, 3))
+                else:
+                    self.assert_refused(
+                        "malformed", "a value in children.json does not complete within %d"
+                        " characters (not valid JSON, or longer than the per-value bound);"
+                        " its relevance cannot be decided" % _OBSERVE_MAX_FILE_BYTES)
+
+    def test_IS5b_a_number_split_at_a_chunk_edge_is_taken_whole(self):
+        """The chunk edge placed after EVERY character of a number token
+        NESTED IN A RECORD — ``1e|+05``, ``1e+|05``, ``1.5e|-2`` … — parses
+        to the one correct value. Scope, stated exactly: the RECORD is the
+        value decoded here, so the split is completed by the OBJECT's
+        re-decode; the SCALAR completion rule (``_complete`` on a numeric
+        value) is exercised by IS5c, not by this test."""
+        for number, expected in (("1e+05", 1e5), ("1e-3", 1e-3), ("1E5", 1e5),
+                                 ("1.5e-2", 0.015), ("12345", 12345), ("-0.25", -0.25)):
+            raw = ('{"version": 1, "children": [{"parent_task_id": null, "dependency":'
+                   ' false, "repo": "%s", "task_id": "t-1", "requested_at": %s,'
+                   ' "workspace_id": "ws-1", "agents": {"supervisor": "s"}}]}\n'
+                   % (self.LEASE, number))
+            offset = raw.index(": %s," % number) + 2
+            self.write(raw=raw.encode("ascii"))
+            for cut in range(1, len(number) + 1):
+                with self.subTest(number=number, after=number[:cut]):
+                    with patch.object(obs_mod, "_OBSERVE_SCAN_CHUNK_BYTES", offset + cut):
+                        stream, state, detail = obs_mod._SpawnRecordStream.open(self.path)
+                        try:
+                            records = list(stream)
+                        finally:
+                            stream.close()
+                        self.assertEqual((state, [r["requested_at"] for r in records]),
+                                         ("available", [expected]))
+                        scoped = self.scoped()
+                        self.assertEqual((scoped["state"], scoped["count"]), ("available", 1))
+
+    def test_IS5c_a_document_level_scalar_split_at_a_chunk_edge_is_taken_whole(self):
+        """The SCALAR branch: a numeric MEMBER VALUE of the document object
+        (``"version": 1e+05``) with the chunk edge after every character of
+        its token. The old rule (a decode ending before the buffer's end is
+        complete) took ``1`` from ``1e``/``1e+``/``1.`` and then rejected the
+        rest of the SAME token as punctuation — a valid file refused."""
+        relevant = self.relevant_pair()
+        for number in ("1e+05", "1e-3", "7E5", "1.5", "-2E-3"):
+            raw = '{"children": [%s, %s], "version": %s}\n' % (
+                json.dumps(relevant[0]), json.dumps(relevant[1]), number)
+            offset = raw.index('"version": ') + len('"version": ')
+            self.write(raw=raw.encode("ascii"))
+            for cut in range(1, len(number) + 1):
+                with self.subTest(number=number, after=number[:cut]):
+                    with patch.object(obs_mod, "_OBSERVE_SCAN_CHUNK_BYTES", offset + cut):
+                        self.assertEqual(self.scoped(), self.expected(relevant, 2))
+
+    def test_IS5_chunk_boundaries_never_split_a_value(self):
+        relevant = self.relevant_pair()
+        records = self.unrelated(12) + [relevant[0]] + self.unrelated(5, start=12) + relevant[1:]
+        raw = (json.dumps({"children": records, "version": 1234567, "flag": True,
+                           "none": None}, indent=2) + "  \n").encode("ascii")
+        self.write(raw=raw)
+        reference = self.scoped()
+        self.assertEqual(reference, self.expected(relevant, len(records)))
+        for chunk in (1, 2, 3, 5, 7, 11, 64, 4093):
+            with self.subTest(chunk=chunk):
+                with patch.object(obs_mod, "_OBSERVE_SCAN_CHUNK_BYTES", chunk):
+                    self.assertEqual(self.scoped(), reference)
+
+    # -- fail closed, truthfully, past the bound ------------------------------------
+
+    def assert_refused(self, state, detail):
+        self.assertEqual(self.scoped(), {"state": state, "count": None, "truncated": False,
+                                         "listed": [], "detail": detail})
+
+    def test_IS6a_a_malformed_relevant_record_past_the_bound(self):
+        relevant = self.relevant_pair()
+        relevant[1] = dict(relevant[1], task_id=None)
+        records = self.past_the_bound(relevant)
+        self.write(records)
+        self.assert_refused("malformed", "child record %d has malformed identity fields"
+                            % (len(records) - 1))
+
+    def test_IS6b_undecidable_relevance_past_the_bound(self):
+        for label, odd, detail in (
+                ("not an object", "not-a-record", "is not a JSON object"),
+                ("no repository", self.record(None, "t", 3),
+                 "names no repository, so its relevance cannot be decided")):
+            with self.subTest(label):
+                records = self.past_the_bound(self.relevant_pair()) + [odd]
+                self.write(records)
+                self.assert_refused("malformed", "child record %d %s"
+                                    % (len(records) - 1, detail))
+
+    def test_IS6c_read_failures_past_the_bound(self):
+        records = self.past_the_bound(self.relevant_pair())
+        self.write(records)
+        with self.subTest("permissions"):
+            os.chmod(self.path, 0)
+            try:
+                self.assert_refused("unreadable", "children.json: PermissionError")
+            finally:
+                os.chmod(self.path, 0o644)
+        with self.subTest("decode"):
+            raw = self.text(records).encode("ascii")
+            cut = raw.rindex(b"wf-old-")
+            self.write(raw=raw[:cut] + b"\xff" + raw[cut + 1:])
+            self.assert_refused("unreadable", "children.json could not be decoded")
+        with self.subTest("I/O"):
+            self.write(records)
+            real_open = open
+
+            class Failing:
+                def __init__(self, handle):
+                    self.handle, self.reads = handle, 0
+
+                def read(self, size):
+                    self.reads += 1
+                    if self.reads == 5:
+                        raise OSError("device error")
+                    return self.handle.read(size)
+
+                def close(self):
+                    self.handle.close()
+
+            with patch.object(obs_mod, "open", lambda *a, **k: Failing(real_open(*a, **k)),
+                              create=True):
+                self.assert_refused("unreadable", "children.json: OSError")
+        with self.subTest("a directory"):
+            self.path.unlink()
+            self.path.mkdir()
+            self.assert_refused("unreadable", "children.json is a directory")
+            self.path.rmdir()
+
+    def test_IS6d_a_truncated_file_past_the_bound(self):
+        raw = self.text(self.past_the_bound(self.relevant_pair())).encode("ascii")
+        self.write(raw=raw[:int(len(raw) * 0.9)])
+        self.assert_refused("malformed", "children.json is not valid JSON")
+
+    def test_IS4c_refusing_an_over_long_value_never_holds_more_than_the_ceiling(self):
+        """A 3 MiB value is refused BEFORE its text is read past the bound:
+        the buffer never exceeds one bound plus one chunk."""
+        huge = dict(self.unrelated(1, start=99)[0], pad="w" * (3 * _OBSERVE_MAX_FILE_BYTES))
+        self.write([huge] + self.relevant_pair())
+        stream, state, _detail = obs_mod._SpawnRecordStream.open(self.path)
+        try:
+            with self.assertRaises(obs_mod._SpawnRecordRefused) as refused:
+                list(stream)
+        finally:
+            stream.close()
+        self.assertEqual((state, refused.exception.state), ("available", "malformed"))
+        self.assertLessEqual(stream.peak_chars,
+                             _OBSERVE_MAX_FILE_BYTES + obs_mod._OBSERVE_SCAN_CHUNK_BYTES)
+        self.assertLess(stream.bytes_read, 2 * _OBSERVE_MAX_FILE_BYTES)
+
+    def test_IS6h_a_file_also_not_valid_json_reports_that_first(self):
+        """Parse-first order, as the whole-file read: a malformed RELEVANT
+        record early in a file that is ALSO cut off reports the file."""
+        relevant = self.relevant_pair()
+        relevant[0] = dict(relevant[0], task_id=None)
+        raw = self.text(relevant + self.unrelated(30)).encode("ascii")
+        self.write(raw=raw[:-40])
+        self.assert_refused("malformed", "children.json is not valid JSON")
+        self.write(raw=raw)
+        self.assert_refused("malformed", "child record 0 has malformed identity fields")
+
+    def test_IS8_the_file_is_closed_on_every_path(self):
+        import gc
+        import warnings
+        cases = {
+            "available": self.text(self.relevant_pair() + self.unrelated(5)),
+            "refused mid-scan": self.text(self.relevant_pair())[:-9],
+            "refused at open": "[]",
+            "malformed record": self.text([dict(self.relevant_pair()[0], task_id=None)]),
+        }
+        for label, text in sorted(cases.items()):
+            with self.subTest(label):
+                self.write(raw=text.encode("ascii"))
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always", ResourceWarning)
+                    self.scoped()
+                    gc.collect()
+                self.assertEqual([w for w in caught if issubclass(w.category, ResourceWarning)],
+                                 [])
+
+    def test_IS9_differential_cases_project_identically_through_both_readers(self):
+        """DIFFERENTIAL CASES (finite — evidence over these shapes, not a
+        proof over every file): the scoped projection through the incremental
+        reader equals the projection through the ORIGINAL whole-file read
+        (the same function with the reader swapped for ``_read_json_object``)
+        for each named case below, at the default chunk and at a tiny one.
+        The readers are NOT identical everywhere: the incremental read is
+        stricter on a duplicate ``children`` member (refused; ``json.loads``
+        keeps the last) and on undecodable bytes (refused; the whole-file
+        read replaces them) — IS6f and IS6c pin those divergences — and it
+        reads files past the whole-file bound (IS1, IS2)."""
+        class WholeFile(list):
+            @classmethod
+            def open(cls, path):
+                data, state, detail = obs_mod._read_json_object(path)
+                if state != "available":
+                    return None, state, detail
+                records = data.get("children")
+                if not isinstance(records, list):
+                    return None, "malformed", "`children` in children.json is not a list"
+                return cls(records), "available", None
+
+            def drain(self):
+                pass
+
+            def close(self):
+                pass
+
+        relevant = self.relevant_pair()
+        over = [self.record(self.LEASE, "20260924-1400%02d-cccccc" % n, 300 + n)
+                for n in range(_OBSERVE_MAX_CHILDREN + 1)]
+        corpus = {
+            "relevant beyond a prefix": self.unrelated(40) + relevant + self.unrelated(3, 40),
+            "no relevant record": self.unrelated(50),
+            "an over-bound relevant set": self.unrelated(10) + over,
+            "exactly the listing bound": over[:_OBSERVE_MAX_CHILDREN],
+            "a malformed unrelated record": [dict(self.unrelated(1)[0], dependency="x")]
+                                            + relevant,
+            "a malformed relevant record": relevant[:1] + [dict(relevant[1], task_id=None)],
+            "an overlong relevant field": [dict(relevant[0], task_id="t" * 300)],
+            "not an object": self.unrelated(3) + ["x"],
+            "no repository": self.unrelated(3) + [self.record(None, "t", 1)],
+            "empty": [],
+        }
+        texts = dict((label, self.text(records)) for label, records in corpus.items())
+        texts.update({"not a list": json.dumps({"children": {"a": 1}}),
+                      "no children": json.dumps({"version": 1}),
+                      "a top-level array": json.dumps(relevant),
+                      "cut off": self.text(relevant)[:-5],
+                      "an empty file": ""})
+        for label, text in sorted(texts.items()):
+            self.write(raw=text.encode("ascii"))
+            with patch.object(obs_mod, "_SpawnRecordStream", WholeFile):
+                reference = self.scoped()
+            for chunk in (obs_mod._OBSERVE_SCAN_CHUNK_BYTES, 7):
+                with self.subTest(label, chunk=chunk):
+                    with patch.object(obs_mod, "_OBSERVE_SCAN_CHUNK_BYTES", chunk):
+                        self.assertEqual(self.scoped(), reference)
+
+    def test_IS6g_a_number_truncated_at_the_end_of_the_file_is_malformed(self):
+        """A number or exponent cut off by the END OF THE FILE at a NONZERO
+        offset (the read that meets the end compacts the buffer — the
+        offsets are rebased): a truthful ``malformed`` refusal, never a
+        cursor artefact. At top level, ``  1e`` is not valid JSON at all —
+        not "a document that is not an object"."""
+        relevant = self.relevant_pair()
+        body = '{"children": [%s, %s], "version": ' % (
+            json.dumps(relevant[0]), json.dumps(relevant[1]))
+        for label, raw in (("an exponent in the object", body + "1e"),
+                           ("a signed exponent in the object", body + "1e+"),
+                           ("a whole number in the object", body + "12"),
+                           ("a decimal point in the object", body + "3."),
+                           ("an exponent at top level", "  1e"),
+                           ("a signed exponent at top level", "\n\n  25E-")):
+            with self.subTest(label):
+                self.assertGreater(raw.index(raw.strip()[-2:]), 0)
+                self.write(raw=raw.encode("ascii"))
+                self.assert_refused("malformed", "children.json is not valid JSON")
+
+    def test_IS6e_an_over_bound_relevant_set_past_the_bound_is_truncated(self):
+        relevant = [self.record(self.LEASE, "20260924-1400%02d-cccccc" % n, 200 + n)
+                    for n in range(_OBSERVE_MAX_CHILDREN + 1)]
+        records = self.past_the_bound(relevant[:1]) + relevant[1:]
+        self.write(records)
+        self.assertEqual(self.scoped(), {
+            "state": "available", "count": _OBSERVE_MAX_CHILDREN + 1, "truncated": True,
+            "listed": [self.listed(r) for r in relevant[:_OBSERVE_MAX_CHILDREN]],
+            "detail": "relevant spawn records truncated to %d of %d (%d records in the"
+                      " file)" % (_OBSERVE_MAX_CHILDREN, _OBSERVE_MAX_CHILDREN + 1,
+                                  len(records)),
+            "scope": {"records": len(records)}})
+
+    def test_IS6f_the_document_shape_is_strict(self):
+        relevant = self.relevant_pair()
+        body = self.text(relevant)
+        cases = (
+            ("a duplicate children member",
+             body.rstrip()[:-1] + ', "children": []}\n',
+             "children.json names `children` more than once"),
+            ("trailing content", body + "x", "children.json is not valid JSON"),
+            ("not an object", json.dumps(relevant), "children.json does not contain a JSON object"),
+            ("children not a list", json.dumps({"children": {"a": 1}}),
+             "`children` in children.json is not a list"),
+            ("no children", json.dumps({"version": 1}), "`children` in children.json is not a list"),
+            ("an empty file", "", "children.json is not valid JSON"),
+        )
+        for label, text, detail in cases:
+            with self.subTest(label):
+                self.write(raw=text.encode("ascii"))
+                self.assert_refused("malformed", detail)
+        self.path.unlink()
+        self.assertEqual(self.scoped(), {"state": "empty", "count": 0, "truncated": False,
+                                         "listed": [], "detail": None})
 
 
 class CorrelationTests(unittest.TestCase):

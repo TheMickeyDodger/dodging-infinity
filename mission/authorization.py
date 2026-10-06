@@ -420,13 +420,15 @@ def reconcile_registry(document):
                 return _history("request reservation %s is marked consumed by"
                                 " %s but no mission with that id was created"
                                 " from it" % (reserved_id, consumed_by))
-        elif reservation.get("kind") == "state_operation":
+        elif reservation.get("kind") in ("state_operation", "cancel_operation"):
             # Mission State (Task 5): a consumed state operation appears
-            # exactly once across all state records' applied operations.
+            # exactly once across all state records' applied operations
+            # (Task 8 S-V: a Mission's derived cancel operation likewise).
             if consumed_by != reserved_id or applied.get(reserved_id) != 1:
-                return _history("state_operation reservation %s is marked"
+                return _history("%s reservation %s is marked"
                                 " consumed but %d state records apply it"
-                                % (reserved_id, applied.get(reserved_id, 0)))
+                                % (reservation.get("kind"), reserved_id,
+                                   applied.get(reserved_id, 0)))
         elif consumed_by != reserved_id or reserved_id not in decisions:
             return _history("decision reservation %s is marked consumed but no"
                             " mission records a decision with that id"

@@ -13,12 +13,19 @@ What it owns:
 
 - The supported protocol revisions and the version-negotiation rule
   (echo a supported request, otherwise answer the newest supported).
-- The eight-tool table: the three original tools plus the five bounded
-  Mission tools (propose, get, edit, approve, deny). Every tool carries
+- The sixteen-tool table: the three original tools, the five bounded
+  Mission tools (propose, get, edit, approve, deny), the client-mediated
+  decision tools (the Mission decision and, since Task 8 S-VI, the
+  delivery decision), the engineering engagement relay, the pure delivery
+  status, and (Task 8 S-VII) the pure Mission status, the client-mediated
+  Mission control (hold, resume, cancel), the attention pull and the
+  client-mediated attention acknowledgment. Every client-mediated answer
+  can arrive ONLY as the client's answer to a server-originated
+  elicitation request and never as a tool argument. Every tool carries
   an exact ``inputSchema`` and ``outputSchema`` with
   ``additionalProperties: false``, an explicit ``required`` list, and
   explicit bounds. There is no shell tool, no run-command tool, no file
-  tool, no dispatch, capability, Git, delivery, merge, release, or
+  tool, no capability, Git, delivery-effect, merge, release, or
   deploy tool, no path, argv, or shell argument, and no field that
   names or accepts a Grok conversation id, message id, user id, or
   thread id. No Mission tool input names a principal, actor, subject,
@@ -52,7 +59,7 @@ CONTRACT_VERSION = 1
 SERVER_NAME = "dodging-infinity"
 SERVER_VERSION = "1"
 SERVER_INSTRUCTIONS = (
-    "Dodging Infinity exposes eight tools: di_status and di_ping are"
+    "Dodging Infinity exposes sixteen tools: di_status and di_ping are"
     " pure liveness/readiness checks; di_operator_turn sends one bounded"
     " text turn to the local operator and returns its reply. Continue"
     " an operator session by passing back the session_ref this server"
@@ -62,8 +69,22 @@ SERVER_INSTRUCTIONS = (
     " decision binds the exact revision you pass, approval records"
     " authority and starts nothing, and github_pr names only the"
     " Mission's later delivery scope. Pass back the request_id a"
-    " propose call returned to retry it safely. No other references"
-    " are accepted."
+    " propose call returned to retry it safely. di_mission_decide asks"
+    " the human, through this client's own elicitation form, to accept"
+    " or decline exactly one revision; the accept is the human's form"
+    " answer and cannot be supplied as an argument. di_mission_dispatch"
+    " asks the Mission control layer to start the engineering engagement"
+    " of an AUTHORIZED Mission; it refuses unless every precondition"
+    " holds. di_delivery_decide asks the human, through the same"
+    " elicitation form, to accept or decline the prepared pull-request"
+    " delivery proposal of exactly one revision; di_delivery_status reads"
+    " that delivery without changing anything. di_mission_status reads one"
+    " Mission without changing anything. di_mission_control asks the human,"
+    " through the same elicitation form, to confirm a hold, resume or"
+    " cancel of exactly one revision. di_attention_pull lists what needs"
+    " the human's attention; di_attention_ack asks the human to acknowledge"
+    " one record. No merge, tag, release or deploy tool exists. No other"
+    " references are accepted."
 )
 
 TOOL_STATUS = "di_status"
@@ -78,7 +99,75 @@ MISSION_TOOL_NAMES = (
     TOOL_MISSION_PROPOSE, TOOL_MISSION_GET, TOOL_MISSION_EDIT,
     TOOL_MISSION_APPROVE, TOOL_MISSION_DENY,
 )
-TOOL_NAMES = (TOOL_STATUS, TOOL_PING, TOOL_OPERATOR_TURN) + MISSION_TOOL_NAMES
+# The client-mediated decision tool (Task 8, slice S-I). Kept apart from
+# MISSION_TOOL_NAMES: it is relayed by ``grok_mcp.decision_tools`` and
+# needs an elicitation channel the plain Mission tools never touch.
+TOOL_MISSION_DECIDE = "di_mission_decide"
+# Task 8, slice S-VI: the client-mediated DELIVERY decision rides the same
+# elicitation path (a distinct decision kind and reservation), so it is a
+# decision tool too.
+TOOL_DELIVERY_DECIDE = "di_delivery_decide"
+DECISION_TOOL_NAMES = (TOOL_MISSION_DECIDE, TOOL_DELIVERY_DECIDE)
+# The engineering engagement tool (Task 8, slice S-IV): relayed by
+# ``grok_mcp.engagement_tools`` into the INJECTED Mission-control
+# bootstrap; it refuses unless every precondition holds and, until the
+# integrated candidate carries slice S-V's guards, always refuses with
+# ``mission_dependency_missing`` and performs zero effects.
+TOOL_MISSION_DISPATCH = "di_mission_dispatch"
+ENGAGEMENT_TOOL_NAMES = (TOOL_MISSION_DISPATCH,)
+# Task 8, slice S-VI: the PURE delivery status read, relayed into the
+# injected Mission-control delivery desk.
+TOOL_DELIVERY_STATUS = "di_delivery_status"
+DELIVERY_TOOL_NAMES = (TOOL_DELIVERY_STATUS,)
+# Task 8, slice S-VII: the READ-ONLY Mission status (relayed into the
+# injected status reader), the elicited Mission control (hold, resume,
+# cancel — the human's act, relayed into the injected control desk) and the
+# attention pull / elicited acknowledgment (relayed into the injected
+# attention desk).
+TOOL_MISSION_STATUS = "di_mission_status"
+STATUS_TOOL_NAMES = (TOOL_MISSION_STATUS,)
+TOOL_MISSION_CONTROL = "di_mission_control"
+CONTROL_TOOL_NAMES = (TOOL_MISSION_CONTROL,)
+TOOL_ATTENTION_PULL = "di_attention_pull"
+TOOL_ATTENTION_ACK = "di_attention_ack"
+ATTENTION_TOOL_NAMES = (TOOL_ATTENTION_PULL, TOOL_ATTENTION_ACK)
+# Every tool whose answer is the human's elicitation form answer: the
+# server gives exactly these an event-stream channel.
+ELICITED_TOOL_NAMES = DECISION_TOOL_NAMES + (TOOL_MISSION_CONTROL,
+                                             TOOL_ATTENTION_ACK)
+TOOL_NAMES = (
+    (TOOL_STATUS, TOOL_PING, TOOL_OPERATOR_TURN) + MISSION_TOOL_NAMES
+    + DECISION_TOOL_NAMES + ENGAGEMENT_TOOL_NAMES + DELIVERY_TOOL_NAMES
+    + STATUS_TOOL_NAMES + CONTROL_TOOL_NAMES + ATTENTION_TOOL_NAMES
+)
+# The control a ``di_mission_control`` call names (the canonical operation
+# is resolved by the Mission-control desk from the control record).
+CONTROL_PATTERN = "^(hold|resume|cancel)$"
+CONTROL_CHARS = 6
+ATTENTION_ID_PATTERN = "^ca-[0-9a-f]{32}$"
+ELICITATION_REQUEST_ID_PATTERN = "^(mo|ak)-[0-9a-f]{32}$"
+
+# -- server-originated elicitation (MCP client feature) ---------------
+METHOD_ELICITATION_CREATE = "elicitation/create"
+ELICITATION_MODE_FORM = "form"
+ELICITATION_ACTION_ACCEPT = "accept"
+ELICITATION_ACTION_DECLINE = "decline"
+ELICITATION_ACTION_CANCEL = "cancel"
+ELICITATION_ACTIONS = (
+    ELICITATION_ACTION_ACCEPT, ELICITATION_ACTION_DECLINE,
+    ELICITATION_ACTION_CANCEL,
+)
+# The one form field the human answers, and the exact number of
+# proposal-digest hex characters it must equal (the same twelve the local
+# delivery ceremony asks a human to type).
+ELICITATION_CONFIRM_FIELD = "confirm"
+ELICITATION_CONFIRM_CHARS = 12
+# Hard bound on the rendered authority card sent in ``message``. A card
+# that would exceed it is REFUSED before anything is reserved; it is
+# never truncated or partially rendered.
+MAX_ELICITATION_MESSAGE_CHARS = 12000
+# Protocol revisions that define elicitation at all (2025-03-26 does not).
+ELICITATION_VERSIONS = ("2025-11-25", "2025-06-18")
 
 # Bounds. Every one is exact-value pinned in the test suite.
 MAX_TURN_TEXT_CHARS = 4000
@@ -99,6 +188,10 @@ MISSION_ID_PATTERN = "^mn-[0-9a-f]{32}$"
 REQUEST_ID_PATTERN = "^mq-[0-9a-f]{32}$"
 DECISION_ID_PATTERN = "^md-[0-9a-f]{32}$"
 AUTHORIZATION_ID_PATTERN = "^ma-[0-9a-f]{32}$"
+# Task 8 S-VI: a delivery decision is reserved as a Mission state
+# operation (``mo-``) and recorded as evidence (``mv-``).
+STATE_OPERATION_ID_PATTERN = "^mo-[0-9a-f]{32}$"
+EVIDENCE_ID_PATTERN = "^mv-[0-9a-f]{32}$"
 MISSION_TOKEN_CHARS = 35
 DIGEST_CHARS = 64
 
@@ -253,7 +346,8 @@ def _build_tools(bounds):
                 "additionalProperties": False,
             },
         },
-    ) + _build_mission_tools()
+    ) + _build_mission_tools() + _build_decision_tools() + _build_engagement_tools() + (
+        _build_delivery_tools()) + _build_state_tools()
 
 
 def _token_schema(pattern):
@@ -309,21 +403,49 @@ def _proposal_properties():
         "requested_delivery_target": {
             "type": ["string", "null"], "minLength": 1, "maxLength": 64,
         },
+        # Task 8, slice S-IV: the ONE canonical approved-baseline field,
+        # end to end — proposed here, stored in the revision, digested,
+        # rendered on the elicitation card, returned with every read and
+        # approval, and required before any engineering engagement.
+        # Optional: absent means the Mission declares none (and cannot be
+        # engaged until an EDIT declares one).
+        "baseline": _baseline_schema(),
+        # Task 8, slice S-VII: the proof contract and the verification argv
+        # are proposal INPUTS on propose AND edit. Both are the Mission
+        # Core's own optional proposal keys, validated strictly by the core
+        # (closed keys, bounds, the mandatory integration obligations at
+        # dispatch); nothing here interprets, runs or opens them.
+        "proof_contract": {"type": ["object", "null"]},
+        "verification": {"type": ["object", "null"]},
+    }
+
+
+def _baseline_schema():
+    return {
+        "type": ["object", "null"],
+        "properties": {
+            "ref": {"type": "string", "minLength": 1,
+                    "maxLength": mission_record.MAX_BASELINE_REF_CHARS},
+            "commit_sha": {"type": "string", "minLength": 40, "maxLength": 40,
+                           "pattern": "^[0-9a-f]{40}$"},
+        },
+        "required": ["ref", "commit_sha"],
+        "additionalProperties": False,
     }
 
 
 PROPOSAL_INPUT_NAMES = tuple(mission_record.PROPOSAL_KEYS)
+# The optional proposal inputs the relay passes through when present (the
+# Mission Core's own optional proposal keys, all three since S-VII).
+PROPOSAL_OPTIONAL_INPUT_NAMES = ("baseline", "proof_contract", "verification")
 
 
 def _proposal_output_schema():
-    """The proposal as the Mission Core RETURNS it. The core's normalized
-    proposal may carry the additive-optional ``proof_contract`` key when a
-    revision was proposed with one, so the OUTPUT schema declares it as an
-    optional property; it is never a tool INPUT here (no transport tool
-    authors a proof contract yet), so ``_proposal_properties`` and
-    ``required`` are unchanged."""
+    """The proposal as the Mission Core RETURNS it, including the optional
+    ``baseline``, ``proof_contract`` and ``verification`` keys a revision
+    carries when it was proposed with them (tool INPUTS on propose and edit
+    since Task 8 S-VII); ``required`` is the core's required keys only."""
     properties = dict(_proposal_properties())
-    properties["proof_contract"] = {"type": ["object", "null"]}
     return {
         "type": ["object", "null"],
         "properties": properties,
@@ -485,8 +607,27 @@ def _build_mission_tools():
                 "additionalProperties": False,
             },
             "outputSchema": _decision_output(
-                {"invalidated_authorization_ids": _string_list_schema()},
-                ("invalidated_authorization_ids",),
+                {"invalidated_authorization_ids": _string_list_schema(),
+                 # Task 8, slice S-V: what the EDIT superseded (the
+                 # activation, checkpoints, engagement workflows and the
+                 # starts whose stop requirement it recorded), derived
+                 # from durable state; null only for a non-EDIT outcome.
+                 "superseded": {
+                     "type": ["object", "null"],
+                     "properties": {
+                         "revision": {"type": "integer", "minimum": 1},
+                         "activation_id": {"type": ["string", "null"]},
+                         "checkpoints": {"type": "integer", "minimum": 0},
+                         "engagements": _string_list_schema(),
+                         "starts_stop_requested": {"type": "integer", "minimum": 0},
+                         "recorded": {"type": "boolean"},
+                     },
+                     "required": ["revision", "activation_id", "checkpoints",
+                                  "engagements", "starts_stop_requested",
+                                  "recorded"],
+                     "additionalProperties": False,
+                 }},
+                ("invalidated_authorization_ids", "superseded"),
             ),
         },
         {
@@ -520,10 +661,13 @@ def _build_mission_tools():
                     ),
                     "authorization_live": {"type": ["boolean", "null"]},
                     "authorization_problem": {"type": ["string", "null"]},
+                    # Task 8 S-IV: the exact baseline the approval binds
+                    # (null when the approved revision declares none).
+                    "baseline": _baseline_schema(),
                 },
                 ("authorization_id", "authorization_digest_sha256",
                  "authorized_action_scope", "authorized_delivery_targets",
-                 "authorization_live", "authorization_problem"),
+                 "authorization_live", "authorization_problem", "baseline"),
             ),
         },
         {
@@ -546,6 +690,470 @@ def _build_mission_tools():
             "outputSchema": _decision_output({}, ()),
         },
     )
+
+
+def _build_decision_tools():
+    return (
+        {
+            "name": TOOL_MISSION_DECIDE,
+            "title": "Dodging Infinity Mission decision (client-mediated)",
+            "description": (
+                "Ask the human to decide exactly the revision passed. The"
+                " server renders the complete authority-bearing proposal"
+                " and sends it to THIS client as an elicitation form; the"
+                " human's accept records the approval and its bounded"
+                " expiry, decline records a denial, cancel records nothing."
+                " The decision is the human's form answer: no argument"
+                " can supply it. Requires a client that negotiated form"
+                " elicitation and accepts an event-stream response."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": "integer", "minimum": 1},
+                },
+                "required": ["mission_id", "revision"],
+                "additionalProperties": False,
+            },
+            "outputSchema": _decision_output(
+                {
+                    "decision": {"type": ["string", "null"]},
+                    "authorization_id": _nullable_token_schema(
+                        AUTHORIZATION_ID_PATTERN
+                    ),
+                    "authorization_digest_sha256": _nullable_digest_schema(),
+                    "authorized_action_scope": _nullable_string_list_schema(),
+                    "authorized_delivery_targets": (
+                        _nullable_string_list_schema()
+                    ),
+                    "authorization_live": {"type": ["boolean", "null"]},
+                    "authorization_problem": {"type": ["string", "null"]},
+                    "expires_at": {"type": ["integer", "null"], "minimum": 0},
+                    "elicitation_outcome": {"type": ["string", "null"]},
+                    # What the relay PROVED about the reserved decision id:
+                    # true = a decision is recorded under it (applied, or
+                    # found by readback), false = readback/refusal proved
+                    # none, null = not applicable or not knowable.
+                    "decision_recorded": {"type": ["boolean", "null"]},
+                    # Whether the CURRENT authorization projection (live,
+                    # problem, digest) was computed: "available", or
+                    # "unavailable (<Class>)" when a recorded decision is
+                    # proven but that projection could not be built.
+                    "authorization_projection": {"type": ["string", "null"]},
+                    # Task 8 S-IV: the exact baseline an ACCEPT bound (the
+                    # one the card showed); null for any other outcome.
+                    "baseline": _baseline_schema(),
+                },
+                ("decision", "authorization_id",
+                 "authorization_digest_sha256", "authorized_action_scope",
+                 "authorized_delivery_targets", "authorization_live",
+                 "authorization_problem", "expires_at",
+                 "elicitation_outcome", "decision_recorded",
+                 "authorization_projection", "baseline"),
+            ),
+        },
+        {
+            "name": TOOL_DELIVERY_DECIDE,
+            "title": "Dodging Infinity delivery decision (client-mediated)",
+            "description": (
+                "Ask the human to decide the prepared pull-request delivery"
+                " proposal of exactly the Mission revision passed. The server"
+                " renders the FULL proposal (every value the delivery"
+                " authority will bind, its absolute expiry and the only"
+                " allowed actions: base refresh, commit, push, pull-request"
+                " creation) and sends it to THIS client as an elicitation"
+                " form confirmed by the candidate identity prefix. Accept"
+                " records the human's delivery decision as Mission evidence;"
+                " decline records a sticky cancel request of the Mission;"
+                " cancel records nothing. A Mission approval never authorizes"
+                " delivery and this decision approves nothing else. Nothing"
+                " here merges, tags, releases or deploys."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": "integer", "minimum": 1},
+                },
+                "required": ["mission_id", "revision"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": ["integer", "null"], "minimum": 1},
+                    # The reserved Mission state-operation id the decision
+                    # is recorded under (reported unconsumed otherwise).
+                    "delivery_decision_id": _nullable_token_schema(
+                        STATE_OPERATION_ID_PATTERN),
+                    "proposal_digest_sha256": _nullable_digest_schema(),
+                    "candidate_identity_digest_sha256": _nullable_digest_schema(),
+                    "decision": {"type": ["string", "null"]},
+                    "evidence_id": _nullable_token_schema(EVIDENCE_ID_PATTERN),
+                    "decision_document_digest_sha256": _nullable_digest_schema(),
+                    "decision_recorded": {"type": ["boolean", "null"]},
+                    "cancel_requested": {"type": ["boolean", "null"]},
+                    "elicitation_outcome": {"type": ["string", "null"]},
+                    "expires_at": {"type": ["integer", "null"], "minimum": 0},
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "mission_id",
+                    "revision", "delivery_decision_id", "proposal_digest_sha256",
+                    "candidate_identity_digest_sha256", "decision", "evidence_id",
+                    "decision_document_digest_sha256", "decision_recorded",
+                    "cancel_requested", "elicitation_outcome", "expires_at",
+                    "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    )
+
+
+def _build_delivery_tools():
+    """Task 8, slice S-VI: the PURE delivery status read."""
+    return (
+        {
+            "name": TOOL_DELIVERY_STATUS,
+            "title": "Dodging Infinity delivery status",
+            "description": (
+                "Read the pull-request delivery of one Mission: the prepared"
+                " proposal, the human's delivery decision, the delivery"
+                " authorization's source, each step's receipt and whether the"
+                " Mission attested it, the pull-request URL, what is"
+                " uncertain and the next action. Read-only: it prepares,"
+                " records and performs nothing; safe to retry."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                },
+                "required": ["mission_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": ["integer", "null"], "minimum": 1},
+                    "mission_state": {"type": ["string", "null"]},
+                    "progress": {"type": ["string", "null"]},
+                    "delivery_requested": {"type": ["boolean", "null"]},
+                    "cancel_requested": {"type": ["boolean", "null"]},
+                    "proposal": {"type": ["object", "null"]},
+                    # The recorded source-branch preparation state (never a
+                    # Git read).
+                    "preparation": {"type": ["object", "null"]},
+                    "decision": {"type": ["object", "null"]},
+                    "delivery": {"type": ["object", "null"]},
+                    "uncertainty": _string_list_schema(),
+                    "next_action": {"type": ["string", "null"]},
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "mission_id",
+                    "revision", "mission_state", "progress",
+                    "delivery_requested", "cancel_requested", "proposal",
+                    "preparation", "decision", "delivery", "uncertainty",
+                    "next_action", "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    )
+
+
+def _object_list_schema():
+    return {"type": "array", "items": {"type": "object"}}
+
+
+def _build_state_tools():
+    """Task 8, slice S-VII: the read-only Mission status, the elicited
+    Mission control, and the attention pull and elicited acknowledgment."""
+    return (
+        {
+            "name": TOOL_MISSION_STATUS,
+            "title": "Dodging Infinity Mission status",
+            "description": (
+                "Read one Mission: where it is (state, revision, progress,"
+                " workflow and task), what holds it (blockers, proof,"
+                " readiness, controls, pending decisions), what the Reviewer"
+                " said and the candidate and delivery facts the Runtime's"
+                " latest reconciliation recorded (with their standing and"
+                " freshness), the evidence and artifacts, and its live"
+                " attention. Read-only: it writes, prepares, reconciles and"
+                " waits for nothing, consults no engine or model and takes no"
+                " lock; safe to retry while work is running."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                },
+                "required": ["mission_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    # The canonical Mission part (one Mission snapshot).
+                    "canonical": {"type": ["object", "null"]},
+                    "stores": {"type": ["object", "null"]},
+                    "reconciliation": {"type": ["object", "null"]},
+                    "workflows": {"type": ["object", "null"]},
+                    "attention": {"type": ["object", "null"]},
+                    "limitations": _string_list_schema(),
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "mission_id", "canonical",
+                    "stores", "reconciliation", "workflows", "attention",
+                    "limitations", "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": TOOL_MISSION_CONTROL,
+            "title": "Dodging Infinity Mission control (client-mediated)",
+            "description": (
+                "Ask the human to confirm one control of exactly the Mission"
+                " revision passed: hold (every Dodging Infinity effect stops at"
+                " its gate until resumed; a running engineering session is not"
+                " paused), resume (lifts the hold and starts nothing; every"
+                " later step re-validates), or cancel (a sticky request the"
+                " Runtime acts on by stopping what it started; once the stops"
+                " are confirmed by observed absence, the same control asks the"
+                " human to CONFIRM the cancel, which closes the Mission). The"
+                " server renders the exact control and its limits and sends it"
+                " to THIS client as an elicitation form; only the human's accept"
+                " applies it. Nothing already completed is undone. Requires a"
+                " client that negotiated form elicitation and accepts an"
+                " event-stream response."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": "integer", "minimum": 1},
+                    "control": {"type": "string", "minLength": 4,
+                                "maxLength": CONTROL_CHARS,
+                                "pattern": CONTROL_PATTERN},
+                },
+                "required": ["mission_id", "revision", "control"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": ["integer", "null"], "minimum": 1},
+                    "control": {"type": ["string", "null"]},
+                    "operation": {"type": ["string", "null"]},
+                    "operation_id": _nullable_token_schema(
+                        STATE_OPERATION_ID_PATTERN),
+                    "elicitation_outcome": {"type": ["string", "null"]},
+                    "control_recorded": {"type": ["boolean", "null"]},
+                    "controls": {"type": ["object", "null"]},
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "mission_id", "revision",
+                    "control", "operation", "operation_id",
+                    "elicitation_outcome", "control_recorded", "controls",
+                    "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": TOOL_ATTENTION_PULL,
+            "title": "Dodging Infinity attention pull",
+            "description": (
+                "Pull what needs the human's attention for this client: every"
+                " pending attention record is surfaced into THIS result;"
+                " records surfaced by an earlier pull whose receipt is not yet"
+                " acknowledged are listed again under surfaced, never"
+                " duplicated. It records only that each record was included in"
+                " this result; it authorizes and changes nothing else."
+            ),
+            "inputSchema": {
+                "type": "object", "properties": {}, "required": [],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "surfaced_now": _object_list_schema(),
+                    "surfaced": _object_list_schema(),
+                    "acknowledged": _object_list_schema(),
+                    "pending": _object_list_schema(),
+                    "not_surfaced": _object_list_schema(),
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "surfaced_now",
+                    "surfaced", "acknowledged", "pending", "not_surfaced",
+                    "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": TOOL_ATTENTION_ACK,
+            "title": "Dodging Infinity attention acknowledgment (client-mediated)",
+            "description": (
+                "Ask the human to acknowledge one attention record through this"
+                " client's elicitation form. Only the human's accept records the"
+                " acknowledgment; it authorizes, resolves and starts nothing."
+                " Requires a client that negotiated form elicitation and accepts"
+                " an event-stream response."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "attention_id": _token_schema(ATTENTION_ID_PATTERN),
+                },
+                "required": ["attention_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "attention_id": _nullable_token_schema(ATTENTION_ID_PATTERN),
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    "request_id": _nullable_token_schema(
+                        ELICITATION_REQUEST_ID_PATTERN),
+                    "elicitation_outcome": {"type": ["string", "null"]},
+                    "acknowledged": {"type": ["boolean", "null"]},
+                    "attention": {"type": ["object", "null"]},
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "attention_id",
+                    "mission_id", "request_id", "elicitation_outcome",
+                    "acknowledged", "attention", "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    )
+
+
+def _build_engagement_tools():
+    """Task 8, slice S-IV: the engineering engagement tool. Its only input
+    is the Mission id; every precondition is re-read by the Mission
+    control layer at call time and nothing here carries authority."""
+    return (
+        {
+            "name": TOOL_MISSION_DISPATCH,
+            "title": "Dodging Infinity Mission engineering engagement",
+            "description": (
+                "Start the engineering engagement of exactly one AUTHORIZED"
+                " Mission: the Mission control layer re-reads the live"
+                " authorization, its provenance, the proof contract's"
+                " mandatory obligations, readiness and budget, records the"
+                " canonical engagement reservation and publishes exactly one"
+                " workflow row for the Runtime. Refuses with an exact problem"
+                " code when any precondition fails; repeating the call for"
+                " the same Mission is idempotent. Runs nothing itself."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mission_id": _token_schema(MISSION_ID_PATTERN),
+                },
+                "required": ["mission_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"},
+                    "reason": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "problem": {"type": ["string", "null"]},
+                    "mission_id": _nullable_token_schema(MISSION_ID_PATTERN),
+                    "revision": {"type": ["integer", "null"], "minimum": 1},
+                    "workflow_id": {"type": ["string", "null"], "minLength": 1,
+                                    "maxLength": 128},
+                    "engagement_id": {"type": ["string", "null"], "minLength": 35,
+                                      "maxLength": 35},
+                    "idempotent": {"type": "boolean"},
+                    "missing_guards": _string_list_schema(),
+                    "call_ref": _ref_schema(),
+                },
+                "required": [
+                    "ok", "reason", "status", "problem", "mission_id",
+                    "revision", "workflow_id", "engagement_id", "idempotent",
+                    "missing_guards", "call_ref",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    )
+
+
+def form_elicitation_negotiated(protocol_version, capabilities):
+    """Whether the client declared FORM-mode elicitation for the
+    negotiated protocol revision; False for anything else, including an
+    absent, malformed or URL-only declaration.
+
+    Rules, per revision (from the MCP specification, "Client Features >
+    Elicitation > Capabilities", and "Base Protocol > Lifecycle"):
+
+    - 2025-11-25: the ``elicitation`` capability object may carry the
+      sub-capabilities ``form`` and ``url``, each an object, naming the
+      modes the client supports. The specification keeps an EMPTY
+      ``elicitation`` object meaningful for backwards compatibility with
+      2025-06-18 clients, which had form mode only: an empty object is
+      read as form support. An object that names ONLY ``url`` is a
+      URL-only client and is NOT form-capable here.
+    - 2025-06-18: elicitation has a single (form) mode and the capability
+      is declared as ``"elicitation": {}``; any object value declares it.
+    - 2025-03-26: elicitation does not exist; never form-capable.
+    """
+    if protocol_version not in ELICITATION_VERSIONS:
+        return False
+    if not isinstance(capabilities, dict):
+        return False
+    declared = capabilities.get("elicitation")
+    if not isinstance(declared, dict):
+        return False
+    if protocol_version == "2025-06-18":
+        return True
+    if not declared:
+        return True
+    return isinstance(declared.get(ELICITATION_MODE_FORM), dict)
 
 
 # The names reported under di_status "bounds", in order. The values

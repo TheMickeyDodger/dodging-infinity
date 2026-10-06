@@ -45,6 +45,7 @@ cannot make room the new record is REFUSED explicitly. Counts
 reported by this module are exact (standing truthfulness rule).
 """
 
+import copy
 import json
 import os
 import stat
@@ -56,10 +57,18 @@ from telegram_operator.config import CONFIG_DIR_RELATIVE
 # ``store.atomic_write_json`` / ``store.exclusive_store_lock`` reference
 # keeps working unchanged.
 from workflow_authority.atomic import (  # noqa: F401 (re-exported)
+    READ_ABSENT,
+    READ_PRESENT,
+    READ_UNAVAILABLE,
+    ReadResult,
     WORKFLOWS_LOCK_FILE_NAME,
     atomic_write_json,
+    classify_missing,
     exclusive_store_lock,
+    path_access,
+    read_store_document,
 )
+from workflow_authority import record as record_module
 from workflow_authority.record import (
     RESULT_DELIVERY_ADDITIVE_KEYS,
     TERMINAL_PHASES,
@@ -154,14 +163,16 @@ class StoreError(Exception):
 _FORBIDDEN_STORE_MODE_BITS = 0o077
 
 
-def _refuse_open_store_permissions(path):
+def _refuse_open_store_permissions(path, mode):
     """Raise StoreError if group/other can access the store file.
 
     ``save`` always creates the file mode 600; a wider mode on load
     means somebody changed it after the fact, and the store must not
     be trusted (or leaked) until a human fixes the permissions.
+
+    Task 8 R23-1: ``mode`` is the one already OBSERVED by ``load`` — no
+    second ``stat`` that could fail outside the StoreError contract.
     """
-    mode = os.stat(path).st_mode
     if mode & _FORBIDDEN_STORE_MODE_BITS:
         raise StoreError(
             "workflow store %s is accessible by group/other (mode %o);"
@@ -262,16 +273,43 @@ class WorkflowStore(object):
         self.path = os.path.join(directory, WORKFLOWS_FILE_NAME)
 
     def load(self):
-        """Read the store; a missing file yields a fresh default.
+        """Read the store; a GENUINELY missing file yields a fresh default.
 
-        Every other failure — unreadable file, invalid JSON, unknown
-        version, closed-schema violation in any record — raises
-        StoreError and leaves the file untouched. Nothing is ever
-        silently reinitialized.
+        Every other failure — metadata that cannot be read, unreadable
+        file, invalid JSON, unknown version, closed-schema violation in
+        any record — raises StoreError and leaves the file untouched.
+        Nothing is ever silently reinitialized.
+
+        Task 8 R23-1: absence is observed STRICTLY. Only a ``stat`` that
+        raises ``FileNotFoundError`` is a missing file; ``os.path.exists``
+        returned False for EVERY ``OSError`` (EACCES, EIO, ...), so an
+        unreadable store was reinitialized as a default document and its
+        owners read as none.
+
+        Task 8 R24-1: and ``stat`` raises ``FileNotFoundError`` for an
+        EXISTING link whose target is unavailable too (a dangling store
+        link, or a dangling link among its ancestors). So that error only
+        opens the question: the traversal (``classify_missing``) answers it.
+        Genuine absence keeps the default; anything else is UNAVAILABLE.
         """
-        if not os.path.exists(self.path):
-            return default_document()
-        _refuse_open_store_permissions(self.path)
+        problem = None
+        try:
+            mode = os.stat(self.path).st_mode
+        except FileNotFoundError:
+            missing = classify_missing(self.path)
+            if missing.availability == READ_ABSENT:
+                return default_document()
+            problem = missing.problem
+        except OSError as exc:
+            problem = exc
+        if problem is not None:
+            raise StoreError(
+                "workflow store %s cannot be examined (%s); it is"
+                " UNAVAILABLE, not absent — refusing to read it as a fresh"
+                " store. It is NOT safe to delete or reinitialize it: it"
+                " carries authorization records" % (self.path, problem)
+            )
+        _refuse_open_store_permissions(self.path, mode)
         try:
             with open(self.path, "r", encoding="utf-8") as handle:
                 document = json.load(handle)
@@ -295,6 +333,41 @@ class WorkflowStore(object):
                 _normalize_additive_keys(record)
         _validate_document(document, self.path)
         return document
+
+    def read(self):
+        """The observer read (Task 8, slice S-II): ONE document read through
+        this store's own validation, as a ``ReadResult``. Read by
+        descriptor (``read_store_document``): the OPENED file must be a
+        regular file group/other cannot reach — the file-mode rule
+        ``load`` enforces, applied to what was actually opened (this
+        store has no directory policy, exactly as ``load``); a symbolic
+        link to a readable target stays supported, a dangling,
+        inaccessible or exposed target refuses. PRESENT carries the
+        validated, additive-normalized document; ABSENT only for a
+        directory or file genuinely missing; UNAVAILABLE names the
+        refusing rule or the OSError class for every access, decode,
+        parse or validation failure (none escapes). Read-only: no lock,
+        no creation. ``load`` (writers and authority paths) is
+        unchanged."""
+        read = read_store_document(self.directory, WORKFLOWS_FILE_NAME,
+                                   "StoreError", refuse_exposed_directory=False)
+        if read.availability != READ_PRESENT:
+            return read
+        document = read.document
+        try:
+            workflows = document.get("workflows") if isinstance(
+                document, dict
+            ) else None
+            if isinstance(workflows, dict):
+                for record in workflows.values():
+                    _normalize_additive_keys(record)
+            _validate_document(document, self.path)
+        except StoreError as exc:
+            return ReadResult(READ_UNAVAILABLE, None, type(exc).__name__)
+        except Exception as exc:  # noqa: BLE001 - validation never escapes
+            return ReadResult(READ_UNAVAILABLE, None,
+                              "StoreError: %s" % type(exc).__name__)
+        return ReadResult(READ_PRESENT, document, None)
 
     def save(self, document):
         """Atomically persist the store: temp file, fsync, replace.
@@ -321,19 +394,60 @@ def store_counts(document):
     return {"total": total, "active": active, "inactive": total - active}
 
 
-def _prune_inactive(document):
+def retention_protects(record, now):
+    """Task 8, slice S-V (ledger R2-2): the ONE predicate every release,
+    cleanup and pruning path consults — the record layer's rule
+    (``record.retention_protects``): a Mission-origin record whose
+    retention is unreleased and unexpired at ``now``, or whose
+    engagement-start receipts show an unresolved start. Never a v2
+    record."""
+    return record_module.retention_protects(record, now)
+
+
+def _canonically_protected(record, protected):
+    """Task 8 S-V (R15-2): a Mission-origin record's canonical start
+    obligations (an unsettled start, a stop not confirmed — a cancel
+    after the workflow's terminal completion included) live in the
+    Mission store, which this layer never reads. A caller that can read
+    them passes ``protected`` (record -> True while an obligation is
+    outstanding or cannot be read); WITHOUT it a Mission-origin record is
+    never pruned — nothing is pruned while a canonical stop could be
+    outstanding. A v2 record is never canonically protected."""
+    if not record_module.is_mission_core_kind(record):
+        return False
+    return True if protected is None else bool(protected(record))
+
+
+def _prune_inactive(document, now=None, protected=None):
     """Drop terminal-phase records, oldest first, only as needed to
-    get back under the cap. Active records are never pruned. Returns
-    the EXACT number of records pruned, so the bound is observable at
-    the call site rather than silent."""
+    get back under the cap. Active records are never pruned, and
+    neither is a record ``retention_protects`` at ``now`` (Task 8,
+    slice S-V; ``now`` None reads the clock), one with an outstanding
+    canonical obligation (``_canonically_protected``, R15-2), or one
+    whose verification recovery evidence is still needed (Task 8 R20-1,
+    ``record.verification_evidence_outstanding``: pruning it would drop
+    the verification scope from the recovery owners while a verification
+    process may be alive or its attempt is unsettled), or one whose recovery
+    authority over its process scopes is still needed (R20-2,
+    ``record.cleanup_evidence_outstanding``: its workspace lease is held —
+    its cleanup has not established absence for every scope — or a scope
+    was retained after the lease was released). Returns the EXACT number of
+    records pruned, so the bound is observable at the call site rather
+    than silent."""
     workflows = document["workflows"]
     if len(workflows) < MAX_WORKFLOW_RECORDS:
         return 0
+    if now is None:
+        import time
+        now = int(time.time())
     inactive = sorted(
         (
             workflow_id
             for workflow_id, record in workflows.items()
-            if not is_active(record)
+            if not is_active(record) and not retention_protects(record, now)
+            and not _canonically_protected(record, protected)
+            and not record_module.verification_evidence_outstanding(record)
+            and not record_module.cleanup_evidence_outstanding(record)
         ),
         key=lambda workflow_id: (
             workflows[workflow_id]["approval"]["created_at"],
@@ -349,25 +463,38 @@ def _prune_inactive(document):
     return pruned
 
 
-def add_workflow(document, record):
+def has_room(document, now=None, protected=None):
+    """Task 8 S-VII (item E): whether ``add_workflow`` could add one more
+    record to ``document`` now — the SAME pruning, applied to a copy.
+    Pure: ``document`` is never changed."""
+    probe = copy.deepcopy(document)
+    _prune_inactive(probe, now, protected)
+    return len(probe["workflows"]) < MAX_WORKFLOW_RECORDS
+
+
+def add_workflow(document, record, now=None, protected=None):
     """Add a validated record to the store document, or refuse.
+    ``protected`` is the caller's canonical-obligation predicate for
+    Mission-origin records (see ``_canonically_protected``).
 
     Returns ``(ok, problem, pruned)``. ``ok`` is True on success with
     ``problem`` None; ``(False, problem, pruned)`` when the workflow
     id already exists (``pruned`` is 0 — nothing was touched) or when
     the store is at ``MAX_WORKFLOW_RECORDS`` even after pruning
     terminal-phase records — an explicit refusal; an active record is
-    never evicted to make room. ``pruned`` is the EXACT number of
-    terminal-phase records dropped to make room (standing
-    truthfulness rule: pruning of authorization records is reported,
-    never silent). The caller reports exact totals via
-    ``store_counts``.
+    never evicted to make room, and neither is a RETAINED one (Task 8,
+    slice S-V) or one whose verification recovery evidence is still
+    needed (R20-1): a store full of protected records refuses insertion.
+    ``pruned`` is the EXACT number of terminal-phase records dropped to
+    make room (standing truthfulness rule: pruning of authorization
+    records is reported, never silent). The caller reports exact totals
+    via ``store_counts``.
     """
     validate_record(record)
     workflows = document["workflows"]
     if record["workflow_id"] in workflows:
         return False, PROBLEM_DUPLICATE_WORKFLOW, 0
-    pruned = _prune_inactive(document)
+    pruned = _prune_inactive(document, now, protected)
     if len(workflows) >= MAX_WORKFLOW_RECORDS:
         return False, PROBLEM_STORE_FULL, pruned
     workflows[record["workflow_id"]] = record

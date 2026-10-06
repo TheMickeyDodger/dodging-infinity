@@ -21,6 +21,11 @@ Keys (all optional except ``repository``):
   into the controller so the ``di_mission_*`` tools work; when absent
   those tools refuse with an observable reason and nothing else changes.
   Loading the config creates nothing there.
+- ``workflow_store_dir`` (optional; Task 8 S-IV): the Runtime's state
+  directory; with ``mission_store_dir`` it wires dispatch, delivery,
+  status and controls.
+- ``coordination_store_dir`` (optional; Task 8 S-VII): the coordination
+  store the attention tools use; absent, they refuse.
 
 The config file and its directory must not be group- or
 world-accessible; an open mode is refused before the file is read.
@@ -53,6 +58,16 @@ class ServerConfig:
     allowed_origins: Tuple[str, ...]
     repository: str
     mission_store_dir: Optional[str] = None
+    # Task 8, slice S-IV: the absolute protected directory of the workflow
+    # store (the Runtime's state directory). Together with
+    # ``mission_store_dir`` it wires the engineering engagement tool; absent,
+    # that tool refuses with an observable reason and nothing else changes.
+    workflow_store_dir: Optional[str] = None
+    # Task 8, slice S-VII: the absolute protected directory of the
+    # coordination store the attention tools and the status read use (the
+    # same directory the Runtime projects attention into). Absent, the
+    # attention tools refuse with an observable reason.
+    coordination_store_dir: Optional[str] = None
 
 
 def _refuse_open_permissions(path, kind):
@@ -125,6 +140,24 @@ def load_config(path, environment):
         raise ConfigError(
             "config key mission_store_dir must be an absolute directory path"
         )
+    workflow_store_dir = raw.get("workflow_store_dir")
+    if workflow_store_dir is not None and (
+        not isinstance(workflow_store_dir, str)
+        or not os.path.isabs(workflow_store_dir)
+        or any(ch.isspace() or ord(ch) < 32 for ch in workflow_store_dir)
+    ):
+        raise ConfigError(
+            "config key workflow_store_dir must be an absolute directory path"
+        )
+    coordination_store_dir = raw.get("coordination_store_dir")
+    if coordination_store_dir is not None and (
+        not isinstance(coordination_store_dir, str)
+        or not os.path.isabs(coordination_store_dir)
+        or any(ch.isspace() or ord(ch) < 32 for ch in coordination_store_dir)
+    ):
+        raise ConfigError(
+            "config key coordination_store_dir must be an absolute directory path"
+        )
     token = raw.get("bearer_token")
     if token is None:
         token = environment.get(BEARER_TOKEN_ENV)
@@ -146,4 +179,6 @@ def load_config(path, environment):
         allowed_origins=tuple(item.strip() for item in origins),
         repository=repository,
         mission_store_dir=mission_store_dir,
+        workflow_store_dir=workflow_store_dir,
+        coordination_store_dir=coordination_store_dir,
     )

@@ -5282,5 +5282,258 @@ class MigrateWorkflowsCliTests(unittest.TestCase):
             self.assertEqual(handle.read(), before)
 
 
+class R23TelegramStateGateTests(unittest.TestCase):
+    """Task 8 R23 (brief amendment): the adapter state's existence gate.
+
+    Before: ``os.path.exists`` was False for EVERY OSError, so state whose
+    metadata cannot be read (EACCES, EIO) loaded as a FRESH default. The
+    adapter, which loads its state once at construction and saves it after
+    each update, would then overwrite the recorded state: approval
+    consumption, sessions and the Telegram offset, permitting reprocessing.
+
+    Now ``load`` raises StateError and the adapter never starts from the
+    false default:
+    - no save, counted by its own assertion;
+    - the state file's bytes identical;
+    - nothing written beside it.
+    Restored, the adapter reads the RECORDED state. The VALID and the
+    GENUINE-ABSENCE paths are unchanged."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = state.StateStore(self.tmp.name)
+        recorded = state.default_state()
+        recorded["update_offset"] = 55
+        self.store.save(recorded)
+        self.recorded = self.store.load()
+
+    def stat_refused(self, error):
+        """``os.stat`` of exactly the state file fails with errno ``error``;
+        every other path is observed for real. A context manager."""
+        path, real_stat = self.store.path, os.stat
+
+        def stat_(target, *args, **kwargs):
+            if not isinstance(target, int) and os.fspath(target) == path:
+                raise OSError(error, os.strerror(error), path)
+            return real_stat(target, *args, **kwargs)
+        return mock.patch.object(os, "stat", stat_)
+
+    def state_bytes(self):
+        with open(self.store.path, "rb") as handle:
+            return handle.read()
+
+    def outage_refuses(self, error):
+        before, listing = self.state_bytes(), sorted(os.listdir(self.tmp.name))
+        saves = []
+        real_save = state.StateStore.save
+
+        def save(this, document):
+            saves.append(document)
+            return real_save(this, document)
+        with mock.patch.object(state.StateStore, "save", save), self.stat_refused(error):
+            with self.assertRaises(state.StateError) as raised:
+                self.store.load()
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+            self.assertIn(os.strerror(error), str(raised.exception))
+            # The adapter never starts from a fresh default it would save
+            # over the recorded state.
+            with self.assertRaises(state.StateError):
+                AdapterHarness(self.tmp.name)
+        self.assertEqual(saves, [])                       # ZERO effect: nothing saved
+        self.assertEqual(self.state_bytes(), before)      # byte-identical
+        self.assertEqual(sorted(os.listdir(self.tmp.name)), listing)
+        # Restored: the adapter reads the RECORDED state, offset included.
+        harness = AdapterHarness(self.tmp.name)
+        self.assertEqual(harness.adapter._document, self.recorded)
+        self.assertEqual(harness.adapter._document["update_offset"], 55)
+        self.assertEqual(self.state_bytes(), before)
+
+    def test_R23A_state_metadata_refused_EACCES_never_starts_from_a_default(self):
+        import errno
+        self.outage_refuses(errno.EACCES)
+
+    def test_R23A_state_metadata_failing_EIO_never_starts_from_a_default(self):
+        import errno
+        self.outage_refuses(errno.EIO)
+
+    def test_R23A_valid_and_genuinely_missing_state_are_unchanged(self):
+        """The controls: VALID state reads exactly as recorded, and the read
+        writes nothing. GENUINE ABSENCE yields the fresh default exactly,
+        nothing created, and the adapter starts from it as it always did."""
+        before = self.state_bytes()
+        self.assertEqual(self.store.load(), json.loads(before.decode("utf-8")))
+        self.assertEqual(self.store.load(), self.recorded)
+        self.assertEqual(self.state_bytes(), before)
+        os.unlink(self.store.path)
+        self.assertEqual(self.store.load(), state.default_state())
+        self.assertFalse(os.path.exists(self.store.path))
+        harness = AdapterHarness(self.tmp.name)
+        self.assertEqual(harness.adapter._document, state.default_state())
+
+
+class R24TelegramStateLinkTests(unittest.TestCase):
+    """Task 8 R24-1: the adapter's state behind a link whose TARGET is
+    missing.
+
+    ``stat`` raises ``FileNotFoundError`` for a dangling link too, at the
+    state file or at its directory. The R23 gate read that as genuine
+    absence: a FRESH default state, which the real adapter then SAVED. In the
+    Reviewer's reproduction, a denied update at id 10 requested a fresh-state
+    save with offset 11, where the recorded state stands at 55.
+
+    Now the traversal decides: ``load`` raises StateError for a dangling file
+    or directory link, and the adapter never starts from a default. Scoped to
+    the DENIED state:
+    - no save, counted by its own assertion;
+    - the link unchanged, and nothing initialized at its target;
+    - the recorded offset 55 preserved.
+
+    Once the target returns, the adapter reads the RECORDED state through the
+    link. A VALID link behaves exactly as a regular state file, update for
+    update, and genuine absence is still the fresh default."""
+
+    DANGLING = "FileNotFoundError (symlink target)"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.directory = os.path.join(self.tmp.name, "state")
+        os.mkdir(self.directory, 0o700)
+        self.store = state.StateStore(self.directory)
+        recorded = state.default_state()
+        recorded["update_offset"] = 55
+        self.store.save(recorded)
+        self.recorded = self.store.load()
+        with open(self.store.path, "rb") as handle:
+            self.stored = handle.read()
+
+    @staticmethod
+    def denied(update_id):
+        """One poll carrying ONE update from a user who is not allowed: the
+        adapter persists no content, sends nothing, and saves its advanced
+        offset (``update_id + 1``)."""
+        return [telegram_api.PollOutcome(
+            (msg_update(update_id, "hello", user=666, chat=666),), False, None)]
+
+    def dangle(self, path):
+        """``path`` becomes a link to a MISSING target; the real object waits
+        aside. Returns ``(restore, target, link)``: ``restore`` makes the target
+        return, so the link resolves. The cleanup puts the object back."""
+        import shutil
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+        aside = os.path.join(holding, "aside")
+        target = os.path.join(holding, "target")
+        os.rename(path, aside)
+        os.symlink(target, path)
+
+        def put_back():
+            os.unlink(path)
+            os.rename(target if os.path.lexists(target) else aside, path)
+        self.addCleanup(put_back)
+        return (lambda: os.rename(aside, target)), target, os.lstat(path)
+
+    def link_unchanged(self, path, target, link):
+        self.assertTrue(os.path.islink(path), path)
+        self.assertEqual((os.lstat(path).st_ino, os.readlink(path)), (link.st_ino, target))
+        self.assertFalse(os.path.lexists(target), "something was initialized at the target")
+
+    def counted_saves(self, saves):
+        """Every ``StateStore.save`` COUNTED (its path and offset)."""
+        real_save = state.StateStore.save
+
+        def save(this, document):
+            saves.append((this.path, document["update_offset"]))
+            return real_save(this, document)
+        return mock.patch.object(state.StateStore, "save", save)
+
+    def dangling_state_refuses(self, path):
+        restore, target, link = self.dangle(path)
+        saves = []
+        with self.counted_saves(saves):
+            with self.assertRaises(state.StateError) as raised:
+                self.store.load()
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+            self.assertIn(self.DANGLING, str(raised.exception))
+            # The real adapter, offered the Reviewer's update, never starts
+            # from a default it would save over the recorded state.
+            with self.assertRaises(state.StateError):
+                AdapterHarness(self.directory, poll_script=self.denied(10))
+        self.assertEqual(saves, [])   # ZERO: no fresh-state save, no default initialized
+        self.link_unchanged(path, target, link)
+        # The target returns: the RECORDED state, offset 55, read through the
+        # link; an idle poll asks from 55 and saves nothing.
+        restore()
+        with self.counted_saves(saves):
+            harness = AdapterHarness(
+                self.directory, poll_script=[telegram_api.PollOutcome((), True, None)])
+            self.assertEqual(harness.adapter._document, self.recorded)
+            self.assertTrue(harness.adapter.poll_once())
+        self.assertEqual(harness.adapter._document["update_offset"], 55)
+        self.assertEqual([entry for entry in harness.timeline if entry[0] == "poll"],
+                         [("poll", 55)])
+        self.assertEqual(saves, [])
+        with open(self.store.path, "rb") as handle:
+            self.assertEqual(handle.read(), self.stored)
+
+    def test_R24A_a_dangling_state_FILE_link_never_starts_from_a_default(self):
+        self.dangling_state_refuses(self.store.path)
+
+    def test_R24A_a_dangling_state_DIRECTORY_link_never_starts_from_a_default(self):
+        self.dangling_state_refuses(self.directory)
+
+    def test_R24A_a_valid_state_link_behaves_exactly_as_the_regular_file(self):
+        """The same adapter run — the RECORDED state loaded, one denied update
+        at id 60 — over the regular file, a VALID file link and a VALID
+        directory link: the same document loaded and the same timeline,
+        poll for poll and save for save (two saves at offset 61, the
+        event's and the batch's)."""
+        import shutil
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+
+        def run():
+            harness = AdapterHarness(self.directory, poll_script=self.denied(60))
+            loaded = json.loads(json.dumps(harness.adapter._document))
+            self.assertTrue(harness.adapter.poll_once())
+            return loaded, list(harness.timeline)
+
+        def put_recorded():
+            with open(self.store.path, "wb") as handle:
+                handle.write(self.stored)
+        regular = run()
+        self.assertEqual(regular[0], self.recorded)
+        self.assertEqual([(entry[0], entry[1]["update_offset"]) for entry in regular[1]
+                          if entry[0] == "save"], [("save", 61), ("save", 61)])
+        for path in (self.store.path, self.directory):
+            put_recorded()
+            real = os.path.join(holding, os.path.basename(path) + "-real")
+            os.rename(path, real)
+            os.symlink(real, path)
+            self.assertEqual(run(), regular, path)
+            os.unlink(path)
+            os.rename(real, path)
+
+    def test_R24A_genuinely_missing_state_is_still_the_fresh_default(self):
+        """A state file GENUINELY missing — its directory present — is the
+        fresh default, nothing created by the read; the adapter starts from
+        it and the denied update at id 10 is then saved at offset 11, twice
+        (the event's save and the batch's) — exactly as before. A state
+        DIRECTORY genuinely missing is the fresh default too."""
+        missing = os.path.join(self.tmp.name, "never-created")
+        self.assertEqual(state.StateStore(missing).load(), state.default_state())
+        self.assertFalse(os.path.lexists(missing))
+        os.unlink(self.store.path)
+        self.assertEqual(self.store.load(), state.default_state())
+        self.assertFalse(os.path.lexists(self.store.path))
+        saves = []
+        with self.counted_saves(saves):
+            harness = AdapterHarness(self.directory, poll_script=self.denied(10))
+            self.assertEqual(harness.adapter._document, state.default_state())
+            self.assertTrue(harness.adapter.poll_once())
+        self.assertEqual(saves, [(self.store.path, 11), (self.store.path, 11)])
+
+
 if __name__ == "__main__":
     unittest.main()

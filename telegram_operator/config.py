@@ -46,6 +46,18 @@ class AdapterConfig:
     bot_token: str
     allowed_user_ids: Tuple[int, ...]
     repository: str
+    # Task 8, slice S-IV (dirun only): the absolute protected directory of
+    # the neutral Mission store. When present the Runtime consults the
+    # Mission effect gate for Mission-origin workflows; absent, every
+    # Mission-origin record is refused (fail closed) and v2 records are
+    # unaffected. The Telegram adapter ignores it.
+    mission_store_dir: Optional[str] = None
+    # Task 8, slice S-VII (dirun only): the absolute protected directory of
+    # the coordination store the Runtime projects client attention into
+    # (the same directory the Grok endpoint's attention tools read).
+    # Absent, the Runtime projects no attention. The Telegram adapter
+    # ignores it.
+    coordination_store_dir: Optional[str] = None
 
 
 def default_config_path(home=None):
@@ -189,9 +201,28 @@ def load_config(path=None):
                 " config outside the repository."
                 % (label, resolved, candidate, repo_real)
             )
+    mission_store_dir = raw.get("mission_store_dir")
+    if mission_store_dir is not None and (
+        not isinstance(mission_store_dir, str)
+        or not os.path.isabs(mission_store_dir)
+        or any(ch.isspace() or ord(ch) < 32 for ch in mission_store_dir)
+    ):
+        raise ConfigError(
+            "config key mission_store_dir must be an absolute directory path"
+        )
+    coordination_store_dir = raw.get("coordination_store_dir")
+    if coordination_store_dir is not None and (
+        not isinstance(coordination_store_dir, str)
+        or not os.path.isabs(coordination_store_dir)
+        or any(ch.isspace() or ord(ch) < 32 for ch in coordination_store_dir)
+    ):
+        raise ConfigError(
+            "config key coordination_store_dir must be an absolute directory path"
+        )
     unknown = sorted(
         key for key in raw
-        if key not in ("bot_token", "allowed_user_ids", "repository")
+        if key not in ("bot_token", "allowed_user_ids", "repository",
+                       "mission_store_dir", "coordination_store_dir")
     )
     if unknown:
         raise ConfigError(
@@ -203,4 +234,6 @@ def load_config(path=None):
         bot_token=token,
         allowed_user_ids=tuple(checked),
         repository=repo_real,
+        mission_store_dir=mission_store_dir,
+        coordination_store_dir=coordination_store_dir,
     )

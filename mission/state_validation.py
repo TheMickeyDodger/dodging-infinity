@@ -111,6 +111,8 @@ class _Bindings(object):
         self.evidence = {}
         self.blocker_ids = set()
         self.dependency_ids = set()
+        self.engagement_ids = set()
+        self.engagement_start_ids = set()
 
 
 def _bound_list(value, location, max_items, problem=state_module.PROBLEM_STATE_FULL):
@@ -646,6 +648,394 @@ def _validate_reconciliation(bindings, entry, where):
                        time_field="reconciled_at")
 
 
+def _validate_engagement(bindings, entry, where, per_activation):
+    """Task 8, slice S-IV: a engagement reservation binds its operation,
+    its activation (whose authorization and digest it must repeat),
+    numbers the activation's engagements contiguously (sequence 1 is the
+    one INITIAL kind, every later one a FOLLOW-UP naming the same
+    workflow) and names a workflow id in the mirrored grammar."""
+    record.require_id(entry["engagement_id"], record.ENGAGEMENT_ID_PREFIX,
+                      where + ".engagement_id")
+    if entry["engagement_id"] in bindings.engagement_ids:
+        record.fail(record.PROBLEM_BAD_VALUE,
+                    "%s repeats engagement id %s" % (where, entry["engagement_id"]))
+    bindings.engagement_ids.add(entry["engagement_id"])
+    _require_operation(bindings, entry, state_module.OPERATION_RESERVE_ENGAGEMENT, where,
+                       time_field="reserved_at")
+    activation = _require_activation(bindings, entry, where)
+    if entry["authorization_id"] != activation["authorization_id"] or (
+        entry["authorization_digest_sha256"]
+        != activation["authorization_digest_sha256"]
+    ):
+        record.fail(state_module.PROBLEM_ACTIVATION_BINDING,
+                    "%s names authorization %s / digest %s but its activation %s"
+                    " was made under %s / %s" % (
+                        where, entry["authorization_id"],
+                        entry["authorization_digest_sha256"],
+                        activation["activation_id"], activation["authorization_id"],
+                        activation["authorization_digest_sha256"]))
+    state_module.require_workflow_id(entry["workflow_id"], where + ".workflow_id")
+    record.require_int(entry["engagement_sequence"], where + ".engagement_sequence",
+                       minimum=1)
+    record.require_member(entry["kind"], state_module.ENGAGEMENT_KINDS, where + ".kind")
+    earlier = per_activation.setdefault(activation["activation_id"], [])
+    if entry["engagement_sequence"] != len(earlier) + 1:
+        record.fail(state_module.PROBLEM_ENGAGEMENT_SEQUENCE,
+                    "%s.engagement_sequence must be %d: an activation's engagements"
+                    " are numbered contiguously" % (where, len(earlier) + 1))
+    expected_kind = (state_module.ENGAGEMENT_KIND_INITIAL if not earlier
+                     else state_module.ENGAGEMENT_KIND_FOLLOW_UP)
+    if entry["kind"] != expected_kind:
+        record.fail(state_module.PROBLEM_ENGAGEMENT_FENCE,
+                    "%s.kind must be %s at engagement_sequence %d"
+                    % (where, expected_kind, entry["engagement_sequence"]))
+    if earlier and earlier[0]["workflow_id"] != entry["workflow_id"]:
+        record.fail(state_module.PROBLEM_ENGAGEMENT_WORKFLOW_MISMATCH,
+                    "%s names workflow %s but the activation's initial engagement"
+                    " named %s" % (where, entry["workflow_id"],
+                                   earlier[0]["workflow_id"]))
+    earlier.append(entry)
+
+
+def _same_principal(a, b):
+    return all(a[key] == b[key]
+               for key in ("transport", "principal_kind", "principal_ref"))
+
+
+def _validate_engagement_start(bindings, entry, where, seen_points):
+    """Task 8, slice S-IV (start-claim decision): an engagement start
+    binds its opening operation and activation, repeats its engagement's
+    identity exactly, is the ONE start of its (engagement, point), a task
+    start follows a completed unstopped runtime start, and its nested
+    stop request / settlement / stop observation each bind a LATER
+    operation of the right kind (settlement and observation by the same
+    owner)."""
+    record.require_id(entry["start_id"], record.ENGAGEMENT_START_ID_PREFIX,
+                      where + ".start_id")
+    if entry["start_id"] in bindings.engagement_start_ids:
+        record.fail(record.PROBLEM_BAD_VALUE,
+                    "%s repeats start id %s" % (where, entry["start_id"]))
+    bindings.engagement_start_ids.add(entry["start_id"])
+    _require_operation(bindings, entry, state_module.OPERATION_OPEN_ENGAGEMENT_START,
+                       where, time_field="opened_at")
+    activation = _require_activation(bindings, entry, where)
+    record.require_id(entry["engagement_id"], record.ENGAGEMENT_ID_PREFIX,
+                      where + ".engagement_id")
+    engagement = state_module.engagement_by_id(bindings.state, entry["engagement_id"])
+    if engagement is None or engagement["sequence"] >= entry["sequence"]:
+        record.fail(state_module.PROBLEM_UNKNOWN_ENGAGEMENT,
+                    "%s names engagement %s, which is not an engagement reserved"
+                    " before it" % (where, entry["engagement_id"]))
+    if engagement["activation_id"] != activation["activation_id"]:
+        record.fail(state_module.PROBLEM_ACTIVATION_BINDING,
+                    "%s binds activation %s but its engagement was reserved under"
+                    " %s" % (where, activation["activation_id"],
+                             engagement["activation_id"]))
+    for key in ("workflow_id", "engagement_sequence", "authorization_id",
+                "authorization_digest_sha256"):
+        if entry[key] != engagement[key]:
+            record.fail(record.PROBLEM_BAD_VALUE,
+                        "%s.%s %r does not repeat its engagement's %r"
+                        % (where, key, entry[key], engagement[key]))
+    record.require_member(entry["point"], state_module.START_POINTS, where + ".point",
+                          state_module.PROBLEM_ENGAGEMENT_START_POINT)
+    slot = (entry["engagement_id"], entry["point"])
+    if slot in seen_points:
+        record.fail(state_module.PROBLEM_ENGAGEMENT_START_EXISTS,
+                    "%s repeats the %s start of engagement %s; a start is"
+                    " admitted once" % (where, entry["point"], entry["engagement_id"]))
+    seen_points[slot] = entry
+    record.require_str(entry["owner_ref"], where + ".owner_ref",
+                       state_module.MAX_OWNER_REF_CHARS)
+    opened = record.require_timestamp(entry["opened_at"], where + ".opened_at")
+    stop_requested = entry["stop_requested"]
+    if stop_requested is not None:
+        sub = where + ".stop_requested"
+        record.require_dict(stop_requested, sub)
+        record.require_closed_keys(stop_requested, state_module.STOP_REQUEST_KEYS, sub)
+        record.require_timestamp(stop_requested["requested_at"], sub + ".requested_at")
+        record.require_str(stop_requested["reason"], sub + ".reason",
+                           state_module.MAX_STATE_REASON_CHARS)
+        if stop_requested["operation_id"] is None:
+            # An EDIT's supersession: bound to the superseding revision.
+            if stop_requested["sequence"] is not None:
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s binds no operation but carries a sequence" % sub)
+            record.require_int(stop_requested["revision"], sub + ".revision",
+                               minimum=2)
+            if stop_requested["revision"] <= entry["provenance"]["revision"]:
+                record.fail(record.PROBLEM_BAD_VALUE,
+                            "%s names revision %d, which does not supersede the"
+                            " start's revision %d"
+                            % (sub, stop_requested["revision"],
+                               entry["provenance"]["revision"]))
+        else:
+            if stop_requested["revision"] is not None:
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s binds both an operation and a revision" % sub)
+            record.require_id(stop_requested["operation_id"],
+                              record.STATE_OPERATION_ID_PREFIX, sub + ".operation_id")
+            operation = bindings.operations.get(stop_requested["operation_id"])
+            record.require_int(stop_requested["sequence"], sub + ".sequence",
+                               minimum=1)
+            if operation is None or operation["sequence"] != (
+                stop_requested["sequence"]
+            ) or operation["sequence"] <= entry["sequence"] or (
+                operation["kind"] not in (state_module.OPERATION_REQUEST_CANCEL,
+                                          state_module.OPERATION_REQUEST_HOLD)
+            ):
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s must name a LATER applied request_cancel or"
+                            " request_hold operation of this record" % sub)
+            # A hold marks only a start that was still OPEN at the hold (it
+            # never pretends to pause a settled, running start).
+            if operation["kind"] == state_module.OPERATION_REQUEST_HOLD and (
+                entry["settlement"] is not None
+                and isinstance(entry["settlement"].get("sequence"), int)
+                and entry["settlement"]["sequence"] <= operation["sequence"]
+            ):
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s names a hold applied after the start was settled;"
+                            " a hold marks only an open start" % sub)
+    settlement = entry["settlement"]
+    if settlement is not None:
+        sub = where + ".settlement"
+        record.require_dict(settlement, sub)
+        record.require_closed_keys(settlement, state_module.SETTLEMENT_KEYS, sub)
+        record.require_int(settlement["sequence"], sub + ".sequence", minimum=1)
+        _require_operation(bindings, settlement,
+                           state_module.OPERATION_SETTLE_ENGAGEMENT_START, sub,
+                           time_field="settled_at")
+        if settlement["sequence"] <= entry["sequence"]:
+            record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                        "%s must be a LATER operation than the opening" % sub)
+        settled = record.require_timestamp(settlement["settled_at"],
+                                           sub + ".settled_at")
+        if settled < opened:
+            record.fail(record.PROBLEM_BAD_VALUE,
+                        "%s.settled_at precedes the opening" % sub)
+        record.require_member(settlement["outcome"], state_module.START_OUTCOMES,
+                              sub + ".outcome")
+        if settlement["identity"] is not None:
+            state_module.validate_start_identity(settlement["identity"],
+                                                 sub + ".identity")
+            if settlement["outcome"] != state_module.START_OUTCOME_COMPLETED:
+                record.fail(record.PROBLEM_BAD_VALUE,
+                            "%s carries an identity for a %s start"
+                            % (sub, settlement["outcome"]))
+        record.require_bool(settlement["stop_pending"], sub + ".stop_pending")
+        record.require_optional_str(settlement["owner_reason"], sub + ".owner_reason",
+                                    state_module.MAX_STATE_REASON_CHARS)
+        record.require_optional_str(settlement["stop_reason"], sub + ".stop_reason",
+                                    state_module.MAX_STATE_REASON_CHARS * 4)
+        if (settlement["owner_reason"] is not None) and not settlement["stop_pending"]:
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_STATE,
+                        "%s carries an owner stop reason but pends no stop" % sub)
+        if settlement["outcome"] != state_module.START_OUTCOME_COMPLETED and (
+            not settlement["stop_pending"]
+        ):
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_STATE,
+                        "%s: a %s start always pends a stop (it is not absence"
+                        " proof)" % (sub, settlement["outcome"]))
+        if not _same_principal(settlement["provenance"], entry["provenance"]):
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_OWNER,
+                        "%s was settled by a principal other than its owner" % sub)
+    if entry["point"] == state_module.START_POINT_TASK:
+        runtime = seen_points.get((entry["engagement_id"],
+                                   state_module.START_POINT_RUNTIME))
+        if runtime is None or runtime["settlement"] is None or (
+            runtime["settlement"]["sequence"] >= entry["sequence"]
+        ) or runtime["settlement"]["outcome"] != (
+            state_module.START_OUTCOME_COMPLETED
+        ) or runtime["settlement"]["stop_pending"] or _stop_requested_before(
+            runtime["stop_requested"], entry
+        ):
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_ORDER,
+                        "%s: a task start needs its engagement's runtime start"
+                        " settled completed, without a stop requirement, before"
+                        " it" % where)
+    observations = _bound_list(entry["stop_observations"], where + ".stop_observations",
+                               state_module.MAX_STOP_OBSERVATIONS)
+    last_sequence = 0
+    for index, observation in enumerate(observations):
+        sub = "%s.stop_observations[%d]" % (where, index)
+        record.require_dict(observation, sub)
+        record.require_closed_keys(observation, state_module.STOP_OBSERVATION_KEYS, sub)
+        record.require_int(observation["sequence"], sub + ".sequence", minimum=1)
+        _require_operation(bindings, observation,
+                           state_module.OPERATION_OBSERVE_ENGAGEMENT_STOP, sub,
+                           time_field="observed_at")
+        if settlement is None or observation["sequence"] <= settlement["sequence"]:
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_STATE,
+                        "%s must follow the settlement" % sub)
+        if observation["sequence"] <= last_sequence:
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_STATE,
+                        "%s must follow the earlier observation" % sub)
+        if index > 0 and observations[index - 1]["absent"]:
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_STATE,
+                        "%s follows a confirming observation; nothing is observed"
+                        " after confirmation" % sub)
+        last_sequence = observation["sequence"]
+        required = settlement["stop_pending"] or _stop_requested_before(
+            stop_requested, observation)
+        if not required:
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_STATE,
+                        "%s observes a stop that was never required" % sub)
+        record.require_bool(observation["absent"], sub + ".absent")
+        record.require_str(observation["detail"], sub + ".detail",
+                           state_module.MAX_STOP_DETAIL_CHARS)
+        if observation["identity"] is not None:
+            state_module.validate_start_identity(observation["identity"],
+                                                 sub + ".identity")
+        if not _same_principal(observation["provenance"], entry["provenance"]):
+            record.fail(state_module.PROBLEM_ENGAGEMENT_START_OWNER,
+                        "%s was recorded by a principal other than the owner" % sub)
+
+
+def _stop_requested_before(stop, later):
+    """Whether a start's stop requirement preceded ``later`` (a task
+    start, or a stop observation): an operation-bound marker (a cancel)
+    by sequence; a revision-bound marker (an EDIT, Task 8 S-V; recorded
+    in the EDIT's own transaction, sequence None) by revision — an entry
+    recorded under the superseding revision or later follows it."""
+    if stop is None:
+        return False
+    if stop["sequence"] is not None:
+        return stop["sequence"] < later["sequence"]
+    return later["provenance"]["revision"] >= stop["revision"]
+
+
+def _validate_controls(bindings, value, where):
+    """Task 8, slice S-V: the closed control record — a hold (and its
+    lift) and a cancel request (and its confirmation) each bound to
+    their operations in order; a bounded history of closed events; the
+    cancel's confirmation only with a closure of the confirming
+    operation."""
+    state = bindings.state
+    record.require_dict(value, where)
+    record.require_closed_keys(value, state_module.CONTROL_RECORD_KEYS, where)
+    if value["version"] != state_module.CONTROL_RECORD_VERSION:
+        record.fail(record.PROBLEM_BAD_VALUE,
+                    "%s.version must be %d" % (where, state_module.CONTROL_RECORD_VERSION))
+    holds = value["holds"]
+    if not isinstance(holds, list):
+        record.fail(record.PROBLEM_BAD_TYPE, "%s.holds must be a list" % where)
+    if len(holds) > state_module.MAX_APPLIED_OPERATIONS:
+        record.fail(record.PROBLEM_TOO_LARGE, "%s.holds exceeds the ledger bound" % where)
+    for index, hold in enumerate(holds):
+        sub = "%s.holds[%d]" % (where, index)
+        if index > 0 and hold["sequence"] <= holds[index - 1]["sequence"]:
+            record.fail(state_module.PROBLEM_CONTROL_STATE,
+                        "%s must follow the previous hold" % sub)
+        if index < len(holds) - 1 and hold["lifted_at"] is None:
+            record.fail(state_module.PROBLEM_CONTROL_STATE,
+                        "%s is not the latest hold and must be lifted" % sub)
+        record.require_dict(hold, sub)
+        record.require_closed_keys(hold, state_module.CONTROL_HOLD_KEYS, sub)
+        record.require_int(hold["sequence"], sub + ".sequence", minimum=1)
+        _require_operation(bindings, hold, state_module.OPERATION_REQUEST_HOLD, sub,
+                           time_field="requested_at")
+        record.require_str(hold["reason"], sub + ".reason",
+                           state_module.MAX_STATE_REASON_CHARS)
+        record.require_int(hold["revision"], sub + ".revision", minimum=1)
+        lifted = (hold["lifted_at"], hold["lift_operation_id"],
+                  hold["lift_sequence"])
+        if any(v is not None for v in lifted):
+            if any(v is None for v in lifted):
+                record.fail(record.PROBLEM_BAD_VALUE,
+                            "%s lift fields must all be set or all null" % sub)
+            lift = {"operation_id": hold["lift_operation_id"],
+                    "sequence": hold["lift_sequence"]}
+            operation = bindings.operations.get(lift["operation_id"])
+            record.require_int(lift["sequence"], sub + ".lift_sequence",
+                               minimum=1)
+            if operation is None or operation["kind"] != (
+                state_module.OPERATION_LIFT_HOLD
+            ) or operation["sequence"] != lift["sequence"] or (
+                lift["sequence"] <= hold["sequence"]
+            ):
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s lift must name a LATER applied lift_hold"
+                            " operation" % sub)
+            record.require_timestamp(hold["lifted_at"], sub + ".lifted_at")
+    cancel = value["cancel_request"]
+    if cancel is not None:
+        sub = where + ".cancel_request"
+        record.require_dict(cancel, sub)
+        record.require_closed_keys(cancel, state_module.CONTROL_CANCEL_KEYS, sub)
+        record.require_int(cancel["sequence"], sub + ".sequence", minimum=1)
+        _require_operation(bindings, cancel, state_module.OPERATION_REQUEST_CANCEL, sub,
+                           time_field="requested_at")
+        record.require_str(cancel["reason"], sub + ".reason",
+                           state_module.MAX_STATE_REASON_CHARS)
+        record.require_int(cancel["revision"], sub + ".revision", minimum=1)
+        confirmation = cancel["confirmation"]
+        if (cancel["confirmed_at"] is None) != (confirmation is None):
+            record.fail(record.PROBLEM_BAD_VALUE,
+                        "%s confirmed_at and confirmation must both be set or"
+                        " both null" % sub)
+        if confirmation is not None:
+            csub = sub + ".confirmation"
+            record.require_dict(confirmation, csub)
+            record.require_closed_keys(confirmation,
+                                       state_module.CONTROL_CONFIRMATION_KEYS, csub)
+            record.require_int(confirmation["sequence"], csub + ".sequence", minimum=1)
+            _require_operation(bindings, confirmation,
+                               state_module.OPERATION_CONFIRM_CANCEL, csub)
+            if confirmation["sequence"] <= cancel["sequence"]:
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s must follow the cancel request" % csub)
+            record.require_timestamp(cancel["confirmed_at"], sub + ".confirmed_at")
+            record.require_str(confirmation["detail"], csub + ".detail",
+                               state_module.MAX_STATE_REASON_CHARS)
+            record.require_bool(confirmation["starts_never_started"],
+                                csub + ".starts_never_started")
+            starts = confirmation["starts_confirmed"]
+            if not isinstance(starts, list):
+                record.fail(record.PROBLEM_BAD_TYPE,
+                            "%s.starts_confirmed must be a list" % csub)
+            known = set(s["start_id"] for s in state_module.engagement_starts_of(state))
+            for index, start_id in enumerate(starts):
+                record.require_id(start_id, record.ENGAGEMENT_START_ID_PREFIX,
+                                  "%s.starts_confirmed[%d]" % (csub, index))
+                if start_id not in known:
+                    record.fail(state_module.PROBLEM_UNKNOWN_ENGAGEMENT_START,
+                                "%s names unknown start %s" % (csub, start_id))
+            if confirmation["starts_never_started"] != (not known):
+                record.fail(record.PROBLEM_BAD_VALUE,
+                            "%s.starts_never_started disagrees with the record"
+                            % csub)
+            closure = state["closure"]
+            if closure is None or closure["operation_id"] != confirmation["operation_id"]:
+                record.fail(state_module.PROBLEM_CONTROL_STATE,
+                            "%s is not bound to the closure it produced" % csub)
+    history = _bound_list(value["history"], where + ".history",
+                          state_module.MAX_CONTROL_HISTORY)
+    for index, event in enumerate(history):
+        sub = "%s.history[%d]" % (where, index)
+        record.require_dict(event, sub)
+        record.require_closed_keys(event, state_module.CONTROL_HISTORY_KEYS, sub)
+        record.require_member(event["kind"], state_module.CONTROL_EVENTS, sub + ".kind")
+        record.require_timestamp(event["at"], sub + ".at")
+        record.require_int(event["revision"], sub + ".revision", minimum=1)
+        if event["operation_id"] is None:
+            if event["kind"] != state_module.CONTROL_EVENT_REVISION_SUPERSEDED or (
+                event["sequence"] is not None
+            ):
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s binds no operation; only a supersession may" % sub)
+        else:
+            record.require_id(event["operation_id"], record.STATE_OPERATION_ID_PREFIX,
+                              sub + ".operation_id")
+            record.require_int(event["sequence"], sub + ".sequence", minimum=1)
+            operation = bindings.operations.get(event["operation_id"])
+            if operation is None or operation["sequence"] != event["sequence"] or (
+                operation["kind"] not in state_module.CONTROL_OPERATIONS
+            ):
+                record.fail(state_module.PROBLEM_OPERATION_BINDING,
+                            "%s must name an applied control operation" % sub)
+
+
 def _validate_work_items(value, where):
     items = _bound_list(value, where, state_module.MAX_WORK_ITEMS, record.PROBLEM_TOO_LARGE)
     for index, item in enumerate(items):
@@ -758,14 +1148,18 @@ def _validate_closure(bindings):
     record.require_timestamp(closure["closed_at"], where + ".closed_at")
     record.require_int(closure["sequence"], where + ".sequence", minimum=1)
     operation = bindings.operations.get(closure["operation_id"])
-    expected_kind = None
-    for kind, outcome in state_module.CLOSING_OPERATIONS.items():
-        if outcome == progress:
-            expected_kind = kind
-    if operation is None or operation["kind"] != expected_kind:
+    # Task 8, slice S-V: more than one closing kind may produce the same
+    # terminal progress (abandon and confirm_cancel both end ABANDONED);
+    # the closure binds to whichever applied closing operation it names.
+    expected_kinds = sorted(
+        kind for kind, outcome in state_module.CLOSING_OPERATIONS.items()
+        if outcome == progress)
+    if operation is None or operation["kind"] not in expected_kinds:
         record.fail(state_module.PROBLEM_CLOSURE,
-                    "%s must be produced by a %s operation" % (where, expected_kind))
-    _require_operation(bindings, closure, expected_kind, where, time_field="closed_at")
+                    "%s must be produced by a %s operation"
+                    % (where, " or ".join(expected_kinds)))
+    _require_operation(bindings, closure, operation["kind"], where,
+                       time_field="closed_at")
     if closure["sequence"] != state["sequence"]:
         record.fail(state_module.PROBLEM_CLOSURE,
                     "%s is not the last operation of the record; terminal is"
@@ -865,6 +1259,23 @@ def validate_state_record(value, location="mission state"):
         _validate_ordered(bindings, "reconciliations",
                           reconciliation.MAX_RECONCILIATION_RECORDS,
                           reconciliation.RECONCILIATION_KEYS, _validate_reconciliation)
+    # Task 8, slice S-IV: engagement reservations, when the key is present.
+    if "engagements" in value:
+        per_activation = {}
+        _validate_ordered(
+            bindings, "engagements", state_module.MAX_ENGAGEMENT_RECORDS,
+            state_module.ENGAGEMENT_KEYS,
+            lambda b, e, w: _validate_engagement(b, e, w, per_activation))
+    # Task 8, slice S-IV (start-claim decision): engagement starts.
+    if "engagement_starts" in value:
+        seen_points = {}
+        _validate_ordered(
+            bindings, "engagement_starts", state_module.MAX_ENGAGEMENT_START_RECORDS,
+            state_module.ENGAGEMENT_START_KEYS,
+            lambda b, e, w: _validate_engagement_start(b, e, w, seen_points))
+    # Task 8, slice S-V: the control record, when the key is present.
+    if value.get("controls") is not None:
+        _validate_controls(bindings, value["controls"], location + ".controls")
     _validate_closure(bindings)
     _validate_progress_consistency(bindings)
     state_reconcile.reconcile_effects(value, location)

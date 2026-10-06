@@ -56,6 +56,15 @@ check and passes it per request as ``ingress``; a call without one
 refuses and mints nothing. ``di_operator_turn`` keeps its existing
 principal semantics unchanged. This controller writes no durable state
 itself; the Mission service owns its own store.
+
+Decision tool. ``di_mission_decide`` is relayed by
+``grok_mcp.decision_tools`` and needs two more things the server hands
+in per request: the CLIENT CONFIRMATION context (``client_ingress``,
+built by the server after the same bearer check, under which a client's
+form answer is reserved and applied) and an elicitation channel
+(``elicitation``) bound to the request's session and event stream. A
+call without them refuses and mints nothing; the controller never
+builds either.
 """
 
 import collections
@@ -67,6 +76,9 @@ import threading
 from human_interaction import EVENT_MESSAGE, InteractionEvent
 
 from grok_mcp import adapter as adapter_module
+from grok_mcp import control_tools
+from grok_mcp import decision_tools
+from grok_mcp import engagement_tools
 from grok_mcp import mission_tools
 from grok_mcp import protocol
 
@@ -117,12 +129,29 @@ class GrokMcpController(object):
     """Dispatch one validated tool call; own every DI-minted reference."""
 
     def __init__(self, session, repository, principal_id=DEFAULT_PRINCIPAL_ID,
-                 mint_ref=None, mission_service=None):
+                 mint_ref=None, mission_service=None, engagement_bootstrap=None,
+                 delivery_desk=None, status_reader=None, control_desk=None,
+                 attention_desk=None):
         self._session = session
         self._repository = repository
         self._principal_id = principal_id
         self._mint_ref = mint_ref or default_mint_ref
         self._mission_service = mission_service
+        # Task 8 S-IV: the INJECTED engagement bootstrap callable
+        # ``(mission_id, ingress) -> result``; None means the engagement
+        # tool refuses with an observable reason.
+        self._engagement_bootstrap = engagement_bootstrap
+        # Task 8 S-VI: the INJECTED Mission-control delivery desk (card,
+        # client-confirmed decision record, pure status); None refuses both
+        # delivery tools with an observable reason.
+        self._delivery_desk = delivery_desk
+        # Task 8 S-VII: the INJECTED pure status reader ``(mission_id) ->
+        # status``, the Mission-control desk (hold / resume / cancel) and the
+        # attention desk (pull, acknowledgment); each None refuses its tools
+        # with an observable reason.
+        self._status_reader = status_reader
+        self._control_desk = control_desk
+        self._attention_desk = attention_desk
         self._counter = itertools.count(1)
         self._counter_lock = threading.Lock()
         self._turn_lock = threading.Lock()
@@ -160,10 +189,13 @@ class GrokMcpController(object):
 
     # -- dispatch -------------------------------------------------------
 
-    def call_tool(self, name, arguments, ingress=None):
+    def call_tool(self, name, arguments, ingress=None, elicitation=None,
+                  client_ingress=None):
         """Dispatch one tool call. ``ingress`` is the per-request
         authenticated context the server built after its bearer check;
-        only the Mission tools consume it, and they refuse without it."""
+        only the Mission tools consume it, and they refuse without it.
+        ``client_ingress`` and ``elicitation`` are consumed only by the
+        decision tool, which refuses without them."""
         tool = protocol.tool_by_name(name)
         if tool is None:
             raise UnknownToolError("unknown tool")
@@ -182,6 +214,44 @@ class GrokMcpController(object):
             structured, is_error = mission_tools.relay(
                 name, arguments, reason, ingress, self._mission_service,
                 self._mint_ref(),
+            )
+            return self._finish(name, structured, is_error)
+        if name in protocol.DECISION_TOOL_NAMES:
+            structured, is_error = decision_tools.relay(
+                name, arguments, reason, ingress, client_ingress,
+                self._mission_service, self._mint_ref(), elicitation,
+                delivery_desk=self._delivery_desk,
+            )
+            return self._finish(name, structured, is_error)
+        if name in protocol.DELIVERY_TOOL_NAMES:
+            structured, is_error = decision_tools.relay_delivery_status(
+                name, arguments, reason, ingress, self._delivery_desk,
+                self._mint_ref(),
+            )
+            return self._finish(name, structured, is_error)
+        if name in protocol.ENGAGEMENT_TOOL_NAMES:
+            structured, is_error = engagement_tools.relay(
+                name, arguments, reason, ingress, self._engagement_bootstrap,
+                self._mint_ref(),
+            )
+            return self._finish(name, structured, is_error)
+        if name in protocol.STATUS_TOOL_NAMES:
+            structured, is_error = control_tools.relay_status(
+                name, arguments, reason, ingress, self._status_reader,
+                self._mint_ref(),
+            )
+            return self._finish(name, structured, is_error)
+        if name == protocol.TOOL_ATTENTION_PULL:
+            structured, is_error = control_tools.relay_attention_pull(
+                name, arguments, reason, ingress, self._attention_desk,
+                self._mint_ref(),
+            )
+            return self._finish(name, structured, is_error)
+        if name in (protocol.TOOL_MISSION_CONTROL, protocol.TOOL_ATTENTION_ACK):
+            structured, is_error = control_tools.relay_elicited(
+                name, arguments, reason, ingress, client_ingress,
+                self._control_desk if name == protocol.TOOL_MISSION_CONTROL
+                else self._attention_desk, self._mint_ref(), elicitation,
             )
             return self._finish(name, structured, is_error)
         return self._operator_turn(arguments, reason)

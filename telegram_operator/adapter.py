@@ -1377,6 +1377,10 @@ class Adapter(object):
         entry = workflows["workflows"].get(workflow_id)
         if entry is None or entry.get("result_placeholder") is not None:
             return False
+        # Task 8 S-III: a Mission-origin record has no chat to bind a
+        # placeholder in; nothing is requested for it.
+        if not wa_record.is_telegram_kind(entry):
+            return False
         entry["result_placeholder"] = {
             "state": wa_record.PLACEHOLDER_REQUIRED,
             "chat_id": entry["telegram"]["chat_id"],
@@ -1445,7 +1449,11 @@ class Adapter(object):
                     for workflow_id, entry in sorted(
                         workflows["workflows"].items()
                     )
-                    if _placeholder_is_claimable(
+                    # Task 8 S-III: only Telegram-approved records
+                    # can carry a placeholder; the kind is checked
+                    # before anything Telegram-shaped is read.
+                    if wa_record.is_telegram_kind(entry)
+                    and _placeholder_is_claimable(
                         entry.get("result_placeholder")
                     )
                 ]
@@ -1484,6 +1492,9 @@ class Adapter(object):
                 workflows = self.workflow_store.load()
                 entry = workflows["workflows"].get(workflow_id)
                 if entry is None:
+                    return None
+                # Task 8 S-III: re-checked under the lock, kind first.
+                if not wa_record.is_telegram_kind(entry):
                     return None
                 placeholder = entry.get("result_placeholder")
                 # Re-checked under the lock: the snapshot that named
@@ -1625,6 +1636,10 @@ class Adapter(object):
         three legacy keys and has NOT passed the load-boundary
         normalizer (plan §2.3, T-X6).
         """
+        # Task 8 S-III: the edit engine drives Telegram-approved
+        # records only; a Mission-origin record is never claimed.
+        if not wa_record.is_telegram_kind(entry):
+            return False
         if entry["phase"] != wa_record.PHASE_COMPLETED:
             return False
         verified = entry["verified_result"]
@@ -2073,7 +2088,13 @@ class Adapter(object):
                     workflows["workflows"].items()
                 ):
                     if (
-                        entry["phase"] == wa_record.PHASE_COMPLETED
+                        # Task 8 S-III: the legacy lane is a TELEGRAM
+                        # lane; a Mission-origin record (whose null
+                        # placeholder would otherwise select it) is
+                        # excluded by kind BEFORE the null-placeholder
+                        # test, so it is never reserved or sent.
+                        wa_record.is_telegram_kind(entry)
+                        and entry["phase"] == wa_record.PHASE_COMPLETED
                         and entry["verified_result"] is not None
                         and entry["result_delivery"] is None
                         # RULING R-15 — the LEGACY-LANE GATE, and it is
@@ -2426,7 +2447,9 @@ class Adapter(object):
                     ):
                         workflows = self.workflow_store.load()
                         stored = workflows["workflows"].get(workflow_id)
-                        if stored is not None:
+                        if stored is not None and wa_record.is_telegram_kind(
+                            stored
+                        ):
                             stored["telegram"]["message_ids"] = [
                                 int(value)
                                 for value in outcome.message_ids
@@ -2690,7 +2713,16 @@ class Adapter(object):
                 " mission state is unknown until it is repaired." % exc
             )
         if workflows is not None:
-            entries = workflows["workflows"]
+            # Task 8 S-III: /status lists and counts TELEGRAM-approved
+            # workflows exactly as before; Mission-origin records are
+            # FILTERED out of the rows, the count and every detail
+            # (their fields are never read here). No other presentation
+            # of them exists on this surface.
+            entries = {
+                workflow_id: entry
+                for workflow_id, entry in workflows["workflows"].items()
+                if wa_record.is_telegram_kind(entry)
+            }
             if not entries:
                 lines.append("v2 mission workflows: none")
             else:

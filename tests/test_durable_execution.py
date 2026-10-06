@@ -818,12 +818,21 @@ class CliSeamTests(unittest.TestCase):
             and isinstance(node.value, ast.Call)
             and getattr(node.value.func, "id", None) == "acquire_runtime_lock"
         )
+        # A default and an explicit assertion (Task 8 R21): a moved or
+        # renamed recovery call is reported as a FAILURE naming what was not
+        # found, never as a StopIteration ERROR.
         recover_index = next(
-            index for index, node in enumerate(statements)
-            if isinstance(node, ast.Assign)
-            and isinstance(node.value, ast.Call)
-            and getattr(node.value.func, "attr", None)
-            == "recover_inherited_processes"
+            (index for index, node in enumerate(statements)
+             if isinstance(node, ast.Assign)
+             and isinstance(node.value, ast.Call)
+             and getattr(node.value.func, "attr", None)
+             == "recover_inherited_processes"),
+            None,
+        )
+        self.assertIsNotNone(
+            recover_index,
+            "main() holds no `<name> = <...>.recover_inherited_processes()`"
+            " assignment at its top level",
         )
         readiness_index = next(
             index for index, node in enumerate(statements)
@@ -846,6 +855,37 @@ class CliSeamTests(unittest.TestCase):
         close = finalbody[0].value
         self.assertEqual(close.func.attr, "close")
         self.assertEqual(close.args[0].id, "lock_descriptor")
+
+    def test_R21_main_reports_the_recovery_it_ran(self):
+        """Task 8 R21-2: ``main`` hands the recovery it ran — the
+        ``RecoveryReport`` carrying ``unavailable`` — to
+        ``report_inherited_recovery`` in the very next statement, so what the
+        CLI prints is what recovery observed (the report itself is pinned by
+        ``test_ownership.R21UnavailableObservationTests``)."""
+        tree = ast.parse(CLI_PATH.read_text())
+        main = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main"
+        )
+        statements = main.body
+        recover_index = next(
+            (index for index, node in enumerate(statements)
+             if isinstance(node, ast.Assign)
+             and isinstance(node.value, ast.Call)
+             and getattr(node.value.func, "attr", None)
+             == "recover_inherited_processes"),
+            None,
+        )
+        self.assertIsNotNone(recover_index)
+        [target] = statements[recover_index].targets
+        report = statements[recover_index + 1]
+        self.assertIsInstance(report, ast.Expr)
+        self.assertIsInstance(report.value, ast.Call)
+        self.assertEqual(getattr(report.value.func, "id", None),
+                         "report_inherited_recovery")
+        self.assertEqual([ast.dump(arg) for arg in report.value.args],
+                         [ast.dump(ast.Name(id=target.id, ctx=ast.Load()))])
+        self.assertEqual(report.value.keywords, [])
 
 
 if __name__ == "__main__":

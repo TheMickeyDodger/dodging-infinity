@@ -421,6 +421,10 @@ def supersede_chat_missions(workflows_document, chat_id):
     """
     count = 0
     for entry in workflows_document["workflows"].values():
+        # Task 8 S-III: a Mission-origin record has no chat; it is
+        # neither read for one nor superseded by a Telegram mission.
+        if not record_module.is_telegram_kind(entry):
+            continue
         if (
             entry["telegram"]["chat_id"] == chat_id
             and entry["phase"] == record_module.PHASE_PLANNED
@@ -505,6 +509,19 @@ def evaluate_mission_callback(workflows_document, workflow_id, user_id,
         # here. The former first-binding-line check was subsumed by
         # that equality and removed as dead code.
         return None, PROBLEM_RECORD_INVALID
+    approval = entry["approval"]
+    # THE KIND GUARD, FIRST after validation (Task 8 S-III): a Telegram
+    # decision callback can only ever decide a TELEGRAM-approved (v2)
+    # record. validate_record's closed APPROVAL_KINDS set now holds two
+    # members — the v2 kind and the Mission-origin kind, whose record
+    # carries no Telegram identity at all — so this read of the
+    # discriminator is load-bearing again (it was belt-only while the
+    # set had one element), and it runs BEFORE any Telegram field of
+    # the record is read. For a v2 record it changes nothing.
+    if approval["approval_kind"] != (
+        record_module.APPROVAL_KIND_MISSION_V2
+    ) or not record_module.is_telegram_kind(entry):
+        return None, PROBLEM_NOT_A_MISSION_APPROVAL
     # I3 (D4c authority gap): a PLANNED record armed by the pre-I2
     # resumed/ambient path carries NO planning-turn identity
     # (codex_turns holds no role "planning" entry). An approval must
@@ -517,17 +534,6 @@ def evaluate_mission_callback(workflows_document, workflow_id, user_id,
         for turn in entry["codex_turns"]
     ):
         return None, PROBLEM_UNPROVEN_PLANNING
-    approval = entry["approval"]
-    # BELT ONLY (round-06 finding N2): E-4's actual structural layer
-    # is validate_record's closed APPROVAL_KINDS set (single element),
-    # which the re-validation above has already enforced — a record
-    # with any other kind can never reach this line. Kept as an
-    # explicit second read of the discriminator, not as the
-    # protection.
-    if approval["approval_kind"] != (
-        record_module.APPROVAL_KIND_MISSION_V2
-    ):
-        return None, PROBLEM_NOT_A_MISSION_APPROVAL
     if approval["superseded"]:
         return None, PROBLEM_SUPERSEDED
     if approval["consumed_at"] is not None:

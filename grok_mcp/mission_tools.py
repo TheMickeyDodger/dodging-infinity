@@ -74,6 +74,8 @@ def _shape(name, structured):
         structured.setdefault("current_state", None)
         if name == protocol.TOOL_MISSION_EDIT:
             structured.setdefault("invalidated_authorization_ids", [])
+            # Task 8, slice S-V: a refusal superseded nothing.
+            structured.setdefault("superseded", None)
         elif name == protocol.TOOL_MISSION_APPROVE:
             structured.setdefault("authorization_id", None)
             structured.setdefault("authorization_digest_sha256", None)
@@ -81,6 +83,7 @@ def _shape(name, structured):
             structured.setdefault("authorized_delivery_targets", None)
             structured.setdefault("authorization_live", None)
             structured.setdefault("authorization_problem", None)
+            structured.setdefault("baseline", None)
     return structured
 
 
@@ -89,7 +92,11 @@ def refusal(name, reason, problem, call_ref):
 
 
 def _proposal_from(arguments):
-    return dict((key, arguments[key]) for key in protocol.PROPOSAL_INPUT_NAMES)
+    proposal = dict((key, arguments[key]) for key in protocol.PROPOSAL_INPUT_NAMES)
+    for key in protocol.PROPOSAL_OPTIONAL_INPUT_NAMES:
+        if arguments.get(key) is not None:
+            proposal[key] = arguments[key]
+    return proposal
 
 
 def relay(name, arguments, schema_reason, ingress, service, call_ref):
@@ -172,6 +179,17 @@ def _decision_result(name, outcome, call_ref):
         structured["invalidated_authorization_ids"] = list(
             outcome["invalidated_authorization_ids"]
         )
+        # Task 8, slice S-V: what the EDIT superseded, derived by the
+        # core from the durable state facts (identical on replay).
+        superseded = outcome.get("superseded")
+        structured["superseded"] = None if superseded is None else {
+            "revision": superseded["revision"],
+            "activation_id": superseded["activation_id"],
+            "checkpoints": superseded["checkpoints"],
+            "engagements": list(superseded["engagements"]),
+            "starts_stop_requested": superseded["starts_stop_requested"],
+            "recorded": superseded["recorded"],
+        }
     elif name == protocol.TOOL_MISSION_APPROVE:
         structured.update({
             "authorization_id": outcome["authorization_id"],
@@ -197,6 +215,7 @@ def _decide(name, arguments, ingress, service, call_ref):
     """APPROVE exactly the requested scope of the revision passed, or DENY."""
     mission_id = arguments["mission_id"]
     revision = arguments["revision"]
+    baseline = None
     if name == protocol.TOOL_MISSION_APPROVE:
         stored = service.get(mission_id)
         current = stored["record"]["revisions"][-1]["proposal"]
@@ -206,6 +225,9 @@ def _decide(name, arguments, ingress, service, call_ref):
         decision = mission_decision.DECISION_APPROVE
         actions = list(current["requested_action_scope"])
         targets = [] if target is None else [target]
+        # Task 8 S-IV: the approved baseline, exactly as stored in the
+        # revision being approved (None when the revision declares none).
+        baseline = current.get("baseline")
     else:
         decision = mission_decision.DECISION_DENY
         actions = None
@@ -217,4 +239,9 @@ def _decide(name, arguments, ingress, service, call_ref):
         approved_action_scope=actions, approved_delivery_targets=targets,
     )
     outcome = service.apply_human_decision(envelope)
-    return _decision_result(name, outcome, call_ref)
+    structured, is_error = _decision_result(name, outcome, call_ref)
+    if name == protocol.TOOL_MISSION_APPROVE:
+        structured["baseline"] = (
+            None if baseline is None or outcome["revision"] != revision
+            else dict(baseline))
+    return structured, is_error

@@ -19,6 +19,7 @@ Sections (step 1, the fail-closed spine):
 
 import json
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -3866,6 +3867,255 @@ class ServiceTests(unittest.TestCase):
         for family in store.FAMILY_PREFIXES:
             for value in document[family].values():
                 self.assertEqual(value["authority"], "none")
+
+
+class R23CoordinationStoreGateTests(unittest.TestCase):
+    """Task 8 R23 (brief amendment): the coordination store's existence gate,
+    the most severe of the three.
+
+    Before: ``os.path.exists`` was False for EVERY OSError, so a store whose
+    metadata cannot be read (EACCES, EIO) loaded as an EMPTY document at
+    sequence 0. ``find_replay`` then found no history, so a decided turn was
+    re-derived. ``save``'s on-disk check re-reads through this same ``load``,
+    so it compared two defaults (0 == 0) and could not fire, and the
+    default-derived document replaced the durable history.
+
+    Now ``load`` raises CoordinationStoreError (``coordination_store_
+    unreadable``). Every load-modify-save cycle REFUSES:
+    - no write at all, counted by its own assertion;
+    - the bytes identical;
+    - every prior route decision intact, with no duplicate.
+    ``save``'s on-disk verify itself surfaces the outage. Restored, the
+    replay returns the recorded decision and writes nothing. Genuine absence
+    still yields the empty default."""
+
+    TURN = dict(explicit_mission_id=MISSION_X, domain=record.DOMAIN_ENGINEERING)
+    OTHER_TURN = dict(explicit_mission_id=MISSION_Y, domain=record.DOMAIN_ENGINEERING)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.harness = ServiceHarness(os.path.join(self.tmp.name, "p"))
+        self.svc = self.harness.service
+        self.first = self.svc.route(inbound(**self.TURN), context())   # history on disk
+        self.assertFalse(self.first.replayed)
+
+    def stat_refused(self, error):
+        """``os.stat`` of exactly the store file fails with errno ``error``;
+        every other path is observed for real. A context manager."""
+        from unittest import mock
+        path, real_stat = self.svc.store.path, os.stat
+
+        def stat_(target, *args, **kwargs):
+            if not isinstance(target, int) and os.fspath(target) == path:
+                raise OSError(error, os.strerror(error), path)
+            return real_stat(target, *args, **kwargs)
+        return mock.patch.object(os, "stat", stat_)
+
+    def store_bytes(self):
+        with open(self.svc.store.path, "rb") as handle:
+            return handle.read()
+
+    def outage_refuses(self, error):
+        from unittest import mock
+        durable = self.svc.store
+        before, listing = self.store_bytes(), sorted(os.listdir(durable.directory))
+        writes = []
+        real_write = store.atomic_write_json
+
+        def write(*args, **kwargs):
+            writes.append(args)
+            return real_write(*args, **kwargs)
+        with mock.patch.object(store, "atomic_write_json", write), self.stat_refused(error):
+            with self.assertRaises(store.CoordinationStoreError) as raised:
+                durable.load()
+            self.assertEqual(raised.exception.problem, store.PROBLEM_STORE_UNREADABLE)
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+            self.assertIn(os.strerror(error), str(raised.exception))
+            # The cycle refuses: the decided turn is not re-derived, and no
+            # new turn is recorded over the history.
+            for turn in (self.TURN, self.OTHER_TURN):
+                with self.assertRaises(store.CoordinationStoreError):
+                    self.svc.route(inbound(**turn), context())
+            # The pin: save's on-disk verify SURFACES the outage instead of
+            # comparing two defaults (0 == 0) and writing.
+            with self.assertRaises(store.CoordinationStoreError) as raised:
+                durable.save(store.default_document(), expected_sequence=0)
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+        self.assertEqual(writes, [])                     # ZERO effect: nothing written
+        self.assertEqual(self.store_bytes(), before)     # byte-identical
+        self.assertEqual(sorted(os.listdir(durable.directory)), listing)
+        # Restored: every prior decision intact, exactly once.
+        document = durable.load()
+        self.assertEqual(document["route_decisions"],
+                         {self.first.route["route_id"]: self.first.route})
+        self.assertEqual(document["store_sequence"], 1)
+        replay = self.svc.route(inbound(**self.TURN), context())
+        self.assertTrue(replay.replayed)
+        self.assertEqual(replay.route, self.first.route)
+        self.assertEqual(len(durable.load()["route_decisions"]), 1)   # no duplicate
+        self.assertEqual(self.store_bytes(), before)     # the replay wrote nothing
+
+    def test_R23A_coordination_store_metadata_refused_EACCES_refuses_every_cycle(self):
+        import errno
+        self.outage_refuses(errno.EACCES)
+
+    def test_R23A_coordination_store_metadata_failing_EIO_refuses_every_cycle(self):
+        import errno
+        self.outage_refuses(errno.EIO)
+
+    def test_R23A_a_genuinely_missing_coordination_store_is_still_empty(self):
+        """The control: NO store at all is GENUINE ABSENCE — the empty default
+        exactly, nothing created by the read — and routing then records the
+        first decision as it always did."""
+        directory = os.path.join(self.tmp.name, "fresh")
+        fresh = store.CoordinationStore(directory)
+        self.assertEqual(fresh.load(), store.default_document())
+        self.assertFalse(os.path.exists(fresh.path))
+        harness = ServiceHarness(directory)
+        outcome = harness.service.route(inbound(**self.TURN), context())
+        self.assertFalse(outcome.replayed)
+        self.assertEqual(len(harness.service.store.load()["route_decisions"]), 1)
+
+
+class R24CoordinationStoreLinkTests(unittest.TestCase):
+    """Task 8 R24-1: the coordination store behind a link whose TARGET is
+    missing.
+
+    ``stat`` raises ``FileNotFoundError`` for a dangling link too, at the
+    store file or at its directory. The R23 gate read that as genuine
+    absence: an EMPTY store at sequence 0. ``find_replay`` found no history,
+    and ``save``'s on-disk check compared two defaults. Now the traversal
+    decides.
+
+    A dangling FILE link: ``load`` raises CoordinationStoreError, and every
+    cycle refuses. A dangling DIRECTORY (ancestor) link: ``load`` raises on
+    the gate, and every cycle refuses at the store's lock first, exactly as
+    before R24 (``FileExistsError``). In both, ``save``'s own on-disk verify
+    surfaces the outage.
+
+    Scoped to the DENIED store:
+    - no write, counted by its own assertion;
+    - the link unchanged, and nothing initialized at its target;
+    - every prior route decision intact, with no duplicate, once restored.
+
+    A VALID link keeps working exactly as a regular store, and genuine
+    absence is still the empty default."""
+
+    DANGLING = "FileNotFoundError (symlink target)"
+    TURN = R23CoordinationStoreGateTests.TURN
+    OTHER_TURN = R23CoordinationStoreGateTests.OTHER_TURN
+    setUp = R23CoordinationStoreGateTests.setUp
+    store_bytes = R23CoordinationStoreGateTests.store_bytes
+
+    def dangle(self, path):
+        """``path`` becomes a link to a MISSING target; the real object waits
+        aside. Returns ``(restore, target, link)``: ``restore`` makes the target
+        return, so the link resolves. The cleanup puts the object back."""
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+        aside = os.path.join(holding, "aside")
+        target = os.path.join(holding, "target")
+        os.rename(path, aside)
+        os.symlink(target, path)
+
+        def put_back():
+            os.unlink(path)
+            os.rename(target if os.path.lexists(target) else aside, path)
+        self.addCleanup(put_back)
+        return (lambda: os.rename(aside, target)), target, os.lstat(path)
+
+    def link_unchanged(self, path, target, link):
+        self.assertTrue(os.path.islink(path), path)
+        self.assertEqual((os.lstat(path).st_ino, os.readlink(path)), (link.st_ino, target))
+        self.assertFalse(os.path.lexists(target), "something was initialized at the target")
+
+    def counted_writes(self, writes):
+        """Every coordination ``atomic_write_json`` COUNTED (by its path)."""
+        from unittest import mock
+        real_write = store.atomic_write_json
+
+        def write(directory, path, *args, **kwargs):
+            writes.append(path)
+            return real_write(directory, path, *args, **kwargs)
+        return mock.patch.object(store, "atomic_write_json", write)
+
+    def dangling_store_refuses(self, path, cycle_refusal):
+        durable = self.svc.store
+        before = self.store_bytes()
+        restore, target, link = self.dangle(path)
+        writes = []
+        with self.counted_writes(writes):
+            with self.assertRaises(store.CoordinationStoreError) as raised:
+                durable.load()
+            self.assertEqual(raised.exception.problem, store.PROBLEM_STORE_UNREADABLE)
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+            self.assertIn(self.DANGLING, str(raised.exception))
+            for turn in (self.TURN, self.OTHER_TURN):
+                with self.assertRaises(cycle_refusal):
+                    self.svc.route(inbound(**turn), context())
+            # The pin: save's on-disk verify SURFACES the outage.
+            with self.assertRaises(store.CoordinationStoreError) as raised:
+                durable.save(store.default_document(), expected_sequence=0)
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+        self.assertEqual(writes, [])                     # ZERO effect: nothing written
+        self.link_unchanged(path, target, link)
+        # The target returns: every prior decision intact, exactly once.
+        restore()
+        self.assertEqual(self.store_bytes(), before)
+        document = durable.load()
+        self.assertEqual(document["route_decisions"],
+                         {self.first.route["route_id"]: self.first.route})
+        self.assertEqual(document["store_sequence"], 1)
+        with self.counted_writes(writes):
+            replay = self.svc.route(inbound(**self.TURN), context())
+        self.assertTrue(replay.replayed)
+        self.assertEqual(replay.route, self.first.route)
+        self.assertEqual(writes, [])                     # the replay wrote nothing
+        self.assertEqual(len(durable.load()["route_decisions"]), 1)   # no duplicate
+
+    def test_R24A_a_dangling_coordination_store_FILE_link_refuses_every_cycle(self):
+        self.dangling_store_refuses(self.svc.store.path, store.CoordinationStoreError)
+
+    def test_R24A_a_dangling_coordination_store_DIRECTORY_link_refuses_every_cycle(self):
+        self.dangling_store_refuses(self.svc.store.directory, FileExistsError)
+
+    def test_R24A_valid_links_keep_working_and_genuine_absence_is_empty(self):
+        """A VALID file link and a VALID directory link read exactly as the
+        regular store: the recorded decision replayed, nothing written, the
+        bytes unchanged. A store whose DIRECTORY is genuinely missing is the
+        empty default (nothing created by the read), and routing then records
+        the first decision with exactly one write to that store."""
+        durable = self.svc.store
+        before = self.store_bytes()
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+        for path in (durable.path, durable.directory):
+            real = os.path.join(holding, os.path.basename(path) + "-real")
+            os.rename(path, real)
+            os.symlink(real, path)
+            writes = []
+            with self.counted_writes(writes):
+                self.assertEqual(durable.load()["route_decisions"],
+                                 {self.first.route["route_id"]: self.first.route})
+                replay = self.svc.route(inbound(**self.TURN), context())
+            self.assertTrue(replay.replayed)
+            self.assertEqual(replay.route, self.first.route)
+            self.assertEqual(writes, [])
+            self.assertEqual(self.store_bytes(), before)
+            os.unlink(path)
+            os.rename(real, path)
+        directory = os.path.join(holding, "never-created")
+        fresh = store.CoordinationStore(directory)
+        self.assertEqual(fresh.load(), store.default_document())
+        self.assertFalse(os.path.lexists(directory))     # nothing created by the read
+        harness = ServiceHarness(directory)
+        writes = []
+        with self.counted_writes(writes):
+            outcome = harness.service.route(inbound(**self.TURN), context())
+        self.assertFalse(outcome.replayed)
+        self.assertEqual(writes, [fresh.path])           # exactly one write, this store's
+        self.assertEqual(len(fresh.load()["route_decisions"]), 1)
 
 
 if __name__ == "__main__":

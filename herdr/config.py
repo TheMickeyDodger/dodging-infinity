@@ -84,9 +84,9 @@ DEFAULT = {
             "kind": "claude",
             "args": [
                 "--model",
-                "claude-fable-5-1",
+                "claude-opus-5-5",
                 "--effort",
-                "high",
+                "xhigh",
                 "--permission-mode",
                 "acceptEdits",
             ],
@@ -112,7 +112,7 @@ PRESETS = {
     "max-quality": {
         "description": (
             "GPT-6 Astra xhigh supervisor/reviewer + Claude Opus 5 "
-            "high lead + Claude Fable 5.1 high executor"
+            "high lead + Claude Opus 5.5 extra executor"
         ),
         "roles": {
             "supervisor": {
@@ -142,9 +142,9 @@ PRESETS = {
                 "kind": "claude",
                 "args": [
                     "--model",
-                    "claude-fable-5-1",
+                    "claude-opus-5-5",
                     "--effort",
-                    "high",
+                    "xhigh",
                     "--permission-mode",
                     "auto",
                 ],
@@ -167,7 +167,7 @@ PRESETS = {
     "all-claude": {
         "description": (
             "Claude-only subscription herd using "
-            "Fable/Opus with auto mode"
+            "Fable/Opus/Opus 5.5 with auto mode"
         ),
         "roles": {
             "supervisor": {
@@ -192,7 +192,9 @@ PRESETS = {
                 "kind": "claude",
                 "args": [
                     "--model",
-                    "claude-fable-5-1",
+                    "claude-opus-5-5",
+                    "--effort",
+                    "xhigh",
                     "--permission-mode",
                     "auto",
                 ],

@@ -178,6 +178,45 @@ def state_as_of(state, sequence):
                  "blockers", "dependencies", "resource_readiness",
                  "checkpoints", "continuations", "applied_operations"):
         projected[name] = [e for e in projected[name] if e["sequence"] <= sequence]
+    # Task 8, slice S-IV: the additive-optional engagement reservations,
+    # sliced the same way when present.
+    if "engagements" in projected:
+        projected["engagements"] = [
+            e for e in projected["engagements"] if e["sequence"] <= sequence]
+    if "engagement_starts" in projected:
+        projected["engagement_starts"] = [
+            e for e in projected["engagement_starts"] if e["sequence"] <= sequence]
+        for start in projected["engagement_starts"]:
+            start["settlement"] = _event_as_of(start["settlement"], sequence)
+            stop_requested = start["stop_requested"]
+            if stop_requested is not None and stop_requested["sequence"] is not None:
+                # A cancel's marker is sequenced; an EDIT's is not and is
+                # kept as of every position.
+                start["stop_requested"] = _event_as_of(stop_requested, sequence)
+            start["stop_observations"] = [
+                o for o in start.get("stop_observations") or []
+                if o["sequence"] <= sequence]
+    # Task 8, slice S-V: the control record, sliced the same way.
+    if projected.get("controls") is not None:
+        controls = projected["controls"]
+        controls["holds"] = [h for h in controls["holds"] if h["sequence"] <= sequence]
+        for hold in controls["holds"]:
+            if hold["lift_sequence"] is not None and hold["lift_sequence"] > sequence:
+                hold["lifted_at"] = None
+                hold["lift_operation_id"] = None
+                hold["lift_sequence"] = None
+        cancel = controls["cancel_request"]
+        if cancel is not None:
+            if cancel["sequence"] > sequence:
+                controls["cancel_request"] = None
+            elif cancel["confirmation"] is not None and (
+                cancel["confirmation"]["sequence"] > sequence
+            ):
+                cancel["confirmed_at"] = None
+                cancel["confirmation"] = None
+        controls["history"] = [
+            e for e in controls["history"]
+            if e["sequence"] is None or e["sequence"] <= sequence]
     for evidence in projected["evidence"]:
         evidence["acceptance"] = _event_as_of(evidence["acceptance"], sequence)
         evidence["invalidation"] = _event_as_of(evidence["invalidation"], sequence)
@@ -527,14 +566,41 @@ def count_operations(state, kind):
     return sum(1 for e in state["applied_operations"] if e["kind"] == kind)
 
 
+def consumed_attempts(state, at_or_before=None):
+    """THE ONE shared continuation-budget consumption count (Task 8,
+    slice S-IV), derived from the applied-operation LEDGER only: every
+    ``record_continuation`` operation plus every ``reserve_engagement``
+    operation whose recorded outcome is a FOLLOW-UP engagement (the
+    initial engagement of an activation is charged nothing — the
+    initial-charge policy). With ``at_or_before`` only ledger entries at
+    or before that sequence count (the as-of projection the store's
+    reconciliation and the journal use). Read by both consuming
+    operations and by every budget, checkpoint, closure, reconciliation
+    and validation path, so the budget is spent from one account."""
+    consumed = 0
+    for entry in state["applied_operations"]:
+        if at_or_before is not None and entry["sequence"] > at_or_before:
+            continue
+        if entry["kind"] == state_module.OPERATION_RECORD_CONTINUATION:
+            consumed += 1
+        elif entry["kind"] == state_module.OPERATION_RESERVE_ENGAGEMENT and (
+            (entry["outcome"] or {}).get("kind")
+            == state_module.ENGAGEMENT_KIND_FOLLOW_UP
+        ):
+            consumed += 1
+    return consumed
+
+
 def budget(contract, state):
     """Derived from the applied-operation LEDGER, which the store
     reconciles two-way against the effect records (R-31.2): deleting a
-    continuation or checkpoint record can never restore budget, because
-    the document refuses to load, and even the count itself never reads
-    the deletable list."""
+    continuation, engagement or checkpoint record can never restore
+    budget, because the document refuses to load, and even the count
+    itself never reads the deletable list. ``attempts_consumed`` is the
+    shared account (``consumed_attempts``): continuations plus follow-up
+    engagements; an initial engagement consumes nothing."""
     declared = contract["continuation_budget"]
-    attempts = count_operations(state, state_module.OPERATION_RECORD_CONTINUATION)
+    attempts = consumed_attempts(state)
     checkpoints = count_operations(state, state_module.OPERATION_RECORD_CHECKPOINT)
     return {
         "attempts_consumed": attempts,
@@ -545,9 +611,7 @@ def budget(contract, state):
 
 
 def attempts_exhausted(contract, state):
-    return count_operations(
-        state, state_module.OPERATION_RECORD_CONTINUATION
-    ) >= contract["continuation_budget"]["max_attempts"]
+    return consumed_attempts(state) >= contract["continuation_budget"]["max_attempts"]
 
 
 def local_closure_failures(contract, state, activation_id, now):

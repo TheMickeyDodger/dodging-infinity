@@ -1587,7 +1587,11 @@ class ETrustSeparationTests(unittest.TestCase):
         ]
         self.assertEqual(approve_callers, ["apply_human_decision"])
 
-    def test_E2_only_the_service_and_the_grok_relay_apply_decisions(self):
+    def test_E2_only_the_service_and_the_grok_relays_apply_decisions(self):
+        # Two sanctioned appliers outside the service, one call each: the
+        # plain Mission relay and (Task 8, slice S-I) the client-mediated
+        # decision relay, whose call is reached only after the client's
+        # elicitation answer (tests/test_grok_elicitation.py).
         counts = {}
         for path in _product_files():
             count = _name_and_string_counts(path, "apply_human_decision")
@@ -1595,8 +1599,10 @@ class ETrustSeparationTests(unittest.TestCase):
                 counts[path.relative_to(REPO_ROOT).as_posix()] = count
         self.assertEqual(set(counts), {
             "mission/service.py", "grok_mcp/mission_tools.py",
+            "grok_mcp/decision_tools.py",
         }, counts)
         self.assertEqual(counts["grok_mcp/mission_tools.py"], 1)
+        self.assertEqual(counts["grok_mcp/decision_tools.py"], 1)
 
     def test_E3_no_execution_seam_or_orchestration_module_imports_mission(self):
         forbidden_roots = (
@@ -1649,6 +1655,9 @@ class ETrustSeparationTests(unittest.TestCase):
         # cryptographic proof of a human.
         for path in sorted((REPO_ROOT / "mission").glob("*.py")) + [
             REPO_ROOT / "grok_mcp" / "mission_tools.py",
+            REPO_ROOT / "grok_mcp" / "decision_tools.py",
+            REPO_ROOT / "grok_mcp" / "elicitation.py",
+            REPO_ROOT / "mission_control" / "authority.py",
             REPO_ROOT / "pr_delivery" / "mission_parent.py",
         ]:
             lowered = path.read_text().lower()
@@ -5117,6 +5126,139 @@ class TProposeResponseContractTests(ServiceFixture):
                                     requested_scope="narrower"), self.context)
         again = self.service.propose(request_id, proposal(), self.context)
         self.assertEqual(again, retry)
+
+
+class R24MissionStoreLinkTests(ServiceFixture):
+    """Task 8 R24-1 (the fifth loader, found by its own F12 pin): the Mission
+    store behind a DIRECTORY link whose target is missing.
+
+    S-VII already refused a dangling FILE link (``lexists`` sees it). But
+    ``lexists`` traverses the ANCESTORS, so a dangling store directory read as
+    a missing file and ``load`` returned the EMPTY registry. Now the traversal
+    decides.
+
+    ``load`` and every lock-free read (``get``) raise MissionStoreError. The
+    load-modify-save route (``propose``) refuses at the store's lock first,
+    exactly as before R24 (S-VII's typed lock). Scoped to the DENIED store:
+    - no write, counted by its own assertion;
+    - the link unchanged, and nothing initialized at its target;
+    - the recorded Mission intact once the target returns, with an identical
+      retry idempotent (no duplicate).
+
+    The dangling FILE link refuses exactly as before, a VALID link reads as
+    the regular store, and genuine absence is still the empty registry."""
+
+    DANGLING = "FileNotFoundError (symlink target)"
+
+    def setUp(self):
+        super(R24MissionStoreLinkTests, self).setUp()
+        self.request_id = self.service.mint_request_id(self.context)
+        self.first = self.service.propose(self.request_id, proposal(), self.context)
+        with open(self.store.path, "rb") as handle:
+            self.stored = handle.read()
+
+    def dangle(self, path):
+        """``path`` becomes a link to a MISSING target; the real object waits
+        aside. Returns ``(restore, target, link)``: ``restore`` makes the target
+        return, so the link resolves. The cleanup puts the object back while
+        the link is still there (``tearDown`` removes the whole fixture tree
+        first)."""
+        import shutil
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+        aside = os.path.join(holding, "aside")
+        target = os.path.join(holding, "target")
+        os.rename(path, aside)
+        os.symlink(target, path)
+
+        def put_back():
+            if os.path.islink(path):
+                os.unlink(path)
+                os.rename(target if os.path.lexists(target) else aside, path)
+        self.addCleanup(put_back)
+        return (lambda: os.rename(aside, target)), target, os.lstat(path)
+
+    def link_unchanged(self, path, target, link):
+        self.assertTrue(os.path.islink(path), path)
+        self.assertEqual((os.lstat(path).st_ino, os.readlink(path)), (link.st_ino, target))
+        self.assertFalse(os.path.lexists(target), "something was initialized at the target")
+
+    def counted_writes(self, writes):
+        from unittest import mock
+        real_write = self.mission_store.atomic_write_json
+
+        def write(directory, path, *args, **kwargs):
+            writes.append(path)
+            return real_write(directory, path, *args, **kwargs)
+        return mock.patch.object(self.mission_store, "atomic_write_json", write)
+
+    def test_R24A_a_dangling_mission_store_DIRECTORY_link_is_unavailable(self):
+        mission_id = self.first["mission_id"]
+        restore, target, link = self.dangle(self.directory)
+        writes = []
+        with self.counted_writes(writes):
+            with self.assertRaises(self.mission_store.MissionStoreError) as raised:
+                self.store.load()
+            self.assertEqual(raised.exception.problem,
+                             self.mission_store.PROBLEM_STORE_UNREADABLE)
+            self.assertIn(self.DANGLING, str(raised.exception))
+            with self.assertRaises(self.mission_store.MissionStoreError):
+                self.service.get(mission_id)
+            with self.assertRaises(self.mission_store.MissionStoreError):
+                self.propose()                               # the store's lock refuses
+            with self.assertRaises(self.mission_store.MissionStoreError):
+                self.service.propose(self.request_id, proposal(), self.context)
+        self.assertEqual(writes, [])                         # ZERO effect: nothing written
+        self.link_unchanged(self.directory, target, link)
+        # The target returns: the recorded Mission intact; the identical retry
+        # is idempotent, with no duplicate and no write.
+        restore()
+        self.assertEqual(self.read_bytes(), self.stored)
+        self.assertEqual(self.service.get(mission_id)["record"]["mission_id"], mission_id)
+        with self.counted_writes(writes):
+            retry = self.service.propose(self.request_id, proposal(), self.context)
+        self.assertTrue(retry["idempotent"])
+        self.assertEqual(retry["mission_id"], mission_id)
+        self.assertEqual(writes, [])
+        self.assertEqual(len(self.store.load()["missions"]), 1)
+
+    def test_R24A_the_dangling_FILE_link_valid_links_and_absence_are_unchanged(self):
+        """The S-VII dangling FILE link refuses with its own message, exactly
+        as before. A VALID file link and a VALID directory link read exactly as
+        the regular store. A genuinely missing store directory is the empty
+        registry, nothing created by the read."""
+        import shutil
+        mission_id = self.first["mission_id"]
+        expected = self.store.load()
+        # S-VII: the dangling FILE link refuses with its own message.
+        restore, target, link = self.dangle(self.store.path)
+        with self.assertRaises(self.mission_store.MissionStoreError) as raised:
+            self.store.load()
+        self.assertIn("is a symbolic link whose target is missing", str(raised.exception))
+        self.link_unchanged(self.store.path, target, link)
+        # The target returns: a VALID file link reads exactly as the store.
+        restore()
+        self.assertEqual(self.store.load(), expected)
+        self.assertEqual(self.service.get(mission_id)["record"]["mission_id"], mission_id)
+        # A VALID directory link reads exactly as the store too.
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+        real = os.path.join(holding, "real")
+        os.rename(self.directory, real)
+        os.symlink(real, self.directory)
+
+        def unlink_directory():
+            if os.path.islink(self.directory):
+                os.unlink(self.directory)
+                os.rename(real, self.directory)
+        self.addCleanup(unlink_directory)
+        self.assertEqual(self.store.load(), expected)
+        self.assertEqual(self.service.get(mission_id)["record"]["mission_id"], mission_id)
+        # Genuine absence: the empty registry, nothing created by the read.
+        missing = os.path.join(holding, "never-created")
+        self.assertEqual(self.mission_store.MissionStore(missing).load(),
+                         self.mission_store.default_document())
+        self.assertFalse(os.path.lexists(missing))
 
 
 if __name__ == "__main__":

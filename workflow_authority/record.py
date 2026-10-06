@@ -138,7 +138,145 @@ ISSUE_OR_PR_KIND_PR = "pr"
 ISSUE_OR_PR_KINDS = (ISSUE_OR_PR_KIND_ISSUE, ISSUE_OR_PR_KIND_PR)
 
 APPROVAL_KIND_MISSION_V2 = "mission_authorization_v2"
-APPROVAL_KINDS = (APPROVAL_KIND_MISSION_V2,)
+# Task 8, slice S-III: the MISSION-ORIGIN kind. A record of this kind
+# was authorized by the neutral Mission Core (an issued Mission
+# authorization), not by a Telegram approval: its ``telegram`` block is
+# null and its ``mission_authority`` block (below) carries exactly the
+# Mission id, revision, authorization id, decision id and authorization
+# digest, rendered into the digest-bound authorization text under a
+# kind-selected line. The kind is INERT in this slice: no production
+# path creates, claims, advances, dispatches, releases or reports such
+# a record (the Runtime and the Broker refuse it by kind; the Telegram
+# consumers skip it before touching any Telegram field).
+APPROVAL_KIND_MISSION_CORE = "mission_core_authorization"
+APPROVAL_KINDS = (APPROVAL_KIND_MISSION_V2, APPROVAL_KIND_MISSION_CORE)
+
+# The typed Mission linkage block: an OPTIONAL top-level key (absent
+# or null on every v2 record, so every record already on disk
+# validates byte-identically and the load normalizer adds nothing), and
+# REQUIRED, present and valid, on a Mission-origin record. Its id
+# grammar mirrors the Mission Core's (``<prefix>-<32 lowercase hex>``)
+# without importing it (workflow_authority never imports mission); a
+# cross-module test pins the equality.
+MISSION_AUTHORITY_KEY = "mission_authority"
+MISSION_AUTHORITY_KEYS = (
+    "mission_id", "revision", "authorization_id", "decision_id",
+    "authorization_digest_sha256",
+)
+MISSION_CORE_ID_HEX_CHARS = 32
+MISSION_CORE_MISSION_ID_PREFIX = "mn"
+MISSION_CORE_AUTHORIZATION_ID_PREFIX = "ma"
+MISSION_CORE_DECISION_ID_PREFIX = "md"
+# Task 8, slice S-IV: the Mission Core's engagement reservation (the
+# dispatch fence + budget reservation) a Mission-origin record was
+# published under, saved WITH the record in the same locked
+# ``add_workflow`` save: the reservation id, its ordinal (1 = the
+# initial dispatch), the state operation that recorded it and when.
+# REQUIRED on a Mission-origin record, absent or null on a v2 record.
+MISSION_ENGAGEMENT_KEY = "mission_engagement"
+MISSION_ENGAGEMENT_KEYS = (
+    "engagement_id", "engagement_sequence", "operation_id", "reserved_at",
+)
+MISSION_CORE_ENGAGEMENT_ID_PREFIX = "me"
+MISSION_CORE_OPERATION_ID_PREFIX = "mo"
+# Task 8, slice S-V: delivery-candidate RETENTION (ledger R2-2). A
+# Mission-origin record carries it from its one locked insertion: an
+# IMMUTABLE absolute deadline (never extended by retry or restart) and
+# the reason; ``released_at``/``release_reason`` are set exactly once when
+# the protection ends before the deadline (cancel confirmed, revision
+# superseded, PR created — the S-VI hook — or decline). While protected
+# the record is never released, its sessions never closed, its directory
+# never deleted and it is never pruned; a store full of protected records
+# refuses insertion. A v2 record carries null (byte-identical to before).
+RETENTION_KEY = "retention"
+RETENTION_KEY_PLACEHOLDER = RETENTION_KEY  # the S-IV name, kept for callers
+RETENTION_KEYS = ("established_at", "deadline_at", "reason", "released_at",
+                  "release_reason")
+RETENTION_REASON_DELIVERY_CANDIDATE = "delivery_candidate"
+RETENTION_REASONS = (RETENTION_REASON_DELIVERY_CANDIDATE,)
+RETENTION_RELEASE_CANCEL_CONFIRMED = "cancel_confirmed"
+RETENTION_RELEASE_REVISION_SUPERSEDED = "revision_superseded"
+RETENTION_RELEASE_PR_CREATED = "pr_created"
+RETENTION_RELEASE_DECLINED = "declined"
+RETENTION_RELEASE_REASONS = (
+    RETENTION_RELEASE_CANCEL_CONFIRMED, RETENTION_RELEASE_DECLINED,
+    RETENTION_RELEASE_PR_CREATED, RETENTION_RELEASE_REVISION_SUPERSEDED,
+)
+MAX_RETENTION_REASON_CHARS = 64
+# Exact-value pinned: how long a delivery candidate is retained from the
+# workflow's insertion.
+DELIVERY_CANDIDATE_RETENTION_SECONDS = 14 * 24 * 3600
+# The Broker's engagement-start receipt marker (the bounded-summary
+# prefix of every ``mission start`` receipt), defined here so the record
+# layer can tell an UNRESOLVED start (admitted / unsettled / stop
+# pending / absence observed but unconfirmed / settled uncertain or from
+# a retained result) from a resolved one without importing the Runtime.
+MISSION_START_RECEIPT_MARKER = "mission start"
+# The Broker's PRE-ADMISSION CLAIM receipt marker (S-V retention crash
+# windows): written before the canonical open, resolved by the owner.
+MISSION_CLAIM_RECEIPT_MARKER = "mission claim"
+START_RECEIPT_MARKERS = (MISSION_START_RECEIPT_MARKER, MISSION_CLAIM_RECEIPT_MARKER)
+# A start is RESOLVED on the record's own evidence only: a confirmed
+# stop, a completed settlement whose receipt itself states that no stop
+# was required (``stop=none``, written in the SAME receipt as the
+# settlement — never a later best-effort receipt), or a pre-admission
+# claim the owner resolved (admitted, refused, or found unadmitted by the
+# recovery pass). Everything else — including a ``settled:completed``
+# receipt that omits the stop statement — is unresolved and protects the
+# record (conservative: a crash between the canonical settlement and its
+# receipt leaves the earlier ``admitted`` or ``claiming`` receipt latest).
+RESOLVED_START_STATES = ("stop:confirmed", "claim:admitted", "claim:refused",
+                         "claim:unadmitted")
+SETTLED_COMPLETED_STATE = "settled:completed"
+START_RECEIPT_STOP_NONE = "none"
+START_RECEIPT_STOP_PENDING = "pending"
+# Task 8 R19-3 / R20-1: the Broker's delivery VERIFICATION ATTEMPT records,
+# defined here (as the start markers above are) so the record layer can tell
+# an unresolved attempt from a settled one without importing the Runtime —
+# one grammar, read back by ``verification_attempts`` for the Broker's
+# barrier, its release, cleanup eligibility and pruning alike.
+# ``<marker> <n> claimed roots=<k> (...)`` is written under the launch
+# admission BEFORE the producer is invoked (``k``: the owned roots of the
+# verification scope then); ``<marker> <n> settled: <kind> — <text>``
+# settles attempt ``n``, and its LAST settlement is its state. Numbers and
+# counts are ASCII digits.
+VERIFICATION_ATTEMPT_RECEIPT_MARKER = "delivery verification attempt"
+VERIFICATION_ATTEMPT_CLAIMED = "claimed"
+VERIFICATION_ATTEMPT_SETTLED = "settled"
+VERIFICATION_ATTEMPT_RETURNED = "returned"
+VERIFICATION_ATTEMPT_NOT_STARTED = "not-started"
+VERIFICATION_ATTEMPT_START_UNKNOWN = "start-unknown"
+VERIFICATION_ATTEMPT_UNRECORDED = "ran-unrecorded"
+VERIFICATION_ATTEMPT_OUTCOME_UNKNOWN = "outcome-unknown"
+VERIFICATION_ATTEMPT_INTERRUPTED = "interrupted"
+VERIFICATION_ATTEMPT_KINDS = (
+    VERIFICATION_ATTEMPT_RETURNED, VERIFICATION_ATTEMPT_NOT_STARTED,
+    VERIFICATION_ATTEMPT_START_UNKNOWN, VERIFICATION_ATTEMPT_UNRECORDED,
+    VERIFICATION_ATTEMPT_OUTCOME_UNKNOWN, VERIFICATION_ATTEMPT_INTERRUPTED)
+# The settlements that bar every further attempt: it ran, or may have run,
+# in the lease, and its result is not recorded.
+VERIFICATION_ATTEMPT_NOT_REPLAYABLE = (
+    VERIFICATION_ATTEMPT_UNRECORDED, VERIFICATION_ATTEMPT_OUTCOME_UNKNOWN,
+    VERIFICATION_ATTEMPT_INTERRUPTED)
+# Task 8 R20-2: the Broker's receipt for a process scope of the workflow
+# whose retirement was REFUSED after the workspace lease was released — the
+# record's own word that recovery evidence remains on disk that only this
+# record names as its owner (``cleanup_evidence_outstanding``).
+PROCESS_SCOPE_RETAINED_RECEIPT_MARKER = "process scope retained"
+# Task 8 R20-B (Addendum B): its SETTLEMENT — the Broker's receipt that a
+# later retirement-only pass ESTABLISHED absence for every scope of the
+# workflow and retired what remained. It supersedes every retained receipt
+# before it; a retained receipt written after it is outstanding again
+# (``process_scope_retention_outstanding``).
+PROCESS_SCOPE_SETTLED_RECEIPT_MARKER = "process scope settled"
+# Task 8 R21-1 / R21-3: the Broker's receipt that a release reached its
+# destructive boundary — trust revoked, evidence preserved, sessions proven
+# closed — WITHOUT an observed workspace removal (a hold or a refused
+# admission there, or a removal that did not complete). Re-entry is then the
+# removal ONLY, never a replay (``workspace_removal_outstanding``); its
+# settlement is the ``workspace removal completed`` receipt.
+WORKSPACE_REMOVAL_PENDING_RECEIPT_MARKER = "workspace removal pending"
+WORKSPACE_REMOVAL_COMPLETED_RECEIPT_MARKER = "workspace removal completed"
 
 DECISION_APPROVE = "approve"
 DECISION_REJECT = "reject"
@@ -255,6 +393,12 @@ PROBLEM_DELIVERY_STATE_FIELDS = (
 PROBLEM_DELIVERY_BINDING = "workflow_record_delivery_binding"
 PROBLEM_UNKNOWN_PHASE = "workflow_unknown_phase"
 PROBLEM_INVALID_TRANSITION = "workflow_invalid_transition"
+# Task 8 S-III: the approval kind and its authority block disagree
+# (a Mission-origin record with a Telegram identity or without its
+# linkage, a v2 record carrying a linkage, a Mission-origin record
+# with a chat-bound placeholder).
+PROBLEM_KIND_LINKAGE = "workflow_record_kind_linkage"
+PROBLEM_MISSION_ID_GRAMMAR = "workflow_record_mission_id_grammar"
 
 
 class RecordError(Exception):
@@ -511,6 +655,14 @@ _TOP_LEVEL_KEYS = (
     "delivery_authority",
 )
 
+# Task 8 S-III: the OPTIONAL top-level keys (absent means exactly
+# null). ``_TOP_LEVEL_KEYS`` itself is byte-for-byte what it was (its
+# pin holds); the Mission linkage block is additive and optional so a
+# v2 record on disk neither gains a key at load nor changes bytes.
+_OPTIONAL_TOP_LEVEL_KEYS = (
+    MISSION_AUTHORITY_KEY, MISSION_ENGAGEMENT_KEY, RETENTION_KEY_PLACEHOLDER,
+)
+
 # Bounded verified-result summary (E-5 shape: capability-free, the
 # text the human sees as the mission outcome). Hard constant.
 MAX_VERIFIED_SUMMARY_CHARS = 4000
@@ -680,6 +832,368 @@ def _validate_mission_authorization(value, location):
             " rendered_text; the record no longer binds the exact"
             " authorized text and is refused" % location,
         )
+
+
+def _require_mission_core_id(value, prefix, location):
+    """The Mission Core id grammar, mirrored: ``<prefix>-`` followed by
+    exactly ``MISSION_CORE_ID_HEX_CHARS`` lowercase hex characters."""
+    expected = len(prefix) + 1 + MISSION_CORE_ID_HEX_CHARS
+    if not isinstance(value, str):
+        _fail(PROBLEM_MISSION_ID_GRAMMAR,
+              "%s must be a string, not %s" % (location, type(value).__name__))
+    if len(value) != expected:
+        _fail(PROBLEM_MISSION_ID_GRAMMAR,
+              "%s must be exactly %d characters" % (location, expected))
+    if value[:len(prefix) + 1] != prefix + "-":
+        _fail(PROBLEM_MISSION_ID_GRAMMAR,
+              "%s must start with %r" % (location, prefix + "-"))
+    if any(ch not in "0123456789abcdef" for ch in value[len(prefix) + 1:]):
+        _fail(PROBLEM_MISSION_ID_GRAMMAR,
+              "%s must end in %d lowercase hex characters"
+              % (location, MISSION_CORE_ID_HEX_CHARS))
+
+
+def _validate_mission_authority(value, location):
+    """The typed Mission linkage block: closed keys, strict grammar,
+    exact bounds. Nothing here consults the Mission store — the block
+    is a recorded, digest-bound CLAIM of origin that the rendering
+    binds; establishing that it is CURRENT is the consumers' job
+    (slice S-IV), never a property of the record alone."""
+    _require_dict(value, location)
+    _require_closed_keys(value, MISSION_AUTHORITY_KEYS, location)
+    _require_mission_core_id(value["mission_id"],
+                             MISSION_CORE_MISSION_ID_PREFIX,
+                             location + ".mission_id")
+    _require_int(value["revision"], location + ".revision", minimum=1)
+    _require_mission_core_id(value["authorization_id"],
+                             MISSION_CORE_AUTHORIZATION_ID_PREFIX,
+                             location + ".authorization_id")
+    _require_mission_core_id(value["decision_id"],
+                             MISSION_CORE_DECISION_ID_PREFIX,
+                             location + ".decision_id")
+    _require_hex(value["authorization_digest_sha256"],
+                 location + ".authorization_digest_sha256", 64)
+
+
+def _validate_retention(value, location):
+    _require_dict(value, location)
+    _require_closed_keys(value, RETENTION_KEYS, location)
+    _require_timestamp(value["established_at"], location + ".established_at")
+    _require_timestamp(value["deadline_at"], location + ".deadline_at")
+    if value["deadline_at"] <= value["established_at"]:
+        _fail(PROBLEM_BAD_VALUE,
+              "%s.deadline_at must follow established_at" % location)
+    _require_member(value["reason"], RETENTION_REASONS, location + ".reason")
+    if (value["released_at"] is None) != (value["release_reason"] is None):
+        _fail(PROBLEM_BAD_VALUE,
+              "%s released_at and release_reason must both be set or both null"
+              % location)
+    if value["released_at"] is not None:
+        _require_timestamp(value["released_at"], location + ".released_at")
+        _require_member(value["release_reason"], RETENTION_RELEASE_REASONS,
+                        location + ".release_reason")
+
+
+def retention_protects(document, now):
+    """Whether ``document`` (a workflow record) is PROTECTED at ``now``:
+    a Mission-origin record whose retention is not released and whose
+    deadline has not passed — or whose engagement-start receipts show an
+    UNRESOLVED start (the record's own truth about a start whose stop is
+    not confirmed or whose result is retained/uncertain), which no
+    deadline may prune. A v2 record is never protected."""
+    retention = document.get(RETENTION_KEY)
+    if retention is None:
+        return False
+    if unresolved_start_receipts(document):
+        return True
+    return retention["released_at"] is None and now < retention["deadline_at"]
+
+
+def unresolved_start_receipts(document):
+    """The latest ``mission start`` receipt state per head (a start id,
+    or a pre-admission claim head), for the heads whose latest receipt
+    does not resolve the start by itself (see ``RESOLVED_START_STATES``):
+    a completed settlement resolves only with its own ``stop=none``."""
+    latest = {}
+    for receipt in document.get("receipts") or []:
+        summary = receipt.get("bounded_summary") if isinstance(receipt, dict) else None
+        if not isinstance(summary, str):
+            continue
+        marker = None
+        for candidate in START_RECEIPT_MARKERS:
+            if summary.startswith(candidate + " "):
+                marker = candidate
+        if marker is None:
+            continue
+        head, _, rest = summary[len(marker) + 1:].partition(":")
+        state = None
+        stop = None
+        for token in rest.split(" "):
+            if token.startswith("state=") and state is None:
+                state = token[len("state="):]
+            elif token.startswith("stop="):
+                stop = token[len("stop="):]
+        if state is None:
+            continue
+        latest[head] = (state, stop)
+    unresolved = {}
+    for head, (state, stop) in latest.items():
+        if state in RESOLVED_START_STATES:
+            continue
+        if state == SETTLED_COMPLETED_STATE and stop == START_RECEIPT_STOP_NONE:
+            continue
+        unresolved[head] = state
+    return unresolved
+
+
+def verification_attempts(document):
+    """Every durable verification attempt record of ``document`` (a
+    workflow record), read back: ``(attempts, undecodable)`` — ``attempts``
+    maps each attempt number to ``{"roots": the owned-root count its claim
+    recorded, or None (no claim), "kind": its LAST settlement's kind, or
+    None (unsettled)}``; ``undecodable`` counts attempt records whose
+    number, verb, count or kind does not decode, which a caller must never
+    read as "no attempt"."""
+    head = VERIFICATION_ATTEMPT_RECEIPT_MARKER + " "
+    digits = "0123456789"
+    attempts, undecodable = {}, 0
+    for receipt in document.get("receipts") or []:
+        summary = receipt.get("bounded_summary") if isinstance(receipt, dict) else None
+        if not isinstance(summary, str) or not summary.startswith(head):
+            continue
+        number, _, rest = summary[len(head):].partition(" ")
+        verb, _, rest = rest.partition(" ")
+        token = rest.partition(" ")[0]
+        if not (number and all(c in digits for c in number)):
+            undecodable += 1
+            continue
+        if verb == VERIFICATION_ATTEMPT_CLAIMED and token.startswith("roots=") and (
+                token[len("roots="):] and all(c in digits for c in token[len("roots="):])):
+            attempts.setdefault(int(number), {"roots": None, "kind": None})[
+                "roots"] = int(token[len("roots="):])
+        elif verb == VERIFICATION_ATTEMPT_SETTLED + ":" and (
+                token in VERIFICATION_ATTEMPT_KINDS):
+            attempts.setdefault(int(number), {"roots": None, "kind": None})["kind"] = token
+        else:
+            undecodable += 1
+    return attempts, undecodable
+
+
+def unresolved_verification_attempts(document):
+    """``(unresolved, undecodable)``: the numbers of ``document``'s
+    verification attempts its record does not settle by itself — CLAIMED
+    and never settled (the process may be running, or its pass died), or
+    settled ``start-unknown`` (whether a process started is not decided
+    yet) — and the count of attempt records that do not decode
+    (``verification_attempts``). Settling them needs the verification
+    scope's OWNERSHIP records, which this layer never reads: the Broker
+    settles an attempt once those records establish that no verification
+    process of the workflow can be alive."""
+    attempts, undecodable = verification_attempts(document)
+    unresolved = sorted(
+        number for number, attempt in attempts.items()
+        if attempt["kind"] in (None, VERIFICATION_ATTEMPT_START_UNKNOWN))
+    return unresolved, undecodable
+
+
+def verification_evidence_outstanding(document):
+    """Task 8 R20-1: whether ``document``'s VERIFICATION recovery evidence
+    — the record itself, which names the verification scope a recovery
+    owner (``runtime.current_scope_owners``) — is still needed, decided
+    from the record ALONE, for the one caller that reads no ownership
+    record: pruning (``store._prune_inactive``). True when the record
+    carries any verification attempt record and an attempt record does not
+    decode (ambiguity is not settlement), an attempt is unresolved
+    (``unresolved_verification_attempts``), or the workspace lease is not
+    released or not recorded: the release releases the lease only AFTER it
+    established, from the ownership records, that no verification process
+    of the workflow can be alive and settled every attempt (``target_runtime
+    .broker``), so an unreleased lease is the record's own word that this
+    has not happened yet. A record without verification attempt records is
+    unaffected; a settled, released one is prunable as before."""
+    attempts, undecodable = verification_attempts(document)
+    if not attempts and not undecodable:
+        return False
+    unresolved, _undecodable = unresolved_verification_attempts(document)
+    if undecodable or unresolved:
+        return True
+    lease = document.get("workspace_lease")
+    return not isinstance(lease, dict) or lease.get("released_at") is None
+
+
+def cleanup_evidence_outstanding(document):
+    """Task 8 R20-2: whether ``document``'s RECOVERY AUTHORITY over its
+    process scopes is still needed, decided from the record ALONE for the
+    one caller that reads no ownership record — pruning (``store
+    ._prune_inactive``). The record is what names every scope of the
+    workflow a recovery owner (``runtime.current_scope_owners``); pruning it
+    while a scope may still hold a process of the workflow leaves that scope
+    with no owner any recovery can aim at.
+
+    True while the workspace LEASE is held: the release releases the lease
+    only after it ESTABLISHED, from the ownership records, that every scope
+    of the workflow is absent or settled (``target_runtime.broker``), so a
+    held lease is the record's own word that this has not happened yet —
+    whatever the record's phase or kind. True as well while a ``process
+    scope retained`` receipt is OUTSTANDING (``process_scope_retention
+    _outstanding``): a scope whose retirement was refused after the lease
+    was released stays on disk, and this record is its only owner — until a
+    retirement-only pass establishes its absence and settles it. A record
+    that never held a lease, or whose lease was released with every scope
+    retired (or since settled), is unaffected."""
+    lease = document.get("workspace_lease")
+    if isinstance(lease, dict) and lease.get("released_at") is None:
+        return True
+    return process_scope_retention_outstanding(document)
+
+
+def process_scope_retention_outstanding(document):
+    """Task 8 R20-B (Addendum B): whether ``document``'s LATEST process-scope
+    receipt is a ``process scope retained`` one — receipts are appended in
+    order, so a ``process scope settled`` receipt supersedes every retained
+    one before it, and a retained one after it (a retry refused again) is
+    outstanding once more. No such receipt: False."""
+    latest = latest_process_scope_receipt(document)
+    return latest is not None and latest.startswith(PROCESS_SCOPE_RETAINED_RECEIPT_MARKER + ":")
+
+
+def workspace_removal_outstanding(document):
+    """Task 8 R21: whether ``document``'s LATEST workspace-removal receipt is
+    a ``workspace removal pending`` one — the release already revoked,
+    preserved and closed, and only the removal remains. No such receipt:
+    False."""
+    latest = latest_workspace_removal_receipt(document)
+    return latest is not None and latest.startswith(
+        WORKSPACE_REMOVAL_PENDING_RECEIPT_MARKER + ":")
+
+
+def latest_workspace_removal_receipt(document):
+    """The ``bounded_summary`` of ``document``'s LATEST ``workspace removal
+    pending`` or ``workspace removal completed`` receipt, or None."""
+    latest = None
+    for receipt in document.get("receipts") or []:
+        summary = receipt.get("bounded_summary") if isinstance(receipt, dict) else None
+        if isinstance(summary, str) and summary.startswith((
+                WORKSPACE_REMOVAL_PENDING_RECEIPT_MARKER + ":",
+                WORKSPACE_REMOVAL_COMPLETED_RECEIPT_MARKER + ":")):
+            latest = summary
+    return latest
+
+
+def latest_process_scope_receipt(document):
+    """The ``bounded_summary`` of ``document``'s LATEST ``process scope
+    retained`` or ``process scope settled`` receipt, or None."""
+    latest = None
+    for receipt in document.get("receipts") or []:
+        summary = receipt.get("bounded_summary") if isinstance(receipt, dict) else None
+        if isinstance(summary, str) and summary.startswith((
+                PROCESS_SCOPE_RETAINED_RECEIPT_MARKER + ":",
+                PROCESS_SCOPE_SETTLED_RECEIPT_MARKER + ":")):
+            latest = summary
+    return latest
+
+
+def _validate_kind_linkage(document, location):
+    """Task 8 S-III: the kind ⇔ authority-block invariants.
+
+    Mission-origin kind ⇔ ``mission_authority`` present and valid ⇔
+    ``telegram`` null (and no chat-bound placeholder, there being no
+    chat); v2 kind ⇔ ``telegram`` identity present and valid ⇔
+    ``mission_authority`` absent or null. No cross-kind substitution:
+    every other combination is refused with ``PROBLEM_KIND_LINKAGE``.
+    ``approval`` was validated already, so the kind is a member of
+    ``APPROVAL_KINDS``."""
+    kind = document["approval"]["approval_kind"]
+    linkage = document.get(MISSION_AUTHORITY_KEY)
+    engagement = document.get(MISSION_ENGAGEMENT_KEY)
+    retention = document.get(RETENTION_KEY)
+    if kind != APPROVAL_KIND_MISSION_CORE and retention is not None:
+        _fail(PROBLEM_KIND_LINKAGE,
+              "%s.%s must be absent or null for approval kind %s; only a"
+              " Mission-origin record is retained" % (location, RETENTION_KEY, kind))
+    if kind == APPROVAL_KIND_MISSION_CORE:
+        if retention is None:
+            _fail(PROBLEM_KIND_LINKAGE,
+                  "%s.%s must be present for approval kind %s: a Mission-origin"
+                  " record is retained from its insertion"
+                  % (location, RETENTION_KEY, kind))
+        _validate_retention(retention, "%s.%s" % (location, RETENTION_KEY))
+        if document["telegram"] is not None:
+            _fail(PROBLEM_KIND_LINKAGE,
+                  "%s.telegram must be null for approval kind %s; a"
+                  " Mission-origin record carries no Telegram identity"
+                  % (location, kind))
+        if linkage is None:
+            _fail(PROBLEM_KIND_LINKAGE,
+                  "%s.%s must be present for approval kind %s; a"
+                  " Mission-origin record binds its Mission authority"
+                  " explicitly, never by handoff text or receipts"
+                  % (location, MISSION_AUTHORITY_KEY, kind))
+        _validate_mission_authority(
+            linkage, "%s.%s" % (location, MISSION_AUTHORITY_KEY))
+        if engagement is None:
+            _fail(PROBLEM_KIND_LINKAGE,
+                  "%s.%s must be present for approval kind %s; a"
+                  " Mission-origin record is published only under a"
+                  " canonical engagement reservation"
+                  % (location, MISSION_ENGAGEMENT_KEY, kind))
+        _validate_mission_engagement(
+            engagement, "%s.%s" % (location, MISSION_ENGAGEMENT_KEY))
+        if document["result_placeholder"] is not None:
+            _fail(PROBLEM_KIND_LINKAGE,
+                  "%s.result_placeholder must be null for approval kind"
+                  " %s; there is no chat to bind a placeholder in"
+                  % (location, kind))
+        return
+    if linkage is not None:
+        _fail(PROBLEM_KIND_LINKAGE,
+              "%s.%s must be absent or null for approval kind %s; a"
+              " Telegram-approved record never carries Mission authority"
+              % (location, MISSION_AUTHORITY_KEY, kind))
+    if engagement is not None:
+        _fail(PROBLEM_KIND_LINKAGE,
+              "%s.%s must be absent or null for approval kind %s"
+              % (location, MISSION_ENGAGEMENT_KEY, kind))
+    _validate_telegram(document["telegram"], location + ".telegram")
+
+
+def _validate_mission_engagement(value, location):
+    _require_dict(value, location)
+    _require_closed_keys(value, MISSION_ENGAGEMENT_KEYS, location)
+    _require_mission_core_id(value["engagement_id"],
+                             MISSION_CORE_ENGAGEMENT_ID_PREFIX,
+                             location + ".engagement_id")
+    _require_int(value["engagement_sequence"],
+                 location + ".engagement_sequence", minimum=1)
+    _require_mission_core_id(value["operation_id"],
+                             MISSION_CORE_OPERATION_ID_PREFIX,
+                             location + ".operation_id")
+    _require_timestamp(value["reserved_at"], location + ".reserved_at")
+
+
+def is_telegram_kind(entry):
+    """True when ``entry`` is a Telegram-approved (v2) record whose
+    Telegram identity may be read. Consumers of the Telegram fields
+    ask THIS before dereferencing ``entry["telegram"]`` (Task 8
+    S-III): a Mission-origin record has none. Total over any
+    mapping."""
+    if not isinstance(entry, dict):
+        return False
+    approval = entry.get("approval")
+    if not isinstance(approval, dict):
+        return False
+    return (approval.get("approval_kind") == APPROVAL_KIND_MISSION_V2
+            and isinstance(entry.get("telegram"), dict))
+
+
+def is_mission_core_kind(entry):
+    """True when ``entry`` is a Mission-origin record (Task 8 S-III).
+    Total over any mapping."""
+    if not isinstance(entry, dict):
+        return False
+    approval = entry.get("approval")
+    return (isinstance(approval, dict)
+            and approval.get("approval_kind") == APPROVAL_KIND_MISSION_CORE)
 
 
 def _validate_telegram(value, location):
@@ -1419,7 +1933,9 @@ def validate_record(document, location="workflow record"):
             " inspection) — never delete it: it carries authorization"
             " records" % (location, version, WORKFLOW_SCHEMA_VERSION),
         )
-    _require_closed_keys(document, _TOP_LEVEL_KEYS, location)
+    _require_closed_keys_with_optional(
+        document, _TOP_LEVEL_KEYS, _OPTIONAL_TOP_LEVEL_KEYS, location
+    )
     _require_str(
         document["workflow_id"], location + ".workflow_id",
         max_chars=MAX_ID_CHARS,
@@ -1452,8 +1968,12 @@ def validate_record(document, location="workflow record"):
         document["mission_authorization"],
         location + ".mission_authorization",
     )
-    _validate_telegram(document["telegram"], location + ".telegram")
     _validate_approval(document["approval"], location + ".approval")
+    # Task 8 S-III: the kind decides which authority block must be
+    # present (Telegram identity for v2, the typed Mission linkage for
+    # the Mission-origin kind) and refuses every cross-kind shape; the
+    # v2 branch runs the unchanged ``_validate_telegram``.
+    _validate_kind_linkage(document, location)
     _validate_handoff(document["handoff"], location + ".handoff")
     _require_member(document["phase"], PHASES, location + ".phase")
     _validate_workspace_lease(
@@ -1473,7 +1993,10 @@ def validate_record(document, location="workflow record"):
     _validate_result_placeholder(
         document["result_placeholder"],
         location + ".result_placeholder",
-        document["telegram"]["chat_id"],
+        # A Mission-origin record has no chat (its placeholder is
+        # already required null above); a v2 record binds its own chat.
+        (None if document["telegram"] is None
+         else document["telegram"]["chat_id"]),
     )
     _validate_result_delivery(
         document["result_delivery"], location + ".result_delivery"
@@ -1685,5 +2208,131 @@ def new_record(workflow_id, human_intent, repository_realpath,
         "last_observation": None,
         "delivery_authority": DELIVERY_AUTHORITY_NONE,
     }
+    validate_record(document)
+    return document
+
+
+def new_mission_origin_record(workflow_id, human_intent, repository_realpath,
+                              policy_digest_sha256, canonical_host, owner,
+                              repo, canonical_url, baseline_ref,
+                              baseline_commit_sha, authority_content,
+                              mission_revision, mission_authority,
+                              mission_engagement, created_at, expires_at,
+                              handoff_revision, handoff_text):
+    """Task 8, slice S-IV: the ONE production constructor of a
+    MISSION-ORIGIN workflow record (the writer slice S-III deliberately
+    lacked). Its approval is the Mission Core's issued authorization
+    (``mission_authority``, the typed linkage), already decided by the
+    human through the Core, so the record is built in the ADMISSION
+    state: approval consumed at ``created_at`` with decision ``approve``,
+    phase AUTHORIZED, no Telegram identity, no placeholder, and the
+    canonical engagement reservation (``mission_engagement``) it was
+    published under. The rendered Mission Authorization text is computed
+    HERE by the single renderer from exactly the stored fields (the
+    Mission-origin approval line from the typed block), so the render
+    binding holds by construction; the result is validated before it is
+    returned. The target is repository-only (a Mission names a
+    repository, never an issue or PR)."""
+    _require_str(human_intent, "human_intent", max_chars=MAX_HUMAN_INTENT_CHARS)
+    _require_dict(authority_content, "authority_content")
+    _require_closed_keys(authority_content, rendering.AUTHORITY_CONTENT_KEYS,
+                         "authority_content")
+    for key in sorted(authority_content):
+        _require_str(authority_content[key], key,
+                     max_chars=MAX_AUTHORITY_FIELD_CHARS)
+    _require_str(handoff_text, "handoff_text", max_chars=MAX_AUTHORITY_TEXT_CHARS)
+    _require_int(mission_revision, "mission_revision", minimum=1)
+    _require_int(handoff_revision, "handoff_revision", minimum=1)
+    _validate_mission_authority(mission_authority, "mission_authority")
+    _validate_mission_engagement(mission_engagement, "mission_engagement")
+    if mission_authority["revision"] != mission_revision:
+        _fail(PROBLEM_KIND_LINKAGE,
+              "mission_authority.revision %d is not the mission_revision %d"
+              " the record is built for" % (mission_authority["revision"],
+                                            mission_revision))
+    rendered_text = rendering.render_authorization_text(
+        workflow_id=workflow_id,
+        revision=mission_revision,
+        control_realpath=repository_realpath,
+        policy_digest=policy_digest_sha256,
+        canonical_url=canonical_url,
+        issue_or_pr=None,
+        baseline_ref=baseline_ref,
+        baseline_sha=baseline_commit_sha,
+        user_id=None,
+        chat_id=None,
+        mission_authority=dict(mission_authority),
+        human_intent=human_intent,
+        authority_content=dict(authority_content),
+        handoff_revision=handoff_revision,
+        handoff_text=handoff_text,
+    )
+    mission_authorization = {
+        "rendered_text": rendered_text,
+        "digest_sha256": text_digest(rendered_text),
+        "revision": mission_revision,
+    }
+    mission_authorization.update(authority_content)
+    document = {
+        "schema_version": WORKFLOW_SCHEMA_VERSION,
+        "workflow_id": workflow_id,
+        "human_intent": human_intent,
+        "control_identity": {
+            "repository_realpath": repository_realpath,
+            "policy_digest_sha256": policy_digest_sha256,
+        },
+        "target": {
+            "canonical_host": canonical_host,
+            "owner": owner,
+            "repo": repo,
+            "canonical_url": canonical_url,
+            "issue_or_pr": None,
+        },
+        "approved_baseline": {
+            "ref": baseline_ref,
+            "commit_sha": baseline_commit_sha,
+        },
+        "mission_authorization": mission_authorization,
+        "telegram": None,
+        MISSION_AUTHORITY_KEY: dict(mission_authority),
+        MISSION_ENGAGEMENT_KEY: dict(mission_engagement),
+        RETENTION_KEY: {
+            "established_at": created_at,
+            "deadline_at": created_at + DELIVERY_CANDIDATE_RETENTION_SECONDS,
+            "reason": RETENTION_REASON_DELIVERY_CANDIDATE,
+            "released_at": None,
+            "release_reason": None,
+        },
+        "approval": {
+            "approval_kind": APPROVAL_KIND_MISSION_CORE,
+            # No callback secret exists for this kind; the nonce slot
+            # carries the (non-secret) authorization digest.
+            "nonce": mission_authority["authorization_digest_sha256"],
+            "created_at": created_at,
+            "expires_at": expires_at,
+            "consumed_at": created_at,
+            "consumed_by_update_id": None,
+            "decision": DECISION_APPROVE,
+            "superseded": False,
+        },
+        "handoff": {
+            "revision": handoff_revision,
+            "text": handoff_text,
+            "digest_sha256": text_digest(handoff_text),
+        },
+        "phase": PHASE_PLANNED,
+        "workspace_lease": None,
+        "receipts": [],
+        "codex_turns": [],
+        "ambiguity": {"state": AMBIGUITY_NONE, "detail": None},
+        "target_engine": None,
+        "verified_result": None,
+        "result_placeholder": None,
+        "result_delivery": None,
+        "last_observation": None,
+        "delivery_authority": DELIVERY_AUTHORITY_NONE,
+    }
+    validate_record(document)
+    apply_transition(document, PHASE_AUTHORIZED)
     validate_record(document)
     return document

@@ -93,8 +93,12 @@ MAX_REFERENCE_LIST = 64
 
 PRINCIPAL_KIND_CONNECTOR_CREDENTIAL = "configured_connector_credential_ordinal"
 PRINCIPAL_KIND_LOCAL_PROCESS_USER = "local_process_user"
+# Re-declared from the Mission Core (parity is pinned from the test side):
+# a client-mediated confirmation round trip; never a human identity.
+PRINCIPAL_KIND_CLIENT_CONFIRMATION = "configured_connector_client_confirmation"
 PRINCIPAL_KINDS = (
     PRINCIPAL_KIND_CONNECTOR_CREDENTIAL, PRINCIPAL_KIND_LOCAL_PROCESS_USER,
+    PRINCIPAL_KIND_CLIENT_CONFIRMATION,
 )
 PROOF_TRANSPORT_CREDENTIAL_ONLY = "transport_credential_only"
 CONTEXT_KEYS = (

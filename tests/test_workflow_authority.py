@@ -76,6 +76,56 @@ def make_record(workflow_id="wf-0001", mission_revision=1,
     return document
 
 
+MISSION_CORE_LINKAGE = {
+    "mission_id": "mn-" + "1" * 32,
+    "revision": 1,
+    "authorization_id": "ma-" + "2" * 32,
+    "decision_id": "md-" + "3" * 32,
+    "authorization_digest_sha256": "4" * 64,
+}
+# Task 8 S-IV: the engagement reservation reference a Mission-origin
+# record is published under (required for that kind).
+MISSION_CORE_ENGAGEMENT = {
+    "engagement_id": "me-" + "5" * 32,
+    "engagement_sequence": 1,
+    "operation_id": "mo-" + "6" * 32,
+    "reserved_at": 100,
+}
+# Task 8, slice S-V (R2-2): the delivery-candidate retention a
+# Mission-origin record is established with (required for that kind).
+MISSION_CORE_RETENTION = {
+    "established_at": 100,
+    "deadline_at": 100 + 1209600,
+    "reason": "delivery_candidate",
+    "released_at": None,
+    "release_reason": None,
+}
+
+
+def mission_core_record(base=None, **linkage_overrides):
+    """Task 8 S-III: a MISSION-ORIGIN workflow record built by TESTS
+    ONLY (no production writer exists in this slice) from a v2 record:
+    the approval kind becomes ``mission_core_authorization``, the
+    Telegram identity becomes null, the typed ``mission_authority``
+    block is attached, no placeholder is bound, and the digest-bound
+    rendered text is recomputed by the PRODUCTION renderer over the
+    record's own fields. Returns a validating record."""
+    entry = make_record() if base is None else base
+    linkage = dict(MISSION_CORE_LINKAGE, revision=entry["mission_authorization"]["revision"])
+    linkage.update(linkage_overrides)
+    entry["approval"]["approval_kind"] = record.APPROVAL_KIND_MISSION_CORE
+    entry["telegram"] = None
+    entry["result_placeholder"] = None
+    entry[record.MISSION_AUTHORITY_KEY] = linkage
+    entry[record.MISSION_ENGAGEMENT_KEY] = dict(MISSION_CORE_ENGAGEMENT)
+    entry[record.RETENTION_KEY] = dict(MISSION_CORE_RETENTION)
+    rendered = rendering.render_record_text(entry)
+    entry["mission_authorization"]["rendered_text"] = rendered
+    entry["mission_authorization"]["digest_sha256"] = digest.text_digest(rendered)
+    record.validate_record(entry)
+    return entry
+
+
 class RecordValidationTests(unittest.TestCase):
     def test_new_record_validates_and_is_planned(self):
         document = make_record()
@@ -1932,8 +1982,11 @@ class ClosedSetValuePinTests(unittest.TestCase):
 
     def test_closed_value_sets_are_pinned(self):
         self.assertEqual(record.ISSUE_OR_PR_KINDS, ("issue", "pr"))
+        # Task 8 S-III: the approval-kind enumeration is extended
+        # DELIBERATELY by exactly the Mission-origin kind.
         self.assertEqual(
-            record.APPROVAL_KINDS, ("mission_authorization_v2",)
+            record.APPROVAL_KINDS,
+            ("mission_authorization_v2", "mission_core_authorization"),
         )
         self.assertEqual(record.DECISIONS, ("approve", "reject"))
         self.assertEqual(
@@ -2082,6 +2135,10 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_AUTHORIZATION_NODES": 512,
         },
         "workflow_authority/record.py": {
+            # Task 8, slice S-V: the delivery-candidate retention window
+            # of a Mission-origin record and its reason text.
+            "MAX_RETENTION_REASON_CHARS": 64,
+            "DELIVERY_CANDIDATE_RETENTION_SECONDS": 1209600,
             "MAX_ID_CHARS": 128,
             "MAX_TELEGRAM_MESSAGE_IDS": 64,
             "MAX_RECEIPTS": 256,
@@ -2092,6 +2149,9 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_AUTHORITY_FIELD_CHARS": 8000,
             "MAX_HUMAN_INTENT_CHARS": 4000,
             "MAX_VERIFIED_SUMMARY_CHARS": 4000,
+            # Task 8 S-III: the Mission Core id grammar, mirrored
+            # (pinned equal to mission.record.ID_HEX_CHARS elsewhere).
+            "MISSION_CORE_ID_HEX_CHARS": 32,
         },
         "workflow_authority/canonical.py": {
             "CANONICAL_TARGET_HOST": "github.com",
@@ -2153,6 +2213,25 @@ class BoundConstantPinTests(unittest.TestCase):
         },
         "target_runtime/dispatch.py": {
             "MAX_FOLLOW_UP_DISPATCHES": 2,
+            # Task 8 S-IV (start-claim decision): the bound on the wait
+            # for the engine's start / task hand-over calls at the guarded
+            # start points; a call that outlasts it is ABANDONED and its
+            # start settled uncertain (never retried).
+            "START_WAIT_SECONDS": 600,
+        },
+        # Task 8 S-IV (re-checkpoint 2): the owner's bounded late
+        # hand-over retries.
+        "target_runtime/broker.py": {
+            "MAX_LATE_HANDOVER_ATTEMPTS": 16,
+            "LATE_HANDOVER_RETRY_SECONDS": 0.5,
+            # Task 8 S-V (start-claim decision item 5, bounded cleanup):
+            # the bound on EACH engine call of the owned stop (listing,
+            # close); an abandoned call leaves the stop PENDING.
+            "OWNED_STOP_WAIT_SECONDS": 60,
+            # Task 8 startup correction: the largest persisted target
+            # runtime state a follow-up's retirement reads (it is a few
+            # hundred bytes); over it is a contradiction, never a discard.
+            "MAX_RUNTIME_STATE_BYTES": 65536,
         },
         "target_runtime/capability.py": {
             "MAX_CAPABILITIES": 256,
@@ -2181,6 +2260,10 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_FILE_BYTES": 65536,
             "MAX_FILES": 32,
             "MAX_TOTAL_BYTES": 1048576,
+            # Task 8 startup correction: the largest runtime-state archive
+            # read back (the 64 KiB state, JSON escaping at most sextupling
+            # it); over it is malformed evidence, kept and never replaced.
+            "MAX_RUNTIME_STATE_ARCHIVE_BYTES": 524288,
         },
         "target_runtime/process_ownership.py": {
             # I5 / R-14. Both bound a REAP — local cleanup of a
@@ -2200,6 +2283,11 @@ class BoundConstantPinTests(unittest.TestCase):
             # a disambiguator, not a credential. A collision is
             # refused rather than silently inherited.
             "CONTROL_DIGEST_CHARS": 16,
+            # Task 8 R20-1: the largest process-group id an owned root's
+            # group record may name in a scope RETIREMENT reads (``pid_t``,
+            # signed 32-bit) — a larger number is unreadable evidence that
+            # retains the scope, never a group to probe.
+            "MAX_RECORDED_GROUP_ID": 2147483647,
         },
         "target_runtime/readiness.py": {
             # I3. Within this module the BOOTSTRAP bound is the only
@@ -2211,6 +2299,17 @@ class BoundConstantPinTests(unittest.TestCase):
             # `EngineeringRunsForHoursTests` and
             # `test_no_mission_timer_behavioral` both drive.
             "BOOTSTRAP_MAX_SECONDS": 900,
+        },
+        "target_runtime/verification.py": {
+            # Task 8 S-VI (R2-9). Bounds the REAP of the verification
+            # group — local cleanup of a process this component started,
+            # never a deadline on the verification itself, which runs
+            # without one (a timeout would silently truncate evidence).
+            "VERIFICATION_REAP_SETTLE_SECONDS": 10.0,
+            # Task 8 R19-3: the largest process-group id an owned root's
+            # group record may name (``pid_t``, signed 32-bit) — a larger
+            # number is unavailable evidence, never a group to probe.
+            "MAX_GROUP_ID": 2147483647,
         },
         # Grok Bot MCP transport (grok_mcp). Every bound is exact-value
         # pinned; the spike writes no durable state, so the two table
@@ -2224,6 +2323,53 @@ class BoundConstantPinTests(unittest.TestCase):
             # Mission Core identifiers and digests as relayed on the wire.
             "MISSION_TOKEN_CHARS": 35,
             "DIGEST_CHARS": 64,
+            # Client-mediated decision (Task 8, slice S-I): the exact
+            # digest-prefix length the human confirms, and the hard
+            # bound on the rendered authority card (refused, never
+            # truncated, above it).
+            "ELICITATION_CONFIRM_CHARS": 12,
+            "MAX_ELICITATION_MESSAGE_CHARS": 12000,
+            # Task 8 S-VII: the longest control name di_mission_control
+            # accepts ("resume"; the pattern names hold, resume, cancel).
+            "CONTROL_CHARS": 6,
+        },
+        "grok_mcp/elicitation.py": {
+            "ELICITATION_VALIDITY_SECONDS": 900,
+            "ELICITATION_POLL_SECONDS": 0.25,
+            "MAX_PENDING_ELICITATIONS": 8,
+            "MAX_CONSUMED_IDS": 64,
+        },
+        "grok_mcp/decision_tools.py": {
+            "CLIENT_CONFIRMED_AUTHORITY_SECONDS": 86400,
+        },
+        # Task 8 S-IV: the engineering bootstrap's fixed bounds.
+        "mission_control/engineering.py": {
+            "WORKFLOW_ID_HEX_CHARS": 26,
+            "DEFAULT_APPROVAL_VALIDITY_SECONDS": 2592000,
+        },
+        # The gate re-exports the core's agent-name bound for the Broker
+        # (target_runtime never imports ``mission``): the same value.
+        "mission_control/gate.py": {
+            "MAX_START_AGENT_NAMES": 32,
+        },
+        # Task 8 S-V (R17-2): the largest number an observation receipt
+        # states (a round, an entry count) — six ASCII digits.
+        "mission_control/observation_receipts.py": {
+            "MAX_RECEIPT_NUMBER": 999999,
+            "MAX_LISTED_ROUNDS": 64,
+        },
+        # Task 8 S-VI: the Mission-bound delivery. The proposal's ABSOLUTE
+        # validity (the minted delivery authority expires with it; within
+        # P1-A6's own maximum), the per-pass step bound, and the candidate
+        # identity prefix the human confirms (the terminal ceremony's
+        # twelve).
+        "mission_control/delivery.py": {
+            "DELIVERY_PROPOSAL_VALIDITY_SECONDS": 86400,
+            "MAX_DELIVERY_STEPS_PER_PASS": 8,
+            "DELIVERY_CONFIRM_CHARS": 12,
+            # How many recorded source-branch preparation attempts that
+            # provably changed nothing precede ``unresolved``.
+            "MAX_PREPARATION_ATTEMPTS": 3,
         },
         # Mission Core (mission). Every bound is exact-value pinned; the
         # store caps REFUSE at the bound and never evict or prune.
@@ -2246,6 +2392,11 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_STALENESS_BOUND_SECONDS": 315360000,
             "MAX_CONTINUATION_ATTEMPTS": 64,
             "MAX_CONTINUATION_CHECKPOINTS": 256,
+            # Task 8, slice S-IV: the approved baseline ref name bound.
+            "MAX_BASELINE_REF_CHARS": 256,
+            # Task 8, slice S-VI: the approved verification argv bounds.
+            "MAX_VERIFICATION_ARGV": 64,
+            "MAX_VERIFICATION_ARG_CHARS": 4096,
         },
         "mission/manifest.py": {
             "MAX_MISSION_REVISIONS": 64,
@@ -2255,6 +2406,8 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_LEDGER_REASON_CHARS": 256,
         },
         "mission/state.py": {
+            # Task 8, slice S-V: the bounded control history.
+            "MAX_CONTROL_HISTORY": 64,
             "MAX_CONTRACT_ACTIVATIONS": 64,
             "MAX_CLAIMS": 256,
             "MAX_EVIDENCE_RECORDS": 512,
@@ -2264,6 +2417,17 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_DEPENDENCY_RECORDS": 128,
             "MAX_RESOURCE_READINESS_OBSERVATIONS": 1024,
             "MAX_CONTINUATION_RECORDS": 64,
+            # Task 8, slice S-IV: engagement reservations and the mirrored
+            # workflow id bound.
+            "MAX_ENGAGEMENT_RECORDS": 64,
+            "MAX_WORKFLOW_ID_CHARS": 128,
+            # Task 8, slice S-IV (start-claim decision): engagement starts.
+            "MAX_ENGAGEMENT_START_RECORDS": 128,
+            "MAX_OWNER_REF_CHARS": 128,
+            "MAX_START_IDENTITY_CHARS": 128,
+            "MAX_START_AGENT_NAMES": 32,
+            "MAX_STOP_DETAIL_CHARS": 2000,
+            "MAX_STOP_OBSERVATIONS": 16,
             "MAX_APPLIED_OPERATIONS": 4096,
             "MAX_CLAIM_STATEMENT_CHARS": 4000,
             "MAX_BLOCKER_DESCRIPTION_CHARS": 2000,
@@ -2281,6 +2445,8 @@ class BoundConstantPinTests(unittest.TestCase):
         },
         "mission/store.py": {
             "MAX_MISSION_RECORDS": 1024,
+            # Task 8, slice S-V: two derived cancel ids per Mission.
+            "MAX_RESERVED_CANCEL_OPERATION_IDS": 2048,
             "MAX_AUTHORIZATION_RECORDS": 4096,
             "MAX_AUTHORITY_LEDGER_ENTRIES": 16384,
             "MAX_RESERVED_REQUEST_IDS": 4096,
@@ -2390,6 +2556,7 @@ class BoundConstantPinTests(unittest.TestCase):
         },
         "grok_mcp/server.py": {
             "MAX_SESSIONS": 256,
+            "REQUEST_SOCKET_TIMEOUT_SECONDS": 30,
         },
     }
 
@@ -3233,6 +3400,25 @@ class InjectiveRenderingTests(unittest.TestCase):
             )
 
 
+def _hostile_mission_authority(entry):
+    """Turn ``entry`` (a v2 record) into a Mission-origin record whose
+    linkage carries line structure in the authorization digest (the
+    other ids are length-checked before the hex alphabet, so a
+    line-laced digest of the right length is the sharpest probe)."""
+    linkage = dict(MISSION_CORE_LINKAGE,
+                   revision=entry["mission_authorization"]["revision"],
+                   authorization_digest_sha256="f" * 62 + "\nX")
+    entry["approval"]["approval_kind"] = record.APPROVAL_KIND_MISSION_CORE
+    entry["telegram"] = None
+    entry["result_placeholder"] = None
+    entry[record.MISSION_AUTHORITY_KEY] = linkage
+    entry[record.MISSION_ENGAGEMENT_KEY] = dict(MISSION_CORE_ENGAGEMENT)
+    entry[record.RETENTION_KEY] = dict(MISSION_CORE_RETENTION)
+    rendered = rendering.render_record_text(entry)
+    entry["mission_authorization"]["rendered_text"] = rendered
+    entry["mission_authorization"]["digest_sha256"] = digest.text_digest(rendered)
+
+
 class ContainmentRegistryTests(unittest.TestCase):
     """Round-02 F-6 Part 1: the structural closure. EVERY component
     that can reach a rendered line must carry a proven containment
@@ -3320,6 +3506,10 @@ class ContainmentRegistryTests(unittest.TestCase):
             "handoff_revision": lambda entry: entry[
                 "handoff"
             ].__setitem__("revision", "1\n2"),
+            # Task 8 S-III: the typed Mission linkage renders the
+            # Mission-origin approval line; a line-laced id in it
+            # must fail closed (grammar), never reach a rendered line.
+            "mission_authority": _hostile_mission_authority,
         }
 
     def test_every_component_contains_hostile_line_structure(self):

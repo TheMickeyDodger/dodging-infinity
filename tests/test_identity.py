@@ -156,12 +156,14 @@ class ClassificationTests(unittest.TestCase):
 
     def test_a_model_switch_alone_does_not_read_as_a_new_identity(self):
         """Adversarial class: model switch. The `all-claude` preset
-        runs supervisor/executor on Fable 5.1 and lead/reviewer on Opus.
+        runs the supervisor on Fable 5.1, the executor on Opus 5.5,
+        and lead/reviewer on Opus.
         The model is an argv choice; it is not in the agent record, so
         switching it must not by itself look like a replacement."""
         preset = PRESETS["all-claude"]["roles"]
         self.assertEqual(preset["supervisor"]["args"][1], "claude-fable-5-1")
         self.assertEqual(preset["lead"]["args"][1], "opus")
+        self.assertEqual(preset["executor"]["args"][1], "claude-opus-5-5")
         # Same session, same stable identity, different model: the
         # record is unchanged, so the verdict is PRESENT.
         verdict = identity.classify(

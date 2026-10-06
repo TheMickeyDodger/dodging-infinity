@@ -307,6 +307,155 @@ def preserve(entry, lease_path, store_directory, now,
     return True, None, None, summary
 
 
+#: Task 8 startup correction: a corrective follow-up's start RETIRES the
+#: target herd's persisted runtime state (``.herd/state/runtime.json``) that
+#: names this workflow's earlier runtime. Its exact bytes are preserved here
+#: first — beside, never inside, the terminal projection ``preserved_path``
+#: names, one file per follow-up ordinal.
+#: TERMINAL: an INTACT copy of different bytes is already preserved.
+PROBLEM_RUNTIME_STATE_CONFLICT = "preserve_runtime_state_conflict"
+#: TERMINAL: something exists at the archive path that is not an intact
+#: archive of THIS retirement — never overwritten, never read as missing.
+PROBLEM_RUNTIME_STATE_MALFORMED = "preserve_runtime_state_malformed"
+#: Recoverable: something exists at the archive path and cannot be read.
+PROBLEM_RUNTIME_STATE_UNREADABLE = "preserve_runtime_state_unreadable"
+
+RUNTIME_STATE_MISSING = "missing"
+RUNTIME_STATE_UNREADABLE = "unreadable"
+RUNTIME_STATE_MALFORMED = "malformed"
+RUNTIME_STATE_INTACT = "intact"
+#: The largest archive read (the state is bounded at 64 KiB; JSON escaping
+#: at most sextuples it).
+MAX_RUNTIME_STATE_ARCHIVE_BYTES = 512 * 1024
+
+
+def runtime_state_path(store_directory, workflow_id, dispatch_sequence):
+    return os.path.join(
+        store_directory, PRESERVED_DIR_NAME,
+        "%s.runtime-state-%d.json" % (workflow_id, dispatch_sequence),
+    )
+
+
+def inspect_runtime_state(store_directory, workflow_id, dispatch_sequence):
+    """Classify the preserved copy of one retirement: ``(status, document,
+    detail)``. ``missing`` only when nothing exists at the path;
+    ``unreadable`` when something exists and cannot be read; ``malformed``
+    when it reads but is not an intact archive of THIS retirement (not
+    UTF-8 JSON, not an object, over-bound, a field missing or of the wrong
+    type, another workflow or ordinal, or a stored text whose OWN sha256 or
+    size is not the recorded one); ``intact`` (with the document) only when
+    every binding holds — the text re-digested, never the recorded digest
+    alone."""
+    path = runtime_state_path(store_directory, workflow_id, dispatch_sequence)
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(MAX_RUNTIME_STATE_ARCHIVE_BYTES + 1)
+    except FileNotFoundError:
+        return RUNTIME_STATE_MISSING, None, "%s does not exist" % path
+    except OSError as exc:
+        return (RUNTIME_STATE_UNREADABLE, None,
+                "%s exists and cannot be read (%s)" % (path, exc.__class__.__name__))
+    if len(raw) > MAX_RUNTIME_STATE_ARCHIVE_BYTES:
+        return (RUNTIME_STATE_MALFORMED, None,
+                "%s exceeds %d bytes" % (path, MAX_RUNTIME_STATE_ARCHIVE_BYTES))
+    try:
+        document = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return RUNTIME_STATE_MALFORMED, None, "%s is not valid UTF-8 JSON" % path
+    if not isinstance(document, dict):
+        return RUNTIME_STATE_MALFORMED, None, "%s is not a JSON object" % path
+    text, sha256, size = document.get("text"), document.get("sha256"), document.get("size")
+    sequence = document.get("dispatch_sequence")
+    if not (isinstance(text, str) and isinstance(sha256, str)
+            and isinstance(size, int) and not isinstance(size, bool)
+            and isinstance(sequence, int) and not isinstance(sequence, bool)):
+        return (RUNTIME_STATE_MALFORMED, None,
+                "%s lacks a well-typed text, sha256, size or dispatch_sequence" % path)
+    if (document.get("workflow_id"), sequence) != (workflow_id, dispatch_sequence):
+        return (RUNTIME_STATE_MALFORMED, None,
+                "%s is bound to workflow %r ordinal %r, not %r ordinal %d"
+                % (path, document.get("workflow_id"), sequence, workflow_id,
+                   dispatch_sequence))
+    try:
+        stored = text.encode("utf-8")
+    except UnicodeEncodeError:
+        return RUNTIME_STATE_MALFORMED, None, "%s holds a text that is not UTF-8" % path
+    if (_digest(stored), len(stored)) != (sha256, size):
+        return (RUNTIME_STATE_MALFORMED, None,
+                "%s: its stored text does not match its recorded sha256/size" % path)
+    return RUNTIME_STATE_INTACT, document, None
+
+
+def preserve_runtime_state(store_directory, workflow_id, dispatch_sequence, data, now):
+    """Preserve ``data`` — the EXACT bytes of the runtime state about to be
+    retired — and PROVE it: ``(ok, problem, detail, path)``. Idempotent only
+    for an INTACT copy of the same bytes (a resumed retirement: the existing
+    copy's text is re-digested and bound to this workflow and ordinal). A
+    copy of DIFFERENT bytes (``PROBLEM_RUNTIME_STATE_CONFLICT``), or anything
+    at the path that is malformed (``PROBLEM_RUNTIME_STATE_MALFORMED``) or
+    unreadable (``PROBLEM_RUNTIME_STATE_UNREADABLE``), is NEVER overwritten
+    or read as missing: its bytes are kept and the caller refuses. A new copy
+    is linked into place only where nothing exists (``os.link`` never
+    replaces), then read back through the same classification."""
+    path = runtime_state_path(store_directory, workflow_id, dispatch_sequence)
+    digest = _digest(data)
+
+    def existing_verdict(status, document, detail):
+        if status == RUNTIME_STATE_INTACT:
+            if document["sha256"] == digest:
+                return True, None, None, path
+            return (False, PROBLEM_RUNTIME_STATE_CONFLICT,
+                    "%s already preserves other bytes (sha256 %s, verified against its"
+                    " stored text)" % (path, document["sha256"][:12]), path)
+        if status == RUNTIME_STATE_UNREADABLE:
+            return False, PROBLEM_RUNTIME_STATE_UNREADABLE, detail, path
+        return False, PROBLEM_RUNTIME_STATE_MALFORMED, detail, path
+    status, document, detail = inspect_runtime_state(
+        store_directory, workflow_id, dispatch_sequence)
+    if status != RUNTIME_STATE_MISSING:
+        return existing_verdict(status, document, detail)
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return False, PROBLEM_WRITE_FAILED, "the state is not UTF-8 (%s)" % exc, path
+    document = {
+        "workflow_id": workflow_id,
+        "dispatch_sequence": dispatch_sequence,
+        "source": "/".join(STATE_SUBDIRS + ("runtime.json",)),
+        "sha256": digest,
+        "size": len(data),
+        "text": text,
+        "preserved_at": now,
+    }
+    temporary = path + ".partial"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(temporary, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(document, indent=2, sort_keys=True))
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            # Something appeared since the inspection: judged, never replaced.
+            return existing_verdict(*inspect_runtime_state(
+                store_directory, workflow_id, dispatch_sequence))
+    except OSError as exc:
+        return False, PROBLEM_WRITE_FAILED, "could not write %s: %s" % (path, exc), path
+    finally:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+    status, fresh, detail = inspect_runtime_state(
+        store_directory, workflow_id, dispatch_sequence)
+    if status != RUNTIME_STATE_INTACT or fresh["sha256"] != digest:
+        return (False, PROBLEM_READBACK,
+                "a fresh read of %s does not return the bytes just preserved (%s)"
+                % (path, detail or status), path)
+    return True, None, None, path
+
+
 def load_preserved(store_directory, workflow_id):
     """The preserved projection, or None.
 

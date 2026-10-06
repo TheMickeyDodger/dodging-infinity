@@ -19,6 +19,7 @@ reconciliation after a crash can prove the text it would have sent.
 from workflow_authority.digest import text_digest
 
 from pr_delivery.authorization import (
+    AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION,
     MAX_PR_BODY_CHARS,
     MAX_PR_TITLE_CHARS,
 )
@@ -72,14 +73,31 @@ def body(record):
     lines.append("")
     lines.append("## Validation evidence")
     lines.append("")
-    lines.append(
-        "- Independent verification command: `%s`; exit status %d; log"
-        " sha256 `%s` (%d bytes)." % (
-            " ".join(verification["command_argv"]),
-            verification["exit_status"], verification["log_sha256"],
-            verification["log_bytes"],
+    if record["human_authorization"]["source"] == (
+        AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION
+    ):
+        # Task 8 S-VI: a Mission-bound delivery's verification is what it
+        # is — a separately executed run the Runtime owned and observed —
+        # and the text claims nothing more.
+        lines.append(
+            "- Verification (machine-observed: a separately executed,"
+            " Runtime-owned run of the approved command; no"
+            " independent-party verification is claimed): `%s`; exit status"
+            " %d; log sha256 `%s` (%d bytes)." % (
+                " ".join(verification["command_argv"]),
+                verification["exit_status"], verification["log_sha256"],
+                verification["log_bytes"],
+            )
         )
-    )
+    else:
+        lines.append(
+            "- Independent verification command: `%s`; exit status %d; log"
+            " sha256 `%s` (%d bytes)." % (
+                " ".join(verification["command_argv"]),
+                verification["exit_status"], verification["log_sha256"],
+                verification["log_bytes"],
+            )
+        )
     lines.append(
         "- Engineering task `%s` reached %s." % (
             engineering["task_id"], engineering["status"],

@@ -34,6 +34,7 @@ diagnostic and does demote.
 
 from __future__ import annotations
 
+import codecs
 import json
 import re
 import subprocess
@@ -60,6 +61,11 @@ OBSERVE_SCHEMA_VERSION = 3
 
 # ---- hard bound constants (module-level; NEVER derived from input) ----
 _OBSERVE_MAX_FILE_BYTES = 1048576   # refuse to read a state file larger than this
+# Task 8 input-size correction: a SCOPED spawn-record read
+# (``observe_spawn_records(…, relevant=…)``) is INCREMENTAL — this many bytes
+# per read, and _OBSERVE_MAX_FILE_BYTES bounds each JSON VALUE instead of the
+# whole file (``_SpawnRecordStream``). Every other read is unchanged.
+_OBSERVE_SCAN_CHUNK_BYTES = 65536
 _OBSERVE_MAX_AGENT_PROBES = 64      # live `herdr agent get` calls per run
 _OBSERVE_MAX_LISTED_AGENTS = 32
 _OBSERVE_MAX_RECENT_TASKS = 10
@@ -191,6 +197,29 @@ def _int_or_none(value):
 
 def _str_or_none(value):
     return _trunc(value) if isinstance(value, str) else None
+
+
+def _exact_identifier(value):
+    """A recorded identifier EXACTLY, or None: non-empty and within the
+    string bound, never truncated (a truncated id is a different id)."""
+    if isinstance(value, str) and value and len(value) <= _OBSERVE_MAX_STRING:
+        return value
+    return None
+
+
+def _exact_agents(value):
+    """A recorded ``{logical role: agent name}`` mapping EXACTLY, or None
+    when absent, empty, larger than the agent bound, or holding any entry
+    that is not an exact identifier: a partial mapping is never projected,
+    because a subset would match a live workspace it does not describe."""
+    if not isinstance(value, dict) or not value or len(value) > _OBSERVE_MAX_LISTED_AGENTS:
+        return None
+    agents = {}
+    for logical, name in value.items():
+        if _exact_identifier(logical) is None or _exact_identifier(name) is None:
+            return None
+        agents[logical] = name
+    return agents
 
 
 def _list_dir(path, suffix=None):
@@ -683,7 +712,305 @@ def _children_section(root, task_id, diags):
     return section
 
 
-def observe_spawn_records(repo):
+class _SpawnRecordRefused(Exception):
+    """The scoped incremental read of ``children.json`` cannot go on:
+    ``state`` (``unreadable`` or ``malformed``) and ``detail`` — never a
+    partial reading presented as a complete one."""
+
+    def __init__(self, state, detail):
+        super().__init__(detail)
+        self.state = state
+        self.detail = detail
+
+
+class _SpawnRecordStream:
+    """The SCOPED, INCREMENTAL read of ``children.json`` (Task 8 input-size
+    correction) for a caller asking ONE relevant-lease question
+    (``observe_spawn_records(repo, relevant=…)``): a valid unrelated prefix
+    can no longer push a small relevant set past a whole-file bound. The
+    UNSCOPED projection keeps the whole-file read and its
+    ``_OBSERVE_MAX_FILE_BYTES`` refusal unchanged.
+
+    BOUNDED-RESOURCE GUARANTEE (what the code enforces). One forward pass:
+    the file is read once, in order, ``_OBSERVE_SCAN_CHUNK_BYTES`` bytes at
+    a time — never re-read, never seeked (``bytes_read`` ends equal to the
+    file's size). Every JSON value — each record, and each other member of
+    the document object — must have text of at most
+    ``_OBSERVE_MAX_FILE_BYTES`` characters, the ORIGINAL whole-file bound
+    now applied per value (so no record today's reader could read is
+    refused): a value that COMPLETES longer than that, or has not completed
+    within it, is ``malformed`` — its relevance cannot be decided, so the
+    read fails closed. The pending text is checked against that bound
+    BEFORE every further read, so the text buffer never exceeds
+    ``_OBSERVE_MAX_FILE_BYTES + _OBSERVE_SCAN_CHUNK_BYTES`` characters (the
+    peak is recorded in ``peak_chars``) — one byte each for the writer's
+    ASCII output, at most four each for non-ASCII text (CPython's string
+    storage). Beside that buffer the read holds ONE decoded value at a time
+    (a record object, whose size follows its own ≤-bound text) and never
+    retains it; the caller keeps only the relevant listing (at most
+    ``_OBSERVE_MAX_CHILDREN`` projected records) and counts. Memory is
+    therefore independent of the file's length; time is one linear pass —
+    an N-byte file costs one N-byte read. Nothing more is claimed.
+
+    STRICT. UTF-8 is decoded strictly (the writer's ``json.dumps`` output is
+    ASCII; an undecodable byte is corruption → ``unreadable``). The document
+    must be ONE JSON object holding ``children`` exactly once, as an array,
+    and nothing after it: a value that does not decode, a duplicate
+    ``children`` member, trailing content or a truncated file is
+    ``malformed``. Nothing is written, rewritten, cached or indexed."""
+
+    _WHITESPACE = re.compile(r"[ \t\n\r]*")
+
+    def __init__(self, handle, name):
+        self._handle = handle
+        self._name = name
+        self._decoder = codecs.getincrementaldecoder("utf-8")("strict")
+        self._json = json.JSONDecoder()
+        self._buffer = ""
+        self._position = 0
+        self._eof = False
+        self._expecting_member = True
+        self._object_empty = True
+        self._closed = False
+        self._children_seen = False
+        self._not_a_list = False
+        self._in_array = False
+        self._array_empty = True
+        self._finished = False
+        self._records = 0
+        self.bytes_read = 0
+        self.peak_chars = 0
+
+    @classmethod
+    def open(cls, path):
+        """``(stream, "available", None)`` positioned at the first record,
+        or ``(None, state, detail)`` for a missing, directory, unreadable or
+        malformed file — the states the whole-file read reports."""
+        try:
+            if path.is_dir():
+                return None, "unreadable", f"{path.name} is a directory"
+            if not path.is_file():
+                return None, "missing", f"{path.name} does not exist"
+            handle = open(path, "rb")
+        except OSError as exc:
+            return None, "unreadable", f"{path.name}: {exc.__class__.__name__}"
+        stream = cls(handle, path.name)
+        try:
+            stream._to_children()
+        except _SpawnRecordRefused as refused:
+            stream.close()
+            return None, refused.state, refused.detail
+        except BaseException:
+            stream.close()
+            raise
+        return stream, "available", None
+
+    def __len__(self):
+        """The records yielded so far — every record once iteration ends."""
+        return self._records
+
+    def __iter__(self):
+        # The delimiter BEFORE each record is consumed at the next step, so
+        # a caller that stops after a record (and a later ``drain``) resumes
+        # from a consistent position.
+        while self._in_array:
+            if self._array_empty:
+                if self._peek() == "]":
+                    self._position += 1
+                    self._in_array = False
+                    break
+            elif self._expect(",]") == "]":
+                self._in_array = False
+                break
+            record = self._value()
+            self._records += 1
+            self._array_empty = False
+            yield record
+        self._finish()
+
+    def drain(self):
+        """Read the rest of the file to its end (every record, unkept), so a
+        file that is ALSO not valid JSON reports that — the whole-file
+        read's parse-first order."""
+        for _record in self:
+            pass
+
+    def close(self):
+        self._handle.close()
+
+    # -- the bounded grammar -------------------------------------------------
+
+    def _refused(self, detail=None):
+        return _SpawnRecordRefused(
+            "malformed", detail or f"{self._name} is not valid JSON")
+
+    def _fill(self):
+        """One more chunk; False once the file is exhausted."""
+        if self._eof:
+            return False
+        try:
+            data = self._handle.read(_OBSERVE_SCAN_CHUNK_BYTES)
+        except OSError as exc:
+            raise _SpawnRecordRefused(
+                "unreadable", f"{self._name}: {exc.__class__.__name__}")
+        self.bytes_read += len(data)
+        try:
+            text = self._decoder.decode(data, final=not data)
+        except UnicodeDecodeError:
+            raise _SpawnRecordRefused("unreadable", f"{self._name} could not be decoded")
+        if not data:
+            self._eof = True
+        if self._position:
+            self._buffer = self._buffer[self._position:]
+            self._position = 0
+        self._buffer += text
+        self.peak_chars = max(self.peak_chars, len(self._buffer))
+        return bool(data or text)
+
+    def _peek(self):
+        """The next non-whitespace character, or "" at the end of the file."""
+        while True:
+            self._position = self._WHITESPACE.match(self._buffer, self._position).end()
+            if self._position < len(self._buffer):
+                return self._buffer[self._position]
+            if not self._fill():
+                return ""
+
+    def _expect(self, allowed):
+        char = self._peek()
+        if not char or char not in allowed:
+            raise self._refused()
+        self._position += 1
+        return char
+
+    #: Characters that can continue a JSON number token (``1`` → ``1.5``,
+    #: ``1e`` → ``1e+5``).
+    _NUMBER_CONTINUATION = frozenset("0123456789.eE+-")
+
+    def _complete(self, value, end):
+        """Whether a successful decode ending at ``end`` is the WHOLE token:
+        at the end of the file always; otherwise a NUMBER only when a
+        character that cannot continue it follows inside the buffer (a
+        buffer ending ``1e``, ``1e+`` or ``1.`` decodes as ``1`` with the
+        rest of the SAME token still pending); strings, objects, arrays and
+        literals end at their own last character."""
+        if self._eof or not isinstance(value, (int, float)) or isinstance(value, bool):
+            return True
+        rest = self._buffer
+        for index in range(end, len(rest)):
+            if rest[index] not in self._NUMBER_CONTINUATION:
+                return True
+        return False
+
+    def _value(self):
+        """The next complete JSON value whose text is at most
+        _OBSERVE_MAX_FILE_BYTES characters — enforced on a value that
+        COMPLETES longer than that as well as on one that has not completed
+        within it. A token split across chunks (a number's exponent, a
+        literal, a string) is decoded again once more text, or the end of
+        the file, is seen: never taken in part."""
+        self._peek()
+        start = self._position
+        while True:
+            try:
+                value, end = self._json.raw_decode(self._buffer, start)
+            except ValueError:
+                end = None
+            if end is not None and self._complete(value, end):
+                return self._accept(value, start, end)
+            more = self._fill_more(start)
+            # The fill compacted the buffer to the value's start — also on
+            # the read that first meets the end of the file — so every
+            # offset held here is rebased onto the compacted buffer.
+            if end is not None:
+                end -= start - self._position
+            start = self._position
+            if not more:
+                if end is None:
+                    raise self._refused()
+                # A number ending exactly at the end of the file: whatever
+                # the document still needed after it is judged by the caller.
+                return self._accept(value, start, end)
+
+    def _accept(self, value, start, end):
+        if end - start > _OBSERVE_MAX_FILE_BYTES:
+            raise self._over_bound()
+        self._position = end
+        return value
+
+    def _fill_more(self, start):
+        """Read one more chunk for the value starting at ``start``: the
+        buffer is compacted so that it starts there (``_position``); False
+        at the end of the file. A value still incomplete past the per-value
+        bound is refused BEFORE more is read, so the text held never
+        exceeds that bound plus one chunk."""
+        self._position = start
+        if len(self._buffer) - start > _OBSERVE_MAX_FILE_BYTES:
+            raise self._over_bound()
+        return self._fill()
+
+    def _over_bound(self):
+        return self._refused(
+            f"a value in {self._name} does not complete within"
+            f" {_OBSERVE_MAX_FILE_BYTES} characters (not valid JSON, or longer"
+            " than the per-value bound); its relevance cannot be decided")
+
+    def _members(self):
+        """Parse the document object's members until ``children``'s array
+        opens (True) or the object closes (False)."""
+        while True:
+            if self._expecting_member:
+                if self._object_empty and self._peek() == "}":
+                    self._position += 1
+                    self._closed = True
+                    return False
+                key = self._value()
+                if not isinstance(key, str):
+                    raise self._refused()
+                self._expect(":")
+                self._object_empty = False
+                self._expecting_member = False
+                if key == "children":
+                    if self._children_seen:
+                        raise self._refused(
+                            f"{self._name} names `children` more than once")
+                    self._children_seen = True
+                    if self._peek() == "[":
+                        self._position += 1
+                        self._in_array = True
+                        return True
+                    self._not_a_list = True
+                self._value()
+                continue
+            if self._expect(",}") == "}":
+                self._closed = True
+                return False
+            self._expecting_member = True
+
+    def _to_children(self):
+        if self._peek() != "{":
+            self._value()
+            if self._peek():
+                raise self._refused()
+            raise self._refused(f"{self._name} does not contain a JSON object")
+        self._position += 1
+        if not self._members():
+            self._finish()
+            raise self._refused("`children` in children.json is not a list")
+
+    def _finish(self):
+        if self._finished:
+            return
+        if not self._closed:
+            self._members()
+        if self._peek():
+            raise self._refused()
+        self._finished = True
+        if self._not_a_list:
+            raise self._refused("`children` in children.json is not a list")
+
+
+def observe_spawn_records(repo, relevant=None):
     """Project every persisted child-spawn record from THIS repository.
 
     This is deliberately separate from canonical :func:`observe`, whose
@@ -697,6 +1024,33 @@ def observe_spawn_records(repo):
     discloses when the exact count exceeds the listing cap. Any malformed
     record makes the whole projection ``malformed`` so reconciliation can
     fail closed instead of silently ignoring unprojectable evidence.
+
+    ``relevant`` (optional) SCOPES the projection for a caller that needs
+    ONE resource's records completely: a callable deciding, from a record's
+    ``repo`` STRING alone, whether that record is relevant (the caller owns
+    that rule; this projection still opens, resolves and follows nothing).
+    EVERY record in the file is classified — none is passed over for its
+    position — so unrelated history can neither hide a relevant record nor
+    truncate the relevant set. ``count``, ``truncated`` and ``listed`` then
+    describe the RELEVANT records only, under the SAME listing bound
+    (beyond it: truncated, and the caller fails closed), and ``scope``
+    reports how many records the file holds. An unrelated record is not
+    validated further; a record whose relevance cannot be decided (not an
+    object, no usable ``repo``, a rule that raises) or a relevant record
+    that is malformed makes the projection ``malformed``: evidence that
+    might be relevant is never dropped silently. Without ``relevant`` the
+    projection is exactly what it was.
+
+    Task 8 input-size correction: a SCOPED read is INCREMENTAL
+    (``_SpawnRecordStream``) — one bounded forward pass, each JSON value
+    bounded by ``_OBSERVE_MAX_FILE_BYTES`` instead of the whole file — so a
+    valid unrelated prefix that makes the file larger than that bound can
+    no longer make a small relevant set unobservable. It is a scoped
+    NARROWING, not the same reader: past the whole-file bound it reads; on
+    two shapes it is stricter (a duplicate ``children`` member and
+    undecodable bytes are refused, where the whole-file read keeps the last
+    member and replaces the bytes). The unscoped read is unchanged — the
+    whole-file bound and its ``unreadable`` refusal.
     """
     projection = {
         "state": "unavailable",
@@ -705,19 +1059,22 @@ def observe_spawn_records(repo):
         "listed": [],
         "detail": None,
     }
+    stream = None
     try:
         root = Path(repo).expanduser()
-        data, state, detail = _read_json_object(
-            root / ".herd" / "state" / "children.json"
-        )
+        path = root / ".herd" / "state" / "children.json"
+        if relevant is None:
+            data, state, detail = _read_json_object(path)
+        else:
+            stream, state, detail = _SpawnRecordStream.open(path)
         if state == "missing":
             projection.update({"state": "empty", "count": 0})
             return projection
         if state != "available":
             projection.update({"state": state, "detail": _trunc(detail)})
             return projection
-        records = data.get("children")
-        if not isinstance(records, list):
+        records = data.get("children") if stream is None else stream
+        if not isinstance(records, (list, _SpawnRecordStream)):
             projection.update({
                 "state": "malformed",
                 "detail": "`children` in children.json is not a list",
@@ -727,10 +1084,27 @@ def observe_spawn_records(repo):
         projection["count"] = len(records)
         projection["truncated"] = len(records) > _OBSERVE_MAX_CHILDREN
         malformed = None
+        position = 0      # this record's place among the ones projected
         for index, record in enumerate(records):
             if not isinstance(record, dict):
                 malformed = "child record %d is not a JSON object" % index
                 break
+            if relevant is not None:
+                scope_repo = record.get("repo")
+                if not isinstance(scope_repo, str) or not scope_repo.strip():
+                    malformed = ("child record %d names no repository, so its"
+                                 " relevance cannot be decided" % index)
+                    break
+                try:
+                    wanted = relevant(scope_repo)
+                except Exception as exc:                  # noqa: BLE001
+                    wanted = exc
+                if wanted is not True and wanted is not False:
+                    malformed = ("child record %d: its relevance could not be"
+                                 " decided (%s)" % (index, wanted.__class__.__name__))
+                    break
+                if not wanted:
+                    continue
             parent_task_id = record.get("parent_task_id")
             dependency = record.get("dependency")
             repo_value = record.get("repo")
@@ -751,7 +1125,8 @@ def observe_spawn_records(repo):
             ):
                 malformed = "child record %d has an overlong identity field" % index
                 break
-            if index < _OBSERVE_MAX_CHILDREN:
+            position += 1
+            if position <= _OBSERVE_MAX_CHILDREN:
                 projection["listed"].append({
                     "parent_task_id": _str_or_none(parent_task_id),
                     "dependency": dependency,
@@ -759,6 +1134,14 @@ def observe_spawn_records(repo):
                     "task_id": _str_or_none(task_id),
                     "recorded_status": _str_or_none(record.get("task_status")),
                     "role": _str_or_none(record.get("role")),
+                    # The runtime identity ``spawn_child`` records for the
+                    # child: what the release's ownership proof matches
+                    # against the live workspace. EXACT or None — never
+                    # truncated, since a shortened id would name another
+                    # workspace or none — and never a reason to reject the
+                    # projection: an unusable identity proves nothing.
+                    "workspace_id": _exact_identifier(record.get("workspace_id")),
+                    "agents": _exact_agents(record.get("agents")),
                 })
         if malformed is not None:
             # I4 item 3. The scan STOPS at the first malformed record,
@@ -771,6 +1154,8 @@ def observe_spawn_records(repo):
             # truncation presented as fact" class, so the malformed
             # return carries NO count and NO listing — matching the
             # `unreadable` path, which already returns count None.
+            if stream is not None:
+                stream.drain()    # a file ALSO not valid JSON reports that
             projection.update({
                 "state": "malformed",
                 "detail": malformed,
@@ -779,12 +1164,36 @@ def observe_spawn_records(repo):
                 "listed": [],
             })
             return projection
+        if relevant is not None:
+            # SCOPED: the counts describe the relevant records, classified
+            # over the WHOLE file; the listing bound is the same one.
+            projection["count"] = position
+            projection["truncated"] = position > _OBSERVE_MAX_CHILDREN
+            projection["scope"] = {"records": len(records)}
+            projection["state"] = "available" if position else "empty"
+            if projection["truncated"]:
+                projection["detail"] = (
+                    "relevant spawn records truncated to %d of %d (%d records"
+                    " in the file)" % (_OBSERVE_MAX_CHILDREN, position, len(records))
+                )
+            return projection
         projection["state"] = "available" if records else "empty"
         if projection["truncated"]:
             projection["detail"] = (
                 "spawn records truncated to %d of %d"
                 % (_OBSERVE_MAX_CHILDREN, len(records))
             )
+        return projection
+    except _SpawnRecordRefused as refused:
+        # The scoped incremental read failed part-way (unreadable bytes, not
+        # valid JSON, a value over its bound): no count, no listing.
+        projection.update({
+            "state": refused.state,
+            "detail": _trunc(refused.detail),
+            "count": None,
+            "truncated": False,
+            "listed": [],
+        })
         return projection
     except Exception as exc:
         projection.update({
@@ -795,6 +1204,9 @@ def observe_spawn_records(repo):
             ),
         })
         return projection
+    finally:
+        if stream is not None:
+            stream.close()
 
 
 # Canonical header line written into every persisted review artifact by

@@ -268,9 +268,20 @@ def _open_private():
     guard. Restoring the PREVIOUS value keeps the two nested.
     """
     directory = tempfile.mkdtemp(prefix="di-isolated-scope-")
+    # Task 8 R28: the base carries a record from its first moment. This one is
+    # replaced on entry to ``_close_private``; still present, it records only
+    # that no entry write replaced it.
+    _keep(directory, "close-not-reached",
+          note="written at _open_private; replaced on entry to _close_private")
     _STACK.append(directory)
     _ACTIVE[0] = directory
     return directory
+
+
+#: Task 8 R28: a private base this cleanup KEEPS carries its own REASON in this
+#: file, written into that base (this case's own directory) and read by nothing in
+#: the product — so a retained base never has to be explained by reconstruction.
+RETENTION_REASON_FILE = "di-retention-reason.json"
 
 
 def _close_private(directory):
@@ -282,13 +293,136 @@ def _close_private(directory):
     # inside it is ALIVE: deleting a live process's ownership record
     # is the one act the whole module exists to prevent, and a
     # fixture is not exempt from it.
-    for scope in _private_scopes(directory):
-        if _own.scope_has_live_group(scope):
+    #
+    # Task 8 R28: the decision is UNCHANGED — the same reads, in the same
+    # order, the same early returns, the same one removal attempt — and it is
+    # now RECORDED (``_keep``), in words that never turn a conservative True into
+    # "observed live" and never into settlement: the predicate's own True is
+    # recorded as the cause, and a LATER re-read beside it only as corroboration
+    # (``_reread``); an exception is recorded as a cleanup exception and
+    # re-raised exactly as before; a removal that fails is no longer silent
+    # (``ignore_errors`` discarded its errors and reported success).
+    _keep(directory, "close-no-decision-recorded",
+          note="written on entry to _close_private; replaced by every recorded decision")
+    try:
+        scopes = _private_scopes(directory)
+    except Exception as exc:
+        _keep(directory, "cleanup-exception", read="_private_scopes",
+              error="%s: %s" % (exc.__class__.__name__, exc))
+        raise
+    for scope in scopes:
+        try:
+            kept = _own.scope_has_live_group(scope)
+        except Exception as exc:
+            _keep(directory, "cleanup-exception", scope=scope, read="scope_has_live_group",
+                  error="%s: %s" % (exc.__class__.__name__, exc))
+            raise
+        if kept:
+            _keep(directory, "scope-has-live-group-true", scope=scope,
+                  read="scope_has_live_group",
+                  decision="scope_has_live_group returned True at this cleanup;"
+                           " that return is why this base is kept",
+                  reread=_reread(scope))
             return False
-    if _own.surviving_owned_groups(directory):
+    try:
+        surviving = _own.surviving_owned_groups(directory)
+    except _own.ObservationUnavailable as exc:
+        _keep(directory, "surviving-observation-unavailable",
+              read="surviving_owned_groups",
+              error="%s: %s" % (exc.__class__.__name__, exc))
+        raise
+    except Exception as exc:
+        _keep(directory, "cleanup-exception", read="surviving_owned_groups",
+              error="%s: %s" % (exc.__class__.__name__, exc))
+        raise
+    if surviving:
+        _keep(directory, "surviving-groups", read="surviving_owned_groups",
+              groups=list(surviving),
+              note="the ledger-recorded groups surviving_owned_groups reported"
+                   " (_group_alive answered present, EPERM included); not proven"
+                   " ours, not settled")
         return False
-    shutil.rmtree(directory, ignore_errors=True)
+    failures = []
+
+    def failed(function, path, info):
+        failures.append("%s %s: %s" % (getattr(function, "__name__", function), path,
+                                       info[1]))
+    shutil.rmtree(directory, onerror=failed)
+    if failures or os.path.lexists(directory):
+        _keep(directory, "removal-failed", errors=failures)
+        return False
     return True
+
+
+def _reread(scope):
+    """A SECOND, LATER read of ``scope_has_live_group``'s own primitives, in its
+    order, taken after the predicate returned True at this cleanup. It is
+    CORROBORATION of a later observation, never the reason the base is kept —
+    that is the predicate's own return, recorded beside it — and it cannot
+    prove which branch fired. ``corroborated`` names the branch this read
+    reached: ``proven-ours-and-alive`` ONLY where ``group_is_ours`` corroborated
+    the root (``_group_alive`` answered present, EPERM included);
+    ``unavailable`` (a root unreadable, the ledger not observed, ``group_is_ours``
+    raising ``OSError``/``UnicodeDecodeError``, a leader that could not be read);
+    ``contradictory`` (a contradicting ledger row); ``unresolved-start-fragment``;
+    or ``none`` — "no branch corroborated at reread", with no cause asserted.
+    A re-read that raises corroborates none and records its error."""
+    note = ("a later re-read after scope_has_live_group returned True;"
+            " corroboration only, not the reason this base is kept")
+    try:
+        branch, detail = _reread_branch(scope)
+    except Exception as exc:
+        branch, detail = None, {"error": "%s: %s" % (exc.__class__.__name__, exc)}
+    if branch is None:
+        return dict(detail, note=note, corroborated="none",
+                    result="no branch corroborated at reread")
+    return dict(detail, note=note, corroborated=branch)
+
+
+def _reread_branch(scope):
+    """``(branch_or_None, detail)`` for ``_reread``; mirrors the predicate's order."""
+    roots, missing = _own.owned_roots_observed(scope)
+    if missing:
+        return "unavailable", {"at": "owned_roots_observed",
+                               "unreadable": [str(entry) for entry in missing]}
+    groups, gap = _own.ledger_groups(scope)
+    for root, pgid in roots:
+        where = {"root": os.path.basename(root), "pgid": pgid}
+        if pgid is not None and gap is not None:
+            return "unavailable", dict(where, at="ledger_groups", gap=str(gap))
+        if pgid is not None and _own.ledger_contradicts(groups, root, pgid):
+            return "contradictory", dict(where, at="ledger_contradicts")
+        if pgid is None or pgid <= 1 or not _own._group_alive(pgid):
+            continue
+        try:
+            ours, why = _own.group_is_ours(root)
+        except (OSError, UnicodeDecodeError) as exc:
+            return "unavailable", dict(where, at="group_is_ours",
+                                       error="%s: %s" % (exc.__class__.__name__, exc))
+        if ours is not None:
+            return "proven-ours-and-alive", dict(where, at="group_is_ours")
+        if why in _own.LEADER_UNAVAILABLE_REASONS:
+            return "unavailable", dict(where, at="group_is_ours", why=why)
+        if why == _own.UNCORROBORATED_START_FRAGMENT:
+            return "unresolved-start-fragment", dict(where, at="group_is_ours", why=why)
+    return None, {}
+
+
+def _keep(directory, outcome, **detail):
+    """Record ``outcome`` for ``directory`` — written INTO it (it is this case's
+    own), replacing the previous record; best effort: a record that cannot be
+    written goes to stderr instead, so a kept base is never left without one.
+    Removes, signals and waits on nothing."""
+    import json
+    import sys
+    record = dict(detail, outcome=outcome, base=directory, recorded_by=os.getpid())
+    text = json.dumps(record, sort_keys=True, default=str) + "\n"
+    try:
+        with open(os.path.join(directory, RETENTION_REASON_FILE), "w") as handle:
+            handle.write(text)
+    except OSError as exc:
+        sys.stderr.write("scope hygiene: a private base's record could not be"
+                         " written into it (%s): %s" % (exc.__class__.__name__, text))
 
 
 def _private_scopes(directory):

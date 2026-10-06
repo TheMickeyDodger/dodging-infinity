@@ -54,6 +54,7 @@ from mission import authorization as authorization_module
 from mission import decision as decision_module
 from mission import manifest
 from mission import record
+from mission import state as state_module
 from mission import state_service
 from mission import store as store_module
 
@@ -85,6 +86,15 @@ class MissionService(state_service.MissionStateOperations):
     def _now(self):
         return record.require_timestamp(self._clock(), "clock")
 
+    def store_lock(self):
+        """The Mission store's cross-process lock as a context manager
+        (Task 8, slice S-IV): the SHORT critical section an effect gate
+        holds while it re-reads Mission authority and durably marks an
+        irreversible effect, so a Mission-side write committed before
+        the section is seen and one committed after it is truthfully
+        after the effect. Never held across a blocking wait."""
+        return self._store.lock()
+
     def now(self):
         """The service clock, for adapters stamping a receive time."""
         return self._now()
@@ -98,10 +108,13 @@ class MissionService(state_service.MissionStateOperations):
         record.fail(record.PROBLEM_ID_GRAMMAR,
                     "the injected id minter keeps returning taken ids")
 
-    def _reserve(self, kind, context):
+    def _reserve(self, kind, context, headroom=0):
+        """Reserve one id; ``headroom`` (Task 8, slice S-V capacity
+        strategy) is the number of reservations below the cap an
+        ORDINARY mint leaves free for controls."""
         record.require_context(context)
         prefix = store_module.RESERVATION_PREFIXES[kind]
-        cap = store_module.RESERVATION_CAPS[kind]
+        cap = store_module.RESERVATION_CAPS[kind] - headroom
         with self._store.lock():
             document = self._store.load()
             reservations = document["reservations"]
@@ -263,22 +276,9 @@ class MissionService(state_service.MissionStateOperations):
         document = self._store.load()
         mission = self._mission(document, mission_id)
         now = self._now()
-        live = [
-            authorization_id
-            for authorization_id in mission["authorization_ids"]
-            if authorization_module.validate_authorization_use(
-                document, authorization_id, mission_id,
-                mission["current_revision"], now,
-            ).valid
-        ]
-        return {
-            "record": copy.deepcopy(mission),
-            "authorizations": [
-                copy.deepcopy(document["authorizations"][authorization_id])
-                for authorization_id in mission["authorization_ids"]
-            ],
-            "live_authorization_id": live[0] if live else None,
-        }
+        # The projection is the shared pure helper the one-load
+        # ``snapshot`` (Task 8, slice S-II) uses on the same document.
+        return self._record_projection(document, mission, now)
 
     # -- decisions ---------------------------------------------------------
 
@@ -397,6 +397,15 @@ class MissionService(state_service.MissionStateOperations):
             "invalidated_authorization_ids": list(
                 outcome["invalidated_authorization_ids"]
             ),
+            # Task 8, slice S-V: what an EDIT left behind, derived from the
+            # durable state facts (the same on replay); None otherwise.
+            "superseded": (
+                state_module.supersession_view(
+                    document["mission_state"].get(decision_record["mission_id"]),
+                    outcome["resulting_revision"])
+                if decision_record["decision"] == decision_module.DECISION_EDIT
+                else None
+            ),
             "idempotent": idempotent,
             "current_revision": mission["current_revision"],
             "current_state": mission["state"],
@@ -500,6 +509,7 @@ class MissionService(state_service.MissionStateOperations):
                                          envelope.decision_id, envelope.context,
                                          envelope.received_at)
         mission["state"] = record.STATE_AWAITING_DECISION
+        self._supersede_state(document, mission, entry["revision"], now)
         return {
             "resulting_state": record.STATE_AWAITING_DECISION,
             "resulting_revision": entry["revision"],
@@ -507,6 +517,42 @@ class MissionService(state_service.MissionStateOperations):
             "authorization_id": None,
             "invalidated_authorization_ids": invalidated,
         }
+
+    @staticmethod
+    def _supersede_state(document, mission, revision, now):
+        """Task 8, slice S-V: an EDIT's durable effect on the Mission
+        STATE, in the SAME locked transaction — the stop requirement is
+        recorded on every engagement start whose stop is not confirmed
+        (bound to the superseding ``revision``; an EDIT is a Mission
+        record decision, not a state operation) and a control history
+        event names the supersession. What the new revision leaves
+        behind (activation, checkpoints, engagement workflows, starts
+        marked) is DERIVED from those durable facts by
+        ``state.supersession_view`` — the decision outcome stays the
+        closed historical record. History is preserved; nothing is
+        deleted."""
+        state = document["mission_state"].get(mission["mission_id"])
+        if state is None:
+            return 0
+        marked = 0
+        for start in state_module.engagement_starts_of(state):
+            if state_module.start_stop_confirmed(start) or (
+                start["stop_requested"] is not None
+            ):
+                continue
+            start["stop_requested"] = state_module.new_stop_request(
+                now, "revision superseded by EDIT to revision %d" % revision,
+                None, None, revision)
+            marked += 1
+        # The state record is touched ONLY when the EDIT has an effect on
+        # it (a start's stop requirement); an EDIT of a Mission with
+        # nothing running leaves the state's history byte-identical.
+        if marked:
+            state.setdefault("controls", state_module.new_controls())
+            state_module.append_control_event(
+                state["controls"], state_module.CONTROL_EVENT_REVISION_SUPERSEDED,
+                now, None, None, revision)
+        return marked
 
     # -- validation (forwarding to the ONE path) ----------------------------
 

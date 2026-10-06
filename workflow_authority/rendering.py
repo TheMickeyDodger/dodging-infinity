@@ -72,6 +72,11 @@ QUOTE_PREFIX = "> "
 
 TARGET_FORM_REPOSITORY_ONLY = "repository, no issue or PR"
 
+# The Mission-origin approval kind, spelled here because this module
+# imports nothing from the record layer (which imports it); the record
+# layer's ``APPROVAL_KIND_MISSION_CORE`` is pinned equal by a test.
+MISSION_CORE_KIND = "mission_core_authorization"
+
 # The closed set of containment classes a rendered component may
 # carry (round-02 F-6 structural closure — third appearance of the
 # "unquoted free text reaches a rendered line" class in this
@@ -109,7 +114,41 @@ RENDERED_COMPONENT_CONTAINMENT = {
     "authority_content": CONTAINMENT_QUOTED,          # all 7 fields
     "handoff_revision": CONTAINMENT_TYPE_CONSTRAINED,  # int
     "handoff_text": CONTAINMENT_QUOTED,
+    # Task 8 S-III: the typed Mission linkage block (closed id grammar
+    # ``<prefix>-<32 hex>``, an int revision, a 64-hex digest) renders
+    # the kind-selected approval line of a Mission-origin record.
+    "mission_authority": CONTAINMENT_TYPE_CONSTRAINED,
 }
+
+# The two approval lines share NO template: a Telegram-approved record
+# and a Mission-origin record can never render to identical bytes,
+# whatever the other fields, so neither kind can be edited into the
+# other without breaking the rendered-text equality.
+APPROVAL_LINE_TELEGRAM = "approved by: telegram user %d, chat %d"
+APPROVAL_LINE_MISSION_CORE = (
+    "approved by: mission core %s revision %d, authorization %s,"
+    " decision %s, digest %s"
+)
+
+
+def approval_line(user_id, chat_id, mission_authority):
+    """The kind-selected approval line. EXACTLY one kind is given: a
+    Telegram identity (both ids) or a Mission linkage block; both or
+    neither is a caller error, never a rendering."""
+    if mission_authority is None:
+        if user_id is None or chat_id is None:
+            raise ValueError("a Telegram-approved rendering needs both"
+                             " user_id and chat_id")
+        return APPROVAL_LINE_TELEGRAM % (user_id, chat_id)
+    if user_id is not None or chat_id is not None:
+        raise ValueError("a Mission-origin rendering carries no Telegram"
+                         " identity")
+    return APPROVAL_LINE_MISSION_CORE % (
+        mission_authority["mission_id"], mission_authority["revision"],
+        mission_authority["authorization_id"],
+        mission_authority["decision_id"],
+        mission_authority["authorization_digest_sha256"],
+    )
 
 _AUTHORITY_SECTIONS = (
     ("OBJECTIVE", "objective"),
@@ -175,21 +214,24 @@ def render_authorization_text(workflow_id, revision, control_realpath,
                               issue_or_pr, baseline_ref, baseline_sha,
                               user_id, chat_id, human_intent,
                               authority_content, handoff_revision,
-                              handoff_text):
+                              handoff_text, mission_authority=None):
     """Render the complete Mission Authorization text, deterministic.
 
     ``authority_content`` maps each authority-content field name
     (objective, constraints, rules, desired_outcome, acceptance,
     unresolved_questions, execution_scope) to its exact text. Composed
     field-by-field from explicit values (an ALLOWLIST): a newly added
-    key can never leak into the rendering.
+    key can never leak into the rendering. ``mission_authority`` (Task
+    8 S-III) selects the Mission-origin approval line, rendered from
+    the typed linkage block with ``user_id``/``chat_id`` None; without
+    it the Telegram approval line renders byte-identically to before.
     """
     lines = list(binding_lines(
         workflow_id, revision, control_realpath, policy_digest,
         canonical_url, issue_or_pr, baseline_ref, baseline_sha,
     ))
     lines += [
-        "approved by: telegram user %d, chat %d" % (user_id, chat_id),
+        approval_line(user_id, chat_id, mission_authority),
         "delivery authority: none",
         "",
         "ORIGINAL REQUEST (verbatim, quoted, sha256 %s; typed text"
@@ -219,6 +261,14 @@ def render_record_text(entry):
     own stored fields — the equality partner of the stored
     ``rendered_text`` (``record.validate_record`` enforces it)."""
     authorization = entry["mission_authorization"]
+    # Task 8 S-III: kind-selected authority. The Mission-origin kind
+    # renders FROM its typed linkage block (the record layer already
+    # required ``telegram`` null and the block present for that kind,
+    # and the reverse for v2), so the rendered bytes bind the block.
+    mission_origin = (
+        entry["approval"]["approval_kind"] == MISSION_CORE_KIND
+    )
+    telegram = None if mission_origin else entry["telegram"]
     return render_authorization_text(
         workflow_id=entry["workflow_id"],
         revision=authorization["revision"],
@@ -232,8 +282,11 @@ def render_record_text(entry):
         issue_or_pr=entry["target"]["issue_or_pr"],
         baseline_ref=entry["approved_baseline"]["ref"],
         baseline_sha=entry["approved_baseline"]["commit_sha"],
-        user_id=entry["telegram"]["user_id"],
-        chat_id=entry["telegram"]["chat_id"],
+        user_id=None if telegram is None else telegram["user_id"],
+        chat_id=None if telegram is None else telegram["chat_id"],
+        mission_authority=(
+            entry.get("mission_authority") if mission_origin else None
+        ),
         human_intent=entry["human_intent"],
         authority_content={
             key: authorization[key]

@@ -205,6 +205,30 @@ class GitTransport(object):
             "digest": result["digest"],
         }
 
+    def diff_index_raw_readonly(self, path, base_oid):
+        """Task 8 S-V (R2-11-b): the STAGED candidate relative to
+        ``base_oid`` as the delivery layer identifies it (P1-A6):
+        ``diff-index --cached --raw --abbrev=40 --no-renames -z`` — the
+        exact argv the delivery transport uses, read through this
+        transport's bounded streamed capture. ``--cached`` compares the
+        index to the tree and touches no working file; with
+        ``--no-optional-locks`` git takes no index lock and refreshes
+        nothing, so ``.git/index`` bytes and mtime are unchanged by a
+        capture (pinned by test). Returns the raw ``-z`` bytes, or raises
+        ``GitTransportError`` when the capture is over the bound (an
+        over-bound candidate is never parsed partially)."""
+        result = self._stream(
+            ["git", "--no-optional-locks", "-C", str(path), "diff-index",
+             "--cached", "--raw", "--abbrev=40", "--no-renames", "-z",
+             str(base_oid)],
+            MAX_DIFF_TOTAL_BYTES, MAX_DIFF_TOTAL_BYTES,
+        )
+        if result["status"] != CAPTURE_CAPTURED or result["truncated"]:
+            raise GitTransportError(
+                "staged candidate capture over the bound (%s)"
+                % result.get("total_bytes_lower_bound", result.get("total_bytes")))
+        return result["retained"]
+
     def status_porcelain_readonly(self, path):
         """Bounded porcelain capture, provably non-mutating.
 

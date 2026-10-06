@@ -154,8 +154,10 @@ otherwise:
   closed). An existing schema-1 `state.json` fails closed at adapter
   startup until the human runs `tgop migrate-state`.
 - **Delivery authority none, structurally.** The Runtime package
-  contains no subprocess use outside its pinned seven-verb git
-  transport seam, no `shell=True`, no environment reads, and no git
+  contains no subprocess use outside its pinned eight-verb git
+  transport seam (Task 8 added one read-only verb,
+  `diff_index_raw_readonly`, the lock-free staged-candidate read that
+  never writes the index), no `shell=True`, no environment reads, and no git
   delivery verb as a string value anywhere — enforced by AST and
   token scans over the whole package plus its entry script, and
   behaviorally by the adversarial matrix (refusals leave the control

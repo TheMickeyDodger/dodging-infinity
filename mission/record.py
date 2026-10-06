@@ -92,11 +92,18 @@ CLAIM_ID_PREFIX = "mc"
 CHECKPOINT_ID_PREFIX = "mk"
 DEPENDENCY_ID_PREFIX = "mx"
 STATE_OPERATION_ID_PREFIX = "mo"
+# Task 8, slice S-IV: the engineering engagement reservation record.
+ENGAGEMENT_ID_PREFIX = "me"
+# Task 8, slice S-IV (start-claim decision): the engagement START record
+# — the admitted, single-owner, non-replayable claim of exactly one
+# engine operation of an engagement.
+ENGAGEMENT_START_ID_PREFIX = "ms"
 ID_PREFIXES = (
     MISSION_ID_PREFIX, REQUEST_ID_PREFIX, DECISION_ID_PREFIX,
     AUTHORIZATION_ID_PREFIX, LEDGER_ENTRY_ID_PREFIX,
     PROOF_CONTRACT_ID_PREFIX, EVIDENCE_ID_PREFIX, ARTIFACT_ID_PREFIX, BLOCKER_ID_PREFIX, CLAIM_ID_PREFIX,
     CHECKPOINT_ID_PREFIX, DEPENDENCY_ID_PREFIX, STATE_OPERATION_ID_PREFIX,
+    ENGAGEMENT_ID_PREFIX, ENGAGEMENT_START_ID_PREFIX,
 )
 # Exact-value pinned in the bound-constant table.
 ID_HEX_CHARS = 32
@@ -150,8 +157,19 @@ ALLOWED_TRANSITIONS = {
 
 PRINCIPAL_KIND_CONNECTOR_CREDENTIAL = "configured_connector_credential_ordinal"
 PRINCIPAL_KIND_LOCAL_PROCESS_USER = "local_process_user"
+# A client-mediated confirmation (Task 8, slice S-I). What it CLAIMS: the
+# configured connector client, on a session the server authenticated by
+# its bearer credential, was shown the exact proposal text by the server
+# and returned the user's accept or decline through the client's OWN user
+# interface (an MCP elicitation response, never a tool argument). What it
+# DOES NOT claim: who the human was. ``human_identity_proof`` stays null
+# and ``proof`` stays ``transport_credential_only`` for this kind exactly
+# as for the other two; the kind records that a confirmation round trip
+# happened, not an identity.
+PRINCIPAL_KIND_CLIENT_CONFIRMATION = "configured_connector_client_confirmation"
 PRINCIPAL_KINDS = (
     PRINCIPAL_KIND_CONNECTOR_CREDENTIAL, PRINCIPAL_KIND_LOCAL_PROCESS_USER,
+    PRINCIPAL_KIND_CLIENT_CONFIRMATION,
 )
 PROOF_TRANSPORT_CREDENTIAL_ONLY = "transport_credential_only"
 
@@ -249,7 +267,30 @@ PROPOSAL_KEYS = (
     "objective", "target_context", "repository_url", "requested_scope",
     "requested_action_scope", "requested_delivery_target",
 )
-PROPOSAL_OPTIONAL_KEYS = ("proof_contract",)
+# ``baseline`` (Task 8, slice S-IV): the exact target baseline an
+# engineering engagement materializes at — the ref name and the 40-hex
+# commit the human approves WITH the proposal. Optional and omitted when
+# absent (a proposal without one normalizes and digests exactly as
+# before); a Mission without it is never engaged (the composing layer
+# refuses rather than choosing a baseline the human never saw).
+# ``verification`` (Task 8, slice S-VI): the verification command the human
+# approves WITH the proposal — an argv (never a shell string) that the
+# Runtime runs in the leased workspace to produce the genuine verification
+# record (log bytes, command, exit status, timing) a delivery is bound to.
+# Optional and omitted when absent (the digest is then unchanged); a
+# Mission without it can never propose a delivery.
+PROPOSAL_OPTIONAL_KEYS = ("proof_contract", "baseline", "verification")
+PROPOSAL_BASELINE_KEYS = ("ref", "commit_sha")
+MAX_BASELINE_REF_CHARS = 256
+PROBLEM_BASELINE = "mission_baseline"
+PROPOSAL_VERIFICATION_KEYS = ("argv",)
+MAX_VERIFICATION_ARGV = 64
+MAX_VERIFICATION_ARG_CHARS = 4096
+PROBLEM_VERIFICATION = "mission_verification"
+# A shell as argv[0] would make the rest a script — a shell string by
+# another name — so it is refused.
+VERIFICATION_REFUSED_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "fish",
+                                 "cmd", "pwsh", "powershell")
 PROOF_CONTRACT_KEYS = (
     "requirements", "required_artifacts", "required_dependencies",
     "required_resource_readiness", "degradation_policy",
@@ -497,7 +538,65 @@ def validate_proposal(value, location="proposal"):
         clean["proof_contract"] = validate_proof_contract(
             value["proof_contract"], location + ".proof_contract"
         )
+    if value.get("baseline") is not None:
+        clean["baseline"] = validate_baseline(
+            value["baseline"], location + ".baseline"
+        )
+    if value.get("verification") is not None:
+        clean["verification"] = validate_verification(
+            value["verification"], location + ".verification"
+        )
     return clean
+
+
+def validate_verification(value, location="verification"):
+    """The approved verification command: a closed ``{argv}``, a non-empty
+    list of at most ``MAX_VERIFICATION_ARGV`` strings (each at most
+    ``MAX_VERIFICATION_ARG_CHARS``, no control character), whose program is
+    not a shell. Refused, never repaired."""
+    require_dict(value, location)
+    require_closed_keys(value, PROPOSAL_VERIFICATION_KEYS, location)
+    argv = value["argv"]
+    if not isinstance(argv, list) or not argv:
+        fail(PROBLEM_VERIFICATION, "%s.argv must be a non-empty list" % location)
+    if len(argv) > MAX_VERIFICATION_ARGV:
+        fail(PROBLEM_VERIFICATION, "%s.argv has more than %d elements"
+             % (location, MAX_VERIFICATION_ARGV))
+    clean = []
+    for index, item in enumerate(argv):
+        where = "%s.argv[%d]" % (location, index)
+        text = require_str(item, where, MAX_VERIFICATION_ARG_CHARS)
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in text):
+            fail(PROBLEM_VERIFICATION,
+                 "%s carries a control character" % where)
+        clean.append(text)
+    program = clean[0].replace("\\", "/").rsplit("/", 1)[-1]
+    if program in VERIFICATION_REFUSED_PROGRAMS:
+        fail(PROBLEM_VERIFICATION,
+             "%s.argv[0] %r is a shell; the argv must name the program"
+             " directly" % (location, clean[0]))
+    return {"argv": clean}
+
+
+def validate_baseline(value, location="baseline"):
+    """The approved target baseline: a closed ``{ref, commit_sha}``. The
+    ref is a bounded name with no whitespace or control character (it is
+    rendered on a binding line downstream, so line structure is refused
+    here, never repaired); the commit is exactly 40 lowercase hex."""
+    require_dict(value, location)
+    require_closed_keys(value, PROPOSAL_BASELINE_KEYS, location)
+    ref = require_str(value["ref"], location + ".ref", MAX_BASELINE_REF_CHARS)
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in ref):
+        fail(PROBLEM_BASELINE,
+             "%s.ref must carry no whitespace or control character" % location)
+    if ref.startswith("-") or ".." in ref or ref.endswith(".lock"):
+        fail(PROBLEM_BASELINE,
+             "%s.ref is not an acceptable git ref name" % location)
+    return {
+        "ref": ref,
+        "commit_sha": require_hex(value["commit_sha"],
+                                  location + ".commit_sha", 40),
+    }
 
 
 def _validate_repository_url(value, location):

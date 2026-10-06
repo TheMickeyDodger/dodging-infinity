@@ -152,7 +152,11 @@ class ALegacyPreservationTests(unittest.TestCase):
             "objective", "target_context", "repository_url", "requested_scope",
             "requested_action_scope", "requested_delivery_target",
         ))
-        self.assertEqual(mission_record.PROPOSAL_OPTIONAL_KEYS, ("proof_contract",))
+        # Task 8, slice S-IV: the approved target baseline is the second
+        # optional key; slice S-VI adds the approved verification argv as
+        # the third. Absent, a proposal digests exactly as before.
+        self.assertEqual(mission_record.PROPOSAL_OPTIONAL_KEYS,
+                         ("proof_contract", "baseline", "verification"))
         # A missing required key still refuses; an unknown key still refuses.
         refuses(self, mission_record.PROBLEM_MISSING_KEY,
                 mission_record.validate_proposal,
@@ -507,6 +511,10 @@ class AIdentityTests(unittest.TestCase):
             "mk": mission_record.CHECKPOINT_ID_PREFIX,
             "mx": mission_record.DEPENDENCY_ID_PREFIX,
             "mo": mission_record.STATE_OPERATION_ID_PREFIX,
+            # Task 8, slice S-IV: the engagement reservation record and
+            # (start-claim decision) the engagement start record.
+            "me": mission_record.ENGAGEMENT_ID_PREFIX,
+            "ms": mission_record.ENGAGEMENT_START_ID_PREFIX,
         }
         for expected, actual in new.items():
             self.assertEqual(actual, expected)
@@ -524,7 +532,9 @@ class AIdentityTests(unittest.TestCase):
         # there is no proof-requirement prefix at all.
         self.assertNotIn("mp", prefixes)
         self.assertFalse(hasattr(mission_record, "PROOF_REQUIREMENT_ID_PREFIX"))
-        self.assertEqual(len(prefixes), 13)
+        # Task 8, slice S-IV: exactly one prefix added (``me``).
+        # Task 8 S-IV: 14 -> 15 with the engagement start prefix "ms".
+        self.assertEqual(len(prefixes), 15)
 
     def test_A13_state_operation_reference_kind_in_provenance(self):
         context = mission_record.AuthenticatedContext(
@@ -680,6 +690,23 @@ def seal_state(state, max_attempts=3):
             if e: out.update((k, e[k]) for k in (
                 "checkpoint_id", "next_permitted_step", "refusal", "budget",
                 "active_blocker_ids", "outstanding_dependency_ids"))
+        elif kind == ms.OPERATION_REQUEST_HOLD:
+            # Task 8, slice S-V: the control facts (hold / lift / cancel).
+            found = [h for h in ms.controls_of(state)["holds"] if h["operation_id"] == oid]
+            e = found[0] if len(found) == 1 else None
+            if e: out.update(hold_active=True)
+        elif kind == ms.OPERATION_LIFT_HOLD:
+            found = [h for h in ms.controls_of(state)["holds"]
+                     if h["lift_operation_id"] == oid]
+            e = found[0] if len(found) == 1 else None
+            if e: out.update(hold_active=False)
+        elif kind == ms.OPERATION_REQUEST_CANCEL:
+            c = ms.controls_of(state)["cancel_request"]
+            e = c if c is not None and c["operation_id"] == oid else None
+            if e: out.update(cancel_requested=True, stops_requested=sum(
+                1 for s in state.get("engagement_starts") or []
+                if s["stop_requested"] is not None
+                and s["stop_requested"]["operation_id"] == oid))
         else:
             c = state.get("closure")
             e = c if c is not None and c["operation_id"] == oid else None
@@ -3246,7 +3273,11 @@ class EReconcileRegistryTests(DocumentFixture):
             "revoke", "validate_authorization_record", "validate_authorization_use",
             "validate_ledger_entry",
         ]))
-        self.assertEqual(source.count("state_operation"), 2)
+        # Task 8 S-V: the SAME one branch also admits the Mission's derived
+        # cancel operation reservation kind (one tuple, no second branch).
+        self.assertEqual(source.count("state_operation"), 1)
+        self.assertEqual(source.count('("state_operation", "cancel_operation")'), 1)
+        self.assertEqual(source.count("cancel_operation"), 1)
         self.assertEqual(source.count("mission_state"), 1)
 
 
@@ -3984,6 +4015,13 @@ class FNoWeakeningParameterTests(ServiceStateFixture):
         "resolve_dependency", "observe_resource_readiness", "record_continuation",
         "record_checkpoint", "complete_successfully", "close_unsuccessful", "abandon",
         "reconcile", "attest_delivery_receipt",
+        # Task 8, slice S-IV: the engagement reservation (fence + budget)
+        # and (start-claim decision) the engagement start: its atomic
+        # admission, its settlement and the observation of its stop.
+        "reserve_engagement", "open_engagement_start",
+        "settle_engagement_start", "observe_engagement_stop",
+        # Task 8, slice S-V: the canonical controls.
+        "request_hold", "lift_hold", "request_cancel", "confirm_cancel",
     )
     FORBIDDEN = ("requirements", "budget", "max_", "attempts", "checkpoints",
                  "age", "stale", "degrad", "severity", "required", "permitted",
@@ -4271,6 +4309,238 @@ class GStageTwoGateTests(ServiceStateFixture):
 # ====================================================================
 
 
+class _ProviderUseTrap(object):
+    """The run's provider-free guarantee, ENFORCED for the fixture's duration
+    whatever this interpreter imported before it. A shared-import runner
+    (``unittest discover``) has provider modules cached before any test runs,
+    and ``tests/__init__.py`` caches one for every ``tests.*`` import, so their
+    presence in ``sys.modules`` proves nothing either way; what matters is
+    whether THE RUN uses one. Every use is a recorded contact:
+
+    - an import of a provider root, cached or not, by the import statement or
+      ``importlib.import_module`` — refused on the spot;
+    - an import reaching the import machinery by any other route — refused by
+      a finder placed ahead of every other;
+    - a lookup in a CACHED provider found through ``sys.modules`` — each
+      cached provider entry is replaced by a tripwire that refuses everything
+      but the module's identity (name, spec, path, file);
+    - execution of provider code however it was reached, a reference bound
+      before the fixture began included — the fixture's thread is profiled by
+      the C-level ``cProfile`` recorder, and every executed code object whose
+      file lies in a provider package is a contact;
+    - a provider module, function or class held by any module the run
+      executed (a reference bound at that module's import);
+    - a provider module entering ``sys.modules`` during the fixture.
+
+    A refusal raises the test's failure exception, and ``contacts`` keeps it
+    even if the code under test swallows the exception. Garbage is collected
+    before the trap is set and collection is paused while it is set, so an
+    earlier test's leftovers are never finalized inside the fixture. Removal
+    restores every import hook, cache entry and profile function, each step
+    independently, so a failing step never leaves another hook installed."""
+
+    IDENTITY = frozenset(("__class__", "__name__", "__spec__", "__loader__",
+                          "__package__", "__path__", "__file__", "__cached__",
+                          "__doc__"))
+
+    def __init__(self, roots, failure, repo_root):
+        self.roots = tuple(roots)
+        self.failure = failure
+        self.repo_root = str(repo_root)
+        self.contacts = []
+        self.cached_at_start = []
+        self.originals = {}
+        self.provider_dirs = ()
+        self._imports = None
+        self._finder = None
+        self._profile = None
+        self._previous_profile = None
+        self._gc_was_enabled = None
+
+    def is_provider(self, name):
+        return isinstance(name, str) and name.split(".")[0] in self.roots
+
+    def refuse(self, how, name):
+        contact = "%s %s" % (how, name)
+        self.contacts.append(contact)
+        raise self.failure("the hermetic run reached a provider: %s" % contact)
+
+    def install(self):
+        import gc
+        gc.collect()
+        self._gc_was_enabled = gc.isenabled()
+        gc.disable()
+        self.cached_at_start = sorted(n for n in sys.modules if self.is_provider(n))
+        self._install_imports()
+        self._install_finder()
+        self._install_tripwires()
+        self._install_profile()
+
+    def _install_imports(self):
+        import builtins
+        import importlib
+        import importlib.util
+        real_import, real_import_module = builtins.__import__, importlib.import_module
+        trap = self
+
+        def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+            absolute = name
+            if level:
+                try:
+                    absolute = importlib.util.resolve_name(
+                        "." * level + name, (globals or {}).get("__package__"))
+                except (ImportError, ValueError, TypeError):
+                    absolute = None
+            if trap.is_provider(absolute):
+                trap.refuse("import of", absolute)
+            return real_import(name, globals, locals, fromlist, level)
+
+        def guarded_import_module(name, package=None):
+            absolute = name
+            if isinstance(name, str) and name.startswith("."):
+                try:
+                    absolute = importlib.util.resolve_name(name, package)
+                except (ImportError, ValueError, TypeError):
+                    absolute = None
+            if trap.is_provider(absolute):
+                trap.refuse("importlib.import_module of", absolute)
+            return real_import_module(name, package)
+        builtins.__import__, importlib.import_module = guarded_import, guarded_import_module
+        self._imports = (real_import, real_import_module)
+
+    def _install_finder(self):
+        trap = self
+
+        class ProviderFinder(object):
+            def find_spec(self, fullname, path=None, target=None):
+                if trap.is_provider(fullname):
+                    trap.refuse("the import machinery for", fullname)
+                return None
+        self._finder = ProviderFinder()
+        sys.meta_path.insert(0, self._finder)
+
+    def _install_tripwires(self):
+        import types
+        trap, identity = self, self.IDENTITY
+
+        class CachedProvider(types.ModuleType):
+            def __getattribute__(self, attr):
+                original = object.__getattribute__(self, "_original")
+                if attr in identity:
+                    return getattr(original, attr)
+                trap.refuse("attribute %r of the cached module" % attr, original.__name__)
+
+            def __setattr__(self, attr, value):
+                trap.refuse("assignment of %r on the cached module" % attr,
+                            object.__getattribute__(self, "_original").__name__)
+
+            def __delattr__(self, attr):
+                trap.refuse("deletion of %r on the cached module" % attr,
+                            object.__getattribute__(self, "_original").__name__)
+        for name in self.cached_at_start:
+            original = sys.modules[name]
+            if not isinstance(original, types.ModuleType):
+                continue
+            tripwire = CachedProvider(name)
+            object.__setattr__(tripwire, "_original", original)
+            self.originals[name] = original
+            sys.modules[name] = tripwire
+
+    def _install_profile(self):
+        import cProfile
+        directories = set(os.path.realpath(os.path.join(self.repo_root, root))
+                          for root in self.roots)
+        for original in self.originals.values():
+            directories.update(os.path.realpath(entry)
+                               for entry in getattr(original, "__path__", None) or [])
+        self.provider_dirs = tuple(sorted(directory + os.sep for directory in directories))
+        self._previous_profile = sys.getprofile()
+        self._profile = cProfile.Profile()
+        self._profile.enable()
+
+    def _executed_files(self):
+        """``{realpath: a code name}`` of every code object executed (a named
+        function preferred to a ``<genexpr>``-style one)."""
+        files = {}
+        for entry in self._profile.getstats():
+            if not isinstance(entry.code, str):
+                path = os.path.realpath(entry.code.co_filename)
+                if files.get(path, "<").startswith("<"):
+                    files[path] = entry.code.co_name
+        return files
+
+    def verdict(self):
+        """Every contact with a provider root recorded since the trap was set:
+        to be empty. Read while the trap is still set — by the fixture at the
+        end of its run, and again after its last clean-up."""
+        import types
+        contacts = list(self.contacts)
+        if self._profile is None:
+            return contacts
+        if sys.getprofile() is not self._profile:
+            contacts.append("the execution recorder was replaced during the fixture")
+        files = self._executed_files()
+        if not files:
+            contacts.append("the execution recorder recorded nothing")
+        contacts.extend("execution of %s (%s)" % (path, code) for path, code in sorted(
+            files.items()) if path.startswith(self.provider_dirs))
+        contacts.extend("entry of %s into sys.modules" % name for name in sorted(
+            n for n in sys.modules if self.is_provider(n) and n not in self.cached_at_start))
+        executed = set()
+        for name, module in list(sys.modules.items()):
+            if self.is_provider(name) or not isinstance(module, types.ModuleType):
+                continue
+            try:
+                path = getattr(module, "__file__", None)
+            except Exception:                                  # noqa: BLE001
+                continue
+            if isinstance(path, str) and os.path.realpath(path) in files:
+                executed.add(name)
+        for name in sorted(executed):
+            for key, value in sorted(vars(sys.modules[name]).items()):
+                if isinstance(value, types.ModuleType):
+                    held = value.__name__
+                elif isinstance(value, (types.FunctionType, types.BuiltinFunctionType, type)):
+                    held = getattr(value, "__module__", None)
+                else:
+                    continue
+                if self.is_provider(held):
+                    contacts.append("reference %s.%s to %s" % (name, key, held))
+        return contacts
+
+    def remove(self):
+        """Every hook restored, each step on its own: a step that fails never
+        leaves another hook (profiler, cache entry, finder, import function,
+        collection) installed into later tests; the first failure is raised
+        once every step has run."""
+        import builtins
+        import gc
+        import importlib
+        steps = []
+        if self._profile is not None:
+            steps.append(self._profile.disable)
+            steps.append(lambda: sys.setprofile(self._previous_profile))
+        for name, original in self.originals.items():
+            steps.append(lambda name=name, original=original:
+                         sys.modules.__setitem__(name, original))
+        if self._finder is not None:
+            steps.append(lambda: sys.meta_path.remove(self._finder)
+                         if self._finder in sys.meta_path else None)
+        if self._imports is not None:
+            steps.append(lambda: setattr(builtins, "__import__", self._imports[0]))
+            steps.append(lambda: setattr(importlib, "import_module", self._imports[1]))
+        if self._gc_was_enabled:
+            steps.append(gc.enable)
+        failure = None
+        for step in steps:
+            try:
+                step()
+            except BaseException as exc:                   # noqa: BLE001
+                failure = failure or exc
+        if failure is not None:
+            raise failure
+
+
 class HermeticAcceptanceFixtureTests(ServiceStateFixture):
     """ONE named fixture driving the REAL MissionStore + MissionService in
     a temporary protected directory through the full lifecycle the user
@@ -4282,13 +4552,22 @@ class HermeticAcceptanceFixtureTests(ServiceStateFixture):
     successful closure; exhausted budget; abandonment. No Mission or
     Capability is launched and no subprocess is spawned: process creation
     is trapped for the duration and no orchestration or provider module is
-    loaded by the run."""
+    loaded by the run — imported, resolved or executed — whatever the
+    interpreter had cached before the fixture (``_ProviderUseTrap``)."""
 
     PROVIDER_ROOTS = ("telegram_operator", "grok_mcp", "operator_session",
                       "codex_gateway", "target_runtime", "capability", "worker",
                       "durable_execution", "herdr")
 
     def setUp(self):
+        # Set FIRST and closed LAST (clean-ups run last-in first-out): set-up,
+        # run and every other clean-up happen inside the trap, and its verdict
+        # over all three is asserted by ``_close_provider_trap``.
+        self.providers = _ProviderUseTrap(self.PROVIDER_ROOTS, self.failureException,
+                                          REPO_ROOT)
+        self.run_contacts = []
+        self.addCleanup(self._close_provider_trap)
+        self.providers.install()
         super(HermeticAcceptanceFixtureTests, self).setUp()
         import subprocess
         import unittest.mock as mock
@@ -4303,6 +4582,18 @@ class HermeticAcceptanceFixtureTests(ServiceStateFixture):
         for patch in self.patches:
             patch.start()
             self.addCleanup(patch.stop)
+
+    def _close_provider_trap(self):
+        """The LAST clean-up: every other clean-up has run inside the trap.
+        The verdict over the WHOLE fixture — set-up, run and clean-ups — is
+        read while the trap is still set, the trap is removed whatever that
+        read does, and every contact the run's own verdict did not already
+        report is asserted here."""
+        try:
+            contacts = self.providers.verdict()
+        finally:
+            self.providers.remove()
+        self.assertEqual([c for c in contacts if c not in self.run_contacts], [])
 
     def authority_of(self, mission_id):
         document = json.loads(self.read_bytes())
@@ -4541,9 +4832,16 @@ class HermeticAcceptanceFixtureTests(ServiceStateFixture):
         self.assertEqual(document, json.loads(self.read_bytes()))
         self.assertIsNone(self.ma.reconcile_registry(document))
         self.assertEqual(self.spawned, [])
-        loaded = sorted(name for name in sys.modules
-                        if name.split(".")[0] in self.PROVIDER_ROOTS)
-        self.assertEqual(loaded, [])
+        # No provider module was imported, resolved or executed by the set-up
+        # or the run, including one another module had already cached in this
+        # interpreter (the clean-ups are asserted by ``_close_provider_trap``).
+        self.run_contacts = self.providers.verdict()
+        self.assertEqual(self.run_contacts, [])
+        if not self.providers.cached_at_start:
+            # An interpreter with nothing preloaded: the original form holds too.
+            loaded = sorted(name for name in sys.modules
+                            if name.split(".")[0] in self.PROVIDER_ROOTS)
+            self.assertEqual(loaded, [])
         self.assertEqual(sorted(n for n in os.listdir(self.directory)
                                 if n != "missions.lock"), ["missions.json"])
 
@@ -5076,6 +5374,24 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
         # the Mission Authorization a delivery record would carry.
         self.call("attest_delivery_receipt", d_id, self.attestation(d_id))
         self.call("record_continuation", d_id, "one more")
+        # Task 8, slice S-V: a hold and its lift (the cancel pair is
+        # closing/sticky and is exercised in tests.test_mission_controls).
+        self.call("request_hold", d_id, "operator pause")
+        self.call("lift_hold", d_id)
+        # Task 8, slice S-IV: the initial engagement reservation, then
+        # (start-claim decision) its runtime start admitted, settled
+        # completed with a stop reason (the owner's own terminal refusal at
+        # settlement), and the stop observed absent.
+        engagement = self.call("reserve_engagement", d_id, "wf-m-" + "a" * 26, 1)
+        start = self.call("open_engagement_start", d_id,
+                          engagement["engagement_id"], ms.START_POINT_RUNTIME,
+                          "owner-1")
+        self.call("settle_engagement_start", d_id, start["start_id"], "owner-1",
+                  ms.START_OUTCOME_COMPLETED,
+                  {"workspace_id": "w-1", "agent_names": ["a", "b"],
+                   "task_id": None}, "gate refused at settlement")
+        self.call("observe_engagement_stop", d_id, start["start_id"], "owner-1",
+                  True, "workspace w-1 absent from the live listing", None)
         self.call("record_checkpoint", d_id, ["tests"], ["close"], "retry", "stop")
         # Task 7, Stage 2: one reconciliation over a pre-materialized task
         # report, bound to the head cursor it was collected at.
@@ -5092,8 +5408,13 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
         good = self.stable()
         state = self.state_of(good, d_id)
         kinds = set(op["kind"] for op in state["applied_operations"])
+        # Task 8, slice S-V: the cancel pair cannot coexist with a
+        # successful completion (sticky request, closing confirmation);
+        # its digests re-derive in tests.test_mission_controls.
         self.assertEqual(kinds, set(ms.OPERATION_KINDS) - {ms.OPERATION_CLOSE_UNSUCCESSFUL,
-                                                           ms.OPERATION_ABANDON})
+                                                           ms.OPERATION_ABANDON,
+                                                           ms.OPERATION_REQUEST_CANCEL,
+                                                           ms.OPERATION_CONFIRM_CANCEL})
         # Completeness: every stored digest re-derives from stored state
         # with expected_sequence == sequence - 1, for every kind present,
         # and any other expected_sequence does NOT reproduce it.
@@ -5123,6 +5444,10 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
             "attested receipt reference": ("artifacts", 2, "locator", "rcpt-" + "b" * 24),
             "attested receipt digest": ("artifacts", 2, "content_digest_sha256", "5" * 64),
         }
+        # Task 8, slice S-IV: the engagement's whole payload (workflow id,
+        # ordinal) is ALSO carried by its outcome, so a tamper is caught by
+        # the effect/outcome agreement first; the invocation binding for
+        # the kind is proven by the re-derivation loop above.
         for label, (name, index, field, value) in tampers.items():
             with self.subTest(label):
                 d = json.loads(json.dumps(good))
@@ -5188,6 +5513,23 @@ class TPreFreezeRoundTwoTests(ServiceStateFixture):
             ms.OPERATION_RECORD_CONTINUATION: one("continuations"),
             ms.OPERATION_RECORD_CHECKPOINT: one("checkpoints"),
             ms.OPERATION_RECONCILE: one("reconciliations"),
+            ms.OPERATION_RESERVE_ENGAGEMENT: one("engagements"),
+            ms.OPERATION_OPEN_ENGAGEMENT_START: one("engagement_starts"),
+            ms.OPERATION_SETTLE_ENGAGEMENT_START: nested("engagement_starts",
+                                                         "settlement"),
+            ms.OPERATION_OBSERVE_ENGAGEMENT_STOP: [
+                dict(o, start_id=s["start_id"], owner_ref=s["owner_ref"])
+                for s in state["engagement_starts"]
+                for o in s["stop_observations"] if o["operation_id"] == oid],
+            # Task 8, slice S-V: the control record's canonical facts.
+            ms.OPERATION_REQUEST_HOLD: [
+                h for h in ms.controls_of(state)["holds"] if h["operation_id"] == oid],
+            ms.OPERATION_LIFT_HOLD: [
+                h for h in ms.controls_of(state)["holds"]
+                if h["lift_operation_id"] == oid],
+            ms.OPERATION_REQUEST_CANCEL: [
+                c for c in [ms.controls_of(state)["cancel_request"]]
+                if c is not None and c["operation_id"] == oid],
         }
         if kind in table:
             found = table[kind]

@@ -1764,5 +1764,492 @@ class MissionParentAttestationTests(unittest.TestCase):
             self.mission_service.get_state(self.mission_id)["record"])), 3)
 
 
+# ---------------------------------------------------- Task 8 S-VI hardening
+
+S6_MISSION_ID = "m-" + "1" * 32
+S6_DECISION_ID = "mo-" + "a" * 32
+
+
+def client_confirmed_authority(fx, mission_id=S6_MISSION_ID):
+    """The fixture's authority re-sourced as a client-confirmed decision
+    under a Mission parent (structure only: the Mission-side acceptance is
+    the Runtime driver's, exercised in tests.test_mission_delivery)."""
+    authority = fx._patched_authority()
+    authority["mission"] = {"workflow_id": mission_id,
+                            "mission_authorization_digest_sha256": "c" * 64}
+    authority["human_authorization"] = dict(
+        authority["human_authorization"],
+        identity="connector credential 1; client-confirmed decision "
+                 + S6_DECISION_ID,
+        source=auth.AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION,
+        client_confirmation={
+            "decision_id": S6_DECISION_ID,
+            "decision_document_digest_sha256": "d" * 64,
+            "proposal_digest_sha256": "e" * 64,
+            "mission_id": mission_id, "mission_revision": 1,
+            "evidence_id": "mv-" + "f" * 32})
+    return authority
+
+
+class S6DeliveryHardeningTests(unittest.TestCase):
+    """Task 8 S-VI, P1-A6 side: the client-confirmed source, the Mission
+    gate requirement, per-effect admission with outcome-specific counts,
+    revocation-safe persistence, the drive lock, remote-lookup failures,
+    owned effect children and pruning."""
+
+    def setUp(self):
+        self.fx = DeliveryFixture(self)
+
+    def insert(self, authority, delivery_id):
+        record = auth.new_authorization(delivery_id, authority, self.fx.clock())
+        with self.fx.store.lock():
+            document = self.fx.store.load()
+            ok, problem, _ = store_module.add_delivery(document, record)
+            self.assertTrue(ok, problem)
+            self.fx.store.save(document)
+        return record
+
+    def store_bytes(self):
+        with open(self.fx.store.path, "rb") as handle:
+            return handle.read()
+
+    def gated(self, refuse, transport=None):
+        """A machine whose gate refuses exactly the effects in ``refuse``
+        (a set, mutable by the caller) and records every admission."""
+        admitted = []
+
+        def gate(record, step, effect):
+            admitted.append((step, effect))
+            if effect in refuse:
+                return False, "test_gate_refused", "refused %s" % effect, False
+            return True, None, None, False
+        machine = machine_module.DeliveryMachine(
+            self.fx.store, transport or self.fx.transport, self.fx.clock,
+            effect_gate=gate)
+        return machine, admitted
+
+    # -- the client-confirmed source ------------------------------------
+
+    def test_client_source_exists_only_under_its_own_mission_parent(self):
+        authority = client_confirmed_authority(self.fx)
+        record = auth.new_authorization("prd-client", authority, self.fx.clock())
+        self.assertTrue(auth.is_client_confirmed(record))
+        for label, mutate in (
+                ("no parent", lambda a: a.update(mission=None)),
+                ("another Mission", lambda a: a["mission"].update(
+                    workflow_id="m-" + "2" * 32)),
+        ):
+            with self.subTest(case=label):
+                bad = copy.deepcopy(authority)
+                mutate(bad)
+                with self.assertRaises(auth.AuthorizationError) as caught:
+                    auth.new_authorization("prd-client", bad, self.fx.clock())
+                self.assertEqual(caught.exception.problem,
+                                 auth.PROBLEM_CLIENT_SOURCE_PARENT)
+        extra = copy.deepcopy(authority)
+        extra["human_authorization"]["client_confirmation"]["note"] = "x"
+        with self.assertRaises(auth.AuthorizationError) as caught:
+            auth.new_authorization("prd-client", extra, self.fx.clock())
+        self.assertEqual(caught.exception.problem, auth.PROBLEM_UNKNOWN_KEY)
+        # The terminal source can never carry the client block, and its own
+        # shape (and so every existing authority digest) is unchanged.
+        terminal = self.fx._patched_authority()
+        self.assertEqual(sorted(terminal["human_authorization"]),
+                         ["authorized_at", "confirmation_digest_sha256",
+                          "identity", "source"])
+        smuggled = copy.deepcopy(terminal)
+        smuggled["human_authorization"]["client_confirmation"] = copy.deepcopy(
+            authority["human_authorization"]["client_confirmation"])
+        with self.assertRaises(auth.AuthorizationError) as caught:
+            auth.new_authorization("prd-test", smuggled, self.fx.clock())
+        self.assertEqual(caught.exception.problem, auth.PROBLEM_UNKNOWN_KEY)
+        self.assertFalse(auth.is_client_confirmed(
+            auth.new_authorization("prd-test", terminal, self.fx.clock())))
+
+    def test_default_cli_and_bare_machine_cannot_drive_a_mission_bound_record(self):
+        self.insert(client_confirmed_authority(self.fx), "prd-client")
+        before = self.store_bytes()
+        outcome = self.fx.machine.advance("prd-client")
+        self.assertEqual(outcome, machine_module.OUTCOME_GATE_REQUIRED)
+        self.assertEqual(self.fx.machine.last_refusal[0],
+                         machine_module.PROBLEM_MISSION_GATE_REQUIRED)
+        self.assertEqual(self.store_bytes(), before)
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        self.assertIsNone(self.fx.remote_oid("refs/heads/" + SOURCE_BRANCH))
+        self.assertEqual(self.fx.transport.created, [])
+        # The production CLI (its own real transport, no gate) likewise.
+        printed = io.StringIO()
+        with patch.object(sys, "stdout", printed):
+            cli_module.advance_cmd(SimpleNamespace(delivery_id="prd-client"),
+                                   store_dir=self.fx.store.directory)
+        self.assertEqual(json.loads(printed.getvalue())["outcome"],
+                         machine_module.OUTCOME_GATE_REQUIRED)
+        self.assertEqual(self.store_bytes(), before)
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        # A stop is always available: revocation needs no gate.
+        cli_module.revoke_cmd(SimpleNamespace(delivery_id="prd-client",
+                                              reason="stop"),
+                              store_dir=self.fx.store.directory)
+        self.assertEqual(self.fx.machine.load("prd-client")["phase"],
+                         auth.PHASE_REVOKED)
+        # Legacy terminal records keep driving without any gate.
+        self.fx.authorize()
+        self.assertEqual(self.fx.machine.advance("prd-test"),
+                         machine_module.OUTCOME_COMPLETE)
+
+    # -- per-effect admission, outcome-specific counts -------------------
+
+    def test_each_step_effect_is_admitted_and_a_refusal_performs_nothing_more(self):
+        self.fx.authorize()
+        refuse = {"commit"}
+        machine, admitted = self.gated(refuse)
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_ADVANCED)   # NOT_NEEDED refresh
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        record = self.fx.record()
+        # write-tree was admitted; the commit was not: HEAD unmoved, the
+        # executing receipt voided (one attempt), no blocker.
+        self.assertEqual(admitted, [(COMMIT_STEP, "write_tree"),
+                                    (COMMIT_STEP, "commit")])
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        self.assertEqual(record["steps"][COMMIT_STEP]["state"], auth.STEP_PENDING)
+        self.assertEqual(len(record["steps"][COMMIT_STEP]["voided"]), 1)
+        self.assertIsNone(record["blocker"])
+        self.assertEqual(machine.last_refusal[0], "test_gate_refused")
+        # Commit admitted, push refused: exactly one commit, nothing pushed.
+        refuse.clear()
+        refuse.add("push")
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_ADVANCED)
+        committed = self.fx.head()
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        self.assertIsNone(self.fx.remote_oid("refs/heads/" + SOURCE_BRANCH))
+        self.assertEqual(self.fx.head(), committed)
+        # Push admitted, PR creation refused: pushed once, no PR created.
+        refuse.clear()
+        refuse.add("pr_create")
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_ADVANCED)
+        self.assertEqual(self.fx.remote_oid("refs/heads/" + SOURCE_BRANCH),
+                         committed)
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        self.assertEqual(self.fx.transport.created, [])
+        refuse.clear()
+        self.assertEqual(machine.advance("prd-test"),
+                         machine_module.OUTCOME_COMPLETE)
+        self.assertEqual(len(self.fx.transport.created), 1)
+        self.assertEqual(self.fx.record()["steps"][PUSH_STEP]["receipt"][
+            "observed"], {"reconciled": False, "remote_oid": committed})
+
+    def test_base_refresh_effects_are_each_admitted_including_reconciliation(self):
+        self.fx.authorize()
+        new_base = self.fx.advance_base({"docs/notes.md": "notes\n"})
+        refuse = {"fetch"}
+        machine, admitted = self.gated(refuse)
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        self.assertIsNone(self.fx.record()["steps"][BASE_REFRESH]["receipt"])
+        # read-tree refused: the receipt voided, index and ref untouched.
+        refuse.clear()
+        refuse.add("read_tree")
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        record = self.fx.record()
+        self.assertEqual(len(record["steps"][BASE_REFRESH]["voided"]), 1)
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        # read-tree admitted, the ref move refused: the receipt STAYS
+        # executing (the index already moved) and reconciliation later needs
+        # its own admission for the same ref move.
+        refuse.clear()
+        refuse.add("update_ref")
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        record = self.fx.record()
+        self.assertEqual(record["steps"][BASE_REFRESH]["state"],
+                         auth.STEP_EXECUTING)
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)   # reconciliation refused
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        # Ref move admitted, reverification refused: the ref moved, the
+        # reverification never ran (no marker), the receipt stays executing.
+        refuse.clear()
+        refuse.add("reverification")
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        self.assertEqual(self.fx.head(), new_base)
+        self.assertFalse(self.fx.marker.exists())
+        refuse.clear()
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_ADVANCED)
+        record = self.fx.record()
+        self.assertEqual(record["steps"][BASE_REFRESH]["state"],
+                         auth.STEP_SUCCEEDED)
+        self.assertEqual(self.fx.marker.read_text(), "ran\n")
+        self.assertEqual([e for s, e in admitted if s == BASE_REFRESH].count(
+            "reverification"), 2)
+
+    def test_a_change_during_blocking_work_stops_the_next_effect(self):
+        self.fx.authorize()
+        self.fx.advance_base({"docs/notes.md": "notes\n"})
+        refuse = set()
+
+        class T(TestTransport):
+            def fetch_ref(self, path, remote_name, ref):
+                super(T, self).fetch_ref(path, remote_name, ref)
+                refuse.add("read_tree")   # e.g. a cancel landed meanwhile
+        transport = T(self.fx.work)
+        machine, admitted = self.gated(refuse, transport)
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        self.assertEqual(admitted, [(BASE_REFRESH, "fetch"),
+                                    (BASE_REFRESH, "read_tree")])
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        self.assertEqual(len(self.fx.record()["steps"][BASE_REFRESH]["voided"]), 1)
+
+    # -- revocation-safe persistence, one owner ---------------------------
+
+    def test_a_revocation_written_mid_step_is_never_overwritten(self):
+        self.fx.authorize()
+        fx = self.fx
+
+        class T(TestTransport):
+            def commit(self, path, name, email, message):
+                super(T, self).commit(path, name, email, message)
+                # A second owner (the CLI's revoker) stops the delivery while
+                # this driver still holds its pre-revocation working copy.
+                machine_module.DeliveryMachine(fx.store, TestTransport(fx.work),
+                                               fx.clock).revoke(
+                    "prd-test", "other terminal", "stop now")
+        machine = machine_module.DeliveryMachine(fx.store, T(fx.work), fx.clock)
+        machine.advance_once("prd-test")                      # refresh
+        machine.advance_once("prd-test")                      # commit
+        record = fx.record()
+        self.assertTrue(record["revocation"]["revoked"])
+        self.assertEqual(record["phase"], auth.PHASE_REVOKED)
+        # The commit that DID happen stays recorded truthfully.
+        self.assertEqual(record["steps"][COMMIT_STEP]["state"], auth.STEP_SUCCEEDED)
+        self.assertEqual(machine.advance("prd-test"), machine_module.OUTCOME_BLOCKED)
+        self.assertIsNone(fx.remote_oid("refs/heads/" + SOURCE_BRANCH))
+
+    def test_a_revocation_before_the_receipt_is_persisted_revokes_cleanly(self):
+        # The revoker lands after write-tree and BEFORE the COMMIT receipt
+        # is persisted as executing: the persistence folds the revocation
+        # (REVOKED), the receipt is voided, and the step reports REVOKED —
+        # never a REVOKED -> REVOKED transition raised out of the drive.
+        self.fx.authorize()
+        fx = self.fx
+
+        class T(TestTransport):
+            def write_tree(self, path):
+                tree = super(T, self).write_tree(path)
+                machine_module.DeliveryMachine(fx.store, TestTransport(fx.work),
+                                               fx.clock).revoke(
+                    "prd-test", "other terminal", "stop now")
+                return tree
+        machine = machine_module.DeliveryMachine(fx.store, T(fx.work), fx.clock)
+        machine.advance_once("prd-test")                      # refresh
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_REVOKED)
+        record = fx.record()
+        self.assertTrue(record["revocation"]["revoked"])
+        self.assertEqual(record["revocation"]["revoked_by"], "other terminal")
+        self.assertEqual(record["phase"], auth.PHASE_REVOKED)
+        self.assertIsNone(record["steps"][COMMIT_STEP]["receipt"])
+        self.assertEqual(len(record["steps"][COMMIT_STEP]["voided"]), 1)
+        self.assertEqual(fx.head(), fx.baseline)
+
+    def test_one_driver_at_a_time(self):
+        self.fx.authorize()
+        before = self.store_bytes()
+        with self.fx.store.drive_lock("prd-test"):
+            self.assertEqual(self.fx.machine.advance_once("prd-test"),
+                             machine_module.OUTCOME_BUSY)
+            self.assertEqual(self.fx.machine.advance("prd-test"),
+                             machine_module.OUTCOME_BUSY)
+        self.assertEqual(self.store_bytes(), before)
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        # The revoker never needs the drive lock.
+        with self.fx.store.drive_lock("prd-test"):
+            self.fx.machine.revoke("prd-test", "human", "stop")
+        self.assertEqual(self.fx.record()["phase"], auth.PHASE_REVOKED)
+
+    # -- a remote lookup failure is never absence -------------------------
+
+    def test_remote_lookup_failure_never_voids_an_executing_push(self):
+        self.fx.authorize()
+        fx = self.fx
+        state = {"crash": True, "lookup_fails": False, "pushes": 0}
+
+        class T(TestTransport):
+            def push(self, path, remote_name, source_ref, destination_ref):
+                state["pushes"] += 1
+                super(T, self).push(path, remote_name, source_ref,
+                                    destination_ref)
+                if state["crash"]:
+                    raise Crash()
+
+            def ls_remote(self, path, remote_name, ref):
+                if state["lookup_fails"]:
+                    raise transport_module.DeliveryTransportError(
+                        "git ls-remote origin failed (128)")
+                return super(T, self).ls_remote(path, remote_name, ref)
+        transport = T(fx.work)
+        machine = machine_module.DeliveryMachine(fx.store, transport, fx.clock)
+        machine.advance_once("prd-test")
+        machine.advance_once("prd-test")
+        with self.assertRaises(Crash):
+            machine.advance_once("prd-test")
+        committed = fx.head()
+        self.assertEqual(fx.record()["steps"][PUSH_STEP]["state"],
+                         auth.STEP_EXECUTING)
+        state.update(crash=False, lookup_fails=True)
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_RETRY)
+        record = fx.record()
+        # Not voided, not re-pushed: the failure is named, nothing guessed.
+        self.assertEqual(record["steps"][PUSH_STEP]["voided"], [])
+        self.assertEqual(record["steps"][PUSH_STEP]["receipt"]["state"],
+                         auth.RECEIPT_FAILED_RETRYABLE)
+        self.assertIn("ls-remote origin failed", record["steps"][PUSH_STEP][
+            "receipt"]["observed"]["error"])
+        self.assertEqual(state["pushes"], 1)
+        state["lookup_fails"] = False
+        self.assertEqual(machine.advance("prd-test"),
+                         machine_module.OUTCOME_COMPLETE)
+        self.assertEqual(state["pushes"], 1)          # adopted, never re-pushed
+        self.assertEqual(fx.record()["steps"][PUSH_STEP]["receipt"]["observed"],
+                         {"reconciled": True, "remote_oid": committed})
+
+    def test_the_production_lookup_distinguishes_absence_from_failure(self):
+        transport = self.fx.transport
+        self.assertIsNone(transport.ls_remote(str(self.fx.work), "origin",
+                                              "refs/heads/never-created"))
+        with self.assertRaises(transport_module.DeliveryTransportError) as caught:
+            transport.ls_remote(str(self.fx.work), "no-such-remote",
+                                "refs/heads/main")
+        self.assertIn("never absence", str(caught.exception))
+
+    # -- owned effect children --------------------------------------------
+
+    def ledger(self, delivery_id="prd-test"):
+        path = os.path.join(self.fx.store.directory,
+                            transport_module.CHILD_LEDGER_DIR_NAME,
+                            delivery_id + ".jsonl")
+        with open(path, "r", encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle]
+
+    def append_ledger(self, row, delivery_id="prd-test"):
+        self.fx.transport._ledger_append(delivery_id, row)
+
+    def test_effect_children_are_owned_and_settlement_is_proven_before_retry(self):
+        self.fx.authorize()
+        self.assertEqual(self.fx.machine.advance("prd-test"),
+                         machine_module.OUTCOME_COMPLETE)
+        rows = self.ledger()
+        intents = [r for r in rows if "intent" in r]
+        self.assertEqual([(r["step"], r["effect"], r["program"]) for r in intents],
+                         [(COMMIT_STEP, "write_tree", "git"),
+                          (COMMIT_STEP, "commit", "git"),
+                          (PUSH_STEP, "push", "git")])
+        for intent in intents:
+            nonce = intent["intent"]
+            self.assertEqual(len([r for r in rows if r.get("nonce") == nonce
+                                  and isinstance(r.get("pgid"), int)]), 1)
+            settled = [r for r in rows if r.get("nonce") == nonce
+                       and "settled" in r]
+            self.assertEqual([r["settled"] for r in settled], [True])
+        self.assertEqual(self.fx.transport.unsettled_children("prd-test"), [])
+        # Read verbs are not effect children.
+        self.assertNotIn("status", [r.get("effect") for r in intents])
+
+    def test_unproven_children_refuse_the_next_effect_and_are_never_killed(self):
+        self.fx.authorize()
+        machine, admitted = self.gated(set())
+        # The base is current: the refresh step performs no effect at all.
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_ADVANCED)
+        # A crash INSIDE the spawn window: an intent whose group id was never
+        # recorded — ownership cannot be proven, so no effect runs.
+        self.append_ledger({"intent": "chd-crashed", "step": COMMIT_STEP,
+                            "effect": "commit", "program": "git", "at": 1})
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        self.assertEqual(machine.last_refusal[0],
+                         transport_module.CHILD_UNRESOLVED)
+        self.assertEqual(admitted, [])                 # refused before the gate
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        # A surviving descendant: a recorded group that is still alive (this
+        # test's own group — alive, and never signalled).
+        self.append_ledger({"nonce": "chd-crashed", "settled": True})
+        self.append_ledger({"intent": "chd-survivor", "step": COMMIT_STEP,
+                            "effect": "commit", "program": "git", "at": 2})
+        self.append_ledger({"nonce": "chd-survivor", "pgid": os.getpgrp()})
+        self.assertEqual(machine.advance_once("prd-test"),
+                         machine_module.OUTCOME_HELD)
+        self.assertEqual(machine.last_refusal[0], transport_module.CHILD_UNSETTLED)
+        self.assertEqual(self.fx.head(), self.fx.baseline)
+        # Proven settled (the group is gone): the next effect is admitted.
+        self.append_ledger({"nonce": "chd-survivor", "settled": True})
+        self.assertEqual(machine.advance("prd-test"),
+                         machine_module.OUTCOME_COMPLETE)
+
+    def test_a_group_proven_gone_later_records_its_settlement(self):
+        self.fx.authorize()
+        self.append_ledger({"intent": "chd-gone", "step": PUSH_STEP,
+                            "effect": "push", "program": "git", "at": 1})
+        # A group id no live process holds (the maximum pid is never a
+        # session leader here): proven gone, so it settles now.
+        self.append_ledger({"nonce": "chd-gone", "pgid": 2 ** 22 - 3})
+        self.assertEqual(self.fx.transport.unsettled_children("prd-test"), [])
+        self.assertIn({"nonce": "chd-gone", "settled": True},
+                      [{k: r[k] for k in ("nonce", "settled")}
+                       for r in self.ledger() if "settled" in r])
+
+    # -- pruning ------------------------------------------------------------
+
+    def test_mission_bound_records_are_never_pruned(self):
+        client = auth.new_authorization(
+            "prd-client-0", client_confirmed_authority(self.fx), self.fx.clock())
+        legacy = auth.new_authorization("prd-legacy-0", self.fx._patched_authority(),
+                                        self.fx.clock())
+        document = store_module.default_document()
+        for index in range(store_module.MAX_PR_DELIVERY_RECORDS):
+            template = client if index % 2 == 0 else legacy
+            record = copy.deepcopy(template)
+            record["delivery_id"] = "prd-%s-%d" % (
+                "client" if index % 2 == 0 else "legacy", index)
+            record["authority_digest_sha256"] = auth.authority_digest(record)
+            record["revocation"] = {"revoked": True, "revoked_at": 1.0,
+                                    "revoked_by": "h", "reason": ""}
+            record["phase"] = auth.PHASE_REVOKED
+            auth.validate_authorization(record)
+            document["deliveries"][record["delivery_id"]] = record
+        newcomer = auth.new_authorization("prd-new", self.fx._patched_authority(),
+                                          self.fx.clock())
+        ok, problem, pruned = store_module.add_delivery(document, newcomer)
+        self.assertEqual((ok, problem, pruned), (True, None, 1))
+        self.assertTrue(all(auth.is_client_confirmed(r) or r["delivery_id"] != (
+            "prd-legacy-1") for r in document["deliveries"].values()))
+        self.assertEqual(len([r for r in document["deliveries"].values()
+                              if auth.is_client_confirmed(r)]),
+                         store_module.MAX_PR_DELIVERY_RECORDS // 2)
+        # A store holding only Mission-bound terminal records refuses.
+        document = store_module.default_document()
+        for index in range(store_module.MAX_PR_DELIVERY_RECORDS):
+            record = copy.deepcopy(client)
+            record["delivery_id"] = "prd-client-%d" % index
+            record["authority_digest_sha256"] = auth.authority_digest(record)
+            record["revocation"] = {"revoked": True, "revoked_at": 1.0,
+                                    "revoked_by": "h", "reason": ""}
+            record["phase"] = auth.PHASE_REVOKED
+            document["deliveries"][record["delivery_id"]] = record
+        self.assertEqual(store_module.add_delivery(document, newcomer),
+                         (False, store_module.PROBLEM_STORE_FULL, 0))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

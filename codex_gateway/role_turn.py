@@ -129,6 +129,28 @@ REASON_OUTPUT_NOT_UTF8 = "output_not_utf8"
 REASON_FAILURE_EVENT = "codex_failure_event"
 REASON_MALFORMED_OUTPUT = "malformed_output"
 REASON_OUTCOME_ENVELOPE = "outcome_envelope_problem"
+# Task 8 R28-1: a Codex process WAS spawned and a step after its start failed
+# (its spawn's ownership records, its turn's I/O): its outcome is UNRESOLVED.
+# Never "the binary could not be executed": the turn carries its known pid.
+REASON_SPAWNED_OUTCOME_UNRESOLVED = "codex_spawned_outcome_unresolved"
+
+
+class SpawnedTurnUnresolved(Exception):
+    """Task 8 R28-1: the production runner STARTED a Codex process (``pid``, for
+    ``owner_scope``), and a step after the start (``step``) failed, so the turn's
+    outcome is UNRESOLVED. Deliberately NOT an ``OSError``: no handler that reads
+    one as "the binary could not be executed" can classify it. Nothing about the
+    process is concluded — not its exit, not its settlement, not its absence."""
+
+    def __init__(self, pid, owner_scope, step, cause):
+        super(SpawnedTurnUnresolved, self).__init__(
+            "a Codex process STARTED (pid %s, owner scope %s) and %s failed (%s: %s);"
+            " its outcome is UNRESOLVED — nothing was concluded about the process,"
+            " and its owner scope's records retain it"
+            % (pid, owner_scope, step, cause.__class__.__name__, cause))
+        self.pid = pid
+        self.owner_scope = owner_scope
+        self.step = step
 
 
 @dataclass(frozen=True)
@@ -929,41 +951,87 @@ def _default_runner(argv, prompt_bytes, cwd, owner_scope=None):
             "a production role-turn spawn requires an owner scope"
             " naming its workflow and task"
         )
-    process = _own.spawn_owned(
-        argv,
-        label="codex-role-turn",
-        directory=owner_scope,
-        owned_root_base_dir=owner_scope,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=cwd,
-    )
+    # Task 8 R28-1: the spawn is HELD — `communicate` reads the turn to its end
+    # and OBSERVES the Codex process's exit WITHOUT collecting it, so the reap
+    # below acts while the group's number is still this process's own: a
+    # descendant the turn left running is reaped as surely this group's, and a
+    # reused number is never signalled.
+    # Task 8 R28-1: PRE-EFFECT versus POST-SPAWN, for the `OSError` that the
+    # caller reads as "the binary could not be executed". One raised before any
+    # process exists propagates as itself (that refusal is true). One raised
+    # AFTER `Popen` started the child — its ownership records, its turn's I/O —
+    # is `SpawnedTurnUnresolved`, carrying the KNOWN pid and owner scope: never
+    # "no spawn", and nothing concluded about it. Any other exception propagates
+    # as itself, as before (`SpawnUnconfirmed` among them: not an `OSError`, it
+    # already says the process STARTED and carries it).
+    try:
+        process = _own.spawn_owned(
+            argv,
+            label="codex-role-turn",
+            directory=owner_scope,
+            owned_root_base_dir=owner_scope,
+            hold_leader=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+        )
+    except OSError as exc:
+        started = _own.started_process(exc)
+        if started is None:
+            raise                                       # PRE-EFFECT: nothing started
+        raise SpawnedTurnUnresolved(
+            started.pid, owner_scope, "its spawn's ownership records", exc) from exc
+    unresolved = cleanup_error = None
     try:
         stdout, stderr = process.communicate(prompt_bytes)
+    except OSError as exc:                              # post-spawn: kept, reported below
+        unresolved = exc
     finally:
-        # The group is reaped on EVERY exit path, so a turn that
-        # raises does not leave the Codex tree running.
-        _own.reap_owned(
-            process.pid, directory=owner_scope, settle_seconds=10.0,
-        )
-        # `communicate` normally waits and closes its pipe lifecycle for
-        # us.  If it raises, collect the reaped child and close every pipe
-        # explicitly so the exceptional path leaks neither a Popen handle
-        # nor file descriptors (and does not emit ResourceWarning later).
-        wait = getattr(process, "wait", None)
-        if wait is not None:
+        # A reap of the group is ATTEMPTED on every exit path. It is NOT
+        # guaranteed: `reap_owned` REFUSES whenever it cannot prove the
+        # group is this spawn's (Task 8 R28-1), and its verdict is not
+        # returned from here — so a refused reap can leave the Codex tree
+        # running. What it then leaves is the owner scope's ledger row and
+        # owned root, RETAINED for a later reap or recovery that proves
+        # ownership. Nothing here is a cleanup receipt or a settlement. A
+        # cleanup step that raises an `OSError` is contained the same way: the
+        # process exists, so it is never reported as "could not be executed".
+        try:
             try:
-                wait(timeout=10)
-            except (OSError, subprocess.SubprocessError):
-                pass
-        for stream in (
-                getattr(process, "stdin", None),
-                getattr(process, "stdout", None),
-                getattr(process, "stderr", None)):
-            if stream is not None:
-                stream.close()
-    return process.returncode, stdout, stderr, process.pid
+                _own.reap_owned(
+                    process.pid, directory=owner_scope, settle_seconds=10.0,
+                )
+            finally:
+                # The reap is decided. A reap that signalled COLLECTED the
+                # process. After a refused one it is never waited on here:
+                # collecting it would release the number a later reap's proof
+                # rests on. The disarm collects it only once it has exited with
+                # nothing alive left in its group, read by a BOUNDED, strict
+                # observation; otherwise it stays uncollected and held. Every
+                # pipe is closed explicitly, each on its own, so no path leaks
+                # a file descriptor.
+                _own.disarm_hold(process)
+                for stream in (
+                        getattr(process, "stdin", None),
+                        getattr(process, "stdout", None),
+                        getattr(process, "stderr", None)):
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except OSError as exc:
+                            cleanup_error = cleanup_error or exc
+        except OSError as exc:
+            cleanup_error = cleanup_error or exc
+    if unresolved is not None:
+        raise SpawnedTurnUnresolved(
+            process.pid, owner_scope, "its turn's I/O" + (
+                "" if cleanup_error is None else " (and then its cleanup: %s)"
+                % cleanup_error.__class__.__name__), unresolved) from unresolved
+    # The turn's output is in hand: it is returned as it is. A cleanup `OSError`
+    # changes nothing here — like a refused reap's verdict, the cleanup's is not
+    # returned; the owner scope's records retain the group.
+    return _own.exit_status_of(process), stdout, stderr, process.pid
 
 
 def _refused(reason, detail, turn=None):
@@ -1080,7 +1148,21 @@ def _spawn_restricted(role, prompt, control_realpath, now,
             returncode, stdout, stderr, pid = run(
                 argv, prompt.encode("utf-8"), control_realpath
             )
+    except SpawnedTurnUnresolved as unresolved:
+        # Task 8 R28-1: a process WAS spawned — so the turn carries its KNOWN
+        # identity, and the outcome is UNRESOLVED (no exit, no settlement, no
+        # absence concluded). Never the PRE-EFFECT refusal below.
+        turn = {
+            "turn_id": make_turn_id(),
+            "role": role,
+            "process_id": unresolved.pid,
+            "recorded_at": now,
+        }
+        return turn, None, _failed(
+            REASON_SPAWNED_OUTCOME_UNRESOLVED, str(unresolved), turn)
     except OSError as exc:
+        # PRE-EFFECT only: the production runner raises an `OSError` here only
+        # when no process was started (Task 8 R28-1).
         return None, None, _refused(
             REASON_BINARY_UNAVAILABLE,
             "the %s binary could not be executed (%s)"

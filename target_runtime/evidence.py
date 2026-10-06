@@ -257,6 +257,9 @@ CHECKPOINT_FILE_NAME = "task-checkpoint.md"
 MARKER_SOURCE_FILES = (CHECKPOINT_FILE_NAME,)
 _STATE_SUBDIRS = (".herd", "state")
 _REVIEWS_SUBDIRS = (".herd", "state", "reviews")
+# Task 8 S-V (R2-11): the Broker records every review round's digest it
+# observed at verification through the same hardened read.
+REVIEWS_SUBDIRS = _REVIEWS_SUBDIRS
 
 # The reviewer round artifact vocabulary, derived from the canonical
 # writer (herdctl ``review-decision``): the file is named

@@ -106,7 +106,22 @@ RECEIPT_STATES = (
 )
 
 AUTHORIZATION_SOURCE_LOCAL_TERMINAL = "local_terminal"
-AUTHORIZATION_SOURCES = (AUTHORIZATION_SOURCE_LOCAL_TERMINAL,)
+# Task 8 S-VI: a delivery decision the configured Grok client rendered and
+# confirmed through its own user interface (the S-I client-mediated
+# elicitation), recorded and ACCEPTED as Mission evidence before any
+# minting. It exists ONLY under a Mission parent (validated below) and
+# carries a closed provenance block binding the exact decision.
+AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION = "grok_mcp_client_confirmation"
+AUTHORIZATION_SOURCES = (AUTHORIZATION_SOURCE_LOCAL_TERMINAL,
+                         AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION)
+# The closed provenance of a client-confirmed authorization: the reserved
+# decision id, the digest of the canonical decision document, the digest
+# of the delivery proposal the human confirmed, the Mission and revision
+# it was confirmed under, and the ACCEPTED Mission evidence record.
+CLIENT_CONFIRMATION_KEYS = (
+    "decision_id", "decision_document_digest_sha256", "proposal_digest_sha256",
+    "mission_id", "mission_revision", "evidence_id",
+)
 
 EXPIRATION_POLICY_ABSOLUTE = "absolute_deadline"
 EXPIRATION_POLICIES = (EXPIRATION_POLICY_ABSOLUTE,)
@@ -199,6 +214,7 @@ PROBLEM_EVIDENCE = "pr_delivery_evidence"
 PROBLEM_UNKNOWN_PHASE = "pr_delivery_unknown_phase"
 PROBLEM_INVALID_TRANSITION = "pr_delivery_invalid_transition"
 PROBLEM_STEP_STATE = "pr_delivery_step_state"
+PROBLEM_CLIENT_SOURCE_PARENT = "pr_delivery_client_source_without_parent"
 
 
 class AuthorizationError(Exception):
@@ -681,12 +697,15 @@ def _validate_pr_content(value, location):
 
 
 def _validate_human_authorization(value, location):
+    """The human half. The local terminal source keeps its exact four
+    keys (every existing record and digest unchanged); the client-confirmed
+    source carries those four plus the closed ``client_confirmation``
+    provenance block — and only that source may carry it."""
     _require_dict(value, location)
-    _require_closed_keys(
-        value, ("identity", "source", "authorized_at",
-                "confirmation_digest_sha256"),
-        location,
-    )
+    keys = ("identity", "source", "authorized_at", "confirmation_digest_sha256")
+    if value.get("source") == AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION:
+        keys = keys + ("client_confirmation",)
+    _require_closed_keys(value, keys, location)
     _require_line_free_str(value["identity"], location + ".identity",
                            max_chars=255)
     _require_member(value["source"], AUTHORIZATION_SOURCES,
@@ -694,6 +713,29 @@ def _validate_human_authorization(value, location):
     _require_timestamp(value["authorized_at"], location + ".authorized_at")
     _require_hex(value["confirmation_digest_sha256"],
                  location + ".confirmation_digest_sha256", 64)
+    if value["source"] != AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION:
+        return
+    confirmation = value["client_confirmation"]
+    where = location + ".client_confirmation"
+    _require_dict(confirmation, where)
+    _require_closed_keys(confirmation, CLIENT_CONFIRMATION_KEYS, where)
+    _require_id(confirmation["decision_id"], where + ".decision_id")
+    _require_hex(confirmation["decision_document_digest_sha256"],
+                 where + ".decision_document_digest_sha256", 64)
+    _require_hex(confirmation["proposal_digest_sha256"],
+                 where + ".proposal_digest_sha256", 64)
+    _require_id(confirmation["mission_id"], where + ".mission_id")
+    _require_int(confirmation["mission_revision"], where + ".mission_revision",
+                 minimum=1)
+    _require_id(confirmation["evidence_id"], where + ".evidence_id")
+
+
+def is_client_confirmed(record):
+    """Whether ``record`` carries client-confirmed (Mission-bound) authority:
+    such a record is driven only through a Mission effect gate and is never
+    pruned while the Mission lifecycle may still need it."""
+    return (record["human_authorization"]["source"]
+            == AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION)
 
 
 def _validate_expiration(value, location, authorized_at):
@@ -1018,6 +1060,30 @@ def validate_authorization(document, location="PR delivery authorization"):
     _validate_pr_content(document["pr_content"], location + ".pr_content")
     _validate_human_authorization(document["human_authorization"],
                                   location + ".human_authorization")
+    if document["human_authorization"]["source"] == (
+        AUTHORIZATION_SOURCE_CLIENT_CONFIRMATION
+    ):
+        # Client-confirmed delivery authority exists ONLY under a Mission
+        # parent, and only for the Mission the decision was confirmed for.
+        if mission is None:
+            _fail(
+                PROBLEM_CLIENT_SOURCE_PARENT,
+                "%s.human_authorization is client-confirmed but the record"
+                " carries no Mission parent; such authority exists only"
+                " under a Mission" % location,
+            )
+        if mission["workflow_id"] != document["human_authorization"][
+            "client_confirmation"
+        ]["mission_id"]:
+            _fail(
+                PROBLEM_CLIENT_SOURCE_PARENT,
+                "%s.human_authorization.client_confirmation names Mission %r"
+                " but the parent is %r" % (
+                    location,
+                    document["human_authorization"]["client_confirmation"][
+                        "mission_id"],
+                    mission["workflow_id"]),
+            )
     _validate_expiration(
         document["expiration"], location + ".expiration",
         document["human_authorization"]["authorized_at"],
@@ -1075,6 +1141,55 @@ def is_expired(record, now):
 
 def is_revoked(record):
     return bool(record["revocation"]["revoked"])
+
+
+def authority_template(bindings, evidence, reverify_argv, workflow_identity,
+                       mission, pr_content):
+    """Every AUTHORITY field except the delivery id and the human half
+    (``human_authorization``, ``expiration``), from the live ``bindings``
+    of ``cli.live_bindings``: exactly what the terminal ceremony binds and
+    what a Mission delivery proposal binds (Task 8 S-VI), so a later
+    minting may substitute nothing. Pure."""
+    target = bindings["target"]
+    return {
+        "revision": 1,
+        "previous_delivery_id": None,
+        "workflow_identity": dict(workflow_identity),
+        "mission": None if mission is None else dict(mission),
+        "repository": {
+            "realpath": bindings["repo"],
+            "git_dir_realpath": bindings["git_dir"],
+            "canonical_host": target.host,
+            "owner": target.owner,
+            "repo": target.repo,
+            "repository_url": target.repository_url,
+        },
+        "remote": {
+            "name": bindings["remote_name"],
+            "url_exact": bindings["url_exact"],
+            "url_fetch": bindings["url_fetch"],
+            "url_push": bindings["url_push"],
+            "repository_url": target.repository_url,
+        },
+        "mode": MODE_PULL_REQUEST,
+        "source": {"branch": bindings["source_branch"],
+                   "ref": bindings["head_ref"]},
+        "target_base": {"branch": bindings["base_branch"],
+                        "ref": bindings["base_ref"]},
+        "original_baseline": {"ref": bindings["base_ref"],
+                              "commit_sha": bindings["head"]},
+        "candidate": {
+            "identity_digest_sha256": bindings["digest"],
+            "entry_count": len(bindings["entries"]),
+            "entries": bindings["entries"],
+        },
+        "evidence": evidence,
+        "allowed_actions": list(STEPS),
+        "committer": {"name": bindings["committer_name"],
+                      "email": bindings["committer_email"]},
+        "reverification": {"argv": list(reverify_argv)},
+        "pr_content": dict(pr_content),
+    }
 
 
 def new_authorization(delivery_id, authority, now):

@@ -209,7 +209,16 @@ FORBIDDEN_NAMES = ("store", "store_module", "service", "MissionService",
                    "authorization_module", "issue_mission_authorization",
                    "apply_human_decision", "os", "json", "sys", "time", "threading",
                    "subprocess", "adapter", "adapters", "collect", "callable")
-READ_PATH_METHODS = ("observe", "reconcile", "_require_at_cursor", "_contract_status")
+# Task 8 S-II: the one-load ``snapshot`` (raw surface ``inputs``, like
+# observe's) and the three pure helpers it shares with get/get_state and
+# the durable cursor are read-path methods under the same non-invoking
+# pin (R10-C1: static coverage extended to the helpers).
+READ_PATH_METHODS = ("observe", "reconcile", "_require_at_cursor", "_contract_status",
+                     "snapshot", "_record_projection", "_state_projection_at",
+                     "durable_cursor")
+# The READ-ONLY roots of the mutator ban (``reconcile`` is a writer: it
+# applies an operation under the lock, and is pinned as non-invoking only).
+READ_ONLY_ROOTS = tuple(name for name in READ_PATH_METHODS if name != "reconcile")
 
 
 def _function_calls(tree, name):
@@ -217,6 +226,65 @@ def _function_calls(tree, name):
         if isinstance(node, ast.FunctionDef) and node.name == name:
             return [n for n in ast.walk(node) if isinstance(n, ast.Call)]
     raise AssertionError("no function %s" % name)
+
+
+# Correction 2 (R10-C1): the mutator ban covers EVERY function on the
+# read path — the read methods and every helper they reach, transitively
+# (``self.<helper>`` and module-level calls) — not only ``observe`` and
+# ``snapshot``.
+MUTATOR_CALLS = frozenset({
+    "lock", "save", "_apply", "_reserve", "mint_state_operation_id",
+    "apply_human_decision", "issue_mission_authorization", "atomic_write_json",
+    "exclusive_store_lock", "open", "collect", "callable", "replace", "rename",
+    "makedirs", "mkdir", "remove", "unlink", "write", "chmod", "fsync",
+    "mint_id", "mint_request_id", "mint_decision_id", "_fresh_id",
+})
+
+
+def _callee(node):
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id, False
+    if isinstance(func, ast.Attribute):
+        return func.attr, isinstance(func.value, ast.Name) and func.value.id == "self"
+    return None, False
+
+
+def read_path_closure(tree, roots):
+    """Every function named in ``roots`` plus every function of the module
+    reached from them through ``self.<name>(...)`` or a direct call,
+    transitively (a helper that does not exist in the module is not on
+    the path)."""
+    defined = {node.name: node for node in ast.walk(tree)
+               if isinstance(node, ast.FunctionDef)}
+    closure = set()
+    pending = list(roots)
+    while pending:
+        name = pending.pop()
+        if name in closure or name not in defined:
+            continue
+        closure.add(name)
+        for node in ast.walk(defined[name]):
+            if isinstance(node, ast.Call):
+                callee, on_self = _callee(node)
+                if callee in defined and (on_self or not callee.startswith("self")):
+                    pending.append(callee)
+    return closure
+
+
+def assert_no_mutator_on_read_path(tree, roots):
+    """Raises AssertionError naming the first mutator reached from the
+    read path; returns the closure that was checked."""
+    closure = read_path_closure(tree, roots)
+    defined = {node.name: node for node in ast.walk(tree)
+               if isinstance(node, ast.FunctionDef)}
+    for name in sorted(closure):
+        for node in ast.walk(defined[name]):
+            if isinstance(node, ast.Call):
+                callee, _ = _callee(node)
+                if callee in MUTATOR_CALLS:
+                    raise AssertionError("%s reaches mutator %s" % (name, callee))
+    return closure
 
 
 class O1ReadOnlyTests(ObservationFixture):
@@ -285,7 +353,8 @@ class O1ReadOnlyTests(ObservationFixture):
         source = (REPO_ROOT / "mission" / "state_service.py").read_text()
         tree = ast.parse(source)
         checked = ni.check_functions(tree, READ_PATH_METHODS, "state_service",
-                                     raw_surface=("observe", "reconcile"))
+                                     raw_surface=("observe", "reconcile",
+                                                  "snapshot"))
         self.assertEqual(checked, len(READ_PATH_METHODS))
         for name in READ_PATH_METHODS:
             names = {getattr(n.func, "id", getattr(n.func, "attr", None))
@@ -302,6 +371,70 @@ class O1ReadOnlyTests(ObservationFixture):
         self.assertIn("normalize_inputs", observe_calls)
         self.assertIn("require_exact_str", observe_calls)
         self.assertIn("report", observe_calls)
+        # Task 8 S-II: ``snapshot`` keeps exactly the same read discipline
+        # — one load, the sanitizers first, the report, no writer/lock/
+        # mint/apply call anywhere in it.
+        snapshot_calls = [n for n in _function_calls(tree, "snapshot")]
+        snapshot_names = {getattr(n.func, "id", getattr(n.func, "attr", None))
+                          for n in snapshot_calls}
+        for forbidden in ("lock", "save", "_apply", "_reserve",
+                          "mint_state_operation_id", "apply_human_decision",
+                          "atomic_write_json", "open", "collect", "callable"):
+            self.assertNotIn(forbidden, snapshot_names, forbidden)
+        # The snapshot reads through the store OWNER's one validated
+        # ``read()`` (never ``load``), exactly once.
+        for required in ("read", "normalize_inputs", "require_exact_str", "report",
+                         "durable_cursor", "_record_projection",
+                         "_state_projection_at", "_contract_status"):
+            self.assertIn(required, snapshot_names, required)
+        self.assertNotIn("load", snapshot_names)
+        self.assertEqual(sum(1 for n in snapshot_calls
+                             if getattr(n.func, "attr", None) == "read"), 1)
+        # Correction 2 (R10-C1): no mutator anywhere on the read path —
+        # the read methods and every helper they reach.
+        closure = assert_no_mutator_on_read_path(tree, READ_ONLY_ROOTS)
+        for helper in ("_state_projection_at", "_record_projection",
+                       "durable_cursor", "_contract_status", "_bound_contract",
+                       "_activation_contract", "_live_authorization"):
+            self.assertIn(helper, closure, helper)
+        self.assertGreaterEqual(len(closure), len(READ_ONLY_ROOTS) + 3)
+        self.assertNotIn("_apply", closure)
+        self.assertNotIn("reconcile", closure)
+
+    def test_O1_inserted_mutator_in_any_read_path_helper_fails_the_pin(self):
+        # Independent negative self-test (R10-C1): a ``save``, a ``lock``
+        # or an ``atomic_write_json`` inserted as the first statement of
+        # EVERY read-path helper (each one separately) is detected.
+        import re
+        source = (REPO_ROOT / "mission" / "state_service.py").read_text()
+        tree = ast.parse(source)
+        closure = assert_no_mutator_on_read_path(tree, READ_ONLY_ROOTS)
+        checked = 0
+        for helper in sorted(closure):
+            pattern = re.compile(r"^(    def %s\([^)]*\):\n)" % re.escape(helper),
+                                 re.MULTILINE)
+            self.assertEqual(len(pattern.findall(source)), 1, helper)
+            for mutator in ("        self._store.save(document)\n",
+                            "        self._store.lock()\n",
+                            "        atomic_write_json(directory, path, document, prefix)\n",
+                            "        self._fresh_id(prefix, set())\n"):
+                doctored = pattern.sub(lambda m: m.group(1) + mutator, source, 1)
+                self.assertNotEqual(doctored, source, helper)
+                with self.assertRaises(AssertionError, msg=(helper, mutator)):
+                    assert_no_mutator_on_read_path(ast.parse(doctored),
+                                                   READ_ONLY_ROOTS)
+                checked += 1
+        self.assertGreaterEqual(checked, 4 * len(closure))
+        # A mutator hidden one call deeper (a NEW helper reached from
+        # ``_state_projection_at``) is detected through the closure.
+        deeper = source.replace(
+            "    def _state_projection_at(self, document, mission, state, now):\n",
+            "    def _hidden(self):\n        self._store.save({})\n\n"
+            "    def _state_projection_at(self, document, mission, state, now):\n"
+            "        self._hidden()\n", 1)
+        self.assertNotEqual(deeper, source)
+        with self.assertRaises(AssertionError):
+            assert_no_mutator_on_read_path(ast.parse(deeper), READ_ONLY_ROOTS)
         reconcile_calls = {getattr(n.func, "id", getattr(n.func, "attr", None))
                            for n in _function_calls(tree, "reconcile")}
         for sanitizer in ("require_exact_str", "require_exact_int",

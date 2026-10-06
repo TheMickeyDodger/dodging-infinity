@@ -312,6 +312,60 @@ def prove_ownership(entry, child_records, live_workspaces,
     )
 
 
+def prove_started_runtime(identity, live_workspaces, lease):
+    """Task 8 S-IV (start-claim decision): ownership of a PARTIAL or IDLE
+    startup, BEFORE task binding, from the execution identity the engine
+    RETURNED to the start's owner (its workspace id and the exact agent
+    name set it created) against a fresh live listing — the same two
+    facts the child-record proof matches, minus the child record that
+    does not exist yet. Never a repository name, a label or a pid alone:
+    the workspace must carry exactly that id and exactly that agent set,
+    once. Returns ``(verdict, snapshot_or_None, problem, detail)``; a
+    snapshot exists only for OWNED, exactly as in ``prove_ownership``."""
+    if not isinstance(identity, dict):
+        return (UNPROVABLE, None, PROBLEM_EVIDENCE_DEGRADED,
+                "no execution identity was returned for the start")
+    workspace_id = identity.get("workspace_id")
+    if not isinstance(workspace_id, str) or not workspace_id:
+        return (UNPROVABLE, None, PROBLEM_NO_WORKSPACE_ID,
+                "the returned identity names no workspace_id")
+    expected = identity.get("agent_names")
+    if not isinstance(expected, (list, tuple, set, frozenset)) or not expected:
+        return (UNPROVABLE, None, PROBLEM_AGENTS_DISAGREE,
+                "the returned identity carries no agent name set, so the live"
+                " workspace cannot be matched against it")
+    if not isinstance(live_workspaces, list):
+        return (UNPROVABLE, None, PROBLEM_EVIDENCE_DEGRADED,
+                "the live workspace listing is unreadable")
+    live = [
+        workspace for workspace in live_workspaces
+        if isinstance(workspace, dict)
+        and workspace.get("workspace_id") == workspace_id
+    ]
+    if not live:
+        return (NOT_OWNED, None, PROBLEM_WORKSPACE_NOT_FOUND,
+                "no live workspace carries id %r; there is nothing to"
+                " close" % workspace_id)
+    if len(live) > 1:
+        return (NOT_OWNED, None, PROBLEM_MULTIPLE_WORKSPACES,
+                "%d live workspaces carry id %r; an ambiguous set"
+                " closes nothing" % (len(live), workspace_id))
+    observed = live[0].get("agent_names")
+    if not isinstance(observed, (set, frozenset, list, tuple)):
+        return (UNPROVABLE, None, PROBLEM_EVIDENCE_DEGRADED,
+                "the live workspace reports no agent name set")
+    if set(observed) != set(expected):
+        return (NOT_OWNED, None, PROBLEM_AGENTS_DISAGREE,
+                "the live workspace's agents %r do not match the returned"
+                " %r; a workspace whose sessions are other than the ones"
+                " this start created is left alone"
+                % (sorted(observed), sorted(expected)))
+    return (OWNED, ProofSnapshot(workspace_id=workspace_id,
+                                 task_id=identity.get("task_id"),
+                                 agent_names=set(observed), lease=lease),
+            None, None)
+
+
 def close_proven_workspace(snapshot, live_now, close_fn,
                            child_records=None, entry=None,
                            workspaces_root=None):

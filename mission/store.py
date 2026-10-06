@@ -145,11 +145,15 @@ unreadable. Nothing here validates a receipt; the delivery layer's
 validator is never imported.
 """
 
+import contextlib
 import json
 import os
 import stat
 
-from workflow_authority.atomic import atomic_write_json, exclusive_store_lock
+from workflow_authority.atomic import (  # noqa: F401 (READ_* re-exported)
+    READ_ABSENT, READ_PRESENT, READ_UNAVAILABLE, ReadResult, atomic_write_json,
+    classify_missing, exclusive_store_lock, read_store_document,
+)
 
 from mission import authorization as authorization_module
 from mission import journal
@@ -183,22 +187,35 @@ MAX_RESERVED_REQUEST_IDS = 4096
 MAX_RESERVED_DECISION_IDS = 4096
 MAX_RESERVED_STATE_OPERATION_IDS = 65536
 MAX_MISSION_STATE_RECORDS = 1024
+# Task 8, slice S-V (capacity strategy): the cancel request and its
+# confirmation are reserved under their OWN kind, whose ids are DERIVED
+# per Mission (``state.cancel_operation_id``) — at most two per Mission,
+# so the dedicated cap equals what every Mission could ever consume and
+# no run of ordinary or hold reservations can exhaust it.
+MAX_RESERVED_CANCEL_OPERATION_IDS = 2 * MAX_MISSION_RECORDS
 
 RESERVATION_KIND_REQUEST = "request"
 RESERVATION_KIND_DECISION = "decision"
 RESERVATION_KIND_STATE_OPERATION = "state_operation"
+RESERVATION_KIND_CANCEL_OPERATION = "cancel_operation"
 RESERVATION_KINDS = (RESERVATION_KIND_REQUEST, RESERVATION_KIND_DECISION,
-                     RESERVATION_KIND_STATE_OPERATION)
+                     RESERVATION_KIND_STATE_OPERATION,
+                     RESERVATION_KIND_CANCEL_OPERATION)
+# The reservation kinds an applied state operation may have consumed.
+OPERATION_RESERVATION_KINDS = (RESERVATION_KIND_STATE_OPERATION,
+                               RESERVATION_KIND_CANCEL_OPERATION)
 # The id prefix a reservation of each kind reserves and is consumed by.
 RESERVATION_PREFIXES = {
     RESERVATION_KIND_REQUEST: record.REQUEST_ID_PREFIX,
     RESERVATION_KIND_DECISION: record.DECISION_ID_PREFIX,
     RESERVATION_KIND_STATE_OPERATION: record.STATE_OPERATION_ID_PREFIX,
+    RESERVATION_KIND_CANCEL_OPERATION: record.STATE_OPERATION_ID_PREFIX,
 }
 RESERVATION_CAPS = {
     RESERVATION_KIND_REQUEST: MAX_RESERVED_REQUEST_IDS,
     RESERVATION_KIND_DECISION: MAX_RESERVED_DECISION_IDS,
     RESERVATION_KIND_STATE_OPERATION: MAX_RESERVED_STATE_OPERATION_IDS,
+    RESERVATION_KIND_CANCEL_OPERATION: MAX_RESERVED_CANCEL_OPERATION_IDS,
 }
 RESERVATION_KEYS = ("reserved_at", "kind", "context", "consumed_by")
 
@@ -725,18 +742,42 @@ def _validate_mission_state(document, mission_id, state, path):
                                 % (sub, state_module.PROBLEM_HISTORY_IMPOSSIBLE,
                                    artifact["key"], artifact["role"],
                                    declared["role"]))
+        if operation["kind"] == state_module.OPERATION_RESERVE_ENGAGEMENT:
+            # Task 8, slice S-IV (the R-31.6 discipline for the derived
+            # field): attempts_remaining is the bound contract's budget
+            # minus the continuations and follow-up reservations at or
+            # before this operation, never the current contract's.
+            declared = contracts[bound["activation_id"]]["continuation_budget"][
+                "max_attempts"]
+            consumed = progress_module.consumed_attempts(
+                state, at_or_before=operation["sequence"])
+            expected = max(0, declared - consumed)
+            if operation["outcome"]["attempts_remaining"] != expected:
+                _unreadable(path, "%s (%s): outcome.attempts_remaining %r but the"
+                            " bound contract permits %d and the shared account"
+                            " holds %d consumed at that sequence"
+                            % (sub, state_module.PROBLEM_EFFECT_INCONSISTENT,
+                               operation["outcome"]["attempts_remaining"], declared,
+                               consumed))
+            continue
         if operation["kind"] != state_module.OPERATION_RECORD_CONTINUATION:
             continue
         declared = contracts[bound["activation_id"]]["continuation_budget"][
             "max_attempts"]
         outcome = operation["outcome"]
         # R-31.6: a DERIVED field is reconciled against the contract bound
-        # at that operation (never the current one) and the ledger count.
-        if outcome["attempts_remaining"] != declared - outcome["attempt"]:
+        # at that operation (never the current one) and the ledger count
+        # — the SHARED account (continuations plus follow-up engagements
+        # at or before this operation, Task 8 S-IV), so a record with no
+        # engagements reconciles exactly as before.
+        consumed = progress_module.consumed_attempts(
+            state, at_or_before=operation["sequence"])
+        if outcome["attempts_remaining"] != declared - consumed:
             _unreadable(path, "%s (%s): outcome.attempts_remaining %r but the bound"
-                        " contract permits %d and attempt %d was consumed"
+                        " contract permits %d and the shared account holds %d"
+                        " consumed at that sequence (attempt %d)"
                         % (sub, state_module.PROBLEM_EFFECT_INCONSISTENT,
-                           outcome["attempts_remaining"], declared,
+                           outcome["attempts_remaining"], declared, consumed,
                            outcome["attempt"]))
     for index, checkpoint in enumerate(state["checkpoints"]):
         sub = "%s.checkpoints[%d]" % (where, index)
@@ -748,11 +789,19 @@ def _validate_mission_state(document, mission_id, state, path):
     for index, operation in enumerate(state["applied_operations"]):
         sub = "%s.applied_operations[%d]" % (where, index)
         reservation = document["reservations"].get(operation["operation_id"])
-        if reservation is None or reservation["kind"] != (
-            RESERVATION_KIND_STATE_OPERATION
+        if reservation is None or reservation["kind"] not in (
+            OPERATION_RESERVATION_KINDS
         ) or reservation["consumed_by"] != operation["operation_id"]:
             _unreadable(path, "%s operation %s is not a consumed state_operation"
                         " reservation" % (sub, operation["operation_id"]))
+        if reservation["kind"] == RESERVATION_KIND_CANCEL_OPERATION and (
+            operation["kind"] not in state_module.CANCEL_OPERATIONS
+            or operation["operation_id"] != state_module.cancel_operation_id(
+                state["mission_id"], operation["kind"])
+        ):
+            _unreadable(path, "%s operation %s consumed a cancel_operation"
+                        " reservation that is not this Mission's derived cancel"
+                        " id for its kind" % (sub, operation["operation_id"]))
         context = dict((key, operation["provenance"][key])
                        for key in record.CONTEXT_KEYS)
         if reservation["context"] != context:
@@ -830,16 +879,51 @@ class MissionStore(object):
         self.directory = directory
         self.path = os.path.join(directory, MISSIONS_FILE_NAME)
 
+    @contextlib.contextmanager
     def lock(self):
         """The cross-process lock every load-modify-save cycle holds. The
-        directory boundary is checked before the lock file is touched."""
+        directory boundary is checked before the lock file is touched.
+        Task 8 S-VII (source unavailability, typed): a lock that cannot be
+        created, opened or taken (an OSError — permission, a read-only or
+        exhausted file system) is this store's typed ``MissionStoreError``
+        (``mission_store_unreadable``): the caller learns the source is
+        unavailable, nothing was read or written, and nothing untyped
+        escapes into a Runtime pass or a relay."""
         _refuse_open_directory(self.directory)
-        return exclusive_store_lock(self.directory, MISSIONS_LOCK_FILE_NAME)
+        with contextlib.ExitStack() as stack:
+            try:
+                stack.enter_context(
+                    exclusive_store_lock(self.directory, MISSIONS_LOCK_FILE_NAME))
+            except OSError as exc:
+                raise MissionStoreError(
+                    "the mission store lock in %s could not be taken (%s);"
+                    " nothing was read or written" % (self.directory,
+                                                      type(exc).__name__),
+                    PROBLEM_STORE_UNREADABLE)
+            yield
 
     def load(self):
         _refuse_open_directory(self.directory)
-        if not os.path.exists(self.path):
+        # Task 8 S-VII (source unavailability, typed): ONLY a genuinely
+        # missing document is the empty registry. A path that exists but
+        # cannot be reached (an inaccessible directory, a dangling
+        # symbolic link, any other OSError) is this store's typed
+        # ``MissionStoreError`` — never an empty registry, so an unreadable
+        # store is never mistaken for "no such Mission".
+        try:
+            os.stat(self.path)
+        except FileNotFoundError:
+            if os.path.lexists(self.path):
+                _unreadable(self.path, "is a symbolic link whose target is missing")
+            # Task 8 R24-1: ``lexists`` traverses the ANCESTORS, so a dangling
+            # link among them (the store directory, or above) read as a
+            # missing file. Only the traversal establishes genuine absence.
+            missing = classify_missing(self.path)
+            if missing.availability != READ_ABSENT:
+                _unreadable(self.path, "could not be reached (%s)" % missing.problem)
             return default_document()
+        except OSError as exc:
+            _unreadable(self.path, "could not be reached (%s)" % type(exc).__name__)
         _refuse_open_permissions(self.path)
         try:
             with open(self.path, "r", encoding="utf-8") as handle:
@@ -852,6 +936,42 @@ class MissionStore(object):
         if isinstance(document, dict) and OPTIONAL_TOP_LEVEL_KEY not in document:
             document[OPTIONAL_TOP_LEVEL_KEY] = {}
         return validate_document(document, self.path)
+
+    def read(self):
+        """The observer read (Task 8, slice S-II): ONE document read through
+        this store's own validation, as a ``ReadResult``. The document is
+        read by descriptor (``read_store_document``): the store directory
+        is opened and its OPENED target held to this store's
+        protected-directory rule (group/other must not reach it — the
+        same rule ``load``, ``lock`` and ``save`` enforce); the file is
+        opened relative to that directory and its OPENED target must be a
+        regular file group/other cannot reach (the same rule ``load``
+        enforces) — never a path checked beforehand, so nothing swapped
+        in between the check and the open is trusted. A symbolic link to
+        a readable directory or file stays supported (the followed target
+        is what is validated); a dangling, inaccessible or exposed target
+        refuses. PRESENT carries the validated document (the same R-3
+        compatibility rule as ``load``); ABSENT means the directory or
+        file is genuinely missing; UNAVAILABLE names the refusing rule or
+        the OSError class, for every access, decode, parse or validation
+        failure (none escapes). Read-only: no lock, no creation. ``load``
+        (writers, authority and journal paths) is unchanged."""
+        read = read_store_document(self.directory, MISSIONS_FILE_NAME,
+                                   "MissionStoreError",
+                                   refuse_exposed_directory=True)
+        if read.availability != READ_PRESENT:
+            return read
+        document = read.document
+        if isinstance(document, dict) and OPTIONAL_TOP_LEVEL_KEY not in document:
+            document[OPTIONAL_TOP_LEVEL_KEY] = {}
+        try:
+            document = validate_document(document, self.path)
+        except (MissionStoreError, record.MissionError) as exc:
+            return ReadResult(READ_UNAVAILABLE, None, type(exc).__name__)
+        except Exception as exc:  # noqa: BLE001 - validation never escapes
+            return ReadResult(READ_UNAVAILABLE, None,
+                              "MissionStoreError: %s" % type(exc).__name__)
+        return ReadResult(READ_PRESENT, document, None)
 
     def save(self, document):
         _refuse_open_directory(self.directory)

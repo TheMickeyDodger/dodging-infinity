@@ -2432,20 +2432,24 @@ class CorrectnessDocsPinTests(unittest.TestCase):
             )
 
     def test_seven_verb_transport_claim_matches_the_class(self):
-        # doc<->code: "seven-verb" against the DERIVED public-method
-        # count of the real transport class; the stale "five-verb"
-        # must be gone everywhere.
+        # doc<->code: the verb-count claim against the DERIVED
+        # public-method count of the real transport class. Task 8 S-V
+        # (R2-11-b) added the read-only staged-candidate read, so the
+        # current claim is "eight-verb"; the historical v0.7.0 entry
+        # keeps its "seven verbs" wording, the current security posture
+        # does not, and the stale "five-verb" must be gone everywhere.
         verbs = [
             name for name, _ in inspect.getmembers(
                 git_transport_module.GitTransport,
                 inspect.isfunction,
             ) if not name.startswith("_")
         ]
-        self.assertEqual(len(verbs), 7, verbs)
+        self.assertEqual(len(verbs), 8, verbs)
+        self.assertIn("diff_index_raw_readonly", verbs)
         for name in ("SECURITY.md", "CHANGELOG.md"):
             flat = self.flat(name)
-            self.assertIn("seven-verb git transport seam", flat,
-                          name)
+            self.assertIn("eight-verb git transport seam", flat, name)
+        self.assertNotIn("seven-verb", self.flat("SECURITY.md"))
         for name in self.ALL_DOCS:
             self.assertNotIn("five-verb", self.flat(name), name)
 

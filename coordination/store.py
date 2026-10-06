@@ -49,7 +49,10 @@ import json
 import os
 import stat
 
-from workflow_authority.atomic import atomic_write_json, exclusive_store_lock
+from workflow_authority.atomic import (
+    READ_ABSENT, READ_PRESENT, READ_UNAVAILABLE, ReadResult, atomic_write_json,
+    classify_missing, exclusive_store_lock, read_store_document,
+)
 
 from coordination import attention
 from coordination import binding
@@ -247,8 +250,29 @@ class CoordinationStore(object):
 
     def load(self):
         _refuse_open_directory(self.directory)
-        if not os.path.exists(self.path):
-            return default_document()
+        # Task 8 R23 (amendment): absence is observed STRICTLY. Only a stat
+        # raising FileNotFoundError is a missing store; ``os.path.exists`` was
+        # False for EVERY OSError (EACCES, EIO), so an unreadable store loaded
+        # as an EMPTY document at sequence 0 — and ``save``'s on-disk check,
+        # which re-reads through this method, compared two defaults.
+        # Task 8 R24-1: stat raises FileNotFoundError for an EXISTING link
+        # whose target is unavailable too (at the store, its directory or an
+        # ancestor), so the traversal (``classify_missing``) decides: genuine
+        # absence keeps the empty default, anything else is UNAVAILABLE.
+        problem = None
+        try:
+            os.stat(self.path)
+        except FileNotFoundError:
+            missing = classify_missing(self.path)
+            if missing.availability == READ_ABSENT:
+                return default_document()
+            problem = missing.problem
+        except OSError as exc:
+            problem = "%s: %s" % (exc.__class__.__name__, exc)
+        if problem is not None:
+            _unreadable(self.path, "cannot be examined (%s); it is UNAVAILABLE,"
+                        " not absent — refusing to read it as an empty store"
+                        % problem)
         _refuse_open_permissions(self.path)
         try:
             with open(self.path, "r", encoding="utf-8") as handle:
@@ -256,6 +280,35 @@ class CoordinationStore(object):
         except (OSError, ValueError) as exc:
             _unreadable(self.path, "could not be read as JSON (%s)" % exc)
         return validate_document(document, self.path)
+
+    def read(self):
+        """The observer read (Task 8, slice S-II): ONE document read through
+        this store's own validation, as a ``ReadResult``. Read by
+        descriptor (``read_store_document``): the OPENED store directory
+        is held to this store's protected-directory rule and the OPENED
+        file must be a regular file group/other cannot reach — the same
+        rules ``load`` enforces, applied to what was actually opened, so
+        nothing swapped in between a check and the open is trusted; a
+        symbolic link to a readable target stays supported, a dangling,
+        inaccessible or exposed target refuses. PRESENT carries the
+        validated document; ABSENT only for a directory or file genuinely
+        missing; UNAVAILABLE names the refusing rule or the OSError class
+        for every access, decode, parse or validation failure (none
+        escapes). Read-only: no lock, no creation; ``load`` (writers) is
+        unchanged."""
+        read = read_store_document(self.directory, COORDINATION_FILE_NAME,
+                                   "CoordinationStoreError",
+                                   refuse_exposed_directory=True)
+        if read.availability != READ_PRESENT:
+            return read
+        try:
+            document = validate_document(read.document, self.path)
+        except (CoordinationStoreError, record.CoordinationError) as exc:
+            return ReadResult(READ_UNAVAILABLE, None, type(exc).__name__)
+        except Exception as exc:  # noqa: BLE001 - validation never escapes
+            return ReadResult(READ_UNAVAILABLE, None,
+                              "CoordinationStoreError: %s" % type(exc).__name__)
+        return ReadResult(READ_PRESENT, document, None)
 
     def save(self, document, expected_sequence):
         """Validate, prove both the in-memory and the on-disk document

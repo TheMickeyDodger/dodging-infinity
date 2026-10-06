@@ -184,6 +184,7 @@ _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
     'operator_session', 'human_interaction', 'durable_execution',
     'capability', 'worker', 'grok_mcp', 'mission', 'coordination',
+    'mission_control',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -892,11 +893,68 @@ WORKER_EXPECTED_HOST_CALLS = {
     WORKER_CLI_FILE: {('workspace_trust', 'default_config_path'): 1},
 }
 WORKER_EXPECTED_BROKER_REFERENCES = {
-    'verify_workspace': 5, 'materialize_workspace': 1,
-    'relinquish_workspace': 1, 'establish_workspace_trust': 1,
-    'workspace_trust_consumable': 1, 'revoke_workspace_trust': 1,
-    'probe_readiness': 1, 'live_workspaces': 3, 'close_workspace': 1,
-    'observes_live_workspaces': 2, 'closes_workspaces': 2,
+    # Task 8 S-IV: verify_workspace gains its sixth reference (the
+    # resumed materialize of a Mission-origin record re-verifies the lease
+    # it already holds instead of re-cloning). The owned stop of an
+    # engagement start (`_owned_stop`) adds one capability check each
+    # (closes_workspaces, observes_live_workspaces), three fresh live
+    # listings (proof, revalidation before the close, absence
+    # confirmation) and one more hand-in of close_workspace to the proven
+    # close (a reference, never a direct call — the pin below still holds).
+    # Task 8 S-VII (Lead gate F-S7-1): the resumption of a durably refused
+    # start claim (`_resume_refused_dispatch`) re-verifies the lease and the
+    # point-of-use trust exactly as `_dispatch` does before its spawn —
+    # verify_workspace's seventh and workspace_trust_consumable's second
+    # reference (tests/test_worker.py pins both sites by name).
+    # Task 8 S-VII correction 2 (R1): the resumed TASK handover of a start
+    # that already settled (`_resume_task_handover`) proves the SAME runtime
+    # before handing it the objective — one capability check
+    # (observes_live_workspaces' fourth reference) and one fresh listing
+    # handed to the bounded call (live_workspaces' seventh; a reference,
+    # never a direct call).
+    # Task 8 S-VII correction 3 (S7c-R3): the binding recovered from a
+    # resumed handover's CANONICAL settlement (`_bind_settled_handover`)
+    # proves the settled runtime fresh before it binds — one capability
+    # check (observes_live_workspaces' fifth reference) and one fresh
+    # listing handed to the bounded call (live_workspaces' eighth; a
+    # reference, never a direct call).
+    # Task 8 ownership correction: the terminal release of a RESUMED initial
+    # handover proves its workspaces from the canonical settled starts
+    # (`_canonical_release_proof`: one capability check each —
+    # observes_live_workspaces' sixth and closes_workspaces' fourth — and
+    # one listing, live_workspaces' ninth) and closes them
+    # (`_canonical_release_sessions`: the listing taken at and after each
+    # close, live_workspaces' tenth, and close_workspace's third, handed to
+    # the bounded close). All references, never direct calls. The
+    # child-record release (`_domain_b_release`) now observes ABSENCE after
+    # its close before the directory and lease are released — a close that
+    # returned is not absence — live_workspaces' eleventh.
+    # Task 8 startup correction: a corrective follow-up's start first RETIRES
+    # this workflow's earlier runtime (`_retire_predecessor`, also run
+    # read-only as the Runtime's pre-mint assessment): one capability check
+    # each (observes_live_workspaces' seventh, closes_workspaces' fifth), the
+    # first complete listing and the listing taken at each close's boundary
+    # and after the closes (live_workspaces' twelfth and thirteenth), and the
+    # proven close's hand-in of close_workspace (its fourth) to the bounded
+    # close. All references, never direct calls. The owned stop of a start
+    # whose incarnation a retirement already claimed only OBSERVES
+    # (`_observe_claimed_incarnation`): one capability check
+    # (observes_live_workspaces' eighth) and one listing (live_workspaces'
+    # fourteenth) — no close.
+    # Task 8 R21-1/R21-3: the REMOVAL-ONLY retry of a release that reached
+    # its destructive boundary without an observed removal
+    # (`_retry_workspace_removal`) is relinquish_workspace's second reference
+    # (tests/test_worker.py pins both sites). R21-A/R21-C: the read-only
+    # session-absence predicate both routes take at that boundary
+    # (`_sessions_absent_now`) checks the capabilities exactly as the first
+    # pass's route selection does — observes_live_workspaces' ninth,
+    # closes_workspaces' sixth and seventh. No listing and no close of its
+    # own: it reads through the existing proofs.
+    'verify_workspace': 7, 'materialize_workspace': 1,
+    'relinquish_workspace': 2, 'establish_workspace_trust': 1,
+    'workspace_trust_consumable': 2, 'revoke_workspace_trust': 1,
+    'probe_readiness': 1, 'live_workspaces': 14, 'close_workspace': 4,
+    'observes_live_workspaces': 9, 'closes_workspaces': 7,
 }
 WORKER_MOVED_READERS = (
     '_production_readiness_probe', '_production_live_workspaces',
@@ -1357,7 +1415,9 @@ assert pr_transport_constructions == {PR_DELIVERY_CLI_FILE: 1}, (
     ' cli.py', pr_transport_constructions,
 )
 assert pr_new_authorization_calls == {PR_DELIVERY_CLI_FILE: 1}, (
-    'a PR Delivery Authorization is minted only by the terminal ceremony',
+    'a PR Delivery Authorization is minted at ONE site in cli.py, reached'
+    ' only by the terminal ceremony or a client-confirmed Mission decision'
+    ' (Task 8 S-VI)',
     pr_new_authorization_calls,
 )
 # (M4) `run_reverification` has exactly one call site, in the machine.
@@ -1543,10 +1603,199 @@ for path in product_files + sorted((R / 'herdr').glob('*.py')):
             pr_delivery_importers[relpath] = (
                 pr_delivery_importers.get(relpath, 0) + 1
             )
-assert pr_delivery_importers == {'herdr/guards.py': 1}, (
-    'only the git guard may reach the delivery package',
+# Task 8 S-V (R2-11-b) adds exactly two READ-ONLY directions, each pinned
+# narrow below (6c, 6d): the Broker takes the pure candidate identity
+# module; the reconciliation bridge reads the delivery store and the
+# validated step receipts through the delivery layer's own validators.
+# Task 8 S-VI adds the Mission-bound delivery driver and desk (6e below):
+# five pure delivery modules at module scope and the CLI lazily, inside
+# its production factory only.
+assert pr_delivery_importers == {'herdr/guards.py': 1,
+                                 'mission_control/status.py': 1,
+                                 'mission_control/reconciliation_bridge.py': 3,
+                                 'mission_control/delivery.py': 6,
+                                 'target_runtime/broker.py': 1}, (
+    'only the git guard, the Task 8 S-II status read, the S-V candidate'
+    ' identity / transition reads and the S-VI Mission-bound delivery'
+    ' driver may reach the delivery package',
     pr_delivery_importers,
 )
+# (6e) Task 8 S-VI: the Mission-bound delivery driver COMPOSES the delivery
+#      package and re-implements none of it: at module scope it imports
+#      exactly the pure modules (authorization, boundary, machine,
+#      mission_parent, store — none loads the transport); the CLI, which
+#      holds the ONE transport construction and the ONE minting site, is
+#      imported lazily and only inside ``production_delivery``; and the
+#      driver itself never names the transport class, the minting or
+#      store-insertion functions, the drive lock or a store save.
+_driver_tree = ast.parse((R / 'mission_control' / 'delivery.py').read_text())
+_driver_scope = [node for node in _driver_tree.body
+                 if isinstance(node, ast.ImportFrom)
+                 and (node.module or '').split('.')[0] == 'pr_delivery']
+assert sorted(a.name for node in _driver_scope for a in node.names) == [
+    'authorization', 'boundary', 'machine', 'mission_parent', 'store'], (
+    [ast.dump(node) for node in _driver_scope])
+_driver_lazy = [node for node in ast.walk(_driver_tree)
+                if isinstance(node, (ast.Import, ast.ImportFrom))
+                and node not in _driver_scope
+                and any(name.split('.')[0] == 'pr_delivery' for name in (
+                    [a.name for a in node.names] if isinstance(node, ast.Import)
+                    else [node.module or '']))]
+_driver_factory = [node for node in _driver_tree.body
+                   if isinstance(node, ast.FunctionDef)
+                   and node.name == 'production_delivery']
+assert len(_driver_lazy) == 1 and len(_driver_factory) == 1, _driver_lazy
+assert [a.name for a in _driver_lazy[0].names] == ['cli']
+assert any(node is _driver_lazy[0] for node in ast.walk(_driver_factory[0])), (
+    'the delivery CLI is imported only inside the production factory')
+_driver_names = {node.id for node in ast.walk(_driver_tree)
+                 if isinstance(node, ast.Name)} | {
+    node.attr for node in ast.walk(_driver_tree) if isinstance(node, ast.Attribute)}
+for _forbidden in ('DeliveryTransport', 'new_authorization', 'add_delivery',
+                   'drive_lock', 'save'):
+    assert _forbidden not in _driver_names, (
+        'the Mission delivery driver never names %s' % _forbidden)
+# (6b) The status read's reach into the delivery package is READ-ONLY and
+#      narrow (Supervisor early-audit correction 1): exactly one
+#      ``from pr_delivery import store``, and through it only the store
+#      class, its typed error and the file name — never transport,
+#      machine, CLI, authorization or any minting/saving name.
+STATUS_ALLOWED_DELIVERY_NAMES = frozenset({'DeliveryStore', 'StoreError',
+                                           'STORE_FILE_NAME', 'default_document',
+                                           'load', 'path'})
+_status_tree = ast.parse((R / 'mission_control' / 'status.py').read_text())
+_status_delivery_aliases = set()
+for node in ast.walk(_status_tree):
+    if isinstance(node, ast.ImportFrom) and node.module == 'pr_delivery':
+        assert [a.name for a in node.names] == ['store'], (
+            'status imports only pr_delivery.store', [a.name for a in node.names])
+        _status_delivery_aliases.add(node.names[0].asname or 'store')
+    elif isinstance(node, ast.ImportFrom) and (
+        node.module or ''
+    ).startswith('pr_delivery.'):
+        raise AssertionError(('status imports no pr_delivery submodule directly',
+                              node.module))
+    elif isinstance(node, ast.Import):
+        assert not any(a.name.startswith('pr_delivery') for a in node.names), (
+            'status imports pr_delivery only as "from pr_delivery import store"')
+assert _status_delivery_aliases == {'delivery_store'}, _status_delivery_aliases
+
+
+def _chain_root(node):
+    """The base Name of an attribute/call/subscript chain, or None."""
+    while isinstance(node, (ast.Attribute, ast.Call, ast.Subscript)):
+        node = node.func if isinstance(node, ast.Call) else node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def _attributes_rooted_at(tree, aliases):
+    """Every attribute anywhere on a chain rooted at one of ``aliases``
+    (``alias.Cls(d).save(x)`` yields Cls AND save)."""
+    return {node.attr for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and _chain_root(node.value) in aliases}
+
+
+_status_delivery_attributes = sorted(
+    _attributes_rooted_at(_status_tree, _status_delivery_aliases))
+assert set(_status_delivery_attributes) <= STATUS_ALLOWED_DELIVERY_NAMES, (
+    'status reaches only read-only delivery store names',
+    _status_delivery_attributes)
+assert 'DeliveryStore' in _status_delivery_attributes
+# The pin fires on what it exists to catch (planted probes over mutated
+# in-memory sources).
+for _probe in ('from pr_delivery import transport\n',
+               'from pr_delivery.machine import advance\n',
+               'import pr_delivery\n'):
+    _tree = ast.parse(_probe)
+    _bad = False
+    for node in ast.walk(_tree):
+        if isinstance(node, ast.ImportFrom) and node.module == 'pr_delivery':
+            _bad = _bad or [a.name for a in node.names] != ['store']
+        elif isinstance(node, ast.ImportFrom) and (
+            node.module or ''
+        ).startswith('pr_delivery.'):
+            _bad = True
+        elif isinstance(node, ast.Import):
+            _bad = _bad or any(a.name.startswith('pr_delivery') for a in node.names)
+    assert _bad, ('delivery importer negative probe must be caught', _probe)
+def _delivery_alias_attributes(source):
+    return _attributes_rooted_at(ast.parse(source), {'delivery_store'})
+
+
+# Split negatives (R10-C1): each escape proves its own detection.
+for _probe in ('delivery_store.DeliveryStore(d).save(x)',
+               'delivery_store.lock()',
+               'delivery_store.atomic_write_json(d, p, x)',
+               'delivery_store.DeliveryStore(d).lock()'):
+    _attrs = _delivery_alias_attributes(_probe)
+    assert not _attrs <= STATUS_ALLOWED_DELIVERY_NAMES, (_probe, _attrs)
+assert _delivery_alias_attributes(
+    'delivery_store.DeliveryStore(d).load()') <= STATUS_ALLOWED_DELIVERY_NAMES
+
+
+def _delivery_imports(relpath):
+    """``{submodule: alias}`` of every ``from pr_delivery import X [as Y]``
+    in ``relpath``; any other form of delivery import is a failure."""
+    imports = {}
+    for node in ast.walk(ast.parse((R / relpath).read_text())):
+        if isinstance(node, ast.ImportFrom) and node.module == 'pr_delivery':
+            for alias in node.names:
+                imports[alias.name] = alias.asname or alias.name
+        elif isinstance(node, ast.ImportFrom) and (
+            node.module or ''
+        ).startswith('pr_delivery.'):
+            raise AssertionError((relpath, 'imports a delivery submodule directly',
+                                  node.module))
+        elif isinstance(node, ast.Import):
+            assert not any(a.name.startswith('pr_delivery') for a in node.names), (
+                relpath, 'imports pr_delivery only as "from pr_delivery import X"')
+    return imports
+
+
+# (6c) Task 8 S-V (R2-11-b): the Broker's ONE candidate identity authority is
+#      the P1-A6 PURE candidate module, and through it only the parser, the
+#      digest and the typed error — no store, transport, machine,
+#      authorization, receipt or minting name.
+BROKER_ALLOWED_DELIVERY = {'candidate': frozenset({'parse_raw_z', 'identity_digest',
+                                                   'CandidateError'})}
+_broker_delivery = _delivery_imports('target_runtime/broker.py')
+assert _broker_delivery == {'candidate': 'candidate_module'}, _broker_delivery
+_broker_attributes = _attributes_rooted_at(
+    ast.parse((R / 'target_runtime' / 'broker.py').read_text()), {'candidate_module'})
+assert _broker_attributes == BROKER_ALLOWED_DELIVERY['candidate'], _broker_attributes
+# (6d) Task 8 S-V (R2-11-b): the reconciliation bridge READS the delivery
+#      layer: the store's observer read and activity test, the ONE
+#      validating function of the parent seam (``validated_receipt`` — never
+#      the attesting ``attest_validated_receipt``) and the contract's typed
+#      error. Nothing that saves, locks, mints, derives, executes or attests.
+BRIDGE_ALLOWED_DELIVERY = {
+    # Task 8 S-VI: the delivery report walks the closed step order (a
+    # constant tuple) to find the latest receipt it judges.
+    'authorization': frozenset({'AuthorizationError', 'STEPS'}),
+    'mission_parent': frozenset({'validated_receipt'}),
+    'store': frozenset({'DeliveryStore', 'read', 'is_active'}),
+}
+_bridge_delivery = _delivery_imports('mission_control/reconciliation_bridge.py')
+assert _bridge_delivery == {'authorization': 'delivery_authorization',
+                            'mission_parent': 'delivery_parent',
+                            'store': 'delivery_store'}, _bridge_delivery
+_bridge_tree = ast.parse((R / 'mission_control' / 'reconciliation_bridge.py').read_text())
+for _module, _alias in sorted(_bridge_delivery.items()):
+    _attrs = _attributes_rooted_at(_bridge_tree, {_alias})
+    assert _attrs <= BRIDGE_ALLOWED_DELIVERY[_module], (_module, _attrs)
+    assert _attrs, (_module, 'imported but unused')
+# The narrow pins fire on what they exist to catch.
+for _probe, _alias, _allowed in (
+        ('candidate_module.compare(a, b)', 'candidate_module',
+         BROKER_ALLOWED_DELIVERY['candidate']),
+        ('delivery_parent.attest_validated_receipt(d, s, m, o, e, c)', 'delivery_parent',
+         BRIDGE_ALLOWED_DELIVERY['mission_parent']),
+        ('delivery_store.DeliveryStore(d).save(x)', 'delivery_store',
+         BRIDGE_ALLOWED_DELIVERY['store']),
+        ('delivery_authorization.apply_transition(r, p, n)', 'delivery_authorization',
+         BRIDGE_ALLOWED_DELIVERY['authorization'])):
+    assert not _attributes_rooted_at(ast.parse(_probe), {_alias}) <= _allowed, _probe
 
 # (7) Mission Authorization separation: the workflow record's key set,
 #     the Mission Authorization's key set, and the policy record are
@@ -1585,6 +1834,10 @@ PR_DELIVERY_ALLOWED_WA_IMPORTS = {
     },
     'workflow_authority.store': {
         'atomic_write_json', 'default_store_dir', 'exclusive_store_lock',
+        # Task 8 S-II: the read-only observer read result and the
+        # absence classifier (no writer, no lock, no creation).
+        'READ_ABSENT', 'READ_PRESENT', 'READ_UNAVAILABLE', 'ReadResult',
+        'classify_missing', 'read_store_document',
     },
 }
 for path in pr_delivery_files:
@@ -1956,6 +2209,35 @@ MISSION_FORBIDDEN_WORDS = frozenset({
 MISSION_ALLOWED_CONSUMERS = frozenset({
     'grok_mcp/cli.py', 'grok_mcp/mission_tools.py', 'grok_mcp/protocol.py',
     'grok_mcp/server.py', 'pr_delivery/mission_parent.py',
+    # Task 8, slice S-I: the client-mediated decision relay and the
+    # Mission-control provenance predicate (both Herdr-free, both read
+    # the neutral core through its service and record modules only).
+    'grok_mcp/decision_tools.py', 'mission_control/authority.py',
+    # Task 8, slice S-II: the canonical observation adapter (one
+    # ``snapshot`` per observation) and the pure, lock-free status read.
+    'mission_control/observation_adapter.py', 'mission_control/status.py',
+    # Task 8, slice S-IV: the hard missing-dependency predicate, the
+    # effect-boundary Mission gate, the engineering dispatch bootstrap
+    # and the Grok engagement-tool relay (its authenticated-context
+    # type only).
+    'mission_control/integration.py', 'mission_control/gate.py',
+    'mission_control/engineering.py', 'grok_mcp/engagement_tools.py',
+    # Task 8, slice S-V (R2-11): the Runtime → Mission Core reconciliation
+    # bridge (reads through the service; writes only through the core's
+    # own ``reconcile`` operation).
+    'mission_control/reconciliation_bridge.py',
+    # Task 8, slice S-VI: the Mission-bound delivery driver and desk
+    # (evidence, artifacts, the decision record and completion through the
+    # service's own operations; the controls read).
+    'mission_control/delivery.py',
+    # Task 8, slice S-VII: the human's control desk (hold / resume / cancel
+    # and its confirmation, through the core's own S-V operations), the
+    # engineering-runtime readiness producer (the core's own
+    # ``observe_resource_readiness``), and the Grok relay of the status,
+    # control and attention tools (its authenticated-context type and the
+    # core's typed refusals only).
+    'mission_control/controls.py', 'mission_control/readiness.py',
+    'grok_mcp/control_tools.py',
 })
 MISSION_READ_ONLY_OPEN_FILE = 'mission/store.py'
 
@@ -2291,6 +2573,13 @@ assert _mission_state.RECEIPT_STATE_SUCCEEDED in pr_authorization.RECEIPT_STATES
 # state AND step state, each the delivery layer's own constant.
 assert _mission_state.STEP_STATE_SUCCEEDED == pr_authorization.STEP_SUCCEEDED
 assert _mission_state.STEP_STATE_SUCCEEDED in pr_authorization.STEP_STATES
+# Task 8 S-V (R2-11-a/b): the attested steps that authorize an observed
+# identity to move within a revision ARE the delivery layer's step names.
+assert _mission_state.TRANSITION_STEP_BASE_REFRESH == pr_authorization.STEP_BASE_REFRESH
+assert _mission_state.TRANSITION_STEP_COMMIT == pr_authorization.STEP_COMMIT
+assert _mission_state.BASELINE_TRANSITION_STEPS == (pr_authorization.STEP_BASE_REFRESH,)
+assert _mission_state.HEAD_TRANSITION_STEPS == (pr_authorization.STEP_BASE_REFRESH,
+                                                pr_authorization.STEP_COMMIT)
 assert _mission_state.MAX_RECEIPT_ATTESTATION_FIELD_CHARS == wa_record.MAX_ID_CHARS == 128
 assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT == 'attest_delivery_receipt'
 assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT in _mission_state.OPERATION_KINDS
@@ -2298,7 +2587,20 @@ assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT in _mission_state.OUTCOM
 assert _mission_state.OPERATION_ATTEST_DELIVERY_RECEIPT in _mission_state.CONTRACT_DEPENDENT_KINDS
 assert 'OPERATION_ATTEST_DELIVERY_RECEIPT,\n))' not in _state_source
 assert _mission_state.ARTIFACT_OPTIONAL_KEYS == ('receipt_attestation',)
-assert _mission_state.STATE_RECORD_OPTIONAL_KEYS == ('snapshot', 'reconciliations')
+# Task 8 S-VII (Lead gate F-S7-2): the readiness producer's Runtime lock
+# file name is DUPLICATED (its import roots exclude telegram_operator) and
+# pinned EQUAL to the Runtime's own constant, the owner: a drift in either
+# would make the producer probe the wrong file.
+from mission_control import readiness as _mission_readiness
+from telegram_operator import state as _runtime_state
+assert _mission_readiness.RUNTIME_LOCK_FILE_NAME == _runtime_state.RUNTIME_LOCK_FILE_NAME, (
+    _mission_readiness.RUNTIME_LOCK_FILE_NAME, _runtime_state.RUNTIME_LOCK_FILE_NAME)
+# Task 8, slice S-IV: the engagement reservations are the third
+# additive-optional key (absent in older records, read as empty); slice
+# S-V adds the canonical control record as the fifth (absent in older
+# records, read as the empty default — no hold, no cancel).
+assert _mission_state.STATE_RECORD_OPTIONAL_KEYS == (
+    'snapshot', 'reconciliations', 'engagements', 'engagement_starts', 'controls')
 assert _mission_state.RECEIPT_ATTESTATION_KEYS == (
     'delivery_id', 'step', 'receipt_state', 'step_state',
     'parent_authority_digest_sha256', 'authorization_id',
@@ -2393,7 +2695,19 @@ COORDINATION_FORBIDDEN_WORDS = frozenset({
 })
 assert 'release' not in COORDINATION_FORBIDDEN_WORDS
 assert not {'route', 'router', 'routing'} & COORDINATION_FORBIDDEN_WORDS
-COORDINATION_ALLOWED_CONSUMERS = frozenset()
+# Task 8, slice S-II: exactly the two Mission-control readers — the
+# observation source (implements coordination's abstract source over one
+# Mission snapshot) and the status read (lock-free coordination-store
+# load). Neither writes, locks or routes; the AST bans live in
+# tests/test_mission_control.py.
+COORDINATION_ALLOWED_CONSUMERS = frozenset({
+    'mission_control/observation_adapter.py', 'mission_control/status.py',
+    # Task 8, slice S-VII: the attention desk — it composes coordination's
+    # own CoordinationService over the observation adapter for the one
+    # client destination (projection, pull, acknowledgment) and adds no
+    # attention state or rule of its own.
+    'mission_control/attention.py',
+})
 COORDINATION_READ_ONLY_OPEN_FILE = 'coordination/store.py'
 
 
@@ -2491,7 +2805,8 @@ assert any(
     for node in ast.walk(ast.parse((R / COORDINATION_READ_ONLY_OPEN_FILE).read_text()))
 ), 'the read-only open() pin must actually see the store load path'
 
-# (d) exactly no consumer: nothing in the product tree imports coordination.
+# (d) exactly the allowed consumer set (Task 8 S-II: the two Mission-control
+#     readers); anything else importing coordination fails this pin.
 _coordination_consumers = set()
 for path in product_files:
     relpath = path.relative_to(R).as_posix()
@@ -2507,9 +2822,11 @@ for path in product_files:
         if any(n.split('.')[0] == 'coordination' for n in names):
             _coordination_consumers.add(relpath)
 assert _coordination_consumers == COORDINATION_ALLOWED_CONSUMERS, (
-    'coordination gained a consumer; no adapter wiring is in scope',
+    'coordination gained or lost a consumer; only the two Mission-control'
+    ' readers and the attention desk may import it',
     sorted(_coordination_consumers))
 assert 'coordination/*.py' in ci_text, 'CI must compile coordination'
+assert 'mission_control/*.py' in ci_text, 'CI must compile mission_control'
 
 # (e) fresh-interpreter import closure: the A2 boundary and the
 #     no-live-effects rule, behaviorally.

@@ -592,7 +592,7 @@ class _BrokerCase(unittest.TestCase):
             clock=lambda: NOW,
             observer_fn=never,
             spawn_records_fn=kwargs.pop(
-                "spawn_records_fn", lambda control: {"listed": []}
+                "spawn_records_fn", lambda control, relevant=None: {"listed": []}
             ),
             **kwargs
         )
@@ -672,11 +672,26 @@ class BrokerSeamTests(_BrokerCase):
             and any(arg.arg == "store_directory" for arg in node.args.args)
         )
         names = [arg.arg for arg in init.args.args]
-        self.assertEqual(names[-1], "worker")
         self.assertEqual(names.count("worker"), 1)
-        last_default = init.args.defaults[-1]
-        self.assertIsInstance(last_default, ast.Constant)
-        self.assertIsNone(last_default.value)
+        # The worker keyword is located by NAME rather than by position
+        # (as the capability pin already does): Task 8 appended its own
+        # keywords after it. They are pinned EXACTLY, in order, so any
+        # further growth of the surface fails here: S-IV the Mission gate,
+        # S-V the delivery store the reconciliation bridge reads, S-VI the
+        # Mission delivery driver and the verification producer's
+        # ownership-scope base.
+        self.assertEqual(names[names.index("worker") + 1:], [
+            "mission_gate", "delivery_store_directory", "mission_delivery",
+            "verification_scope_base",
+        ])
+        defaults = dict(zip(
+            names[len(names) - len(init.args.defaults):],
+            init.args.defaults,
+        ))
+        for name in names[names.index("worker"):]:
+            default = defaults[name]
+            self.assertIsInstance(default, ast.Constant, name)
+            self.assertIsNone(default.value, name)
         constructions = [
             node for node in ast.walk(tree)
             if isinstance(node, ast.Call)
@@ -687,6 +702,49 @@ class BrokerSeamTests(_BrokerCase):
         self.assertTrue(
             any(node is constructions[0] for node in ast.walk(init))
         )
+
+
+class LeaseScopedSpawnRecordTests(_BrokerCase):
+    """Task 8 cap correction: every Broker read of the spawn records for one
+    workflow is scoped to its lease by the ownership matchers' OWN rule."""
+
+    def test_the_lease_rule_is_the_matchers_realpath_comparison(self):
+        root = os.path.join(self.tmp.name, "managed")
+        lease = os.path.join(root, "wf-m-1")
+        os.makedirs(lease)
+        os.makedirs(os.path.join(root, "wf-m-2"))
+        alias = os.path.join(self.tmp.name, "alias")
+        os.symlink(root, alias)
+        names = broker_module._names_lease(lease)
+        # Every spelling that resolves to the lease is relevant — a lexical
+        # rule would miss the symlinked one and hide that record.
+        for spelling in (os.path.realpath(lease), lease + "/",
+                         os.path.join(root, ".", "wf-m-1"),
+                         os.path.join(alias, "wf-m-1")):
+            with self.subTest(spelling):
+                self.assertIs(names(spelling), True)
+        for spelling in (os.path.join(root, "wf-m-2"), "/managed/workspaces/wf-m-1",
+                         os.path.join(alias, "wf-m-1-other")):
+            with self.subTest(spelling):
+                self.assertIs(names(spelling), False)
+
+    def test_a_scoped_read_hands_the_seam_the_rule_for_that_lease(self):
+        calls = []
+
+        def spawn_records(control, relevant=None):
+            calls.append((control, relevant))
+            return {"state": "empty", "count": 0, "truncated": False, "listed": []}
+        broker = self.make_broker(spawn_records_fn=spawn_records)
+        lease = os.path.join(self.tmp.name, "lease")
+        os.makedirs(lease)
+        self.assertEqual(broker._spawn_records_raw(lease=lease)["state"], "empty")
+        self.assertEqual(broker._spawn_records_raw()["state"], "empty")
+        (control, rule), (control_again, unscoped) = calls
+        self.assertEqual((control, control_again), (broker.control_realpath,) * 2)
+        self.assertIsNone(unscoped)
+        self.assertIsNotNone(rule, "the scoped read handed the seam no rule")
+        self.assertIs(rule(os.path.realpath(lease)), True)
+        self.assertIs(rule(os.path.join(self.tmp.name, "another")), False)
 
 
 class DomainBTriStateTests(_BrokerCase):
@@ -1224,18 +1282,63 @@ class IdentitySeparationTests(FakeWorkerCase):
                 else:
                     shapes.append(ast.dump(arg))
             seen.setdefault(node.func.attr, []).append(shapes)
+        # ``verify_workspace`` is called from exactly seven sites: _prepare,
+        # _validate_handoff, _dispatch, _verify, _reconcile, (Task 8 S-IV)
+        # _materialize's read-only resume of a Mission-core clone kept on
+        # the record by a reversible hold — never a re-clone — and (Task 8
+        # S-VII, Lead gate F-S7-1) _resume_refused_dispatch, the resumption
+        # of a durably refused start claim, which re-verifies the lease and
+        # the point-of-use trust exactly as _dispatch does before its spawn.
         self.assertEqual(seen, {
             "materialize_workspace": [["entry", "self._clock()"]],
-            "verify_workspace": [["entry"]] * 5,
+            "verify_workspace": [["entry"]] * 7,
             "establish_workspace_trust": [["entry"]],
-            "workspace_trust_consumable": [["entry"]],
+            "workspace_trust_consumable": [["entry"]] * 2,
             "revoke_workspace_trust": [["entry"]],
-            "relinquish_workspace": [["entry", "self._clock()"]],
+            # Two sites: the release's destructive boundary, and (Task 8
+            # R21-1/R21-3) ``_retry_workspace_removal`` — the removal-only
+            # re-entry of a release that reached that boundary without an
+            # observed removal. Same shape at both.
+            "relinquish_workspace": [["entry", "self._clock()"]] * 2,
             "probe_readiness": [[
                 "entry['workspace_lease']['path_realpath']"
             ]],
-            "live_workspaces": [[]] * 3,
+            # Direct listing calls: the child-record proof, its
+            # nothing-to-close check, the revalidation at the close and
+            # (Task 8 ownership correction) the observed-absence listing
+            # AFTER the close — both in ``_domain_b_release``, pinned by
+            # site below. Every other listing is handed to a bounded call.
+            "live_workspaces": [[]] * 4,
         })
+        self.assertEqual(sorted(
+            function.name for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef)
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "worker"
+            and node.func.attr == "live_workspaces"),
+            ["_domain_b_nothing_to_close", "_domain_b_proof", "_domain_b_release",
+             "_domain_b_release"])
+        # ... and those seven sites are exactly these methods; the two
+        # point-of-use trust checks are exactly the two spawn sites.
+        def sites_of(seam):
+            return sorted(
+                function.name for function in ast.walk(tree)
+                if isinstance(function, ast.FunctionDef)
+                for node in ast.walk(function)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "worker"
+                and node.func.attr == seam
+            )
+        self.assertEqual(sites_of("verify_workspace"),
+                         ["_dispatch", "_materialize", "_prepare", "_reconcile",
+                          "_resume_refused_dispatch", "_validate_handoff", "_verify"])
+        self.assertEqual(sites_of("workspace_trust_consumable"),
+                         ["_dispatch", "_resume_refused_dispatch"])
 
     def _bound_terminal(self, task_id="20260828-114612-5d92e1"):
         self.real_lease()
@@ -1304,11 +1407,12 @@ class IdentitySeparationTests(FakeWorkerCase):
 
     def test_an_exact_and_unique_proof_closes_the_recorded_id_only(self):
         self._bound_terminal()
+        closed = []
         fake = FakeWorker(
             observes=True, closes=True,
-            live_workspaces=[{"workspace_id": "wTEST",
-                              "agent_names": {"a-sup", "a-lead"}}],
-            close_workspace=True,
+            live_workspaces=lambda: [] if closed else [
+                {"workspace_id": "wTEST", "agent_names": {"a-sup", "a-lead"}}],
+            close_workspace=lambda workspace_id: closed.append(workspace_id) or True,
         )
         result, report = self._domain_b(fake)
         self.assertEqual(result, broker_module.SESSIONS_RECLAIMED)
@@ -1317,8 +1421,54 @@ class IdentitySeparationTests(FakeWorkerCase):
             [("close_workspace", "wTEST")],
         )
         self.assertEqual(report.removed, [("workspace_session", "wTEST")])
-        # The projection was re-read immediately before the close.
-        self.assertEqual(len(_calls_named(fake, "live_workspaces")), 2)
+        # The projection was re-read immediately before the close, and once
+        # more after it: reclaimed only on OBSERVED absence.
+        self.assertEqual(len(_calls_named(fake, "live_workspaces")), 3)
+
+    def test_a_legacy_record_close_takes_no_mission_admission(self):
+        """Task 8 ownership correction: the fresh cleanup admission at the
+        close is a Mission-origin boundary; a legacy (v2) record's close is
+        unchanged — a gate that would refuse everything is never consulted."""
+        entry = self._bound_terminal()
+        self.assertFalse(broker_module.record_module.is_mission_core_kind(entry))
+        closed = []
+        fake = FakeWorker(
+            observes=True, closes=True,
+            live_workspaces=lambda: [] if closed else [
+                {"workspace_id": "wTEST", "agent_names": {"a-sup", "a-lead"}}],
+            close_workspace=lambda workspace_id: closed.append(workspace_id) or True,
+        )
+        broker = self.fake_broker(fake)
+        gate = unittest.mock.Mock()
+        gate.admit_cleanup.side_effect = AssertionError("the gate was consulted")
+        broker.mission_gate = gate
+        report = ownership_module.CleanupReport()
+        with host_tripwires(self):
+            snapshot = broker_module._domain_b_proof(broker, entry)
+            result = broker_module._domain_b_release(broker, entry, report,
+                                                     snapshot=snapshot)
+        self.assertEqual(result, broker_module.SESSIONS_RECLAIMED)
+        self.assertEqual(closed, ["wTEST"])
+        gate.admit_cleanup.assert_not_called()
+
+    def test_a_close_that_leaves_the_workspace_listed_is_not_absence(self):
+        """Task 8 ownership correction: a close that RETURNED while the
+        workspace is still listed reclaims nothing — the directory and lease
+        stay, and the workflow remains a cleanup candidate."""
+        self._bound_terminal()
+        fake = FakeWorker(
+            observes=True, closes=True,
+            live_workspaces=[{"workspace_id": "wTEST",
+                              "agent_names": {"a-sup", "a-lead"}}],
+            close_workspace=True,
+        )
+        result, report = self._domain_b(fake)
+        self.assertEqual(result, broker_module.SESSIONS_RETAINED)
+        self.assertEqual(_calls_named(fake, "close_workspace"),
+                         [("close_workspace", "wTEST")])
+        self.assertEqual(report.removed, [])
+        self.assertIn("still listed", report.unprovable[-1][2])
+        self.assertEqual(len(_calls_named(fake, "live_workspaces")), 3)
 
     def test_a_proof_gone_stale_before_the_close_refuses(self):
         self._bound_terminal()
@@ -1352,6 +1502,123 @@ class IdentitySeparationTests(FakeWorkerCase):
         self.assertEqual(_calls_named(fake, "close_workspace"), [])
         self.assertIn(ws_module.PROBLEM_EVIDENCE_DEGRADED,
                       report.unprovable[-1][2])
+
+
+class R21LegacyRemovalRetryTests(FakeWorkerCase):
+    """Task 8 R21-A on the LEGACY (non-Mission) route: a release that reached
+    its destructive boundary without an observed removal is retried as the
+    removal ALONE, and the retry RE-PROVES the sessions' absence by the first
+    pass's own child-record proof (``_domain_b_proof``, then
+    ``_domain_b_nothing_to_close``) — it never closes, revokes or preserves
+    again. Driven through the Broker's production release action with the
+    host behind a scripted worker (``host_tripwires``)."""
+
+    _bound_terminal = IdentitySeparationTests._bound_terminal
+
+    LIVE = [{"workspace_id": "wTEST", "agent_names": {"a-sup", "a-lead"}}]
+
+    def removal_receipts(self):
+        return [r["bounded_summary"] for r in self.disk_entry()["receipts"]
+                if r["bounded_summary"].startswith((
+                    wa_record.WORKSPACE_REMOVAL_PENDING_RECEIPT_MARKER + ":",
+                    wa_record.WORKSPACE_REMOVAL_COMPLETED_RECEIPT_MARKER + ":"))]
+
+    def test_R21A_d_the_legacy_retry_re_proves_absence_and_never_closes(self):
+        entry = self._bound_terminal()
+        self.assertFalse(broker_module.record_module.is_mission_core_kind(entry))
+        state = {"live": [dict(w) for w in self.LIVE], "error": None,
+                 "relinquish": [(False, workspace_module.PROBLEM_RELEASE_INCOMPLETE,
+                                 "the directory survived its removal"),
+                                (True, None, None)]}
+
+        def live():
+            if state["error"] is not None:
+                raise state["error"]
+            return [dict(w) for w in state["live"]]
+
+        def close(workspace_id):
+            state["live"] = [w for w in state["live"] if w["workspace_id"] != workspace_id]
+            return True
+
+        def relinquish(record, now):
+            ok, problem, detail = state["relinquish"].pop(0)
+            if ok:                                       # as ``workspace.release`` does
+                record["workspace_lease"]["released_at"] = now
+            return ok, problem, detail
+        fake = FakeWorker(observes=True, closes=True, live_workspaces=live,
+                          close_workspace=close, relinquish_workspace=relinquish,
+                          revoke_workspace_trust=(True, None, None))
+        broker = self.fake_broker(fake)
+
+        def release():
+            before = len(fake.calls)
+            with host_tripwires(self):
+                outcome = self.perform_with(broker, "wf-0001", broker_module.ACTION_RELEASE)
+            names = [call[0] for call in fake.calls[before:]]
+            return outcome, dict((name, names.count(name)) for name in (
+                "revoke_workspace_trust", "close_workspace", "relinquish_workspace",
+                "live_workspaces"))
+
+        pending = wa_record.WORKSPACE_REMOVAL_PENDING_RECEIPT_MARKER + ": "
+        # 1. The first pass: revoked, closed (observed absent), and the removal
+        #    not observed — the lease kept, the pending receipt written.
+        outcome, calls = release()
+        self.assertEqual((outcome.ok, outcome.problem),
+                         (False, workspace_module.PROBLEM_RELEASE_INCOMPLETE))
+        self.assertTrue(outcome.detail.startswith(
+            "the directory survived its removal (at the destructive boundary; "),
+            outcome.detail)
+        self.assertEqual((calls["revoke_workspace_trust"], calls["close_workspace"],
+                          calls["relinquish_workspace"]), (1, 1, 1))
+        self.assertIsNone(self.disk_entry()["workspace_lease"]["released_at"])
+        receipts = [pending + "the release reached its destructive boundary with the"
+                    " sessions proven closed; the removal was not made or not observed"
+                    " — the directory survived its removal"]
+        self.assertEqual(self.removal_receipts(), receipts)
+        # 2. The workspace is LISTED LIVE AGAIN between the passes: the retry
+        #    removes nothing and closes nothing — the state recorded once.
+        state["live"] = [dict(w) for w in self.LIVE]
+        live_again = ("workspace wTEST of this workflow is listed live again after its"
+                      " sessions were proven closed; nothing is closed or released")
+        outcome, calls = release()
+        self.assertEqual((outcome.ok, outcome.problem, outcome.detail), (
+            False, broker_module.PROBLEM_WORKSPACE_SESSIONS_RETAINED, live_again))
+        self.assertEqual((calls["revoke_workspace_trust"], calls["close_workspace"],
+                          calls["relinquish_workspace"]), (0, 0, 0))
+        receipts.append(pending + "the retried removal was not made: " + live_again)
+        self.assertEqual(self.removal_receipts(), receipts)
+        # ... and again, identically: refused with NOTHING written.
+        before = self.disk_entry()
+        outcome, calls = release()
+        self.assertEqual((outcome.ok, outcome.problem, outcome.detail), (
+            False, broker_module.PROBLEM_WORKSPACE_SESSIONS_RETAINED, live_again))
+        self.assertEqual((calls["revoke_workspace_trust"], calls["close_workspace"],
+                          calls["relinquish_workspace"]), (0, 0, 0))
+        self.assertEqual(self.disk_entry(), before)
+        # 3. The listing becomes UNAVAILABLE: still nothing removed or closed.
+        state["live"], state["error"] = [], RuntimeError("listing down")
+        unavailable = ("the sessions' absence is not established now (workspace evidence"
+                       " unreadable (RuntimeError)); nothing is released")
+        outcome, calls = release()
+        self.assertEqual((outcome.ok, outcome.problem, outcome.detail), (
+            False, broker_module.PROBLEM_WORKSPACE_SESSIONS_RETAINED, unavailable))
+        self.assertEqual((calls["revoke_workspace_trust"], calls["close_workspace"],
+                          calls["relinquish_workspace"]), (0, 0, 0))
+        receipts.append(pending + "the retried removal was not made: " + unavailable)
+        self.assertEqual(self.removal_receipts(), receipts)
+        self.assertIsNone(self.disk_entry()["workspace_lease"]["released_at"])
+        # 4. Absence RESTORED: EXACTLY one removal, nothing earlier repeated.
+        state["error"] = None
+        outcome, calls = release()
+        self.assertTrue(outcome.ok, (outcome.problem, outcome.detail))
+        self.assertEqual((calls["revoke_workspace_trust"], calls["close_workspace"],
+                          calls["relinquish_workspace"]), (0, 0, 1))
+        self.assertIsNotNone(self.disk_entry()["workspace_lease"]["released_at"])
+        receipts.append(wa_record.WORKSPACE_REMOVAL_COMPLETED_RECEIPT_MARKER
+                        + ": the workspace directory is observed removed and its lease"
+                          " released")
+        self.assertEqual(self.removal_receipts(), receipts)
+        self.assertEqual(state["relinquish"], [])
 
 
 # The executed hermetic-git sweep runs a swept module with

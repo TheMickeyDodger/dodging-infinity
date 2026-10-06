@@ -886,9 +886,16 @@ class J10BoundsTests(JournalFixture):
 class J11CompatibilityTests(JournalFixture):
 
     def test_J11_snapshot_is_an_additive_optional_state_record_key(self):
-        self.assertEqual(ms.STATE_RECORD_OPTIONAL_KEYS, ("snapshot", "reconciliations"))
+        # Task 8: slice S-IV added the engagement reservations and starts,
+        # slice S-V the control record — each additive-optional (absent in
+        # older records, read as empty). The derived cases below cover
+        # every one of them the moment it exists.
+        self.assertEqual(ms.STATE_RECORD_OPTIONAL_KEYS,
+                         ("snapshot", "reconciliations", "engagements",
+                          "engagement_starts", "controls"))
         self.assertEqual(set(ms.STATE_RECORD_KEYS),
-                         set(ms.STATE_RECORD_REQUIRED_KEYS) | {"snapshot", "reconciliations"})
+                         set(ms.STATE_RECORD_REQUIRED_KEYS)
+                         | set(ms.STATE_RECORD_OPTIONAL_KEYS))
         self.assertIsNone(ms.new_state_record(hexid("mn", 1), 5)["snapshot"])
         # Lead decision 02: the legacy-compatibility property is proven
         # DERIVED over every additive-optional record key, and over the

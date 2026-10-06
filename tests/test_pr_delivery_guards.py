@@ -459,5 +459,239 @@ class PretoolGuardUnchangedTests(unittest.TestCase):
         self.assertIn("push_approval_valid", source)
 
 
+class R23DeliveryStoreGateTests(_GuardCase):
+    """Task 8 R23 (brief amendment): the delivery store's existence gate.
+    ``os.path.exists`` was False for EVERY OSError, so a store whose metadata
+    cannot be read (EACCES, EIO) loaded as an EMPTY document. The ceremony
+    insert (``cli._mint``, the ONE minting site) then bypassed its "already
+    exists" guard and saved a document holding ONLY the new record, erasing
+    every other delivery. Now ``load`` raises StoreError, so the insert
+    REFUSES:
+    - no save at all, counted by its own assertion;
+    - the store's bytes identical;
+    - nothing written beside it;
+    - the existing record present and unchanged, with no second
+      authorization.
+    Restored, the insert behaves exactly as before. Genuine absence still
+    yields the empty default."""
+
+    def stat_refused(self, error):
+        """``os.stat`` of exactly the store file fails with errno ``error``;
+        every other path is observed for real. A context manager."""
+        from unittest import mock
+        path, real_stat = self.fx.store.path, os.stat
+
+        def stat(target, *args, **kwargs):
+            if not isinstance(target, int) and os.fspath(target) == path:
+                raise OSError(error, os.strerror(error), path)
+            return real_stat(target, *args, **kwargs)
+        return mock.patch.object(os, "stat", stat)
+
+    def store_bytes(self):
+        with open(self.fx.store.path, "rb") as handle:
+            return handle.read()
+
+    def mint(self, delivery_id, reuse_existing):
+        from pr_delivery import cli as cli_module
+        return cli_module._mint(self.fx.store, delivery_id, self.fx._patched_authority(),
+                                self.fx.clock(), reuse_existing=reuse_existing)
+
+    def outage_refuses(self, error):
+        from unittest import mock
+        from pr_delivery import cli as cli_module
+        store = self.fx.store
+        existing = store.load()["deliveries"]["prd-test"]
+        before, listing = self.store_bytes(), sorted(os.listdir(store.directory))
+        saved = []
+        real_save = store_module.DeliveryStore.save
+
+        def save(this, document):
+            saved.append(document)
+            return real_save(this, document)
+        with mock.patch.object(store_module.DeliveryStore, "save", save), \
+                self.stat_refused(error):
+            with self.assertRaises(store_module.StoreError) as raised:
+                store.load()
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+            self.assertIn(os.strerror(error), str(raised.exception))
+            for delivery_id, reuse in (("prd-test", True), ("prd-test", False),
+                                       ("prd-second", False)):
+                with self.assertRaises(store_module.StoreError):
+                    self.mint(delivery_id, reuse)
+        self.assertEqual(saved, [])                      # ZERO effect: nothing saved
+        self.assertEqual(self.store_bytes(), before)     # byte-identical
+        self.assertEqual(sorted(os.listdir(store.directory)), listing)
+        # Restored: nothing erased, no second authorization for the id.
+        document = store.load()
+        self.assertEqual(sorted(document["deliveries"]), ["prd-test"])
+        self.assertEqual(document["deliveries"]["prd-test"], existing)
+        # ...and the insert behaves exactly as before: the existing record is
+        # returned untouched, and a second authorization is refused.
+        record, inserted, _ = self.mint("prd-test", True)
+        self.assertEqual((record, inserted), (existing, False))
+        self.assertEqual(self.store_bytes(), before)
+        with self.assertRaises(cli_module.CeremonyError):
+            self.mint("prd-test", False)
+        self.assertEqual(self.store_bytes(), before)
+
+    def test_R23A_delivery_store_metadata_refused_EACCES_refuses_the_insert(self):
+        import errno
+        self.outage_refuses(errno.EACCES)
+
+    def test_R23A_delivery_store_metadata_failing_EIO_refuses_the_insert(self):
+        import errno
+        self.outage_refuses(errno.EIO)
+
+    def test_R23A_a_genuinely_missing_delivery_store_is_still_empty(self):
+        """The control: NO store file at all is GENUINE ABSENCE — the empty
+        default exactly, nothing created by the read — and the insert then
+        works as it always did."""
+        os.unlink(self.fx.store.path)
+        self.assertEqual(self.fx.store.load(), store_module.default_document())
+        self.assertFalse(os.path.exists(self.fx.store.path))
+        record, inserted, _ = self.mint("prd-test", False)
+        self.assertTrue(inserted)
+        self.assertEqual(sorted(self.fx.store.load()["deliveries"]), ["prd-test"])
+
+
+class R24DeliveryStoreLinkTests(_GuardCase):
+    """Task 8 R24-1: the delivery store behind a link whose TARGET is missing.
+
+    ``stat`` raises ``FileNotFoundError`` for a dangling link too, at the
+    store file or at its directory. The R23 gate read that as genuine
+    absence: an EMPTY store, so the ceremony insert (``cli._mint``) bypassed
+    its "already exists" guard. Now the traversal decides.
+
+    A dangling FILE link: ``load`` raises StoreError and every insert
+    refuses. A dangling DIRECTORY (ancestor) link: ``load`` raises StoreError
+    on the gate, and the insert refuses at the store's lock first, exactly as
+    before R24 (``FileExistsError``: the link exists, its directory does not).
+
+    Either way, scoped to the DENIED store:
+    - no save, counted by its own assertion;
+    - the link unchanged, and nothing initialized at its target;
+    - no second authorization once the target returns.
+
+    A VALID link keeps working exactly as a regular store, and genuine
+    absence is still the empty default."""
+
+    DANGLING = "FileNotFoundError (symlink target)"
+    mint = R23DeliveryStoreGateTests.mint
+
+    def dangle(self, path):
+        """``path`` becomes a link to a MISSING target; the real object waits
+        aside. Returns ``(restore, target, link)``: ``restore`` makes the target
+        return, so the link resolves. The cleanup puts the object back."""
+        import shutil
+        import tempfile
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+        aside = os.path.join(holding, "aside")
+        target = os.path.join(holding, "target")
+        os.rename(path, aside)
+        os.symlink(target, path)
+
+        def put_back():
+            os.unlink(path)
+            os.rename(target if os.path.lexists(target) else aside, path)
+        self.addCleanup(put_back)
+        return (lambda: os.rename(aside, target)), target, os.lstat(path)
+
+    def link_unchanged(self, path, target, link):
+        self.assertTrue(os.path.islink(path), path)
+        self.assertEqual((os.lstat(path).st_ino, os.readlink(path)), (link.st_ino, target))
+        self.assertFalse(os.path.lexists(target), "something was initialized at the target")
+
+    def counted_saves(self, saves):
+        """Every ``DeliveryStore.save`` COUNTED (by the store path)."""
+        from unittest import mock
+        real_save = store_module.DeliveryStore.save
+
+        def save(this, document):
+            saves.append(this.path)
+            return real_save(this, document)
+        return mock.patch.object(store_module.DeliveryStore, "save", save)
+
+    def dangling_store_refuses(self, path, insert_refusal):
+        from pr_delivery import cli as cli_module
+        store = self.fx.store
+        existing = store.load()["deliveries"]["prd-test"]
+        with open(store.path, "rb") as handle:
+            stored = handle.read()
+        restore, target, link = self.dangle(path)
+        saves = []
+        with self.counted_saves(saves):
+            with self.assertRaises(store_module.StoreError) as raised:
+                store.load()
+            self.assertIn("UNAVAILABLE, not absent", str(raised.exception))
+            self.assertIn(self.DANGLING, str(raised.exception))
+            for delivery_id, reuse in (("prd-test", True), ("prd-test", False),
+                                       ("prd-second", False)):
+                with self.assertRaises(insert_refusal):
+                    self.mint(delivery_id, reuse)
+        self.assertEqual(saves, [])                      # ZERO effect: nothing saved
+        self.link_unchanged(path, target, link)
+        # The target returns: nothing erased, no second authorization.
+        restore()
+        document = store.load()
+        self.assertEqual(sorted(document["deliveries"]), ["prd-test"])
+        self.assertEqual(document["deliveries"]["prd-test"], existing)
+        with self.counted_saves(saves):
+            record, inserted, _ = self.mint("prd-test", True)
+            self.assertEqual((record, inserted), (existing, False))
+            with self.assertRaises(cli_module.CeremonyError):
+                self.mint("prd-test", False)
+        self.assertEqual(saves, [])
+        with open(store.path, "rb") as handle:
+            self.assertEqual(handle.read(), stored)
+
+    def test_R24A_a_dangling_delivery_store_FILE_link_refuses_the_insert(self):
+        self.dangling_store_refuses(self.fx.store.path, store_module.StoreError)
+
+    def test_R24A_a_dangling_delivery_store_DIRECTORY_link_refuses_the_insert(self):
+        self.dangling_store_refuses(self.fx.store.directory, FileExistsError)
+
+    def test_R24A_valid_links_keep_working_and_genuine_absence_is_empty(self):
+        """A VALID file link and a VALID directory link read exactly as the
+        regular store: the existing record reused, a second authorization
+        refused, nothing saved, the target's bytes unchanged. A store whose
+        DIRECTORY is genuinely missing is the empty default (nothing created
+        by the read), and the insert then works as it always did."""
+        import shutil
+        import tempfile
+        from pr_delivery import cli as cli_module
+        store = self.fx.store
+        existing = store.load()["deliveries"]["prd-test"]
+        with open(store.path, "rb") as handle:
+            stored = handle.read()
+        holding = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, holding, True)
+        for path in (store.path, store.directory):
+            real = os.path.join(holding, os.path.basename(path) + "-real")
+            os.rename(path, real)
+            os.symlink(real, path)
+            saves = []
+            with self.counted_saves(saves):
+                self.assertEqual(store.load(), json.loads(stored.decode("utf-8")))
+                self.assertEqual(self.mint("prd-test", True)[:2], (existing, False))
+                with self.assertRaises(cli_module.CeremonyError):
+                    self.mint("prd-test", False)
+            self.assertEqual(saves, [])
+            with open(store.path, "rb") as handle:
+                self.assertEqual(handle.read(), stored)
+            os.unlink(path)
+            os.rename(real, path)
+        aside = os.path.join(holding, "store-dir")
+        os.rename(store.directory, aside)
+        self.assertEqual(store.load(), store_module.default_document())
+        self.assertFalse(os.path.lexists(store.directory))  # nothing created by the read
+        saves = []
+        with self.counted_saves(saves):
+            record, inserted, _ = self.mint("prd-test", False)
+        self.assertTrue(inserted)
+        self.assertEqual(saves, [store.path])            # exactly one save, this store's
+        self.assertEqual(sorted(store.load()["deliveries"]), ["prd-test"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

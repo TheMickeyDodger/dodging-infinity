@@ -20,8 +20,16 @@ import os
 import sys
 import time
 
+import functools
+
 from mission import service as mission_service_module
 from mission import store as mission_store_module
+from mission_control import attention as attention_module
+from mission_control import controls as controls_module
+from mission_control import delivery as delivery_module
+from mission_control import engineering as engineering_module
+from mission_control import readiness as readiness_module
+from mission_control import status as status_module
 from operator_session import CodexOperatorSession
 
 from grok_mcp import config as config_module
@@ -37,8 +45,8 @@ def _build_parser():
         prog="grokmcp",
         description=(
             "Dodging Infinity MCP endpoint for the Grok Bot custom"
-            " connector: eight bounded tools, no shell, no file, no"
-            " delivery surface."
+            " connector: sixteen bounded tools, no shell, no file, no Git"
+            " effect surface."
         ),
     )
     parser.add_argument("--config", metavar="PATH", default=None,
@@ -85,8 +93,48 @@ def main(argv=None, session_factory=None, serve_forever=None, environ=None,
             mission_store_module.MissionStore(config.mission_store_dir),
             _unix_seconds,
         )
+    # Task 8 S-IV: the engineering engagement bootstrap is wired only when
+    # BOTH stores are configured; it composes the Mission service, the
+    # workflow store and this node's control repository. It refuses on
+    # its own until the integrated controls exist.
+    engagement_bootstrap = None
+    delivery_desk = None
+    status_reader = None
+    control_desk = None
+    attention_desk = None
+    if mission_service is not None and config.workflow_store_dir is not None:
+        # Task 8 S-VII: the bootstrap records the engineering Runtime's
+        # readiness from a non-destructive probe of the Runtime's lock in
+        # its state directory (the workflow store directory).
+        engagement_bootstrap = engineering_module.MissionControl(
+            mission_service, config.workflow_store_dir, config.repository,
+            readiness_producer=readiness_module.RuntimeReadinessProducer(
+                mission_service, config.workflow_store_dir),
+        ).dispatch
+        # Task 8 S-VI: the delivery desk (card, client-confirmed decision,
+        # pure status) over the same stores; the P1-A6 store it reads lives
+        # beside the workflow store (the P1-A6 default convention, as the
+        # Runtime wires it).
+        delivery_desk = delivery_module.DeliveryDesk(
+            mission_service, config.workflow_store_dir, config.workflow_store_dir)
+    if mission_service is not None:
+        # Task 8 S-VII: the pure status read over every configured store,
+        # and the human's controls (hold, resume, cancel and its confirmation).
+        status_reader = functools.partial(
+            status_module.mission_status, mission_service,
+            workflow_directory=config.workflow_store_dir,
+            delivery_directory=config.workflow_store_dir,
+            coordination_directory=config.coordination_store_dir,
+            destination=attention_module.CLIENT_DESTINATION)
+        control_desk = controls_module.ControlDesk(mission_service)
+        if config.coordination_store_dir is not None:
+            attention_desk = attention_module.AttentionDesk(
+                mission_service, config.coordination_store_dir)
     controller = controller_module.GrokMcpController(
-        session, config.repository, mission_service=mission_service
+        session, config.repository, mission_service=mission_service,
+        engagement_bootstrap=engagement_bootstrap, delivery_desk=delivery_desk,
+        status_reader=status_reader, control_desk=control_desk,
+        attention_desk=attention_desk,
     )
     server = server_module.GrokMcpServer(
         (config.bind_host, config.port), controller,

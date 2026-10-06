@@ -44,6 +44,9 @@ from target_runtime import process_ownership as ownership_module
 from target_runtime import readiness as readiness_module
 from workflow_authority import canonical as canonical_module
 from workflow_authority import record as record_module
+# Task 8 S-IV: the Mission gate's boundary vocabulary (the gate INSTANCE
+# is the Broker's; this module never imports the neutral Mission core).
+from mission_control import gate as mission_gate_module
 from workflow_authority import store as store_module
 from workflow_authority.digest import (
     DigestError,
@@ -135,6 +138,13 @@ PROBLEM_POLICY_DRIFT = "runtime_policy_digest_drift"
 PROBLEM_TARGET_IDENTITY = "runtime_target_identity_mismatch"
 PROBLEM_STORE_UNREADABLE = "runtime_store_unreadable"
 PROBLEM_CAPABILITY_MINT = "runtime_capability_mint_failed"
+# Task 8 S-III: the Mission-origin workflow kind exists in the record
+# layer but is NOT ENABLED in this Runtime: such a record is never
+# claimed, advanced, recovered or released, in every constructor and
+# CLI configuration, and a direct advance refuses with this code
+# BEFORE any model turn or capability mint (fail closed, no effect,
+# no receipt). Slice S-IV replaces this refusal with the gated path.
+PROBLEM_MISSION_KIND_NOT_ENABLED = "runtime_mission_kind_not_enabled"
 # I4 revision 2 (round-08 F-2): the workflow record's codex_turns
 # list is at its hard bound, so no further standing recovery request
 # can ever be recorded. TRUTHFUL name — the store is readable; the
@@ -145,6 +155,8 @@ PROBLEM_TURN_CAPACITY_EXHAUSTED = (
 )
 
 REQUEST_LABEL_PREFIX = "request:"
+# Task 8 S-VII (F-S7-1): the label of the resumption step's admission.
+RESUME_LABEL = "dispatch_resume"
 
 
 def _refusal(problem, detail=None):
@@ -153,13 +165,16 @@ def _refusal(problem, detail=None):
     )
 
 
-def claimable_workflows(store_directory):
+def claimable_workflows(store_directory, mission_gate=None):
     """Workflow ids in a phase this Runtime can advance, with the
     revision each claim must present (read from the record — the
     Broker re-checks it against its own read).
 
     Read-only; fail-closed: an unreadable store yields no claims
-    (and /status reports it independently).
+    (and /status reports it independently). Task 8 S-IV: a
+    Mission-origin record is claimable ONLY when a Mission gate is
+    configured AND enabled (slice S-V's guards present and wired);
+    otherwise it is never claimed (fail closed, zero effects).
     """
     store = store_module.WorkflowStore(store_directory)
     with store_module.exclusive_store_lock(store_directory):
@@ -174,6 +189,10 @@ def claimable_workflows(store_directory):
             record_module.validate_record(entry)
         except record_module.RecordError:
             continue  # the Broker gate reports invalid records
+        if record_module.is_mission_core_kind(entry) and (
+            mission_gate is None or not mission_gate.enabled()
+        ):
+            continue  # Task 8 S-IV: no enabled gate; never claimable
         if (
             entry["phase"] in _STEPS
             or entry["phase"] in _I5_PHASES
@@ -184,6 +203,32 @@ def claimable_workflows(store_directory):
                 (workflow_id, entry["handoff"]["revision"])
             )
     return claims
+
+
+def _mission_turn_admission(broker, workflow_id, entry, boundary, results,
+                            label):
+    """Task 8 S-IV: the Runtime's PRE-MINT admission of a Mission-origin
+    record before (and again after) a planning/recovery model turn. A
+    v2 record is admitted. A refusal is recorded durably through the
+    Broker (hold / block) — or, for the dependency gate and a missing
+    gate, refused with zero effects — and appended to ``results``.
+    Returns True when admitted."""
+    if not record_module.is_mission_core_kind(entry):
+        return True
+    if broker.mission_gate is None:
+        results.append((label, _refusal(
+            PROBLEM_MISSION_KIND_NOT_ENABLED,
+            "workflow %s is a Mission-origin record (%s); no Mission gate"
+            " is configured in this Runtime and it is never advanced"
+            % (workflow_id, record_module.APPROVAL_KIND_MISSION_CORE),
+        )))
+        return False
+    admission = broker.mission_gate.admit(entry, boundary)
+    if admission.ok:
+        return True
+    results.append((label, broker._apply_mission_admission(
+        workflow_id, admission)))
+    return False
 
 
 def _load_entry(broker, workflow_id):
@@ -421,8 +466,30 @@ def advance_workflow(broker, workflow_id, revision):
             return results
         if entry is None:
             return results
+        if record_module.is_mission_core_kind(entry) and (
+            broker.mission_gate is None
+        ):
+            # Task 8 S-IV (unchanged from S-III when no gate is
+            # configured): refused BEFORE any turn, mint or action;
+            # nothing is written, consumed or spawned.
+            results.append((REQUEST_LABEL_PREFIX + "kind", _refusal(
+                PROBLEM_MISSION_KIND_NOT_ENABLED,
+                "workflow %s is a Mission-origin record (%s); no Mission"
+                " gate is configured in this Runtime and it is never"
+                " advanced"
+                % (workflow_id, record_module.APPROVAL_KIND_MISSION_CORE),
+            )))
+            return results
         phase = entry["phase"]
         if phase in _I5_PHASES:
+            # Task 8 S-IV: the recovery/verify path may run a status
+            # recovery turn before any mint; admit first.
+            if not _mission_turn_admission(
+                broker, workflow_id, entry,
+                mission_gate_module.BOUNDARY_RECOVERY_TURN, results,
+                REQUEST_LABEL_PREFIX + "recovery",
+            ):
+                return results
             keep_going = _advance_i5_phase(
                 broker, workflow_id, revision, phase, entry, now_fn,
                 results,
@@ -451,7 +518,21 @@ def advance_workflow(broker, workflow_id, revision):
                 # forbids).
                 run_fresh_turn = True
         if run_fresh_turn:
+            # Task 8 S-IV: a Mission-origin record is admitted BEFORE the
+            # pre-mint model turn runs (a lapse refuses with zero turns
+            # and zero mints) and AGAIN after it returns, before its
+            # outcome is accepted (a lapse during the turn discards it).
+            if not _mission_turn_admission(
+                broker, workflow_id, entry,
+                mission_gate_module.BOUNDARY_PLANNING_TURN, results, label,
+            ):
+                return results
             result = broker._role_turn(step["role"], entry, now)
+            if not _mission_turn_admission(
+                broker, workflow_id, entry,
+                mission_gate_module.BOUNDARY_PLANNING_TURN, results, label,
+            ):
+                return results  # the turn's outcome is discarded
             if result.status != ROLE_TURN_COMPLETED or (
                 result.outcome is None
             ):
@@ -576,6 +657,13 @@ def dispatch_identity_unresolved(entry):
     if entry["phase"] != record_module.PHASE_DISPATCHED:
         return False
     if dispatch_module.dispatch_count(entry) < 1:
+        return False
+    if broker_module.refused_claim_resumable(entry):
+        # Task 8 S-VII (F-S7-1): NOT an ambiguity — the live guard durably
+        # recorded that the runtime start claim was REFUSED before any
+        # invocation, and no start was ever admitted: the dispatch is
+        # provably unstarted and is RESUMED once admitted
+        # (``_resume_refused_dispatch``), never reconciled into a block.
         return False
     engine = entry["target_engine"]
     if engine is None:
@@ -755,6 +843,47 @@ def _handle_dispatch_recovery(broker, workflow_id, revision, entry,
     )
 
 
+def _resume_refused_dispatch(broker, workflow_id, revision, entry, now_fn,
+                             results):
+    """Task 8 S-VII (Lead gate F-S7-1; correction 2, R1 and R2): the
+    Runtime's step for a dispatch holding a start point whose claim was
+    durably REFUSED with nothing admitted at it
+    (``broker.refused_claim_resumption``). Zero model calls. The spawn
+    boundary is admitted FIRST, lock-free, before any capability is
+    minted: while a reversible cause holds (a hold, stale readiness, a
+    source that cannot answer) the refusal is recorded as a hold (at most
+    one receipt per cause) and NOTHING is minted, claimed or invoked; a
+    terminal cause (cancel, EDIT, revocation, expiry, a terminal Mission)
+    blocks durably. Once admitted, the ONE capability-gated action of that
+    dispatch — ``dispatch`` for the initial dispatch, ``dispatch_follow_up``
+    for a follow-up ordinal — resumes the same point
+    (``_resume_refused_dispatch``); the guard's canonical claim re-checks
+    under the Mission lock and the core admits each start at most once."""
+    if not _mission_turn_admission(
+        broker, workflow_id, entry, mission_gate_module.BOUNDARY_SPAWN,
+        results, RESUME_LABEL,
+    ):
+        return
+    # Task 8 startup correction: a follow-up whose resumption would retire
+    # its earlier runtime is re-assessed READ-ONLY first, through the
+    # Broker's contained maintenance entry; while that retirement is still
+    # refused, nothing is minted, claimed or invoked (a hold records at most
+    # one receipt per cause; a contradiction blocks).
+    resumption = broker_module.refused_claim_resumption(entry)
+    if (resumption is not None
+            and resumption[0] == dispatch_module.START_POINT_RUNTIME
+            and resumption[1] > 1):
+        retirement = broker.maintain(workflow_id, broker_module.MAINTAIN_RETIREMENT)
+        if not retirement.ok or retirement.problem is not None:
+            results.append((RESUME_LABEL, retirement))
+            return
+    action = (broker_module.ACTION_FOLLOW_UP if resumption is not None
+              and resumption[1] > 1 else broker_module.ACTION_DISPATCH)
+    _perform_capability_action(
+        broker, workflow_id, revision, action, now_fn, results,
+    )
+
+
 def _advance_i5_phase(broker, workflow_id, revision, phase, entry,
                       now_fn, results):
     """Advance ONE I5 completion phase. Returns True to keep advancing
@@ -777,6 +906,23 @@ def _advance_i5_phase(broker, workflow_id, revision, phase, entry,
     EXACTLY ONE deterministic path per pass (wait, one fresh turn,
     or a durable stop) — no dead end, no double work."""
     if phase == record_module.PHASE_DISPATCHED:
+        if broker_module.refused_claim_resumable(entry):
+            _resume_refused_dispatch(
+                broker, workflow_id, revision, entry, now_fn, results
+            )
+            return False
+        if broker_module.resumed_handover_binding(entry) is not None:
+            # Task 8 S-VII correction 3 (S7c-R3): a RESUMED task handover
+            # was admitted but its binding save was lost. It wrote no
+            # control-repository child record, so no recovery turn is run:
+            # the ONE capability-gated reconcile action binds it from the
+            # CANONICAL settlement (zero model calls; never a replay), or
+            # refuses / blocks when that settlement is not proven.
+            _perform_capability_action(
+                broker, workflow_id, revision,
+                broker_module.ACTION_RECONCILE, now_fn, results,
+            )
+            return False
         if dispatch_identity_unresolved(entry):
             _handle_dispatch_recovery(
                 broker, workflow_id, revision, entry, now_fn, results
@@ -869,27 +1015,45 @@ def current_scope_owners(store_directory):
     current record, not only against the store that issued it. This is
     that record, as ``(owner_type, owner_id, unit_id)`` triples.
 
-    Both scopes a workflow can own are listed: the pre-dispatch one it
-    used before a target task existed, and the task-scoped one it uses
-    after. A workflow whose turn crashed before dispatch owns records
-    under the first, and omitting it would strand them. Each carries
-    the CONTROL REPOSITORY it belongs to, so that within this base a
-    workflow id cannot claim another deployment's records.
+    Every scope a workflow can own is listed: the pre-dispatch one it
+    used before a target task existed, the task-scoped one it uses
+    after, and (Task 8 R19-3) — once the record durably CLAIMED a
+    verification attempt — the one its delivery's verification producer
+    runs under (``target_runtime.verification``,
+    ``VERIFICATION_OWNER_UNIT``). A workflow whose turn crashed before
+    dispatch owns records under the first, and one whose Runtime died
+    during a verification run owns a live group under the last;
+    omitting either would strand them. A record that never claimed a
+    verification names no verification owner (it could have spawned
+    nothing there). Each carries the CONTROL REPOSITORY it belongs to, so
+    that within this base a workflow id cannot claim another
+    deployment's records.
 
-    FAIL-CLOSED, and the consequence stated: an unreadable store
-    yields the EMPTY set, so no workflow-owned scope validates and
-    recovery acts on none of them. That is indistinguishable from an
-    empty store, and deliberately so — both mean "the record does not
-    say this owner exists", and both must leave the records alone.
+    FAIL-CLOSED, and — Task 8 R22-2 — TRUTHFUL: a store that cannot be
+    read (its file unreadable or invalid, or its lock not obtainable) is
+    NOT an empty store. It returns ``process_ownership.UnavailableOwners``
+    — not a set — so every workflow-owned scope is reported
+    UNATTRIBUTED as owners UNAVAILABLE (never STALE, which says the record
+    was read and does not hold the owner), the store is counted among the
+    observations recovery could not make, and nothing is acted on. A store
+    file that is genuinely ABSENT is an empty store (the empty set).
     """
+    from target_runtime.verification import VERIFICATION_OWNER_UNIT as verification_unit
     store = store_module.WorkflowStore(store_directory)
-    with store_module.exclusive_store_lock(store_directory):
-        try:
+    try:
+        with store_module.exclusive_store_lock(store_directory):
             workflows = store.load()
-        except store_module.StoreError:
-            return set()
+    except (store_module.StoreError, OSError) as exc:
+        return ownership_module.UnavailableOwners(store.path, (
+            "%s: the workflow store cannot be read (%s)"
+            % (ownership_module.OBSERVATION_UNAVAILABLE, exc.__class__.__name__)))
     owners = set()
     for workflow_id, entry in workflows["workflows"].items():
+        # Task 8 S-IV: a Mission-origin record dispatched through the
+        # gated Broker owns its scopes exactly like a v2 record (its
+        # assignment records were written by this Runtime before the
+        # spawn); a record never dispatched names no task scope and its
+        # pre-dispatch scope holds nothing to attribute.
         control = (
             entry.get("control_identity") or {}
         ).get("repository_realpath")
@@ -900,7 +1064,17 @@ def current_scope_owners(store_directory):
             # unattributed and are left alone.
             continue
         digest = ownership_module.control_digest(control)
-        for unit_id in ("pre-dispatch", (
+        # The verification scope only when the record durably shows a
+        # verification could have been spawned under it: an attempt CLAIM,
+        # written under the launch admission before every producer call.
+        claimed = any(
+            isinstance(receipt, dict)
+            and isinstance(receipt.get("bounded_summary"), str)
+            and receipt["bounded_summary"].startswith(
+                broker_module.VERIFICATION_ATTEMPT_RECEIPT_MARKER + " ")
+            for receipt in entry.get("receipts") or []
+        )
+        for unit_id in ("pre-dispatch", verification_unit if claimed else None, (
             entry.get("target_engine") or {}
         ).get("task_id")):
             if isinstance(unit_id, str) and unit_id:
@@ -933,6 +1107,14 @@ def recover_inherited_processes(store_directory):
     would be the guess ownership discipline forbids — and because the
     name that made them look ownable is exactly what an attacker
     controls.
+
+    Task 8 R21-2: the result is ``recover_attributed``'s ``RecoveryReport``
+    — it also carries ``unavailable``, every observation that could not be
+    made, REPORTED (``cli.report_inherited_recovery``) as unavailable and
+    never read as absent. R22-2: an unreadable workflow store reaches it
+    as ``UnavailableOwners`` (``current_scope_owners``), never as an empty
+    owner set; R22-1: a live group whose leader corroboration cannot be
+    obtained is reported, never signalled.
     """
     return ownership_module.recover_attributed(
         settle_seconds=10.0,
@@ -940,7 +1122,8 @@ def recover_inherited_processes(store_directory):
     )
 
 
-def terminal_cleanup_candidates(store_directory):
+def terminal_cleanup_candidates(store_directory, mission_gate=None, now=None,
+                                scope_base=None):
     """Workflows in a TERMINAL phase that still hold a lease (R-33).
 
     THE BIAS IS TOWARD NOT CLOSING, and it is enforced here rather
@@ -953,10 +1136,28 @@ def terminal_cleanup_candidates(store_directory):
     alone.
 
     A workflow whose lease is already released is not a candidate, so
-    a repeat pass neither retries nor double-closes. And because the
-    lease is released ONLY after a proven close, "released" now means
-    "cleaned up" rather than "an attempt was made" — the substitution
-    R-36 AA-2 forbade.
+    a repeat pass neither retries nor double-closes. The lease is
+    released ONLY after a proven close, so "released" means the
+    WORKSPACE was cleaned up rather than "an attempt was made" — the
+    substitution R-36 AA-2 forbade. Task 8 R20-B (Addendum B): it no
+    longer means every PROCESS SCOPE was retired. A scope whose state
+    changed after the release's boundary re-check can be refused after
+    the lease went, and the record says so with an outstanding
+    ``process scope retained`` receipt rather than with the lease
+    (``record.process_scope_retention_outstanding``). That record is the
+    one released-lease candidate, for the Broker's RETIREMENT-ONLY
+    re-entry (``broker._retry_scope_retirement``: no close, no
+    relinquish, nothing replayed), and only once the holds below
+    establish absence; only an actual retirement settles the receipt.
+
+    Task 8 R20-1: nor is a workflow whose VERIFICATION evidence is still
+    needed (``broker.verification_release_hold``: a verification process
+    of it may be alive, or its ownership or attempt records cannot be
+    read) — the same read-only check the release itself makes before it
+    destroys anything; ``scope_base`` is the verification scope base the
+    Broker uses (None: the production default). R20-2: nor is one any of
+    whose OTHER process scopes cannot be shown absent
+    (``broker.scope_release_hold``).
     """
     store = store_module.WorkflowStore(store_directory)
     with store_module.exclusive_store_lock(store_directory):
@@ -971,13 +1172,30 @@ def terminal_cleanup_candidates(store_directory):
             record_module.validate_record(entry)
         except record_module.RecordError:
             continue
+        if record_module.is_mission_core_kind(entry) and (
+            mission_gate is None or not mission_gate.enabled()
+        ):
+            continue  # Task 8 S-IV: no enabled gate; never released here
         if entry["phase"] not in record_module.TERMINAL_PHASES:
             continue
         lease = entry.get("workspace_lease")
         if not isinstance(lease, dict):
             continue
-        if lease.get("released_at") is not None:
+        if lease.get("released_at") is not None and not (
+                record_module.process_scope_retention_outstanding(entry)):
+            continue  # R20-B: unless a scope's retirement is outstanding
+        if now is not None and store_module.retention_protects(entry, now):
+            continue  # Task 8 S-V: a retained record is never a candidate
+        if record_module.is_mission_core_kind(entry) and (
+            mission_gate.obligations(entry) != []
+        ):
+            # R15-2: nor is one whose CANONICAL start obligations are
+            # outstanding, or cannot be read right now.
             continue
+        if broker_module.verification_release_hold(entry, scope_base) is not None:
+            continue  # R20-1: its verification evidence is still needed
+        if broker_module.scope_release_hold(entry) is not None:
+            continue  # R20-2: a process scope of it cannot be shown absent
         candidates.append((workflow_id, entry["handoff"]["revision"]))
     return candidates
 
@@ -1241,14 +1459,32 @@ def process_once(broker):
     """
     compact_capabilities(broker)
     processed = {}
+    # Task 8 S-VII: the engineering-runtime readiness each live Mission's
+    # contract requires is refreshed (throttled) BEFORE any action is
+    # admitted, so the spawn, completion and delivery gates read fresh,
+    # probed readiness.
+    for workflow_id, outcome in refresh_mission_readiness(broker).items():
+        processed.setdefault(workflow_id, []).append((READINESS_LABEL, outcome))
     for workflow_id, revision in claimable_workflows(
-        broker.store.directory
+        broker.store.directory, broker.mission_gate
     ):
         processed[workflow_id] = advance_workflow(
             broker, workflow_id, revision
         )
+    # Task 8 S-V (retention crash windows): every Mission-origin record
+    # carrying unresolved start evidence gets the owner's recovery pass,
+    # whatever its phase (a protected record is never a cleanup
+    # candidate and a BLOCKED one is never claimable, yet its claims and
+    # stops must still be resolved) — BEFORE cleanup is decided.
+    for workflow_id, outcome in recover_unresolved_mission_records(broker).items():
+        processed.setdefault(workflow_id, []).append((RECOVERY_LABEL, outcome))
+    # Task 8 S-V (R2-2): retention is released on the pass for a confirmed
+    # cancel or a superseded revision, BEFORE cleanup candidates are read.
+    for workflow_id, outcome in release_mission_retentions(broker).items():
+        processed.setdefault(workflow_id, []).append((RETENTION_LABEL, outcome))
     for workflow_id, revision in terminal_cleanup_candidates(
-        broker.store.directory
+        broker.store.directory, broker.mission_gate, broker._clock(),
+        scope_base=broker.verification_scope_base,
     ):
         outcome = _perform_capability_action(
             broker, workflow_id, revision,
@@ -1256,4 +1492,264 @@ def process_once(broker):
             processed.setdefault(workflow_id, []),
         )
         del outcome
+    # Task 8 S-V (R2-11-b): the read-only candidate observation of every
+    # Mission-origin record that has one to observe (a delivery bound to
+    # its Mission, or a verified record's held lease), recorded only when
+    # it changed — so the report below reads this pass's observation.
+    for workflow_id, outcome in observe_mission_candidates(broker).items():
+        processed.setdefault(workflow_id, []).append((CANDIDATE_LABEL, outcome))
+    # Task 8 S-VI: the Mission-bound delivery of every COMPLETED
+    # Mission-origin record, after this pass's candidate observation and
+    # BEFORE the report below, so the report reads what it did.
+    for workflow_id, outcome in drive_mission_deliveries(broker).items():
+        processed.setdefault(workflow_id, []).append((DELIVERY_LABEL, outcome))
+    # Task 8 S-V (R2-11): the pass CLOSES by reporting every Mission-origin
+    # record's durable facts to its Mission's reconciliation, at the full
+    # current cursor; refusals are recorded per workflow, never raised.
+    for workflow_id, outcome in reconcile_mission_workflows(broker).items():
+        processed.setdefault(workflow_id, []).append((RECONCILE_LABEL, outcome))
+    # Task 8 S-VII: the client attention projection reads what the
+    # reconciliation above recorded; it writes ONLY the coordination store,
+    # so the reconciliation stays the pass's last Mission-store write.
+    for workflow_id, outcome in project_mission_attention(broker).items():
+        processed.setdefault(workflow_id, []).append((ATTENTION_LABEL, outcome))
     return processed
+
+
+RECOVERY_LABEL = "mission_recovery"
+RETENTION_LABEL = "mission_retention"
+CANDIDATE_LABEL = "mission_candidate"
+DELIVERY_LABEL = "mission_delivery"
+RECONCILE_LABEL = "mission_reconcile"
+READINESS_LABEL = "mission_readiness"
+ATTENTION_LABEL = "mission_attention"
+OUTCOME_READINESS_RECORDED = "readiness_recorded"
+OUTCOME_READINESS_NOT_RECORDED = "readiness_not_recorded"
+OUTCOME_ATTENTION_PROJECTED = "attention_projected"
+OUTCOME_ATTENTION_NOT_PROJECTED = "attention_not_projected"
+
+
+def _live_mission_records(broker, include_blocked=False):
+    """``[(workflow_id, mission_id)]``: one per Mission (the first valid
+    Mission-origin record in id order); BLOCKED records are skipped unless
+    ``include_blocked``."""
+    seen = set()
+    records = []
+    for workflow_id, entry in _gated_mission_records(broker):
+        if entry.get("phase") == record_module.PHASE_BLOCKED and not include_blocked:
+            continue
+        linkage = entry.get(record_module.MISSION_AUTHORITY_KEY) or {}
+        mission_id = linkage.get("mission_id")
+        if mission_id is None or mission_id in seen:
+            continue
+        seen.add(mission_id)
+        records.append((workflow_id, mission_id))
+    return records
+
+
+def refresh_mission_readiness(broker):
+    """Task 8 S-VII: ``{workflow_id: BrokerOutcome}`` for every live
+    Mission whose readiness the producer (``broker.mission_readiness``)
+    refreshed this pass — only when due; nothing for a Broker without a
+    producer or an enabled gate. A refusal is reported, never raised."""
+    producer = getattr(broker, "mission_readiness", None)
+    if producer is None:
+        return {}
+    outcomes = {}
+    for workflow_id, mission_id in _live_mission_records(broker):
+        result = producer.refresh(mission_id, broker.mission_gate.context)
+        if result is None:
+            continue
+        outcomes[workflow_id] = broker_module.BrokerOutcome(
+            result["recorded"], problem=result["problem"], detail=result["detail"],
+            outcome=(OUTCOME_READINESS_RECORDED if result["recorded"]
+                     else OUTCOME_READINESS_NOT_RECORDED))
+    return outcomes
+
+
+def project_mission_attention(broker):
+    """Task 8 S-VII: ``{workflow_id: BrokerOutcome}`` — the client
+    attention projection of every live Mission through
+    ``broker.mission_attention`` (coordination's own rules: only a FRESH
+    observation changes anything). A failure is reported by class name,
+    never raised."""
+    desk = getattr(broker, "mission_attention", None)
+    if desk is None:
+        return {}
+    outcomes = {}
+    # Every Mission with a Mission-origin record, BLOCKED ones included: a
+    # workflow stopped by an EDIT leaves its Mission awaiting the human's
+    # decision on the new revision, which is exactly what attention is for.
+    for workflow_id, mission_id in _live_mission_records(broker, include_blocked=True):
+        try:
+            projected = desk.project(mission_id)
+        except Exception as exc:  # noqa: BLE001 - class name only, never raised
+            outcomes[workflow_id] = broker_module.BrokerOutcome(
+                False, problem=type(exc).__name__,
+                detail="the attention projection raised %s" % type(exc).__name__,
+                outcome=OUTCOME_ATTENTION_NOT_PROJECTED)
+            continue
+        outcomes[workflow_id] = broker_module.BrokerOutcome(
+            projected["problem"] is None, problem=projected["problem"],
+            detail="created %d, obsoleted %d, resolved %d (%s)" % (
+                len(projected["created"]), len(projected["obsoleted"]),
+                len(projected["resolved"]), projected["freshness"]),
+            outcome=OUTCOME_ATTENTION_PROJECTED)
+    return outcomes
+
+
+def _gated_mission_records(broker):
+    """``[(workflow_id, entry)]`` for every VALID Mission-origin record,
+    in id order; empty for a Broker without an enabled gate or an
+    unreadable store (the actions report those)."""
+    gate = broker.mission_gate
+    if gate is None or not gate.enabled():
+        return []
+    try:
+        workflows = broker.store.load()
+    except store_module.StoreError:
+        return []
+    records = []
+    for workflow_id in sorted(workflows["workflows"]):
+        entry = workflows["workflows"][workflow_id]
+        if not record_module.is_mission_core_kind(entry):
+            continue
+        try:
+            record_module.validate_record(entry)
+        except record_module.RecordError:
+            continue
+        records.append((workflow_id, entry))
+    return records
+
+
+def observe_mission_candidates(broker):
+    """``{workflow_id: BrokerOutcome}`` for every valid Mission-origin
+    record the pass observed a CHANGED candidate for (or failed to), via
+    ``broker.maintain(…, MAINTAIN_CANDIDATE)``; the Broker decides where
+    and against what base (see ``TargetBroker._maintain_candidate``).
+    Unchanged and not-applicable observations are not reported."""
+    outcomes = {}
+    for workflow_id, _entry in _gated_mission_records(broker):
+        outcome = broker.maintain(workflow_id, broker_module.MAINTAIN_CANDIDATE)
+        if not outcome.ok or outcome.outcome == broker_module.OUTCOME_CANDIDATE_OBSERVED:
+            outcomes[workflow_id] = outcome
+    return outcomes
+
+
+def drive_mission_deliveries(broker):
+    """``{workflow_id: BrokerOutcome}`` for every valid COMPLETED
+    Mission-origin record the delivery pass acted on or refused, through
+    ``broker.maintain(…, MAINTAIN_DELIVERY)`` (Task 8 S-VI); records the
+    delivery does not apply to are not reported. Nothing for a Broker
+    without a gate or a delivery driver."""
+    outcomes = {}
+    if getattr(broker, "mission_delivery", None) is None:
+        return outcomes
+    for workflow_id, entry in _gated_mission_records(broker):
+        if entry["phase"] != record_module.PHASE_COMPLETED:
+            continue
+        outcome = broker.maintain(workflow_id, broker_module.MAINTAIN_DELIVERY)
+        if not outcome.ok or (
+            outcome.outcome != broker_module.OUTCOME_DELIVERY_NOT_APPLICABLE
+        ):
+            outcomes[workflow_id] = outcome
+    return outcomes
+
+
+def release_mission_retentions(broker):
+    """``{workflow_id: BrokerOutcome}`` for every valid Mission-origin
+    record whose retention is still held, through ``broker.maintain(…,
+    MAINTAIN_RETENTION)`` (released exactly when its Mission's cancel is
+    confirmed or its revision superseded). Only records whose retention
+    was RELEASED by this pass (or whose maintenance refused) are
+    reported."""
+    outcomes = {}
+    for workflow_id, entry in _gated_mission_records(broker):
+        retention = entry.get(record_module.RETENTION_KEY)
+        if not isinstance(retention, dict) or retention["released_at"] is not None:
+            continue
+        outcome = broker.maintain(workflow_id, broker_module.MAINTAIN_RETENTION)
+        if outcome.outcome == broker_module.OUTCOME_RETENTION_RELEASED or not outcome.ok:
+            outcomes[workflow_id] = outcome
+    return outcomes
+
+
+def recover_unresolved_mission_records(broker):
+    """``{workflow_id: BrokerOutcome}`` for every valid Mission-origin
+    record whose own receipts show unresolved start evidence OR whose
+    CANONICAL start obligations are outstanding (R15-2: a cancel that
+    marks an already settled start — after the workflow's terminal
+    completion included — is known only to the Mission record, while the
+    workflow record still reads ``settled:completed stop=none``), through
+    ``broker.maintain(…, MAINTAIN_RECOVERY)``. Nothing for a Broker
+    without a gate."""
+    outcomes = {}
+    for workflow_id, entry in _gated_mission_records(broker):
+        unresolved = record_module.unresolved_start_receipts(entry)
+        obligations = broker.mission_gate.obligations(entry)
+        if obligations is None and not unresolved:
+            # Task 8 S-VII: the Mission store could not be read, so whether
+            # a canonical stop obligation is outstanding is UNKNOWN — it is
+            # reported (held, source unavailable), never skipped as if none
+            # were owed, and nothing is performed for it this pass.
+            outcomes[workflow_id] = broker_module.BrokerOutcome(
+                False, problem=mission_gate_module.PROBLEM_SOURCE_UNAVAILABLE,
+                detail="the Mission store could not be read: whether a stop is"
+                       " owed is unknown; nothing was performed",
+                outcome=broker_module.OUTCOME_MISSION_HELD)
+            continue
+        if not unresolved and not obligations:
+            continue
+        outcomes[workflow_id] = broker.maintain(workflow_id,
+                                                broker_module.MAINTAIN_RECOVERY)
+    return outcomes
+OUTCOME_RECONCILED_CHANGED = "reconciled:changed"
+OUTCOME_RECONCILED_UNCHANGED = "reconciled:unchanged"
+
+
+def reconcile_mission_workflows(broker):
+    """One reconciliation report per Mission-origin record in the store,
+    through the bridge (``mission_control.reconciliation_bridge``) with
+    the gate's service and context. Returns ``{workflow_id:
+    BrokerOutcome}``: ``ok`` with ``reconciled:changed`` /
+    ``reconciled:unchanged``, or a refusal carrying the core's typed
+    problem. A record whose Mission the store does not know is skipped
+    (the gate refuses it terminally on its own), as is an invalid record
+    (the Broker reports those) and a v2 record (no Mission to report
+    to). Nothing here spawns, mints a capability or writes the workflow
+    store; the Mission write is the core's own reconcile operation."""
+    from mission_control import reconciliation_bridge as bridge
+    gate = broker.mission_gate
+    if gate is None or not gate.enabled():
+        return {}
+    try:
+        workflows = broker.store.load()
+    except store_module.StoreError:
+        return {}
+    outcomes = {}
+    for workflow_id in sorted(workflows["workflows"]):
+        entry = workflows["workflows"][workflow_id]
+        if not record_module.is_mission_core_kind(entry):
+            continue
+        try:
+            record_module.validate_record(entry)
+        except record_module.RecordError:
+            continue
+        result = bridge.reconcile_workflow(
+            gate.service, gate.context, entry, broker._clock(),
+            delivery_directory=broker.delivery_store_directory)
+        if result["problem"] == bridge.PROBLEM_UNKNOWN_MISSION:
+            continue
+        if result["ok"]:
+            outcomes[workflow_id] = broker_module.BrokerOutcome(
+                True, phase=entry["phase"],
+                outcome=(OUTCOME_RECONCILED_CHANGED if result["changed"]
+                         else OUTCOME_RECONCILED_UNCHANGED),
+                detail="reconciled at position %s revision %s: %s finding(s)"
+                       % (result["position"], result["revision"],
+                          result["finding_count"]))
+        else:
+            outcomes[workflow_id] = broker_module.BrokerOutcome(
+                False, problem=result["problem"], detail=result["detail"],
+                phase=entry["phase"])
+    return outcomes

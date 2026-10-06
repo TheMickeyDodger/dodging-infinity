@@ -21,6 +21,7 @@ import os
 import tempfile
 
 from telegram_operator.config import CONFIG_DIR_RELATIVE
+from workflow_authority.atomic import READ_ABSENT, classify_missing
 
 # Schema version 2 marks every pre-1.0 (DI-REMOTE-1-era) approval
 # record superseded FOR V2 PURPOSES ONLY via the explicit, human-run
@@ -156,9 +157,36 @@ class StateStore(object):
         self.path = os.path.join(directory, STATE_FILE_NAME)
 
     def load(self):
-        """Read state; a missing file yields a fresh default state."""
-        if not os.path.exists(self.path):
-            return default_state()
+        """Read state; a GENUINELY missing file yields a fresh default state.
+
+        Task 8 R23 (amendment): absence is observed STRICTLY — only a stat
+        raising FileNotFoundError is a missing file. Any other failure to
+        examine it (EACCES, EIO, ...) raises StateError: the state is
+        UNAVAILABLE, never read as a fresh default that the adapter would
+        then save over the recorded state.
+
+        Task 8 R24-1: stat raises FileNotFoundError for an EXISTING link whose
+        target is unavailable too (a dangling state link, or a dangling link
+        among its ancestors), so the traversal (``classify_missing``) decides:
+        genuine absence keeps the fresh default, anything else is
+        UNAVAILABLE."""
+        problem = None
+        try:
+            os.stat(self.path)
+        except FileNotFoundError:
+            missing = classify_missing(self.path)
+            if missing.availability == READ_ABSENT:
+                return default_state()
+            problem = missing.problem
+        except OSError as exc:
+            problem = "%s: %s" % (exc.__class__.__name__, exc)
+        if problem is not None:
+            raise StateError(
+                "state file %s cannot be examined (%s); it is UNAVAILABLE,"
+                " not absent — refusing to start from a fresh default. It is"
+                " NOT safe to delete it: it records approval consumption and"
+                " the Telegram offset" % (self.path, problem)
+            )
         try:
             with open(self.path, "r", encoding="utf-8") as handle:
                 document = json.load(handle)

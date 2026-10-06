@@ -16,6 +16,7 @@ import shutil
 from telegram_operator.config import CONFIG_DIR_RELATIVE
 
 from target_runtime.git_transport import GitTransportError
+from workflow_authority.atomic import READ_ABSENT, classify_missing
 
 WORKSPACES_DIR_NAME = "workspaces"
 
@@ -29,6 +30,10 @@ PROBLEM_GIT_FAILED = "workspace_git_operation_failed"
 PROBLEM_LEASE_MISSING = "workspace_lease_missing"
 PROBLEM_WORKSPACE_MISSING = "workspace_directory_missing"
 PROBLEM_RELEASE_PATH_MISMATCH = "workspace_release_path_mismatch"
+#: Task 8 R21-3: the removal ran but its absence was not OBSERVED — the
+#: directory survived, wholly or partly, or cannot be examined. The lease is
+#: kept; the release is retried.
+PROBLEM_RELEASE_INCOMPLETE = "workspace_release_incomplete"
 
 
 def default_workspaces_root(home=None):
@@ -228,7 +233,49 @@ def release(entry, workspaces_root, now):
             " directory %s; a substituted or cross-workflow path is"
             " never removed" % (path, expected)
         )
+    # Task 8 R21-3: the lease is released only on OBSERVED absence — after
+    # the removal, ``lstat`` must raise FileNotFoundError. A directory that
+    # survives (the removal failed, or removed only part of it) or whose
+    # absence cannot be observed keeps the lease: the record stays the
+    # owner of what remains, and the removal is retried. ``ignore_errors``
+    # stays — the observation, not the removal's errors, decides.
+    # R21-C (C-2): NO diagnostic read sits between the caller's admission and
+    # the removal — the only reads before it are the path-identity checks the
+    # removal's own safety rests on (the realpaths above, ``isdir`` here);
+    # what survived is counted AFTER the attempt, on the failure path only.
     if os.path.isdir(path):
         shutil.rmtree(path, ignore_errors=True)
-    lease["released_at"] = now
-    return True, None, None
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        # Task 8 R25-2: ``lstat`` raises FileNotFoundError THROUGH a dangling
+        # ANCESTOR too, so the observation could lie. The lease is released
+        # only when the traversal establishes GENUINE absence; otherwise the
+        # removal cannot be observed and the lease is kept.
+        missing = classify_missing(path)
+        if missing.availability != READ_ABSENT:
+            return False, PROBLEM_RELEASE_INCOMPLETE, (
+                "the removal of %s cannot be observed (%s); the lease is kept and"
+                " the removal is retried" % (path, missing.problem))
+        lease["released_at"] = now
+        return True, None, None
+    except OSError as exc:
+        return False, PROBLEM_RELEASE_INCOMPLETE, (
+            "the removal of %s cannot be observed (%s); the lease is kept and"
+            " the removal is retried" % (path, exc.__class__.__name__))
+    remaining = _entry_count(path)
+    return False, PROBLEM_RELEASE_INCOMPLETE, (
+        "%s survived its removal (%s); the lease is kept and the removal is"
+        " retried" % (path, "entries remaining: %d" % remaining
+                      if remaining is not None
+                      else "its remaining entries could not be counted"))
+
+
+def _entry_count(path):
+    """The number of entries directly in ``path``, or None when it cannot
+    be listed (reported, never guessed). Read only AFTER a removal attempt
+    (R21-C, C-2)."""
+    try:
+        return len(os.listdir(path))
+    except OSError:
+        return None

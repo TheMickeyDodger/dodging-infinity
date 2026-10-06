@@ -134,10 +134,16 @@ _OUTCOME_ID_PREFIXES = {
     "blocker_id": record.BLOCKER_ID_PREFIX,
     "dependency_id": record.DEPENDENCY_ID_PREFIX,
     "checkpoint_id": record.CHECKPOINT_ID_PREFIX,
+    "engagement_id": record.ENGAGEMENT_ID_PREFIX,
+    "start_id": record.ENGAGEMENT_START_ID_PREFIX,
 }
-_OUTCOME_BOOL_KEYS = ("accepted", "invalidated", "resolved", "new_binding")
+_OUTCOME_BOOL_KEYS = ("accepted", "invalidated", "resolved", "new_binding",
+                      "stop_pending", "absent", "stop_confirmed",
+                      # Task 8, slice S-V: the control outcomes.
+                      "hold_active", "cancel_requested")
 _OUTCOME_INT_KEYS = ("attempt", "attempts_remaining", "revision",
-                     "observed_position", "observed_revision", "finding_count")
+                     "observed_position", "observed_revision", "finding_count",
+                     "engagement_sequence", "stops_requested")
 _OUTCOME_OPTIONAL_STR_KEYS = ("key", "slot_key", "next_permitted_step", "detail")
 
 
@@ -226,6 +232,39 @@ def _nested(records, event, operation_id):
             if r[event] is not None and r[event]["operation_id"] == operation_id]
 
 
+def _control_effect(where, state, field, operation_id):
+    """The control record field (``cancel_request``) that names
+    ``operation_id`` as its recording operation."""
+    effect = state_module.controls_of(state)[field]
+    if effect is None or effect["operation_id"] != operation_id:
+        _inconsistent(where, "%s operation without the %s record it produced"
+                      % (operation_id, field))
+    return effect
+
+
+def _hold_effect(where, state, field, operation_id):
+    """The ONE hold record whose ``field`` (``operation_id`` for a request,
+    ``lift_operation_id`` for a lift) names ``operation_id``."""
+    found = [h for h in state_module.controls_of(state)["holds"]
+             if h[field] == operation_id]
+    if len(found) != 1:
+        _inconsistent(where, "%s operation without exactly one hold record it"
+                      " produced (%d)" % (operation_id, len(found)))
+    return found[0]
+
+
+def _observation_effects(state, operation_id):
+    """The stop observation entries naming ``operation_id``, each carrying
+    its start's ``start_id`` and ``owner_ref`` (the invocation identity)."""
+    found = []
+    for start in state_module.engagement_starts_of(state):
+        for observation in state_module.stop_observations_of(start):
+            if observation["operation_id"] == operation_id:
+                found.append(dict(observation, start_id=start["start_id"],
+                                  owner_ref=start["owner_ref"]))
+    return found
+
+
 def _invocation_arguments(kind, effect, outcome, state):
     """The service's invocation ``arguments`` rebuilt from the effect (see
     ``state_service``): one shape per kind, identical to what the service
@@ -278,6 +317,32 @@ def _invocation_arguments(kind, effect, outcome, state):
                 "observed_at": effect["observed_at"]}
     if kind == state_module.OPERATION_RECORD_CONTINUATION:
         return {"reason": effect["reason"]}
+    if kind == state_module.OPERATION_RESERVE_ENGAGEMENT:
+        return {"workflow_id": effect["workflow_id"],
+                "ordinal": effect["engagement_sequence"]}
+    if kind == state_module.OPERATION_OPEN_ENGAGEMENT_START:
+        return {"reservation_id": effect["engagement_id"], "point": effect["point"],
+                "owner_ref": effect["owner_ref"]}
+    if kind == state_module.OPERATION_SETTLE_ENGAGEMENT_START:
+        settlement = effect["settlement"]
+        return {"start_id": effect["start_id"], "owner_ref": effect["owner_ref"],
+                "outcome": settlement["outcome"],
+                "identity": copy.deepcopy(settlement["identity"]),
+                "stop_reason": settlement["owner_reason"]}
+    if kind == state_module.OPERATION_OBSERVE_ENGAGEMENT_STOP:
+        # ``effect`` is the observation entry itself, carrying its start's
+        # identity (see ``_observation_effect``).
+        return {"start_id": effect["start_id"], "owner_ref": effect["owner_ref"],
+                "absent": effect["absent"], "detail": effect["detail"],
+                "identity": copy.deepcopy(effect["identity"])}
+    if kind == state_module.OPERATION_REQUEST_HOLD:
+        return {"reason": effect["reason"]}
+    if kind == state_module.OPERATION_LIFT_HOLD:
+        return {}
+    if kind == state_module.OPERATION_REQUEST_CANCEL:
+        return {"reason": effect["reason"]}
+    if kind == state_module.OPERATION_CONFIRM_CANCEL:
+        return {"detail": effect["detail"]}
     if kind == state_module.OPERATION_RECORD_CHECKPOINT:
         return {"completed_work": list(effect["completed_work"]),
                 "outstanding_work": list(effect["outstanding_work"]),
@@ -327,6 +392,15 @@ def reconcile_effects(state, location):
     by_operation["reconciliations"] = {}
     for entry in state.get("reconciliations", []):
         by_operation["reconciliations"].setdefault(
+            entry["operation_id"], []).append(entry)
+    # Task 8, slice S-IV: the additive-optional engagement reservations.
+    by_operation["engagements"] = {}
+    for entry in state_module.engagements_of(state):
+        by_operation["engagements"].setdefault(
+            entry["operation_id"], []).append(entry)
+    by_operation["engagement_starts"] = {}
+    for entry in state_module.engagement_starts_of(state):
+        by_operation["engagement_starts"].setdefault(
             entry["operation_id"], []).append(entry)
     for index, operation in enumerate(state["applied_operations"]):
         where = "%s.applied_operations[%d]" % (location, index)
@@ -478,6 +552,77 @@ def reconcile_effects(state, location):
                 _inconsistent(where, "continuation attempt %d but the ledger holds"
                               " %d continuation operations at that sequence"
                               % (effect["attempt"], consumed))
+        elif kind == state_module.OPERATION_RESERVE_ENGAGEMENT:
+            effect = direct("engagements")
+            before = progress_module.progress_at(state, operation["sequence"] - 1)
+            if before != state_module.PROGRESS_IN_PROGRESS:
+                record.fail(state_module.PROBLEM_HISTORY_IMPOSSIBLE,
+                            "%s reserves a engagement while the history was %s;"
+                            " the service accepts one only while IN_PROGRESS"
+                            % (where, before))
+            for key in ("engagement_id", "workflow_id", "engagement_sequence", "kind"):
+                _require_equal(where, outcome, key, effect[key])
+        elif kind == state_module.OPERATION_OPEN_ENGAGEMENT_START:
+            effect = direct("engagement_starts")
+            before = progress_module.progress_at(state, operation["sequence"] - 1)
+            if before != state_module.PROGRESS_IN_PROGRESS:
+                record.fail(state_module.PROBLEM_HISTORY_IMPOSSIBLE,
+                            "%s opens an engagement start while the history was"
+                            " %s; the service admits one only while IN_PROGRESS"
+                            % (where, before))
+            for key in ("start_id", "engagement_id", "point"):
+                _require_equal(where, outcome, key, effect[key])
+        elif kind == state_module.OPERATION_SETTLE_ENGAGEMENT_START:
+            effect = _exactly_one(where, _nested(
+                state_module.engagement_starts_of(state), "settlement",
+                operation_id), "settlement")
+            _require_equal(where, outcome, "start_id", effect["start_id"])
+            _require_equal(where, outcome, "outcome",
+                           effect["settlement"]["outcome"])
+            _require_equal(where, outcome, "stop_pending",
+                           effect["settlement"]["stop_pending"])
+        elif kind == state_module.OPERATION_OBSERVE_ENGAGEMENT_STOP:
+            effect = _exactly_one(where, _observation_effects(state, operation_id),
+                                  "stop observation")
+            _require_equal(where, outcome, "start_id", effect["start_id"])
+            _require_equal(where, outcome, "absent", effect["absent"])
+            _require_equal(where, outcome, "stop_confirmed", effect["absent"])
+        elif kind == state_module.OPERATION_REQUEST_HOLD:
+            effect = _hold_effect(where, state, "operation_id", operation_id)
+            _require_equal(where, outcome, "hold_active", True)
+            # The open starts the hold marked (R15-1), counted exactly.
+            marked = sum(
+                1 for s in state_module.engagement_starts_of(state)
+                if s["stop_requested"] is not None
+                and s["stop_requested"]["operation_id"] == operation_id)
+            _require_equal(where, outcome, "stops_requested", marked)
+        elif kind == state_module.OPERATION_LIFT_HOLD:
+            effect = _hold_effect(where, state, "lift_operation_id", operation_id)
+            _require_equal(where, outcome, "hold_active", False)
+        elif kind == state_module.OPERATION_REQUEST_CANCEL:
+            effect = _control_effect(where, state, "cancel_request", operation_id)
+            _require_equal(where, outcome, "cancel_requested", True)
+            marked = sum(
+                1 for s in state_module.engagement_starts_of(state)
+                if s["stop_requested"] is not None
+                and s["stop_requested"]["operation_id"] == operation_id)
+            _require_equal(where, outcome, "stops_requested", marked)
+        elif kind == state_module.OPERATION_CONFIRM_CANCEL:
+            request = state_module.controls_of(state)["cancel_request"]
+            if request is None or request["confirmation"] is None or (
+                request["confirmation"]["operation_id"] != operation_id
+            ):
+                _inconsistent(where, "confirm_cancel operation without the"
+                              " confirmation it produced")
+            closure = state["closure"]
+            if closure is None or closure["operation_id"] != operation_id:
+                _inconsistent(where, "confirm_cancel operation without the closure"
+                              " it produced")
+            effect = closure
+            _require_equal(where, outcome, "reason", closure["reason"])
+            _require_equal(where, outcome, "detail", closure["detail"])
+            if closure["progress"] != state_module.PROGRESS_ABANDONED:
+                _inconsistent(where, "a confirmed cancel closes as abandoned")
         elif kind == state_module.OPERATION_RECORD_CHECKPOINT:
             effect = direct("checkpoints")
             for key in ("checkpoint_id", "next_permitted_step", "refusal", "budget",
@@ -545,6 +690,8 @@ def reconcile_effects(state, location):
         "checkpoints": state_module.OPERATION_RECORD_CHECKPOINT,
         "continuations": state_module.OPERATION_RECORD_CONTINUATION,
         "reconciliations": state_module.OPERATION_RECONCILE,
+        "engagements": state_module.OPERATION_RESERVE_ENGAGEMENT,
+        "engagement_starts": state_module.OPERATION_OPEN_ENGAGEMENT_START,
     }
     for name, kind in expected_kind.items():
         for operation_id, entries in by_operation[name].items():
@@ -557,6 +704,8 @@ def reconcile_effects(state, location):
         (state["evidence"], "invalidation", state_module.OPERATION_INVALIDATE_EVIDENCE),
         (state["blockers"], "resolution", state_module.OPERATION_RESOLVE_BLOCKER),
         (state["dependencies"], "resolution", state_module.OPERATION_RESOLVE_DEPENDENCY),
+        (state_module.engagement_starts_of(state), "settlement",
+         state_module.OPERATION_SETTLE_ENGAGEMENT_START),
     ):
         seen = {}
         for entry in records:
@@ -571,6 +720,22 @@ def reconcile_effects(state, location):
             if count != 1:
                 _inconsistent(location, "%s event reused across %d records for"
                               " operation %s" % (event, count, operation_id))
+    # Task 8, slice S-IV (start-claim decision): every stop observation
+    # entry names exactly one applied observe operation, and no two
+    # entries share one.
+    seen = {}
+    for start in state_module.engagement_starts_of(state):
+        for observation in state_module.stop_observations_of(start):
+            operation_id = observation["operation_id"]
+            seen[operation_id] = seen.get(operation_id, 0) + 1
+            if ledger.get(operation_id) != state_module.OPERATION_OBSERVE_ENGAGEMENT_STOP:
+                _inconsistent(location, "stop observation attributed to operation"
+                              " %s of kind %s" % (operation_id,
+                                                  ledger.get(operation_id)))
+    for operation_id, count in seen.items():
+        if count != 1:
+            _inconsistent(location, "stop observation reused across %d entries for"
+                          " operation %s" % (count, operation_id))
     if state["closure"] is not None and ledger.get(state["closure"]["operation_id"]) not in (
         state_module.CLOSING_OPERATIONS
     ):

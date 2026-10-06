@@ -38,12 +38,32 @@ handled with the same rules: an argv list of strings, no shell, no
 interpolation, cwd is the authorized repository root, output bounded.
 A non-zero exit is reported to the machine, which records the named
 problem ``pr_delivery_reverification_failed`` and blocks durably.
+
+OWNED EFFECT CHILDREN (Task 8 S-VI, R2-8). Every EFFECT child — the git
+effect verbs (``EFFECT_GIT_VERBS``), ``gh pr create`` and the
+reverification argv — started while the machine has named its owner
+(``effect_owner``) and bound a child ledger (``bind_child_ledger``) runs in
+its OWN session (one process group: its whole tree is reachable through
+one id) and is recorded in an fsynced per-delivery ledger: an INTENT row
+before the spawn, the group id right after it, and a SETTLED row only when
+``killpg(group, 0)`` proves the group empty after the leader exited.
+``unsettled_children`` is what the machine consults before every effect:
+a group still alive, or an intent whose group id was never recorded (a
+crash inside the spawn window), refuses the next effect — settlement is
+PROVEN before any retry and nothing here ever kills a process, so an
+unattributed one is never touched. The limits, stated: a descendant that
+leaves its group (its own ``setsid``) is outside what the group proves;
+and an intent-only row (crash between the intent and the group id) stays
+unresolved until a human resolves it — refusal, never a guess.
 """
 
 import hashlib
 import json
+import os
+import secrets
 import subprocess
 import tempfile
+import time
 
 from pr_delivery.errors import DeliveryTransportError
 
@@ -64,24 +84,199 @@ ALLOWED_GH_ARGV = (
 )
 CHECK_RUNS_ENDPOINT = "repos/%s/%s/commits/%s/check-runs"
 
+# Task 8 S-VI: the git verbs that CHANGE something (objects, the index, a
+# ref, a remote); each child running one is an OWNED effect child. The
+# MUTATING form of ``symbolic-ref`` (``symbolic-ref HEAD <ref>``: the
+# Mission-bound preparation's HEAD move) is an effect form of its own; the
+# READ-ONLY ``symbolic-ref -q HEAD`` observation never is (``_effect_form``).
+SYMBOLIC_REF_SET = "symbolic-ref-set"
+EFFECT_GIT_VERBS = ("fetch", "update-index", "read-tree", "update-ref",
+                    "commit", "push", "write-tree", SYMBOLIC_REF_SET)
+CHILD_LEDGER_DIR_NAME = "pr_delivery-children"
+CHILD_UNSETTLED = "pr_delivery_effect_child_unsettled"
+CHILD_UNRESOLVED = "pr_delivery_effect_owner_unresolved"
+
 _PR_JSON_FIELDS = "number,url,headRefOid,headRefName,baseRefName,state"
 
 __all__ = ("DeliveryTransport", "DeliveryTransportError")
 
 
+def _effect_form(verb, argv):
+    """The effect form of one git call: ``symbolic-ref`` with a ref to SET
+    (two positional arguments) is ``SYMBOLIC_REF_SET``; its read-only query
+    form stays ``symbolic-ref``; every other verb is itself."""
+    if verb != "symbolic-ref":
+        return verb
+    rest = argv[argv.index(verb) + 1:]
+    positional = [item for item in rest if not item.startswith("-")]
+    return SYMBOLIC_REF_SET if len(positional) >= 2 else verb
+
+
+def _group_gone(pgid):
+    """True only when ``killpg(pgid, 0)`` proves no process remains in the
+    group; alive, or not ours to probe, is NOT gone."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 class DeliveryTransport(object):
     """The real transport. Hermetic tests inject a fake instead."""
 
-    def _run(self, argv, cwd=None, stdin_bytes=None):
+    # Bound by the machine (never by construction: the transport is built
+    # with zero arguments in exactly one place, ``cli.build_machine``).
+    child_ledger_directory = None
+    effect_owner = None
+    # The ledger's problem codes, for callers that must not import this
+    # module (the Mission-bound preparation reads them off the instance).
+    child_unsettled_problem = CHILD_UNSETTLED
+    child_unresolved_problem = CHILD_UNRESOLVED
+
+    def bind_child_ledger(self, directory):
+        """Record owned effect children under ``directory`` (the delivery
+        store's protected directory)."""
+        self.child_ledger_directory = os.path.join(directory,
+                                                   CHILD_LEDGER_DIR_NAME)
+
+    def _ledger_path(self, delivery_id):
+        return os.path.join(self.child_ledger_directory,
+                            "%s.jsonl" % delivery_id)
+
+    def _ledger_append(self, delivery_id, row):
+        os.makedirs(self.child_ledger_directory, mode=0o700, exist_ok=True)
+        descriptor = os.open(self._ledger_path(delivery_id),
+                             os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(descriptor, (json.dumps(row, sort_keys=True) + "\n")
+                     .encode("utf-8"))
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _owner(self, owned):
+        """The effect owner to record this child under, or None (a read,
+        or no ledger bound / no owner named)."""
+        owner = self.effect_owner
+        if not owned or self.child_ledger_directory is None or not isinstance(
+            owner, dict
+        ):
+            return None
+        return owner
+
+    def unsettled_children(self, delivery_id):
+        """``[(problem, detail)]`` for every owned child of ``delivery_id``
+        whose settlement is not proven: a group still alive
+        (``CHILD_UNSETTLED``) or an intent whose group id was never recorded
+        (``CHILD_UNRESOLVED``). A group found gone now gets its settled row
+        (the proof). Read-mostly; never signals a process."""
+        if self.child_ledger_directory is None:
+            return []
+        path = self._ledger_path(delivery_id)
+        if not os.path.exists(path):
+            return []
+        intents, groups, settled = {}, {}, set()
+        with open(path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    return [(CHILD_UNRESOLVED,
+                             "the owned-child ledger of %s is unreadable"
+                             % delivery_id)]
+                if not isinstance(row, dict):
+                    continue
+                if isinstance(row.get("intent"), str):
+                    intents[row["intent"]] = row
+                elif isinstance(row.get("nonce"), str):
+                    if isinstance(row.get("pgid"), int):
+                        groups[row["nonce"]] = row["pgid"]
+                    if row.get("settled") is True:
+                        settled.add(row["nonce"])
+        problems = []
+        for nonce, intent in sorted(intents.items()):
+            if nonce in settled:
+                continue
+            pgid = groups.get(nonce)
+            if pgid is None:
+                problems.append((CHILD_UNRESOLVED,
+                                 "effect child %s (%s %s) was intended but its"
+                                 " process group was never recorded; ownership"
+                                 " and settlement cannot be proven" % (
+                                     nonce, intent.get("step"),
+                                     intent.get("effect"))))
+            elif _group_gone(pgid):
+                self._ledger_append(delivery_id, {"nonce": nonce,
+                                                  "settled": True,
+                                                  "proven_at": time.time()})
+            else:
+                problems.append((CHILD_UNSETTLED,
+                                 "effect child %s (%s %s) process group %d is"
+                                 " still alive; no retry until it settles" % (
+                                     nonce, intent.get("step"),
+                                     intent.get("effect"), pgid)))
+        return problems
+
+    def child_intents(self, delivery_id):
+        """The effect names of every owned child recorded under
+        ``delivery_id`` (its fsynced intent rows, in order), or None when
+        the ledger cannot be read. Read-only; the settlement of each is
+        ``unsettled_children``'s to prove."""
+        if self.child_ledger_directory is None:
+            return None
+        path = self._ledger_path(delivery_id)
+        if not os.path.exists(path):
+            return []
+        effects = []
+        with open(path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    return None
+                if isinstance(row, dict) and isinstance(row.get("intent"), str):
+                    effects.append(row.get("effect"))
+        return effects
+
+    def _start_child(self, argv, owned, **popen_kwargs):
+        """Start one child. An OWNED child is recorded (intent before, group
+        after) and runs in its own session; returns ``(process, owner,
+        nonce)``."""
+        owner = self._owner(owned)
+        if owner is None:
+            return subprocess.Popen(argv, **popen_kwargs), None, None
+        nonce = "chd-" + secrets.token_hex(8)
+        self._ledger_append(owner["delivery_id"], {
+            "intent": nonce, "step": owner.get("step"),
+            "effect": owner.get("effect"), "program": os.path.basename(argv[0]),
+            "at": time.time()})
+        process = subprocess.Popen(argv, start_new_session=True, **popen_kwargs)
+        self._ledger_append(owner["delivery_id"], {"nonce": nonce,
+                                                   "pgid": process.pid})
+        return process, owner, nonce
+
+    def _settle_child(self, process, owner, nonce, returncode):
+        if owner is None:
+            return
+        self._ledger_append(owner["delivery_id"], {
+            "nonce": nonce, "returncode": returncode,
+            "settled": _group_gone(process.pid), "at": time.time()})
+
+    def _run(self, argv, cwd=None, stdin_bytes=None, owned=False):
         """Run one argv; return ``(returncode, stdout_bytes, stderr_text)``.
 
         stdout is streamed and bounded; over the bound the child is
         killed and the call refuses. stderr is captured through a
         temporary file and only its head is retained for messages.
+        ``owned`` marks an EFFECT child (see the module docstring).
         """
         with tempfile.TemporaryFile() as stderr_file:
-            process = subprocess.Popen(
-                argv, cwd=cwd, stdout=subprocess.PIPE, stderr=stderr_file,
+            process, owner, nonce = self._start_child(
+                argv, owned, cwd=cwd, stdout=subprocess.PIPE,
+                stderr=stderr_file,
                 stdin=subprocess.PIPE if stdin_bytes is not None else (
                     subprocess.DEVNULL
                 ),
@@ -107,6 +302,7 @@ class DeliveryTransport(object):
                     process.kill()
                 process.stdout.close()
                 returncode = process.wait()
+                self._settle_child(process, owner, nonce, returncode)
             stderr_file.seek(0)
             stderr_text = stderr_file.read(_STDERR_RETAINED_BYTES).decode(
                 "utf-8", "replace"
@@ -133,7 +329,8 @@ class DeliveryTransport(object):
             full.extend(["-c", item])
         full.extend(["-C", str(path)])
         full.extend(argv)
-        returncode, stdout, stderr = self._run(full)
+        returncode, stdout, stderr = self._run(
+            full, owned=_effect_form(verb, argv) in EFFECT_GIT_VERBS)
         if returncode != 0 and not allow_fail:
             raise DeliveryTransportError(
                 "git %s failed (%d): %s"
@@ -243,9 +440,19 @@ class DeliveryTransport(object):
         return parent, tree
 
     def ls_remote(self, path, remote_name, ref):
-        _, text = self._git_text(path, ["ls-remote", "--exit-code",
-                                        remote_name, ref],
-                                 allow_fail=True)
+        """The remote OID of ``ref``, or None when the remote PROVABLY has no
+        such ref (``--exit-code`` exit 2). Any other failure RAISES: a remote
+        lookup that could not be made is never read as absence (Task 8
+        S-VI, prep Q7)."""
+        code, text = self._git_text(path, ["ls-remote", "--exit-code",
+                                           remote_name, ref],
+                                    allow_fail=True)
+        if code == 2:
+            return None
+        if code != 0:
+            raise DeliveryTransportError(
+                "git ls-remote %s %s failed (%d); the remote could not be"
+                " queried, which is never absence" % (remote_name, ref, code))
         for line in text.splitlines():
             parts = line.split("\t")
             if len(parts) == 2 and parts[1] == ref:
@@ -280,6 +487,37 @@ class DeliveryTransport(object):
         ``old_oid`` at the moment of the update."""
         self._git(path, ["update-ref", ref, new_oid, old_oid])
 
+    def source_branch_state(self, path, ref, head_oid):
+        """Task 8 S-VI, READ-ONLY: where the Mission-bound preparation of the
+        local source branch ``ref`` at ``head_oid`` stands in ``path``, read
+        from the actual refs and HEAD. Returns ``(state, detail)``:
+
+        - ``not_started``: ``ref`` absent, HEAD detached at ``head_oid``;
+        - ``partial``: ``ref`` at ``head_oid``, HEAD still detached there
+          (the window between the ref creation and the HEAD move);
+        - ``done``: HEAD names ``ref`` and ``ref`` is at ``head_oid``;
+        - ``foreign``: anything else (HEAD elsewhere, the ref at another
+          commit, HEAD naming another branch) — never adopted."""
+        symbolic = self.symbolic_ref_head(path)
+        at = self.rev_parse(path, ref)
+        head = self.head_oid(path)
+        if symbolic == ref and at == head_oid:
+            return "done", None
+        if symbolic is None and head == head_oid:
+            if at is None:
+                return "not_started", None
+            if at == head_oid:
+                return "partial", None
+        return "foreign", "HEAD %s (symbolic %s), %s at %s, bound %s" % (
+            head, symbolic, ref, at, head_oid)
+
+    def attach_head(self, path, ref):
+        """Task 8 S-VI, the second (atomic) half of the preparation: point
+        HEAD at the existing local ``ref`` (``symbolic-ref``: one lockfile
+        rename; index and working tree untouched, no remote reached). The
+        caller has classified the state (``source_branch_state``) first."""
+        self._git(path, ["symbolic-ref", "HEAD", ref])
+
     def commit(self, path, name, email, message):
         """One commit with identity and ``gpgsign=false`` on the argv."""
         self._git(
@@ -306,8 +544,8 @@ class DeliveryTransport(object):
                 "reverification argv must be a non-empty list of strings"
             )
         with tempfile.TemporaryFile() as stderr_file:
-            process = subprocess.Popen(
-                list(argv), cwd=cwd, stdout=subprocess.PIPE,
+            process, owner, nonce = self._start_child(
+                list(argv), True, cwd=cwd, stdout=subprocess.PIPE,
                 stderr=stderr_file, stdin=subprocess.DEVNULL,
             )
             collected = bytearray()
@@ -327,6 +565,7 @@ class DeliveryTransport(object):
             finally:
                 process.stdout.close()
                 returncode = process.wait()
+                self._settle_child(process, owner, nonce, returncode)
         return returncode, bytes(collected), truncated
 
     # -- gh verbs -----------------------------------------------------
@@ -337,8 +576,10 @@ class DeliveryTransport(object):
             raise DeliveryTransportError(
                 "gh verb %r is outside the closed verb set" % (prefix,)
             )
-        returncode, stdout, stderr = self._run(["gh"] + list(argv),
-                                               stdin_bytes=stdin_bytes)
+        # Only ``pr create`` changes anything remotely: an OWNED effect child.
+        returncode, stdout, stderr = self._run(
+            ["gh"] + list(argv), stdin_bytes=stdin_bytes,
+            owned=prefix == ("pr", "create"))
         if returncode != 0:
             raise DeliveryTransportError(
                 "gh %s failed (%d): %s"
