@@ -26,11 +26,16 @@ passes one. Authorization decisions live entirely outside this module.
 
 Deadline posture: like the read-only transport, every child runs with
 NO deadline (an engineering verification can legitimately take a long
-time and a timeout would be a silent truncation of evidence). stdout is
-streamed and bounded by ``MAX_TRANSPORT_OUTPUT_BYTES`` (over the bound
-the child is killed and the call REFUSES rather than parsing a partial
-output); stderr goes to a temporary FILE, never a second pipe, so a
-hostile unbounded stderr cannot deadlock a deadline-free read.
+time and a timeout would be a silent truncation of evidence). Captured
+stdout is streamed and bounded by ``MAX_TRANSPORT_OUTPUT_BYTES`` (over
+the bound the child is killed and the call REFUSES rather than parsing
+a partial output). The ONE exception is ``staged_diff_sha256``, whose
+fixed ``diff --cached --binary`` stdout is read to EOF with no byte
+bound: nothing of it is retained or parsed. Each chunk is hashed and
+strictly UTF-8 decoded with the text discarded, so memory is bounded
+by one chunk, never by the candidate's size, and only the hex digest
+leaves the call. stderr goes to a temporary FILE, never a second pipe,
+so a hostile unbounded stderr cannot deadlock a deadline-free read.
 
 ``run_reverification`` (Lead M4) executes the human-bound argv recorded
 in the immutable authority half. It is the widest verb here and it is
@@ -40,6 +45,7 @@ A non-zero exit is reported to the machine, which records the named
 problem ``pr_delivery_reverification_failed`` and blocks durably.
 """
 
+import codecs
 import hashlib
 import json
 import subprocess
@@ -67,6 +73,48 @@ CHECK_RUNS_ENDPOINT = "repos/%s/%s/commits/%s/check-runs"
 _PR_JSON_FIELDS = "number,url,headRefOid,headRefName,baseRefName,state"
 
 __all__ = ("DeliveryTransport", "DeliveryTransportError")
+
+
+class _StrictUtf8Sha256(object):
+    """Incremental ``sha256(raw.decode("utf-8").encode("utf-8"))``.
+
+    For valid UTF-8 that round trip is the identity, so hashing the raw
+    chunks as they pass yields the legacy digest. Each chunk is also fed
+    to a strict incremental decoder whose output is discarded, so
+    invalid UTF-8 still refuses. After the first invalid byte nothing
+    more is decoded or hashed; the caller keeps draining the child so
+    its exit status is still observed first. ``hexdigest`` FINALIZES
+    the decoder: a sequence truncated at EOF refuses exactly as the
+    legacy one-shot decode did, instead of being silently held back.
+    """
+
+    def __init__(self):
+        self._hasher = hashlib.sha256()
+        self._decoder = codecs.getincrementaldecoder("utf-8")("strict")
+        self._invalid = False
+
+    def update(self, chunk):
+        if self._invalid:
+            return
+        try:
+            self._decoder.decode(chunk)
+        except UnicodeDecodeError:
+            self._invalid = True
+            return
+        self._hasher.update(chunk)
+
+    def hexdigest(self):
+        if not self._invalid:
+            try:
+                self._decoder.decode(b"", True)
+            except UnicodeDecodeError:
+                self._invalid = True
+        if self._invalid:
+            raise DeliveryTransportError(
+                "staged diff is not valid UTF-8; the legacy guard could"
+                " not bind it either"
+            )
+        return self._hasher.hexdigest()
 
 
 class DeliveryTransport(object):
@@ -223,16 +271,46 @@ class DeliveryTransport(object):
 
     def staged_diff_sha256(self, path):
         """sha256 of ``diff --cached --binary`` exactly as the legacy
-        guard computes it (strict UTF-8 text round trip)."""
-        _, stdout, _ = self._git(path, ["diff", "--cached", "--binary"])
-        try:
-            text = stdout.decode("utf-8")
-        except UnicodeDecodeError:
+        guard computes it (strict UTF-8 text round trip).
+
+        The one capture WITHOUT the output bound (see the module
+        docstring): stdout is streamed through ``_StrictUtf8Sha256`` and
+        never retained, so a candidate of any size binds in bounded
+        memory. The argv is fixed here; no caller supplies one.
+        """
+        argv = ["diff", "--cached", "--binary"]
+        # This path does not go through ``_git`` (whose capture is
+        # bounded), so the call-time verb closure is enforced here too.
+        if argv[0] not in ALLOWED_GIT_VERBS:
             raise DeliveryTransportError(
-                "staged diff is not valid UTF-8; the legacy guard could"
-                " not bind it either"
+                "git verb %r is outside the closed verb set" % (argv[0],)
             )
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+        digest = _StrictUtf8Sha256()
+        with tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                ["git", "-C", str(path)] + argv, stdout=subprocess.PIPE,
+                stderr=stderr_file, stdin=subprocess.DEVNULL,
+            )
+            try:
+                while True:
+                    chunk = process.stdout.read(_STREAM_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+            finally:
+                process.stdout.close()
+                returncode = process.wait()
+            stderr_file.seek(0)
+            stderr_text = stderr_file.read(_STDERR_RETAINED_BYTES).decode(
+                "utf-8", "replace"
+            )
+        # As before: a failed git is reported ahead of any UTF-8 verdict.
+        if returncode != 0:
+            raise DeliveryTransportError(
+                "git %s failed (%d): %s"
+                % (argv[0], returncode, stderr_text.strip()[:500])
+            )
+        return digest.hexdigest()
 
     def write_tree(self, path):
         return self._git_text(path, ["write-tree"])[1]

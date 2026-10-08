@@ -31,6 +31,13 @@ exec python3 "$ROOT/dirun.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/dirun"
 echo "Installed: $BIN_DIR/dirun"
+chmod +x "$ROOT/grokbot.py"
+cat > "$BIN_DIR/grokbot" <<EOF
+#!/usr/bin/env bash
+exec python3 "$ROOT/grokbot.py" "\$@"
+EOF
+chmod +x "$BIN_DIR/grokbot"
+echo "Installed: $BIN_DIR/grokbot"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo 'Add to your shell profile: export PATH="$HOME/.local/bin:$PATH"'
 fi

@@ -20,6 +20,7 @@ Standalone: PYTHONPATH=$PWD python3 tests/test_pr_delivery.py
 import atexit
 import copy
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -27,6 +28,7 @@ import shutil
 import stat
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -1474,6 +1476,307 @@ class MergeExclusionTests(unittest.TestCase):
         self.assertNotIn("merge", json.dumps(record).lower())
 
 
+# ---------------------------------------------------- staged diff digest
+
+
+INVALID_UTF8_MESSAGE = (
+    "staged diff is not valid UTF-8; the legacy guard could not bind it"
+    " either"
+)
+# A 3-byte character: 65536 = 1 (mod 3), so stream chunk boundaries fall
+# inside these characters.
+EURO = "€".encode("utf-8")
+EURO_LINE = EURO * 40 + b"\n"
+
+
+def _incompressible(size, seed):
+    """Deterministic incompressible bytes: a sha256 counter stream."""
+    out = bytearray()
+    counter = 0
+    while len(out) < size:
+        out.extend(hashlib.sha256(b"%s:%d" % (seed, counter)).digest())
+        counter += 1
+    return bytes(out[:size])
+
+
+def _staged_repo(base, name, files):
+    """A repository whose index stages ``files`` (relative path -> bytes)
+    on top of one base commit."""
+    repo = base / name
+    run_git("init", "-q", str(repo))
+    (repo / "base.txt").write_bytes(b"base\n")
+    git("add", "-A", cwd=repo)
+    git("commit", "-qm", "base", cwd=repo)
+    for relative, content in files.items():
+        (repo / relative).write_bytes(content)
+    git("add", "-A", cwd=repo)
+    return repo
+
+
+def _raw_staged_diff(repo, out_path):
+    """The exact bytes of ``diff --cached --binary``, taken independently
+    of the transport. git writes them to a file (``--output``) because
+    the hermetic helper decodes stdout as text."""
+    run_git_completed(["-C", str(repo), "diff", "--cached", "--binary",
+                       "--output=" + str(out_path)])
+    return out_path.read_bytes()
+
+
+class _StandInDiffChild(object):
+    """Stands in for the ``git diff`` child on the digest path only.
+
+    Real git cannot END a diff stream inside a multi-byte sequence: every
+    diff line, ``\\ No newline at end of file`` included, ends with a
+    newline. So the EOF-truncation and posture cases drive the production
+    read loop over a scripted stdout instead of a real child.
+    """
+
+    def __init__(self, payload, returncode=0, stderr=b""):
+        self.payload = payload
+        self.returncode = returncode
+        self.stderr = stderr
+        self.stdout = None
+        self.calls = []
+        self.waits = []
+
+    def popen(self, argv, **kwargs):
+        self.calls.append((list(argv), dict(kwargs)))
+        if self.stderr:
+            kwargs["stderr"].write(self.stderr)
+        self.stdout = io.BytesIO(self.payload)
+        return self
+
+    def wait(self, timeout=None):
+        self.waits.append(timeout)
+        return self.returncode
+
+    def kill(self):
+        raise AssertionError("the digest path never kills its child")
+
+
+class StagedDiffDigestTests(unittest.TestCase):
+    """The COMMIT binding's ``staged_sha256`` over the REAL transport.
+
+    ``staged_diff_sha256`` streams ``diff --cached --binary`` without the
+    captured-output bound (nothing is captured), so a candidate of any
+    size binds; every other capture keeps the bound.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(temp.cleanup)
+        cls.base = Path(temp.name)
+        cls.large = _staged_repo(cls.base, "large", {
+            "base.txt": b"base\nchanged\n",
+            # NUL first: git classifies the file binary, so the diff
+            # carries a base85 "GIT binary patch" (--binary matters).
+            "blob.bin": b"\x00" + _incompressible(700000, b"blob"),
+            "euro.txt": EURO_LINE * 12000,
+        })
+        cls.large_raw = _raw_staged_diff(cls.large,
+                                         cls.base / "large.diff")
+
+    def run_stand_in(self, child):
+        path = str(self.base)
+        with patch.object(transport_module.subprocess, "Popen",
+                          child.popen):
+            return TestTransport(path).staged_diff_sha256(path)
+
+    def test_a_staged_diff_over_the_output_bound_binds(self):
+        raw = self.large_raw
+        # Anti-vacuity: comfortably over the bound, a real binary patch,
+        # and a character split by a stream chunk boundary.
+        self.assertGreater(
+            len(raw), 2 * transport_module.MAX_TRANSPORT_OUTPUT_BYTES
+        )
+        self.assertIn(b"GIT binary patch", raw)
+        chunk = transport_module._STREAM_CHUNK_BYTES
+        self.assertTrue(any(
+            0x80 <= raw[offset] <= 0xBF
+            for offset in range(chunk, len(raw), chunk)
+        ))
+        digest = TestTransport(self.large).staged_diff_sha256(
+            str(self.large)
+        )
+        self.assertEqual(digest, hashlib.sha256(raw).hexdigest())
+
+    def test_a_small_staged_diff_is_byte_compatible_with_the_legacy(self):
+        repo = _staged_repo(self.base, "small", {
+            "base.txt": b"base\nna\xc3\xafve \xe2\x98\x83\n",
+            "tiny.bin": b"\x00\x01\x02\xff" * 16,
+        })
+        transport = TestTransport(repo)
+        # The pre-fix computation verbatim: the bounded capture through
+        # ``_git``, then the strict UTF-8 text round trip.
+        _, stdout, _ = transport._git(str(repo),
+                                      ["diff", "--cached", "--binary"])
+        legacy = hashlib.sha256(
+            stdout.decode("utf-8").encode("utf-8")
+        ).hexdigest()
+        raw = _raw_staged_diff(repo, self.base / "small.diff")
+        self.assertEqual(stdout, raw)
+        self.assertIn(b"GIT binary patch", raw)
+        self.assertEqual(transport.staged_diff_sha256(str(repo)), legacy)
+
+    def test_invalid_utf8_from_real_git_refuses_with_the_legacy_message(
+        self,
+    ):
+        # Reachable through real git: a file with no NUL byte is diffed as
+        # TEXT, and --binary passes its raw bytes through, so a Latin-1
+        # byte reaches the stream. Once at the head, once past the first
+        # MiB (decoding must continue across every chunk).
+        cases = {
+            "early": {"latin1.txt": b"caf\xe9\n"},
+            "late": {"a-euro.txt": EURO_LINE * 10000,
+                     "z-latin1.txt": b"caf\xe9\n"},
+        }
+        for name, files in sorted(cases.items()):
+            with self.subTest(case=name):
+                repo = _staged_repo(self.base, "invalid-" + name, files)
+                raw = _raw_staged_diff(
+                    repo, self.base / ("invalid-%s.diff" % name)
+                )
+                with self.assertRaises(UnicodeDecodeError):
+                    raw.decode("utf-8")
+                if name == "late":
+                    self.assertGreater(
+                        raw.index(b"caf\xe9"),
+                        transport_module.MAX_TRANSPORT_OUTPUT_BYTES,
+                    )
+                with self.assertRaises(
+                    transport_module.DeliveryTransportError
+                ) as caught:
+                    TestTransport(repo).staged_diff_sha256(str(repo))
+                self.assertEqual(str(caught.exception),
+                                 INVALID_UTF8_MESSAGE)
+
+    def test_a_sequence_truncated_at_eof_refuses(self):
+        # The character starts in the first chunk and is cut off in the
+        # second, at EOF: an incremental decoder that is never finalized
+        # would accept it. The completed stream (a character split across
+        # the boundary) binds as the raw bytes' sha256.
+        prefix = b"+" * (transport_module._STREAM_CHUNK_BYTES - 1)
+        with self.assertRaises(
+            transport_module.DeliveryTransportError
+        ) as caught:
+            self.run_stand_in(_StandInDiffChild(prefix + EURO[:2]))
+        self.assertEqual(str(caught.exception), INVALID_UTF8_MESSAGE)
+        complete = prefix + EURO + b"\n"
+        self.assertEqual(self.run_stand_in(_StandInDiffChild(complete)),
+                         hashlib.sha256(complete).hexdigest())
+
+    def test_a_failed_git_reports_its_exit_before_any_utf8_verdict(self):
+        child = _StandInDiffChild(b"caf\xe9\n", returncode=1,
+                                  stderr=b"fatal: boom\n")
+        with self.assertRaises(
+            transport_module.DeliveryTransportError
+        ) as caught:
+            self.run_stand_in(child)
+        self.assertEqual(str(caught.exception),
+                         "git diff failed (1): fatal: boom")
+        # And from real git, with its own stderr head.
+        missing = str(self.base / "missing")
+        with self.assertRaises(
+            transport_module.DeliveryTransportError
+        ) as caught:
+            TestTransport(missing).staged_diff_sha256(missing)
+        self.assertRegex(str(caught.exception),
+                         r"^git diff failed \(\d+\): \S")
+
+    def test_the_digest_child_keeps_the_deadline_and_stderr_posture(self):
+        payload = b"diff --git a/x b/x\n"
+        child = _StandInDiffChild(payload)
+        self.assertEqual(self.run_stand_in(child),
+                         hashlib.sha256(payload).hexdigest())
+        self.assertEqual(len(child.calls), 1)
+        argv, kwargs = child.calls[0]
+        self.assertEqual(argv[0], "git")
+        self.assertEqual(argv[1:3], ["-C", str(self.base)])
+        self.assertEqual(argv[3:], ["diff", "--cached", "--binary"])
+        process = transport_module.subprocess
+        self.assertIs(kwargs["stdout"], process.PIPE)
+        self.assertIs(kwargs["stdin"], process.DEVNULL)
+        # stderr is a temporary FILE, never a second pipe.
+        self.assertNotIn(kwargs["stderr"],
+                         (process.PIPE, process.STDOUT, None))
+        self.assertTrue(callable(getattr(kwargs["stderr"], "fileno")))
+        # No deadline: no timeout on the child or on the wait.
+        self.assertNotIn("timeout", kwargs)
+        self.assertEqual(child.waits, [None])
+
+    def test_verb_closure_holds_on_the_digest_path(self):
+        narrowed = tuple(verb for verb in transport_module.ALLOWED_GIT_VERBS
+                         if verb != "diff")
+        child = _StandInDiffChild(b"")
+        with patch.object(transport_module, "ALLOWED_GIT_VERBS", narrowed):
+            with self.assertRaises(
+                transport_module.DeliveryTransportError
+            ) as caught:
+                self.run_stand_in(child)
+        self.assertEqual(str(caught.exception),
+                         "git verb 'diff' is outside the closed verb set")
+        self.assertEqual(child.calls, [])
+
+    def test_every_other_capture_keeps_the_output_bound(self):
+        self.assertEqual(transport_module.MAX_TRANSPORT_OUTPUT_BYTES,
+                         1048576)
+        transport = TestTransport(self.large)
+        path = str(self.large)
+        empty_tree = git("hash-object", "-t", "tree", "/dev/null",
+                         cwd=self.large)
+        staged_tree = transport.write_tree(path)
+        # The SAME oversized stream through the ordinary bounded path,
+        # and a second verb: both still refuse with the existing message.
+        for argv in (["diff", "--cached", "--binary"],
+                     ["diff-tree", "-r", "-p", "--binary", empty_tree,
+                      staged_tree]):
+            with self.subTest(verb=argv[0]):
+                with self.assertRaises(
+                    transport_module.DeliveryTransportError
+                ) as caught:
+                    transport._git(path, argv)
+                self.assertEqual(
+                    str(caught.exception),
+                    "git produced more than 1048576 bytes; refusing to"
+                    " parse a partial output",
+                )
+        # No parameter exists through which a caller could relax it.
+        real = transport_module.DeliveryTransport
+        self.assertEqual(list(inspect.signature(real._run).parameters),
+                         ["self", "argv", "cwd", "stdin_bytes"])
+        self.assertEqual(list(inspect.signature(real._git).parameters),
+                         ["self", "path", "argv", "allow_fail", "config"])
+        self.assertEqual(
+            list(inspect.signature(real.staged_diff_sha256).parameters),
+            ["self", "path"],
+        )
+
+    def test_commit_binds_a_candidate_over_the_output_bound(self):
+        # The blocker itself: COMMIT binds a staged candidate larger than
+        # the captured-output bound, through the installed guards, instead
+        # of returning retry before any receipt exists.
+        fx = DeliveryFixture(self, hooks=True)
+        (fx.work / "src" / "blob.bin").write_bytes(
+            b"\x00" + _incompressible(600000, b"e2e")
+        )
+        (fx.work / "src" / "euro.txt").write_bytes(EURO_LINE * 6000)
+        git("add", "-A", cwd=fx.work)
+        raw = _raw_staged_diff(fx.work,
+                               Path(fx.temp.name) / "candidate.diff")
+        self.assertGreater(len(raw),
+                           transport_module.MAX_TRANSPORT_OUTPUT_BYTES)
+        fx.authorize(validity_seconds=3600)
+        outcome = fx.machine.advance("prd-test")
+        record = fx.record()
+        self.assertEqual(outcome, machine_module.OUTCOME_COMPLETE,
+                         record["steps"][COMMIT_STEP])
+        receipt = record["steps"][COMMIT_STEP]["receipt"]
+        self.assertEqual(receipt["state"], auth.RECEIPT_SUCCEEDED)
+        self.assertEqual(receipt["binding"]["staged_sha256"],
+                         hashlib.sha256(raw).hexdigest())
+
+
 class StoreTests(unittest.TestCase):
     def test_store_fails_closed_and_prunes_only_terminal(self):
         fx = DeliveryFixture(self)
@@ -1762,6 +2065,285 @@ class MissionParentAttestationTests(unittest.TestCase):
         self.assertEqual(self.mission_bytes(), before)
         self.assertEqual(len(mission_state.attested_artifacts(
             self.mission_service.get_state(self.mission_id)["record"])), 3)
+
+
+class DotsAttestedCeremonyTests(unittest.TestCase):
+    """Task 8, user decision: the minimal Dots-attested P1-A6 ceremony,
+    PRESENT plus ATTEST on the existing store, record, expiry, one-shot
+    consumption and revocation. The phone human replies with a simple
+    affirmative and never types a digest; the full binding lives in the
+    presented proposal and the attested record. Operator-attested, NOT
+    independently verified. No live delivery: the real local fixture
+    repositories only, and nothing is advanced, pushed or opened."""
+
+    REPLY_TO = "dots-message-0001"
+    RELAY_REF = "relay-0001"
+
+    def setUp(self):
+        self.fx = DeliveryFixture(self)
+
+    def present(self, **overrides):
+        return cli_module.present_dots_cmd(self.fx.args(**overrides),
+                                           out=io.StringIO())
+
+    def attest(self, presented, reply="approved", digest=None, proposal=None,
+               reply_to=REPLY_TO, relay_ref=RELAY_REF):
+        args = SimpleNamespace(
+            proposal_digest=(presented["proposal_digest_sha256"]
+                             if digest is None else digest),
+            reply_to=reply_to, relay_ref=relay_ref)
+        stdin = json.dumps({
+            "delivery_proposal": (presented["delivery_proposal"]
+                                  if proposal is None else proposal),
+            "relayed_reply": reply})
+        return cli_module.attest_dots_cmd(args, stdin, out=io.StringIO())
+
+    def refused(self, presented, **kwargs):
+        with self.assertRaises(cli_module.CeremonyError) as caught:
+            self.attest(presented, **kwargs)
+        self.assertEqual(self.fx.store.load()["deliveries"], {})
+        return str(caught.exception)
+
+    def test_D1_records_honest_source_identity_and_relayed_confirmation(self):
+        presented = self.present(mission_workflow_id="mn-" + "1" * 32,
+                                 mission_authorization_digest="2" * 64)
+        self.assertIn(presented["delivery_proposal"]["binding"]["candidate"][
+            "identity_digest_sha256"], presented["display"])
+        self.assertIn("no digest is ever typed", presented["reply"])
+        delivery_id = self.attest(presented)
+        record = self.fx.store.load()["deliveries"][delivery_id]
+        auth.validate_authorization(record)
+        human = record["human_authorization"]
+        self.assertEqual(human["source"], "dots_operator_attested")
+        self.assertNotEqual(human["source"], auth.AUTHORIZATION_SOURCE_LOCAL_TERMINAL)
+        self.assertEqual(human["identity"],
+                         "operator_attested_relay:outer_operator_relay")
+        attestation = human["attestation"]
+        self.assertEqual(attestation["confirmation"], "operator_relayed")
+        self.assertEqual(attestation["provenance"],
+                         "operator_attested_not_independently_verified")
+        self.assertIn("could fabricate it", attestation["residual_risk"])
+        self.assertIn("not verified authorship", attestation["residual_risk"])
+        self.assertEqual(attestation["relayed_reply"], "approved")
+        self.assertEqual(attestation["reply_to"], self.REPLY_TO)
+        self.assertEqual(attestation["proposal_digest_sha256"],
+                         presented["proposal_digest_sha256"])
+        # The FULL binding: candidate, Mission, revision, scope, target, expiry.
+        binding = presented["delivery_proposal"]["binding"]
+        self.assertEqual(record["candidate"]["identity_digest_sha256"],
+                         self.fx.live_digest())
+        for key in auth.DELIVERY_PROPOSAL_BINDING_KEYS:
+            self.assertEqual(record[key], binding[key], key)
+        self.assertEqual(record["mission"]["workflow_id"], "mn-" + "1" * 32)
+        self.assertEqual(record["expiration"]["expires_at"],
+                         presented["delivery_proposal"]["expires_at"])
+        self.assertEqual(record["phase"], auth.PHASE_AUTHORIZED)
+
+    def test_D2_only_the_whole_affirmative_counts_and_refusals_write_nothing(self):
+        presented = self.present()
+        digest = presented["proposal_digest_sha256"]
+        for reply in ("no", "not approved", "disapproved", "approved, thanks",
+                      "\"approved\"", "'approved'", "he said approved",
+                      "approved " + digest, digest, "", "   "):
+            with self.subTest(reply=reply):
+                self.assertIn("not an exact affirmative",
+                              self.refused(presented, reply=reply))
+        # The phone human's whole reply is just the word: no digest typed.
+        self.assertTrue(self.attest(presented, reply="  Approved ").startswith("prd-"))
+
+    def test_D3_ambiguous_or_substituted_candidates_are_refused(self):
+        presented = self.present()
+        other = self.present(title="a different delivery")
+        for kwargs in ({"digest": other["proposal_digest_sha256"]},
+                       {"reply_to": ""}, {"relay_ref": ""}):
+            with self.subTest(kwargs=sorted(kwargs)):
+                self.refused(presented, **kwargs)
+        substituted = copy.deepcopy(presented["delivery_proposal"])
+        substituted["binding"]["candidate"]["identity_digest_sha256"] = "9" * 64
+        self.assertIn("ambiguous or substituted",
+                      self.refused(presented, proposal=substituted))
+        # The live candidate changed after presentation: refused even though
+        # the reply links to the presented proposal exactly.
+        (self.fx.work / "late.txt").write_text("staged after presentation\n")
+        git("add", "late.txt", cwd=self.fx.work)
+        self.assertIn("substituted or different candidate",
+                      self.refused(presented))
+
+    def test_D4_expiry_one_shot_and_revocation_still_hold(self):
+        presented = self.present()
+        stale = copy.deepcopy(presented["delivery_proposal"])
+        # A deadline that has passed (deterministic: before presentation).
+        stale["expires_at"] = stale["presented_at"] - 1
+        self.assertIn("expired", self.refused(
+            presented, proposal=stale,
+            digest=auth.delivery_proposal_digest(stale)))
+        delivery_id = self.attest(presented)
+        with self.assertRaises(cli_module.CeremonyError) as caught:
+            self.attest(presented)
+        self.assertIn("already attested", str(caught.exception))
+        self.assertEqual(list(self.fx.store.load()["deliveries"]), [delivery_id])
+        boundary = boundary_module.PrDeliveryBoundary(self.fx.machine)
+        status = boundary.revoke(delivery_id, "human", "not today")
+        self.assertEqual(status["phase"], auth.PHASE_REVOKED)
+
+    def test_D8_capacity_pruning_never_launders_a_revoked_proposal(self):
+        """Round 18: attest, revoke, capacity pruning pressure, restart,
+        then replay the identical proposal and reply BEFORE expiry: refused,
+        no new AUTHORIZED record. Once the proposal's deadline passes, the
+        record is reclaimable again, so capacity is never consumed for good."""
+        presented = self.present()
+        proposal_digest = presented["proposal_digest_sha256"]
+        deadline = presented["delivery_proposal"]["expires_at"]
+        # 1. attest
+        attested_id = self.attest(presented)
+        attested_at = self.fx.store.load()["deliveries"][attested_id][
+            "human_authorization"]["authorized_at"]
+        # 2. revoke
+        self.fx.now[0] = attested_at + 10
+        boundary = boundary_module.PrDeliveryBoundary(self.fx.machine)
+        self.assertEqual(boundary.revoke(attested_id, "human", "no")["phase"],
+                         auth.PHASE_REVOKED)
+        # 3. capacity pruning pressure: fill the store with ordinary
+        # terminal records that are all NEWER than the revoked one (so the
+        # old oldest-first pruning would have evicted it first), then make
+        # an ordinary insertion through the real ceremony.
+        self.fx.now[0] = attested_at + 100
+        self.fx.authorize(title="a filler delivery")
+        boundary.revoke("prd-test", "human", "filler")
+        with self.fx.store.lock():
+            document = self.fx.store.load()
+            filler = document["deliveries"]["prd-test"]
+            for index in range(store_module.MAX_PR_DELIVERY_RECORDS - 2):
+                record = copy.deepcopy(filler)
+                record["delivery_id"] = "prd-filler-%03d" % index
+                record["authority_digest_sha256"] = auth.authority_digest(record)
+                ok, problem, _ = store_module.add_delivery(document, record)
+                self.assertTrue(ok, problem)
+            self.fx.store.save(document)
+        self.assertEqual(len(self.fx.store.load()["deliveries"]),
+                         store_module.MAX_PR_DELIVERY_RECORDS)
+        other = self.present(title="another delivery under pressure")
+        pressure_id = self.attest(other, reply_to="dots-message-0002",
+                                  relay_ref="relay-0002")
+        # 4. restart: a fresh store read from disk still holds the revoked
+        # record (the ordinary insertion pruned a filler instead).
+        restarted = store_module.DeliveryStore(store_module.store_directory())
+        before = restarted.load()["deliveries"]
+        self.assertEqual(len(before), store_module.MAX_PR_DELIVERY_RECORDS)
+        self.assertIn(pressure_id, before)
+        self.assertEqual(before[attested_id]["phase"], auth.PHASE_REVOKED)
+        # 5. replay the identical proposal and reply before expiry.
+        self.assertLess(time.time(), deadline)
+        with self.assertRaises(cli_module.CeremonyError) as caught:
+            self.attest(presented)
+        self.assertIn("already attested", str(caught.exception))
+        after = restarted.load()["deliveries"]
+        self.assertEqual(sorted(after), sorted(before))
+        self.assertEqual([
+            delivery_id for delivery_id, record in after.items()
+            if record["phase"] == auth.PHASE_AUTHORIZED
+            and record["human_authorization"].get("attestation", {}).get(
+                "proposal_digest_sha256") == proposal_digest
+        ], [])
+        # A store full of protected records refuses rather than pruning.
+        protected = {"deliveries": {}}
+        for index in range(store_module.MAX_PR_DELIVERY_RECORDS):
+            record = copy.deepcopy(after[attested_id])
+            record["delivery_id"] = "prd-protected-%03d" % index
+            record["authority_digest_sha256"] = auth.authority_digest(record)
+            protected["deliveries"][record["delivery_id"]] = record
+        incoming = copy.deepcopy(after[pressure_id])
+        incoming["delivery_id"] = "prd-incoming-before"
+        incoming["authority_digest_sha256"] = auth.authority_digest(incoming)
+        self.assertEqual(store_module.add_delivery(protected, incoming),
+                         (False, store_module.PROBLEM_STORE_FULL, 0))
+        # 6. after the deadline the expired record is reclaimable: an
+        # ordinary insertion at deadline+1 evicts it (oldest first).
+        with patch("time.time", return_value=deadline + 1):
+            late = self.present(title="a delivery after the deadline")
+            late_id = self.attest(late, reply_to="dots-message-0003",
+                                  relay_ref="relay-0003")
+        reclaimed = restarted.load()["deliveries"]
+        self.assertNotIn(attested_id, reclaimed)
+        self.assertIn(late_id, reclaimed)
+        incoming = copy.deepcopy(reclaimed[late_id])
+        incoming["delivery_id"] = "prd-incoming-after"
+        incoming["authority_digest_sha256"] = auth.authority_digest(incoming)
+        ok, problem, pruned = store_module.add_delivery(protected, incoming)
+        self.assertEqual((ok, problem, pruned), (True, None, 1))
+        # Replaying the original proposal after its deadline stays refused.
+        with patch("time.time", return_value=deadline + 2):
+            with self.assertRaises(cli_module.CeremonyError) as caught:
+                self.attest(presented)
+        self.assertIn("expired", str(caught.exception))
+
+    def test_D9_the_dots_display_states_the_absolute_presentation_deadline(self):
+        presented = self.present()
+        deadline = presented["delivery_proposal"]["expires_at"]
+        self.assertIn("Expires       : %s (absolute; 3600 seconds from"
+                      " presentation, not from approval)" % time.strftime(
+                          "%Y-%m-%dT%H:%M:%SZ", time.gmtime(deadline)),
+                      presented["display"])
+        self.assertNotIn("from authorization", presented["display"])
+        # The terminal ceremony's wording is unchanged.
+        shown = io.StringIO()
+        digest = self.fx.live_digest()
+        cli_module.assemble_authority(
+            self.fx.transport, self.fx.args(), self.fx.clock(), "human",
+            lambda prompt: digest[:cli_module.CONFIRMATION_CHARS], out=shown)
+        self.assertIn("Expires       : 3600 seconds from authorization",
+                      shown.getvalue())
+
+    def test_D5_no_record_can_claim_local_terminal_or_a_person(self):
+        presented = self.present()
+        delivery_id = self.attest(presented)
+        record = self.fx.store.load()["deliveries"][delivery_id]
+        tampered_cases = (
+            lambda r: r["human_authorization"].update(source="local_terminal"),
+            lambda r: r["human_authorization"].update(identity="alice"),
+            lambda r: r["human_authorization"]["attestation"].update(
+                relayed_reply="not approved"),
+            lambda r: r["human_authorization"]["attestation"].update(
+                provenance="verified_human"),
+            lambda r: r["human_authorization"].update(
+                confirmation_digest_sha256="0" * 64),
+            lambda r: r["candidate"].update(identity_digest_sha256="9" * 64),
+            # A binding field the human never saw: only the proposal-digest
+            # re-proof catches it.
+            lambda r: r["pr_content"].update(title="a substituted title"),
+        )
+        for index, tamper in enumerate(tampered_cases):
+            with self.subTest(case=index):
+                changed = copy.deepcopy(record)
+                tamper(changed)
+                changed["authority_digest_sha256"] = auth.authority_digest(changed)
+                with self.assertRaises(auth.AuthorizationError):
+                    auth.validate_authorization(changed)
+
+    def test_D6_local_terminal_and_its_tty_requirement_are_unchanged(self):
+        with patch("sys.stdin", io.StringIO("000000000000\n")):
+            with self.assertRaises(cli_module.CeremonyError) as caught:
+                cli_module.authorize_cmd(self.fx.args(), out=io.StringIO())
+        self.assertIn("interactive terminal", str(caught.exception))
+        self.assertEqual(self.fx.store.load()["deliveries"], {})
+        self.assertEqual(auth.AUTHORIZATION_SOURCES,
+                         ("local_terminal", "dots_operator_attested"))
+
+    def test_D7_an_engineering_approval_alone_yields_no_delivery(self):
+        # A Mission engineering approval is not a delivery proposal: without
+        # a presented delivery proposal there is nothing to attest, and
+        # nothing is written.
+        presented = self.present(mission_workflow_id="mn-" + "1" * 32,
+                                 mission_authorization_digest="2" * 64)
+        engineering_only = {"mission_id": "mn-" + "1" * 32,
+                            "decision": "APPROVE", "relayed_reply": "approved"}
+        with self.assertRaises(cli_module.CeremonyError):
+            cli_module.attest_dots_cmd(
+                SimpleNamespace(proposal_digest="2" * 64, reply_to="r",
+                                relay_ref="x"),
+                json.dumps(engineering_only), out=io.StringIO())
+        self.assertEqual(self.fx.store.load()["deliveries"], {})
+        self.assertNotIn("delivery_authority", presented["delivery_proposal"])
 
 
 if __name__ == "__main__":

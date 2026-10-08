@@ -11,6 +11,10 @@ Every argv is a fixed literal command plus values resolved from the
 protected workflow record — never a caller-typed string, never a
 shell. The verb set is READ/CLONE/CHECKOUT only: nothing here can
 stage, create a revision, move a ref, or contact a remote to write.
+``add_worktree`` (automatic Mission workspaces) is a CHECKOUT into a
+new directory: detached at an existing commit and locked, so it
+creates no branch and no revision, moves no shared ref and contacts
+no remote; no verb here removes, moves or prunes a worktree.
 """
 
 import hashlib
@@ -89,6 +93,41 @@ class GitTransport(object):
     def status_porcelain(self, path):
         return self._run(
             ["git", "-C", str(path), "status", "--porcelain"]
+        )
+
+    # -- automatic Mission workspaces (local repository only) ----------
+
+    def toplevel(self, path):
+        return self._run(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"]
+        ).strip()
+
+    def common_dir(self, path):
+        """The repository's shared Git directory, absolute: the same for
+        every worktree of one repository."""
+        return self._run(
+            ["git", "-C", str(path), "rev-parse", "--path-format=absolute",
+             "--git-common-dir"]
+        ).strip()
+
+    def worktree_list(self, repository):
+        """``git worktree list --porcelain -z``, unparsed: NUL-separated
+        fields, so no path or lock reason can forge a record."""
+        return self._run(
+            ["git", "-C", str(repository), "worktree", "list",
+             "--porcelain", "-z"]
+        )
+
+    def add_worktree(self, repository, path, commit_sha, lock_reason):
+        """Check ``commit_sha`` out, detached, into the NEW directory
+        ``path`` as a worktree of ``repository``, locked with
+        ``lock_reason`` from its first moment (so ``git worktree prune``
+        never removes it). Repository hooks are disabled for this one
+        invocation: an unattended preparation runs no hook."""
+        self._run(
+            ["git", "-c", "core.hooksPath=/dev/null", "-C", str(repository),
+             "worktree", "add", "--quiet", "--detach", "--lock", "--reason",
+             str(lock_reason), "--", str(path), str(commit_sha)]
         )
 
     # -- streamed, bounded READ captures (evidence layer) --------------

@@ -59,7 +59,7 @@ PACKAGE_DIR = REPO_ROOT / "human_interaction"
 FORBIDDEN_ROOTS = (
     "telegram_operator", "codex_gateway", "operator_session",
     "workflow_authority", "target_runtime", "herdr", "herdctl",
-    "grok_mcp",
+    "grok_mcp", "grok_bot",
 )
 NOW = 1_000_000
 ALLOWED = (42,)

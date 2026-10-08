@@ -28,6 +28,7 @@ from workflow_authority.store import (
 )
 
 from pr_delivery.authorization import (
+    AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED,
     TERMINAL_PHASES,
     AuthorizationError,
     validate_authorization,
@@ -164,7 +165,21 @@ def is_active(record):
     return record["phase"] not in TERMINAL_PHASES
 
 
-def _prune_inactive(document):
+def is_replay_protected(record, now):
+    """A Dots operator-attested record, of any phase, stays in the store
+    until its presented proposal's deadline (the record's own expiry) has
+    passed: until then it is the one-shot and revocation history that
+    refuses a replay of that proposal, so capacity pruning must not erase
+    it. Once the deadline passes, the proposal can no longer be attested
+    and the record is reclaimable as before."""
+    return (
+        record["human_authorization"]["source"]
+        == AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED
+        and now < record["expiration"]["expires_at"]
+    )
+
+
+def _prune_inactive(document, now):
     deliveries = document["deliveries"]
     if len(deliveries) < MAX_PR_DELIVERY_RECORDS:
         return 0
@@ -172,6 +187,7 @@ def _prune_inactive(document):
         (
             delivery_id for delivery_id, record in deliveries.items()
             if not is_active(record)
+            and not is_replay_protected(record, now)
         ),
         key=lambda delivery_id: (
             deliveries[delivery_id]["human_authorization"]["authorized_at"],
@@ -189,12 +205,16 @@ def _prune_inactive(document):
 
 def add_delivery(document, record):
     """Add a validated record or refuse. Returns ``(ok, problem, pruned)``;
-    an active record is never evicted to make room."""
+    an active record is never evicted to make room, and neither is an
+    unexpired replay-protected one: the INCOMING authorization time is
+    compared with each retained record's expiry, and a store full of
+    protected records refuses."""
     validate_authorization(record)
     deliveries = document["deliveries"]
     if record["delivery_id"] in deliveries:
         return False, PROBLEM_DUPLICATE_DELIVERY, 0
-    pruned = _prune_inactive(document)
+    pruned = _prune_inactive(
+        document, record["human_authorization"]["authorized_at"])
     if len(deliveries) >= MAX_PR_DELIVERY_RECORDS:
         return False, PROBLEM_STORE_FULL, pruned
     deliveries[record["delivery_id"]] = record

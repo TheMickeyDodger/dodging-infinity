@@ -2,6 +2,120 @@
 
 ## Unreleased
 
+- **Automatic Mission workspaces (Task 8 final).** Dispatching an approved
+  Mission no longer needs a path from anyone. Grok Bot's `run` `dispatch`
+  takes no arguments, and `direquest.py dispatch` no longer requires
+  `--workspace`. With `--workspace-repository` (a local checkout of the
+  approved repository) and `--workspaces-root` (an existing directory outside
+  every repository: no directory from it up to `/` may hold `.git` or be a
+  Git directory, so a root inside a third repository, a linked worktree or a
+  bare repository is refused before anything is bound or created)
+  configured, the bridge does the following:
+  - It prepares one isolated Git worktree per Mission at `ROOT/MISSION_ID`
+    (`target_runtime/mission_workspace.py`). The worktree is detached at the
+    repository's observed `HEAD` and locked with DI's marker naming the
+    Mission's exact binding.
+  - Mission Core records the binding as `preparing` before anything is
+    created, then `prepared`, before the run intent. The intent must name
+    exactly that path and baseline (`record_workspace_binding`,
+    `record_workspace_prepared`, `mission_run_workspace_unprepared`).
+  - A worktree is reused only on an exact match. That includes reciprocal
+    worktree identity: exactly one administrative directory of the
+    configured repository points back at the checkout, and the checkout's
+    own `.git` pointer (a regular file) resolves to exactly that directory.
+    A malformed pointer, or one that cannot be read or resolved, is refused
+    durably as `foreign`, never raised as an exception.
+    Collisions, foreign, conflicting, active, busy, dirty and failed
+    preparations, and an unavailable repository or root, are refused
+    truthfully. Each refusal is recorded durably as the latest workspace
+    refusal, records no intent and starts nothing. A refusal before the
+    binding creates nothing. One after the worktree was created (a Git add
+    whose outcome was not confirmed, a failed post-creation check, a
+    trust-establishment failure) keeps that new worktree with its
+    `preparing` binding, for the next dispatch to adopt only if exact.
+  - Claude workspace trust is established for exactly the new worktree
+    before it is recorded `prepared`, through the existing managed-workspace
+    seam (`RuntimeWorker` over `workspace_trust`: one key, one entry, in the
+    configuration the started Herdr reads), and re-checked at the point of
+    use. Without it a fresh directory would stop the Herdr at the trust
+    dialog. A failure is a durable `mission_bridge_workspace_trust` refusal.
+    `tests/test_static.py` names the bridge as the second, exact user of
+    that seam; the Broker's pins are unchanged.
+  - The pinned seven-verb seam gains four local worktree verbs
+    (`toplevel`, `common_dir`, `worktree_list`, `add_worktree`). It is now
+    an eleven-verb git transport seam, still the only subprocess seam, with
+    no remove, prune, move, force or delivery verb.
+  - Before the intent, a worktree holding any Herdr task or runtime record
+    (Git ignores `.herd`) is refused.
+  - Restarts and overlapping preparations converge on one worktree; the
+    once-only intent and the HOLD after an uncertain dispatch are unchanged.
+    A crash inside `git worktree add` can leave a partial directory. It is
+    refused, because it is never exact, and kept: never adopted, completed
+    or deleted.
+  - Nothing removes, prunes or unlocks a worktree.
+
+  The explicit `workspace_path` (`--workspace`) stays as an operator recovery
+  path only. It must name the Mission's own, already bound worktree, it never
+  creates a workspace or a binding, and every check applies to it. A lost
+  binding is never rebuilt from a path or a marker. Before this change, any
+  clean checkout of the approved repository was accepted. `status` shows the
+  binding and the latest refusal. The docs now state the active position:
+  Grok Bot is the human-facing mobile interface, Codex is the Outer
+  Operator, and Dots is optional for active operation. The earlier
+  statements are kept, labelled as history.
+- **Grok Bot transport over the current contracts (Task 8, local candidate).**
+  `grokbot.py` / `grok_bot/` is a thin transport, not the retired `grok_mcp`
+  spike. Plain text goes to the Codex Outer Operator (`operator_session`,
+  source `grok_bot`), which authors the Mission proposal. Presentation,
+  operator-attested approval, status and the run commands are the local
+  request surface's own. `present` shows the complete proposal, with nothing
+  truncated, and durably records what was displayed. `approve` compares the
+  relayed binding with that record and refuses any difference by name. A
+  loopback-only (`127.0.0.1`) MCP Streamable HTTP endpoint (`grokbot.py
+  serve`, optional bearer token) advertises exactly MCP `2025-11-25` and
+  `2025-06-18`. Delivery stays a separate ceremony: `present_delivery` and
+  `approve_delivery` relay pr_delivery's own `present-dots` and `attest-dots`,
+  unchanged, for exactly the displayed delivery proposal. They record an
+  operator-attested PR Delivery Authorization for BASE_REFRESH, COMMIT, PUSH
+  and PR_CREATE only. An engineering approval never reaches that ceremony,
+  the transport mints nothing and performs no step, and no tool merges,
+  releases or deploys. `grok_bot/delivery.py` is the second module outside
+  `pr_delivery/` allowed to import it (`tests/test_static.py`). Its tests run
+  the ceremony over a recording double for the whole transport, with every
+  process seam contained. Limitations kept: approval is operator-attested,
+  not cryptographically authenticated; loopback tests demonstrate protocol
+  shape only, not live Grok Bot interoperability; and a client that speaks
+  only MCP `2025-03-26` cannot use the endpoint, because batch reception is
+  not implemented. Public reachability (HTTPS, connector registration, live
+  acceptance) is a human setup step (`docs/grok-bot.md`).
+- **Local operator request surface (Task 8, increment 2, local candidate).**
+  `direquest.py` / `local_request/`: any local caller proposes a bounded
+  Mission (Mission Core proposal, revision, digest), reads durable status
+  (Mission Core's observation, unchanged), and may withdraw only its own
+  pending revision-1 proposal with the one-time key it received. Approval is
+  always refused (`local_request_approval_unauthenticated`); nothing is
+  dispatched. Mission Core gains the proposal-only principal kind
+  `unauthenticated_local_caller` (refused in the core for every decision,
+  reservation, state operation and authorization) and a durable withdrawal
+  marker its decision path refuses on (`mission_proposal_withdrawn`). The
+  marker is not a lifecycle state: the Mission stays `AWAITING_DECISION`.
+  No running-Mission control; authenticated Dots approval stays NOT
+  ESTABLISHED.
+- **Grok Bot interaction surface retired (Task 8).** The Grok Bot MCP spike,
+  the `grok_mcp` package and the `grokmcp.py` entry script, is removed from the
+  active product and its startup path: no installed console entry, no
+  compile-list entry, no product importer. `tests/test_grok_bot_retirement.py`
+  pins its absence and starts every installed entry with any `grok_mcp` import
+  refused. Neutral coverage it carried moved to Mission Core directly (recorded
+  approval provenance), and two trust pins became exact: no product transport
+  calls `apply_human_decision`, and `pr_delivery/mission_parent.py` is the only
+  product importer of `mission` outside the package. Grok as a model or Herdr
+  agent runtime is unchanged. The docs now name Dots as the human-facing mobile
+  interface, with what is demonstrated (reach, read, and reply; a connected
+  same-task durable status read) separated from what is not established
+  (authenticated exact approval binding, outage and restart recovery,
+  background notification, verified-result delivery fidelity, full live
+  Mission acceptance). Mission approval over Dots fails closed.
 - **P1-A6 Verified PR Delivery.** A separate durable human PR Delivery
   Authorization (`pr_delivery/`, minted only by a terminal ceremony) binds the
   exact reviewed candidate identity, the recorded Herdr COMPLETE, canonical
@@ -13,6 +127,25 @@
   reconciles after a crash without a duplicate; delivery stops at an open pull
   request with no merge, tag, release, deploy or publish verb. `herdctl
   delivery-evidence` emits the Herdr evidence the ceremony binds.
+- **PR Delivery binds staged candidates of any size.** COMMIT's
+  `staged_sha256` (`DeliveryTransport.staged_diff_sha256`) now streams
+  `git diff --cached --binary` through an incremental sha256 and a
+  finalized strict UTF-8 decoder instead of capturing it. A staged diff
+  over the 1 MiB `MAX_TRANSPORT_OUTPUT_BYTES` bound previously made COMMIT
+  retry before any receipt existed. The digest and the invalid-UTF-8 and
+  git-failure refusals are unchanged, and the bound and its refusal still
+  apply to every other transport capture.
+- **A completed run's receipts are recorded after its authorization
+  expires.** `validate_delivery_parent_use` keeps the run that consumed a
+  Mission Authorization eligible as the `github_pr` delivery parent after
+  that authorization expires. The Mission store nevertheless refused the
+  run's validated receipt attestation (`mission_state_authority_window`),
+  so nothing was recorded. The store now checks that expiry against the
+  run's intent instead of the attestation. That applies only when the
+  Mission's one run intent consumed exactly that authorization at the cited
+  revision before it expired, and the run reached RUNNING. The `issued_at`
+  floor, the revocation bound, every attestation binding and the full
+  window for activations and completions are unchanged.
 
 ## v0.7.0
 

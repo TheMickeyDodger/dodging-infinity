@@ -2432,19 +2432,21 @@ class CorrectnessDocsPinTests(unittest.TestCase):
             )
 
     def test_seven_verb_transport_claim_matches_the_class(self):
-        # doc<->code: "seven-verb" against the DERIVED public-method
-        # count of the real transport class; the stale "five-verb"
-        # must be gone everywhere.
+        # doc<->code: the verb-count claim against the DERIVED public-method
+        # count of the real transport class; the stale "five-verb" must be
+        # gone everywhere. Task 8 final: the four local worktree verbs of
+        # automatic Mission workspaces make it eleven (the historical
+        # "seven-verb" CHANGELOG entries stay as history).
         verbs = [
             name for name, _ in inspect.getmembers(
                 git_transport_module.GitTransport,
                 inspect.isfunction,
             ) if not name.startswith("_")
         ]
-        self.assertEqual(len(verbs), 7, verbs)
+        self.assertEqual(len(verbs), 11, verbs)
         for name in ("SECURITY.md", "CHANGELOG.md"):
             flat = self.flat(name)
-            self.assertIn("seven-verb git transport seam", flat,
+            self.assertIn("eleven-verb git transport seam", flat,
                           name)
         for name in self.ALL_DOCS:
             self.assertNotIn("five-verb", self.flat(name), name)

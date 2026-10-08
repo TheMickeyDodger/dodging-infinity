@@ -1265,10 +1265,14 @@ class RuntimeInvariantTests(unittest.TestCase):
         self.assertIn(readiness_line, top_level_lines)
 
     def test_ownership_semantics_unchanged(self):
-        # RuntimeWorker is constructed in exactly one place: the
-        # Broker constructor. The Runtime CLI never constructs one and
-        # never passes worker=; the service layer never imports the
-        # Runtime at all.
+        # RuntimeWorker is constructed in exactly one place for the
+        # Runtime: the Broker constructor. The Runtime CLI never
+        # constructs one and never passes worker=; the service layer
+        # never imports the Runtime at all. EXTENDED, Task 8 final: the
+        # Mission bridge, which is not the Runtime, constructs its own in
+        # exactly one place, its constructor, for the trust of the
+        # Mission workspace it prepares (tests/test_static.py pins the
+        # same pair).
         construction_sites = []
         for name in sorted(os.listdir(os.path.join(REPO_ROOT, "target_runtime"))):
             if not name.endswith(".py"):
@@ -1281,22 +1285,24 @@ class RuntimeInvariantTests(unittest.TestCase):
                     getattr(node.func, "id", None) == "RuntimeWorker"
                 ):
                     construction_sites.append((name, node.lineno))
-        self.assertEqual(len(construction_sites), 1, construction_sites)
-        self.assertEqual(construction_sites[0][0], "broker.py")
-        with open(os.path.join(REPO_ROOT, "target_runtime", "broker.py")) as handle:
-            broker_tree = ast.parse(handle.read())
-        enclosing = None
-        for node in ast.walk(broker_tree):
-            if isinstance(node, ast.ClassDef) and node.name == "TargetBroker":
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef) and item.name == "__init__":
-                        if any(
-                            isinstance(sub, ast.Call)
-                            and getattr(sub.func, "id", None) == "RuntimeWorker"
-                            for sub in ast.walk(item)
-                        ):
-                            enclosing = "TargetBroker.__init__"
-        self.assertEqual(enclosing, "TargetBroker.__init__")
+        self.assertEqual(sorted(name for name, _ in construction_sites),
+                         ["broker.py", "mission_bridge.py"], construction_sites)
+        for file_name, class_name in (("broker.py", "TargetBroker"),
+                                      ("mission_bridge.py", "MissionBridge")):
+            with open(os.path.join(REPO_ROOT, "target_runtime", file_name)) as handle:
+                tree = ast.parse(handle.read())
+            enclosing = None
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name == class_name:
+                    for item in node.body:
+                        if isinstance(item, ast.FunctionDef) and item.name == "__init__":
+                            if any(
+                                isinstance(sub, ast.Call)
+                                and getattr(sub.func, "id", None) == "RuntimeWorker"
+                                for sub in ast.walk(item)
+                            ):
+                                enclosing = class_name + ".__init__"
+            self.assertEqual(enclosing, class_name + ".__init__")
         cli_source = self.runtime_cli_source()
         self.assertNotIn("RuntimeWorker(", cli_source)
         self.assertNotIn("worker=", cli_source)

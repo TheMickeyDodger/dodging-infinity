@@ -46,11 +46,16 @@ EVIDENCE_1 = "mv-" + "3" * 32
 EVIDENCE_2 = "mv-" + "4" * 32
 ARTIFACT_1 = "mf-" + "5" * 32
 NOW = 1_800_000_000
+# SYNTHETIC transport label. No adapter is wired to coordination (and the
+# Grok Bot surface this label used to name was retired in Task 8); it
+# exercises only the neutral record contract and stands in for no real or
+# Dots principal.
+SYNTHETIC_TRANSPORT = "synthetic_transport"
 
 
 def context(**overrides):
     fields = {
-        "transport": "grok_mcp",
+        "transport": SYNTHETIC_TRANSPORT,
         "principal_kind": record.PRINCIPAL_KIND_CONNECTOR_CREDENTIAL,
         "principal_ref": "credential-0",
         "configured_subject": "operator",
@@ -209,7 +214,13 @@ class VocabularyParityTests(unittest.TestCase):
 
     def test_context_and_lifecycle_vocabularies_match_mission_core(self):
         self.assertEqual(record.CONTEXT_KEYS, mission_record.CONTEXT_KEYS)
-        self.assertEqual(record.PRINCIPAL_KINDS, mission_record.PRINCIPAL_KINDS)
+        # Task 8 added Mission Core's proposal-only unauthenticated local
+        # caller kind. Coordination accepts only the AUTHENTICATED kinds,
+        # exactly, and records only transport-credential proof.
+        self.assertEqual(record.PRINCIPAL_KINDS,
+                         mission_record.AUTHENTICATED_PRINCIPAL_KINDS)
+        self.assertNotIn(mission_record.PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER,
+                         record.PRINCIPAL_KINDS)
         self.assertEqual(record.LIFECYCLE_STATES, mission_record.MISSION_STATES)
         self.assertEqual(record.PROOF_TRANSPORT_CREDENTIAL_ONLY,
                          mission_record.PROOF_TRANSPORT_CREDENTIAL_ONLY)
@@ -272,7 +283,7 @@ class ContextAndProvenanceTests(unittest.TestCase):
 
     def test_context_refusals(self):
         with self.assertRaises(record.CoordinationError) as caught:
-            context(transport="Grok MCP").validate()
+            context(transport="Synthetic Transport").validate()
         self.assertEqual(caught.exception.problem, record.PROBLEM_BAD_VALUE)
         with self.assertRaises(record.CoordinationError) as caught:
             context(principal_kind="human").validate()
@@ -281,7 +292,7 @@ class ContextAndProvenanceTests(unittest.TestCase):
             context(principal_ref="x" * (record.MAX_PRINCIPAL_REF_CHARS + 1)).validate()
         self.assertEqual(caught.exception.problem, record.PROBLEM_TOO_LARGE)
         with self.assertRaises(record.CoordinationError) as caught:
-            record.require_context({"transport": "grok_mcp"})
+            record.require_context({"transport": SYNTHETIC_TRANSPORT})
         self.assertEqual(caught.exception.problem, record.PROBLEM_PROVENANCE)
         with self.assertRaises(record.CoordinationError) as caught:
             record.context_from_dict(dict(context().as_dict(), extra=1))
@@ -1190,7 +1201,7 @@ def fresh(mission_id=MISSION_X, **overrides):
 
 
 def make_binding(kind, selector, mission_id=MISSION_X, conversation_ref=None,
-                 transport="grok_mcp", bound_at=NOW - 100, expires_at=None,
+                 transport=SYNTHETIC_TRANSPORT, bound_at=NOW - 100, expires_at=None,
                  obs=None, binding_id=None, ctx=None):
     if conversation_ref is None and kind in record.CONVERSATION_SCOPED_BINDING_KINDS:
         conversation_ref = CONVERSATION_A
@@ -1356,13 +1367,13 @@ class BindingDocumentTests(unittest.TestCase):
         gone = binding.revoke(
             make_binding(record.BINDING_REPLY_TO_MESSAGE, "n"), NOW)
         document = self.document(live, gone)
-        found = binding.find(document, record.BINDING_REPLY_TO_MESSAGE, "grok_mcp",
+        found = binding.find(document, record.BINDING_REPLY_TO_MESSAGE, SYNTHETIC_TRANSPORT,
                              CONVERSATION_A, "m")
         self.assertEqual([b["binding_id"] for b in found], [live["binding_id"]])
         self.assertEqual(binding.find(document, record.BINDING_REPLY_TO_MESSAGE,
-                                      "grok_mcp", CONVERSATION_A, "n"), [])
+                                      SYNTHETIC_TRANSPORT, CONVERSATION_A, "n"), [])
         self.assertEqual(binding.find(document, record.BINDING_REPLY_TO_MESSAGE,
-                                      "grok_mcp", CONVERSATION_B, "m"), [])
+                                      SYNTHETIC_TRANSPORT, CONVERSATION_B, "m"), [])
 
 
 # =====================================================================
@@ -1372,7 +1383,7 @@ class BindingDocumentTests(unittest.TestCase):
 
 def inbound(**overrides):
     fields = {
-        "transport": "grok_mcp",
+        "transport": SYNTHETIC_TRANSPORT,
         "conversation_ref": CONVERSATION_A,
         "message_ref": "msg-100",
         "explicit_mission_id": None,
@@ -1437,7 +1448,7 @@ class InboundTurnTests(unittest.TestCase):
         turn = inbound(explicit_mission_id=MISSION_X).validate()
         self.assertEqual(tuple(turn.as_dict()), routing.INBOUND_KEYS)
         self.assertEqual(routing.inbound_from_dict(turn.as_dict()), turn)
-        self.assertEqual(turn.identity(), ("grok_mcp", CONVERSATION_A, "msg-100"))
+        self.assertEqual(turn.identity(), (SYNTHETIC_TRANSPORT, CONVERSATION_A, "msg-100"))
         self.assertEqual(turn.digest(), inbound(explicit_mission_id=MISSION_X).digest())
         self.assertNotEqual(turn.digest(), inbound().digest())
 
@@ -1452,7 +1463,7 @@ class InboundTurnTests(unittest.TestCase):
             (dict(domain=""), record.PROBLEM_BAD_VALUE),
             (dict(proposal_digest_sha256="zz"), record.PROBLEM_BAD_VALUE),
             (dict(message_ref=""), record.PROBLEM_BAD_VALUE),
-            (dict(transport="Grok"), record.PROBLEM_BAD_VALUE),
+            (dict(transport="Synthetic"), record.PROBLEM_BAD_VALUE),
         ):
             with self.assertRaises(record.CoordinationError) as caught:
                 inbound(**overrides).validate()
@@ -1792,7 +1803,7 @@ class BindingTierRoutingTests(unittest.TestCase):
             bound = make_binding(record.BINDING_REPLY_TO_MESSAGE,
                                  "reply-" + mission_id[-2:], mission_id=mission_id)
             document["bindings"][bound["binding_id"]] = bound
-        members = routing.conversation_missions(document, "grok_mcp", CONVERSATION_A,
+        members = routing.conversation_missions(document, SYNTHETIC_TRANSPORT, CONVERSATION_A,
                                                 NOW)
         self.assertEqual(members, sorted(candidates))
         for turn in (inbound(), inbound(intent=record.INTENT_FOLLOW_UP),
@@ -2042,8 +2053,8 @@ class ReplayTests(unittest.TestCase):
 # F. attention
 # =====================================================================
 
-DESTINATION_A = {"transport": "grok_mcp", "conversation_ref": CONVERSATION_A}
-DESTINATION_B = {"transport": "grok_mcp", "conversation_ref": CONVERSATION_B}
+DESTINATION_A = {"transport": SYNTHETIC_TRANSPORT, "conversation_ref": CONVERSATION_A}
+DESTINATION_B = {"transport": SYNTHETIC_TRANSPORT, "conversation_ref": CONVERSATION_B}
 
 
 def needs_human(**overrides):
@@ -2258,7 +2269,7 @@ class AttentionProjectionTests(unittest.TestCase):
             self.project(fresh_result(mission_id=MISSION_Y))
         self.assertEqual(caught.exception.problem, record.PROBLEM_MISSION_MISMATCH)
         with self.assertRaises(record.CoordinationError):
-            self.project(destination={"transport": "grok_mcp"})
+            self.project(destination={"transport": SYNTHETIC_TRANSPORT})
         with self.assertRaises(record.CoordinationError):
             attention.project(self.document, MISSION_X, DESTINATION_A, "fresh", NOW,
                               self.mint)
@@ -2587,7 +2598,7 @@ class AttentionRecordValidationTests(unittest.TestCase):
                  closed_reason=record.CLOSED_CONDITION_CLEARED),
             dict(revision=3),
             dict(authorization_digest_sha256=None),
-            dict(destination={"transport": "grok_mcp"}),
+            dict(destination={"transport": SYNTHETIC_TRANSPORT}),
             dict(mission_id="mq-" + "2" * 32),
         ):
             with self.assertRaises(record.CoordinationError, msg=overrides):
@@ -3531,7 +3542,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(len(self.svc.inspect()["route_decisions"]), 1)
 
     def test_bind_requires_a_fresh_observation_and_routing_never_rebinds(self):
-        bound = self.svc.bind(record.BINDING_REPLY_TO_MESSAGE, "grok_mcp",
+        bound = self.svc.bind(record.BINDING_REPLY_TO_MESSAGE, SYNTHETIC_TRANSPORT,
                               CONVERSATION_A, "msg-1", MISSION_X, context())
         self.assertEqual(bound["bound_revision"], 2)
         resolved = self.svc.route(inbound(reply_to_message_ref="msg-1"), context())
@@ -3572,26 +3583,26 @@ class ServiceTests(unittest.TestCase):
         self.source.answers[MISSION_X] = observation.ObservationOutcome.unavailable(
             "registry locked")
         with self.assertRaises(record.CoordinationError) as caught:
-            self.svc.bind(record.BINDING_ALIAS, "grok_mcp", None, "alias", MISSION_X,
+            self.svc.bind(record.BINDING_ALIAS, SYNTHETIC_TRANSPORT, None, "alias", MISSION_X,
                           context())
         self.assertEqual(caught.exception.problem,
                          record.PROBLEM_OBSERVATION_UNAVAILABLE)
         self.assertIn("registry locked", str(caught.exception))
         del self.source.answers[MISSION_X]
         with self.assertRaises(record.CoordinationError) as caught:
-            self.svc.bind(record.BINDING_ALIAS, "grok_mcp", None, "alias", MISSION_X,
+            self.svc.bind(record.BINDING_ALIAS, SYNTHETIC_TRANSPORT, None, "alias", MISSION_X,
                           context())
         self.assertEqual(caught.exception.problem, record.PROBLEM_MISSION_NOT_OBSERVED)
         self.assertEqual(self.svc.inspect()["bindings"], {})
-        revoked = self.svc.bind(record.BINDING_ALIAS, "grok_mcp", None, "alias",
+        revoked = self.svc.bind(record.BINDING_ALIAS, SYNTHETIC_TRANSPORT, None, "alias",
                                 MISSION_Y, context())
         gone = self.svc.revoke_binding(revoked["binding_id"], context())
         self.assertTrue(gone["revoked"])
 
     def test_two_missions_stay_isolated_through_the_service(self):
-        self.svc.bind(record.BINDING_CONVERSATION, "grok_mcp", CONVERSATION_A, "",
+        self.svc.bind(record.BINDING_CONVERSATION, SYNTHETIC_TRANSPORT, CONVERSATION_A, "",
                       MISSION_X, context())
-        self.svc.bind(record.BINDING_CONVERSATION, "grok_mcp", CONVERSATION_B, "",
+        self.svc.bind(record.BINDING_CONVERSATION, SYNTHETIC_TRANSPORT, CONVERSATION_B, "",
                       MISSION_Y, context())
         in_a = self.svc.route(inbound(conversation_ref=CONVERSATION_A), context())
         in_b = self.svc.route(inbound(conversation_ref=CONVERSATION_B), context())
@@ -3664,7 +3675,7 @@ class ServiceTests(unittest.TestCase):
     # -- restart, corruption, conflicts -------------------------------
 
     def test_restart_preserves_everything(self):
-        bound = self.svc.bind(record.BINDING_REPLY_TO_MESSAGE, "grok_mcp",
+        bound = self.svc.bind(record.BINDING_REPLY_TO_MESSAGE, SYNTHETIC_TRANSPORT,
                               CONVERSATION_A, "msg-1", MISSION_X, context())
         route = self.svc.route(inbound(reply_to_message_ref="msg-1"), context()).route
         attention_id = self.svc.project_attention(MISSION_X, DESTINATION_A).created[0]
@@ -3697,7 +3708,7 @@ class ServiceTests(unittest.TestCase):
         os.chmod(path, 0o600)
         operations = (
             lambda: self.svc.route(inbound(explicit_mission_id=MISSION_X), context()),
-            lambda: self.svc.bind(record.BINDING_ALIAS, "grok_mcp", None, "a",
+            lambda: self.svc.bind(record.BINDING_ALIAS, SYNTHETIC_TRANSPORT, None, "a",
                                   MISSION_X, context()),
             lambda: self.svc.project_attention(MISSION_X, DESTINATION_A),
             lambda: self.svc.set_roster(MISSION_X, ROSTER, context()),
@@ -3754,7 +3765,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual((mark.revision, mark.cursor), (2, "9"))
         # Bindings and attention records count as well.
         self.move(state_cursor="11")
-        self.svc.bind(record.BINDING_ALIAS, "grok_mcp", None, "a", MISSION_X, context())
+        self.svc.bind(record.BINDING_ALIAS, SYNTHETIC_TRANSPORT, None, "a", MISSION_X, context())
         self.assertEqual(service.high_water_mark(self.svc.inspect(), MISSION_X).cursor,
                          "11")
         self.move(state_cursor="12")
@@ -3832,7 +3843,7 @@ class ServiceTests(unittest.TestCase):
                          "11")
 
     def test_f3_explicit_id_consults_matching_stale_context_first(self):
-        bound = self.svc.bind(record.BINDING_APPROVAL_PRESENTATION, "grok_mcp",
+        bound = self.svc.bind(record.BINDING_APPROVAL_PRESENTATION, SYNTHETIC_TRANSPORT,
                               CONVERSATION_A, "card-1", MISSION_X, context())
         self.move(current_revision=3, state_cursor="12",
                   conditions=(condition(revision=3),))

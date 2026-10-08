@@ -106,7 +106,46 @@ RECEIPT_STATES = (
 )
 
 AUTHORIZATION_SOURCE_LOCAL_TERMINAL = "local_terminal"
-AUTHORIZATION_SOURCES = (AUTHORIZATION_SOURCE_LOCAL_TERMINAL,)
+# Task 8 (user decision): a delivery approval the Outer Operator RELAYS from
+# the human's Dots-chat reply. It is not a local terminal, not a local OS
+# user and not typed locally: it is Operator-attested and NOT independently
+# verified. One more member of the CLOSED set, validated on its own terms;
+# ``local_terminal`` is unchanged.
+AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED = "dots_operator_attested"
+AUTHORIZATION_SOURCES = (AUTHORIZATION_SOURCE_LOCAL_TERMINAL,
+                         AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED)
+# The relayed approval's fixed, honest fields. The identity names the
+# attesting relay, never a person or a local OS account.
+DOTS_ATTESTED_IDENTITY = "operator_attested_relay:outer_operator_relay"
+DOTS_CONFIRMATION = "operator_relayed"
+DOTS_PROVENANCE = "operator_attested_not_independently_verified"
+DOTS_RESIDUAL_RISK = (
+    "operator-attested: the Outer Operator reports that the human replied"
+    " with this delivery approval; this layer did not verify the human, and a"
+    " mistaken or malicious same-user operator or local process could"
+    " fabricate it. Every digest and reference here was supplied by the"
+    " Operator: Operator attestation, not verified authorship. The full"
+    " binding ties the decision to one exact candidate; it does not bind the"
+    " reply to a human cryptographically"
+)
+# The human's reply: ONLY the whole value, trimmed and case-folded. The human
+# never types a digest; the binding lives in the presented proposal.
+DOTS_AFFIRMATIVE_REPLIES = ("approved", "approve")
+DOTS_ATTESTATION_KEYS = (
+    "proposal_digest_sha256", "presented_at", "reply_to", "relayed_reply",
+    "relay_ref", "confirmation", "provenance", "residual_risk",
+)
+# The PRESENTED delivery proposal is every authority field except the human
+# authorization and the expiration, plus its presentation time and its
+# absolute deadline; the minted authorization expires at that same deadline.
+DELIVERY_PROPOSAL_BINDING_KEYS = (
+    "revision", "previous_delivery_id", "workflow_identity", "mission",
+    "repository", "remote", "mode", "source", "target_base",
+    "original_baseline", "candidate", "evidence", "allowed_actions",
+    "committer", "reverification", "pr_content",
+)
+MAX_RELAY_TEXT_CHARS = 200
+MAX_RELAY_REF_CHARS = 128
 
 EXPIRATION_POLICY_ABSOLUTE = "absolute_deadline"
 EXPIRATION_POLICIES = (EXPIRATION_POLICY_ABSOLUTE,)
@@ -680,8 +719,36 @@ def _validate_pr_content(value, location):
                      max_chars=MAX_HUMAN_TEXT_CHARS, allow_empty=True)
 
 
-def _validate_human_authorization(value, location):
+def is_dots_affirmative(reply):
+    """The WHOLE relayed reply, trimmed and case-folded, is an affirmative.
+    Never a substring ("not approved"), never quoted or reported speech."""
+    return isinstance(reply, str) and len(reply) <= MAX_RELAY_TEXT_CHARS and (
+        reply.strip().casefold() in DOTS_AFFIRMATIVE_REPLIES)
+
+
+def delivery_proposal(binding, presented_at, expires_at):
+    """The presented delivery proposal: the full binding, as displayed."""
+    return {"binding": binding, "presented_at": presented_at,
+            "expires_at": expires_at}
+
+
+def delivery_proposal_digest(proposal):
+    return json_digest(proposal)
+
+
+def dots_confirmation_digest(attestation):
+    """What the relayed confirmation binds: the proposal it answers, the
+    chat reference it replies to, the reply and the relay reference."""
+    return json_digest({key: attestation[key] for key in (
+        "proposal_digest_sha256", "reply_to", "relayed_reply", "relay_ref")})
+
+
+def _validate_human_authorization(value, location, document=None):
     _require_dict(value, location)
+    source = value.get("source")
+    if source == AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED:
+        _validate_dots_authorization(value, location, document)
+        return
     _require_closed_keys(
         value, ("identity", "source", "authorized_at",
                 "confirmation_digest_sha256"),
@@ -694,6 +761,67 @@ def _validate_human_authorization(value, location):
     _require_timestamp(value["authorized_at"], location + ".authorized_at")
     _require_hex(value["confirmation_digest_sha256"],
                  location + ".confirmation_digest_sha256", 64)
+
+
+def _validate_dots_authorization(value, location, document):
+    """The Operator-attested source, on its own terms: a fixed attesting
+    identity (never a local OS user), an Operator-relayed confirmation of
+    the human's exact affirmative, the residual risk, and the FULL binding
+    re-proven from the record itself (the proposal digest recomputes from
+    this record's own authority fields and deadline)."""
+    _require_closed_keys(
+        value, ("identity", "source", "authorized_at",
+                "confirmation_digest_sha256", "attestation"),
+        location,
+    )
+    if value["identity"] != DOTS_ATTESTED_IDENTITY:
+        _fail(PROBLEM_BAD_VALUE,
+              "%s.identity must be %r: a relayed approval names the"
+              " attesting relay, never a person or a local OS account"
+              % (location, DOTS_ATTESTED_IDENTITY))
+    _require_timestamp(value["authorized_at"], location + ".authorized_at")
+    attestation = value["attestation"]
+    where = location + ".attestation"
+    _require_dict(attestation, where)
+    _require_closed_keys(attestation, DOTS_ATTESTATION_KEYS, where)
+    _require_hex(attestation["proposal_digest_sha256"],
+                 where + ".proposal_digest_sha256", 64)
+    _require_timestamp(attestation["presented_at"], where + ".presented_at")
+    for key in ("reply_to", "relay_ref"):
+        _require_line_free_str(attestation[key], "%s.%s" % (where, key),
+                               max_chars=MAX_RELAY_REF_CHARS)
+    if not is_dots_affirmative(attestation["relayed_reply"]):
+        _fail(PROBLEM_BAD_VALUE,
+              "%s.relayed_reply is not an exact affirmative" % where)
+    if (attestation["confirmation"], attestation["provenance"],
+            attestation["residual_risk"]) != (
+                DOTS_CONFIRMATION, DOTS_PROVENANCE, DOTS_RESIDUAL_RISK):
+        _fail(PROBLEM_BAD_VALUE,
+              "%s must state the Operator-relayed confirmation, the"
+              " operator-attested provenance and the residual risk exactly"
+              % where)
+    _require_hex(value["confirmation_digest_sha256"],
+                 location + ".confirmation_digest_sha256", 64)
+    if value["confirmation_digest_sha256"] != dots_confirmation_digest(
+        attestation
+    ):
+        _fail(PROBLEM_BAD_VALUE,
+              "%s.confirmation_digest_sha256 does not bind the attested"
+              " decision" % location)
+    if attestation["presented_at"] > value["authorized_at"]:
+        _fail(PROBLEM_BAD_VALUE,
+              "%s.presented_at follows the authorization" % where)
+    if document is not None:
+        proposal = delivery_proposal(
+            {key: document[key] for key in DELIVERY_PROPOSAL_BINDING_KEYS},
+            attestation["presented_at"], document["expiration"]["expires_at"])
+        if delivery_proposal_digest(proposal) != attestation[
+            "proposal_digest_sha256"
+        ]:
+            _fail(PROBLEM_CANDIDATE_IDENTITY,
+                  "%s.proposal_digest_sha256 does not match this record's own"
+                  " binding: the authorization is not for the presented"
+                  " candidate and is refused" % where)
 
 
 def _validate_expiration(value, location, authorized_at):
@@ -1017,7 +1145,7 @@ def validate_authorization(document, location="PR delivery authorization"):
     _validate_argv(reverification["argv"], where + ".argv")
     _validate_pr_content(document["pr_content"], location + ".pr_content")
     _validate_human_authorization(document["human_authorization"],
-                                  location + ".human_authorization")
+                                  location + ".human_authorization", document)
     _validate_expiration(
         document["expiration"], location + ".expiration",
         document["human_authorization"]["authorized_at"],

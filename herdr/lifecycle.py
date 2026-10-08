@@ -542,12 +542,22 @@ def start_herd(
             )
         )
 
+        # A failed start leaves a bounded, redacted diagnostic here,
+        # written before the cleanup below closes the workspace; the
+        # cleanup removes only runtime.json, so the diagnostic survives.
+        diagnostic_dir = (
+            herd.herd_root
+            / "state"
+            / "diagnostics"
+        )
+
         start_agent(
             agents["supervisor"],
             panes["supervisor"],
             config["roles"]["supervisor"],
             start_timeout,
             shell_wait,
+            diagnostic_dir=diagnostic_dir,
         )
 
         for i in range(1, leads + 1):
@@ -557,6 +567,7 @@ def start_herd(
                 config["roles"]["lead"],
                 start_timeout,
                 shell_wait,
+                diagnostic_dir=diagnostic_dir,
             )
 
         for i in range(1, pods + 1):
@@ -566,6 +577,7 @@ def start_herd(
                 config["roles"]["executor"],
                 start_timeout,
                 shell_wait,
+                diagnostic_dir=diagnostic_dir,
             )
 
             start_agent(
@@ -574,6 +586,7 @@ def start_herd(
                 config["roles"]["reviewer"],
                 start_timeout,
                 shell_wait,
+                diagnostic_dir=diagnostic_dir,
             )
 
         task_timeout = int(

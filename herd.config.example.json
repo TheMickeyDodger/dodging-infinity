@@ -58,8 +58,6 @@
         "gpt-6-astra",
         "-c",
         "model_reasoning_effort=\"xhigh\"",
-        "--sandbox",
-        "workspace-write",
         "--approve-for-me"
       ]
     },
