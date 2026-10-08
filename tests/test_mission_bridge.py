@@ -38,6 +38,7 @@ from mission import authorization as authorization_module  # noqa: E402
 from mission import progress as progress_module  # noqa: E402
 from mission import record as mission_record  # noqa: E402
 from mission import service as mission_service  # noqa: E402
+from mission import state as mission_state  # noqa: E402
 from mission import store as mission_store  # noqa: E402
 from local_request import store as store_module  # noqa: E402
 from local_request import surface as surface_module  # noqa: E402
@@ -1733,6 +1734,382 @@ class ZDeliveredDerivedTests(Fixture):
         self.assertFalse(self.bridge.status(approved)["delivered"])
         verified, _ = self.verified(objective="verified, no delivery target")
         self.assertFalse(self.bridge.status(verified)["delivered"])
+
+
+class WExpiredParentFixture(Fixture):
+    """Task 8 attestation correction: the run that CONSUMED its authorization
+    stays an eligible P1-A6 delivery parent after that authorization expires
+    (``validate_delivery_parent_use``: the expiry bounded when the run could
+    start). Real seam, real Mission Core operation, real store save and
+    load, in an isolated store; injected receipts only, no delivery invoked."""
+
+    github = YDeliveryParentTests.github
+    digest = YDeliveryParentTests.digest
+    STEPS = (delivery_authorization.STEP_COMMIT, delivery_authorization.STEP_PUSH,
+             delivery_authorization.STEP_PR_CREATE)
+
+    def expire(self, mission_id):
+        """Move the clock past the engineering authorization's expiry."""
+        authorization = self.missions.get(mission_id)["authorizations"][-1]
+        self.assertIsNotNone(authorization["expires_at"])
+        self.clock.now = authorization["expires_at"] + 60
+        return authorization
+
+    def attest(self, mission_id, step, state=delivery_authorization.RECEIPT_SUCCEEDED):
+        record_ = with_receipt(
+            delivery_record(mission_id, self.digest(mission_id), self.clock()),
+            step, state, self.clock())
+        operation = self.missions.mint_state_operation_id(AUTHENTICATED)
+        return mission_parent.attest_validated_receipt(
+            record_, step, self.missions, operation,
+            self.missions.get_state(mission_id)["sequence"], AUTHENTICATED)
+
+    def recorded(self):
+        """Everything the store records except the id reservations (minting
+        an operation id is itself a durable reservation)."""
+        document = mission_store.MissionStore(self.state).load()
+        del document["reservations"]
+        return document
+
+
+class WExpiredParentAttestationTests(WExpiredParentFixture):
+    """The store now durably records the expired consumed run's validated
+    receipts instead of refusing them as outside the expired window."""
+
+    def test_W1_expired_completed_run_attests_commit_push_and_pr_create(self):
+        mission_id, _ = self.verified(**self.github())
+        authorization = self.expire(mission_id)
+        self.assertEqual(self.mission(mission_id)["state"], "COMPLETED")
+        # General engineering authority stays unavailable after expiry.
+        self.assertIsNone(self.missions.get(mission_id)["live_authorization_id"])
+        for step in self.STEPS:
+            # The existing derived surface: delivered only once the final
+            # step's receipt is attested succeeded under a succeeded step.
+            self.assertFalse(self.bridge.status(mission_id)["delivered"], step)
+            result = self.attest(mission_id, step)
+            self.assertTrue(result["valid"], result)
+            self.assertTrue(result["succeeded"])
+            self.assertFalse(result["outcome"]["idempotent"])
+            self.assertEqual(result["authorization_id"],
+                             authorization["authorization_id"])
+            self.clock.now += 1
+        status = self.bridge.status(mission_id)
+        self.assertTrue(status["delivered"])
+        self.assertEqual(status["delivery_authority"], "none")
+        self.assertEqual(
+            [(r["step"], r["receipt_state"], r["step_state"], r["completed_effect"])
+             for r in status["delivery"]["receipts"]],
+            [(step, "succeeded", "succeeded", True) for step in self.STEPS])
+        state = mission_store.MissionStore(self.state).load()["mission_state"][mission_id]
+        recorded = [a["recorded_at"] for a in state["artifacts"]
+                    if mission_state.receipt_attestation_of(a) is not None]
+        self.assertEqual(len(recorded), 3)
+        self.assertTrue(all(at > authorization["expires_at"] for at in recorded))
+        self.assertEqual(self.mission(mission_id)["state"], "COMPLETED")
+
+    def test_W2_the_attested_record_reloads_resaves_and_rederives(self):
+        mission_id, _ = self.verified(**self.github())
+        self.expire(mission_id)
+        for step in self.STEPS:
+            self.assertTrue(self.attest(mission_id, step)["valid"], step)
+            self.clock.now += 1
+        written = self.mission_bytes()
+        # A fresh store over the same directory re-proves the whole
+        # document on load, saves it back unchanged, and loads it again.
+        reopened = mission_store.MissionStore(self.state)
+        document = reopened.load()
+        state = document["mission_state"][mission_id]
+        attested = [mission_state.receipt_attestation_of(a) for a in state["artifacts"]
+                    if mission_state.receipt_attestation_of(a) is not None]
+        self.assertEqual([m["step"] for m in attested], list(self.STEPS))
+        self.assertTrue(all(mission_state.receipt_effect_completed(m) for m in attested))
+        with reopened.lock():
+            reopened.save(document)
+        self.assertEqual(self.mission_bytes(), written)
+        self.assertEqual(mission_store.MissionStore(self.state).load(), document)
+        # The load above re-derived the snapshot and the chain; the head
+        # snapshot is current and served, with nothing stale.
+        supported = self.missions.reload_supported_state(mission_id)
+        self.assertEqual(supported["cursor"]["position"], state["sequence"])
+        self.assertEqual(supported["source"], "snapshot")
+        self.assertIsNone(supported["snapshot_problem"])
+
+    def test_W3_a_running_attestation_stays_readable_after_cancel_or_block(self):
+        # The store's relaxation rests on durable facts, never the current
+        # state: a run that attested while RUNNING and later left RUNNING
+        # for a terminal state other than COMPLETED stays readable.
+        cancelled = self.running(**self.github(objective="cancelled"))
+        blocked = self.running(**self.github(objective="blocked"))
+        self.expire(cancelled)
+        self.expire(blocked)
+        for mission_id in (cancelled, blocked):
+            self.assertTrue(self.attest(mission_id, "COMMIT")["valid"], mission_id)
+            self.clock.now += 1
+        self.bridge.cancel(cancelled)
+        self.write_artifacts(blocked)
+        self.satisfy_tests_pass(blocked)
+        self.observer.raw = raw_observation()
+        self.assertEqual(self.bridge.verify(blocked, self.reported())["state"],
+                         "BLOCKED")
+        document = mission_store.MissionStore(self.state).load()
+        for mission_id, terminal in ((cancelled, "CANCELLED"), (blocked, "BLOCKED")):
+            with self.subTest(state=terminal):
+                self.assertEqual(document["missions"][mission_id]["state"], terminal)
+                self.assertEqual(len(mission_state.attested_artifacts(
+                    document["mission_state"][mission_id])), 1)
+                # And a terminal run other than COMPLETED attests nothing new.
+                parent = self.attest(mission_id, "PUSH")
+                self.assertFalse(parent["valid"])
+                self.assertEqual(parent["problem"], mission_parent.PROBLEM_PARENT_INVALID)
+
+    def test_W7_only_the_expiry_moves_and_only_to_the_run_intent(self):
+        mission_id, _ = self.verified(**self.github())
+        authorization = self.expire(mission_id)
+        self.assertTrue(self.attest(mission_id, "COMMIT")["valid"])
+        good = mission_store.MissionStore(self.state).load()
+        attested = mission_state.attested_artifacts(good["mission_state"][mission_id])[0]
+        at = attested["recorded_at"]
+        expires = authorization["expires_at"]
+
+        def outcome(mutate):
+            document = json.loads(json.dumps(good))
+            mutate(document, document["missions"][mission_id])
+            try:
+                mission_store.validate_document(document)
+            except mission_store.MissionStoreError as exc:
+                return str(exc)
+            return None
+
+        def revoked(revoked_at):
+            def mutate(document, mission):
+                document["authorizations"][authorization["authorization_id"]][
+                    "revocation"] = {"revoked": True, "revoked_at": revoked_at,
+                                     "reason": "superseded_by_edit"}
+            return mutate
+
+        def intent_at(when):
+            # Every run time from the intent on moves together, so the run
+            # record's own ordering still holds; only the intent's place
+            # against the recorded expiry changes.
+            def mutate(document, mission):
+                delta = when - mission["run"]["intent"]["recorded_at"]
+                for entry in ([mission["run"]["intent"], mission["run"]["receipt"],
+                               mission["run"]["verification"]] + mission["lifecycle"]):
+                    for key in ("recorded_at", "decided_at"):
+                        if key in entry:
+                            entry[key] += delta
+                mission["updated_at"] += delta
+            return mutate
+
+        def refused(mutate):
+            problem = outcome(mutate)
+            self.assertIsNotNone(problem, "the altered record loaded")
+            return problem
+
+        window = mission_state.PROBLEM_AUTHORITY_WINDOW
+        self.assertIsNone(outcome(lambda document, mission: None))
+        # The revocation bound still applies to the attestation itself: one
+        # second before it refuses; at the revocation second (non-strict,
+        # R-26) the window holds and only the forged history refuses.
+        self.assertIn(window, refused(revoked(at - 1)))
+        at_revocation = refused(revoked(at))
+        self.assertNotIn(window, at_revocation)
+        self.assertIn(authorization_module.PROBLEM_LEDGER_INCONSISTENT, at_revocation)
+        # The expiry is proved at the intent, strictly.
+        self.assertIsNone(outcome(intent_at(expires - 1)))
+        self.assertIn(window, refused(intent_at(expires)))
+
+        # Altered bytes still refuse on this path, with test_U2's codes.
+        def altered(change):
+            def mutate(document, mission):
+                for artifact in document["mission_state"][mission_id]["artifacts"]:
+                    if artifact["artifact_id"] == attested["artifact_id"]:
+                        change(artifact, mission_state.receipt_attestation_of(artifact))
+            return mutate
+
+        for name, change in (
+                ("receipt digest", lambda a, m: a.update(content_digest_sha256="c" * 64)),
+                ("receipt reference", lambda a, m: a.update(locator="rcpt-" + "c" * 24)),
+                ("authorization digest",
+                 lambda a, m: m.update(authorization_digest_sha256="c" * 64))):
+            with self.subTest(altered=name):
+                self.assertIn(mission_state.PROBLEM_INVOCATION_MISMATCH,
+                              refused(altered(change)))
+
+    def test_W9_the_moved_bound_keeps_the_floor_and_the_revocation_bound(self):
+        # The window itself, as the attestation's re-proof calls it with the
+        # expiry proved at the intent. The issued_at floor cannot be reached
+        # first through a whole record of this shape (the activation's own
+        # floor and the monotone time base stand before it), so it is
+        # exercised here directly.
+        def window(recorded_at, bound_expiry, revoked_at=None):
+            authorization = {
+                "authorization_id": "ma-" + "1" * 32, "issued_at": 100,
+                "expires_at": 200,
+                "revocation": {"revoked": revoked_at is not None,
+                               "revoked_at": revoked_at,
+                               "reason": None if revoked_at is None
+                               else "superseded_by_edit"}}
+            try:
+                mission_store._authority_window(
+                    authorization, recorded_at, "receipt attestation", "where",
+                    "<document>", bound_expiry=bound_expiry)
+            except mission_store.MissionStoreError as exc:
+                self.assertIn(mission_state.PROBLEM_AUTHORITY_WINDOW, str(exc))
+                return False
+            return True
+
+        self.assertTrue(window(300, bound_expiry=False))
+        self.assertFalse(window(200, bound_expiry=True))
+        self.assertTrue(window(199, bound_expiry=True))
+        for bound_expiry in (False, True):
+            with self.subTest(bound_expiry=bound_expiry):
+                self.assertFalse(window(99, bound_expiry))
+                self.assertTrue(window(100, bound_expiry))
+                self.assertFalse(window(151, bound_expiry, revoked_at=150))
+                self.assertTrue(window(150, bound_expiry, revoked_at=150))
+
+
+class WExpiredParentControlTests(WExpiredParentFixture):
+    """Preservation controls for the correction: every refusal below held
+    before it and still holds after it, with nothing recorded. They pass on
+    the baseline bytes too; that is their purpose."""
+
+    def unwritten(self, mission_id, step, problem_in_detail):
+        before = self.recorded()
+        result = self.attest(mission_id, step)
+        self.assertFalse(result["valid"], result)
+        self.assertEqual(result["problem"], mission_parent.PROBLEM_PARENT_INVALID)
+        self.assertIn(problem_in_detail, result["detail"])
+        self.assertEqual(self.recorded(), before)
+
+    def direct(self, mission_id, step, **changes):
+        """The Mission Core operation called directly with the values the
+        unchanged validator accepted, optionally altered."""
+        validated = mission_parent.validated_receipt(with_receipt(
+            delivery_record(mission_id, self.digest(mission_id), self.clock()),
+            step, delivery_authorization.RECEIPT_SUCCEEDED, self.clock()), step)
+        attestation = dict(
+            (key, getattr(validated, key)) for key in (
+                "receipt_id", "receipt_digest_sha256", "delivery_id", "step",
+                "receipt_state", "step_state", "parent_authority_digest_sha256",
+                "authorization_digest_sha256"))
+        attestation.update(changes)
+        operation = self.missions.mint_state_operation_id(AUTHENTICATED)
+        return (self.missions.attest_delivery_receipt, mission_id, operation,
+                self.missions.get_state(mission_id)["sequence"], attestation,
+                AUTHENTICATED)
+
+    def test_W4_control_ineligible_runs_refuse_after_expiry(self):
+        no_intent = self.approved(**self.github(objective="no intent"))
+        intent_only = self.approved(**self.github(objective="intent only"))
+        self.dispatch(intent_only)
+        cancelled = self.running(**self.github(objective="cancelled"))
+        self.bridge.cancel(cancelled)
+        blocked = self.running(**self.github(objective="blocked"))
+        self.write_artifacts(blocked)
+        self.satisfy_tests_pass(blocked)
+        self.observer.raw = raw_observation()
+        self.assertEqual(self.bridge.verify(blocked, self.reported())["state"],
+                         "BLOCKED")
+        self.assertIsNotNone(self.mission(intent_only)["run"]["intent"])
+        self.assertEqual(self.mission(intent_only)["state"], "AUTHORIZED")
+        self.expire(no_intent)
+        cases = ((no_intent, authorization_module.PROBLEM_EXPIRED),
+                 (intent_only, authorization_module.PROBLEM_EXPIRED),
+                 (cancelled, authorization_module.PROBLEM_NOT_AUTHORIZED),
+                 (blocked, authorization_module.PROBLEM_NOT_AUTHORIZED))
+        for mission_id, problem in cases:
+            with self.subTest(state=self.mission(mission_id)["state"], problem=problem):
+                self.unwritten(mission_id, "COMMIT", problem)
+
+    def test_W5_control_wrong_unrelated_or_unpermitted_authorization_refuses(self):
+        first, _ = self.verified(**self.github(objective="first"))
+        second, _ = self.verified(**self.github(objective="second"))
+        no_target, _ = self.verified(objective="verified, no delivery target")
+        self.expire(first)
+        # Wrong Mission: the parent block names this Mission but another
+        # Mission's authorization.
+        before = self.recorded()
+        crossed = mission_parent.attest_validated_receipt(
+            with_receipt(delivery_record(first, self.digest(second), self.clock()),
+                         "COMMIT", delivery_authorization.RECEIPT_SUCCEEDED,
+                         self.clock()),
+            "COMMIT", self.missions, self.missions.mint_state_operation_id(AUTHENTICATED),
+            self.missions.get_state(first)["sequence"], AUTHENTICATED)
+        self.assertFalse(crossed["valid"])
+        self.assertIn(authorization_module.PROBLEM_WRONG_MISSION, crossed["detail"])
+        self.assertEqual(self.recorded(), before)
+        # The same at the Mission Core, and a digest resolving to nothing.
+        from mission import state_service
+        for name, digest in (("another mission", self.digest(second)),
+                             ("unrelated", "f" * 64)):
+            with self.subTest(case=name):
+                self.core_refused(state_service.PROBLEM_RECEIPT_ATTESTATION_AUTHORITY,
+                                  *self.direct(first, "COMMIT",
+                                               authorization_digest_sha256=digest))
+                self.assertEqual(self.recorded(), before)
+        # An authorization that does not permit github_pr.
+        self.unwritten(no_target, "COMMIT",
+                       authorization_module.PROBLEM_TARGET_OUTSIDE_SCOPE)
+
+    def test_W6_control_duplicate_and_conflicting_receipts_refuse_after_expiry(self):
+        from mission import state_service
+        mission_id, _ = self.verified(**self.github())
+        # Attested inside the window, then observed again after expiry.
+        record_ = with_receipt(
+            delivery_record(mission_id, self.digest(mission_id), self.clock()),
+            "COMMIT", delivery_authorization.RECEIPT_SUCCEEDED, self.clock())
+        first = mission_parent.attest_validated_receipt(
+            record_, "COMMIT", self.missions,
+            self.missions.mint_state_operation_id(AUTHENTICATED),
+            self.missions.get_state(mission_id)["sequence"], AUTHENTICATED)
+        self.assertTrue(first["valid"], first)
+        self.expire(mission_id)
+        before = self.recorded()
+        self.core_refused(
+            state_service.PROBLEM_RECEIPT_ALREADY_ATTESTED,
+            mission_parent.attest_validated_receipt, record_, "COMMIT", self.missions,
+            self.missions.mint_state_operation_id(AUTHENTICATED),
+            self.missions.get_state(mission_id)["sequence"], AUTHENTICATED)
+        self.assertEqual(self.recorded(), before)
+        validated = mission_parent.validated_receipt(record_, "COMMIT")
+        self.core_refused(state_service.PROBLEM_RECEIPT_ATTESTATION_CONFLICT,
+                          *self.direct(mission_id, "COMMIT",
+                                       receipt_id=validated.receipt_id,
+                                       receipt_digest_sha256="c" * 64))
+        self.assertEqual(self.recorded(), before)
+
+    def test_W8_control_a_run_that_never_reached_running_keeps_the_full_window(self):
+        # Intent recorded, run never observed RUNNING: the service refuses it
+        # after expiry (W4), and a record carrying such an attestation past
+        # the expiry is refused by the store, as an unconsumed Mission's is
+        # (test_U3). The in-window attestation is moved past the expiry with
+        # every recording time of its operation (the U3 construction), and
+        # the journal snapshot is re-bound as every write re-binds it, so
+        # the window is the record's only defect.
+        from mission import journal
+        mission_id = self.approved(**self.github())
+        self.dispatch(mission_id)
+        self.assertEqual(self.mission(mission_id)["state"], "AUTHORIZED")
+        self.assertTrue(self.attest(mission_id, "COMMIT")["valid"])
+        expires = self.missions.get(mission_id)["authorizations"][-1]["expires_at"]
+        document = mission_store.MissionStore(self.state).load()
+        state = document["mission_state"][mission_id]
+        artifact = mission_state.attested_artifacts(state)[0]
+        entry = [o for o in state["applied_operations"]
+                 if o["operation_id"] == artifact["operation_id"]][0]
+        late = expires + 10
+        for value in (entry, artifact):
+            value["provenance"]["received_at"] = late
+        entry["applied_at"] = artifact["recorded_at"] = state["updated_at"] = late
+        state["snapshot"] = None
+        state["snapshot"] = journal.new_snapshot(state, self.missions._activation_contract(
+            document, document["missions"][mission_id], state))
+        with self.assertRaises(mission_store.MissionStoreError) as caught:
+            mission_store.validate_document(document)
+        self.assertIn(mission_state.PROBLEM_AUTHORITY_WINDOW, str(caught.exception))
+        self.assertIn("receipt attestation", str(caught.exception))
 
 
 class GSpawnCompatibilityTests(Fixture):

@@ -135,6 +135,17 @@
   retry before any receipt existed. The digest and the invalid-UTF-8 and
   git-failure refusals are unchanged, and the bound and its refusal still
   apply to every other transport capture.
+- **A completed run's receipts are recorded after its authorization
+  expires.** `validate_delivery_parent_use` keeps the run that consumed a
+  Mission Authorization eligible as the `github_pr` delivery parent after
+  that authorization expires. The Mission store nevertheless refused the
+  run's validated receipt attestation (`mission_state_authority_window`),
+  so nothing was recorded. The store now checks that expiry against the
+  run's intent instead of the attestation. That applies only when the
+  Mission's one run intent consumed exactly that authorization at the cited
+  revision before it expired, and the run reached RUNNING. The `issued_at`
+  floor, the revocation bound, every attestation binding and the full
+  window for activations and completions are unchanged.
 
 ## v0.7.0
 

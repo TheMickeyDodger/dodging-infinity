@@ -144,7 +144,14 @@ activation must satisfy. The marker's digests are binding values, not
 credentials: one that resolves to nothing, to another Mission, to
 another revision or to a non-delivery authorization makes the record
 unreadable. Nothing here validates a receipt; the delivery layer's
-validator is never imported.
+validator is never imported. One bound moves, for this artifact class
+alone (Task 8 attestation correction): when the Mission's one run
+intent consumed exactly that authorization at the cited revision before
+its recorded expiry and the run's lifecycle chain begins with the move
+to RUNNING, the expiry is proved at the intent rather than at the
+attestation, matching ``validate_delivery_parent_use``; the
+``issued_at`` floor and the revocation bound still apply to the
+attestation itself.
 """
 
 import json
@@ -505,9 +512,13 @@ def registry_view(document):
     return view
 
 
-def _authority_window(authorization, recorded_at, what, where, path):
+def _authority_window(authorization, recorded_at, what, where, path,
+                      bound_expiry=True):
     """R-25.1: ``recorded_at`` lies inside the window the authorization
-    itself records. Recorded numbers only; never the wall clock."""
+    itself records. Recorded numbers only; never the wall clock. Only a
+    receipt attestation under the run that consumed the authorization
+    passes ``bound_expiry=False``: its expiry was proved at the run's
+    intent; the ``issued_at`` floor and the revocation bound still apply."""
     expires = authorization["expires_at"]
     revocation = authorization["revocation"]
     # Asymmetry, deliberate (R-26): expiry is STRICT (``T < expires_at``)
@@ -518,7 +529,7 @@ def _authority_window(authorization, recorded_at, what, where, path):
     # that same second is legitimate — strict comparison would make a
     # genuine authority document permanently unreadable.
     if recorded_at < authorization["issued_at"] or (
-        expires is not None and recorded_at >= expires
+        bound_expiry and expires is not None and recorded_at >= expires
     ) or (revocation["revoked"] and recorded_at > revocation["revoked_at"]):
         _unreadable(path, "%s (%s): %s at %d lies outside authorization %s's"
                     " recorded window (issued %d, expires %r, revoked_at %r)"
@@ -585,8 +596,28 @@ def _validate_mission_state(document, mission_id, state, path):
                         % (sub, state_module.PROBLEM_RECEIPT_ATTESTATION,
                            attestation["authorization_id"], mission_id,
                            artifact["provenance"]["revision"]))
+        # Task 8 attestation correction: the expiry bounded when the run
+        # could START, not the consumed run's later receipt attestation
+        # (``validate_delivery_parent_use``), so it is proved at the run's
+        # intent instead: the Mission's one intent consumed exactly this
+        # authorization at the cited revision before its recorded expiry,
+        # and its lifecycle chain begins with the move to RUNNING. Durable
+        # facts only (one intent per Mission, never replaced; no decision
+        # follows an intent; an append-only chain), never the current
+        # state, so a later CANCELLED or BLOCKED keeps the record readable.
+        run = mission.get("run")
+        intent = run["intent"] if run else None
+        lifecycle = mission.get("lifecycle") or []
+        run_consumed = bool(
+            intent is not None
+            and intent["authorization_id"] == attestation["authorization_id"]
+            and intent["revision"] == artifact["provenance"]["revision"]
+            and (authorization["expires_at"] is None
+                 or intent["recorded_at"] < authorization["expires_at"])
+            and lifecycle and lifecycle[0]["to_state"] == record.STATE_RUNNING)
         _authority_window(authorization, artifact["recorded_at"],
-                          "receipt attestation", sub, path)
+                          "receipt attestation", sub, path,
+                          bound_expiry=not run_consumed)
 
     def requirement_of(entry, sub):
         contract = contracts[entry["activation_id"]]
