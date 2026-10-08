@@ -21,7 +21,9 @@ service it is mixed into. Every mutating operation here:
 - takes ``expected_sequence`` and refuses ``mission_state_stale_sequence``
   on a mismatch without mutation (R-7), so of two concurrent writers
   exactly one wins;
-- refuses on a terminal record (``mission_state_terminal``).
+- refuses on a terminal record (``mission_state_terminal``), and (Task 8
+  increment 2) on a Mission whose own lifecycle state is terminal
+  (``mission_terminal``).
 
 Contract activation and staleness (R-5). ``activate_proof_contract``
 derives the contract from the current revision's approved proposal and
@@ -34,7 +36,10 @@ patch or override. Every contract-dependent operation re-derives the
 active contract on each call and refuses ``mission_state_contract_stale``
 when the latest activation is not for the current revision, when the
 recomputed digests disagree with the recorded binding, or when the bound
-authorization no longer validates. Changing the contract is an EDIT plus
+authorization no longer validates (Task 8 increment 2, the one stated
+exception: a RUNNING Mission whose run intent consumed exactly that
+authorization at that revision, unrevoked, still binds it; see
+``_run_holds_authorization``). Changing the contract is an EDIT plus
 a fresh APPROVE, enforced by Task 4 machinery this module never touches:
 nothing here issues, revokes or reads a mutable authorization field, and
 nothing here writes ``mission["state"]``.
@@ -274,7 +279,8 @@ class MissionStateOperations(object):
                 return document["authorizations"][authorization_id]
         return None
 
-    def _bound_contract(self, document, mission, state, now):
+    def _bound_contract(self, document, mission, state, now,
+                        delivery_receipt=False):
         """The active contract, re-derived from the bound revision's
         approved proposal and re-validated for liveness (R-5.4)."""
         activation = state_module.latest_activation(state)
@@ -298,12 +304,41 @@ class MissionStateOperations(object):
             document, activation["authorization_id"], mission["mission_id"],
             activation["revision"], now,
         )
-        if not check.valid:
+        if not check.valid and not self._run_holds_authorization(
+            document, mission, activation, check, delivery_receipt
+        ):
             record.fail(PROBLEM_CONTRACT_STALE,
                         "the authorization the active contract was activated"
                         " under no longer validates (%s: %s)"
                         % (check.problem, check.detail))
         return activation, contract
+
+    @staticmethod
+    def _run_holds_authorization(document, mission, activation, check,
+                                 delivery_receipt=False):
+        """Task 8 increment 2: once a run intent CONSUMED the activation's
+        authorization, the Mission is RUNNING and ``validate_authorization_use``
+        refuses ONLY because the state is no longer AUTHORIZED. Proof
+        writes for that run still bind to it: same authorization, same
+        revision, unrevoked (no decision can follow a run intent). Every
+        other refusal (tampering, history, revocation, revision) stands,
+        and a terminal Mission is refused before this is reached, except
+        (increment 2c) a COMPLETED one for the delivery receipt
+        attestation alone, which binds the same contract."""
+        run = mission.get("run")
+        intent = run["intent"] if run else None
+        states = ((record.STATE_RUNNING, record.STATE_COMPLETED)
+                  if delivery_receipt else (record.STATE_RUNNING,))
+        return bool(
+            check.problem == authorization_module.PROBLEM_NOT_AUTHORIZED
+            and mission["state"] in states
+            and intent is not None
+            and intent["authorization_id"] == activation["authorization_id"]
+            and intent["revision"] == activation["revision"]
+            == mission["current_revision"]
+            and not document["authorizations"][activation["authorization_id"]][
+                "revocation"]["revoked"]
+        )
 
     def _state_projection(self, document, mission, state):
         return {
@@ -313,8 +348,8 @@ class MissionStateOperations(object):
         }
 
     def _apply(self, kind, mission_id, operation_id, expected_sequence, context,
-               arguments, apply, needs_contract=True):
-        record.require_context(context)
+               arguments, apply, needs_contract=True, delivery_receipt=False):
+        record.require_authenticated_context(context)
         record.require_id(mission_id, record.MISSION_ID_PREFIX, "mission_id")
         record.require_id(operation_id, record.STATE_OPERATION_ID_PREFIX,
                           "operation_id")
@@ -341,6 +376,15 @@ class MissionStateOperations(object):
                                 " different content; nothing was changed"
                                 % operation_id)
                 return dict(copy.deepcopy(applied["outcome"]), idempotent=True)
+            # Task 8 increment 2: the Mission-level terminal guard. A
+            # terminal Mission takes no progress, result or proof write.
+            # The ONE exception (increment 2c): the delivery layer's receipt
+            # attestation on a COMPLETED Mission, which records delivery
+            # evidence through the separate P1-A6 contract and grants
+            # nothing. BLOCKED and CANCELLED stay closed to it as well.
+            if not (delivery_receipt
+                    and record.STATE_COMPLETED == mission["state"]):
+                self._refuse_terminal(mission)
             now = self._now()
             state = document["mission_state"].get(mission_id)
             if state is None:
@@ -357,8 +401,9 @@ class MissionStateOperations(object):
                             % (mission_id, state["progress"]))
             activation = contract = None
             if needs_contract:
-                activation, contract = self._bound_contract(document, mission,
-                                                            state, now)
+                activation, contract = self._bound_contract(
+                    document, mission, state, now,
+                    delivery_receipt=delivery_receipt)
             provenance = record.provenance_record(
                 context, now, record.REFERENCE_KIND_STATE_OPERATION, operation_id,
                 mission_id, mission["current_revision"],
@@ -510,7 +555,7 @@ class MissionStateOperations(object):
                                                           "expected_sequence")
         context = observation.require_exact_context(context)
         collected_at, answers = observation.normalize_inputs(inputs)
-        record.require_context(context)
+        record.require_authenticated_context(context)
         record.require_id(mission_id, record.MISSION_ID_PREFIX, "mission_id")
         record.require_id(operation_id, record.STATE_OPERATION_ID_PREFIX,
                           "operation_id")
@@ -817,10 +862,13 @@ class MissionStateOperations(object):
                             "the attestation names a Mission Authorization digest"
                             " that is not a stored authorization of mission %s;"
                             " nothing was recorded" % mission_id)
-            check = authorization_module.validate_authorization_use(
+            # Task 8 increment 2c: the narrowly scoped delivery-parent answer
+            # (also true for the RUNNING or COMPLETED run that consumed this
+            # authorization); it grants nothing and general use stays refused.
+            check = authorization_module.validate_delivery_parent_use(
                 op.document, authorization["authorization_id"], mission_id,
                 authorization["revision"], op.now,
-                required_delivery_target=record.DELIVERY_TARGET_GITHUB_PR)
+                record.DELIVERY_TARGET_GITHUB_PR)
             if not check.valid:
                 record.fail(PROBLEM_RECEIPT_ATTESTATION_AUTHORITY,
                             "the attestation's parent authorization %s does not"
@@ -871,7 +919,8 @@ class MissionStateOperations(object):
                     "authorization_id": authorization["authorization_id"]}
         return self._apply(state_module.OPERATION_ATTEST_DELIVERY_RECEIPT, mission_id,
                            operation_id, expected_sequence, context,
-                           {"attestation": attestation}, apply)
+                           {"attestation": attestation}, apply,
+                           delivery_receipt=True)
 
     def submit_evidence(self, mission_id, operation_id, expected_sequence,
                         requirement_key, kind, content_digest_sha256, artifact_ids,

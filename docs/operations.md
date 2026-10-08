@@ -156,6 +156,49 @@ herdctl bootstrap --repo my-repo
 
 `--force` re-bootstraps a herd whose agents are already registered.
 
+### When an agent fails to start
+
+If a role's `herdr agent start` fails, bootstrap closes the partial workspace
+and removes `state/runtime.json`. Before that cleanup, it writes one
+diagnostic file of the failed start:
+
+```text
+HERD_ROOT/state/diagnostics/agent-start-failure-AGENT-UTC_TIMESTAMP-RANDOM.json
+```
+
+It holds:
+
+- the agent name, kind, pane, start timeout and attempt count;
+- the start command's return code, stderr and stdout;
+- `herdr pane process-info --pane PANE`, reduced to each process's `pid`,
+  `name`, `argv0`, `cwd` and redacted `argv`/`cmdline`;
+- the pane's `detection` and `visible` snapshots (`herdr pane read --lines
+  80`).
+
+It never stores an environment dump. Redaction of credential- and
+capability-shaped text is **best-effort pattern matching, not a guarantee**,
+so treat the file as sensitive.
+
+Bounds:
+
+- each diagnostic command has its own 5-second deadline;
+- at most 64 KiB is read from each command output stream;
+- each field is capped at 8,000 characters and each file at 131,072, with
+  cuts marked `[TRUNCATED]`;
+- the newest 20 files are kept;
+- the directory is mode `700` and each file `600`.
+
+A capture failure never hides the original start error. The error message
+names the file but never includes pane or process content. Inspect it with:
+
+```bash
+ls -t HERD_ROOT/state/diagnostics/
+python3 -m json.tool FILE
+```
+
+The file records what the pane showed at failure; it does not explain the
+cause by itself.
+
 ## 6. Create and run a Mission
 
 The short form dispatches an objective directly:
@@ -694,11 +737,215 @@ operations through the provider-neutral `HumanInteractionAdapter` seam using
 `TelegramHumanInteractionAdapter`. It is an adapter, not an execution system,
 and it has no direct path to Herdr or `herdctl`; the isolation is enforced by
 the static suite. The broader target puts every human surface behind that
-boundary and makes Grok Bot the preferred conversational plane; Telegram
-remains the reference and the fallback until that is proven.
+boundary. Grok Bot is the human-facing mobile interface (Task 8 final:
+`grokbot.py`, see [Grok Bot transport](grok-bot.md)); Codex is the Outer
+Operator; Dots is optional for active operation. [History, Task 8: this
+paragraph named Dots as the mobile interface, and the earlier Grok Bot MCP
+spike, `grok_mcp`, that used to be named here is retired and stays retired.]
+Telegram remains the reference and the fallback.
 
 The authority model the adapter implements is in
 [architecture.md](architecture.md#11-authority).
+
+### Dots, optional for active operation
+
+[History, Task 8: this section was "Dots, the human-facing mobile interface".
+Grok Bot is the mobile interface now; Dots still works as described here,
+but no active operation depends on it.]
+
+There is nothing to install or configure for Dots in this repository: no Dots
+adapter, ingress, MCP server, or tunnel exists here. Dots reaches this machine
+by creating or continuing a local Codex task (the Outer Operator) while the
+computer is online with the app open. Dodging Infinity alone still owns
+Mission identity, authority, lifecycle, durable state, dispatch, evidence,
+reconciliation, and delivery gates; Herdr still executes engineering.
+
+What a local Codex task can invoke (Task 8): the neutral local request
+surface, `python3 direquest.py --state-dir DIR propose|status|approve|cancel|recover`
+(package `local_request/`; run from the repository root, not installed as a
+command; `DIR` is an absolute path to a mode-700 directory). Any local caller can use it; it is not a Dots
+adapter and trusts the caller for nothing. `propose` creates a bounded
+Mission proposal in Mission Core (revision 1 and its digest) and returns a
+one-time control capability. `status` reads the durable records (Mission
+Core's own observation, unchanged), with no chat history. `approve` is
+always refused (`local_request_approval_unauthenticated`, naming the missing
+authenticated per-message principal assertion and exact human approval
+event). `cancel`, with the creator's control capability, withdraws only
+that caller's own pending revision-1 proposal: it cancels the local
+request and records a durable withdrawal marker on the Mission that
+Mission Core's decision path consults and refuses every later decision on.
+A withdrawn proposal is not a lifecycle state: its Mission stays
+`AWAITING_DECISION` carrying the marker. Nothing here cancels or controls a
+running Mission or Herdr work, and nothing is dispatched. [SUPERSEDED for
+the current candidate (Task 8 is ACTIVE and UNACCEPTED) by the operations
+below. The earlier note "none of this has run live" is history: see the live
+V6 exercise under DEMONSTRATED.]
+
+Operator-attested approval (the active trust model). Run `present REF` to
+show the one exact proposal. Then pipe the human's reply into
+`attest-approval REF --mission-id M --revision N --proposal-digest D
+--action-scope S ... --expires-at T --relay-ref R`. Only the whole reply
+`approved` or `approve` counts. The record is labelled
+`operator_attested_not_independently_verified`; it is not authenticated
+human provenance, and a same-user operator or local process could fabricate
+it.
+
+The run route, for the request's own AUTHORIZED Mission (each command takes
+`--control-repo /absolute/control/repo`):
+
+- `dispatch REF --workspace-repository /absolute/approved/checkout
+  --workspaces-root /absolute/mission/workspaces`: no workspace path is
+  given. Dodging Infinity prepares the Mission's own isolated worktree at
+  `ROOT/MISSION_ID`, establishes Claude workspace trust for exactly that
+  path (the Runtime's managed-workspace trust mechanism: one key, one entry,
+  in the configuration the started Herdr reads), records that binding
+  durably, re-checks it (trust included), records the run intent naming
+  exactly that path, then spawns through the real Herdr bridge. The repository's origin must be exactly the approved
+  repository. The root must exist outside every repository. The baseline
+  commit (the repository's `HEAD`) is observed by Dodging Infinity and is not
+  human-approved. Every refusal is recorded durably and starts nothing; see
+  [Automatic Mission workspaces](grok-bot.md#automatic-mission-workspaces).
+  `--workspace P` is operator recovery only: `P` must be the Mission's own,
+  already bound worktree, under every same check. [History: before Task 8
+  final, `--workspace /absolute/clean/checkout` was required and accepted any
+  clean checkout of the approved repository.]
+- `observe REF`, then `prove REF OPERATION < args.json` (one existing evidence
+  or acceptance seam per call; nothing is auto-accepted), then
+  `verify REF < reported.json`, then `result REF`.
+- After a HOLD (`dispatch` or `observe` reports `hold: true`): `reconcile REF`
+  binds the one provable child but leaves the run AUTHORIZED. Run `observe REF`
+  AGAIN before `prove` and `verify`; a `verify` straight after `reconcile` is
+  refused (`mission_bridge_wrong_state`). Nothing is redispatched.
+- `pause REF` / `resume REF`: pause gates Dodging Infinity's progression only.
+  External in-flight work is NOT suspended.
+- `cancel-run REF`: reports the achieved state and HOLD when quiescence is
+  unprovable. A production Herdr target always reports HOLD here.
+
+`verify` either reaches VERIFIED, stops BLOCKED with the failing conjunct's
+code, or records `verification_blocked_pending_proof` with the blocker codes.
+In the last case, meet the obligations with `prove` and verify again; nothing
+is redispatched. `status REF` reports the lifecycle phase, HOLD, pause, cancel
+outcome, Mission State progress (VERIFIED does not close it) and delivery
+derived from attested P1-A6 receipts. Engineering approval confers no
+delivery, and `delivery_authority` stays `none`.
+
+Delivery has its own separate exact ceremony. From the repository, run
+`python3 -m pr_delivery present-dots ...`, with the same inputs as
+`authorize`. It prints the full delivery proposal (candidate, Mission,
+revision, scope, target, deadline) and its digest for the phone to display.
+Then pipe `{"delivery_proposal": ..., "relayed_reply": "approved"}` into
+`python3 -m pr_delivery attest-dots --proposal-digest D --reply-to R
+--relay-ref X`.
+
+- The human replies only `approved` or `approve` and never types a digest.
+- The live candidate must still be exactly the presented one; an ambiguous,
+  substituted, stale or repeated attestation is refused with nothing written.
+- The record says `dots_operator_attested`, operator-attested and not
+  independently verified.
+- `local_terminal` and its TTY ceremony are unchanged.
+- One live delivery has run, Operator-mediated, in the V6 exercise:
+  - the standalone `prd-85cad864f6ae89b72c1c483d` (`mission: null`);
+  - COMMIT, PUSH and PR_CREATE succeeded;
+  - PR #37 is open and not merged.
+  The earlier `prd-e87f7490…` is REVOKED (GitHub GH007, private email) and
+  created no remote branch or PR. [SUPERSEDED: "nothing has been delivered
+  live" is history.]
+
+DEMONSTRATED (user-observed, unedited):
+
+1. Reach, read, and reply: a phone-initiated local Codex task read a
+   repository file and returned its exact content plus session id
+   `01a10275-e9b0-70fd-bc29-9724f5fd60e9`.
+2. Same-task connected continuation and a durable status read: the same task,
+   continued, read `.herd/state/task.json` and Dots returned task
+   `20261003-115300-782f3a` / `ACTIVE`, with no edits. The status came from a
+   durable record, not chat history.
+
+3. Live proposal and status exercise (2026-10-03, human-reported and
+   corroborated from the durable stores): phone → Dots → the same local Codex
+   task → `python3 direquest.py … propose` → durable `status` → phone, with
+   matching request ref, Mission id, revision 1 and proposal digest; request
+   OPEN, Mission AWAITING_DECISION and NOT_STARTED. Zero approval attempts,
+   zero decisions, zero authorizations, no dispatch. The status approval
+   block describes the fail-closed policy; it does not show `approve` was
+   invoked.
+
+That covers connected same-task continuations, a small durable read, and
+proposal identity plus connected status only: not a new task, not a reconnect
+after an outage, not a large payload, not authenticated intent.
+
+4. Live V6 exercise (2026-10-04), Operator-mediated, not Dots-autonomous.
+   - Dots (the same local Codex task) showed the exact Mission
+     `mn-079a81327f76cda72d79eb241ada92d3` (revision 1, digest `7a83af04…`),
+     and the human sent a separate `approved` reply.
+   - The Outer Operator ran the effectful DI commands; Dots' local command
+     permission repeatedly refused DI propose and approve.
+   - The approval was Operator-attested; authenticated human provenance is
+     still not established.
+   - DI recorded one dispatch receipt. Herdr child `20261004-172125-960973`
+     completed in an isolated smoke clone (Lead verified, Reviewer round 2
+     APPROVE), changing only the one-line marker
+     `docs/task8-dots-smoke.md`.
+   - `verify` completed the Mission with `engineering_verified: true`
+     (evidence `mv-5e4e0a62…`).
+   - The human reports Dots read the token-free durable files
+     `dots-phone-status-v6.json`, `dots-phone-verified-result-v6.json` and
+     `dots-phone-pr-result-v6.json` and returned them. Dots did not rerun
+     verification or query GitHub or DI.
+   - The separate standalone P1-A6 delivery is described above. The Outer
+     Operator, not this herd, independently checked GitHub and the delivery
+     store.
+   - The Mission's `status` truthfully stays `delivered: false`, because the
+     delivery has no Mission parent.
+   - The parent's `.herd/state/children.json` still caches the child as
+     `ACTIVE`, while the copied verified result and checkpoint report it
+     COMPLETE. Trust the verified result, and do not edit the cache.
+
+   Not demonstrated live: an unavailable machine or session, disconnection
+   or restart around a decision or dispatch, and live pause or cancel of a
+   running Herdr child. Local deterministic tests are not substitutes.
+   `pause` gates Dodging Infinity's progression only, and a production Herdr
+   `cancel-run` can report HOLD. Task 8 stays ACTIVE and UNACCEPTED until the
+   Outer Operator's own confirmation.
+
+NOT ESTABLISHED, so treat each as a blocked gate:
+
+1. Authenticated exact approval binding. No authenticated per-message
+   principal or approval envelope is documented for the local process; the
+   Mission approval gate fails closed. Do not approve a Mission over Dots.
+   [SUPERSEDED by the user's trust decision: the operator-attested approval
+   above is the one sanctioned, non-authenticated path. Independent
+   authenticated human provenance is NOT ESTABLISHED and DELIBERATELY
+   DELEGATED, with the same-user fabrication risk ACCEPTED. It is NOT a Task 8
+   prerequisite, NOT an acceptance blocker, and no longer a blocked gate.]
+2. Outage and restart recovery of an in-flight approval.
+3. Background notification and durable event delivery (the computer must be
+   online with the app open).
+4. Verified-result delivery fidelity (the phone gets the verified result, not
+   a paraphrase). [SUPERSEDED in part by item 4 above: one human-reported
+   return of the verified result, read from a durable file. It is not a
+   general guarantee.]
+5. Full live Mission acceptance with real human participation, real live
+   dispatch, and the phone-to-PR loop. Each needs exact human authorization;
+   none has been run. [SUPERSEDED: "none has been run" is history. Each was
+   exercised once in the Operator-mediated V6 run above, with the PR as a
+   separate standalone delivery. Task 8 acceptance is still open.]
+
+Going offline is not revoking access, and neither is a way to cancel: a running
+local Dots task may finish after admin access is disabled. A cancel only holds
+when it is a durable local Dodging Infinity terminal state that every write
+path consults and that fails closed.
+
+A structured plugin or MCP tool route is UNPROVEN, not impossible. The
+documented inline or file-declared MCP import is Desktop-only, so it is not the
+mobile Dots surface; connecting one would need a registered app reference, a
+Secure MCP Tunnel, or public HTTPS (no usable DI connection has been
+established, and setup is not authorized in this task); and OAuth or mTLS alone would still not prove exact human approval of a
+Mission revision. No existing Dodging Infinity structured connector may be
+assumed, and the user states there is likely none; a plugin-management catalog
+search cannot enumerate account-specific installed plugins, so no match is not
+proof of absence. The full position is in
+[architecture.md](architecture.md#3-interaction-grok-bot-the-human-facing-mobile-interface).
 
 ### Telegram remote operator experience
 

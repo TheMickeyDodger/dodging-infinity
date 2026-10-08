@@ -897,7 +897,8 @@ def validate_record_shape(value, location):
                        location + ".observed_journal_digest_sha256", 64)
     record.require_int(value["observed_revision"], location + ".observed_revision",
                        minimum=1)
-    record.validate_provenance(value["provenance"], location + ".provenance")
+    record.require_authenticated_provenance(value["provenance"],
+                                            location + ".provenance")
     if value["provenance"]["revision"] != value["observed_revision"]:
         _malformed(location, "observed_revision %d is not the provenance revision %d"
                    % (value["observed_revision"], value["provenance"]["revision"]))

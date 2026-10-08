@@ -1691,9 +1691,13 @@ class GitTransportArgvPinTests(unittest.TestCase):
     # closing pass): a SIXTH method fails the suite until it is added
     # here AND exercised by the argv pin below — the same
     # derive-then-require-each-member shape as the bound registry.
+    # Task 8 final, deliberately: the four LOCAL worktree verbs of
+    # automatic Mission workspaces (add_worktree, common_dir, toplevel,
+    # worktree_list), each argv-pinned below.
     PINNED_METHODS = (
-        "checkout_detached", "clone", "diff_head", "head_commit",
-        "remote_url", "status_porcelain", "status_porcelain_readonly",
+        "add_worktree", "checkout_detached", "clone", "common_dir",
+        "diff_head", "head_commit", "remote_url", "status_porcelain",
+        "status_porcelain_readonly", "toplevel", "worktree_list",
     )
 
     def test_transport_method_set_is_pinned(self):
@@ -1739,6 +1743,10 @@ class GitTransportArgvPinTests(unittest.TestCase):
         transport.status_porcelain("P")
         transport.diff_head("P")
         transport.status_porcelain_readonly("P")
+        transport.toplevel("P")
+        transport.common_dir("P")
+        transport.worktree_list("R")
+        transport.add_worktree("R", "PATH", "SHA", "REASON")
         self.assertEqual(recorded, [
             ["git", "clone", "--quiet", "--", "URL", "PATH"],
             ["git", "-C", "P", "remote", "get-url", "origin"],
@@ -1754,6 +1762,16 @@ class GitTransportArgvPinTests(unittest.TestCase):
             ["git", "--no-optional-locks", "-c",
              "core.quotePath=true", "-C", "P", "status",
              "--porcelain"],
+            ["git", "-C", "P", "rev-parse", "--show-toplevel"],
+            ["git", "-C", "P", "rev-parse", "--path-format=absolute",
+             "--git-common-dir"],
+            ["git", "-C", "R", "worktree", "list", "--porcelain", "-z"],
+            # Detached, locked from its first moment, hooks disabled for
+            # this one invocation, and "--" before the path: no option can
+            # ride in on a path.
+            ["git", "-c", "core.hooksPath=/dev/null", "-C", "R", "worktree",
+             "add", "--quiet", "--detach", "--lock", "--reason", "REASON",
+             "--", "PATH", "SHA"],
         ])
         # Cross-check: every pinned method was exercised above, so
         # the method-set pin and the argv pin can never drift apart.

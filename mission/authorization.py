@@ -6,7 +6,11 @@ AUTHORITY half is immutable after issuance and bound by
 ``authorization_digest_sha256`` (canonical JSON over every authority
 field, re-verified on every load and every validation): authorization
 id, Mission id, the EXACT revision, the exact proposal (manifest) digest
-of that revision, the truthful human-principal provenance block, the
+of that revision, the truthful ``human_principal`` provenance block (the
+approving decision's provenance; despite the historical field name it is
+never proof of a human, ``human_identity_proof`` is always null, and under
+the operator-attested kind it records an ATTESTED principal, not a verified
+one; Task 8), the
 authorized action scope and delivery targets (sorted, closed
 vocabularies), issue time and optional expiry. The STATE half is the
 ``revocation`` block, mutable and protected by the ledger. Keeping
@@ -34,7 +38,9 @@ The one validation path. ``validate_authorization_use`` is the only
 production function that decides whether an authorization permits a
 use. It takes the loaded store document as plain data and fails closed
 with a distinct ``mission_*`` code for: unknown Mission, malformed
-Mission state, unknown authorization, tampered authorization digest,
+Mission state, unknown authorization, a human principal of the
+unauthenticated local caller kind (Task 8; such an authorization cannot
+be issued either), tampered authorization digest,
 wrong Mission, wrong (stale) revision, wrong manifest digest, expired,
 revoked, denied Mission, action outside scope, delivery target outside
 scope, and an inconsistent ledger. Store unreadability is reported by
@@ -65,6 +71,13 @@ from workflow_authority.digest import json_digest
 from mission import manifest
 from mission import record
 
+# ``human_principal`` (a historical name kept for schema compatibility) holds
+# the approving decision's provenance block. It is NEVER proof of a human:
+# ``human_identity_proof`` is always null. For an authenticated kind it names
+# the authenticated transport principal; for ``operator_attested_relay``
+# (Task 8) it names an ATTESTED principal whose proof is
+# ``operator_attested_not_independently_verified``. Read its ``proof``, never
+# the field name.
 AUTHORIZATION_KEYS = (
     "authorization_id", "mission_id", "revision", "proposal_digest_sha256",
     "human_principal", "authorized_action_scope",
@@ -159,8 +172,12 @@ def validate_authorization_record(value, location="authorization"):
     record.require_int(value["revision"], location + ".revision", minimum=1)
     record.require_hex(value["proposal_digest_sha256"],
                        location + ".proposal_digest_sha256", 64)
-    principal = record.validate_provenance(value["human_principal"],
-                                           location + ".human_principal")
+    # An authorization's principal is of an authenticated kind, or of the
+    # operator-attested kind (attested, not independently verified; Task 8).
+    # One of the unauthenticated local caller kind cannot be issued, loaded,
+    # or validated (``mission_unauthenticated_principal``).
+    principal = record.require_decision_provenance(
+        value["human_principal"], True, location + ".human_principal")
     if principal["reference_kind"] != record.REFERENCE_KIND_DECISION or (
         principal["mission_id"] != value["mission_id"]
         or principal["revision"] != value["revision"]
@@ -329,6 +346,59 @@ def _refusal(problem, detail, authorization=None):
     )
 
 
+def validate_delivery_parent_use(document, authorization_id, mission_id,
+                                 revision, now, delivery_target):
+    """P1-A6 delivery-parent eligibility, NARROWLY scoped (Task 8
+    increment 2c). Exactly ``validate_authorization_use`` for the delivery
+    target, with ONE stated difference: when that refuses ONLY because
+    the Mission is no longer AUTHORIZED (every earlier check, tampering,
+    history, revocation, revision and digest, has already passed), a
+    Mission whose run intent CONSUMED exactly this authorization at this
+    revision and is now RUNNING or COMPLETED still answers whether its
+    approved scope names ``delivery_target``.
+
+    It confers nothing: it is the parent-scope answer the separate,
+    exact delivery authorization and receipt contract consult, never
+    delivery permission (``delivery_authority`` stays none), and never
+    general engineering authority: ``validate_authorization_use`` itself
+    still refuses every use of a consumed or completed Mission. A BLOCKED
+    or CANCELLED run is not eligible. The authorization's expiry bounded
+    when the run could START (the intent was validated inside it); it is
+    not re-applied to the consumed run's delivery-target scope."""
+    check = validate_authorization_use(
+        document, authorization_id, mission_id, revision, now,
+        required_delivery_target=delivery_target)
+    if check.valid or check.problem != PROBLEM_NOT_AUTHORIZED:
+        return check
+    mission = document["missions"][mission_id]
+    authorization = document["authorizations"][authorization_id]
+    run = mission.get("run")
+    intent = run["intent"] if run else None
+    if mission["state"] not in (record.STATE_RUNNING, record.STATE_COMPLETED) or (
+        intent is None or intent["authorization_id"] != authorization_id
+        or intent["revision"] != revision
+    ):
+        return check
+    if delivery_target not in authorization["authorized_delivery_targets"]:
+        return _refusal(PROBLEM_TARGET_OUTSIDE_SCOPE,
+                        "delivery target %r is outside the authorized targets"
+                        % (delivery_target,), authorization)
+    return AuthorityCheck(
+        True, None,
+        "mission %s is %s under the run that consumed authorization %s; its"
+        " approved scope names %s (parent eligibility only, no authority)"
+        % (mission_id, mission["state"], authorization_id, delivery_target),
+        authorization_id=authorization_id,
+        mission_id=mission_id,
+        revision=revision,
+        proposal_digest_sha256=authorization["proposal_digest_sha256"],
+        authorized_action_scope=list(authorization["authorized_action_scope"]),
+        authorized_delivery_targets=list(
+            authorization["authorized_delivery_targets"]
+        ),
+    )
+
+
 def find_authorization_by_digest(document, digest):
     """The authorization record whose authority digest is ``digest``, or
     None. Exact string match on a 64-hex digest; anything else is None."""
@@ -371,8 +441,8 @@ def _reservation_agrees(document, reserved_id, kind, consumed_by, provenance):
             kind, reserved_id, consumed_by)
     context = dict((key, provenance.get(key)) for key in record.CONTEXT_KEYS)
     if reservation.get("context") != context:
-        return ("%s reservation %s was reserved by a different authenticated"
-                " context than the one recorded in the provenance"
+        return ("%s reservation %s was reserved by a different context than"
+                " the one recorded in the provenance"
                 % (kind, reserved_id))
     return None
 
@@ -614,6 +684,30 @@ def reconcile_mission_history(document, mission):
         ]["proposal_digest_sha256"]:
             return _history("%s recorded a manifest digest revision %d does not"
                             " carry" % (where, expected_outcome[1]))
+    # Task 8 increment 2: a run follows the decision history. Its intent
+    # binds the authorization that history issued LAST, at the revision
+    # it left, and only from AUTHORIZED; its lifecycle chain then moves
+    # the state on. No decision follows a run (the service refuses it).
+    run = mission.get("run")
+    intent = run["intent"] if run else None
+    if run is not None and state != record.STATE_AUTHORIZED:
+        return _history("mission %s carries a run record but its decision"
+                        " history leaves it %s, not AUTHORIZED"
+                        % (mission_id, state))
+    if intent is not None and (
+        not issued_ids or intent["authorization_id"] != issued_ids[-1]
+        or intent["revision"] != revision
+        or intent["authorization_id"] in revoked_by
+        or intent["approved_action_scope"] != authorizations[
+            intent["authorization_id"]]["authorized_action_scope"]
+        or intent["approved_delivery_targets"] != authorizations[
+            intent["authorization_id"]]["authorized_delivery_targets"]
+    ):
+        return _history("mission %s run intent does not bind the live"
+                        " authorization its decision history issued, with"
+                        " exactly its scope" % mission_id)
+    if mission.get("lifecycle"):
+        state = mission["lifecycle"][-1]["to_state"]
     if state != mission["state"]:
         return _history("mission %s is stored as %s but its decision history"
                         " leaves it %s" % (mission_id, mission["state"], state))
@@ -740,8 +834,9 @@ def validate_authorization_use(document, authorization_id, mission_id,
         validate_authorization_record(authorization,
                                       "authorization %s" % authorization_id)
     except record.MissionError as exc:
-        if exc.problem == PROBLEM_AUTHORIZATION_TAMPERED:
-            return _refusal(PROBLEM_AUTHORIZATION_TAMPERED, str(exc))
+        if exc.problem in (PROBLEM_AUTHORIZATION_TAMPERED,
+                           record.PROBLEM_UNAUTHENTICATED_PRINCIPAL):
+            return _refusal(exc.problem, str(exc))
         return _refusal(PROBLEM_MALFORMED_STATE, str(exc))
     if authorization["mission_id"] != mission_id:
         return _refusal(PROBLEM_WRONG_MISSION,

@@ -12,7 +12,7 @@ giving AI uncontrolled authority. The operating rule:
 > **Bots converse and collaborate. Dodging Infinity governs. Capabilities do
 > bounded work. Workers execute. Humans authorize.**
 
-It is not a wrapper around Telegram, Grok, Codex, or Pi. It is not a persona
+It is not a wrapper around Telegram, Dots, Codex, Pi, or any one model. It is not a persona
 collection, a multi-agent chat demo, a task board, a generic workflow engine,
 or an autonomous Git bot. It is not merely Herdr, and it is not a Herdr UI. It
 is not a visual simulation that controls agents. Each of those can be an
@@ -36,12 +36,29 @@ You
  │ text / voice / image / file / video / link
  ▼
 ┌──────────────────────────────┐
-│      GROK BOT COORDINATOR    │
-│  your universal front door   │
+│           GROK BOT           │
+│ human-facing mobile interface│
 └──────────────┬───────────────┘
                │
-               │ conversations, mission requests,
-               │ approvals, status questions
+               │ ACTIVE (Task 8 final): Grok Bot
+               │ (grokbot.py) reaching the Codex Outer
+               │ Operator; Dots is optional for active
+               │ operation. Carries conversations,
+               │ mission requests, status questions,
+               │ and Mission APPROVAL as an
+               │ OPERATOR-ATTESTED relay of the human's
+               │ separate "approved" reply: not
+               │ cryptographically authenticated; DI
+               │ does not establish the sender
+               │ (section 3, grok-bot.md)
+               │ [HISTORY, superseded, kept verbatim:
+               │ "approval needs an authenticated
+               │ route: section 3"; then, in Task 8,
+               │ "approval is Operator-attested
+               │ Dots-chat approval under declared
+               │ Operator trust, with provenance
+               │ deliberately delegated and the
+               │ fabrication risk accepted"]
                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                DODGING INFINITY ORCHESTRATOR                │
@@ -83,10 +100,11 @@ Each role in the fabric has a limit, and the limit is the point:
 
 | Role | What it does | What it never does |
 |---|---|---|
-| Grok Bot | The conversational plane, with specialist experiences for coordination, research, operations, release, and QA. | Owns authority. |
-| Operator | The replaceable reasoning role for one Mission. Assesses evidence, chooses bounded work, invokes approved capabilities, coordinates engineering when required. | Becomes a model brand. Mints authority. |
-| Herdr | The engineering organization inside an engineering Mission: Supervisor, Lead, Executor, Reviewer. | Becomes the Mission control plane. |
-| Dodging Infinity | The authoritative system: Mission identity, authorization, lifecycle, rules, evidence, blockers, artifacts, scheduling, budgets, workers, checkpoints, recovery, reconciliation, canonical status, delivery receipts. | Delegates authority to a model, a transport, or a UI. |
+| Grok Bot | The human-facing mobile interface (Task 8 final): `grokbot.py`, a thin transport that carries a phone conversation's request to the Codex Outer Operator and presentation, operator-attested approval, status and the run back through the local request surface ([Grok Bot transport](grok-bot.md)). A dispatch needs no path from the human. | Owns authority. Establishes who sent a reply: approval through it is operator-attested, not cryptographically authenticated. |
+| Dots | Optional for active operation. [History, Task 8: Dots was the human-facing mobile interface.] Carries presentation (proposals, status, results) to the human and intent (requests, questions, pause or cancel requests) from the human. | Owns authority. Carries a Mission approval without an authenticated exact binding (section 3). [SUPERSEDED in Task 8: Dots carries a Mission approval as Operator-attested Dots-chat approval under the user's declared Operator trust. Provenance is deliberately delegated, not independently verified, with the same-user fabrication risk accepted. Dots still never owns authority; exact Mission binding and the separate exact P1-A6 delivery authority stay required.] |
+| Operator | The replaceable reasoning role for one Mission. Assesses evidence, chooses bounded work, invokes approved capabilities, coordinates engineering when required. Codex is the Outer Operator today; Muse is not the Operator. | Becomes a model brand. Mints authority. |
+| Herdr | The engineering execution system: the engineering organization inside an engineering Mission (Supervisor, Lead, Executor, Reviewer). | Becomes the Mission control plane. |
+| Dodging Infinity | The authoritative system, and the only owner of Mission identity, authority, lifecycle, durable state, dispatch, evidence, reconciliation, and delivery gates; also rules, blockers, artifacts, scheduling, budgets, workers, checkpoints, recovery, canonical status, delivery receipts. | Delegates authority to a model, a transport, or a UI. |
 | Humans | The root of consequential authority. | Get replaced by an approval a machine minted. |
 | Reconciler | Deterministic machinery that compares durable expected state with reality. | Acts as an AI agent. |
 | Ops Steward | A later organizational learning layer that finds repeated failures and proposes improvements. | Expands its own authority. |
@@ -102,13 +120,20 @@ Each role in the fabric has a limit, and the limit is the point:
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                            GROK BOT PLANE                                    │
-│  Coordinator Grok Bot                                                        │
+│                         HUMAN INTERFACE PLANE                                │
+│  Grok Bot: human-facing mobile interface   Telegram: reference + fallback    │
+│  Dots: optional for active operation (Task 8 history: the mobile interface)  │
+│  Coordinator                                                                 │
 │      ├── Research Bot   ├── Engineering Bot   ├── Marketing Bot              │
 │      ├── Ops Bot        ├── Finance Bot       └── Future Bots                │
 │                                                                              │
 │ Bots share mission refs, artifact refs, evidence, questions, summaries and    │
-│ recommendations. They do NOT exchange hidden authority.                      │
+│ recommendations. They do NOT exchange hidden authority. Mission approval     │
+│ over Dots is NOT ESTABLISHED: no authenticated exact binding (section 3).    │
+│ [SUPERSEDED in Task 8: Mission approval over Dots is Operator-attested       │
+│ Dots-chat approval under declared Operator trust; provenance is              │
+│ deliberately delegated with the fabrication risk accepted. Exact             │
+│ Mission binding and separate P1-A6 delivery authority stay required.]        │
 └───────────────────────────────┬──────────────────────────────────────────────┘
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -324,16 +349,379 @@ automatically inherit each other's authority. A browser QA Mission that
 discovers a bug proposes an engineering child Mission, and that child needs its
 own Mission Authorization.
 
-## 3. Interaction and the Grok Bot plane
+## 3. Interaction: Grok Bot, the human-facing mobile interface
 
-Every human surface sits behind a `HumanInteractionAdapter`. Grok Bot is the
-preferred target conversational plane, with named specialist experiences for
-coordination, research, operations, release, browser QA, and incident recovery.
-An operational desktop and CLI serve setup, health, and administration. The
-visual world is a projection of canonical state and is built last.
+The architecture position, stated once and used everywhere else:
 
-The Coordinator Grok Bot is not tied to one Mission. It should be able to
-understand:
+- **Grok Bot is the human-facing mobile interface** (Task 8 final:
+  `grokbot.py`, see [Grok Bot transport](grok-bot.md)).
+- **Codex is the Outer Operator.**
+- **Dots is optional for active operation.**
+- **Dodging Infinity alone owns Mission identity, authority, lifecycle,
+  durable state, dispatch, evidence, reconciliation, and delivery gates.**
+- **Herdr is the engineering execution system.**
+- **Muse is not the Operator.**
+
+[History, Task 8: this position used to read "Dots is the human-facing mobile
+interface". Dots can still reach the machine as a local Codex task, but no
+active operation depends on it. What the Dots flow showed stays below as
+history.]
+
+Every human surface sits behind a `HumanInteractionAdapter` or reaches Dodging
+Infinity through the Outer Operator. Telegram remains the reference transport
+and the fallback. An operational desktop and CLI serve setup, health, and
+administration. The visual world is a projection of canonical state and is
+built last.
+
+**The Grok Bot MCP spike stays retired; the Grok Bot transport is current.**
+Grok Bot was the earlier target conversational plane, and a Grok Bot MCP spike
+(`grok_mcp`, `grokmcp.py`) existed in the tree. Task 8 removed that spike from
+the active product and its startup path, and it stays removed; its history
+stays in the [roadmap](roadmap.md) and [CHANGELOG.md](../CHANGELOG.md). The
+mobile interface today is a different, thin transport over the current
+contracts, `grok_bot` (`grokbot.py`): it decides nothing, grants no delivery
+authority, and its approval is operator-attested. Its loopback tests prove
+protocol shape only; live phone interoperability is unverified. Grok as a
+model provider is a separate thing and is not retired (section 6).
+
+### What the Dots flow has shown, and what it has not
+
+[History, Task 8: Dots was the mobile interface for these exercises. It is
+optional for active operation now.]
+
+Dots reaches this machine by creating or continuing a local Codex task while
+the computer is online with the app open. Four observations exist: the first
+two user-observed and unedited, the third and fourth human-reported and
+corroborated from durable records:
+
+**DEMONSTRATED**
+
+1. **Reach, read, and reply.** A phone-initiated local Codex task read a
+   repository file and returned its exact content plus the session id
+   `01a10275-e9b0-70fd-bc29-9724f5fd60e9`.
+2. **Same-task connected continuation and a durable status read.** The user
+   continued that same task, read `.herd/state/task.json`, and Dots returned
+   task `20261003-115300-782f3a` / `ACTIVE`, with no edits. A status answer
+   sourced from a durable Dodging Infinity record, rather than from chat
+   history, survived the trip.
+
+3. **Live proposal and status exercise (2026-10-03).** Human-reported and
+   corroborated from the durable stores: phone → Dots → the same local Codex
+   task → a local DI proposal through `direquest.py` → durable status → phone,
+   with matching request `lr-06dfa637b5a65affd594b085b5dc6432`, Mission
+   `mn-5d9af9029527d73a9b38c22781d9d7a8`, revision 1 and proposal digest
+   `90cfd77b…c7fedeb0`; request OPEN, Mission AWAITING_DECISION and
+   NOT_STARTED. There were zero approval attempts, zero decisions, zero
+   authorization ids, zero authorizations and no dispatch. The approval block
+   in status describes the fail-closed policy; it does not show that
+   `approve` was invoked, and no refusal was observed.
+
+Scope of that evidence: connected same-task continuations, a small durable
+read, and proposal identity presentation with connected status retrieval
+only. It is not a new task, not a reconnect after an outage, not a large
+payload, not authenticated intent and not result fidelity; the pending
+Mission has not executed.
+
+4. **Live V6 exercise (2026-10-04), Operator-mediated, not
+   Dots-autonomous.**
+   - Dots (the same local Codex task) showed the exact Mission
+     `mn-079a81327f76cda72d79eb241ada92d3` (revision 1, digest `7a83af04…`),
+     and the human sent a separate `approved` reply.
+   - The Outer Operator ran the effectful DI commands; Dots' local command
+     permission repeatedly refused DI propose and approve.
+   - The Mission approval was Operator-attested; authenticated human
+     provenance is still not established.
+   - DI recorded one dispatch receipt. Herdr child `20261004-172125-960973`
+     completed in an isolated smoke clone, with Lead verification and
+     Reviewer round 2 APPROVE. Its only source change was the one-line
+     marker `docs/task8-dots-smoke.md`.
+   - DI `verify` completed the Mission with `engineering_verified: true`
+     (evidence `mv-5e4e0a62…`).
+   - The human reports Dots read the token-free durable files
+     `dots-phone-status-v6.json`, `dots-phone-verified-result-v6.json` and
+     `dots-phone-pr-result-v6.json` and returned them. Dots did not rerun
+     verification or query GitHub or DI.
+   - Delivery stayed separate. The standalone P1-A6 delivery
+     `prd-85cad864f6ae89b72c1c483d` (`mission: null`), approved by its own
+     Operator-attested Dots reply, completed COMMIT, PUSH and PR_CREATE and
+     opened PR #37, which is open and not merged. The Outer Operator, not
+     this herd, independently checked GitHub and the delivery store.
+   - An earlier delivery, `prd-e87f7490…`, is REVOKED (GitHub GH007, private
+     email), with no remote branch or PR.
+   - The Mission's DI status truthfully stays `delivered: false`: there is
+     no Mission-parent receipt.
+   - Sources differ on the child: the parent's `.herd/state/children.json`
+     still caches it as `ACTIVE`, while the copied verified result and
+     checkpoint report it COMPLETE.
+
+   Not demonstrated live: an unavailable machine or session, disconnection
+   or restart around a decision or dispatch, and live pause or cancel of a
+   running Herdr child. Local deterministic tests are not substitutes.
+
+**NOT ESTABLISHED** (each is a blocked gate wherever success is described)
+
+1. **Authenticated exact approval binding.** No inspected official page
+   documents an authenticated per-message principal or approval envelope
+   available to the local Dodging Infinity process. The Mission approval gate
+   fails closed. [SUPERSEDED in Task 8, reclassified: Mission approval is
+   operator-attested Dots-chat approval under the user's declared trust.
+   Independent authenticated human provenance is NOT ESTABLISHED and
+   DELIBERATELY DELEGATED, with the same-user fabrication risk ACCEPTED. It is
+   NOT a Task 8 prerequisite, NOT an acceptance blocker, and no longer a
+   blocked gate. Exact Mission binding and the separate exact P1-A6 delivery
+   authority stay required.]
+2. **Outage and restart recovery.** Connection changes may interrupt or reload
+   the runtime; nothing guarantees recovery of an in-flight approval.
+3. **Background notification and durable event delivery.** The computer must
+   be online with the app open.
+4. **Verified-result delivery fidelity**: that the phone receives the verified
+   result itself and not a paraphrase of it. [SUPERSEDED in part by item 4
+   above: one human-reported return of the verified result, read from a
+   durable file. It is not a general guarantee.]
+5. **Full live Mission acceptance.** [SUPERSEDED in part: one
+   Operator-mediated live run with dispatch, verification and a separate
+   phone-to-PR delivery is item 4 above. Task 8 acceptance itself is still
+   open and waits for the Outer Operator's own confirmation.]
+
+On that evidence, the native local text route is a human-operated,
+unauthenticated text transport. It can carry presentation (proposals, status,
+results) and intent (requests, clarifications, status questions, pause or
+cancel requests). It cannot carry a Mission approval. [SUPERSEDED in Task 8:
+under the user's declared trust, this route DOES carry a Mission approval, as
+an Operator-attested Dots-chat approval: the human's exact whole-string
+`approved` or `approve`, relayed by the Outer Operator and exactly bound to
+one Mission revision. It stays unauthenticated and not independently verified.
+Provenance is deliberately delegated, with the same-user fabrication risk
+accepted. It confers no delivery, which stays the separate exact P1-A6
+authorization.] A token typed back from
+the phone proves reach, not authority, which is the rule the Telegram adapter
+already follows for quoted marker text ([OPERATOR_PROTOCOL.md](../OPERATOR_PROTOCOL.md)).
+This is a statement about that route, not a claim that Dots approval is
+impossible.
+
+### Offline is not revoked, and neither is cancellation
+
+Three different things must never be conflated:
+
+1. **Offline.** The phone or computer loses connectivity. Connection changes
+   may interrupt or reload the runtime; that stops nothing deterministically.
+2. **Revoked access.** An admin disables access. A running local Dots task may
+   still finish **after** admin access is disabled.
+3. **Cancellation with late-write prevention.** A Dodging Infinity guarantee
+   that once a cancel decision commits, no further effect lands.
+
+Offline is not revoked, and neither offline nor revocation is a cancellation
+mechanism. Cancellation and late-write prevention must therefore be a
+**durable local Dodging Infinity terminal state that every write path consults
+and that fails closed**. They are never attributed to the transport, the
+connection, or the vendor grant.
+
+### The structured plugin / MCP route: unproven, not impossible
+
+Plugins do support structured, authenticated tools, and a tool call could carry
+a Mission revision and a proposal digest as exact fields rather than prose,
+with Dodging Infinity as the server. That route is **UNPROVEN here, not
+impossible**. Its real blockers:
+
+- The documented inline or file-declared MCP import is Desktop-only, so it is
+  not the mobile Dots surface.
+- Connecting one would need a registered app reference, a Secure MCP Tunnel, or
+  public HTTPS. No usable DI connection has been established, and setup is not
+  authorized in this task.
+- OAuth or mTLS alone would still not prove exact human approval of a Mission
+  revision. mTLS authenticates the client, not the human. Tool annotations only
+  influence host confirmation and do not replace server-side authorization and
+  confirmation. Elicitation supplies structured input and is not an
+  authentication bypass.
+
+No existing Dodging Infinity structured connector may be assumed, and the user
+states there is likely none. That is not a verified account-wide absence: a
+plugin-management catalog search cannot enumerate account-specific installed
+plugins, so a search with no match does not show that none is installed.
+
+Until an authenticated approval route is demonstrated, the Mission approval
+gate fails closed. [SUPERSEDED by the user's Task 8 trust decision: the gate
+now admits ONE non-authenticated path, the operator-attested approval
+described under "The local operator request surface" below. An authenticated
+route is still not demonstrated.] This checkout has no Dots adapter, ingress,
+MCP server, or tunnel, and no test simulates an authenticated Dots principal or
+approval.
+
+**Approval boundary investigation (Task 8, design only).** In the inspected
+interfaces and runtime, no supported, DI-verifiable, exact human-decision route
+is established. That is a provisional finding, not a claim of universal
+absence. The exact Dots wire was not observed. Codex command, file or connector
+permission approval (including session-wide acceptance and automatic review)
+is a different surface and never satisfies this gate.
+
+[SUPERSEDED: the approval-page plan below was never built or activated. The
+user chose operator-attested Dots-chat approval instead. The plan is kept as
+frozen historical design evidence only; it is not the active trust model.]
+A decision-ready DRAFT alternative exists, not built or activated: an
+**APPROVE-only** DI-owned approval page opened in the human's own phone
+browser, with a fresh WebAuthn assertion bound to one transaction and the exact
+Mission, revision, digest, scope and expiry, consumed once and applied through
+the existing `apply_human_decision`. Declining stays the existing
+`local_request` cancel / withdraw capability path, which is not a Mission
+decision. A page DENY is deferred: Mission Core enforces no deadline on DENY.
+It has two blocking gates:
+- **G1:** a fail-closed preflight proving the agent account has no privilege
+  path to the service account, code, config or stores.
+- **G2:** a synced platform passkey MAY be usable by a same-user agent on the
+  Mac. The relied-on property, that the agent cannot silently fulfil user
+  verification, is an unproven assumption; a device-bound hardware key is the
+  stronger factor.
+
+An unknown commit outcome is a HOLD: it is never treated as unapplied and
+never retried. Adopting the design needs the human's product and setup
+decisions.
+
+### The local operator request surface (`local_request`, `direquest.py`)
+
+What a local Codex task can invoke today (Task 8, a local candidate under
+review; Task 8 is ACTIVE and UNACCEPTED). It is a neutral entry point for
+**any local caller**, run as `python3 direquest.py --state-dir DIR COMMAND`
+with `propose|status|approve|cancel|recover|present|attest-approval` and the
+run commands `dispatch|observe|reconcile|prove|verify|result|pause|resume|cancel-run`.
+It is not a Dots adapter and models no Dots identity, API, session or
+principal. Its tests are synthetic and are not evidence of live Dots behaviour.
+
+**Current behaviour (supersedes the fail-closed-only and nothing-dispatched
+statements in the list that follows, which describe the earlier candidate):**
+
+- **Operator-attested approval (the active trust model).** `present` shows ONE
+  exact proposal; an explicit reference is required when more than one is
+  pending. `attest-approval` relays the human's reply. Only the whole reply
+  `approved` or `approve` counts, after trimming and case-folding; no
+  substring, no quoted or reported speech, and every refusal writes nothing.
+  It is applied through Mission Core's `apply_operator_attested_approval` in
+  an `OperatorAttestedContext`, never an `AuthenticatedContext`. Its provenance
+  proof is `operator_attested_not_independently_verified`; `relay_ref` and the
+  relayed text are attestation only, never sender evidence. The residual risk is
+  recorded on every record: a mistaken or malicious same-user operator or local
+  process could fabricate it. The binding is exact (Mission, revision, digest,
+  scope, targets, expiry) and issues one authorization. An unknown outcome is
+  a HOLD that is only ever reconciled, never re-applied.
+- **The run route.** For the request's own AUTHORIZED Mission only, through
+  `target_runtime/mission_bridge.py`, which uses the real spawn bridge
+  `dispatch.production_spawn` (tests inject recorders). Every runtime value is
+  derived from the approved record. Three facts are kept distinct: the run
+  intent, recorded before any effect; the receipt; and RUNNING, set only from a
+  read-only observation of the bound target. Intent without a receipt is a
+  HOLD and is never retried. `reconcile` binds exactly one provable child, or
+  stops durably. A child is this run's only if its own task record names this
+  intent, and a workspace carries one live run at a time.
+- **Proof and VERIFIED.** `prove` calls one existing seam per step
+  (`submit_evidence`, `accept_evidence`, `record_claim`, `record_artifact`,
+  `bind_dependency`, `resolve_dependency`, `observe_resource_readiness`); a
+  submission is never auto-accepted. `verify` is a conjunction Dodging Infinity
+  decides; the model never decides it. A reported result counts only when
+  bound to the observed target, its canonical review artifact and a
+  recoverable result artifact. A target stopped in ERROR or ABORTED never
+  verifies. The whole approved contract must also be satisfied, checked by the
+  existing `progress.closure_failures` inside Mission Core's lock. An unmet
+  obligation is recorded as a durable, non-terminal
+  `verification_blocked_pending_proof` state carrying the stopped target and
+  its blocker codes, and the same run verifies once the obligation is met. A
+  target's own Reviewer APPROVE is target-produced evidence, not independent
+  verification.
+- **Pause and cancel.** Pause is a durable gate on Dodging Infinity's own
+  progression; external in-flight work is NOT suspended and no supported
+  suspend seam exists. Cancel records its intent first, which makes the Mission
+  terminal for every later write. It then reaps only a process group the
+  owner ledger proves is Dodging Infinity's, reports which of four achieved
+  states occurred, and reports HOLD when quiescence cannot be established. A
+  production Herdr target exposes no such group, so a production cancel after
+  dispatch reports HOLD.
+- **Status and delivery.** `status` answers from durable records with no caller
+  context. It reports Mission State progress separately (VERIFIED does not
+  close it) and derives "delivered" only from an attested P1-A6 receipt.
+  Delivery stays separately authorized: engineering approval confers none,
+  `delivery_authority` is structurally `none`, and a RUNNING or COMPLETED run
+  is only ELIGIBLE as a delivery parent through the existing exact P1-A6
+  contract (`validate_delivery_parent_use`). General engineering authority is
+  never re-opened.
+
+Independent authenticated human provenance is NOT ESTABLISHED and
+DELIBERATELY DELEGATED to the Outer Operator, with the same-user fabrication
+risk ACCEPTED. It is NOT a Task 8 prerequisite and NOT an acceptance blocker.
+Still unproven, each requiring exact human authorization: full live Mission
+acceptance with real human participation; outage and restart recovery;
+verified-result delivery fidelity; and real live dispatch and the phone-to-PR
+loop. [SUPERSEDED in part by the live V6 exercise in section 3, observation
+4. Real human participation, one live dispatch, one human-reported
+verified-result return and a separate standalone phone-to-PR delivery (PR
+#37) were each exercised once, Operator-mediated. Still unproven live: outage
+and restart recovery around a decision or dispatch, an unavailable machine or
+session, and live pause or cancel of a running Herdr child. Task 8 acceptance
+is still open.] The full suite is not green: the baseline
+`tests/test_workspace_trust.py` failure reproduces on `96c3f47c`, and its root
+cause is UNPROVEN.
+
+The earlier description follows, kept as history:
+
+- **Proposal creation.** `propose` validates the request against Mission Core's
+  own proposal schema, requires a complete proof contract (evidence
+  requirements and a continuation budget), and creates a bounded Mission
+  proposal: revision 1 and its digest. It returns a one-time control
+  capability, which only the creator receives.
+- **Status.** `status` reads durable records only: the local request record and
+  Mission Core's own read-only observation, returned unchanged. A recorded fact
+  is never presented as accepted, verified or delivered, and no chat history is
+  used.
+- **Approval fails closed.** `approve` is always refused with
+  `local_request_approval_unauthenticated` (Mission Core problem
+  `mission_unauthenticated_principal`). The refusal names what is missing:
+  `authenticated_per_message_principal_assertion` and
+  `exact_human_approval_event_not_mintable_by_a_model`. A verified principal
+  alone would still establish whose account, not whose intent. Nothing is
+  dispatched from this surface under any input. [SUPERSEDED: ordinary
+  `approve` still always refuses, but `attest-approval` and the run commands
+  above now exist.]
+- **The caller's kind is proposal-only, enforced in Mission Core.** The surface
+  presents one fixed context of kind `unauthenticated_local_caller`, built from
+  constants, never from a flag, an environment variable or a request field.
+  Its provenance records `proof: "none_unauthenticated"`. Mission Core itself,
+  not the entry point, refuses that kind for every decision, every decision or
+  state-operation id, every state operation and every authorization, so a
+  well-formed context object of that kind never counts as proof of anything.
+- **Pending-proposal withdrawal.** `cancel` withdraws only the caller's OWN
+  pending proposal: revision 1, still awaiting its first decision. It records a
+  durable **withdrawal marker** on the Mission and the local request's terminal
+  state. The marker is **not a lifecycle state**: the Mission stays
+  `AWAITING_DECISION`, no state or transition was added, and the decision path
+  consults the marker as a precondition and refuses every decision with
+  `mission_proposal_withdrawn`. It cancels **no** running Mission and stops
+  **no** Herdr work; control of a running Mission is UNPROVEN and not
+  implemented.
+- **Ownership and lifetime are bound in Mission Core.** At creation Mission Core
+  records the digest of the creator's control capability together with that
+  capability's **original** expiry (from when it was minted), never recomputed
+  from the Mission's creation time and never extended by a delayed creation or
+  a recovery replay. `withdraw_proposal` verifies the key itself and refuses a
+  first withdrawal at or after that original expiry. The shared proposer
+  context and the public request and Mission ids never suffice. A withdrawal
+  committed before the expiry completes idempotently afterwards.
+
+This surface is DEMONSTRATED only in the sense the Dots observations above
+give: a local Codex task runs in this machine's environment, can read durable
+records, and (observation 3) created one pending proposal through this
+surface and read its durable status back to the phone, with no approval
+attempt and no authority. Everything listed under NOT ESTABLISHED stays blocked:
+authenticated exact approval binding, outage and restart recovery, background
+notification, verified-result delivery fidelity, and full live Mission
+acceptance. [SUPERSEDED in part: authenticated exact approval binding is no
+longer a blocked gate. It is deliberately delegated with the fabrication risk
+accepted, and is not a Task 8 acceptance blocker. The rest stays unproven.]
+[SUPERSEDED in part by observation 4: the run route was exercised live once,
+Operator-mediated, through dispatch, verification and a human-reported
+verified-result return. Outage and restart recovery and background
+notification stay unproven, and Task 8 acceptance is still open.]
+
+### Coordination across Missions
+
+The coordinator is not tied to one Mission, whichever interface carries the
+conversation. It should be able to understand:
 
 ```text
 "What is running?"
@@ -349,7 +737,7 @@ understand:
 and hold many Missions at once:
 
 ```text
-Coordinator Grok Bot
+Coordinator
 
 ├─ Mission 142 — Worker seam
 │  └─ Engineering Bot
@@ -375,9 +763,11 @@ Telegram controller routes transport operations through
 `TelegramHumanInteractionAdapter`. Durable cursor and queue state, approval
 validation, Mission Authorization, result-delivery state, `OperatorSession`,
 Runtime, Herdr, and Git authority remain outside the interaction seam.
-Telegram is the current transport and stays the reference and the fallback
-until the Grok adapter is proven; what it does today is in
-[operations.md](operations.md#9-telegram-remote-control).
+Telegram is the current transport and stays the reference and the fallback;
+what it does today is in
+[operations.md](operations.md#9-telegram-remote-control). No Dots adapter
+exists in the tree; Dots reaches the Outer Operator as a local Codex task, with
+the limits above.
 
 A surface can carry an exact human authorization. It cannot mint one. That rule
 is section 11.
@@ -429,8 +819,8 @@ and closure policy, checkpoints and recovery state, the readiness dependency
 graph, the Scheduler, the deterministic Reconciler, the Observation Service,
 and a sequenced event journal with snapshots.
 
-If Grok, Pi, Codex, Herdr, a desktop window, or a worker disappears, the
-Harness is still the source of truth.
+If Dots, Telegram, Grok, Pi, Codex, Herdr, a desktop window, or a worker
+disappears, the Harness is still the source of truth.
 
 The tree has a narrower ancestor of this: the durable `workflow_authority/`
 store (schema-2, atomic, cross-process-locked, fail-closed), the DI-REMOTE-2
@@ -565,9 +955,9 @@ lifecycle will sit behind.
 
 | Provider | Role in the design |
 |---|---|
-| Codex | The current Operator implementation, reached through the Codex Gateway, and the fallback until another path is proven. Not the role itself, and not permanent architecture. |
+| Codex | The Outer Operator today: the current Operator implementation, reached through the Codex Gateway (from Grok Bot, through the operator session seam; optionally, from Dots, as a local Codex task), and the fallback until another path is proven. Not the role itself, and not permanent architecture. |
 | Pi | The preferred candidate provider-neutral operator runtime. An RPC boundary is the preferred first integration, so Pi can supply its model and tool runtime without owning Mission identity, authority, evidence, or delivery. Not selected, not a dependency. |
-| GPT, Claude, Grok models, Muse | Potential model providers behind the OperatorSession. Grok as a model is separate from Grok Bot as an interaction plane. |
+| GPT, Claude, Grok models, Muse | Potential model providers behind the OperatorSession. Muse is not the Operator. Grok as a model is separate from Grok Bot, the mobile interface (section 3); the earlier Grok Bot MCP spike stays retired. |
 | Local and future models | Same boundary, including privacy-constrained work that must stay local. |
 
 A provider-neutral session makes it possible to compare models while holding
@@ -1084,7 +1474,22 @@ uncertain external effects before another attempt is allowed.
 The pull-request link of that chain is implemented (P1-A6, `pr_delivery/`). A
 PR Delivery Authorization is a separate durable human authority record, minted
 only by a local terminal ceremony in which the human types the exact reviewed
-candidate identity. It binds the candidate's changed paths, statuses, modes
+candidate identity. [Task 8 adds ONE more member to that closed source set,
+`dots_operator_attested`. `python -m pr_delivery present-dots` presents the
+full binding for the phone. `attest-dots` then relays the human's simple
+whole-value `approved`/`approve` reply, linked by the proposal digest and a
+reply-to reference, after re-checking the live candidate. The human never
+types a digest. It is Operator-attested and not independently verified:
+digests and references are Operator attestation, not verified authorship,
+with the same-user fabrication risk recorded. It is one-shot per proposal and
+reuses the same record, expiry and revocation. It never records
+`local_terminal`, whose TTY ceremony is unchanged. An engineering approval
+never produces it. Live phone-to-PR delivery remains unproven. SUPERSEDED: one
+standalone live Dots-attested delivery ran in the V6 exercise:
+`prd-85cad864f6ae89b72c1c483d` (`mission: null`), whose COMMIT, PUSH and
+PR_CREATE succeeded and opened PR #37 (open, not merged). It was
+Operator-mediated, and its Mission stays `delivered: false`.] It binds the
+candidate's changed paths, statuses, modes
 and content digests; the recorded Herdr COMPLETE, canonical Reviewer APPROVE
 and independent verification evidence; the repository, remote, source and base
 branches, baseline and committer; the closed action set BASE_REFRESH, COMMIT,
@@ -1109,7 +1514,7 @@ You:
 "Commit it."
     │
     ▼
-Grok Bot
+Remote human interface (authenticated route)
     │
     ▼
 Dodging Infinity
@@ -1143,7 +1548,7 @@ required checks and reviews state, and the ceremony states them back before you
 approve:
 
 ```text
-Grok Bot:
+Remote human interface:
 "PR #72 is ready.
 Head: abc123
 CI: green
@@ -1155,7 +1560,16 @@ Approve merge?"
 This removes the need to type a second approval command locally. It does not
 remove enforcement. Remote delivery authority is not implemented today: no
 Telegram message, plain text or approval callback, can commit, push, open a PR,
-tag, release, or deploy, and the adapter's decision envelope says so.
+tag, release, or deploy, and the adapter's decision envelope says so. Over
+Dots, the remote approval step in this diagram is NOT ESTABLISHED: there is no
+authenticated exact approval binding (section 3), so the gate fails closed.
+[Task 8: this is the remote DELIVERY approval, which stays the separate exact
+P1-A6 authorization. Mission approval over Dots is operator-attested and
+confers no delivery. Independent authenticated provenance is deliberately
+delegated and is not a Task 8 acceptance blocker. That separate
+Dots-attested P1-A6 delivery approval was exercised live once, in the
+Operator-mediated V6 run, for standalone delivery
+`prd-85cad864f6ae89b72c1c483d` and PR #37.]
 
 ### What a transport, a model, and a UI cannot do
 
@@ -1177,7 +1591,7 @@ tag, release, or deploy, and the adapter's decision envelope says so.
   authority, credential scope, Mission scope, Git gates, deployment gates, or
   allowed side effects.
 
-This list also covers Grok Bot, Pi, GPT, Claude, Grok models, DBOS, Skill
+This list also covers Dots, Pi, GPT, Claude, Grok models, Muse, DBOS, Skill
 Packs, Domain Profiles, the Ops Steward, the Reconciler, BrowserCapability,
 Herdr, worker machines, the desktop admin, and the visual world. None of them
 may create missing authority.
@@ -1193,6 +1607,27 @@ shell access, invoke Herdr directly, construct Herdr missions itself, bypass
 Operator reasoning, silently broaden permissions, expose Mac credentials or
 repository secrets, or authorize commits, pushes, PRs, tags, releases,
 deployments, or merges.
+
+**Phone, Grok Bot and Dots.** Grok Bot is the human-facing mobile interface
+(Task 8 final), reaching the Outer Operator through `grokbot.py`; it is
+trusted for presentation and intent, not for authorization, and its approval
+relay is operator-attested. Dots is optional for active operation. [History,
+Task 8: Dots was the human-facing mobile interface, reaching the Outer
+Operator as a local Codex task.] DEMONSTRATED for Dots: reach, read, and reply, and a
+connected same-task continuation that returned a status answer from a durable
+record. NOT ESTABLISHED: authenticated exact approval binding, outage and
+restart recovery, background notification, verified-result delivery fidelity,
+and full live Mission acceptance. It is trusted for presentation and intent,
+not for authorization; a disconnect or a revoked grant is not a cancellation
+(section 3). [SUPERSEDED in Task 8: under the user's declared trust, the
+human's exact `approved`/`approve` reply relayed by the Outer Operator IS the
+Mission approval (operator-attested, not independently verified). Authenticated
+exact approval binding is deliberately delegated with the risk accepted, and
+is not an acceptance blocker.] [Task 8 live V6, section 3 observation 4:
+verified-result return and a separate phone-to-PR delivery were each
+exercised once, Operator-mediated. Outage and restart recovery and
+background notification stay not established, and full Task 8 acceptance
+is still open.]
 
 **MacBook.** The trusted execution node. It owns the repositories, Git
 credentials, Codex credentials and session state, the Codex Gateway, the Herdr
@@ -1258,7 +1693,7 @@ Normal mission control        Alternative / break glass
 Phone                         Phone
   │                             │
   ▼                             ▼
-Grok Bot                      Tailscale
+Dots / Telegram               Tailscale
   │                             │
   ▼                             ▼
 Dodging Infinity              SSH
@@ -1277,8 +1712,8 @@ Mission so Dodging Infinity does not continue on stale assumptions.
 ## 12. Observation, reconciliation, and recovery
 
 Canonical state, not conversation, not a model process, and not a UI, is the
-durable truth. If Grok, Pi, Codex, Herdr, a desktop window, or a worker
-disappears, the Mission Harness is still the source of truth, and every surface
+durable truth. If Dots, Telegram, Grok, Pi, Codex, Herdr, a desktop window, or
+a worker disappears, the Mission Harness is still the source of truth, and every surface
 reconstructs from it. A status answer comes from canonical state. A visual
 world reconstructs from the registry and the event journal. A missed UI event
 is repaired by a snapshot and an event catch-up, never by asking an agent what
@@ -1344,7 +1779,7 @@ crash. Each is bounded and evidence-only.
 
 | Failure | Required behavior |
 |---|---|
-| Transport unavailable (Grok, Telegram) | Missions continue; the fallback surface and break-glass access remain. |
+| Transport unavailable (Dots, Telegram) | Missions continue; the fallback surface and break-glass access remain. A Dots disconnect or revoked grant is not a cancellation: a running local task may still finish, so a cancel is a durable local terminal state every write path consults (section 3). |
 | Operator process disappears (Pi, Codex) | The Reconciler detects STALE and restores the bounded session from durable state, or blocks truthfully. |
 | A Herdr role crashes | One Mission's recovery path runs; unrelated Missions continue. |
 | Sleep and wake, reboot | Services reload, the registry persists, the Reconciler restores truth. |
@@ -1479,7 +1914,7 @@ The core architectural goal:
 STABLE DI CORE              REPLACEABLE SERVICES
 ──────────────              ────────────────────
 
-Mission identity            Grok Bot        Herdr
+Mission identity            Dots            Herdr
 Mission Authorization       Telegram        DBOS
 Authority Ledger            Pi              Playwright
 Lifecycle state             Codex           GitHub
@@ -1503,7 +1938,9 @@ authority owner:
 
 | Service / system | Role | Required for architecture? | Replaceable? | Authority owner |
 |---|---|---:|---:|---|
-| **Grok Bot / xAI** | Primary conversational bot plane | No | Yes | DI |
+| **Grok Bot** | Human-facing mobile interface (`grokbot.py`): presentation and intent; Mission approval operator-attested; live phone interoperability unverified (section 3) | No | Yes | DI |
+| **Dots** | Optional for active operation. [History, Task 8: the human-facing mobile interface; Mission approval Operator-attested (exercised live once in Task 8), authenticated provenance NOT ESTABLISHED (section 3)] | No | Yes | DI |
+| **Grok / xAI** | Possible model provider; separately, the Grok Bot connector reaches `grokbot.py` (the earlier Grok Bot MCP spike stays retired) | No | Yes | DI |
 | **Claude / Anthropic** | Reasoning + Herdr agents | No | Yes | DI / Herdr scope |
 | **OpenAI / GPT** | Reasoning / Operator backend | No | Yes | DI |
 | **Muse Spark** | Possible model / engineering executor | No | Yes | DI / Herdr scope |
@@ -1524,6 +1961,7 @@ The dependency principle:
 ```text
         Dodging Infinity
               │
+              ├── may use Dots
               ├── may use Grok
               ├── may use Claude
               ├── may use GPT
@@ -1541,7 +1979,7 @@ None of those services owns the Mission.
 Read top to bottom, the same thing is a layering:
 
 ```text
-LAYER 1 — HUMAN SURFACES        Grok Bot, Telegram, desktop UI, CLI, Tailscale SSH
+LAYER 1 — HUMAN SURFACES        Dots, Telegram, desktop UI, CLI, Tailscale SSH
 LAYER 2 — DI CONTROL PLANE      interaction, routing, Mission Harness, authorization,
                                 observation, reconciliation, artifacts and evidence
 LAYER 3 — REASONING             Pi, Codex, GPT, Claude, Grok, Muse, future models
@@ -1571,6 +2009,12 @@ what is intended, one row per subsystem. Five words carry the distinction:
 Where the evidence is ambiguous, this page takes the narrower claim and says
 so.
 
+The Grok Bot MCP spike (`grok_mcp`, `grokmcp.py`) is not in the table because
+it is not in the product: Task 8 retired that spike, and
+`tests/test_grok_bot_retirement.py` and `tests/test_static.py` pin its absence
+and that every installed entry starts without it. The current Grok Bot
+transport (`grok_bot`, `grokbot.py`) is a separate, thin transport.
+
 ### Subsystem status
 
 | Subsystem | Status | Pin or location |
@@ -1591,7 +2035,9 @@ so.
 | Mission Harness, Mission Registry and Manifest, `M-####` identity, Authority Ledger, Evidence Graph, Blocker Ledger, Artifact Registry, budgets, checkpoints, event journal | Target | Sections 2 and 5 |
 | Mission Router, Attention Router, Scheduler, multi-mission execution | Target | Section 4 |
 | Reconciler and Observation Service | Target | Section 12 |
-| Grok Bot plane and the broader interaction surface set | Target | Section 3 |
+| Grok Bot as the human-facing mobile interface: the loopback MCP transport and automatic Mission workspaces (a dispatch needs no path). Live phone interoperability is unverified; loopback tests prove protocol shape only | Proven | `grok_bot/`, `grokbot.py`, `target_runtime/mission_workspace.py`; `tests/test_grok_bot.py`, `tests/test_grok_bot_mcp.py`, `tests/test_mission_workspace.py` |
+| Dots, optional for active operation. [History: Dots as the human-facing mobile interface.] [Historical, the pre-V6 count and claims, kept as history: two user-observed results only (reach, read, and reply; a connected same-task durable status read); authenticated exact approval binding, outage and restart recovery, background notification, verified-result delivery fidelity, and full live Mission acceptance are NOT ESTABLISHED.] [Task 8: Mission approval is operator-attested Dots-chat approval; authenticated exact approval binding is deliberately delegated with the risk accepted and is not an acceptance blocker.] [Task 8 live V6: one Operator-mediated run with dispatch, verification, a human-reported verified-result return and a separate standalone PR delivery. Demonstrated live: earlier attempts (w37, w39, v4 and v5) each exercised HOLD, then `reconcile`, then BLOCKED after a failed start. Still unproven live: outage or restart recovery, recovery of a running, successful Mission, and live pause or cancel.] No Dots adapter is in the tree | Target | Section 3 |
+| The broader interaction surface set (coordinator and specialist bots) | Target | Section 3 |
 | Full `OperatorSession` lifecycle, provider selection, Domain Operator Profiles, Skill Packs | Target | Section 6 |
 | `Worker` abstraction and Worker Registry; BrowserCapability; Action Risk Envelope; richer artifact delivery | Target | Sections 7 and 9 |
 | Telegram-native exact delivery authorization (commit, push, PR, merge, tag, release, deploy receipts) | Target | Section 11 |
@@ -1656,10 +2102,11 @@ known limits. [OPERATOR_PROTOCOL.md](../OPERATOR_PROTOCOL.md) and
 | DI-REMOTE-2 | Remote Target Repository Routing: one exact bounded Mission against a remote GitHub target from a Telegram request, with this repository as the permanent control and policy repository. Released in v0.7.0. |
 | `dirun` | The DI-REMOTE-2 Runtime entry script. A separate deterministic process that claims authorized workflows and advances the lifecycle. |
 | Domain Operator Profile | Reusable specialization for a Mission class: Skill Pack, context sources, proof requirements, worker requirements, escalation policy. Improves reasoning; grants no authority. |
+| Dots | Optional for active operation. [History, Task 8: the human-facing mobile interface, reaching the Outer Operator as a local Codex task.] Carries presentation and intent; Mission approval over it is Operator-attested (exercised live once in Task 8), and authenticated human provenance is NOT ESTABLISHED (section 3). Owns no authority. |
 | DurableExecution | The interface (start, enqueue, schedule, cancel, resume, checkpoint, inspect, recover) between the Harness and a durability substrate. |
 | Evidence Graph | Durable proof of what was tested, reviewed, measured, or verified, per Mission. |
 | Executor | The Herdr role that implements. |
-| Grok Bot | The target conversational plane with named specialist experiences. Owns no authority. |
+| Grok Bot | The human-facing mobile interface (Task 8 final): `grokbot.py`, a thin transport to the Codex Outer Operator and the local request surface. Owns no authority. [History: the earlier target conversational plane and its MCP spike, `grok_mcp`, were retired in Task 8 and stay retired.] Grok as a model provider is separate. |
 | Herdr | The engineering organization inside an engineering Mission: Supervisor, Lead, Executor, Reviewer. Not the Mission control plane. |
 | Herdr Pod | The isolated Herdr created for one engineering Mission. |
 | `herdctl` | The Herdr command-line tool: setup, presets, rules, missions, tasks, review decisions, human Git gates, health, observation. |
@@ -1674,7 +2121,7 @@ known limits. [OPERATOR_PROTOCOL.md](../OPERATOR_PROTOCOL.md) and
 | Mission Router | Inbound identity: which Mission a conversation refers to. Routes identity only; does not engineer. |
 | Munder Difflin | Presentation design reference for the visual Mission world. Not the backend. |
 | Observation Service | Pull: read-only status from canonical state. Never interrupts or steers. `herdctl observe` is its ancestor for one herd. |
-| Operator | The replaceable reasoning role for one Mission. A role, not a model brand. |
+| Operator | The replaceable reasoning role for one Mission. A role, not a model brand. Codex is the Outer Operator today; Muse is not the Operator. |
 | OperatorSession | The provider-neutral boundary around the Operator. Today `prepare()` / `execute()`; the target lifecycle is wider. |
 | Ops Steward | The organizational learning layer that finds repeated failures and proposes improvements through a governed path. Cannot expand its own authority. |
 | Pi | Preferred candidate provider-neutral operator runtime. Not selected. |

@@ -122,8 +122,9 @@ PRESETS = {
                     "gpt-6-astra",
                     "-c",
                     'model_reasoning_effort="xhigh"',
-                    "--sandbox",
-                    "workspace-write",
+                    # No explicit --sandbox: codex-cli 0.160.0 rejects it
+                    # together with --approve-for-me, whose help text says
+                    # it uses the workspace-write sandbox.
                     "--approve-for-me",
                 ],
             },

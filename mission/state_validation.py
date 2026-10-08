@@ -130,7 +130,8 @@ def _bound_list(value, location, max_items, problem=state_module.PROBLEM_STATE_F
 
 def _require_provenance(bindings, value, operation_id, location,
                         operation=None):
-    provenance = record.validate_provenance(value, location)
+    # A state operation needs an authenticated principal (Task 8).
+    provenance = record.require_authenticated_provenance(value, location)
     if provenance["reference_kind"] != record.REFERENCE_KIND_STATE_OPERATION or (
         provenance["reference_id"] != operation_id
         or provenance["mission_id"] != bindings.mission_id

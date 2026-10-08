@@ -12,9 +12,10 @@ the PR URL, what blocks it, and what is the exact next action".
 No transcript, no live git read, no model output is consulted on this
 path; if the record does not know something, the projection says so.
 
-Authorization itself is NOT on this boundary: the only authorization
-source today is a local terminal ceremony (``cli.py``), and a remote
-caller minting authority is exactly what the request forbids.
+Authorization itself is NOT on this boundary: authorization is minted only
+in ``cli.py``, by the local terminal ceremony or (Task 8) the Dots
+operator-attested ceremony, and a remote caller minting authority through
+this boundary is exactly what the request forbids.
 """
 
 from pr_delivery import authorization as auth

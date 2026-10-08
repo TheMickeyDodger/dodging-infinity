@@ -28,17 +28,67 @@ no timestamp and no DI-minted id is part of it, so a retry carrying a
 fresh receive time still matches.
 
 Lifecycle. ``MISSION_STATES`` declares the full vocabulary the later
-roadmap needs; ``ALLOWED_TRANSITIONS`` wires only the decision
-transitions of this bundle. ``AUTHORIZED`` has no transition to
-``RUNNING``, and no code path in this package ever assigns ``RUNNING``:
-approved does not imply running.
+roadmap needs; ``ALLOWED_TRANSITIONS`` wires the decision transitions
+and (Task 8 increment 2) the run transitions ``RUN_TRANSITIONS``:
+``AUTHORIZED -> RUNNING`` only from a recorded read-only observation of
+the bound target, never from a recorded intent and never from a model
+claim (approved still does not imply running), and the terminal
+transitions the run uses (``-> BLOCKED``, ``-> COMPLETED`` from RUNNING
+only, ``-> CANCELLED``). ``TERMINAL_STATES`` are terminal: no decision,
+state operation or run write applies to them, except completing the
+cancel record whose own write made the Mission CANCELLED, and (task
+d9e17d) ONE evidence-only late resolution on a Mission a reconcile stopped
+because nothing was observable yet (``LATE_RESOLUTION_STOP_REASONS``): it
+names the late child the full association proof found, changes no state
+and grants nothing. No transition leaves a terminal state. ``CLOSED``
+stays unreachable. A withdrawn proposal (Task 8, see
+``mission.manifest``) is NOT a lifecycle state: its Mission stays
+``AWAITING_DECISION`` and carries a withdrawal marker that the decision
+path consults as a precondition.
 
 Authenticated context and provenance. ``AuthenticatedContext`` is what
 a transport adapter builds from its OWN authenticated state and hands
 in per request. ``provenance_record`` turns it into the closed
 provenance block stored on every revision, decision and authorization.
 The block states only what is known and carries
-``human_identity_proof: null`` with ``proof: "transport_credential_only"``.
+``human_identity_proof: null`` with a ``proof`` fixed by its principal
+kind: ``transport_credential_only`` for the authenticated kinds,
+``none_unauthenticated`` and ``operator_attested_not_independently_verified``
+for the two kinds below.
+
+The unauthenticated kind (Task 8). ``unauthenticated_local_caller``
+names a local caller this layer cannot authenticate at all: the context
+carries a fixed transport label and a fixed reference, never anything
+the caller supplied, and its provenance block records
+``proof: "none_unauthenticated"``, so a well-formed context object of
+this kind is never read as transport-credential or human proof. It is
+PROPOSAL-ONLY, and that is enforced here in the core, not by any entry
+point: ``require_authenticated_context`` refuses it with
+``mission_unauthenticated_principal`` wherever an authenticated kind is
+required (a decision envelope, a decision or state-operation id
+reservation, a state operation), and ``require_decision_provenance``
+refuses it on a stored decision or authorization, so an authorization
+whose ``human_principal`` is of this kind cannot be issued, loaded, or
+validated. The refusal names what is missing: an authenticated
+per-message principal assertion this layer can verify, and an exact
+human approval event a model cannot mint. A verified principal alone
+would still not be enough: it establishes whose account, not whose
+intent.
+
+The operator-attested kind (Task 8, user decision). ``operator_attested_relay``
+records an APPROVE that an Outer Operator ATTESTS it relayed from the
+human's explicit chat reply, under the user's declared trust in that
+Operator. Its provenance proof is ``operator_attested_not_independently_verified``.
+It travels only in an ``OperatorAttestedContext``, never an
+``AuthenticatedContext``; it is NOT authenticated, is not in
+``AUTHENTICATED_PRINCIPAL_KINDS``, and
+carries an APPROVE only (``APPROVE_ONLY_PRINCIPAL_KINDS``): no EDIT, no
+DENY, no state operation. ``OPERATOR_ATTESTED_RESIDUAL_RISK`` states the
+residual risk: a mistaken or malicious same-user operator or local process
+could fabricate it. The decision path enforces, in the core, that such an
+APPROVE binds the exact current proposal digest, the exact requested scope
+and targets, and a bounded expiry, for a proposal the unauthenticated local
+caller kind made.
 
 Proof contract (Mission State). ``proof_contract`` is the ONE
 additive-optional proposal key. It holds the whole consequential
@@ -131,29 +181,278 @@ MISSION_STATES = (
     STATE_AWAITING_DECISION, STATE_AUTHORIZED, STATE_DENIED, STATE_RUNNING,
     STATE_BLOCKED, STATE_COMPLETED, STATE_CLOSED, STATE_CANCELLED,
 )
-# The states a Mission can actually hold in this bundle: the only ones a
-# wired transition can reach. A stored record in any other state is
-# malformed, because nothing here can produce it.
-REACHABLE_STATES = (STATE_AWAITING_DECISION, STATE_AUTHORIZED, STATE_DENIED)
-# Only the decision transitions are wired. Every later-roadmap state is
-# in the vocabulary and in NO transition target.
+# The states a Mission can actually hold: the only ones a wired
+# transition can reach. A stored record in any other state is malformed,
+# because nothing here can produce it. Task 8 increment 2 (intentional
+# invariant change): the run states became reachable; CLOSED did not.
+REACHABLE_STATES = (STATE_AWAITING_DECISION, STATE_AUTHORIZED, STATE_DENIED,
+                    STATE_RUNNING, STATE_BLOCKED, STATE_COMPLETED,
+                    STATE_CANCELLED)
+# The run transitions (Task 8 increment 2), exactly the ones the run uses:
+# RUNNING is reachable from AUTHORIZED only, COMPLETED from RUNNING only.
+RUN_TRANSITIONS = frozenset((
+    (STATE_AUTHORIZED, STATE_RUNNING),
+    (STATE_AUTHORIZED, STATE_BLOCKED),
+    (STATE_AUTHORIZED, STATE_CANCELLED),
+    (STATE_RUNNING, STATE_COMPLETED),
+    (STATE_RUNNING, STATE_BLOCKED),
+    (STATE_RUNNING, STATE_CANCELLED),
+))
+TERMINAL_STATES = (STATE_BLOCKED, STATE_COMPLETED, STATE_CANCELLED)
 ALLOWED_TRANSITIONS = {
     STATE_AWAITING_DECISION: frozenset((STATE_AUTHORIZED, STATE_DENIED)),
-    STATE_AUTHORIZED: frozenset((STATE_AWAITING_DECISION,)),
+    STATE_AUTHORIZED: frozenset((STATE_AWAITING_DECISION, STATE_RUNNING,
+                                 STATE_BLOCKED, STATE_CANCELLED)),
     STATE_DENIED: frozenset((STATE_AWAITING_DECISION,)),
-    STATE_RUNNING: frozenset(),
+    STATE_RUNNING: frozenset((STATE_COMPLETED, STATE_BLOCKED,
+                              STATE_CANCELLED)),
     STATE_BLOCKED: frozenset(),
     STATE_COMPLETED: frozenset(),
     STATE_CLOSED: frozenset(),
     STATE_CANCELLED: frozenset(),
 }
 
+# -- the run record (Task 8 increment 2) --------------------------------
+# What happened after approval, as distinct durable facts: the INTENT
+# (recorded before any effect), the RECEIPT (an effect returned and named
+# a target), the observation-backed transition to RUNNING, the
+# VERIFICATION DI decided, PAUSES and the CANCEL. Every reason below is a
+# closed vocabulary; nothing is free text. Who may write them: only an
+# AUTHENTICATED principal kind (``require_authenticated_context``); the
+# unauthenticated local caller and the operator-attested relay are
+# refused on every run write. The intent's baseline commit is
+# ``observed_baseline_commit_sha``: OBSERVED by DI at intent time, never
+# human-approved. The human approved a scope (repository, actions,
+# delivery targets), not a commit; the observed baseline cannot widen
+# that scope, and it is only the starting content the run is measured
+# against.
+RUN_REASON_OBSERVED_RUNNING = "observed_running"
+# The bound target was first observed already stopped: it is present and
+# ran, but DI never saw it mid-run. Recorded as its own reason.
+RUN_REASON_OBSERVED_AFTER_STOP = "observed_after_stop"
+RUN_REASON_VERIFIED = "verified_completion"
+CANCEL_BEFORE_INTENT = "cancelled_before_intent"
+CANCEL_AFTER_INTENT_TARGET_UNKNOWN = "cancelled_after_intent_target_unknown"
+CANCEL_AFTER_OBSERVED_RUNNING = "cancelled_after_observed_running"
+CANCEL_AFTER_TARGET_TERMINATED = "cancelled_after_target_terminated"
+CANCEL_ACHIEVED_STATES = (
+    CANCEL_BEFORE_INTENT, CANCEL_AFTER_INTENT_TARGET_UNKNOWN,
+    CANCEL_AFTER_OBSERVED_RUNNING, CANCEL_AFTER_TARGET_TERMINATED,
+)
+# What control the cancel achieved, and what quiescence DI can establish.
+# Quiescence is never claimed beyond its scope: an owned process group
+# DI reaped and then found empty, or a target task a supported read-only
+# observation reports stopped. Anything else is ``unproven``.
+CANCEL_CONTROLS = (
+    "not_applicable", "owned_group_reaped", "owned_group_already_gone",
+    "unavailable_no_owned_group", "refused_ownership_unverified",
+    "failed_group_still_alive", "interrupted_not_resignalled",
+)
+CANCEL_QUIESCENCE_NOTHING_STARTED = "nothing_started"
+CANCEL_QUIESCENCE_OWNED_GROUP_REAPED = "owned_group_reaped"
+CANCEL_QUIESCENCE_TASK_OBSERVED_STOPPED = "task_observed_stopped"
+CANCEL_QUIESCENCE_UNPROVEN = "unproven"
+CANCEL_QUIESCENCE = (
+    CANCEL_QUIESCENCE_NOTHING_STARTED, CANCEL_QUIESCENCE_OWNED_GROUP_REAPED,
+    CANCEL_QUIESCENCE_TASK_OBSERVED_STOPPED, CANCEL_QUIESCENCE_UNPROVEN,
+)
+RUN_IDENTITY_SOURCES = ("start_result", "reconciliation")
+# The verification conjunction, in its fixed evaluation order, and the
+# code each failing conjunct stops the Mission with.
+# ``target_succeeded`` is separate from ``target_stopped`` on purpose: a
+# target that stopped in a failure state, even one with a review
+# artifact, never verifies. ``result_bound`` holds only for a reported
+# result bound to the observed target, its canonical review artifact and
+# a recoverable result artifact.
+VERIFY_CONJUNCTS = (
+    ("result_reported", "verify_result_not_reported"),
+    ("evidence_complete", "verify_evidence_incomplete"),
+    ("evidence_valid", "verify_evidence_invalid"),
+    ("target_identity", "verify_target_identity_mismatch"),
+    ("target_stopped", "verify_target_not_stopped"),
+    ("target_succeeded", "verify_target_not_succeeded"),
+    ("review_approve", "verify_review_not_approve"),
+    ("result_bound", "verify_result_not_bound"),
+    ("baseline_unmoved", "verify_baseline_moved"),
+    ("surface_receipt_present", "verify_surface_receipt_missing"),
+    ("surface_unchanged", "verify_surface_changed"),
+    ("delivery_authority_none", "verify_delivery_authority_not_none"),
+)
+# The approved proof-contract requirement a run's result is bound to:
+# VERIFIED needs an ACCEPTED VERIFICATION_RECORD evidence under it.
+RUN_RESULT_REQUIREMENT_KEY = "run_result"
+
+
+def verification_outcome(conjunct_holds):
+    """``(verified, failed_code)``: VERIFIED exactly when every conjunct
+    is ``True``; otherwise the code of the FIRST conjunct that is not."""
+    for name, code in VERIFY_CONJUNCTS:
+        if conjunct_holds.get(name) is not True:
+            return False, code
+    return True, None
+# Task d9e17d. A reconcile whose observation cleanly shows NO task record
+# yet is not a stop: it is recorded as an unobserved attempt, at most
+# MAX_RECONCILE_ATTEMPTS times, and the attempt that reaches the bound stops
+# with this reason. Degraded evidence still stops at once (reconcile_degraded).
+RUN_STOP_RECONCILE_NOT_OBSERVABLE = "reconcile_not_observable"
+# The late child passed the full association proof, but its OWN task record
+# says ABORTED: a safe terminal stop naming it, never RUNNING.
+RUN_STOP_LATE_CHILD_ABORTED = "reconcile_late_child_aborted"
+RECONCILE_STOP_REASONS = (
+    "reconcile_no_match", "reconcile_multiple_matches",
+    "reconcile_conflicting_identity", "reconcile_degraded",
+    # The workspace's own task record does not name THIS Mission's intent
+    # (or started before it): an old or foreign child, never adopted.
+    "reconcile_unproven_association",
+    RUN_STOP_RECONCILE_NOT_OBSERVABLE, RUN_STOP_LATE_CHILD_ABORTED,
+)
+# The stops that mean "nothing was observable yet", and so the only ones
+# that accept an evidence-only late resolution. ``reconcile_degraded`` is
+# here because the reconcile before task d9e17d recorded it for a workspace
+# that reported no task identity (and it cannot be told apart from a
+# degraded listing, which the resolution's own full proof re-checks).
+LATE_RESOLUTION_STOP_REASONS = ("reconcile_degraded",
+                                RUN_STOP_RECONCILE_NOT_OBSERVABLE)
+RUN_STOP_REASONS = RECONCILE_STOP_REASONS + tuple(
+    code for _, code in VERIFY_CONJUNCTS)
+RUN_REASONS_BY_TARGET = {
+    STATE_RUNNING: (RUN_REASON_OBSERVED_RUNNING, RUN_REASON_OBSERVED_AFTER_STOP),
+    STATE_COMPLETED: (RUN_REASON_VERIFIED,),
+    STATE_BLOCKED: RUN_STOP_REASONS,
+    STATE_CANCELLED: CANCEL_ACHIEVED_STATES,
+}
+# The one action scope a run needs: the started engineering target can
+# change its workspace, and nothing here can confine it to reading.
+RUN_REQUIRED_ACTION_SCOPE = (ACTION_SCOPE_ENGINEERING_CHANGE,)
+# Hard bounds, never derived from input. Exact-value pinned.
+MAX_RUN_PAUSES = 16
+MAX_RUN_PATH_CHARS = 4096
+# Task 8 final: the WORKSPACE a run is bound to, recorded BEFORE its intent
+# (the intent must name exactly the prepared path and baseline). DI derives
+# the path from the Mission id and prepares the worktree itself: the binding
+# is PREPARING before anything exists at the path, then PREPARED. Nothing
+# else creates a binding (an operator's recovery path only re-names an
+# existing one). The latest refused preparation is kept beside it, counted.
+# Exact-value pinned.
+WORKSPACE_STATE_PREPARING = "preparing"
+WORKSPACE_STATE_PREPARED = "prepared"
+WORKSPACE_STATES = (WORKSPACE_STATE_PREPARING, WORKSPACE_STATE_PREPARED)
+MAX_WORKSPACE_PROBLEM_CHARS = 128
+MAX_WORKSPACE_DETAIL_CHARS = 2000
+
+
+def workspace_binding_digest(mission_id, path_realpath, repository_realpath,
+                             target_repository_url, revision,
+                             proposal_digest_sha256, baseline_commit_sha):
+    """The digest naming ONE exact workspace binding. DI writes it into the
+    lock marker of the worktree it prepares, so only a worktree prepared
+    for exactly this binding is ever reused."""
+    return json_digest({
+        "mission_id": mission_id, "path_realpath": path_realpath,
+        "repository_realpath": repository_realpath,
+        "target_repository_url": target_repository_url,
+        "revision": revision,
+        "proposal_digest_sha256": proposal_digest_sha256,
+        "baseline_commit_sha": baseline_commit_sha,
+    })
+# The pending-proof record (round-15 state truth): a run whose stopped,
+# succeeded target passed every verification conjunct but whose approved
+# contract is not yet satisfied is NOT terminal. It stays RUNNING with a
+# durable record of the stopped-target observation and the evaluator's
+# blocker codes, so its obligations can be met and the SAME consumed run
+# verified again, a bounded number of times, without a new dispatch.
+MAX_VERIFICATION_ATTEMPTS = 16
+# Task d9e17d: how many reconciles of one held run may see no task record
+# yet. The attempt that reaches it stops the run (reconcile_not_observable).
+MAX_RECONCILE_ATTEMPTS = 16
+MAX_PENDING_PROOF_BLOCKERS = 16
+MAX_BLOCKER_DETAIL_CHARS = 2000
+MAX_OBSERVED_STATUS_CHARS = 64
+
 PRINCIPAL_KIND_CONNECTOR_CREDENTIAL = "configured_connector_credential_ordinal"
 PRINCIPAL_KIND_LOCAL_PROCESS_USER = "local_process_user"
-PRINCIPAL_KINDS = (
+# Task 8: a local caller this layer cannot authenticate. Proposal-only;
+# see the module docstring and ``require_authenticated_context``.
+PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER = "unauthenticated_local_caller"
+# The kinds a transport authenticated from its own state. Only these can
+# reserve a state-operation id, run a state operation, carry an EDIT or a
+# DENY, or record a revision after the first. A decision id, an APPROVE and
+# an authorization's principal may ALSO be of the operator-attested kind
+# below, which is not authenticated.
+AUTHENTICATED_PRINCIPAL_KINDS = (
     PRINCIPAL_KIND_CONNECTOR_CREDENTIAL, PRINCIPAL_KIND_LOCAL_PROCESS_USER,
 )
+# Task 8 (user decision): an APPROVE that an Outer Operator ATTESTS it
+# relayed from the human's explicit chat reply. This layer cannot verify that
+# the human sent it; the kind and its proof say so. It is NOT authenticated
+# and is never in AUTHENTICATED_PRINCIPAL_KINDS.
+PRINCIPAL_KIND_OPERATOR_ATTESTED = "operator_attested_relay"
+PRINCIPAL_KINDS = AUTHENTICATED_PRINCIPAL_KINDS + (
+    PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER,
+    PRINCIPAL_KIND_OPERATOR_ATTESTED,
+)
+# The kinds an ``AuthenticatedContext`` may carry: exactly the set it carried
+# before Task 8's operator-attested kind existed. The operator-attested kind
+# travels only in an ``OperatorAttestedContext``.
+ADAPTER_CONTEXT_PRINCIPAL_KINDS = AUTHENTICATED_PRINCIPAL_KINDS + (
+    PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER,
+)
+# Kinds that may reserve a decision id and carry an APPROVE decision, and
+# nothing else: no EDIT, no DENY, no state operation.
+APPROVE_ONLY_PRINCIPAL_KINDS = (PRINCIPAL_KIND_OPERATOR_ATTESTED,)
 PROOF_TRANSPORT_CREDENTIAL_ONLY = "transport_credential_only"
+PROOF_NONE_UNAUTHENTICATED = "none_unauthenticated"
+PROOF_OPERATOR_ATTESTED = "operator_attested_not_independently_verified"
+OPERATOR_ATTESTED_RESIDUAL_RISK = (
+    "operator-attested: the Outer Operator reports that the human replied"
+    " with this approval; this layer did not verify the human, and a mistaken"
+    " or malicious same-user operator or local process could fabricate it"
+)
+# The longest an operator-attested approval may stay valid. Exact-value
+# pinned; equal to the established human-scale approval window.
+MAX_ATTESTED_APPROVAL_VALIDITY_SECONDS = 900
+# The MAXIMUM PERMITTED withdrawal-key lifetime: seven days. Exact-value
+# pinned. It only CAPS the bound: manifest validation refuses a recorded
+# ``withdrawal_key_expires_at`` later than the Mission's creation plus this.
+# The deadline actually ENFORCED is the key's ORIGINAL expiry, the one the
+# proposer minted and passed with its digest, which Mission Core binds
+# immutably at creation (never recomputed from the creation time, never
+# extended); ``MissionService.withdraw_proposal`` itself refuses a first
+# withdrawal at or after it, not any entry point.
+WITHDRAWAL_KEY_VALIDITY_SECONDS = 604800
+# The proof a provenance block records is fixed by its principal kind.
+_PROOF_BY_PRINCIPAL_KIND = {
+    PRINCIPAL_KIND_CONNECTOR_CREDENTIAL: PROOF_TRANSPORT_CREDENTIAL_ONLY,
+    PRINCIPAL_KIND_LOCAL_PROCESS_USER: PROOF_TRANSPORT_CREDENTIAL_ONLY,
+    PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER: PROOF_NONE_UNAUTHENTICATED,
+    PRINCIPAL_KIND_OPERATOR_ATTESTED: PROOF_OPERATOR_ATTESTED,
+}
+# Why ``human_identity_proof`` is always null, stated per kind so that no
+# kind is described with a check it does not have.
+_NO_HUMAN_IDENTITY_BY_PRINCIPAL_KIND = {
+    PRINCIPAL_KIND_CONNECTOR_CREDENTIAL: "for this kind this layer verifies a"
+    " transport credential, never a human identity",
+    PRINCIPAL_KIND_LOCAL_PROCESS_USER: "for this kind this layer verifies a"
+    " transport credential, never a human identity",
+    PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER: "this kind carries no"
+    " credential and no human identity",
+    PRINCIPAL_KIND_OPERATOR_ATTESTED: "this kind records an Outer Operator's"
+    " attestation, which this layer does not independently check, and never a"
+    " human identity",
+}
+# What an unauthenticated caller lacks to decide anything, machine-readable
+# and in the order the refusal states them.
+DECISION_REQUIREMENTS_MISSING = (
+    "authenticated_per_message_principal_assertion",
+    "exact_human_approval_event_not_mintable_by_a_model",
+)
+UNAUTHENTICATED_REFUSAL_DETAIL = (
+    "an unauthenticated local caller may only propose: it carries no"
+    " authenticated per-message principal assertion this layer can verify"
+    " and no exact human approval event a model cannot mint. A verified"
+    " principal alone would still be insufficient: it establishes whose"
+    " account, not whose intent"
+)
 
 REFERENCE_KIND_REQUEST = "request"
 REFERENCE_KIND_DECISION = "decision"
@@ -299,6 +598,21 @@ PROBLEM_DELIVERY_TARGET = "mission_delivery_target"
 PROBLEM_UNKNOWN_STATE = "mission_unknown_state"
 PROBLEM_INVALID_TRANSITION = "mission_invalid_transition"
 PROBLEM_PROVENANCE = "mission_provenance"
+PROBLEM_UNAUTHENTICATED_PRINCIPAL = "mission_unauthenticated_principal"
+PROBLEM_ATTESTED_APPROVAL = "mission_attested_approval"
+# Task 8 increment 2: the run record and the terminal guard.
+PROBLEM_MISSION_TERMINAL = "mission_terminal"
+PROBLEM_RUN = "mission_run"
+PROBLEM_RUN_ALREADY_RECORDED = "mission_run_already_recorded"
+PROBLEM_RUN_RECORDED = "mission_run_recorded"
+PROBLEM_RUN_PAUSED = "mission_run_paused"
+PROBLEM_RUN_WORKSPACE_BOUND = "mission_run_workspace_bound"
+# Task 8 final: workspace bindings. Another Mission's DI-prepared workspace
+# is kept as its evidence and never bound again; a Mission's own binding is
+# exact and never replaced; an intent needs the prepared binding.
+PROBLEM_RUN_WORKSPACE_PRESERVED = "mission_run_workspace_preserved"
+PROBLEM_RUN_WORKSPACE_CONFLICT = "mission_run_workspace_conflict"
+PROBLEM_RUN_WORKSPACE_UNPREPARED = "mission_run_workspace_unprepared"
 PROBLEM_PROOF_CONTRACT = "mission_proof_contract"
 # R-20.1: every declared required artifact must be named by a
 # requirement and every named one must be declared. A "required"
@@ -841,7 +1155,7 @@ class AuthenticatedContext:
         if any(ch not in _TRANSPORT_ALPHABET for ch in self.transport):
             fail(PROBLEM_BAD_VALUE,
                  "%s.transport must use only [a-z0-9_]" % location)
-        require_member(self.principal_kind, PRINCIPAL_KINDS,
+        require_member(self.principal_kind, ADAPTER_CONTEXT_PRINCIPAL_KINDS,
                        location + ".principal_kind", PROBLEM_PROVENANCE)
         require_str(self.principal_ref, location + ".principal_ref",
                     MAX_PRINCIPAL_REF_CHARS)
@@ -858,9 +1172,67 @@ class AuthenticatedContext:
         }
 
 
+@dataclass(frozen=True)
+class OperatorAttestedContext:
+    """An Outer Operator's ATTESTATION that it relayed the human's explicit
+    chat reply (Task 8, user decision). The Operator is trusted by the
+    user's declared policy; this layer does NOT independently verify the
+    human or the relay. Residual risk (``OPERATOR_ATTESTED_RESIDUAL_RISK``):
+    a mistaken or malicious same-user operator or local process could
+    fabricate it. It may only reserve a decision id and carry an APPROVE.
+    It shares the provenance dictionary SHAPE of the adapter context, not
+    its name or its meaning."""
+
+    transport: str
+    principal_ref: str
+    principal_kind: str = PRINCIPAL_KIND_OPERATOR_ATTESTED
+    configured_subject: Optional[str] = None
+
+    def validate(self, location="attestation"):
+        require_str(self.transport, location + ".transport", MAX_TRANSPORT_CHARS)
+        if any(ch not in _TRANSPORT_ALPHABET for ch in self.transport):
+            fail(PROBLEM_BAD_VALUE,
+                 "%s.transport must use only [a-z0-9_]" % location)
+        if self.principal_kind != PRINCIPAL_KIND_OPERATOR_ATTESTED:
+            fail(PROBLEM_ATTESTED_APPROVAL,
+                 "%s.principal_kind must be %r"
+                 % (location, PRINCIPAL_KIND_OPERATOR_ATTESTED))
+        require_str(self.principal_ref, location + ".principal_ref",
+                    MAX_PRINCIPAL_REF_CHARS)
+        require_optional_str(self.configured_subject,
+                             location + ".configured_subject", MAX_SUBJECT_CHARS)
+        return self
+
+    def as_dict(self):
+        return {
+            "transport": self.transport,
+            "principal_kind": self.principal_kind,
+            "principal_ref": self.principal_ref,
+            "configured_subject": self.configured_subject,
+        }
+
+
+def require_operator_attested_context(value, location="attestation"):
+    """An ``OperatorAttestedContext``, validated, or refuse. It is trusted
+    by declared policy only, never independently verified."""
+    if not isinstance(value, OperatorAttestedContext):
+        fail(PROBLEM_ATTESTED_APPROVAL,
+             "%s must be an OperatorAttestedContext; got %s"
+             % (location, type(value).__name__))
+    return value.validate(location)
+
+
 def context_from_dict(value, location="context"):
+    """The stored context: an ``OperatorAttestedContext`` for the
+    operator-attested kind, otherwise an ``AuthenticatedContext``."""
     require_dict(value, location)
     require_closed_keys(value, CONTEXT_KEYS, location)
+    if value["principal_kind"] == PRINCIPAL_KIND_OPERATOR_ATTESTED:
+        return OperatorAttestedContext(
+            transport=value["transport"],
+            principal_ref=value["principal_ref"],
+            configured_subject=value["configured_subject"],
+        ).validate(location)
     return AuthenticatedContext(
         transport=value["transport"],
         principal_kind=value["principal_kind"],
@@ -883,10 +1255,102 @@ def require_context(value, location="context"):
     return value.validate(location)
 
 
+def _refuse_unauthenticated(principal_kind, location):
+    if principal_kind not in AUTHENTICATED_PRINCIPAL_KINDS:
+        fail(PROBLEM_UNAUTHENTICATED_PRINCIPAL,
+             "%s.principal_kind is %r: %s" % (location, principal_kind,
+                                              UNAUTHENTICATED_REFUSAL_DETAIL))
+
+
+def require_authenticated_context(value, location="context"):
+    """``require_context`` plus an AUTHENTICATED principal kind. Every
+    state-operation id reservation and state operation goes through this,
+    and so does every decision or decision-id reservation carried by an
+    ``AuthenticatedContext``. (An ``OperatorAttestedContext`` is handled by
+    ``require_decision_context`` and is never authenticated.) The
+    unauthenticated kind is refused here, in the core, whichever entry point
+    called."""
+    require_context(value, location)
+    _refuse_unauthenticated(value.principal_kind, location)
+    return value
+
+
+def _require_decision_kind(principal_kind, approve, location):
+    if principal_kind in AUTHENTICATED_PRINCIPAL_KINDS:
+        return
+    if principal_kind in APPROVE_ONLY_PRINCIPAL_KINDS:
+        if approve:
+            return
+        fail(PROBLEM_ATTESTED_APPROVAL,
+             "%s.principal_kind %r may carry only an APPROVE decision"
+             % (location, principal_kind))
+    _refuse_unauthenticated(principal_kind, location)
+
+
+def require_decision_context(value, approve, location="context"):
+    """The context a decision may carry: an ``AuthenticatedContext`` of an
+    authenticated kind (``require_authenticated_context``, unchanged), or,
+    for an APPROVE only, an ``OperatorAttestedContext`` (trusted by declared
+    policy, not independently established). The unauthenticated local caller
+    kind is always refused."""
+    if isinstance(value, OperatorAttestedContext):
+        require_operator_attested_context(value, location)
+        if not approve:
+            fail(PROBLEM_ATTESTED_APPROVAL,
+                 "%s: an operator attestation may carry only an APPROVE"
+                 " decision" % location)
+        return value
+    return require_authenticated_context(value, location)
+
+
+def require_decision_reservation_context(value, location="context"):
+    """A decision id may be reserved for an ``AuthenticatedContext`` of an
+    authenticated kind or for an ``OperatorAttestedContext``; never for the
+    unauthenticated local caller kind."""
+    if isinstance(value, OperatorAttestedContext):
+        return require_operator_attested_context(value, location)
+    return require_authenticated_context(value, location)
+
+
+def require_any_context(value, location="context"):
+    """Either context type, validated: the provenance builder's input."""
+    if isinstance(value, OperatorAttestedContext):
+        return require_operator_attested_context(value, location)
+    return require_context(value, location)
+
+
+def require_decision_provenance(value, approve, location="provenance"):
+    """A stored decision's or authorization's provenance: an authenticated
+    kind, or the operator-attested kind on an APPROVE."""
+    validate_provenance(value, location)
+    _require_decision_kind(value["principal_kind"], approve, location)
+    return value
+
+
+def require_authenticated_provenance(value, location="provenance"):
+    """A validated provenance block whose principal kind is authenticated:
+    required of every revision after the first (an EDIT), every
+    state-operation record and every reconciliation record. Stored
+    decisions and authorizations use ``require_decision_provenance``
+    instead, which also admits the operator-attested kind on an APPROVE."""
+    validate_provenance(value, location)
+    _refuse_unauthenticated(value["principal_kind"], location)
+    return value
+
+
+def withdrawal_key_digest(key):
+    """The digest recorded for a withdrawal key (Task 8); the key itself is
+    never stored. A non-string or empty key has no digest."""
+    if not isinstance(key, str) or not key:
+        return None
+    return json_digest({"withdrawal_key": key})
+
+
 def provenance_record(context, received_at, reference_kind, reference_id,
                       mission_id, revision):
-    """The closed provenance block: only what is known, nothing more."""
-    require_context(context)
+    """The closed provenance block: only what is known, nothing more. The
+    ``proof`` it records is fixed by the context's principal kind."""
+    require_any_context(context)
     require_timestamp(received_at, "received_at")
     require_member(reference_kind, REFERENCE_KINDS, "reference_kind")
     require_id(reference_id, _REFERENCE_PREFIXES[reference_kind], "reference_id")
@@ -900,7 +1364,7 @@ def provenance_record(context, received_at, reference_kind, reference_id,
         "mission_id": mission_id,
         "revision": revision,
         "human_identity_proof": None,
-        "proof": PROOF_TRANSPORT_CREDENTIAL_ONLY,
+        "proof": _PROOF_BY_PRINCIPAL_KIND[context.principal_kind],
     })
     return record
 
@@ -920,14 +1384,19 @@ def validate_provenance(value, location="provenance"):
     require_int(value["revision"], location + ".revision", minimum=1)
     if value["human_identity_proof"] is not None:
         fail(PROBLEM_PROVENANCE,
-             "%s.human_identity_proof must be null: this layer verifies a"
-             " transport credential, never a human identity" % location)
-    if value["proof"] != PROOF_TRANSPORT_CREDENTIAL_ONLY:
+             "%s.human_identity_proof must be null: %s"
+             % (location, _NO_HUMAN_IDENTITY_BY_PRINCIPAL_KIND[
+                 value["principal_kind"]]))
+    expected_proof = _PROOF_BY_PRINCIPAL_KIND[value["principal_kind"]]
+    if value["proof"] != expected_proof:
         fail(PROBLEM_PROVENANCE,
-             "%s.proof must be %r" % (location, PROOF_TRANSPORT_CREDENTIAL_ONLY))
+             "%s.proof must be %r for principal kind %r"
+             % (location, expected_proof, value["principal_kind"]))
     return value
 
 
 def provenance_context(value):
-    """The AuthenticatedContext recorded in a provenance block."""
+    """The context recorded in a provenance block: an
+    ``OperatorAttestedContext`` for the operator-attested kind, otherwise an
+    ``AuthenticatedContext``."""
     return context_from_dict(dict((key, value[key]) for key in CONTEXT_KEYS))

@@ -190,7 +190,8 @@ class BRecordTests(unittest.TestCase):
                     "MN-" + "0" * 32, "", None, 7, "mq-" + "0" * 32):
             self.assertIsNotNone(mission_record.id_problem(bad, "mn"), bad)
         # Every id kind has its own distinct prefix, and none is the
-        # Grok transport prefix.
+        # connector transport prefix ``di-`` (first used by the Grok Bot
+        # spike, retired in Task 8).
         prefixes = (
             mission_record.MISSION_ID_PREFIX,
             mission_record.REQUEST_ID_PREFIX,
@@ -272,7 +273,12 @@ class BRecordTests(unittest.TestCase):
         )))
         self.assertEqual(first, mission_record.proposal_digest(reordered))
 
-    def test_B5_lifecycle_declares_future_states_but_wires_only_decisions(self):
+    def test_B5_lifecycle_wires_decisions_and_exactly_the_run_transitions(self):
+        # INTENTIONAL PIN CHANGE (Task 8 increment 2, Lead brief section A):
+        # this test used to pin that only the decision transitions were
+        # wired. The run transitions are now wired deliberately: RUNNING is
+        # reachable from AUTHORIZED only, COMPLETED from RUNNING only, the
+        # terminal states have no way out, and CLOSED stays unreachable.
         states = mission_record.MISSION_STATES
         for name in ("AWAITING_DECISION", "AUTHORIZED", "DENIED", "RUNNING",
                      "BLOCKED", "COMPLETED", "CLOSED", "CANCELLED"):
@@ -281,25 +287,58 @@ class BRecordTests(unittest.TestCase):
         self.assertEqual(set(transitions), set(states))
         self.assertEqual(transitions["AWAITING_DECISION"],
                          frozenset(("AUTHORIZED", "DENIED")))
-        self.assertEqual(transitions["AUTHORIZED"],
-                         frozenset(("AWAITING_DECISION",)))
+        self.assertEqual(transitions["AUTHORIZED"], frozenset((
+            "AWAITING_DECISION", "RUNNING", "BLOCKED", "CANCELLED")))
         self.assertEqual(transitions["DENIED"],
                          frozenset(("AWAITING_DECISION",)))
+        self.assertEqual(transitions["RUNNING"],
+                         frozenset(("COMPLETED", "BLOCKED", "CANCELLED")))
+        for terminal in ("BLOCKED", "COMPLETED", "CLOSED", "CANCELLED"):
+            self.assertEqual(transitions[terminal], frozenset())
+        self.assertEqual(mission_record.TERMINAL_STATES,
+                         ("BLOCKED", "COMPLETED", "CANCELLED"))
         targets = set().union(*transitions.values())
-        for unwired in ("RUNNING", "BLOCKED", "COMPLETED", "CLOSED",
-                        "CANCELLED"):
-            self.assertNotIn(unwired, targets)
-            self.assertEqual(transitions[unwired], frozenset())
-        self.assertNotIn("RUNNING", transitions["AUTHORIZED"])
+        self.assertNotIn("CLOSED", targets)
+        self.assertEqual(
+            {source for source, target in transitions.items()
+             if "RUNNING" in target}, {"AUTHORIZED"})
+        self.assertEqual(
+            {source for source, target in transitions.items()
+             if "COMPLETED" in target}, {"RUNNING"})
+        self.assertEqual(mission_record.RUN_TRANSITIONS, frozenset(
+            (source, target) for source, targets_ in transitions.items()
+            for target in targets_
+            if (source, target) not in (
+                ("AWAITING_DECISION", "AUTHORIZED"),
+                ("AWAITING_DECISION", "DENIED"),
+                ("AUTHORIZED", "AWAITING_DECISION"),
+                ("DENIED", "AWAITING_DECISION"))))
         with self.assertRaises(mission_record.MissionError) as ctx:
-            mission_record.validate_transition("AUTHORIZED", "RUNNING")
+            mission_record.validate_transition("AWAITING_DECISION", "RUNNING")
         self.assertEqual(ctx.exception.problem,
                          mission_record.PROBLEM_INVALID_TRANSITION)
 
-    def test_B6_no_product_code_path_sets_running(self):
-        # Approved does not imply running: the RUNNING literal appears in
-        # the state vocabulary declaration only, never as an assigned
-        # state anywhere in the package.
+    def test_B6_running_is_set_only_from_a_recorded_observation(self):
+        # Approved does not imply running, and neither does an intent: the
+        # RUNNING literal appears in the state vocabulary declaration only,
+        # and the ONE place any Mission state becomes RUNNING is the
+        # observation-backed record_observed_running.
+        source = (REPO_ROOT / "mission" / "service.py").read_text()
+        # The run transition helper is the only writer of a run state.
+        self.assertEqual(source.count('mission["state"] = target'), 1)
+        self.assertEqual(source.count("record.STATE_RUNNING,"), 1)
+        observed = source.split("def record_observed_running", 1)[1].split(
+            "\n    def ", 1)[0]
+        self.assertIn("self._run_transition(\n                mission,"
+                      " record.STATE_RUNNING", observed)
+        for other in ("record_run_intent", "record_run_receipt",
+                      "record_run_stop", "record_cancel", "record_pause",
+                      "record_verification", "complete_cancel"):
+            body = source.split("def %s" % other, 1)[1].split("\n    def ", 1)[0]
+            self.assertNotIn("_run_transition(mission, record.STATE_RUNNING",
+                             body, other)
+            self.assertNotIn("_run_transition(\n                mission,"
+                             " record.STATE_RUNNING", body, other)
         for path in sorted((REPO_ROOT / "mission").glob("*.py")):
             tree = ast.parse(path.read_text())
             for node in ast.walk(tree):
@@ -319,7 +358,13 @@ class BRecordTests(unittest.TestCase):
 # ====================================================================
 
 
-def make_context(principal_ref="1", transport="grok_mcp", subject=None):
+# SYNTHETIC transport label. No live transport reaches Mission Core (the
+# Grok Bot relay was retired in Task 8); this context exercises only the
+# neutral record contract and stands in for no real or Dots principal.
+SYNTHETIC_TRANSPORT = "synthetic_transport"
+
+
+def make_context(principal_ref="1", transport=SYNTHETIC_TRANSPORT, subject=None):
     return mission_record.AuthenticatedContext(
         transport=transport,
         principal_kind=mission_record.PRINCIPAL_KIND_CONNECTOR_CREDENTIAL,
@@ -715,6 +760,31 @@ class DSuccessScenarioTests(ServiceFixture):
         self.assertEqual(sorted(os.listdir(self.directory)),
                          ["missions.json", "missions.lock"])
 
+    def test_D_G_recorded_provenance_states_only_the_transport_credential(self):
+        # Re-anchored from the retired Grok suite's G2 (Task 8): the
+        # durable approval provenance is a Mission Core contract, so it is
+        # proven here on the service directly with the SYNTHETIC transport
+        # label, not through any transport. It records what the transport
+        # credential established and claims no human identity.
+        mission_id = self.propose()["mission_id"]
+        self.edit(mission_id, 1, objective="Narrower objective")
+        approved = self.approve(mission_id, 2)
+        stored = self.service.get(mission_id)
+        self.assertEqual(len(stored["authorizations"]), 1)
+        principal = stored["authorizations"][0]["human_principal"]
+        self.assertEqual(principal["transport"], SYNTHETIC_TRANSPORT)
+        self.assertEqual(principal["principal_kind"],
+                         "configured_connector_credential_ordinal")
+        self.assertEqual(principal["principal_ref"], "1")
+        self.assertIsNone(principal["configured_subject"])
+        self.assertIsNone(principal["human_identity_proof"])
+        self.assertEqual(principal["proof"], "transport_credential_only")
+        self.assertEqual(principal["reference_id"], approved["decision_id"])
+        self.assertEqual(principal["revision"], 2)
+        # Approval started nothing: only the store exists.
+        self.assertEqual(sorted(os.listdir(self.directory)),
+                         ["missions.json", "missions.lock"])
+
 
 class DFailClosedTests(ServiceFixture):
 
@@ -1026,7 +1096,12 @@ class DFailClosedTests(ServiceFixture):
         digested = {"mission_id", "revision", "decision",
                     "approved_action_scope", "approved_delivery_targets",
                     "expires_at", "proposal"}
-        excluded = {"context", "decision_id", "received_at"}
+        # Task 8: ``expected_proposal_digest_sha256`` is a precondition the
+        # core checks under its lock against the current revision's digest.
+        # It is not decision content: the digested revision already fixes the
+        # digest, because revisions are immutable.
+        excluded = {"context", "decision_id", "received_at",
+                    "expected_proposal_digest_sha256"}
         self.assertEqual(fields, digested | excluded)
         base = dict(
             context=self.context, decision_id="md-" + "0" * 32,
@@ -1070,7 +1145,7 @@ class DFailClosedTests(ServiceFixture):
     def test_D7_absent_or_forged_provenance_refuses(self):
         mission_id = self.propose()["mission_id"]
         decision_id = self.service.mint_decision_id(self.context)
-        for bad_context in (None, {"transport": "grok_mcp"}, "operator",
+        for bad_context in (None, {"transport": SYNTHETIC_TRANSPORT}, "operator",
                             make_context("", ), make_context("1", transport="")):
             envelope = self.mission_decision.HumanDecisionEnvelope(
                 context=bad_context, decision_id=decision_id,
@@ -1552,9 +1627,10 @@ def _product_files():
 
 class ETrustSeparationTests(unittest.TestCase):
     """Static call-site pins SUPPLEMENT the behavioral proofs above
-    (G3/G4 in the Grok suite, F5 below, D7/D8); they never substitute for
-    them. In-process Python can construct any object; these pins close
-    literal references in the product tree, nothing more."""
+    (F5 below, D7/D8; G3/G4 lived in the Grok suite, retired with the Grok
+    Bot relay in Task 8); they never substitute for them. In-process
+    Python can construct any object; these pins close literal references
+    in the product tree, nothing more."""
 
     def test_E1_authorization_constructor_has_one_definition_and_one_caller(self):
         counts = {}
@@ -1587,16 +1663,17 @@ class ETrustSeparationTests(unittest.TestCase):
         ]
         self.assertEqual(approve_callers, ["apply_human_decision"])
 
-    def test_E2_only_the_service_and_the_grok_relay_apply_decisions(self):
+    def test_E2_only_the_service_names_apply_decisions_no_transport_relays(self):
+        # Task 8 retired the Grok Bot relay, the one transport that called
+        # apply_human_decision. No product transport reaches the Mission
+        # approval path today, so it fails closed by construction until an
+        # authenticated approval route is demonstrated and wired.
         counts = {}
         for path in _product_files():
             count = _name_and_string_counts(path, "apply_human_decision")
             if count:
                 counts[path.relative_to(REPO_ROOT).as_posix()] = count
-        self.assertEqual(set(counts), {
-            "mission/service.py", "grok_mcp/mission_tools.py",
-        }, counts)
-        self.assertEqual(counts["grok_mcp/mission_tools.py"], 1)
+        self.assertEqual(set(counts), {"mission/service.py"}, counts)
 
     def test_E3_no_execution_seam_or_orchestration_module_imports_mission(self):
         forbidden_roots = (
@@ -1617,16 +1694,31 @@ class ETrustSeparationTests(unittest.TestCase):
                 if any(n.split(".")[0] == "mission" for n in names):
                     importers.setdefault(relpath, 0)
                     importers[relpath] += 1
+        # INTENTIONAL PIN CHANGE (Task 8 increment 2, Lead brief section F):
+        # exactly ONE target_runtime file, the authorized-Mission run
+        # bridge, may consume Mission Core. It records run facts through
+        # Mission Core's own methods; every other execution seam stays
+        # forbidden, and delivery stays with pr_delivery/mission_parent.py.
+        allowed_runtime_consumers = ("target_runtime/mission_bridge.py",)
         for relpath in importers:
             root = relpath.split("/")[0]
-            self.assertNotIn(root, forbidden_roots, relpath)
+            if relpath not in allowed_runtime_consumers:
+                self.assertNotIn(root, forbidden_roots, relpath)
             self.assertNotIn(relpath, ("herdctl.py", "dirun.py", "tgop.py",
                                        "codexgw.py"))
         self.assertEqual(
             {r for r in importers if r.startswith("pr_delivery/")},
             {"pr_delivery/mission_parent.py"},
         )
-        self.assertTrue({r for r in importers if r.startswith("grok_mcp/")})
+        # With the Grok Bot relay retired (Task 8), the external importers
+        # are exactly the parent seam, the local request surface and (Task 8
+        # increment 2, intentional) the run bridge.
+        self.assertEqual(
+            {r for r in importers if not r.startswith("mission/")},
+            {"pr_delivery/mission_parent.py", "local_request/cli.py",
+             "local_request/store.py", "local_request/surface.py",
+             "target_runtime/mission_bridge.py"},
+        )
 
     def test_E4_mission_never_names_pr_delivery_or_a_provider(self):
         words = ("pr_delivery", "grok", "telegram", "codex", "claude", "pi_",
@@ -1648,7 +1740,6 @@ class ETrustSeparationTests(unittest.TestCase):
         # Truthfulness pin: the package states the limit and never claims
         # cryptographic proof of a human.
         for path in sorted((REPO_ROOT / "mission").glob("*.py")) + [
-            REPO_ROOT / "grok_mcp" / "mission_tools.py",
             REPO_ROOT / "pr_delivery" / "mission_parent.py",
         ]:
             lowered = path.read_text().lower()
@@ -2758,7 +2849,7 @@ class FReceiptAttestationConfinementTests(unittest.TestCase):
         sources = _product_sources()
         self.assertGreater(len(sources), 30)
         for required in (ATTEST_SERVICE_FILE, ATTEST_SEAM_FILE, ATTEST_KIND_FILE,
-                         "pr_delivery/machine.py", "grok_mcp/mission_tools.py",
+                         "pr_delivery/machine.py", "telegram_operator/mission.py",
                          "herdr/guards.py", "herdctl.py", "dirun.py"):
             self.assertIn(required, sources)
         # Discovery is a recursive walk of the tree on disk: it holds every
@@ -2874,7 +2965,7 @@ class FReceiptAttestationConfinementTests(unittest.TestCase):
             ("import alias", "\nfrom mission.state_service import x as attest_delivery_receipt\n"),
         ):
             with self.subTest(label):
-                for relpath in ("pr_delivery/machine.py", "grok_mcp/mission_tools.py",
+                for relpath in ("pr_delivery/machine.py", "telegram_operator/mission.py",
                                 "herdr/guards.py"):
                     self.assertTrue(doctored(**{relpath: good[relpath] + text}), label)
         self.assertTrue(doctored(**{
@@ -4597,8 +4688,26 @@ class RF3ProjectionsUseTheCentralCheckTests(ServiceFixture):
                           '["authorized_action_scope"]',
                           '["authorized_delivery_targets"]'):
             self.assertNotIn(forbidden, outcome_src, forbidden)
-        tools = (REPO_ROOT / "grok_mcp" / "mission_tools.py").read_text()
-        self.assertNotIn('["revocation"]', tools)
+        # Nor does any Mission consumer outside the package. This pin
+        # covered only the Grok relay until Task 8 retired it; it now
+        # covers every product importer of mission, derived.
+        consumers = []
+        for path in _product_files():
+            if path.relative_to(REPO_ROOT).as_posix().startswith("mission/"):
+                continue
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                if any(n.split(".")[0] == "mission" for n in names):
+                    consumers.append(path)
+                    break
+        self.assertTrue(consumers)
+        for path in consumers:
+            self.assertNotIn('["revocation"]', path.read_text(), path)
 
 
 class RF4DirectoryModeTests(StoreFixture):
@@ -5117,6 +5226,653 @@ class TProposeResponseContractTests(ServiceFixture):
                                     requested_scope="narrower"), self.context)
         again = self.service.propose(request_id, proposal(), self.context)
         self.assertEqual(again, retry)
+
+
+# ====================================================================
+# U. The unauthenticated local caller kind is proposal-only (Task 8, B1)
+# ====================================================================
+
+
+def unauthenticated_context():
+    """The proposal-only kind, built here DIRECTLY against the core: these
+    tests attack the service, the issuance constructor and the validation
+    path with no entry point in between. Synthetic label; stands in for no
+    real transport or Dots principal."""
+    return mission_record.AuthenticatedContext(
+        transport=SYNTHETIC_TRANSPORT,
+        principal_kind=mission_record.PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER,
+        principal_ref="unauthenticated",
+    )
+
+
+class UUnauthenticatedKindIsProposalOnlyTests(ServiceFixture):
+    """Shape 1: a caller PRESENTING the unauthenticated kind to the core
+    decision, reservation, state-operation and issuance paths. Shape 2: a
+    record that PASSES it where an authenticated kind is required (an
+    authorization's human principal, a stored decision or reservation, a
+    provenance claiming transport-credential proof). Every refusal is
+    ``mission_unauthenticated_principal`` from the core itself."""
+
+    def setUp(self):
+        super(UUnauthenticatedKindIsProposalOnlyTests, self).setUp()
+        self.unauth = unauthenticated_context()
+
+    def store_bytes(self):
+        return self.read_bytes() if os.path.exists(self.store.path) else None
+
+    def assertUnauthenticated(self, callable_, *args, **kwargs):
+        error = self.assertRefuses(
+            mission_record.PROBLEM_UNAUTHENTICATED_PRINCIPAL,
+            callable_, *args, **kwargs)
+        self.assertIn("whose account, not whose intent", str(error))
+        return error
+
+    def test_U1_the_kind_may_propose_and_records_no_proof(self):
+        created = self.propose(context=self.unauth)
+        self.assertEqual(created["state"], "AWAITING_DECISION")
+        stored = self.service.get(created["mission_id"])
+        provenance = stored["record"]["revisions"][0]["provenance"]
+        self.assertEqual(provenance["principal_kind"],
+                         "unauthenticated_local_caller")
+        self.assertEqual(provenance["proof"], "none_unauthenticated")
+        self.assertIsNone(provenance["human_identity_proof"])
+        self.assertEqual(stored["authorizations"], [])
+        self.assertIsNone(stored["live_authorization_id"])
+        self.assertEqual(self.store.load()["authority_ledger"], [])
+
+    def test_U2_decision_and_state_operation_ids_are_never_reserved(self):
+        self.propose(context=self.unauth)
+        before = self.store_bytes()
+        self.assertUnauthenticated(self.service.mint_decision_id, self.unauth)
+        self.assertUnauthenticated(self.service.mint_state_operation_id,
+                                   self.unauth)
+        self.assertEqual(self.store_bytes(), before)
+
+    def test_U3_every_decision_refuses_the_kind_directly_in_the_core(self):
+        mission_id = self.propose(context=self.unauth)["mission_id"]
+        # The decision id is VALID (reserved by an authenticated context),
+        # so the only reason left to refuse is the presented kind.
+        decision_id = self.service.mint_decision_id(self.context)
+        before = self.store_bytes()
+        for decision, extra in (
+            (self.mission_decision.DECISION_APPROVE, dict(
+                approved_action_scope=["engineering_change", "repository_read"],
+                approved_delivery_targets=["github_pr"])),
+            (self.mission_decision.DECISION_DENY, {}),
+            (self.mission_decision.DECISION_EDIT, dict(
+                proposal=proposal(objective="edited"))),
+        ):
+            with self.subTest(decision):
+                envelope = self.mission_decision.HumanDecisionEnvelope(
+                    context=self.unauth, decision_id=decision_id,
+                    mission_id=mission_id, revision=1, decision=decision,
+                    received_at=self.clock(), **extra)
+                self.assertUnauthenticated(self.service.apply_human_decision,
+                                           envelope)
+        self.assertUnauthenticated(self.service.edit, mission_id, 1,
+                                   proposal(objective="edited"), decision_id,
+                                   self.unauth)
+        self.assertEqual(self.store_bytes(), before)
+        document = self.store.load()
+        self.assertEqual(document["authorizations"], {})
+        self.assertEqual(document["authority_ledger"], [])
+        self.assertEqual(document["missions"][mission_id]["state"],
+                         "AWAITING_DECISION")
+
+    def test_U4_state_operations_refuse_the_kind_before_anything_else(self):
+        mission_id = self.propose()["mission_id"]
+        self.approve(mission_id, 1)
+        operation_id = self.service.mint_state_operation_id(self.context)
+        before = self.store_bytes()
+        self.assertUnauthenticated(self.service.activate_proof_contract,
+                                   mission_id, operation_id, 0, self.unauth)
+        self.assertUnauthenticated(self.service.reconcile, mission_id,
+                                   operation_id, 0, None, self.unauth)
+        self.assertEqual(self.store_bytes(), before)
+
+    def test_U5_issuance_refuses_an_unauthenticated_human_principal(self):
+        mission_id = self.propose(context=self.unauth)["mission_id"]
+        digest = self.service.get(mission_id)["record"]["revisions"][0][
+            "proposal_digest_sha256"]
+        principal = mission_record.provenance_record(
+            self.unauth, self.clock(), mission_record.REFERENCE_KIND_DECISION,
+            "md-" + "1" * 32, mission_id, 1)
+        self.assertUnauthenticated(
+            self.mission_authorization.issue_mission_authorization,
+            "ma-" + "2" * 32, mission_id, 1, digest, principal,
+            ["repository_read"], [], self.clock(), None)
+
+    def planted_document(self, plant_authorization, plant_decision):
+        """A real authenticated approval, then the stored authorization
+        and/or its approving decision rewritten to the unauthenticated kind
+        (the authority digest recomputed): the store as an attacker with
+        file access would shape it."""
+        mission_id = self.propose()["mission_id"]
+        approved = self.approve(mission_id, 1)
+        document = json.loads(self.read_bytes())
+        authorization_id = approved["authorization_id"]
+        authorization = document["authorizations"][authorization_id]
+        blocks = []
+        if plant_authorization:
+            blocks.append(authorization["human_principal"])
+        if plant_decision:
+            blocks.append(
+                document["missions"][mission_id]["decisions"][0]["provenance"])
+        for block in blocks:
+            block["principal_kind"] = "unauthenticated_local_caller"
+            block["proof"] = "none_unauthenticated"
+        authorization["authorization_digest_sha256"] = (
+            self.mission_authorization.authorization_digest(authorization))
+        return document, mission_id, authorization_id
+
+    def test_U6_validation_path_refuses_a_planted_unauthenticated_authorization(self):
+        document, mission_id, authorization_id = self.planted_document(True, False)
+        check = self.mission_authorization.validate_authorization_use(
+            document, authorization_id, mission_id, 1, self.clock())
+        self.assertFalse(check.valid)
+        self.assertEqual(check.problem,
+                         mission_record.PROBLEM_UNAUTHENTICATED_PRINCIPAL)
+        self.write_raw(json.dumps(document))
+        with self.assertRaises(self.mission_store.MissionStoreError):
+            self.store.load()
+        self.assertFalse(self.service.validate_authorization(
+            authorization_id, mission_id, 1).valid)
+
+    def test_U6b_a_planted_unauthenticated_decision_refuses_too(self):
+        for plant_authorization in (False, True):
+            with self.subTest(plant_authorization=plant_authorization):
+                self.tmp.cleanup()
+                self.setUp()
+                document, mission_id, authorization_id = self.planted_document(
+                    plant_authorization, True)
+                check = self.mission_authorization.validate_authorization_use(
+                    document, authorization_id, mission_id, 1, self.clock())
+                self.assertFalse(check.valid)
+                self.assertIn("whose account, not whose intent", check.detail)
+                self.write_raw(json.dumps(document))
+                with self.assertRaises(self.mission_store.MissionStoreError):
+                    self.store.load()
+
+    def test_U7_proof_is_fixed_by_kind_in_both_directions(self):
+        mission_id = self.propose()["mission_id"]
+        block = mission_record.provenance_record(
+            self.unauth, self.clock(), mission_record.REFERENCE_KIND_REQUEST,
+            "mq-" + "3" * 32, mission_id, 1)
+        mission_record.validate_provenance(block)
+        claimed = dict(block, proof="transport_credential_only")
+        self.assertRefuses(mission_record.PROBLEM_PROVENANCE,
+                           mission_record.validate_provenance, claimed)
+        authenticated = mission_record.provenance_record(
+            self.context, self.clock(), mission_record.REFERENCE_KIND_REQUEST,
+            "mq-" + "3" * 32, mission_id, 1)
+        self.assertEqual(authenticated["proof"], "transport_credential_only")
+        self.assertRefuses(mission_record.PROBLEM_PROVENANCE,
+                           mission_record.validate_provenance,
+                           dict(authenticated, proof="none_unauthenticated"))
+        self.assertUnauthenticated(
+            mission_record.require_authenticated_provenance, block)
+
+    def test_U8_a_stored_decision_reservation_for_the_kind_is_malformed(self):
+        self.propose()
+        decision_id = self.service.mint_decision_id(self.context)
+        document = json.loads(self.read_bytes())
+        document["reservations"][decision_id]["context"] = self.unauth.as_dict()
+        self.write_raw(json.dumps(document))
+        with self.assertRaises(self.mission_store.MissionStoreError) as caught:
+            self.store.load()
+        self.assertIn("mission_unauthenticated_principal", str(caught.exception))
+
+    # -- the withdrawal marker (Task 8, E2/E3): an additive guard read ----
+
+    KEY = "k" * 64
+
+    def keyed(self, key=None, expires_at=None):
+        request_id = self.service.mint_request_id(self.unauth)
+        digest = mission_record.withdrawal_key_digest(key or self.KEY)
+        if expires_at is None:
+            expires_at = self.clock() + mission_record.WITHDRAWAL_KEY_VALIDITY_SECONDS
+        return self.service.propose(request_id, proposal(), self.unauth,
+                                    digest, expires_at)["mission_id"], request_id
+
+    def test_U17_delayed_binding_keeps_the_original_expiry(self):
+        # NON-COINCIDING clocks: the key is minted at T0, the Mission is
+        # created later; the core binds T0 + V, never creation + V.
+        validity = mission_record.WITHDRAWAL_KEY_VALIDITY_SECONDS
+        t0 = self.clock()
+        original = t0 + validity
+        # Delayed submit: creation at T0 + 100.
+        self.clock.advance(100)
+        delayed, delayed_request = self.keyed(expires_at=original)
+        self.assertEqual(self.service.get(delayed)["record"][
+            "withdrawal_key_expires_at"], original)
+        # Delayed recovery: creation AFTER the original expiry.
+        self.clock.advance(validity)            # now T0 + V + 100
+        recovered, recovered_request = self.keyed(expires_at=original)
+        self.assertEqual(self.service.get(recovered)["record"][
+            "withdrawal_key_expires_at"], original)
+        # A replay may not extend it.
+        self.assertRefuses(self.mission_service.PROBLEM_REQUEST_ID_CONFLICT,
+                           self.service.propose, recovered_request, proposal(),
+                           self.unauth, mission_record.withdrawal_key_digest(self.KEY),
+                           self.clock() + validity)
+        # Nor may a binding exceed a fresh lifetime from creation.
+        self.assertRefuses("mission_malformed_state",
+                           self.keyed, None, self.clock() + validity + 1)
+        # Property 1: no FIRST withdrawal at or after the ORIGINAL expiry.
+        for mission_id, request_id in ((delayed, delayed_request),
+                                       (recovered, recovered_request)):
+            before = json.loads(self.read_bytes())["missions"][mission_id]
+            self.assertRefuses(self.mission_service.PROBLEM_WITHDRAWAL_KEY_EXPIRED,
+                               self.service.withdraw_proposal, mission_id,
+                               request_id, self.KEY, self.unauth)
+            self.assertEqual(json.loads(self.read_bytes())["missions"][mission_id],
+                             before)
+
+    def test_U18_a_withdrawal_committed_before_the_original_expiry_completes(self):
+        validity = mission_record.WITHDRAWAL_KEY_VALIDITY_SECONDS
+        original = self.clock() + validity
+        self.clock.advance(100)                 # delayed creation
+        mission_id, request_id = self.keyed(expires_at=original)
+        self.clock.advance(validity - 101)      # one second before original
+        first = self.service.withdraw_proposal(mission_id, request_id, self.KEY,
+                                               self.unauth)
+        self.assertFalse(first["idempotent"])
+        self.clock.advance(10)                  # past the original expiry
+        again = self.service.withdraw_proposal(mission_id, request_id, self.KEY,
+                                               self.unauth)
+        self.assertTrue(again["idempotent"])
+        self.assertEqual(again["withdrawal"], first["withdrawal"])
+
+    def withdrawn(self):
+        mission_id, request_id = self.keyed()
+        outcome = self.service.withdraw_proposal(mission_id, request_id,
+                                                 self.KEY, self.unauth)
+        return mission_id, request_id, outcome
+
+    def test_U15_direct_core_bypass_with_shared_context_and_no_key_refuses(self):
+        # Caller A creates; caller B learns A's ids the way any caller may
+        # (get) and calls the core DIRECTLY with the shared context.
+        mission_a, request_a = self.keyed("a" * 64)
+        learned = self.service.get(mission_a)["record"]
+        self.assertEqual(learned["request_id"], request_a)
+        before = self.read_bytes()
+        for presented in (None, "", "b" * 64, request_a, mission_a,
+                          learned["withdrawal_key_digest_sha256"]):
+            self.assertRefuses(self.mission_service.PROBLEM_WITHDRAWAL_KEY,
+                               self.service.withdraw_proposal, mission_a,
+                               learned["request_id"], presented, self.unauth)
+        self.assertEqual(self.read_bytes(), before)
+        self.assertNotIn("withdrawal", self.service.get(mission_a)["record"])
+        # A replay of A's request id under another key is refused too.
+        self.assertRefuses(self.mission_service.PROBLEM_REQUEST_ID_CONFLICT,
+                           self.service.propose, request_a, proposal(),
+                           self.unauth, mission_record.withdrawal_key_digest("b" * 64),
+                           learned["withdrawal_key_expires_at"])
+        # Own key: succeeds, so the refusals above are isolation.
+        own = self.service.withdraw_proposal(mission_a, request_a, "a" * 64,
+                                             self.unauth)
+        self.assertFalse(own["idempotent"])
+        # A proposal created without a key can never be withdrawn.
+        unkeyed = self.propose(context=self.unauth)["mission_id"]
+        self.assertRefuses(
+            self.mission_service.PROBLEM_WITHDRAWAL_KEY,
+            self.service.withdraw_proposal, unkeyed,
+            self.service.get(unkeyed)["record"]["request_id"], "", self.unauth)
+
+    def test_U10_a_withdrawn_proposal_refuses_every_authenticated_decision(self):
+        mission_id, request_id, outcome = self.withdrawn()
+        self.assertFalse(outcome["idempotent"])
+        self.assertEqual(outcome["state"], "AWAITING_DECISION")
+        before = self.read_bytes()
+        decision_id = self.service.mint_decision_id(self.context)
+        for decision, extra in (
+            (self.mission_decision.DECISION_APPROVE, dict(
+                approved_action_scope=["engineering_change", "repository_read"],
+                approved_delivery_targets=["github_pr"])),
+            (self.mission_decision.DECISION_DENY, {}),
+            (self.mission_decision.DECISION_EDIT, dict(
+                proposal=proposal(objective="edited"))),
+        ):
+            with self.subTest(decision):
+                self.assertRefuses(
+                    self.mission_service.PROBLEM_PROPOSAL_WITHDRAWN,
+                    self.service.apply_human_decision,
+                    self.mission_decision.HumanDecisionEnvelope(
+                        context=self.context, decision_id=decision_id,
+                        mission_id=mission_id, revision=1, decision=decision,
+                        received_at=self.clock(), **extra))
+        mission = json.loads(self.read_bytes())["missions"][mission_id]
+        self.assertEqual(mission, json.loads(before)["missions"][mission_id])
+        self.assertEqual(mission["state"], "AWAITING_DECISION")
+        self.assertEqual(self.store.load()["authorizations"], {})
+        # The withdrawal marker adds no lifecycle state. INTENTIONAL PIN
+        # CHANGE (Task 8 increment 2): the reachable set now includes the
+        # run states B5 pins; the withdrawal still reaches none of them.
+        self.assertEqual(mission_record.REACHABLE_STATES,
+                         ("AWAITING_DECISION", "AUTHORIZED", "DENIED",
+                          "RUNNING", "BLOCKED", "COMPLETED", "CANCELLED"))
+        again = self.service.withdraw_proposal(mission_id, request_id, self.KEY,
+                                               self.unauth)
+        self.assertTrue(again["idempotent"])
+        self.assertEqual(again["withdrawal"], outcome["withdrawal"])
+
+    def test_U11_only_the_proposer_of_an_unauthenticated_proposal_withdraws(self):
+        mission_id = self.propose(context=self.unauth)["mission_id"]
+        request_id = self.service.get(mission_id)["record"]["request_id"]
+        other_unauth = mission_record.AuthenticatedContext(
+            transport="other_label",
+            principal_kind=mission_record.PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER,
+            principal_ref="unauthenticated")
+        before = self.read_bytes()
+        for context, presented in ((self.context, request_id),
+                                   (other_unauth, request_id),
+                                   (self.unauth, "mq-" + "0" * 32)):
+            self.assertRefuses(
+                self.mission_service.PROBLEM_WITHDRAWAL_CONTEXT_CONFLICT,
+                self.service.withdraw_proposal, mission_id, presented, self.KEY,
+                context)
+        # An authenticated proposer's Mission is never withdrawable here.
+        authenticated = self.propose()["mission_id"]
+        self.assertRefuses(
+            self.mission_service.PROBLEM_WITHDRAWAL_CONTEXT_CONFLICT,
+            self.service.withdraw_proposal, authenticated,
+            self.service.get(authenticated)["record"]["request_id"], self.KEY,
+            self.context)
+        self.assertEqual(json.loads(self.read_bytes())["missions"][mission_id],
+                         json.loads(before)["missions"][mission_id])
+
+    def test_U12_after_any_decision_nothing_is_withdrawable(self):
+        for act in (lambda m: self.approve(m, 1),
+                    lambda m: self.deny(m, 1),
+                    lambda m: self.edit(m, 1, objective="edited")):
+            mission_id, request_id = self.keyed()
+            act(mission_id)
+            self.assertRefuses(self.mission_service.PROBLEM_NOT_WITHDRAWABLE,
+                               self.service.withdraw_proposal, mission_id,
+                               request_id, self.KEY, self.unauth)
+
+    def test_U13_a_planted_marker_outside_its_scope_fails_closed(self):
+        mission_id, request_id, outcome = self.withdrawn()
+        good = json.loads(self.read_bytes())
+        self.approve(self.propose()["mission_id"], 1)
+        approved_id = [m for m in json.loads(self.read_bytes())["missions"]
+                       if m != mission_id][0]
+        for label, mutate in (
+            ("on an authorized Mission", lambda d: d["missions"][approved_id]
+             .__setitem__("withdrawal", outcome["withdrawal"])),
+            ("revision 2", lambda d: d["missions"][mission_id]["withdrawal"]
+             .__setitem__("revision", 2)),
+            ("another proposer", lambda d: d["missions"][mission_id]["withdrawal"][
+                "provenance"].__setitem__("transport", "other_label")),
+        ):
+            with self.subTest(label):
+                document = json.loads(self.read_bytes()) if label.startswith(
+                    "on an") else json.loads(json.dumps(good))
+                mutate(document)
+                self.write_raw(json.dumps(document))
+                with self.assertRaises(self.mission_store.MissionStoreError):
+                    self.store.load()
+
+    def test_U14_the_marker_has_one_writer_and_one_production_caller(self):
+        counts = {}
+        for path in _product_files():
+            count = _name_and_string_counts(path, "withdraw_proposal")
+            if count:
+                counts[path.relative_to(REPO_ROOT).as_posix()] = count
+        self.assertEqual(counts, {"mission/service.py": 1,
+                                  "local_request/surface.py": 1}, counts)
+        counts = {}
+        for path in _product_files():
+            count = _name_and_string_counts(path, "new_withdrawal")
+            if count:
+                counts[path.relative_to(REPO_ROOT).as_posix()] = count
+        self.assertEqual(counts, {"mission/manifest.py": 1,
+                                  "mission/service.py": 1}, counts)
+
+    def test_U16_direct_core_withdrawal_enforces_the_key_lifetime(self):
+        expired_id, expired_request = self.keyed()
+        self.clock.advance(mission_record.WITHDRAWAL_KEY_VALIDITY_SECONDS)
+        before = json.loads(self.read_bytes())["missions"][expired_id]
+        self.assertRefuses(self.mission_service.PROBLEM_WITHDRAWAL_KEY_EXPIRED,
+                           self.service.withdraw_proposal, expired_id,
+                           expired_request, self.KEY, self.unauth)
+        after = json.loads(self.read_bytes())["missions"][expired_id]
+        self.assertEqual(after, before)
+        self.assertNotIn("withdrawal", after)
+        # A withdrawal committed while valid completes idempotently later.
+        valid_id, valid_request = self.keyed()
+        first = self.service.withdraw_proposal(valid_id, valid_request, self.KEY,
+                                               self.unauth)
+        self.clock.advance(mission_record.WITHDRAWAL_KEY_VALIDITY_SECONDS + 1)
+        again = self.service.withdraw_proposal(valid_id, valid_request, self.KEY,
+                                               self.unauth)
+        self.assertTrue(again["idempotent"])
+        self.assertEqual(again["withdrawal"], first["withdrawal"])
+        # The wrong key is still refused after expiry, never "expired".
+        self.assertRefuses(self.mission_service.PROBLEM_WITHDRAWAL_KEY,
+                           self.service.withdraw_proposal, valid_id,
+                           valid_request, "x" * 64, self.unauth)
+
+    def test_U9_the_authenticated_kinds_are_unchanged(self):
+        self.assertEqual(mission_record.AUTHENTICATED_PRINCIPAL_KINDS, (
+            "configured_connector_credential_ordinal", "local_process_user"))
+        # Task 8: the operator-attested kind is a principal kind but NOT an
+        # authenticated one.
+        self.assertEqual(mission_record.PRINCIPAL_KINDS,
+                         mission_record.AUTHENTICATED_PRINCIPAL_KINDS
+                         + ("unauthenticated_local_caller",
+                            "operator_attested_relay"))
+        self.assertNotIn("operator_attested_relay",
+                         mission_record.AUTHENTICATED_PRINCIPAL_KINDS)
+        self.assertEqual(mission_record.DECISION_REQUIREMENTS_MISSING, (
+            "authenticated_per_message_principal_assertion",
+            "exact_human_approval_event_not_mintable_by_a_model"))
+
+
+# ====================================================================
+# O. Operator-attested APPROVE (Task 8, user decision; NOT verified)
+# ====================================================================
+
+
+def attested_context():
+    """SYNTHETIC label. Built here directly against the core; stands in for
+    no real transport, Dots principal or verified human."""
+    return mission_record.OperatorAttestedContext(
+        transport=SYNTHETIC_TRANSPORT, principal_ref="outer_operator_relay")
+
+
+class OOperatorAttestedApprovalTests(ServiceFixture):
+    """The delegated trust is labelled honestly and bounded in the core.
+    Nothing here asserts that a human sent the approval: the tests pin the
+    label, the residual risk, and the exact-binding and once-only rules."""
+
+    def setUp(self):
+        super(OOperatorAttestedApprovalTests, self).setUp()
+        self.unauth = unauthenticated_context()
+        self.attested = attested_context()
+
+    def surface_proposal(self, **overrides):
+        created = self.propose(context=self.unauth, **overrides)
+        entry = self.service.get(created["mission_id"])["record"]["revisions"][-1]
+        return created["mission_id"], entry
+
+    def attest(self, mission_id, revision, digest, actions, targets, expires_at,
+               decision_id=None):
+        decision_id = decision_id or self.service.mint_decision_id(self.attested)
+        return self.service.apply_operator_attested_approval(
+            self.attested, decision_id, mission_id, revision, digest, actions,
+            targets, expires_at), decision_id
+
+    def exact(self, mission_id, entry, expires_at=None, **changes):
+        proposal_ = entry["proposal"]
+        target = proposal_["requested_delivery_target"]
+        args = dict(
+            mission_id=mission_id, revision=entry["revision"],
+            digest=entry["proposal_digest_sha256"],
+            actions=list(proposal_["requested_action_scope"]),
+            targets=[] if target is None else [target],
+            expires_at=expires_at or self.clock() + 600,
+        )
+        args.update(changes)
+        return args
+
+    def test_O1_label_is_honest_and_never_an_authenticated_context(self):
+        self.assertNotIsInstance(self.attested, mission_record.AuthenticatedContext)
+        self.assertNotIn("operator_attested_relay",
+                         mission_record.AUTHENTICATED_PRINCIPAL_KINDS)
+        self.assertNotIn("operator_attested_relay",
+                         mission_record.ADAPTER_CONTEXT_PRINCIPAL_KINDS)
+        with self.assertRaises(mission_record.MissionError):
+            mission_record.AuthenticatedContext(
+                transport="x", principal_kind="operator_attested_relay",
+                principal_ref="r").validate()
+        self.assertEqual(mission_record.PROOF_OPERATOR_ATTESTED,
+                         "operator_attested_not_independently_verified")
+        risk = mission_record.OPERATOR_ATTESTED_RESIDUAL_RISK
+        self.assertIn("did not verify the human", risk)
+        self.assertIn("could fabricate it", risk)
+        mission_id, entry = self.surface_proposal()
+        outcome, _ = self.attest(**self.exact(mission_id, entry))
+        self.assertEqual(outcome["state"], "AUTHORIZED")
+        principal = self.service.get(mission_id)["authorizations"][0]["human_principal"]
+        self.assertEqual(principal["principal_kind"], "operator_attested_relay")
+        self.assertEqual(principal["proof"],
+                         "operator_attested_not_independently_verified")
+        self.assertIsNone(principal["human_identity_proof"])
+        self.assertTrue(self.service.validate_authorization(
+            outcome["authorization_id"], mission_id, 1).valid)
+
+    def test_O8_attested_provenance_error_claims_no_verification(self):
+        # Round-12 regression pin: refusing a non-null human_identity_proof on
+        # OPERATOR-ATTESTED provenance must not say this layer verifies
+        # anything about that kind.
+        mission_id, _ = self.surface_proposal()
+        decision_id = self.service.mint_decision_id(self.attested)
+        block = mission_record.provenance_record(
+            self.attested, self.clock(), mission_record.REFERENCE_KIND_DECISION,
+            decision_id, mission_id, 1)
+        tampered = dict(block, human_identity_proof="claimed human")
+        for validate in (
+            mission_record.validate_provenance,
+            lambda v: mission_record.require_decision_provenance(v, True, "p"),
+        ):
+            with self.assertRaises(mission_record.MissionError) as caught:
+                validate(dict(tampered))
+            self.assertEqual(caught.exception.problem,
+                             mission_record.PROBLEM_PROVENANCE)
+            reason = str(caught.exception).split("must be null:", 1)[1].lower()
+            self.assertIn("attestation", reason)
+            self.assertIn("never a human identity", reason)
+            for claim in ("verif", "authenticat", "prove", "proof"):
+                self.assertNotIn(claim, reason)
+        # Every kind has its own wording; only the authenticated kinds are
+        # described with a verified transport credential.
+        wording = mission_record._NO_HUMAN_IDENTITY_BY_PRINCIPAL_KIND
+        self.assertEqual(sorted(wording), sorted(mission_record.PRINCIPAL_KINDS))
+        for kind, text in wording.items():
+            self.assertEqual("verifies" in text,
+                             kind in mission_record.AUTHENTICATED_PRINCIPAL_KINDS,
+                             kind)
+
+    def test_O2_one_authorization_under_duplicates_and_replay(self):
+        mission_id, entry = self.surface_proposal()
+        first, decision_id = self.attest(**self.exact(mission_id, entry))
+        again, _ = self.attest(decision_id=decision_id,
+                               **self.exact(mission_id, entry,
+                                            expires_at=first["expires_at"]))
+        self.assertTrue(again["idempotent"])
+        self.assertEqual(again["authorization_id"], first["authorization_id"])
+        # A second, different decision id cannot authorize again.
+        self.assertRefuses(mission_record.PROBLEM_INVALID_TRANSITION, self.attest,
+                           **self.exact(mission_id, entry))
+        self.assertEqual(self.ledger_kinds(mission_id), ["ISSUED"])
+        self.assertEqual(len(self.service.get(mission_id)["authorizations"]), 1)
+
+    def test_O3_exact_binding_stale_altered_scope_expiry_cross_mission(self):
+        mission_id, entry = self.surface_proposal()
+        other_id, other = self.surface_proposal(objective="another proposal")
+        before = self.read_bytes()
+        for problem, changes in (
+            ("mission_stale_revision", dict(revision=2)),
+            ("mission_proposal_digest_mismatch", dict(digest="a" * 64)),
+            ("mission_proposal_digest_mismatch",
+             dict(digest=other["proposal_digest_sha256"])),
+            (mission_record.PROBLEM_ATTESTED_APPROVAL,
+             dict(actions=["repository_read"])),
+            (mission_record.PROBLEM_ATTESTED_APPROVAL, dict(targets=[])),
+            (mission_record.PROBLEM_ATTESTED_APPROVAL,
+             dict(expires_at=self.clock() + 901)),
+            (mission_record.PROBLEM_BAD_VALUE, dict(expires_at=self.clock())),
+        ):
+            with self.subTest(problem=problem, changes=changes):
+                decision_id = self.service.mint_decision_id(self.attested)
+                before = json.loads(self.read_bytes())["missions"]
+                self.assertRefuses(problem, self.attest, decision_id=decision_id,
+                                   **self.exact(mission_id, entry, **changes))
+                self.assertEqual(json.loads(self.read_bytes())["missions"], before)
+        self.assertEqual(self.store.load()["authorizations"], {})
+
+    def test_O4_approve_only_no_deny_edit_or_state_operation(self):
+        mission_id, entry = self.surface_proposal()
+        decision_id = self.service.mint_decision_id(self.attested)
+        for decision, extra in (
+            (self.mission_decision.DECISION_DENY, {}),
+            (self.mission_decision.DECISION_EDIT, dict(proposal=proposal())),
+        ):
+            with self.subTest(decision):
+                self.assertRefuses(
+                    mission_record.PROBLEM_ATTESTED_APPROVAL,
+                    self.service.apply_human_decision,
+                    self.mission_decision.HumanDecisionEnvelope(
+                        context=self.attested, decision_id=decision_id,
+                        mission_id=mission_id, revision=1, decision=decision,
+                        received_at=self.clock(), **extra))
+        # No state-operation id, and no proposal, from an attestation.
+        with self.assertRaises(mission_record.MissionError):
+            self.service.mint_state_operation_id(self.attested)
+        with self.assertRaises(mission_record.MissionError):
+            self.service.mint_request_id(self.attested)
+
+    def test_O5_only_for_a_local_surface_proposal_and_never_unauthenticated(self):
+        authenticated_mission = self.propose()["mission_id"]
+        entry = self.service.get(authenticated_mission)["record"]["revisions"][-1]
+        self.assertRefuses(mission_record.PROBLEM_ATTESTED_APPROVAL, self.attest,
+                           **self.exact(authenticated_mission, entry))
+        # The unauthenticated kind still decides nothing, even via this path.
+        mission_id, entry = self.surface_proposal()
+        self.assertRefuses(mission_record.PROBLEM_ATTESTED_APPROVAL,
+                           self.service.apply_operator_attested_approval,
+                           self.unauth, "md-" + "1" * 32, mission_id, 1,
+                           entry["proposal_digest_sha256"], ["repository_read"],
+                           [], self.clock() + 60)
+        self.assertRefuses(mission_record.PROBLEM_UNAUTHENTICATED_PRINCIPAL,
+                           self.service.mint_decision_id, self.unauth)
+
+    def test_O6_a_withdrawn_proposal_refuses_the_attested_approval(self):
+        mission_id, request_id = self.keyed_unauth()
+        self.service.withdraw_proposal(mission_id, request_id, self.KEY, self.unauth)
+        entry = self.service.get(mission_id)["record"]["revisions"][-1]
+        self.assertRefuses("mission_proposal_withdrawn", self.attest,
+                           **self.exact(mission_id, entry))
+
+    KEY = "k" * 64
+
+    def keyed_unauth(self):
+        request_id = self.service.mint_request_id(self.unauth)
+        expires = self.clock() + mission_record.WITHDRAWAL_KEY_VALIDITY_SECONDS
+        created = self.service.propose(
+            request_id, proposal(), self.unauth,
+            mission_record.withdrawal_key_digest(self.KEY), expires)
+        return created["mission_id"], request_id
+
+    def test_O7_the_entry_point_has_one_production_caller(self):
+        counts = {}
+        for path in _product_files():
+            count = _name_and_string_counts(path, "apply_operator_attested_approval")
+            if count:
+                counts[path.relative_to(REPO_ROOT).as_posix()] = count
+        self.assertEqual(counts, {"mission/service.py": 1,
+                                  "local_request/surface.py": 1}, counts)
 
 
 if __name__ == "__main__":
