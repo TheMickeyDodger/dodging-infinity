@@ -666,11 +666,7 @@ The deterministic harness/Lead persists review evidence; the Reviewer does not n
 
 ### Runtime command safety
 
-Git itself permits bypass forms such as:
-
-```bash
-git push --no-verify
-```
+Git itself can skip the hooks these guards install, so the deterministic Git guards are workflow guardrails, not designed to contain processes running with the user's own privileges.
 
 Runtime-level command protections and role contracts complement the deterministic Git guards.
 
@@ -746,6 +742,50 @@ Telegram remains the reference and the fallback.
 
 The authority model the adapter implements is in
 [architecture.md](architecture.md#11-authority).
+
+### Grok Bot's on-demand tunnel (`ditunnel.py`)
+
+Grok Bot reaches the loopback MCP endpoint only through a public HTTPS URL.
+`ditunnel.py` provides one per session: a free Cloudflare Quick Tunnel that
+runs only when asked. The full operator documentation is
+[On-demand tunnel](tunnel.md).
+
+**Session start and end** (a later, separately approved step; nothing here
+was performed):
+
+1. `ditunnel.py --state-dir DIR on --port PORT`, through Grok Bot's
+   per-command, user-approved local shell. It prints the current URL.
+2. Repoint the Grok Bot connector to that URL plus `/mcp`. It changes on
+   every start.
+3. `ditunnel.py --state-dir DIR off` at session end, then `status`.
+
+**Operational facts:**
+
+- **Ownership.** A persistent controller owns each tunnel, and `off` stops it
+  only through that controller.
+- **If the controller is gone,** the tool signals nothing. `status` reports
+  `unverified` or `unknown`, and stopping the tunnel is manual
+  ([Manual recovery](tunnel.md#manual-recovery)).
+- **Configuration mismatch.** `on` against a running tunnel with a different
+  port or `cloudflared` refuses and names the difference.
+- **The launchd job is an artifact only:**
+  `scripts/ditunnel/com.dodginginfinity.ditunnel.plist` defaults off and is
+  never installed by this repository.
+- **The reported permanent tunnel** (launchd label
+  `com.dodginginfinity.grokbot.task8.tunnel`): the label and its forwarding
+  target are reported by the request.
+  - Its job definition was never read, so its ownership is unverified.
+  - A matching process was observed once, read-only. That established
+    nothing about launchd ownership.
+  - No job-management, installation or migration action was performed: the
+    job was not modified, started, stopped, loaded or unloaded.
+  - Separately, whether any earlier test or smoke-script signal reached an
+    unrelated process is UNKNOWN.
+  - Migrating from it is a plan for a separately approved step
+    ([tunnel.md](tunnel.md#migrating-from-the-reported-permanent-tunnel-a-plan-only)).
+- **Not access control.** Lifecycle control is local-shell only, which is
+  pinned by test. Like the Git gates, this is a workflow guardrail; it is not
+  designed to contain processes running with the user's own privileges.
 
 ### Dots, optional for active operation
 
@@ -1459,9 +1499,13 @@ That separation is architectural, not cosmetic.
 
 ## 11. Git approval gates
 
-Three deterministic one-shot human authorization gates protect commit, branch
-push, and release-tag push. They are enforced by the installed Git guards and
-pinned by the Herdr guard suites. The authority model they implement is in
+Four deterministic one-shot authorization gates, each confirmed by typing at
+the controlling terminal, cover commit, branch push, release-tag push and
+local merge. The installed Git guards and the pretool guard check them, and
+the Herdr guard suites pin them. These gates are workflow guardrails; they are
+not designed to contain processes running with the user's own privileges (see
+[What a gate does not authorize](#what-a-gate-does-not-authorize)).
+The authority model they implement is in
 [architecture.md](architecture.md#11-authority).
 
 ### Why the gates are separate
@@ -1503,13 +1547,13 @@ Authorization is bound to:
 
 A changed staged diff, branch, or HEAD invalidates the approval.
 
-For Codex Operator flows after explicit human confirmation:
-
-```bash
-herdctl approve-commit --yes
-```
-
-Codex may then execute the exact commit.
+The typed confirmation is read only from the controlling terminal, and no
+flag skips it: there is no `--yes`, and an answer piped into the command
+confirms nothing. An Operator flow therefore asks the human to run
+`herdctl approve-commit` in their own terminal; the Operator may then execute
+the exact commit. The terminal requirement is a workflow guardrail, not proof
+that a human confirmed (see
+[What a gate does not authorize](#what-a-gate-does-not-authorize)).
 
 ### Human push gate
 
@@ -1562,6 +1606,101 @@ herdctl push-tag vX.Y.Z
 
 Authorization binds to the exact tag ref and object.
 
+### Human merge gate (separate)
+
+A local merge needs its own approval, naming exactly what is merged:
+
+```bash
+herdctl approve-merge --repo example-repo --source topic
+```
+
+It displays the source revision and the commit it resolves to now, and the
+branch and HEAD it merges into, then asks for the typed alias at the
+controlling terminal. It authorizes exactly ONE local merge of that source
+commit into that branch at that HEAD. Each layer checks only what it can
+establish where it runs:
+
+- **The pretool guard** sees the command. It re-resolves the merge's single
+  source and refuses if it is not the approved commit, if the branch or HEAD
+  changed, or if the merge names no source or several. A mismatch retires
+  the approval. It judges the repository of the working directory, so the
+  merge must run there as one standalone `git merge ...`. Anything that could
+  run it in another repository is refused: `git -C`, `--git-dir`,
+  `--work-tree` or any other global option before `merge`, an environment
+  prefix such as `GIT_DIR=...`, a `cd` or any other chained command, a nested
+  shell, and shell substitution. This is the same refusal `git -C` already
+  gets for commit and push. Variables already exported in the shell are not
+  visible to it; the other repository's own hooks, where installed, still
+  judge its own update.
+- **The `pre-merge-commit` hook** cannot see the source of a fresh automatic
+  merge: in upstream Git's `builtin/merge.c`, the hook runs before
+  `MERGE_HEAD` is written. That is inference from Git's public source, not a
+  test of the Git installed here. So this hook checks only that a merge
+  approval exists for this destination, and does not consume it.
+- **The `pre-commit` hook** is what a CONFLICTED merge completed by
+  `git commit` runs (githooks). `MERGE_HEAD` exists then, and it is checked
+  against the approved source.
+- **The `reference-transaction` hook** sees the actual update, however the
+  merge was run. The branch may move only from the approved HEAD, either to
+  the approved source commit by a true fast-forward (the approved HEAD is an
+  ancestor of it; checked with `git merge-base --is-ancestor`), or to a
+  commit whose parents are exactly the approved HEAD and the approved source.
+  Any other update it judges retires the approval, so even a correctly shaped
+  retry then needs a fresh `herdctl approve-merge`. It consumes the approval
+  when the approved update is committed.
+
+Where a merge is identifiable (`MERGE_HEAD` present when `git commit`
+completes a conflicted merge; at the ref update, a commit with two or more
+parents, or a fast-forward of more than one commit), the merge approval is
+required first, and a valid commit approval never stands in for it. Ordinary
+commits are judged by the commit gate as before. A fast-forward by exactly
+one commit whose parent is the old HEAD looks the same as a commit at the
+ref level and is judged as one.
+
+Commands with NO approval kind here are refused outright, and a merge
+approval never opens them:
+
+- `gh pr create`: opening a pull request is its own delivery action.
+- `gh pr merge`: a remote pull request's base cannot be re-checked locally
+  where it is used.
+- `git pull`: what it merges is unknown before it fetches. Fetch, then merge
+  the exact commit under a merge approval.
+- `gh api` naming pulls or merges, reads included: conservative over-refusal.
+
+pr_delivery's own ceremony (its `PR_CREATE` step, under a PR Delivery
+Authorization) is a separate path and is unchanged.
+
+### The approval ledger: tamper evidence, not a control
+
+`herdctl approve-commit`, `approve-push` and `approve-merge` record each mint
+in `.herd/state/approval-ledger.jsonl`, a hash-chained log; the guards record
+each consumption and invalidation into it. Once it exists, an approval record
+that was edited, reused, written by something other than `herdctl`, or
+deleted while still outstanding is refused and named as tamper evidence,
+instead of being treated as simply absent.
+
+Every read-and-append of the ledger, every mint (the record and its entry)
+and every retirement (reading, removing and recording a record) is one
+operation under a blocking `flock` on `.herd/state/approval-ledger.lock`, so
+two legitimate writers cannot break the chain themselves. If the chain is
+broken anyway, the guards refuse with tamper evidence and never repair it.
+Re-authorizing (`herdctl approve-*`) recovers it in three steps:
+
+1. It copies the broken ledger intact to
+   `approval-ledger.broken-<time>-<id>.jsonl`.
+2. It writes the new chain to a temporary file and flushes it to disk.
+3. It publishes the new chain with one atomic rename.
+
+The broken ledger stays in force until that rename. A recovery that fails
+or is interrupted part-way therefore leaves everything refused, exactly as
+before it started. Other approvals minted in the old chain then need
+re-authorizing too.
+
+This is evidence against NON-ADVERSARIAL change: an accident, a crashed
+write, an unrelated tool, a confused process. It is **not a control**: it is
+not designed to contain processes running with the user's own privileges,
+and it does not detect every change to the ledger.
+
 ### What a gate does not authorize
 
 - A commit approval does not authorize a push, a PR, a tag, a release, a
@@ -1570,12 +1709,20 @@ Authorization binds to the exact tag ref and object.
   deployment. `git push --dry-run` does not consume it.
 - A tag approval authorizes exactly one tag ref and tag-object SHA. It does
   not authorize a release or a deployment.
-- No gate can be operated by an agent, a transport, or a UI on its own.
-  `herdctl approve-commit --yes` exists for Operator flows and is used only
-  after explicit human confirmation.
-- Git itself permits bypass forms such as `git push --no-verify`.
-  Runtime-level command protections and role contracts complement the
+- A merge approval authorizes exactly one local merge of the approved source
+  commit. It never authorizes a commit, a push, a pull request or a remote
+  merge, and no commit, push or Mission approval stands in for it.
+- A Mission approval confers no delivery authority of any kind.
+- The typed confirmation is read only from the controlling terminal, and no
+  flag skips it. That stops `--yes`, an answer piped into the command, and a
+  tool with no terminal from confirming anything. It is not proof that a
+  human confirmed.
+- Runtime-level command protections and role contracts complement the
   deterministic Git guards; they do not replace human authorization.
+- **These gates are workflow guardrails, not an enforced boundary.** They
+  are not designed to contain processes running with the user's own
+  privileges, a Herdr worker included. No separate worker identity is
+  deployed, so that limitation stands.
 
 ## 12. Troubleshooting
 
@@ -1597,6 +1744,9 @@ them can make a situation worse.
 | A v1 state file after an upgrade | `tgop migrate-state`, `tgop migrate-workflows` | State fails closed at adapter startup until the human runs the migration. v1 workflow records are retired, never upgraded. |
 | The LaunchAgent runs the wrong `codex` | Reinstall the agent | The installer resolves `codex` at install time and bakes its directory into the job's PATH first. The agent must be reinstalled if the binary moves. |
 | A commit or push approval will not apply | Re-stage, then re-approve | Each approval binds exact state and has a short TTL. A changed staged diff, branch, or HEAD invalidates it. |
+| Grok Bot cannot reach the endpoint after a tunnel restart | `ditunnel.py --state-dir DIR status` | A Quick Tunnel's URL changes on every start. Repoint the connector to the current URL. |
+| `ditunnel.py on` refuses a "DIFFERENT configuration" | `ditunnel.py --state-dir DIR status` | A tunnel with another port or `cloudflared` is running. Run `off` first; it is never reported as the one you asked for. |
+| `ditunnel.py status` says `unverified` or `unknown` | Read `DIR/tunnel.json` | The controller is gone, so the tool signals nothing. Stop the tunnel manually ([Manual recovery](tunnel.md#manual-recovery)), then `off` or `forget`. |
 
 Cold reboot, login ordering, sleep and wake, long sleep, network loss and
 recovery, DNS failure, and temporary GitHub, Telegram, or model outages have
@@ -1657,7 +1807,7 @@ herdctl review-decision --repo NAME --reviewer reviewer1
 herdctl clear-contexts --repo NAME
 
 herdctl approve-commit --repo NAME
-herdctl approve-commit --repo NAME --yes
+herdctl approve-merge --repo NAME --source REV
 
 herdctl approve-push \
   --repo NAME \
@@ -1705,6 +1855,18 @@ scripts/dirun-agent.sh uninstall
 ```text
 codexgw --help
 ```
+
+### `ditunnel.py`
+
+```text
+ditunnel.py --state-dir DIR on --port PORT [--cloudflared ABS_PATH] [--stop-grace S]
+ditunnel.py --state-dir DIR status
+ditunnel.py --state-dir DIR off
+ditunnel.py --state-dir DIR forget
+ditunnel.py --state-dir DIR foreground --port PORT [--cloudflared ABS_PATH]   # the launchd job only
+```
+
+See [On-demand tunnel](tunnel.md).
 
 The Codex Gateway is a separate outer interface and intentionally remains
 separate from `herdctl`. That separation is architectural, not cosmetic.

@@ -29,19 +29,86 @@ pull request, and no merge, release or deploy tool.
 | Tool | What it does |
 |---|---|
 | `request` | Sends the human's plain text to the Outer Operator, which proposes a Mission or asks a question. |
-| `present` | Returns the exact display text and the binding the human approves, and durably records what was displayed. |
-| `approve` | Relays a separate reply whose whole text is `approved`. Its binding must equal the displayed one in every field. |
+| `present` | Returns the exact display text, the binding the human approves and the exact local `arming` command, and durably records what was displayed. |
+| `approve` | Relays a separate reply whose whole text is `approved`, with the `approval_code` the local arming printed. Its binding must equal the displayed one in every field, and the code must fire the approval armed for exactly that binding, once. |
 | `status` | Durable status and run, read from DI's records. |
 | `recover` | Rebinds a request whose proposal step was interrupted. |
 | `cancel` | Withdraws the caller's own pending proposal using its one-shot control capability or, if the `request` reply was lost, the request's exact `text` and `conversation_ref` (see [Cancelling after a lost `request` reply](#cancelling-after-a-lost-request-reply)). |
 | `run` | Drives the request's own authorized Mission: `dispatch`, `observe`, `reconcile`, `prove`, `verify`, `result`, `pause`, `resume`, `cancel`. Each command's exact arguments are listed below. |
-| `present_delivery` | The separate delivery: `pr_delivery present-dots` proposes exactly `BASE_REFRESH`, `COMMIT`, `PUSH`, `PR_CREATE` for the live candidate. It displays the complete proposal and records what was displayed. |
-| `approve_delivery` | Relays the human's separate `approved` reply to `pr_delivery attest-dots`, for exactly the displayed delivery. |
-| `delivery_status` | A delivery's status, read from `pr_delivery`'s record. |
+| `present_delivery` | The separate delivery: `pr_delivery present-dots` proposes exactly `BASE_REFRESH`, `COMMIT`, `PUSH`, `PR_CREATE` for the live candidate. It displays the complete proposal, returns its local `arming` command, and records what was displayed. |
+| `approve_delivery` | Relays the human's separate `approved` reply, with the `approval_code` of the delivery's local arming, to `pr_delivery attest-dots`, for exactly the displayed delivery. |
+| `delivery_status` | A delivery's status. It loads `pr_delivery`'s record first, then checks the identity of the repository that record names (reading that repository's `.git` pointer files), then projects the status. It runs no Git, opens no network connection and performs no step. |
 
 Approval is **operator-attested, not cryptographically authenticated**. Grok
 Bot gives DI no signed sender attribution, so DI does not establish who sent
 the reply.
+
+### Local arming: the approval boundary
+
+Holding the MCP bearer token is not enough to approve anything. Before
+`approve` (or `approve_delivery`) can succeed, the human **arms** the approval
+by a local action on the DI machine:
+
+1. `present` (or `present_delivery`) returns `arming`: one exact local command,
+   `grokbot.py … authorize` (or `authorize-delivery`). It carries the **full**
+   displayed binding: request, Mission id, revision, all 64 hex characters of
+   the proposal digest, the action scope, the delivery targets, the expiry and
+   the digest of the displayed text. Nothing in it is shortened.
+2. Grok Bot runs that command in its per-command, user-approved local shell
+   on the DI machine (a vendor capability that must be enabled; see the
+   vendor references below). Under the default "Ask every time" policy the
+   human approves that exact command string, so their consent is to the full
+   binding.
+3. Before anything takes effect, and inside the same critical section
+   `present` and `approve` use, the command refuses (by name,
+   `grok_bot_arming_not_displayed`) unless every value equals the **latest**
+   presentation, the proposal is still that one, and its display re-renders to
+   the recorded digest. A presentation made in between cannot inherit the
+   arming, nor the arming fire against a newer presentation. An expired
+   display is refused (`grok_bot_arming_expired`).
+4. It then stores only a one-way commitment (SHA-256 over the binding and a
+   128-bit random nonce) and prints the nonce once as the `approval_code`.
+   DI never stores the code.
+5. `approve` must carry that code. It fires the armed approval exactly once
+   (`grok_bot_approval_consumed` after), only for exactly the armed binding
+   (`grok_bot_approval_code_mismatch` otherwise; five wrong codes kill it),
+   and never without an arming (`grok_bot_approval_not_armed`). Consumption is
+   durable before anything is applied.
+
+**What a code can do depends on its kind:**
+
+- **A Mission code** (from `authorize`) confers NO delivery authority.
+- **A delivery code** (from `authorize-delivery`) redeems EXACTLY ONE locally
+  armed delivery authorization. Presented to `approve_delivery` with the
+  displayed binding (public values) over the endpoint (bearer access), it has
+  pr_delivery's ceremony record one PR Delivery Authorization, for exactly
+  that displayed delivery. The ceremony's remaining checks still apply: the
+  live candidate, expiry at application, and one authorization per proposal.
+- **Neither kind** is a principal or a standing credential, and neither
+  confers general or standing Git authority.
+
+What carries this, stated precisely:
+
+- **Hash-only persistence.** The commitments file holds the commitment and
+  metadata, never the nonce or the code, so read access to anything DI stores
+  yields nothing that fires.
+- **A dependency, not a property of the scheme:** the `request` tool's Operator
+  runs under the pinned fail-closed read-only sandbox posture, which is what
+  is relied on to stop it writing the commitments file or running the arming
+  command itself. DI cannot enforce the provider's sandbox. If that
+  confinement does not hold on some host or provider version, a
+  request-controlled Operator could arm an approval, and this separation
+  fails.
+- **Local arming is the boundary; the code relay is not.** A code persisted
+  by the local shell's output somewhere readable (terminal saved state, for
+  example) fires only the exact binding the human armed, once, before its
+  expiry: it completes the human's own authorization and creates no new one.
+- **A workflow guardrail, not an enforced boundary.** Like the Git gates,
+  local arming is not designed to contain processes running with the user's
+  own privileges, a Herdr worker included. DI cannot see or enforce the
+  vendor's local-shell approval policy: under "Always allow" no per-command
+  human approval occurs. No part of this is cryptographic human
+  authentication.
 
 `present` shows the complete proposal: nothing is truncated or elided. Every
 field of the recorded proposal, including the whole proof contract, appears
@@ -350,9 +417,14 @@ and approval. These are pr_delivery's existing `present-dots` and
      and nothing is truncated.
    - The display, keyed by the proposal's own digest, is durably recorded
      before it is returned.
-2. **The human replies in a separate message** containing only `approved`.
-3. **`approve_delivery`** relays that reply with the displayed binding: the
-   proposal digest and expiry.
+2. **The human arms it locally** with `present_delivery`'s `arming` command
+   (`authorize-delivery`, carrying the full digest, the expiry, the display
+   digest and the repository), which prints a one-time `approval_code` (see
+   [Local arming](#local-arming-the-approval-boundary)).
+3. **The human replies in a separate message** containing only `approved`.
+4. **`approve_delivery`** relays that reply with the displayed binding (the
+   proposal digest and expiry) and the `approval_code`, which must fire the
+   delivery armed for exactly that proposal, once.
    - A digest never displayed here is refused (`grok_bot_not_presented`).
    - A differing expiry is refused (`grok_bot_binding_not_displayed`).
    - Nothing is corrected or filled in.
@@ -383,7 +455,10 @@ machine, through its real git transport.
   - The fetch writes local repository data (objects and refs).
   - The adapter's own code opens no connection, and it does not suppress the
     ceremony's.
-  - `delivery_status` reads pr_delivery's store only.
+  - `delivery_status` runs no ceremony and no Git. It reads pr_delivery's
+    store for the delivery's record, plus the `.git` pointer files of the
+    repository that record names (the identity check below). It opens no
+    network connection and performs no delivery step.
   - The Grok Bot adapter tests replace the transport with a recording double,
     so no git process runs any of these.
 
@@ -477,12 +552,40 @@ grokbot.py --state-dir /abs/state --repository /abs/control-repo \
            --control-repo /abs/control-repo \
            --workspace-repository /abs/approved-checkout \
            --workspaces-root /abs/mission-workspaces serve [--port N] \
-           [--auth-token-file /abs/token-file]
+           --auth-token-file /abs/token-file
 ```
 
 The two workspace paths configure [automatic Mission
 workspaces](#automatic-mission-workspaces). Without them every `dispatch`
-is refused as unavailable.
+is refused as unavailable. They are also the only repositories the delivery
+tools accept: the `--workspace-repository` checkout itself, or one of its
+worktrees directly under `--workspaces-root`, named by its realpath. When
+that identity is checked differs by tool:
+
+- `present_delivery` and `approve_delivery` check it **before** their
+  ceremony runs, so before pr_delivery reads the repository and before any
+  Git process.
+- `delivery_status` first loads the delivery's record through pr_delivery,
+  because only the record names the repository; it then checks that
+  repository's identity, and only then projects the status. It runs no Git.
+
+Unconfigured, all three are refused before pr_delivery is reached. Any
+other path (another repository, a `..` or symlinked path, a non-repository,
+a nested repository, a worktree whose `commondir` names another repository)
+is refused (`grok_bot_delivery_repository_not_approved`); without
+`--workspace-repository` every delivery tool is refused
+(`grok_bot_delivery_not_configured`).
+
+The check reads filesystem **shape**: realpaths, the `.git` entry, and Git's
+`gitdir` and `commondir` pointer files. It is not Git's own resolution of
+the repository and not proof of its identity, and it does not model every
+Git behaviour. Building an accepted shape needs write access to the approved
+repository's Git directory and the workspaces root, which a caller holding
+only the bearer token does not have. Like the Git gates, the check is a
+workflow guardrail, not an enforced boundary: it is not designed to contain
+processes running with the user's own privileges. What the ceremony reads
+with Git is bound into the displayed proposal, and `attest-dots` re-reads it
+and refuses any change.
 
 `serve` exposes the tools as an MCP endpoint (`/mcp`) over the Streamable
 HTTP transport, tools only. It binds **127.0.0.1 only**. There is no option
@@ -496,12 +599,15 @@ Requests are also refused if:
 - their `Host` is not the loopback listener;
 - they carry an `Origin` header (the DNS-rebinding guard).
 
-### Access control (implemented; absent by default)
+### Access control (implemented; required, fail-closed)
 
-With `--auth-token-file`, every request must carry
-`Authorization: Bearer <token>`, where the token is the one in that file. A
-missing or wrong token is refused `401` before the request body is read,
-using a constant-time comparison.
+`serve` requires `--auth-token-file` and refuses to start without it, before
+anything is built or bound; the server itself cannot be constructed without
+a token. Every request must carry exactly one
+`Authorization: Bearer <token>` header, where the token is the one in that
+file. An absent, empty, malformed, wrong-scheme, duplicated or wrong token
+is refused `401` before the request body is read, using a constant-time
+comparison.
 
 The token file must be:
 
@@ -518,8 +624,8 @@ the token, never who the human is, and it **approves nothing**. Approval is
 still the operator-attested relay of the human's separate reply, exactly as
 before.
 
-Without `--auth-token-file`, the endpoint is the loopback-only default with
-no token. Never expose it beyond loopback in that state.
+There is no unauthenticated endpoint: without `--auth-token-file`, nothing
+is served.
 
 ### Forwarder contract
 
@@ -534,32 +640,69 @@ A public HTTPS forwarder must:
 ## Final setup dependency (not performed by this code)
 
 Grok Bot reaches custom MCP servers only at a public HTTPS URL; localhost and
-private addresses are rejected. A Command MCP server in a phone conversation
-runs on xAI's cloud computer, not on this Mac. These human actions are listed
-as data in `grok_bot.server.PUBLIC_REACHABILITY`, and nothing in the
-repository performs them.
+private addresses are rejected. Grok Bot's cloud execution, where a Command
+MCP server in a phone conversation runs, is on xAI's cloud computer.
+
+Per current vendor documentation, **local-computer execution is a separate
+capability**: when it is enabled and each command is approved, Grok Bot can
+run commands on the user's own computer. That is the per-command local
+shell the arming commands and the tunnel's `on` / `off` / `status` use. It
+does not change how a connector reaches this endpoint, which still needs the
+public HTTPS URL. See [What is known, and from where](#what-is-known-and-from-where).
+
+These human actions are listed as data in
+`grok_bot.server.PUBLIC_REACHABILITY`, and nothing in the repository performs
+them.
 
 1. `provision_bearer_token`: generate a random token (32 to 512 visible ASCII
    characters), write it to a file only the serving user can read
    (`chmod 600`), and serve with `--auth-token-file` pointing at it.
 2. `provision_public_https`: provision a public HTTPS forwarder to the
-   loopback listener that meets the forwarder contract above, for example a
-   tunnel per xAI's custom MCP tunneling guide.
+   loopback listener that meets the forwarder contract above. That can be a
+   tunnel per xAI's custom MCP tunneling guide, or the repository's on-demand
+   Quick Tunnel, `ditunnel.py` ([On-demand tunnel](tunnel.md)).
 3. `register_connector`: at grok.com/connectors, choose New Connector, then
    Custom. Enter the public URL ending in `/mcp`, and give the same token as
-   the connector's credential.
+   the connector's credential. A Quick Tunnel's URL changes on every start, so
+   with `ditunnel.py` the connector's URL is repointed every session.
 4. `run_live_acceptance`: run the bounded, reversible phone acceptance
    exercise. This is what resolves the live compatibility questions below.
+
+### Reaching the endpoint with the on-demand tunnel
+
+[`docs/tunnel.md`](tunnel.md) is the operator documentation for
+`ditunnel.py`, a free Cloudflare Quick Tunnel that runs only when asked. A
+session, as instructions for a later, separately approved step (none of it
+was performed here):
+
+1. `ditunnel.py --state-dir DIR on --port PORT`, run through Grok Bot's
+   per-command, user-approved local shell (default Ask every time). It prints
+   the CURRENT `trycloudflare.com` URL.
+2. Repoint the connector to that URL plus `/mcp`. The URL changes on every
+   start, so this is per session.
+3. Use the tools over the authenticated endpoint, with local arming for any
+   approval.
+4. `ditunnel.py --state-dir DIR off` at session end, then `status` to
+   confirm. `status` never reports an old URL as active.
+
+**Limits of a Quick Tunnel** (vendor documentation): no Server-Sent Events,
+so the JSON answer is the one a tunnel carries (the endpoint's SSE branch is
+kept for forwarders that can carry it), and no uptime guarantee. That the
+tunnel presents the required `Host` is [U] until a live acceptance. If a
+tunnel's controller is gone, stopping it is manual
+([Manual recovery](tunnel.md#manual-recovery)).
 
 ### The complete path, end to end
 
 1. **Local, already in this repository:**
    - `grokbot.py serve --auth-token-file …` runs on loopback.
-   - Engineering goes `request` → `present` → the human's `approved` reply →
-     `approve` → `run` (`dispatch` … `verify`, `result`). `dispatch` needs no
-     path: DI prepares the Mission's own workspace.
-   - Delivery goes `present_delivery` → the human's separate `approved`
-     reply → `approve_delivery`.
+   - Engineering goes `request` → `present` → local arming (`authorize`) →
+     the human's `approved` reply → `approve` with the `approval_code` →
+     `run` (`dispatch` … `verify`, `result`). `dispatch` needs no path: DI
+     prepares the Mission's own workspace.
+   - Delivery goes `present_delivery` → local arming (`authorize-delivery`)
+     → the human's separate `approved` reply → `approve_delivery` with the
+     `approval_code`.
 2. **Human setup:** the four actions above.
 3. **Human-run, outside this transport:** `python3 -m pr_delivery advance
    --delivery-id prd-…` performs an authorized delivery through pr_delivery's
@@ -569,7 +712,8 @@ repository performs them.
 
 ## What is known, and from where
 
-These three sources are kept apart.
+These four sources are kept apart. Each is vendor documentation, never
+evidence that this code works end to end.
 
 **Grok Bot (the phone app's Bots) and its custom connectors.**
 <https://docs.x.ai/grok-bot/team-bots>,
@@ -582,7 +726,25 @@ These three sources are kept apart.
 - a custom MCP server must be reachable over the public internet;
 - localhost and private addresses are rejected;
 - Command servers run on "the computer each conversation uses", which is
-  xAI's cloud computer.
+  xAI's cloud computer (cloud execution; local-computer execution is the
+  separate capability below).
+
+**Grok Bot's local-computer execution.**
+
+- **<https://docs.x.ai/grok-bot/computer-and-apps>** (updated 2026-10-08),
+  "Your local computer is separate": cloud execution and local-computer
+  execution are separate capabilities. Bots may run commands on the local
+  computer when that capability is enabled and the user approves under the
+  local policy.
+- **<https://docs.x.ai/grok-bot/approvals-security-and-privacy>** (updated
+  2026-10-06), "Control access to your local computer": Execution on Local
+  Computer offers Ask every time, Always allow and Never allow. The default
+  is Ask every time. Registered computers have per-computer settings, the
+  prompt offers Allow once, and the controls are the same on iPhone.
+
+That is documentation only. It is not proof that this account or device has
+the capability enabled, not live interoperability, and DI does not enforce
+the vendor's approval policy.
 
 **The xAI API's remote MCP tool.**
 <https://docs.x.ai/developers/tools/remote-mcp> describes a separate surface,
@@ -591,7 +753,9 @@ supported", and that a token is set in the `Authorization` header.
 
 **What this repository implemented and tested.**
 
-- The Streamable HTTP transport (POST only; JSON, or one SSE event).
+- The Streamable HTTP transport (POST only; JSON, or one SSE event). A Quick
+  Tunnel does not carry the SSE answer, so through one only the JSON answer
+  is usable.
 - Exactly the MCP revisions `2025-11-25` and `2025-06-18`. Each is negotiated
   in the tests, and nothing else is advertised.
 - JSON-RPC batching was removed in `2025-06-18`, so a batch is refused (`400`)
@@ -634,12 +798,42 @@ The advertised revisions do not cover this case.
 The minimum follow-up is to add `2025-03-26` to the advertised revisions,
 together with JSON-RPC batch reception and its tests.
 
+## What the tests prove, and what they do not
+
+The loopback and fixture tests prove **protocol and mechanism shape only**.
+In particular:
+
+- **No live Grok Bot interoperability.** The MCP revision, headers and
+  credential the live client uses are unknown (see the live compatibility
+  dependency above).
+- **No live tunnel behaviour.** The tunnel tests use a synthetic
+  `cloudflared`; the real one was never run.
+- **No proof about the local shell.** Nothing shows that this account or
+  device has Grok Bot's local-computer execution enabled.
+- **No proof about the installed host Git.** The `pre-merge-commit`
+  lifecycle conclusion is source-based inference from current upstream Git
+  (`docs/operations.md`).
+- **The `mcp_2025_03_26_batch_reception` gap stays recorded.** A client that
+  negotiates only `2025-03-26` cannot use this endpoint.
+
 ## Limitations
 
-- **Proposal-only is an instruction, not enforced.** The Codex request turn
-  runs under the user's ambient Codex configuration with no read-only
-  sandbox, so the proposal-only boundary depends on the instruction it is
-  given.
+- **The request turn is read-only for writes, not for reads.** Each
+  `request` runs one fresh Codex turn under the role-turn restrictive
+  posture (`--sandbox read-only`, `--ignore-user-config`, `--ignore-rules`,
+  `--strict-config`, `-c approval_policy=never`), verified on the exact
+  argv before the process starts. It continues no session: any
+  `operator_session_id` is refused (`grok_bot_operator_session_refused`)
+  before any Operator turn runs. Read-only confines writes by the
+  Operator's shell commands; it does not confine reads. Request text can
+  induce the Operator to read, under its own permissions, any file the
+  serving user can read, and the Operator's reply is returned to the
+  caller. That is a material, disclosed residual: no exfiltration has been
+  demonstrated, and nothing here prevents it. Read-only is not secret
+  isolation, and nothing here scopes readable paths.
+- **Proposal-only is an instruction, not enforced.** That the Operator only
+  proposes depends on the instruction it is given; the neutralization of
+  forged envelopes in the human's text is a mitigation, not a boundary.
 - **Not implemented:** rate limiting, MCP sessions and OAuth.
 - **Workspace trust is written to the live configuration and never
   revoked.** In production, preparation writes one `hasTrustDialogAccepted`

@@ -55,9 +55,11 @@ from codex_gateway.codex_adapter import (
     ROLE_TURN_ALLOWED_LONE_FLAGS,
     ROLE_TURN_SANDBOX_VALUE,
     assert_role_turn_argv_allowed,
+    codex_unavailable,
+    interpret_completed,
     parse_events,
 )
-from codex_gateway.contract import make_error
+from codex_gateway.contract import STATUS_INVALID_REQUEST, make_error
 from telegram_operator.protocol import (
     KIND_MISSION_AUTHORIZATION,
     KIND_ROLE_OUTCOME,
@@ -1363,3 +1365,79 @@ def run_planning_turn(human_intent, control_repository_realpath, now,
         turn=turn,
         error=None,
     )
+
+
+# --- The Grok Bot request tool's Outer Operator turn ------------------------
+
+# The Outer Operator turn behind the Grok Bot ``request`` tool runs under
+# the SAME restrictive posture as every role turn: ``build_role_turn_argv``
+# and ``verify_restrictive_posture`` unchanged, rooted at the Operator's
+# repository realpath, so no ambient Codex configuration, rules or approval
+# policy is inherited. It is not a DI-REMOTE-2 role (there are still six)
+# and it records no workflow: its result is the gateway's own
+# ``(status, session_id, message, error, unrecognized)`` tuple, interpreted
+# by ``codex_adapter.interpret_completed`` exactly as the ambient path's.
+#
+# Fresh only, like the planning turn: there is NO session parameter, so a
+# resume is unrepresentable, and the posture itself is fresh-only:
+# ``verify_restrictive_posture`` refuses any argv carrying ``resume`` or
+# ``fork``.
+#
+# What the posture confines, and what it does not: ``--sandbox read-only``
+# confines WRITES by the Operator's shell commands. It does not confine
+# READS: the turn's text can induce the Operator to read, under its own
+# permissions, any file the serving user can read, and the caller sees its
+# reply. It is not secret isolation, nothing here scopes readable paths, and
+# nothing here prevents exfiltration (none has been demonstrated either): a
+# disclosed residual.
+#
+# The spawn is the gateway's plain one (argv list, no shell, no deadline,
+# bytes in and out), not the owned workflow spawn: this turn belongs to no
+# workflow, and the ambient gateway turn it replaces was not owned either.
+
+
+def _operator_runner(argv, input_bytes, cwd):
+    """One plain spawn of the verified argv; no shell, no deadline."""
+    return subprocess.run(argv, input=input_bytes, cwd=cwd,
+                          capture_output=True)
+
+
+def run_operator_turn(text, repository_realpath, runner=None):
+    """Run ONE fresh Outer Operator turn under the restrictive posture.
+
+    The posture is built and verified on the exact argv BEFORE any process
+    exists; a posture that cannot be established unambiguously is refused
+    (``invalid_request``, error ``REASON_POSTURE_NOT_ESTABLISHED``) and no
+    process ever exists. Exactly one process is spawned per call: a nonzero
+    exit (the binary rejecting a posture flag or the ``approval_policy``
+    override is one cause) fails the turn, never a retry and never a turn
+    under ambient policy. ``text`` arrives validated by the gateway;
+    ``runner`` exists for hermetic tests to inject a recorder.
+    """
+    try:
+        argv = build_role_turn_argv(repository_realpath)
+    except BannedFlagError as exc:
+        established, problem = False, str(exc)
+    else:
+        established, problem = verify_restrictive_posture(
+            argv, repository_realpath
+        )
+    if not established:
+        return (
+            STATUS_INVALID_REQUEST,
+            None,
+            None,
+            make_error(
+                REASON_POSTURE_NOT_ESTABLISHED,
+                "restrictive posture not established unambiguously: %s;"
+                " the Operator turn is refused, never run under ambient"
+                " policy" % problem,
+            ),
+            0,
+        )
+    run = runner or _operator_runner
+    try:
+        completed = run(argv, text.encode("utf-8"), repository_realpath)
+    except OSError as exc:
+        return codex_unavailable(exc)
+    return interpret_completed(completed)

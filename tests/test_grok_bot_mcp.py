@@ -86,11 +86,14 @@ def strings_in(value):
 
 
 class ServerFixture(Fixture):
-    """A real loopback endpoint over the slice-1 fixture's adapter."""
+    """A real loopback endpoint over the slice-1 fixture's adapter, served
+    with the SYNTHETIC bearer token (the endpoint is never served without
+    one), which ``http`` sends unless a test names its own Authorization."""
 
     def setUp(self):
         super(ServerFixture, self).setUp()
-        self.server = server_module.LoopbackMcpServer(self.adapter)
+        self.server = server_module.LoopbackMcpServer(
+            self.adapter, bearer_token=SYNTHETIC_TOKEN)
         self.port = self.server.server_address[1]
         thread = threading.Thread(target=self.server.serve_forever,
                                   kwargs={"poll_interval": 0.05}, daemon=True)
@@ -102,11 +105,13 @@ class ServerFixture(Fixture):
         self.addCleanup(self.server.shutdown)
 
     def http(self, method="POST", body=b"", headers=None, path=None):
+        sent = {"Authorization": "Bearer " + SYNTHETIC_TOKEN}
+        sent.update(headers or {})
         connection = http.client.HTTPConnection(
             "127.0.0.1", self.port, timeout=CLIENT_TIMEOUT_SECONDS)
         try:
             connection.request(method, path or server_module.MCP_PATH,
-                               body=body, headers=headers or {})
+                               body=body, headers=sent)
             response = connection.getresponse()
             return response.status, response, response.read()
         finally:
@@ -215,9 +220,10 @@ class ProtocolTests(ServerFixture):
         self.assertEqual(self.operator.requests[0].source, "grok_bot")
         result, shown = self.tool("present", {"request_ref": out["request_ref"]})
         self.assertEqual(result["content"][0]["text"], shown["display_text"])
-        approval = dict(shown["approval_binding"], relayed_reply="approved",
-                        relay_ref="grok-conversation-1")
-        result, approved = self.tool("approve", approval)
+        # Local arming: unarmed, the relayed reply approves nothing.
+        result, unarmed = self.tool("approve", self.unarmed(shown))
+        self.assertEqual(unarmed["problem"], "grok_bot_approval_not_armed")
+        result, approved = self.tool("approve", self.approval(shown))
         self.assertEqual(approved["status"], "approved_by_operator_attestation")
         self.assert_labels(approved)
         result, ran = self.tool("run", {
@@ -340,6 +346,7 @@ class TransportTests(ServerFixture):
             connection.putrequest("POST", server_module.MCP_PATH)
             connection.putheader("Content-Type", "application/json")
             connection.putheader("Accept", ACCEPT_BOTH)
+            connection.putheader("Authorization", "Bearer " + SYNTHETIC_TOKEN)
             connection.endheaders()
             self.assertEqual(connection.getresponse().status, 411)
         finally:
@@ -453,7 +460,8 @@ class LoopbackBindTests(ServerFixture):
                         mock.patch.object(socketserver.TCPServer,
                                           "server_activate") as listen:
                     try:
-                        built = server_module.LoopbackMcpServer(self.adapter)
+                        built = server_module.LoopbackMcpServer(
+                            self.adapter, bearer_token=SYNTHETIC_TOKEN)
                     except server_module.NotLoopbackError:
                         built = None
                     if built is not None:
@@ -488,7 +496,8 @@ class LoopbackBindTests(ServerFixture):
         with mock.patch.object(socketserver.TCPServer, "server_bind",
                                lands_elsewhere):
             with self.assertRaises(server_module.NotLoopbackError):
-                server_module.LoopbackMcpServer(self.adapter)
+                server_module.LoopbackMcpServer(self.adapter,
+                                                bearer_token=SYNTHETIC_TOKEN)
 
     def test_the_cli_cannot_name_a_host(self):
         for flag in ("--host", "--bind", "--listen", "--address"):
@@ -614,15 +623,24 @@ class EntryScriptServeTests(Fixture):
         finally:
             connection.close()
 
-    def test_grokbot_serve_listens_on_loopback_and_answers_a_tool_call(self):
-        started, _ = self.start_child()
-        self.assertEqual(started["access_control"], "none")
-        status, reply = self.status_call(started["port"])
-        self.assertEqual(status, 200)
-        payload = json.loads(reply["result"]["content"][-1]["text"])
-        self.assertTrue(reply["result"]["isError"])
-        self.assertEqual(payload["problem"], "local_request_unknown_request")
-        self.assertEqual(payload["delivery_authority"], "none")
+    def test_grokbot_serve_without_a_token_file_refuses_to_start(self):
+        """Fail closed: without --auth-token-file the
+        real entry script prints one labelled refusal and exits 2; it never
+        listens. The child is bounded by its own timeout."""
+        temp = tempfile.mkdtemp(dir=self.tmp.name)
+        env = dict(os.environ, PYTHONPATH=str(REPO_ROOT))
+        result = subprocess.run(
+            [sys.executable, str(ENTRY_SCRIPT), "--state-dir", self.state,
+             "--repository", str(REPO_ROOT), "--control-repo",
+             os.path.join(temp, "control"), "serve", "--port", "0"],
+            stdin=subprocess.DEVNULL, capture_output=True, env=env, cwd=temp,
+            text=True, timeout=CHILD_TIMEOUT_SECONDS)
+        self.assertEqual(result.returncode, cli_module.EXIT_USAGE, result.stderr)
+        refusal = json.loads(result.stdout)
+        self.assertFalse(refusal["ok"])
+        self.assertEqual(refusal["problem"], "grok_bot_bad_request")
+        self.assertIn("--auth-token-file", refusal["reason"])
+        self.assertNotIn("url", refusal)
 
     def test_grokbot_serve_with_a_token_file_requires_the_bearer(self):
         """SYNTHETIC token in a temporary owner-only file; never printed."""
@@ -638,7 +656,10 @@ class EntryScriptServeTests(Fixture):
         status, reply = self.status_call(started["port"],
                                          "Bearer " + SYNTHETIC_TOKEN)
         self.assertEqual(status, 200)
+        payload = json.loads(reply["result"]["content"][-1]["text"])
         self.assertTrue(reply["result"]["isError"])
+        self.assertEqual(payload["problem"], "local_request_unknown_request")
+        self.assertEqual(payload["delivery_authority"], "none")
 
 
 # ====================================================================
@@ -740,10 +761,12 @@ class BearerTokenTests(Fixture):
         finally:
             connection.close()
 
-    def test_without_a_token_the_endpoint_is_exactly_the_loopback_default(self):
-        server = self.serve(token=None)
-        self.assertEqual(server.access_control, "none")
-        self.assertEqual(self.post(server, rpc("ping"))[0], 200)
+    def test_without_a_token_the_endpoint_is_never_served(self):
+        """Fail closed: no token, no endpoint."""
+        with self.assertRaises(server_module.BearerTokenError):
+            server_module.LoopbackMcpServer(self.adapter)
+        with self.assertRaises(server_module.BearerTokenError):
+            server_module.LoopbackMcpServer(self.adapter, bearer_token=None)
 
     def test_a_missing_or_wrong_token_is_refused_with_401(self):
         server = self.serve()
@@ -809,11 +832,16 @@ class BearerTokenTests(Fixture):
             return json.loads(json.loads(body)["result"]["content"][-1]["text"])
         out = tool("request", {"text": PROSE})
         shown = tool("present", {"request_ref": out["request_ref"]})
+        unarmed = tool("approve", dict(shown["approval_binding"],
+                                       relayed_reply="approved", relay_ref="r"))
+        self.assertEqual(unarmed["problem"], "grok_bot_approval_not_armed")
         refused = tool("approve", dict(shown["approval_binding"],
-                                       relayed_reply="", relay_ref="r"))
+                                       relayed_reply="", relay_ref="r",
+                                       approval_code=self.arm(shown)))
         self.assertEqual(refused["problem"], "local_request_reply_not_affirmative")
         approved = tool("approve", dict(shown["approval_binding"],
-                                        relayed_reply="approved", relay_ref="r"))
+                                        relayed_reply="approved", relay_ref="r",
+                                        approval_code=self.arm(shown)))
         self.assertEqual(approved["status"], "approved_by_operator_attestation")
         self.assertEqual(approved["provenance_label"]["proof"],
                          "operator_attested_not_independently_verified")
@@ -915,9 +943,15 @@ class DeliveryOverMcpTests(ServerFixture, DeliveryFixture):
         result, shown = self.tool("present_delivery", self.present_arguments())
         self.assertEqual(result["content"][0]["text"], shown["display_text"])
         self.assertEqual(shown["status"], "delivery_presented")
-        result, approved = self.tool("approve_delivery", dict(
+        result, unarmed = self.tool("approve_delivery", dict(
             shown["approval_binding"], relayed_reply="approved",
             reply_to="grok-message-1", relay_ref="relay-1"))
+        self.assertEqual(unarmed["problem"], "grok_bot_approval_not_armed")
+        self.assertEqual(self.deliveries(), {})
+        result, approved = self.tool("approve_delivery", dict(
+            shown["approval_binding"], relayed_reply="approved",
+            reply_to="grok-message-1", relay_ref="relay-1",
+            approval_code=self.arm_delivery(shown)))
         self.assertEqual(approved["status"],
                          "delivery_authorized_by_operator_attestation")
         self.assertIs(approved["delivery_authorization"][
@@ -992,10 +1026,22 @@ class SetupContractTests(unittest.TestCase):
 
     def test_vendor_evidence_keeps_the_three_sources_apart(self):
         """X2: Grok Bot connector support, the SEPARATE xAI API remote-MCP
-        surface, and what this repository implemented and tested."""
+        surface, and what this repository implemented and tested. Grok Bot's
+        SEPARATE local-computer capability is kept apart and limited to
+        documentation."""
         evidence = server_module.PUBLIC_REACHABILITY["vendor_evidence"]
         self.assertEqual(sorted(evidence), ["grok_bot_connectors",
+                                            "grok_bot_local_computer",
                                             "xai_api_remote_mcp"])
+        local = evidence["grok_bot_local_computer"]
+        self.assertEqual(local["sources"], [
+            "https://docs.x.ai/grok-bot/computer-and-apps",
+            "https://docs.x.ai/grok-bot/approvals-security-and-privacy"])
+        for phrase in ("separate capabilities", "2026-10-08", "2026-10-06",
+                       "default Ask every time"):
+            self.assertIn(phrase, local["states"])
+        self.assertIn("vendor documentation only", local["limits"])
+        self.assertIn("not proof", local["limits"])
         for url in evidence["grok_bot_connectors"]["sources"]:
             self.assertTrue(url.startswith(("https://docs.x.ai/grok-bot/",
                                             "https://docs.x.ai/grok/")), url)
@@ -1006,6 +1052,21 @@ class SetupContractTests(unittest.TestCase):
         tested = server_module.PUBLIC_REACHABILITY["implemented_and_tested"]
         self.assertEqual(tested["mcp_revisions"], list(mcp.PROTOCOL_VERSIONS))
         self.assertIn("protocol shape only", tested["evidence"])
+
+    def test_reachability_is_not_described_as_cloud_only(self):
+        """The cloud-only characterization is
+        corrected, and the Quick Tunnel's SSE limit is stated with the SSE
+        branch kept."""
+        contract = server_module.PUBLIC_REACHABILITY
+        self.assertNotIn("not on this Mac", contract["reason"])
+        self.assertIn("LOCAL-COMPUTER execution is a SEPARATE capability",
+                      contract["reason"])
+        self.assertIn("public HTTPS URL", contract["reason"])
+        self.assertIn("JSON answer is the one carried",
+                      contract["forwarder_contract"]["quick_tunnel_sse"])
+        doc = " ".join(server_module.__doc__.split())
+        self.assertIn("Quick Tunnels do not support Server-Sent Events", doc)
+        self.assertIn("The SSE branch stays", doc)
 
     def test_the_advertised_revisions_are_exactly_the_tested_ones(self):
         """Each advertised revision is negotiated, accepted in its header

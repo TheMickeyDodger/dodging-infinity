@@ -2411,6 +2411,35 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_NESTING_DEPTH": 16,
         },
         "grok_bot/index.py": {"MAX_ENTRIES": 1024, "MAX_DELIVERY_RECEIPTS": 16},
+        # Grok Bot delivery: one worktree pointer file, read before any Git.
+        "grok_bot/delivery.py": {"MAX_POINTER_BYTES": 4096},
+        # Local arming: the approval code (the 128-bit nonce, in hex),
+        # wrong codes before an armed approval is killed, armed approvals.
+        "grok_bot/arming.py": {"CODE_HEX_CHARS": 32, "MAX_CODE_FAILURES": 5,
+                               "MAX_COMMITMENTS": 1024},
+        # The on-demand tunnel's controller and client.
+        "tunnel_control/common.py": {
+            "MAX_SOCKET_PATH_BYTES": 100,
+            "MAX_LOG_SCAN_BYTES": 1048576,
+            "MAX_MESSAGE_BYTES": 65536,
+        },
+        "tunnel_control/controller.py": {
+            "STARTUP_TIMEOUT_SECONDS": 30.0,
+            "STARTUP_SETTLE_SECONDS": 1.0,
+            "STOP_GRACE_SECONDS": 10.0,
+            "KILL_GRACE_SECONDS": 5.0,
+            "RETRY_SECONDS": 1.0,
+            "MAX_UNCONFIRMED_SECONDS": 300.0,
+            "CLIENT_IO_SECONDS": 5.0,
+            "POLL_SECONDS": 0.05,
+            "REQUEST_READ_SECONDS": 2.0,
+            "REPLY_SECONDS": 1.0,
+        },
+        "tunnel_control/tunnel.py": {
+            "STATUS_ASK_SECONDS": 5.0,
+            "STOP_REPLY_SECONDS": 60.0,
+            "ON_REPLY_SECONDS": 90.0,
+        },
         # Task 8 slice 2: the loopback MCP endpoint.
         "grok_bot/server.py": {
             "MAX_REQUEST_BODY_BYTES": 131072,

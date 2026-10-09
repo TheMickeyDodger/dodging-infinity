@@ -59,6 +59,7 @@ from pr_delivery.machine import DeliveryMachine  # noqa: E402
 from pr_delivery.store import DeliveryStore  # noqa: E402
 
 from grok_bot import adapter as adapter_module  # noqa: E402
+from grok_bot import authorize as authorize_module  # noqa: E402
 from grok_bot import delivery as delivery_module  # noqa: E402
 from grok_bot import index as index_module  # noqa: E402
 
@@ -185,14 +186,17 @@ class ProcessSeams(object):
 
 class DeliveryFixture(Fixture):
     """The slice-1 fixture plus pr_delivery over the recording double,
-    with every process seam contained FIRST."""
+    with every process seam contained FIRST. ``work`` is the configured,
+    approved delivery repository: a ``.git`` directory
+    SHAPE on disk, never ``git init``, so the adapter's filesystem identity
+    check admits it and the recording double answers every Git read."""
 
     def setUp(self):
         self.seams = ProcessSeams(self)
         super(DeliveryFixture, self).setUp()
         base = os.path.realpath(self.tmp.name)
         self.repo = os.path.join(base, "work")
-        os.makedirs(self.repo)
+        os.makedirs(os.path.join(self.repo, ".git"))
         self.evidence = os.path.join(base, "herd-evidence.json")
         with open(self.evidence, "w") as handle:
             json.dump({
@@ -216,6 +220,9 @@ class DeliveryFixture(Fixture):
                                     lambda store_dir=None: self.machine)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # The adapter again, now configured with the approved identity.
+        self.delivery_repository = self.repo
+        self.adapter = self.make_adapter()
 
     def present_arguments(self, **changes):
         arguments = {
@@ -235,9 +242,20 @@ class DeliveryFixture(Fixture):
         return self.ok(self.adapter.present_delivery(
             **self.present_arguments(**changes)))
 
+    def arm_delivery(self, shown):
+        """The human's LOCAL arming of exactly the
+        displayed delivery (``grok_bot.authorize``, as ``grokbot.py
+        authorize-delivery`` runs it), returning its one-time code."""
+        return authorize_module.arm_delivery(
+            index_module.RequestIndex(self.state), self.clock,
+            shown["proposal_digest_sha256"], shown["approval_binding"][
+                "expires_at"], shown["display_digest_sha256"], self.repo,
+            self.delivery_repository, None)["approval_code"]
+
     def delivery_approval(self, shown, **changes):
         arguments = dict(shown["approval_binding"], relayed_reply="approved",
-                         reply_to="grok-message-0001", relay_ref="relay-0001")
+                         reply_to="grok-message-0001", relay_ref="relay-0001",
+                         approval_code=self.arm_delivery(shown))
         arguments.update(changes)
         return arguments
 

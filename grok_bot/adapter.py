@@ -11,15 +11,23 @@ into an existing DI seam. It decides nothing.
   ``latest_expires_at`` as the expiry the human sees) and the complete
   rendering of it and of the whole recorded proposal. What is displayed
   is durably recorded first, as a presentation receipt.
-- ``approve``: compare, then refuse. The caller's binding must equal,
-  field by field and type-exactly, the one last displayed for its
-  request (``grok_bot_not_presented`` / ``grok_bot_binding_not_displayed``
-  otherwise, naming the fields). Nothing is filled in or corrected from
-  the receipt: when it matches, the caller's own values and relayed reply
-  go to the surface's ``attest_approval`` UNMODIFIED, and the surface
+- ``approve``: compare, then fire, then refuse or apply. The caller's
+  binding must equal, field by field and type-exactly, the one last
+  displayed for its request (``grok_bot_not_presented`` /
+  ``grok_bot_binding_not_displayed`` otherwise, naming the fields). Then
+  the approval must have been ARMED by the local arming command on the DI
+  machine (``grok_bot.arming``): the caller's
+  ``approval_code`` must reproduce the stored one-way commitment over
+  exactly the displayed binding, and an armed approval fires once
+  (``grok_bot_approval_not_armed`` / ``_code_mismatch`` / ``_consumed``).
+  Its consumption is durable BEFORE anything is applied. Nothing is filled
+  in or corrected from the receipt: the caller's own values and relayed
+  reply go to the surface's ``attest_approval`` UNMODIFIED, and the surface
   refuses a missing, stale, expired or non-affirmative one with its own
-  existing code. The receipt is an additional, narrower gate; the
-  surface's own checks are unchanged.
+  existing code. The receipt and the arming are additional, narrower
+  gates; the surface's own checks are unchanged. Nothing reachable over
+  MCP can arm: only the local ``grokbot.py ... authorize`` command writes a
+  commitment (``grok_bot.authorize``, never imported here).
 - ``status``, ``recover``, ``cancel``, ``run``: the surface's own
   operations; ``run`` reaches the run bridge only through the surface
   (``LocalRequestSurface.run_command``). ``run`` ``dispatch`` takes no
@@ -45,8 +53,9 @@ into an existing DI seam. It decides nothing.
   3): the SEPARATE delivery ceremony, relayed to pr_delivery's own
   ``present-dots`` and ``attest-dots`` (``grok_bot.delivery``), with the
   same complete display and compare-then-refuse receipt discipline as a
-  Mission proposal. pr_delivery's ceremony alone records a delivery
-  authorization; nothing here performs a step of it.
+  Mission proposal, and the same local arming (``authorize-delivery``)
+  before ``approve_delivery`` fires. pr_delivery's ceremony alone records a
+  delivery authorization; nothing here performs a step of it.
 
 Every result is the surface's (or the ceremony's) result, labelled with
 ``transport`` (``grok_bot``, a transport only), ``delivery_authority``
@@ -67,6 +76,7 @@ from local_request import store as request_store
 from local_request import surface as surface_module
 from workflow_authority.digest import json_digest, text_digest
 
+from grok_bot import arming
 from grok_bot import framing
 from grok_bot import index as index_module
 
@@ -81,6 +91,8 @@ PROBLEM_OPERATOR_FAILED = "grok_bot_operator_failed"
 PROBLEM_IN_FLIGHT = "grok_bot_request_in_flight"
 PROBLEM_NOT_PRESENTED = "grok_bot_not_presented"
 PROBLEM_NOT_DISPLAYED = "grok_bot_binding_not_displayed"
+# The request tool continues NO Operator session.
+PROBLEM_OPERATOR_SESSION_REFUSED = "grok_bot_operator_session_refused"
 # Cancel recovery after a lost request reply (task d9e17d).
 PROBLEM_ORIGIN_MISMATCH = "grok_bot_cancel_origin_mismatch"
 PROBLEM_RECOVERY_INTERRUPTED = "grok_bot_cancel_recovery_interrupted"
@@ -108,6 +120,9 @@ APPROVAL_FIELDS = (
     "approved_action_scope", "approved_delivery_targets", "expires_at",
     "relayed_reply", "relay_ref",
 )
+# The approve tool's arguments: exactly what the surface receives, plus the
+# one-time code the local arming printed (never handed to the surface).
+APPROVE_ARGUMENTS = APPROVAL_FIELDS + ("approval_code",)
 # The arguments each run command's bridge operation takes, exactly, with
 # the type each must have (None: any value; the bridge validates it).
 RUN_ARGUMENTS = {"dispatch": {},
@@ -143,11 +158,12 @@ DELIVERY_PRESENT_FIELDS = (
 )
 # The delivery binding a reply must restate (as displayed) and the relay.
 DELIVERY_APPROVAL_FIELDS = ("proposal_digest_sha256", "expires_at",
-                            "relayed_reply", "reply_to", "relay_ref")
+                            "relayed_reply", "reply_to", "relay_ref",
+                            "approval_code")
 TOOLS = {
     "request": ("text", "conversation_ref", "operator_session_id"),
     "present": ("request_ref",),
-    "approve": APPROVAL_FIELDS,
+    "approve": APPROVE_ARGUMENTS,
     "status": ("request_ref",),
     "recover": ("request_ref",),
     "cancel": ("request_ref", "control_capability", "text", "conversation_ref"),
@@ -238,6 +254,10 @@ def display_text(presented, binding):
         " requirements and budget):",
     ] + rendered_lines("proposal", presented["proposal"]) + [
         "",
+        "To approve exactly this proposal, first arm it on the DI machine:"
+        " run the arming command presented with it in your local shell,"
+        " approving that command only if every value in it matches this"
+        " proposal. It prints a one-time approval code.",
         "To approve exactly this proposal, reply with a separate message"
         " containing only: approved",
         "This approves engineering only: no commit, push, pull request,"
@@ -271,12 +291,24 @@ def displayed_mismatch(displayed, caller, keys=index_module.DISPLAYED_BINDING_KE
 
 class GrokBotAdapter(object):
 
-    def __init__(self, surface, operator_session, repository, index, clock):
+    def __init__(self, surface, operator_session, repository, index, clock,
+                 delivery_repository=None, delivery_workspaces_root=None,
+                 local_command=None):
         self._surface = surface
         self._session = operator_session
         self._repository = repository
         self._index = index
         self._clock = clock
+        # The configured, approved identity the delivery tools accept (the
+        # serve/run --workspace-repository and --workspaces-root); None
+        # refuses every delivery tool.
+        self._delivery_repository = delivery_repository
+        self._delivery_workspaces_root = delivery_workspaces_root
+        # The local command prefix the arming argv starts with (the entry
+        # script, its state directory and configured workspaces). It only
+        # TELLS the human what to run; nothing here runs it.
+        self._local_command = list(local_command or (
+            "grokbot.py", "--state-dir", index.directory))
 
     def call(self, tool, arguments):
         """One tool call: a closed tool name and a closed argument set."""
@@ -375,6 +407,18 @@ class GrokBotAdapter(object):
         ):
             _refuse(PROBLEM_BAD_REQUEST, "operator_session_id must be null or a"
                     " string of at most %d characters" % MAX_REF_CHARS)
+        if operator_session_id is not None:
+            # Before the index or the provider: nothing is recorded and no
+            # turn runs. Not a foreign id only, but every id, including one
+            # this transport's own reply carried: the restrictive posture is
+            # fresh-only (its verifier refuses a ``resume``), so no session
+            # can be continued under it.
+            _refuse(PROBLEM_OPERATOR_SESSION_REFUSED,
+                    "the request tool continues no Operator session: every"
+                    " request is one fresh, read-only Operator turn. Send the"
+                    " whole request again as text (with the answer to any"
+                    " question the Operator asked) and no operator_session_id;"
+                    " nothing was run or recorded")
         key = json_digest(origin)
         state, request_ref = self._index.begin(key, self._clock())
         if state == index_module.STATE_PROPOSED:
@@ -451,20 +495,25 @@ class GrokBotAdapter(object):
                                             self._clock())
         presented.update(approval_binding=binding, display_text=text,
                          display_digest_sha256=text_digest(text),
+                         arming=arming.arming(arming.mission_arming_argv(
+                             self._local_command, binding, text_digest(text))),
                          limitation=LIMITATION)
         return presented
 
     def _approve(self, **binding):
-        """Compare, then refuse: the caller's binding must equal the one
-        last displayed for its request, field by field. Nothing is ever
-        filled in or corrected from the receipt; when it matches, the
-        caller's own values go to the surface, which checks them again.
-        The comparison and the surface's application run in ONE critical
-        section, so no presentation can replace the receipt between them."""
+        """Compare, fire, then apply: the caller's binding must equal the
+        one last displayed for its request, field by field, and the approval
+        must have been armed locally for exactly that binding (``_fire``).
+        Nothing is ever filled in or corrected from the receipt; when it
+        matches, the caller's own values go to the surface, which checks
+        them again. The comparison, the firing and the surface's application
+        run in ONE critical section, so no presentation or arming can land
+        between them."""
         fields = dict((name, binding.get(name)) for name in APPROVAL_FIELDS)
         request_ref = fields["request_ref"]
         if request_ref is None:
-            # The surface refuses an absent reference with its own code.
+            # The surface refuses an absent reference with its own code
+            # (its first check), so nothing can be applied on this path.
             return self._surface.attest_approval(**fields)
         with self._index.serialized():
             receipt = self._index.presentation(request_ref)
@@ -482,7 +531,60 @@ class GrokBotAdapter(object):
                         " and nothing was corrected" % (
                             request_ref, ", ".join(differing)),
                         fields=differing)
-            return self._surface.attest_approval(**fields)
+            shown, display = receipt["binding"], receipt["display_digest_sha256"]
+            self._fire(arming.mission_key(request_ref),
+                       lambda code: arming.mission_preimage(shown, display, code),
+                       binding.get("approval_code"))
+            result = self._surface.attest_approval(**fields)
+        result["arming"] = {"locally_armed": True,
+                            "arming_source": "local_shell_command"}
+        return result
+
+    def _fire(self, key, preimage_for, approval_code):
+        """Fire the approval armed under ``key``, or refuse; the caller holds
+        ``serialized()``. The code must reproduce the stored commitment over
+        exactly the displayed binding. A wrong code is counted (the
+        commitment dies at ``arming.MAX_CODE_FAILURES``); a right one is
+        recorded CONSUMED, durably, before anything is applied, so an armed
+        approval fires once and a crash after this point never applies it
+        twice. This reads the commitments; it never writes them."""
+        if approval_code is None:
+            _refuse(arming.PROBLEM_NOT_ARMED,
+                    "an approval_code is required: arm the approval with the"
+                    " local arming command on the DI machine first; nothing was"
+                    " recorded")
+        if not arming.is_code(approval_code):
+            _refuse(PROBLEM_BAD_REQUEST,
+                    "approval_code must be the %d lowercase hex characters the"
+                    " local arming printed" % arming.CODE_HEX_CHARS)
+        try:
+            record = arming.load_commitments(
+                self._index.directory)["commitments"].get(key)
+        except arming.CommitmentsError as exc:
+            raise index_module.RequestIndexError(str(exc), exc.problem)
+        if record is None:
+            _refuse(arming.PROBLEM_NOT_ARMED,
+                    "nothing is armed for this approval: run the arming"
+                    " command presented with it in the local shell on the DI"
+                    " machine; nothing was recorded")
+        digest = record["commitment_sha256"]
+        marker = self._index.consumption(digest)
+        if marker is not None and marker["state"] != index_module.CONSUMPTION_OPEN:
+            _refuse(arming.PROBLEM_CONSUMED,
+                    "this armed approval was already %s; arm it again to"
+                    " approve. Nothing was recorded" % marker["state"].lower(),
+                    state=marker["state"])
+        if not arming.reproduces(digest, preimage_for(approval_code)):
+            marker = self._index.record_code_failure(
+                digest, self._clock(), arming.MAX_CODE_FAILURES)
+            _refuse(arming.PROBLEM_CODE_MISMATCH,
+                    "the approval_code does not fire the approval armed for"
+                    " exactly this binding (%d of %d wrong codes; at %d it is"
+                    " killed); nothing was recorded"
+                    % (marker["failures"], arming.MAX_CODE_FAILURES,
+                       arming.MAX_CODE_FAILURES),
+                    failures=marker["failures"])
+        self._index.record_consumed(digest, self._clock())
 
     def _status(self, request_ref=None):
         return self._surface.status(request_ref)
@@ -594,6 +696,11 @@ class GrokBotAdapter(object):
     def _present_delivery(self, **arguments):
         from grok_bot import delivery as delivery_module
         args = delivery_module.ceremony_arguments(arguments)
+        # The identity check, on the filesystem, BEFORE the ceremony (and so
+        # before any Git process): the ceremony receives exactly the checked
+        # name, which is its own realpath.
+        args.repo = delivery_module.approved_repository(
+            args.repo, self._delivery_repository, self._delivery_workspaces_root)
         # One critical section with every delivery approval, exactly as for
         # Mission presentations: the ceremony's read and the receipt write
         # land together.
@@ -611,12 +718,16 @@ class GrokBotAdapter(object):
             "approval_binding": {"proposal_digest_sha256": digest,
                                  "expires_at": proposal["expires_at"]},
             "display_text": text, "display_digest_sha256": text_digest(text),
+            "arming": arming.arming(arming.delivery_arming_argv(
+                self._local_command, digest, proposal["expires_at"],
+                text_digest(text), args.repo)),
             "reply": document["reply"], "source": document["source"],
             "residual_risk": document["residual_risk"], "limitation": LIMITATION,
         }
 
     def _approve_delivery(self, proposal_digest_sha256=None, expires_at=None,
-                          relayed_reply=None, reply_to=None, relay_ref=None):
+                          relayed_reply=None, reply_to=None, relay_ref=None,
+                          approval_code=None):
         """Compare, then refuse, then relay. The digest the human's reply
         answers names the presented proposal: the receipt is content-
         addressed (its key is that proposal's own digest), so the proposal
@@ -652,12 +763,25 @@ class GrokBotAdapter(object):
                         "the relayed delivery binding differs from the one"
                         " displayed in %s; nothing was recorded and nothing was"
                         " corrected" % ", ".join(differing), fields=differing)
+            # The same identity as present_delivery, re-checked before the
+            # ceremony re-reads the live repository with Git.
+            realpath = delivery_module.bound_repository(
+                receipt["proposal"], self._delivery_repository,
+                self._delivery_workspaces_root)
+            display = receipt["display_digest_sha256"]
+            shown_expiry = receipt["proposal"]["expires_at"]
+            self._fire(arming.delivery_key(digest),
+                       lambda code: arming.delivery_preimage(
+                           digest, shown_expiry, display, realpath, code),
+                       approval_code)
             delivery_id = delivery_module.attest(
                 receipt["proposal"], digest, relayed_reply, reply_to, relay_ref)
         return {
             "ok": True, "status": "delivery_authorized_by_operator_attestation",
             "delivery_id": delivery_id, "proposal_digest_sha256": digest,
             "delivery_authorization": delivery_module.grant(delivery_id),
+            "arming": {"locally_armed": True,
+                       "arming_source": "local_shell_command"},
         }
 
     def _delivery_status(self, delivery_id=None):
@@ -665,7 +789,9 @@ class GrokBotAdapter(object):
         if not isinstance(delivery_id, str):
             _refuse(PROBLEM_BAD_REQUEST, "delivery_id must be a string")
         return {"ok": True, "status": "delivery_status", "delivery_id": delivery_id,
-                "delivery": delivery_module.status(delivery_id)}
+                "delivery": delivery_module.status(
+                    delivery_id, self._delivery_repository,
+                    self._delivery_workspaces_root)}
 
     def _run(self, request_ref=None, command=None, arguments=None):
         if command is not None and not isinstance(command, str):
