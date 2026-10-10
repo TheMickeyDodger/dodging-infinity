@@ -71,6 +71,10 @@ ALLOWED_GH_ARGV = (
 CHECK_RUNS_ENDPOINT = "repos/%s/%s/commits/%s/check-runs"
 
 _PR_JSON_FIELDS = "number,url,headRefOid,headRefName,baseRefName,state"
+# ``pr view`` also reads whether the head lives in another repository: a
+# ``pr_update`` pushes to this remote's head branch, so a fork head is an
+# unsupported identity and refuses.
+_PR_VIEW_JSON_FIELDS = _PR_JSON_FIELDS + ",isCrossRepository"
 
 __all__ = ("DeliveryTransport", "DeliveryTransportError")
 
@@ -254,6 +258,19 @@ class DeliveryTransport(object):
                 " it lossily"
             )
 
+    def worktree_status_z(self, path):
+        """NUL-separated porcelain for the ``pr_update`` working-tree
+        tolerance: every path is raw bytes terminated by NUL and never
+        C-quoted, so no path is ever parsed out of quoted text. Untracked
+        files are listed one by one and renames are not detected, so each
+        record carries exactly one path. Parsed by
+        ``candidate.worktree_dirty_paths``; returned as bytes."""
+        _, stdout, _ = self._git(
+            path, ["--no-optional-locks", "status", "--porcelain=v1", "-z",
+                   "--untracked-files=all", "--no-renames"],
+        )
+        return stdout
+
     def diff_index_raw(self, path, base_oid):
         """Staged index vs ``base_oid``: ``--raw -z --no-renames``."""
         _, stdout, _ = self._git(
@@ -319,6 +336,22 @@ class DeliveryTransport(object):
         parent = self.rev_parse(path, oid + "^1")
         tree = self.rev_parse(path, oid + "^{tree}")
         return parent, tree
+
+    def commit_parents(self, path, oid):
+        """EVERY parent of commit ``oid``, in order: ``rev-parse <oid>^@``
+        prints one full object id per parent (none for a root commit).
+        ``commit_parent_and_tree`` reports only the FIRST parent, which
+        cannot tell one new commit from a merge; this read can, and it
+        stays inside the closed verb set (``rev-parse``)."""
+        _, text = self._git_text(path, ["rev-parse", oid + "^@"])
+        parents = text.split()
+        for item in parents:
+            if len(item) != 40 or any(ch not in "0123456789abcdef"
+                                      for ch in item):
+                raise DeliveryTransportError(
+                    "parent of %s is not a full object id: %r" % (oid, item)
+                )
+        return parents
 
     def ls_remote(self, path, remote_name, ref):
         _, text = self._git_text(path, ["ls-remote", "--exit-code",
@@ -456,7 +489,7 @@ class DeliveryTransport(object):
     def gh_pr_view(self, owner, repo, number):
         return self._gh_json([
             "pr", "view", str(int(number)), "--repo",
-            "%s/%s" % (owner, repo), "--json", _PR_JSON_FIELDS,
+            "%s/%s" % (owner, repo), "--json", _PR_VIEW_JSON_FIELDS,
         ])
 
     def gh_check_runs(self, owner, repo, sha):

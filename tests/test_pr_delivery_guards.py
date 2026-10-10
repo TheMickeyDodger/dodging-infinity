@@ -21,6 +21,7 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)
@@ -41,7 +42,10 @@ from test_pr_delivery import (                               # noqa: E402
     GITHUB_URL,
     PUSH_STEP,
     SOURCE_BRANCH,
+    SOURCE_REF,
     DeliveryFixture,
+    UpdateFixture,
+    _template,
     git,
 )
 
@@ -457,6 +461,225 @@ class PretoolGuardUnchangedTests(unittest.TestCase):
         self.assertNotIn("_delivery_receipt_decision", source)
         self.assertIn("approval_valid", source)
         self.assertIn("push_approval_valid", source)
+
+
+
+class PrUpdatePushHookTests(unittest.TestCase):
+    """Case 15, through the INSTALLED hooks: a ``pr_update`` delivery's
+    COMMIT lands through the pre-commit guard on its receipt alone, and
+    its PUSH receipt binds the APPROVED pull request head as the expected
+    remote old OID: the pre-push hook accepts exactly that and refuses a
+    remote at anything else, even a push git itself would accept."""
+
+    def setUp(self):
+        self.fx = UpdateFixture(self, hooks=True)
+        self.delivery_id = self.fx.authorize_update()
+        self.assertFalse(guards.approval_path(self.fx.work).exists())
+        self.assertEqual(self.fx.machine.advance_once(self.delivery_id),
+                         "advanced")
+        record = self.fx.record(self.delivery_id)
+        self.assertEqual(record["phase"], auth.PHASE_COMMITTED)
+        self.commit_oid = git("rev-parse", "HEAD", cwd=self.fx.work)
+        self.assertEqual(git("rev-parse", "HEAD^1", cwd=self.fx.work),
+                         self.fx.baseline)
+
+    def _executing_push(self):
+        """Persist the PUSH receipt exactly as the machine derives it for
+        this kind, in state executing, immediately before the effect."""
+        record = self.fx.record(self.delivery_id)
+        binding = {
+            "repository_realpath": record["repository"]["realpath"],
+            "remote_name": "origin",
+            "remote_url_exact": record["remote"]["url_exact"],
+            "remote_url_push": record["remote"]["url_push"],
+            "source_ref": SOURCE_REF,
+            "source_commit": self.commit_oid,
+            "destination_ref": SOURCE_REF,
+            "expected_remote_old_oid": record["original_baseline"][
+                "commit_sha"],
+            "candidate_identity_digest": record["candidate"][
+                "identity_digest_sha256"],
+        }
+        receipt = receipts.derive(record, PUSH_STEP, binding,
+                                  self.fx.clock())
+        receipt["state"] = auth.RECEIPT_EXECUTING
+        record["steps"][PUSH_STEP]["receipt"] = receipt
+        record["steps"][PUSH_STEP]["state"] = auth.STEP_EXECUTING
+        with self.fx.store.lock():
+            document = self.fx.store.load()
+            document["deliveries"][self.delivery_id] = record
+            self.fx.store.save(document)
+        return receipt
+
+    def _transfer(self):
+        return hook_git(["push", "-q", "origin", SOURCE_BRANCH],
+                        cwd=self.fx.work)
+
+    def test_the_approved_head_as_remote_old_oid_is_accepted(self):
+        self._executing_push()
+        completed = self._transfer()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("HERD PUSH AUTHORIZED BY PR delivery receipt",
+                      completed.stderr)
+        self.assertEqual(self.fx.remote_oid(SOURCE_REF), self.commit_oid)
+
+    def test_a_remote_old_oid_other_than_the_approved_head_is_refused(self):
+        self._executing_push()
+        # The remote head branch moved BACK to an ancestor of the approved
+        # head (a direct ref write in the temporary bare repository): git
+        # would accept the fast-forward transfer, so only the hook decides.
+        older = _template()["baseline"]
+        git("update-ref", SOURCE_REF, older, cwd=self.fx.bare)
+        completed = self._transfer()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("HERD PUSH BLOCKED", completed.stderr)
+        self.assertIn("expected_remote_old_oid", completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+        self.assertEqual(self.fx.remote_oid(SOURCE_REF), older)
+
+    def test_the_machine_completes_through_the_same_hook(self):
+        self.assertEqual(self.fx.machine.advance(self.delivery_id),
+                         "complete")
+        self.assertEqual(self.fx.remote_oid(SOURCE_REF), self.commit_oid)
+        record = self.fx.record(self.delivery_id)
+        self.assertEqual(record["steps"][PUSH_STEP]["receipt"]["binding"][
+            "expected_remote_old_oid"], self.fx.baseline)
+        self.assertFalse(guards.push_approval_path(self.fx.work).exists())
+
+
+
+class PrUpdateProposedParentsTests(unittest.TestCase):
+    """Round 03, the pre-ref-movement enforcement at its two halves:
+    ``herdr.guards._delivery_proposed_parents`` reads the COMPLETE parent set
+    of the commit object a reference transaction proposes for HEAD's branch,
+    BEFORE the ref moves; ``receipts.guard_decision`` refuses a ``pr_update``
+    COMMIT receipt unless that set is exactly [the approved head]. A
+    ``pull_request`` receipt never consults the fact (legacy unchanged)."""
+
+    def _executing_commit(self, fx, delivery_id, phase):
+        record = fx.record(delivery_id)
+        record["phase"] = phase
+        binding = dict(
+            guards._delivery_commit_live(fx.work),
+            candidate_identity_digest=record["candidate"][
+                "identity_digest_sha256"],
+            expected_tree_oid=fx.transport.write_tree(str(fx.work)),
+            committer_name="Delivery Human",
+            committer_email="human@example.com",
+            message_sha256="1" * 64,
+        )
+        if record["mode"] == auth.MODE_PULL_REQUEST:
+            record["steps"][BASE_REFRESH]["state"] = auth.STEP_NOT_NEEDED
+        receipt = receipts.derive(record, COMMIT_STEP, binding, fx.clock())
+        receipt["state"] = auth.RECEIPT_EXECUTING
+        record["steps"][COMMIT_STEP]["receipt"] = receipt
+        record["steps"][COMMIT_STEP]["state"] = auth.STEP_EXECUTING
+        with fx.store.lock():
+            document = fx.store.load()
+            document["deliveries"][delivery_id] = record
+            fx.store.save(document)
+
+    def _decide(self, fx, **extra):
+        live = dict(guards._delivery_commit_live(fx.work), **extra)
+        return receipts.guard_decision(fx.work, COMMIT_STEP, live,
+                                       fx.clock())
+
+    def test_a_pr_update_commit_needs_exactly_the_approved_head_as_parents(
+            self):
+        fx = UpdateFixture(self)
+        delivery_id = fx.authorize_update()
+        self._executing_commit(fx, delivery_id, auth.PHASE_AUTHORIZED)
+        approved = fx.baseline
+        ok, reason = self._decide(fx, proposed_commit_parents=[approved])
+        self.assertTrue(ok, reason)
+        for parents in ([approved, "f" * 40], ["f" * 40, approved],
+                        ["f" * 40], [], None):
+            with self.subTest(parents=parents):
+                ok, reason = self._decide(fx,
+                                          proposed_commit_parents=parents)
+                self.assertFalse(ok)
+                self.assertIn(receipts.PROBLEM_PROPOSED_PARENTS, reason)
+        # The pre-commit hook has no commit object to read, so it supplies
+        # no such fact; its decision on the binding is as before.
+        ok, reason = self._decide(fx)
+        self.assertTrue(ok, reason)
+
+    def test_a_pull_request_commit_receipt_never_consults_the_fact(self):
+        fx = DeliveryFixture(self)
+        fx.authorize()
+        self._executing_commit(fx, "prd-test", auth.PHASE_BASE_CURRENT)
+        for parents in ([fx.baseline, "f" * 40], None, []):
+            with self.subTest(parents=parents):
+                ok, reason = self._decide(fx,
+                                          proposed_commit_parents=parents)
+                self.assertTrue(ok, reason)
+
+    def test_the_guard_reads_the_complete_parent_set_or_none(self):
+        fx = UpdateFixture(self)
+        approved = fx.baseline
+        single = run_git("-C", str(fx.work), "commit-tree",
+                         approved + "^{tree}", "-p", approved, "-m", "one")
+        merged = run_git("-C", str(fx.work), "commit-tree",
+                         approved + "^{tree}", "-p", approved, "-p",
+                         _template()["baseline"], "-m", "two")
+        read = guards._delivery_proposed_parents
+        self.assertEqual(
+            read(fx.work, [(approved, single, SOURCE_REF)], SOURCE_REF),
+            [approved])
+        self.assertEqual(
+            read(fx.work, [(approved, merged, SOURCE_REF)], SOURCE_REF),
+            [approved, _template()["baseline"]])
+        # A root commit has an empty parent set: readable, and refused by
+        # the receipt check (it is not [approved head]).
+        root = run_git("-C", str(fx.work), "commit-tree",
+                       approved + "^{tree}", "-m", "root")
+        self.assertEqual(
+            read(fx.work, [(approved, root, SOURCE_REF)], SOURCE_REF), [])
+        # FAIL CLOSED: anything that cannot be read exactly is None (which
+        # the receipt check refuses, with the reason in its message), never
+        # a pass, and nothing raises out of the hook helper.
+        tree = run_git("-C", str(fx.work), "rev-parse",
+                       approved + "^{tree}")
+        blob = run_git("-C", str(fx.work), "rev-parse",
+                       approved + ":keep.txt")
+        cases = {
+            "no update of HEAD's branch": [],
+            "two updates of HEAD's branch": [
+                (approved, single, SOURCE_REF),
+                (approved, merged, SOURCE_REF)],
+            "update of another ref only": [
+                (approved, single, "refs/heads/other")],
+            "missing object": [(approved, "e" * 40, SOURCE_REF)],
+            "tree object, not a commit": [(approved, tree, SOURCE_REF)],
+            "blob object, not a commit": [(approved, blob, SOURCE_REF)],
+            "option-shaped value": [(approved, "--version", SOURCE_REF)],
+            "short oid": [(approved, single[:12], SOURCE_REF)],
+            "uppercase oid": [(approved, single.upper(), SOURCE_REF)],
+            "non-hex oid": [(approved, "g" * 40, SOURCE_REF)],
+        }
+        for label, updates in cases.items():
+            with self.subTest(case=label):
+                self.assertIsNone(read(fx.work, updates, SOURCE_REF))
+        # A read whose output is malformed or truncated, or that raises.
+        valid = [(approved, single, SOURCE_REF)]
+        for label, output in (
+            ("short parent id", approved[:39]),
+            ("non-hex parent id", "z" * 40),
+            ("truncated second id", approved + "\n" + approved[:20]),
+            ("trailing garbage", approved + " junk"),
+        ):
+            with self.subTest(case=label):
+                with mock.patch.object(guards, "gitout",
+                                       return_value=output):
+                    self.assertIsNone(read(fx.work, valid, SOURCE_REF))
+        for error in (RuntimeError("fatal: bad object"), OSError("gone")):
+            with self.subTest(case=type(error).__name__):
+                with mock.patch.object(guards, "gitout",
+                                       side_effect=error):
+                    self.assertIsNone(read(fx.work, valid, SOURCE_REF))
+        # Empty output reads as an empty parent set, which is refused.
+        with mock.patch.object(guards, "gitout", return_value=""):
+            self.assertEqual(read(fx.work, valid, SOURCE_REF), [])
 
 
 if __name__ == "__main__":

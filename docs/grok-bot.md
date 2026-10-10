@@ -361,6 +361,32 @@ and approval. These are pr_delivery's existing `present-dots` and
      operator-attested (`dots_operator_attested`) PR Delivery Authorization.
      It never records `local_terminal`.
 
+**Updating an existing open pull request (`pr_update`).** `present_delivery`
+also accepts `pr_number` and `head_branch`, both or neither: present-dots'
+own `--pr-number` and `--head-branch`.
+- The proposal then authorizes exactly `COMMIT` and `PUSH`: ONE new commit
+  on that pull request's head branch, a strict fast-forward of its head. It
+  never refreshes a base and never opens a pull request.
+- Above the complete proposal, the display names:
+  - the pull request number and its head and base branches;
+  - the expected head SHA;
+  - the staged hash (sha256 of `git diff --cached --binary` against that
+    head, re-checked before the commit and by the git hook);
+  - the candidate identity, a separate binding;
+  - the `prd-` delivery id that approval will mint;
+  - exactly the authorized steps, read from the proposal itself.
+- The display never claims `PR_CREATE` or `BASE_REFRESH`. The grant reports
+  the record's own steps (`COMMIT`, `PUSH`), with `performed_steps` empty.
+- A closed, merged, moved or mismatched pull request is refused by name.
+  Nothing is recorded.
+- This transport still mints nothing and performs no step. The checkout
+  prerequisites differ for this kind:
+  - HEAD is on the named head branch, at the pull request's head, and the
+    remote head ref equals it;
+  - the read adds `gh pr view` for that one pull request;
+  - unrelated unstaged or untracked paths may remain, if disjoint from every
+    candidate path.
+
 **Ceremony prerequisites and effects.** `present_delivery` and
 `approve_delivery` each run pr_delivery's live-repository read on the DI
 machine, through its real git transport.
@@ -421,7 +447,7 @@ perform real delivery effects in temporary repositories.
 | State | What it means | What it is not |
 |---|---|---|
 | **Verified** | The engineering result is verified (for a Mission, `verify` reached VERIFIED). `present-dots` binds its Herdr COMPLETE, Reviewer APPROVE and independent verification evidence into the proposal. | It is not an authorization. It authorizes no delivery. |
-| **Authorized** | `approve_delivery` succeeded. pr_delivery recorded one PR Delivery Authorization in phase `AUTHORIZED`, every step `pending`. | It is not a delivery. Nothing is committed, pushed or opened yet. |
+| **Authorized** | `approve_delivery` succeeded. pr_delivery recorded one PR Delivery Authorization in phase `AUTHORIZED`, every authorized step `pending`. | It is not a delivery. Nothing is committed, pushed or opened yet. |
 | **Delivered** | A human ran pr_delivery's own drive and its steps succeeded: the record reached `COMPLETE`. A Mission's `status` reports `delivered` only from attested P1-A6 receipts, and only for a delivery whose parent is that Mission. | It is not a merge. Merging is never authorized here. |
 
 An `AUTHORIZED` record must never be read as delivered. `delivery_status` (or
@@ -438,7 +464,9 @@ python3 -m pr_delivery advance --delivery-id prd-…
 ```
 
 - `advance` runs the authorized steps in order: `BASE_REFRESH`, `COMMIT`,
-  `PUSH`, `PR_CREATE`. It goes through pr_delivery's own transport.
+  `PUSH`, `PR_CREATE`. It goes through pr_delivery's own transport. For a
+  `pr_update` delivery it runs `COMMIT` and `PUSH` only, then one effect-free
+  read of the pull request before `COMPLETE`.
 - It stops when the record is `COMPLETE` or `BLOCKED`, or when a retryable
   failure is recorded. An expired authorization blocks.
 - During `advance`, the installed Herdr git guards accept each commit and

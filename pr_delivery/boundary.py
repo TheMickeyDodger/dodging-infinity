@@ -34,6 +34,11 @@ POST_COMMIT_REVERIFICATION_NOTE = (
     " fast-forward, disjointness, candidate identity re-match, and base"
     " CI proof"
 )
+PR_UPDATE_REVERIFICATION_NOTE = (
+    "the reverification command is not re-run; the pr_update kind never"
+    " refreshes or advances the approved head, so the recorded"
+    " verification stays bound to exactly that head"
+)
 
 
 def _step_view(record, step):
@@ -63,7 +68,11 @@ def _next_action(record, now):
         return {"action": NEXT_RESOLVE_BLOCKER, "step": None}
     if auth.is_expired(record, now):
         return {"action": NEXT_EXPIRED, "step": None}
-    step = auth.STEP_FOR_PHASE[phase]
+    step = auth.step_for_phase(record["mode"], phase)
+    if step is None:
+        # A ``pr_update`` record at PUSHED: the next advance is the
+        # effect-free observation of the pull request, not a step.
+        return {"action": NEXT_ADVANCE, "step": None}
     if record["steps"][step]["state"] == auth.STEP_FAILED_RETRYABLE:
         return {"action": NEXT_WAIT_RETRY, "step": step}
     return {"action": NEXT_ADVANCE, "step": step}
@@ -101,6 +110,9 @@ def project_status(record, now):
             "expires_at": record["expiration"]["expires_at"],
             "revoked": auth.is_revoked(record),
             "allowed_actions": list(record["allowed_actions"]),
+            "mode": record["mode"],
+            # Only a ``pr_update`` record carries this key.
+            "pull_request_number": record.get("pull_request_number"),
             "repository_url": record["repository"]["repository_url"],
             "source_branch": record["source"]["branch"],
             "target_base_branch": record["target_base"]["branch"],
@@ -122,7 +134,11 @@ def project_status(record, now):
                 "base_oid": verification["base_oid"],
             },
             "after_base_refresh": refresh_observed,
-            "post_commit_note": POST_COMMIT_REVERIFICATION_NOTE,
+            "post_commit_note": (
+                PR_UPDATE_REVERIFICATION_NOTE
+                if record["mode"] == auth.MODE_PR_UPDATE
+                else POST_COMMIT_REVERIFICATION_NOTE
+            ),
         },
         "base_refresh": dict(
             _step_view(record, auth.STEP_BASE_REFRESH),

@@ -851,6 +851,86 @@ Then pipe `{"delivery_proposal": ..., "relayed_reply": "approved"}` into
   created no remote branch or PR. [SUPERSEDED: "nothing has been delivered
   live" is history.]
 
+Updating an EXISTING open pull request (`pr_update`). Add
+`--pr-number N --head-branch B` (both or neither) to `present-dots` or
+`authorize`, from a checkout of `B` sitting at the pull request's current
+head, with the reviewed candidate staged. The proposal then names ONE new
+commit on `B`, a strict fast-forward of that head, and authorizes exactly
+`COMMIT` and `PUSH`. It never refreshes a base and never creates a pull
+request.
+
+- The proposal displays and binds:
+  - the `prd-` delivery id it will mint, generated when it is presented;
+  - pull request `N`, head branch `B` and the pull request's base branch
+    (`--base-branch`, identity only);
+  - the expected head SHA, which the new commit is parented on;
+  - the complete file list and the candidate identity digest (status, mode,
+    blob and path of every entry);
+  - the staged hash: the sha256 of `git diff --cached --binary` against the
+    expected head. The COMMIT receipt binds the same value, and the
+    pre-commit hook re-checks it.
+  The candidate identity and the staged hash are two different bindings with
+  two different jobs, and both are re-checked before the commit.
+- One separate approval of that exact proposal, through the same ceremonies,
+  is the commit decision and the push decision for exactly those two named
+  steps. Nothing else is authorized. It creates no new prompt, typed alias or
+  token. Expiry, one-shot use, revocation and the installed hooks apply as
+  for every delivery.
+  - On the Dots path, the presented proposal's digest also binds the id.
+  - On the local-terminal path, the displayed id is bound by the record's
+    authority digest and by the human seeing it. There is no proposal digest
+    on that path.
+- Each of these refuses with its own `pr_delivery_*` code:
+  - the pull request is closed (`pr_delivery_pr_closed`) or merged
+    (`pr_delivery_pr_merged`);
+  - its head or base branch differs (`pr_delivery_pr_head_branch_mismatch`,
+    `pr_delivery_pr_base_branch_mismatch`);
+  - its head moved (`pr_delivery_pr_head_drift`);
+  - the remote head ref disagrees with the pull request
+    (`pr_delivery_pr_ref_mismatch`);
+  - the pull request is not one this kind supports
+    (`pr_delivery_pr_identity_unsupported`).
+  These pull-request and remote-head-ref checks run when the proposal is
+  presented and approved, and again before BOTH effects, COMMIT and PUSH.
+  The staged hash is a pre-COMMIT binding check: a staged hash that no
+  longer matches refuses before the commit
+  (`pr_delivery_staged_hash_mismatch`).
+  ONE new commit is checked as a property in its own right. A pending
+  merge, cherry-pick or revert refuses before the COMMIT receipt is derived
+  (`pr_delivery_pending_merge`). The delivered commit's complete parent set
+  must be exactly the approved head. With the installed Herdr git guards,
+  that is enforced on the proposed commit object BEFORE the branch moves:
+  the `reference-transaction` guard refuses it
+  (`pr_delivery_proposed_commit_parents`), so a merge state that appears
+  after the pre-check leaves the branch at the approved head. It is checked
+  again at observation, recovery and before PUSH
+  (`pr_delivery_commit_not_one_new_commit`).
+- What a refusal leaves:
+  - At presentation or approval, no authority is minted and nothing is
+    written.
+  - While the delivery runs, the NEXT effect is stopped and the record
+    blocks durably (its blocker is recorded). Every effect already proven
+    stays recorded with its receipt and evidence. For example, a refusal
+    before PUSH leaves the authorized commit in place.
+- Unrelated unstaged or untracked paths may stay in the working tree, if
+  they are disjoint from every candidate path (exact path and directory
+  prefix, both ways). They are read from NUL-separated `git status` output,
+  never from quoted text. They are never staged or committed, and stay
+  exactly as dirty as before. An extra staged entry
+  (`pr_delivery_candidate_path_extra`), a changed candidate (its own
+  `pr_delivery_candidate_*` code) or a dirty candidate path
+  (`pr_delivery_worktree_overlap`) refuses.
+- `advance` runs COMMIT, then PUSH. The push receipt binds the approved head
+  as the remote's expected old value. It then reads the pull request once
+  more, with no effect, and records `COMPLETE` when the pull request shows
+  the pushed commit.
+- Known cost: the staged hash comes from the local git's diff output. A git
+  upgrade inside the approval window can change it with no content change.
+  That refuses a still-correct delivery (fail-closed); present it again.
+- The approval is operator-attested when relayed (above). It proves the
+  exact proposal that was approved, not who sent the reply. Mission approval
+  still confers no delivery, and `delivery_authority` stays `none`.
+
 DEMONSTRATED (user-observed, unedited):
 
 1. Reach, read, and reply: a phone-initiated local Codex task read a
