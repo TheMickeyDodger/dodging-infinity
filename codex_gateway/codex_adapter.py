@@ -356,17 +356,32 @@ def run_codex_turn(request):
     try:
         completed = invoke_codex(argv, request.text, request.repository)
     except OSError as exc:
-        return (
-            STATUS_CODEX_UNAVAILABLE,
-            None,
-            None,
-            make_error(
-                ERROR_CODEX_NOT_FOUND,
-                "the %s binary could not be executed (%s); install the Codex"
-                " CLI and ensure it is on PATH" % (CODEX_BINARY, exc),
-            ),
-            0,
-        )
+        return codex_unavailable(exc)
+    return interpret_completed(completed)
+
+
+def codex_unavailable(exc):
+    """The turn outcome when the codex binary could not be executed."""
+    return (
+        STATUS_CODEX_UNAVAILABLE,
+        None,
+        None,
+        make_error(
+            ERROR_CODEX_NOT_FOUND,
+            "the %s binary could not be executed (%s); install the Codex"
+            " CLI and ensure it is on PATH" % (CODEX_BINARY, exc),
+        ),
+        0,
+    )
+
+
+def interpret_completed(completed):
+    """Map one finished codex process (``returncode``, BYTES ``stdout`` and
+    ``stderr``) to ``(status, session_id, message, error, unrecognized)``
+    against the declared compatibility surface. Shared by the gateway's
+    ambient path (``run_codex_turn``) and the restricted Outer Operator turn
+    (``codex_gateway.role_turn.run_operator_turn``), so the two never
+    interpret Codex output differently."""
     try:
         stdout_text = (completed.stdout or b"").decode("utf-8")
     except UnicodeDecodeError as exc:

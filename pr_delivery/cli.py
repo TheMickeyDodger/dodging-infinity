@@ -6,10 +6,15 @@ This is the ONLY production module that constructs the real
 minted (one construction site, ``_mint``) — after one of two ceremonies:
 
 - ``authorize`` (``local_terminal``): the human sees every binding and
-  TYPES the first twelve hex characters of the exact candidate identity at
-  an interactive terminal. No model, transport, Worker, Capability,
-  OperatorSession, or Herdr role can drive it: it reads the confirmation
-  from the terminal.
+  TYPES the first twelve hex characters of the exact candidate identity.
+  What the code actually checks: the default confirmation reader
+  (``_terminal_confirmation``) refuses unless stdin is a terminal
+  (``isatty()``), then reads the answer with ``input()``. That stops a piped
+  answer and a caller with no terminal. Like the Git gates, it is a
+  workflow guardrail, not designed to contain processes running with the
+  user's own privileges, so the ceremony rests on a TRUSTED LOCAL USER. The
+  terminal check is not human authentication, and it is not proof that a
+  human typed the answer.
 - ``present-dots`` then ``attest-dots`` (``dots_operator_attested``, Task 8,
   user decision): the FULL binding is presented for the phone to display,
   and the human's simple whole-value affirmative is RELAYED by the Outer
@@ -532,8 +537,10 @@ def assemble_authority(transport, args, now, human_identity,
     """Gather every binding from the live repository and the human's
     inputs, run the LOCAL TERMINAL ceremony, and return the AUTHORITY
     dictionary. The human TYPES the first characters of the candidate
-    identity; the interactive-terminal requirement is enforced by the
-    reader ``authorize_cmd`` passes."""
+    identity. The terminal requirement is the reader's own: the default
+    reader ``authorize_cmd`` passes (``_terminal_confirmation``) requires
+    stdin to be a terminal: a workflow guardrail, not human
+    authentication."""
     out = out if out is not None else sys.stdout
     binding, lines, digest, validity = _gather(transport, args, now)
     lines = lines + [
@@ -565,11 +572,16 @@ def assemble_authority(transport, args, now, human_identity,
     return authority
 
 
-def _mint(machine, authority, now, out, one_shot_proposal_digest=None):
+def _mint(machine, authority, now, out, one_shot_proposal_digest=None,
+          apply_before=None):
     """The ONE place a PR Delivery Authorization is constructed, for both
     ceremonies. ``one_shot_proposal_digest`` (the Dots ceremony) refuses,
     under the store lock, a second authorization of the same presented
-    proposal.
+    proposal. ``apply_before`` (the Dots ceremony: the displayed
+    ``expires_at``) is re-checked against a FRESH clock reading under the
+    store lock, immediately before the record is written: the live
+    repository reads that precede the mint can block, so the expiry checked
+    before them must bite again AT APPLICATION.
 
     A ``pull_request`` authority carries no delivery id: one is minted
     here, unchanged. A ``pr_update`` authority carries the id generated and
@@ -609,6 +621,11 @@ def _mint(machine, authority, now, out, one_shot_proposal_digest=None):
                         "delivery proposal %s was already attested as %s; a"
                         " proposal authorizes once. No delivery record created."
                         % (one_shot_proposal_digest, existing_id))
+        if apply_before is not None and time.time() >= apply_before:
+            raise CeremonyError(
+                "the presented proposal expired before its authorization"
+                " could be recorded; present it again. No delivery record"
+                " created.")
         ok, problem, pruned = add_delivery(document, record)
         if not ok:
             raise CeremonyError("store refused the record: %s" % problem)
@@ -812,7 +829,8 @@ def attest_dots_cmd(args, stdin_text, store_dir=None, out=None):
         "policy": auth.EXPIRATION_POLICY_ABSOLUTE,
         "expires_at": expires_at,
     }
-    return _mint(machine, authority, now, out, one_shot_proposal_digest=digest)
+    return _mint(machine, authority, now, out, one_shot_proposal_digest=digest,
+                 apply_before=expires_at)
 
 
 def _terminal_confirmation(prompt):

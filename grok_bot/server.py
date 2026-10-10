@@ -8,26 +8,36 @@ constant with no flag, variable or argument that can change it;
 socket actually bound; and ``server_activate`` refuses to listen on a socket
 that is not bound to loopback (``listen`` on an unbound socket would bind
 the wildcard address itself). IPv4 only. No TLS, no tunnel, no installed
-credential and no outbound connection of its own (a delivery tool call
-runs pr_delivery's ceremony, whose ``git ls-remote`` and possible
-``git fetch`` reach the configured remote; see ``grok_bot.delivery``):
+credential and no outbound connection of its own (a ``present_delivery``
+or ``approve_delivery`` call runs pr_delivery's ceremony, whose ``git
+ls-remote`` and possible ``git fetch`` reach the configured remote; see
+``grok_bot.delivery``):
 reaching it from Grok Bot needs the human actions in
 ``PUBLIC_REACHABILITY``, which this code never performs.
 
-Access control of the TRANSPORT (implemented, absent by default): started
-with a bearer token (``read_bearer_token``: an owner-only file the human
-provisions; never argv, never the environment, never printed), every
-request must carry ``Authorization: Bearer <that token>``. A missing or
-wrong one is refused 401 before the body is read, by a constant-time
-comparison. Without one, the endpoint is exactly the loopback-only default.
-The token shows only that the caller holds it. It never reaches the adapter,
-and it approves nothing: approval stays the operator-attested relay of the
-human's separate reply, unchanged.
+Access control of the TRANSPORT (implemented, REQUIRED, fail-closed): the
+endpoint cannot be served without a bearer token (``read_bearer_token``: an
+owner-only file the human provisions; never argv, never the environment,
+never printed). ``LoopbackMcpServer`` refuses to be constructed without one,
+before any socket is bound, and ``grokbot.py serve`` refuses to start
+without ``--auth-token-file``. Every request must carry exactly ONE
+``Authorization: Bearer <that token>`` header; an absent, empty, malformed,
+wrong-scheme, duplicated or wrong-value one is refused 401 before the body
+is read, by a constant-time comparison. The per-request check fails closed
+on its own too: a server object holding no token admits nothing. The token
+shows only that the caller holds it. It never reaches the adapter, and it
+approves nothing: approval stays the operator-attested relay of the human's
+separate reply, unchanged.
 
 Per the Streamable HTTP transport: POST carries exactly one JSON-RPC
 message; a notification or client response is answered 202 with no body;
 a request is answered with one JSON object, or with one SSE event when the
-client accepts only ``text/event-stream``. GET and DELETE are 405: no
+client accepts only ``text/event-stream``. A Cloudflare Quick Tunnel (the
+repository's on-demand ``ditunnel.py``, ``docs/tunnel.md``) cannot carry that
+SSE answer: Cloudflare's Quick Tunnel documentation states that Quick
+Tunnels do not support Server-Sent Events. The SSE branch stays, for a
+forwarder that can carry it. Over a Quick Tunnel, the JSON answer is the one
+carried. GET and DELETE are 405: no
 server-initiated stream and no session is offered. An unsupported
 ``MCP-Protocol-Version`` header is a 400 whose body is NOT the modern
 ``-32022`` error, so a dual-era client falls back to ``initialize``.
@@ -76,16 +86,26 @@ PUBLIC_REACHABILITY = {
     "performed_by_this_code": False,
     "bind_address": LOOPBACK_HOST,
     "reason": "Grok Bot reaches custom MCP servers only at a public HTTPS URL;"
-              " localhost and private addresses are rejected, and a Command"
-              " MCP server in a phone conversation runs on xAI's cloud"
-              " computer, not on this Mac.",
+              " localhost and private addresses are rejected. Grok Bot's cloud"
+              " execution (where a Command MCP server in a phone conversation"
+              " runs) is on xAI's cloud computer. Per current vendor"
+              " documentation, LOCAL-COMPUTER execution is a SEPARATE"
+              " capability: when it is enabled and each command is approved,"
+              " Grok Bot can run commands on the user's own computer. Here it"
+              " has two uses: the on-demand tunnel's local control, and the"
+              " LOCAL ARMING of an approval (authorize, authorize-delivery),"
+              " where the approved command string is the record of consent. It"
+              " does not change how a connector reaches this endpoint, which"
+              " still needs the public HTTPS URL"
+              " (vendor_evidence.grok_bot_local_computer).",
     "access_control": {
         "implemented": "bearer_token",
         "configuration": "grokbot.py ... serve --auth-token-file <absolute path"
-                         " of an owner-only file holding the token>; absent by"
-                         " default, which is the loopback-only endpoint",
-        "check": "every request must carry Authorization: Bearer <token>; a"
-                 " missing or wrong one is refused 401 before the body is read",
+                         " of an owner-only file holding the token>; required:"
+                         " serve refuses to start without it (fail-closed)",
+        "check": "every request must carry exactly one Authorization: Bearer"
+                 " <token>; an absent, malformed, duplicated or wrong one is"
+                 " refused 401 before the body is read",
         "scope": "transport only: it shows the caller holds the token, never"
                  " who the human is, and approves nothing; approval stays the"
                  " operator-attested relay of the human's separate reply",
@@ -96,25 +116,32 @@ PUBLIC_REACHABILITY = {
         "host_header": "127.0.0.1:<port>",
         "origin_header": None,
         "authorization_header": "forwarded unchanged",
+        "quick_tunnel_sse": "a Cloudflare Quick Tunnel does not carry"
+                            " Server-Sent Events (vendor documentation), so"
+                            " over one the JSON answer is the one carried; the"
+                            " SSE branch stays for forwarders that can",
     },
     "required_human_actions": [
         {"id": "provision_bearer_token", "performed_by_this_code": False,
          "action": "Generate a random token (32 to 512 visible ASCII"
                    " characters), write it to a file readable only by the"
                    " serving user (chmod 600), and serve with"
-                   " --auth-token-file pointing at it. Never expose the"
-                   " endpoint beyond loopback without it."},
+                   " --auth-token-file pointing at it; serve refuses to"
+                   " start without it."},
         {"id": "provision_public_https", "performed_by_this_code": False,
          "action": "Provision a public HTTPS forwarder to the loopback listener"
                    " (for example a tunnel, per xAI's custom MCP tunneling"
-                   " guide) that meets forwarder_contract: it presents Host"
-                   " 127.0.0.1:<port>, sends no Origin, and passes"
-                   " Authorization through unchanged."},
+                   " guide, or the repository's on-demand Quick Tunnel,"
+                   " docs/tunnel.md) that meets forwarder_contract: it"
+                   " presents Host 127.0.0.1:<port>, sends no Origin, and"
+                   " passes Authorization through unchanged."},
         {"id": "register_connector", "performed_by_this_code": False,
          "action": "At grok.com/connectors choose New Connector, Custom, enter"
                    " the public URL ending in /mcp, and give the same token as"
                    " the connector's credential, so Grok sends it as"
-                   " Authorization: Bearer <token>."},
+                   " Authorization: Bearer <token>. A Quick Tunnel's URL"
+                   " changes on every start, so with that on-demand tunnel the"
+                   " connector's URL is repointed every session."},
         {"id": "run_live_acceptance", "performed_by_this_code": False,
          "action": "Run the bounded, reversible phone acceptance exercise; it"
                    " is what resolves live_compatibility. Nothing in this"
@@ -136,6 +163,27 @@ PUBLIC_REACHABILITY = {
                 "https://docs.x.ai/grok/connectors/custom-mcp-tunneling",
                 "https://docs.x.ai/grok-bot/computer-and-apps",
             ],
+        },
+        "grok_bot_local_computer": {
+            "applies_to": "Grok Bot's execution on the user's own (local)"
+                          " computer, a capability separate from its cloud"
+                          " execution",
+            "states": "cloud execution and local-computer execution are"
+                      " separate capabilities; Bots may run commands on the"
+                      " local computer when that capability is enabled and the"
+                      " user approves under the local policy (computer-and-apps,"
+                      " updated 2026-10-08). Execution on Local Computer offers"
+                      " Ask every time / Always allow / Never allow, default Ask"
+                      " every time, with per-computer settings, Allow once on"
+                      " the prompt, and the same controls on iPhone"
+                      " (approvals-security-and-privacy, updated 2026-10-06)",
+            "sources": [
+                "https://docs.x.ai/grok-bot/computer-and-apps",
+                "https://docs.x.ai/grok-bot/approvals-security-and-privacy",
+            ],
+            "limits": "vendor documentation only: not proof that this account"
+                      " or device has the capability enabled, not live"
+                      " interoperability, and not enforced by DI",
         },
         "xai_api_remote_mcp": {
             "applies_to": "the xAI API's remote MCP tool, not the Grok Bot"
@@ -295,12 +343,16 @@ class McpRequestHandler(http.server.BaseHTTPRequestHandler):
         return True
 
     def _bearer_ok(self):
-        """True when no token is configured, or the request's Authorization
-        header carries exactly it (constant-time). Transport only."""
+        """True only when a token is configured AND the request carries
+        exactly one Authorization header holding exactly it (constant-time).
+        Fails closed: no configured token admits nothing. Transport only."""
         expected = self.server.bearer_token
-        if expected is None:
-            return True
-        scheme, _, supplied = (self.headers.get("Authorization") or "").partition(" ")
+        if not isinstance(expected, bytes) or not expected:
+            return False
+        values = self.headers.get_all("Authorization") or []
+        if len(values) != 1:
+            return False
+        scheme, _, supplied = values[0].partition(" ")
         return scheme.lower() == "bearer" and hmac.compare_digest(
             supplied.strip().encode("latin-1", "replace"), expected)
 
@@ -372,15 +424,20 @@ class LoopbackMcpServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     def __init__(self, adapter, port=0, log=None, bearer_token=None):
         self.adapter = adapter
         self.log = log
-        # Held as bytes for the comparison; never logged, never handed on.
-        self.bearer_token = (None if bearer_token is None else
-                             validate_bearer_token(bearer_token).encode("ascii"))
+        # REQUIRED, and checked before anything binds: there is no
+        # unauthenticated endpoint. Held as bytes for the comparison; never
+        # logged, never handed on.
+        if bearer_token is None:
+            raise BearerTokenError(
+                "the endpoint requires a bearer token (serve"
+                " --auth-token-file); it is never served without one")
+        self.bearer_token = validate_bearer_token(bearer_token).encode("ascii")
         http.server.HTTPServer.__init__(self, (LOOPBACK_HOST, port),
                                         McpRequestHandler)
 
     @property
     def access_control(self):
-        return "none" if self.bearer_token is None else "bearer_token"
+        return "bearer_token"
 
     def server_bind(self):
         # The ONE bind in the package: refused off loopback before it

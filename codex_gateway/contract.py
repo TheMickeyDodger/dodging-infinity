@@ -42,6 +42,9 @@ EXIT_CODE_BY_STATUS = {
 ERROR_EMPTY_INTENT = "empty_intent"
 ERROR_EMPTY_SESSION_ID = "empty_session_id"
 ERROR_FLAG_LIKE_SESSION_ID = "flag_like_session_id"
+# The restricted Outer Operator turn (``gateway.submit_restricted``) is a
+# fresh session only: it continues no session, so any session id is refused.
+ERROR_SESSION_NOT_PERMITTED = "session_not_permitted"
 ERROR_BANNED_FLAG = "banned_flag_element"
 ERROR_INTENT_NOT_UTF8 = "intent_not_utf8"
 ERROR_OUTPUT_NOT_UTF8 = "codex_output_not_utf8"

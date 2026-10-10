@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ARTIFACT ONLY: a reviewable per-user LaunchAgent for the on-demand Quick
+  Tunnel.
+
+  NOT INSTALLED. Nothing in this repository installs, loads, bootstraps or
+  kickstarts it. Installing it is a later, separately approved human step;
+  see docs/tunnel.md, "The optional launchd job".
+
+  DEFAULT OFF:
+  - RunAtLoad is false and there is NO KeepAlive key, so loading this job
+    starts nothing and launchd never restarts it.
+  - It runs only when a human explicitly kickstarts it from a local shell.
+  - It stops on `launchctl kill TERM` (or bootout), or on `ditunnel.py off`.
+
+  THE JOB IS THE CONTROLLER: `ditunnel.py foreground` holds cloudflared as
+  its own unreaped child (in cloudflared's own session) and stops it
+  anchored.
+
+  ExitTimeOut (420 s) is longer than the controller's worst-case bounded
+  stop at the default stop grace, which is at most 343.05 s from the
+  SIGTERM:
+  - up to 1.05 s to observe the stop: 0.05 s at any wait (accept, receive,
+    or reply piece; reads have one 2 s total deadline, and reads and status
+    replies are abandoned on a pending stop), plus local work between waits,
+    allowed 1 s as an assumption (not measured);
+  - the first 20 s attempt (10 s SIGTERM grace, then two 5 s waits);
+  - up to 1 s replying to a client's stop request;
+  - a 300 s retry window, which includes the second attempt;
+  - a final 1 s pause and 20 s attempt, begun just before that window
+    closes.
+  Record bookkeeping after the stop waits on the state lock, unbounded.
+  - If the stop was observed, nothing is running, and a kill during that
+    wait leaves only a record that a later off clears.
+  - If the retries ran out, members may be alive, and a kill during that
+    wait (or before the save) leaves survivors and a possibly stale
+    "running" record. Recovery is then manual.
+  This plist passes no stop-grace option. A larger grace needs a larger
+  ExitTimeOut.
+
+  The anchor is LOST if the retries run out with a member still alive (the
+  record is kept as stop_unconfirmed), or if launchd kills the job before
+  its stop completes. The tool then signals nothing; recovery is manual. See
+  docs/tunnel.md, "Manual recovery".
+
+  Every /ABSOLUTE/PATH and PORT placeholder must be replaced before
+  installation. Left as is, the job refuses to start (PORT is not a number).
+
+  Its label is deliberately distinct from any existing tunnel job.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.dodginginfinity.ditunnel</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/ABSOLUTE/PATH/TO/python3</string>
+		<string>/ABSOLUTE/PATH/TO/dodging-infinity/ditunnel.py</string>
+		<string>--state-dir</string>
+		<string>/ABSOLUTE/PATH/TO/owner-only/ditunnel-state</string>
+		<string>foreground</string>
+		<string>--port</string>
+		<string>PORT</string>
+		<string>--cloudflared</string>
+		<string>/ABSOLUTE/PATH/TO/cloudflared</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>ExitTimeOut</key>
+	<integer>420</integer>
+	<key>StandardOutPath</key>
+	<string>/ABSOLUTE/PATH/TO/owner-only/ditunnel-state/launchd.out</string>
+	<key>StandardErrorPath</key>
+	<string>/ABSOLUTE/PATH/TO/owner-only/ditunnel-state/launchd.err</string>
+</dict>
+</plist>

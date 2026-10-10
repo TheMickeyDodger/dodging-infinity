@@ -323,15 +323,15 @@ def approval_valid(r, consume=False):
     except Exception:
         return False, "Approval token is unreadable. Re-authorize."
     if int(tok.get("expires_at", 0)) < int(time.time()):
-        p.unlink(missing_ok=True)
+        guards.retire_approval(p, r, guards.KIND_COMMIT, "invalidate")
         return False, "Approval expired. Re-authorize."
     now = repo_identity(r)
     for key in ["repo_root", "git_dir", "branch", "head", "staged_sha256"]:
         if tok.get(key) != now.get(key):
-            p.unlink(missing_ok=True)
+            guards.retire_approval(p, r, guards.KIND_COMMIT, "invalidate")
             return False, f"Approval invalidated because `{key}` changed. Re-authorize."
     if consume:
-        p.unlink(missing_ok=True)
+        guards.retire_approval(p, r, guards.KIND_COMMIT, "consume")
     return True, "approved"
 
 
@@ -380,7 +380,7 @@ def push_approval_valid(r, remote_name=None, remote_url=None, updates=None, cons
     except Exception:
         return False, "Push approval token is unreadable. Re-authorize."
     if int(tok.get("expires_at", 0)) < int(time.time()):
-        p.unlink(missing_ok=True)
+        guards.retire_approval(p, r, guards.KIND_PUSH, "invalidate")
         return False, "Push approval expired. Re-authorize."
     target_ref = str(tok.get("target_ref") or "")
     try:
@@ -397,11 +397,11 @@ def push_approval_valid(r, remote_name=None, remote_url=None, updates=None, cons
                 target_ref.removeprefix("refs/heads/") or None,
             )
     except SystemExit as e:
-        p.unlink(missing_ok=True)
+        guards.retire_approval(p, r, guards.KIND_PUSH, "invalidate")
         return False, str(e)
     for key in ["repo_root", "branch", "head", "remote_name", "remote_url", "target_ref"]:
         if tok.get(key) != now.get(key):
-            p.unlink(missing_ok=True)
+            guards.retire_approval(p, r, guards.KIND_PUSH, "invalidate")
             return False, f"Push approval invalidated because `{key}` changed. Re-authorize."
     if remote_name is not None and tok.get("remote_name") != remote_name:
         return False, "Push approval is for a different remote name."
@@ -420,7 +420,7 @@ def push_approval_valid(r, remote_name=None, remote_url=None, updates=None, cons
         if remote_ref != tok.get("target_ref"):
             return False, f"Push target `{remote_ref}` does not match approved `{tok.get('target_ref')}`."
     if consume:
-        p.unlink(missing_ok=True)
+        guards.retire_approval(p, r, guards.KIND_PUSH, "consume")
     return True, "approved"
 
 
@@ -550,18 +550,18 @@ def _consume_push_approval_on_transfer(r, updates):
     try:
         tok = json.loads(p.read_text())
     except Exception:
-        p.unlink(missing_ok=True)
+        guards.retire_approval(p, r, guards.KIND_PUSH, "consume")
         return
     remote_name = tok.get("remote_name")
     branch = str(tok.get("target_ref", "")).removeprefix("refs/heads/")
     head = tok.get("head")
     if not remote_name or not branch or not head:
-        p.unlink(missing_ok=True)
+        guards.retire_approval(p, r, guards.KIND_PUSH, "consume")
         return
     tracking_ref = f"refs/remotes/{remote_name}/{branch}"
     for _old_oid, new_oid, ref in updates:
         if ref == tracking_ref and new_oid == head:
-            p.unlink(missing_ok=True)
+            guards.retire_approval(p, r, guards.KIND_PUSH, "consume")
             return
 
 
@@ -940,6 +940,78 @@ def safety_install(_):
     print("Git commit/history/push guards are installed per initialized repository by `herdctl init` / `herdctl upgrade`.")
 
 
+def _require_typed_confirmation(alias, what, refusal):
+    """Typed human confirmation at the CONTROLLING TERMINAL only
+    (``herdr.guards.typed_confirmation``): never stdin, and no flag skips
+    it, so a ``--yes`` flag or a piped answer confirms nothing. It is a
+    workflow guardrail, not designed to contain processes running with the
+    user's own privileges (see ``herdr/guards.py``)."""
+    if not guards.typed_confirmation(
+        f"\nType the repo alias `{alias}` to authorize exactly {what}: ", alias
+    ):
+        raise SystemExit(
+            f"Not authorized. {refusal} Typed confirmation is read only from"
+            " the controlling terminal."
+        )
+
+
+def _mint_approval(r, path, tok, kind):
+    """Write one approval record and record its mint in the approval
+    ledger, which is tamper-EVIDENCE against non-adversarial change, not a
+    control (``herdr/guards.py``). The record write and its ledger entry are
+    ONE operation under ``guards.ledger_lock``, serialized with every other
+    mint, retirement and ledger append. A broken chain is archived intact and
+    replaced here by one atomic publication (it stays in force until then),
+    so re-authorizing recovers it and an interrupted recovery still refuses."""
+    data = (json.dumps(tok, indent=2) + "\n").encode("utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with guards.ledger_lock(r):
+        path.write_bytes(data)
+        guards.ledger_append(
+            r, "mint", kind, guards.token_digest(data),
+            expires_at=int(tok["expires_at"]), create=True,
+        )
+
+
+def approve_merge(args):
+    """The SEPARATE human merge gate: exactly one local
+    ``git merge`` of the source commit ``--source`` names NOW into this
+    repository's current branch at its current HEAD. The human's typed
+    confirmation follows a display of exactly what merges into what. It
+    authorizes nothing else: no pull-request creation, no remote PR merge,
+    no ``git pull`` (those have no approval kind here), and no commit, push
+    or Mission approval stands in for it."""
+    r = resolve_repo_ref(args.repo)
+    alias = repo_alias(r)
+    ident = guards.merge_identity(r)
+    source_commit = guards.resolve_commit(r, args.source)
+    if source_commit is None:
+        raise SystemExit(
+            f"Not authorized: `{args.source}` does not name a commit here."
+            " No merge approval token created.")
+    print("\nMERGE AUTHORIZATION REQUEST")
+    print("---------------------------")
+    print(f"Repo alias : {alias}")
+    print(f"Codebase   : {r.name}")
+    print(f"Repo root  : {ident['repo_root']}")
+    print(f"Merge      : {args.source} ({source_commit})")
+    print(f"Into       : {ident['branch']} at {ident['head']}")
+    print("Authorizes : exactly ONE local `git merge` of that commit into that"
+          " branch at that HEAD. Nothing else: no pull request, no remote PR"
+          " merge, no `git pull`.")
+    _require_typed_confirmation(alias, "ONE merge of exactly this source",
+                                "No merge approval token created.")
+    tok = dict(ident)
+    tok.update({"kind": guards.KIND_MERGE,
+                "operation": guards.MERGE_OPERATION_LOCAL,
+                "source_ref": args.source, "source_commit": source_commit,
+                "alias": alias, "approved_at": int(time.time()),
+                "expires_at": int(time.time()) + int(args.ttl)})
+    _mint_approval(r, guards.merge_approval_path(r), tok, guards.KIND_MERGE)
+    print(f"Authorized ONE merge of {source_commit} into {ident['branch']} for"
+          f" {args.ttl}s.")
+
+
 def approve_commit(args):
     r = resolve_repo_ref(args.repo)
     c = cfg(r)
@@ -965,10 +1037,7 @@ def approve_commit(args):
     print(staged or "(none — only an empty commit would match this approval)")
     if stat:
         print("\n" + stat)
-    if not args.yes:
-        typed = input(f"\nType the repo alias `{alias}` to authorize exactly ONE commit: ").strip()
-        if typed != alias:
-            raise SystemExit("Not authorized. No approval token created.")
+    _require_typed_confirmation(alias, "ONE commit", "No approval token created.")
     tok = dict(ident)
     tok.update(
         {
@@ -977,9 +1046,7 @@ def approve_commit(args):
             "expires_at": int(time.time()) + int(args.ttl),
         }
     )
-    ap = approval_path(r)
-    ap.parent.mkdir(parents=True, exist_ok=True)
-    ap.write_text(json.dumps(tok, indent=2) + "\n")
+    _mint_approval(r, approval_path(r), tok, guards.KIND_COMMIT)
     print(f"Authorized ONE commit for {args.ttl}s, bound to this repo/worktree/branch/HEAD/staged diff.")
 
 
@@ -1014,15 +1081,10 @@ def approve_push(args):
     if log:
         print("\nCommits that would be pushed (best effort):")
         print(log)
-    if not args.yes:
-        typed = input(f"\nType the repo alias `{alias}` to authorize exactly ONE push: ").strip()
-        if typed != alias:
-            raise SystemExit("Not authorized. No push approval token created.")
+    _require_typed_confirmation(alias, "ONE push", "No push approval token created.")
     tok = dict(ident)
     tok.update({"alias": alias, "approved_at": int(time.time()), "expires_at": int(time.time()) + int(args.ttl)})
-    pp = push_approval_path(r)
-    pp.parent.mkdir(parents=True, exist_ok=True)
-    pp.write_text(json.dumps(tok, indent=2) + "\n")
+    _mint_approval(r, push_approval_path(r), tok, guards.KIND_PUSH)
     print(f"Authorized ONE push for {args.ttl}s, bound to this repo/branch/HEAD/remote/target ref.")
     if getattr(args, "tag", None):
         print("Tag approvals are consumed only after `herdctl push-tag` confirms a successful transfer; `git push --dry-run` does not consume them.")
@@ -1063,7 +1125,7 @@ def push_tag_cmd(args):
     if result.returncode:
         raise SystemExit(result.returncode)
 
-    pp.unlink(missing_ok=True)
+    guards.retire_approval(pp, r, guards.KIND_PUSH, "consume")
     print(f"Tag `{args.tag}` pushed to `{remote}`; one-shot push approval consumed.")
 
 
@@ -2056,8 +2118,14 @@ def main():
     q = sp.add_parser("approve-commit")
     q.add_argument("--repo")
     q.add_argument("--ttl", type=int, default=600)
-    q.add_argument("--yes", action="store_true", help="non-interactive; use only after an external human confirmation")
     q.set_defaults(fn=approve_commit)
+
+    q = sp.add_parser("approve-merge")
+    q.add_argument("--repo")
+    q.add_argument("--source", required=True,
+                   help="the exact revision to merge into the current branch")
+    q.add_argument("--ttl", type=int, default=600)
+    q.set_defaults(fn=approve_merge)
 
     q = sp.add_parser("approve-push")
     q.add_argument("--repo")
@@ -2066,7 +2134,6 @@ def main():
     target.add_argument("--target-branch")
     target.add_argument("--tag")
     q.add_argument("--ttl", type=int, default=600)
-    q.add_argument("--yes", action="store_true", help="non-interactive; use only after an external human confirmation")
     q.set_defaults(fn=approve_push)
 
     q = sp.add_parser("push-tag")

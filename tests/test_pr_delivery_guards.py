@@ -15,6 +15,7 @@ same structurally isolated one ``tests/test_pr_delivery.py`` uses.
 Standalone: PYTHONPATH=$PWD python3 tests/test_pr_delivery_guards.py
 """
 
+import io
 import json
 import os
 import sys
@@ -46,6 +47,7 @@ from test_pr_delivery import (                               # noqa: E402
     DeliveryFixture,
     UpdateFixture,
     _template,
+    assert_git_reported_a_prepared_phase_hook_abort,
     git,
 )
 
@@ -680,6 +682,259 @@ class PrUpdateProposedParentsTests(unittest.TestCase):
         # Empty output reads as an empty parent set, which is refused.
         with mock.patch.object(guards, "gitout", return_value=""):
             self.assertEqual(read(fx.work, valid, SOURCE_REF), [])
+
+
+class _ExecutingUpdateCommitMixin(object):
+
+    def _executing_commit(self, fx, delivery_id):
+        record = fx.record(delivery_id)
+        binding = dict(
+            guards._delivery_commit_live(fx.work),
+            candidate_identity_digest=record["candidate"][
+                "identity_digest_sha256"],
+            expected_tree_oid=fx.transport.write_tree(str(fx.work)),
+            committer_name="Delivery Human",
+            committer_email="human@example.com",
+            message_sha256="1" * 64,
+        )
+        receipt = receipts.derive(record, COMMIT_STEP, binding, fx.clock())
+        receipt["state"] = auth.RECEIPT_EXECUTING
+        record["steps"][COMMIT_STEP]["receipt"] = receipt
+        record["steps"][COMMIT_STEP]["state"] = auth.STEP_EXECUTING
+        with fx.store.lock():
+            document = fx.store.load()
+            document["deliveries"][delivery_id] = record
+            fx.store.save(document)
+
+    def _no_approval_exists(self, fx):
+        for path in (guards.approval_path(fx.work),
+                     guards.merge_approval_path(fx.work),
+                     guards.push_approval_path(fx.work)):
+            self.assertFalse(path.exists(), path)
+
+
+class PrUpdateMergeGateInterleaveTests(_ExecutingUpdateCommitMixin,
+                                       unittest.TestCase):
+    """The ``prepared`` block of ``guard_reference_transaction`` runs the
+    separate merge gate FIRST and the ``pr_update`` COMMIT receipt (with
+    the proposed parent set) after it; the ``committed`` phase retires
+    approvals through ``_consume_merge_on_commit`` and ``_retire``. Proven
+    by execution, in this order: one new commit passes the merge gate and
+    reaches the COMMIT receipt with its parent set read; a merge is refused
+    by the merge gate with the COMMIT receipt never consulted; and a
+    commit landed through the INSTALLED hooks leaves the receipt to the
+    machine, retires nothing else, and authorizes nothing further."""
+
+    def _reference(self, fx, phase, old, new):
+        """One in-process ``reference-transaction`` decision on the update
+        of HEAD's branch from ``old`` to ``new``: ``(exit code, stderr,
+        consulted)``, ``consulted`` listing every delivery receipt lookup
+        as ``(step, live facts, ok)`` in order."""
+        consulted = []
+        real = guards._delivery_receipt_decision
+
+        def recording(repo, step, live):
+            ok, reason = real(repo, step, live)
+            consulted.append((step, dict(live), ok))
+            return ok, reason
+
+        stdin = io.StringIO("%s %s %s\n" % (old, new, SOURCE_REF))
+        errors = io.StringIO()
+        with mock.patch.object(guards, "_delivery_receipt_decision",
+                               recording), \
+                mock.patch.object(sys, "stdin", stdin), \
+                mock.patch.object(sys, "stderr", errors):
+            code = guards.guard_reference_transaction(fx.work, phase)
+        return code, errors.getvalue(), consulted
+
+    def _ledger(self, fx):
+        """The approval ledger's exact bytes, or None when there is none:
+        a retirement or a mint would append to it."""
+        path = guards.ledger_path(fx.work)
+        return path.read_bytes() if path.exists() else None
+
+    def _update(self):
+        fx = UpdateFixture(self)
+        delivery_id = fx.authorize_update()
+        self._executing_commit(fx, delivery_id)
+        self.assertEqual(git("symbolic-ref", "-q", "HEAD", cwd=fx.work),
+                         SOURCE_REF)
+        self._no_approval_exists(fx)
+        return fx
+
+    def test_one_new_commit_passes_the_merge_gate_to_the_commit_receipt(self):
+        fx = self._update()
+        approved = fx.baseline
+        single = run_git("-C", str(fx.work), "commit-tree",
+                         approved + "^{tree}", "-p", approved, "-m", "one")
+        self.assertIs(guards._identifiable_merge(
+            fx.work, [(approved, single)]), False)
+        code, errors, consulted = self._reference(fx, "prepared", approved,
+                                                  single)
+        self.assertEqual(code, 0, errors)
+        self.assertNotIn("HERD MERGE BLOCKED", errors)
+        self.assertEqual([(step, ok) for step, _, ok in consulted],
+                         [(COMMIT_STEP, True)])
+        live = consulted[0][1]
+        self.assertEqual(live[receipts.PROPOSED_PARENTS_FACT], [approved])
+        self.assertEqual(live["head_before"], approved)
+        self._no_approval_exists(fx)
+
+    def test_a_merge_is_refused_by_the_merge_gate_not_the_commit_receipt(
+            self):
+        fx = self._update()
+        approved = fx.baseline
+        foreign = _template()["baseline"]
+        merge_commit = run_git("-C", str(fx.work), "commit-tree",
+                               approved + "^{tree}", "-p", approved, "-p",
+                               foreign, "-m", "two")
+        first = run_git("-C", str(fx.work), "commit-tree",
+                        approved + "^{tree}", "-p", approved, "-m", "a")
+        second = run_git("-C", str(fx.work), "commit-tree",
+                         approved + "^{tree}", "-p", first, "-m", "b")
+        for label, new in (("merge commit", merge_commit),
+                           ("multi-commit fast-forward", second)):
+            with self.subTest(update=label):
+                self.assertIs(guards._identifiable_merge(
+                    fx.work, [(approved, new)]), True)
+                code, errors, consulted = self._reference(
+                    fx, "prepared", approved, new)
+                self.assertEqual(code, 1, errors)
+                self.assertIn("HERD MERGE BLOCKED", errors)
+                self.assertIn("a commit approval never authorizes a merge",
+                              errors)
+                self.assertNotIn("Traceback", errors)
+                # Only the BASE_REFRESH receipt is an alternative authority
+                # for a merge; the executing COMMIT receipt never is.
+                self.assertEqual([(step, ok) for step, _, ok in consulted],
+                                 [(BASE_REFRESH, False)])
+                self.assertEqual(git("rev-parse", SOURCE_REF, cwd=fx.work),
+                                 approved)
+        self._no_approval_exists(fx)
+
+    def test_the_committed_phase_leaves_the_update_receipt_to_the_machine(
+            self):
+        fx = UpdateFixture(self, hooks=True)
+        approved = fx.baseline
+        delivery_id = fx.authorize_update()
+        self._no_approval_exists(fx)
+        ledger = self._ledger(fx)
+        # Through the INSTALLED pre-commit and reference-transaction hooks
+        # (prepared, then committed), on the receipt alone.
+        self.assertEqual(fx.machine.advance_once(delivery_id), "advanced")
+        record = fx.record(delivery_id)
+        self.assertEqual(record["phase"], auth.PHASE_COMMITTED)
+        self.assertEqual(record["steps"][COMMIT_STEP]["receipt"]["state"],
+                         auth.RECEIPT_SUCCEEDED)
+        head = git("rev-parse", "HEAD", cwd=fx.work)
+        self.assertEqual(run_git("-C", str(fx.work), "rev-parse",
+                                 head + "^@").split(), [approved])
+        self._no_approval_exists(fx)
+        self.assertEqual(self._ledger(fx), ledger)
+        # The committed phase, replayed for the same update: it consults no
+        # receipt, writes nothing to the delivery store and retires nothing.
+        before = fx.store.load()
+        code, errors, consulted = self._reference(fx, "committed", approved,
+                                                  head)
+        self.assertEqual(code, 0, errors)
+        self.assertEqual(consulted, [])
+        self.assertEqual(fx.store.load(), before)
+        self._no_approval_exists(fx)
+        self.assertEqual(self._ledger(fx), ledger)
+        # The spent receipt authorizes no further commit.
+        further = run_git("-C", str(fx.work), "commit-tree",
+                          head + "^{tree}", "-p", head, "-m", "again")
+        code, errors, consulted = self._reference(fx, "prepared", head,
+                                                  further)
+        self.assertEqual(code, 1, errors)
+        self.assertIn("HERD HISTORY UPDATE BLOCKED", errors)
+        self.assertEqual(consulted[0][0], COMMIT_STEP)
+        self.assertEqual(consulted[0][1][receipts.PROPOSED_PARENTS_FACT],
+                         [head])
+        self.assertEqual([ok for _, _, ok in consulted],
+                         [False] * len(consulted))
+        self.assertEqual(git("rev-parse", "HEAD", cwd=fx.work), head)
+
+
+class PrUpdateReferenceTransactionHookTests(_ExecutingUpdateCommitMixin,
+                                            unittest.TestCase):
+    """The LATER gate, through the INSTALLED ``reference-transaction`` hook,
+    with a ``pr_update`` COMMIT receipt executing: a branch update that is
+    not exactly one new commit on the approved head is aborted in the
+    ``prepared`` phase BEFORE the ref moves, by the merge gate when the
+    update is identifiable as a merge and by the COMMIT receipt's
+    proposed-parent check when it is not; the receipt is not spent and no
+    approval is consumed or created. Exactly one new commit is admitted
+    (the positive control). A real ``git update-ref`` drives each
+    transaction: a real commit builds a merge only from a MERGE_HEAD present
+    when it starts, which the pre-commit merge gate refuses first
+    (tests/test_pr_delivery.py, the racing-merge case), so this is where the
+    later gate's defense in depth is exercised through the installed hook."""
+
+    def setUp(self):
+        self.fx = UpdateFixture(self, hooks=True)
+        self.delivery_id = self.fx.authorize_update()
+        self.approved = self.fx.baseline
+        self._executing_commit(self.fx, self.delivery_id)
+        self._no_approval_exists(self.fx)
+
+    def _move(self, new):
+        return hook_git(["update-ref", SOURCE_REF, new, self.approved],
+                        cwd=self.fx.work)
+
+    def _object(self, *parents):
+        argv = ["-C", str(self.fx.work), "commit-tree",
+                self.approved + "^{tree}"]
+        for parent in parents:
+            argv += ["-p", parent]
+        return run_git(*(argv + ["-m", "probe"]))
+
+    def _assert_aborted_before_the_ref_moved(self, completed):
+        self.assertNotEqual(completed.returncode, 0, completed.stderr)
+        assert_git_reported_a_prepared_phase_hook_abort(self,
+                                                        completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+        self.assertEqual(git("rev-parse", SOURCE_REF, cwd=self.fx.work),
+                         self.approved)
+        receipt = self.fx.record(self.delivery_id)["steps"][COMMIT_STEP][
+            "receipt"]
+        self.assertEqual(receipt["state"], auth.RECEIPT_EXECUTING)
+        self._no_approval_exists(self.fx)
+
+    def test_a_merge_is_aborted_by_the_merge_gate_before_the_ref_moves(self):
+        foreign = _template()["baseline"]
+        merge_commit = self._object(self.approved, foreign)
+        self.assertIs(guards._identifiable_merge(
+            self.fx.work, [(self.approved, merge_commit)]), True)
+        completed = self._move(merge_commit)
+        self._assert_aborted_before_the_ref_moved(completed)
+        self.assertIn("HERD MERGE BLOCKED: this branch update is a merge and"
+                      " needs the merge approval for exactly it",
+                      completed.stderr)
+        self.assertNotIn("HERD HISTORY UPDATE BLOCKED", completed.stderr)
+
+    def test_a_commit_not_on_the_approved_head_is_aborted_by_the_receipt(
+            self):
+        sibling = self._object(_template()["baseline"])
+        root = self._object()
+        for label, new in (("one commit on another parent", sibling),
+                           ("a root commit", root)):
+            with self.subTest(update=label):
+                self.assertIs(guards._identifiable_merge(
+                    self.fx.work, [(self.approved, new)]), False)
+                completed = self._move(new)
+                self._assert_aborted_before_the_ref_moved(completed)
+                self.assertIn("HERD HISTORY UPDATE BLOCKED",
+                              completed.stderr)
+                self.assertNotIn("HERD MERGE BLOCKED", completed.stderr)
+
+    def test_exactly_one_new_commit_on_the_approved_head_is_admitted(self):
+        single = self._object(self.approved)
+        completed = self._move(single)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("BLOCKED", completed.stderr)
+        self.assertEqual(git("rev-parse", SOURCE_REF, cwd=self.fx.work),
+                         single)
 
 
 if __name__ == "__main__":

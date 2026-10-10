@@ -64,9 +64,14 @@ INSTRUCTIONS = (
     "Dodging Infinity, through its Grok Bot transport. Send the human's plain"
     " request with request; the Codex Outer Operator authors a Mission"
     " proposal (or asks a question). Show the human the exact display_text"
-    " from present. Only after the human sends a separate message containing"
+    " from present. Before approving, the human ARMS it on the DI machine:"
+    " run present's arming command, unchanged, in your local shell, where the"
+    " human approves that exact command; it prints a one-time approval_code."
+    " Only after the human sends a separate message containing"
     " only 'approved', call approve with the approval_binding from that"
-    " present copied exactly, the reply, and a relay_ref. That approval is"
+    " present copied exactly, the reply, a relay_ref and that approval_code"
+    " (delivery: present_delivery's arming, then approve_delivery the same"
+    " way). Nothing reachable here can arm an approval. That approval is"
     " operator-attested, not cryptographically authenticated: DI does not"
     " establish who sent the reply. status, recover, cancel and run report"
     " and drive the request's own Mission from DI's durable records. Give"
@@ -98,13 +103,22 @@ _CONVERSATION_REF = dict(_NULLABLE_REF, description=(
     " secret, so this reference is that path's only protection: anyone who"
     " knows or guesses it could cancel the proposal. Without it nothing is"
     " kept"))
+_APPROVAL_CODE = {"type": "string", "description": (
+    "the one-time code the local arming command printed on the DI machine"
+    " (its 32 lowercase hex characters); it fires exactly the binding armed,"
+    " once")}
+_OPERATOR_SESSION_ID = {"type": "null", "description": (
+    "omit it: no Operator session is ever continued (every request is one"
+    " fresh, read-only Operator turn), so any value is refused")}
 TOOL_DEFINITIONS = {
     "request": (
         "Send the human's plain-text request to the Codex Outer Operator, which"
         " authors a Mission proposal or asks a clarifying question. Proposes"
-        " only; approves and starts nothing.",
+        " only; approves and starts nothing. Every call is one fresh Operator"
+        " session: to answer its question, send the whole request again with"
+        " the answer in text.",
         {"text": _TEXT, "conversation_ref": _CONVERSATION_REF,
-         "operator_session_id": _NULLABLE_REF},
+         "operator_session_id": _OPERATOR_SESSION_ID},
         ["text"]),
     "present": (
         "The exact proposal to show the human: display_text (show it whole) and"
@@ -117,8 +131,11 @@ TOOL_DEFINITIONS = {
         " proposal. Pass the approval_binding from present exactly as shown,"
         " that reply as relayed_reply, and a relay_ref naming the message. Any"
         " field that differs from what was displayed is refused, never"
-        " corrected. The approval is operator-attested, not cryptographically"
-        " authenticated, and grants no delivery authority.",
+        " corrected. approval_code is the one-time code the local arming"
+        " command printed for exactly this binding; without it, or with a"
+        " wrong or used one, nothing is approved. The approval is"
+        " operator-attested, not cryptographically authenticated, and grants"
+        " no delivery authority.",
         {"request_ref": _REF, "mission_id": {"type": "string"},
          "revision": {"type": "integer"},
          "proposal_digest_sha256": {"type": "string"},
@@ -126,8 +143,9 @@ TOOL_DEFINITIONS = {
          "approved_delivery_targets": {"type": "array",
                                        "items": {"type": "string"}},
          "expires_at": {"type": "integer"},
-         "relayed_reply": {"type": "string"}, "relay_ref": {"type": "string"}},
-        list(adapter_module.APPROVAL_FIELDS)),
+         "relayed_reply": {"type": "string"}, "relay_ref": {"type": "string"},
+         "approval_code": _APPROVAL_CODE},
+        list(adapter_module.APPROVE_ARGUMENTS)),
     "status": (
         "The request's durable status and its run, from DI's own records.",
         {"request_ref": _REF}, ["request_ref"]),
@@ -293,14 +311,18 @@ TOOL_DEFINITIONS["approve_delivery"] = (
     " authenticated) delivery authorization after re-reading the live"
     " repository, including the configured remote; no delivery step is"
     " performed, and an"
-    " engineering approval never stands in for this.",
+    " engineering approval never stands in for this. The delivery must first"
+    " be armed by present_delivery's arming command in the local shell on the"
+    " DI machine; pass the approval_code it printed.",
     {"proposal_digest_sha256": {"type": "string"},
      "expires_at": {"type": "number"},
      "relayed_reply": {"type": "string"}, "reply_to": {"type": "string"},
-     "relay_ref": {"type": "string"}},
+     "relay_ref": {"type": "string"}, "approval_code": _APPROVAL_CODE},
     list(adapter_module.DELIVERY_APPROVAL_FIELDS))
 TOOL_DEFINITIONS["delivery_status"] = (
-    "A delivery's status from pr_delivery's durable record (read-only).",
+    "A delivery's status from pr_delivery's durable record (read-only). The"
+    " record is loaded first, then the repository it names is checked by its"
+    " .git pointer files; no Git runs and no step is performed.",
     {"delivery_id": {"type": "string"}}, ["delivery_id"])
 
 

@@ -3,6 +3,19 @@
 
 What this module does, and nothing more:
 
+- ``approved_repository`` (and ``bound_repository``, for a presented
+  proposal or a delivery record) refuses every repository that is not, by
+  filesystem shape, the configured approved repository or one of its
+  worktrees directly under the configured workspaces root, named by its
+  realpath. Every delivery tool passes through it; unconfigured, every one
+  is refused before pr_delivery is reached. When it runs differs by tool:
+  ``present_delivery`` and ``approve_delivery`` check BEFORE their ceremony
+  (and so before any Git process); ``delivery_status`` first loads the
+  delivery's record from pr_delivery's store, because only the record names
+  the repository, then checks, then projects the status. It reads shape
+  (realpaths, the ``.git`` entry, Git's ``gitdir`` and ``commondir`` pointer
+  files), not Git's own resolution; what that does not exclude is stated
+  where it is defined.
 - ``present`` validates the caller's ceremony arguments (exactly
   ``present-dots``' own, ``grok_bot.adapter.DELIVERY_PRESENT_FIELDS``) and
   hands them to ``pr_delivery.cli.present_dots_cmd``, which reads the live
@@ -17,7 +30,9 @@ What this module does, and nothing more:
   ceremony checks the whole-reply affirmative, the digest link, the expiry
   and the LIVE candidate again, and records an operator-attested
   (``dots_operator_attested``) PR Delivery Authorization once.
-- ``status`` reads a delivery's status through ``PrDeliveryBoundary``.
+- ``status`` loads one delivery's record through ``PrDeliveryBoundary``'s
+  machine, checks that the record's repository is the approved identity
+  (``bound_repository``), and only then projects its status.
 
 Construction: this module never constructs a delivery transport, machine
 or store DIRECTLY. Construction is core-owned, by pr_delivery's own
@@ -45,8 +60,10 @@ differs from HEAD, ``git fetch --no-tags`` of the base branch. For a
 instead runs ``gh pr view`` for that one pull request, ``git ls-remote`` of
 its head branch, NUL-separated ``git status`` and ``git diff --cached`` (the
 staged hash), and fetches nothing. With a real remote those can reach an
-external host, and a fetch writes local repository data. ``status`` reads
-pr_delivery's store only.
+external host, and a fetch writes local repository data. ``status`` runs no
+ceremony and no Git: it reads pr_delivery's store for the record, plus the
+``.git`` pointer files of the repository that record names (the identity
+check); it opens no network connection and performs no delivery step.
 
 Provenance: the relayed reply is OPERATOR-ATTESTED, not cryptographically
 authenticated; pr_delivery records its residual risk on the authorization.
@@ -56,6 +73,7 @@ import io
 import json
 import math
 import os
+import stat
 import sys
 from types import SimpleNamespace
 
@@ -73,6 +91,11 @@ from grok_bot import adapter as adapter_module
 
 PROBLEM_REFUSED = "grok_bot_delivery_refused"
 PROBLEM_UNREADABLE = "grok_bot_delivery_input_unreadable"
+# The configured, approved repository identity.
+PROBLEM_NOT_CONFIGURED = "grok_bot_delivery_not_configured"
+PROBLEM_REPOSITORY_NOT_APPROVED = "grok_bot_delivery_repository_not_approved"
+GITDIR_PREFIX = "gitdir: "
+MAX_POINTER_BYTES = 4096
 # Exactly the refusals pr_delivery's own command line reports.
 CEREMONY_ERRORS = (
     delivery_cli.CeremonyError, delivery_store.StoreError,
@@ -118,6 +141,178 @@ def fits_finite_float(value):
 def _refuse(problem, reason, **details):
     raise adapter_module.surface_module.LocalRequestRefusal(problem, reason,
                                                             **details)
+
+
+# -- the approved repository identity --------------------------------------
+#
+# Decided on the FILESYSTEM ALONE: lstat, realpath and Git's small pointer
+# files (``gitdir``, ``commondir``), read without following a final
+# symlink. Nothing here starts a process, opens a socket or writes. For
+# ``present_delivery`` and ``approve_delivery`` it runs before the ceremony,
+# so before any Git process; ``delivery_status`` must load the record from
+# pr_delivery's store first, because the record names the repository.
+#
+# What this is, and is not: a check of filesystem SHAPE, laid out as Git
+# lays out a repository and its linked worktrees. Shape is necessary, not
+# sufficient: it is NOT Git's own resolution of the repository, it is not
+# proof of repository identity, and it does not model every Git behaviour.
+# Constructing any accepted shape needs write access to the approved
+# repository's Git directory and the workspaces root, which a caller holding
+# only the MCP bearer token, who can name paths but write none, does not
+# have. Like the Git gates, this check is a workflow guardrail: it is not
+# designed to contain processes running with the user's own privileges.
+# What the ceremony then reads with Git (repository and Git directory
+# realpaths, remotes, the exact candidate) is bound into the displayed
+# proposal, and ``attest-dots`` re-reads it live and refuses any change.
+
+
+def _not_approved(reason):
+    _refuse(PROBLEM_REPOSITORY_NOT_APPROVED,
+            "%s; delivery is accepted only for the configured approved"
+            " repository or one of its worktrees directly under the configured"
+            " workspaces root, named by its realpath. Nothing was read with"
+            " Git and no ceremony ran" % reason)
+
+
+def _pointer(path):
+    """The single ``gitdir: TARGET`` line of the pointer file at ``path``
+    (Git's worktree layout), or None: no file, a symlink or anything but a
+    regular file, more than 4096 bytes, not UTF-8, a NUL, not exactly one
+    line, or no target. Never follows a symlink at the final component."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        data = os.read(descriptor, MAX_POINTER_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    line = text.strip()
+    if len(data) > MAX_POINTER_BYTES or "\x00" in text or not line or (
+        "\n" in line or "\r" in line
+    ):
+        return None
+    return line
+
+
+def _pointer_target(base, path, prefix=""):
+    """The realpath the pointer file at ``path`` names, resolved against
+    ``base``, or None. A checkout's ``.git`` reads ``gitdir: TARGET``
+    (``prefix`` GITDIR_PREFIX); an administrative ``gitdir`` or
+    ``commondir`` is the bare path."""
+    line = _pointer(path)
+    if line is None or not line.startswith(prefix):
+        return None
+    target = line[len(prefix):].strip()
+    return os.path.realpath(os.path.join(base, target)) if target else None
+
+
+def _common_of(git_dir):
+    """The common directory of the Git directory ``git_dir``, by Git's own
+    layout rule: the target of its ``commondir`` file when it has one,
+    otherwise itself. None when ``commondir`` exists but is unusable (a
+    symlink, malformed, or naming no directory)."""
+    pointer = os.path.join(git_dir, "commondir")
+    if not os.path.lexists(pointer):
+        return git_dir
+    common = _pointer_target(git_dir, pointer)
+    return common if common is not None and os.path.isdir(common) else None
+
+
+def _common_dir(repository_realpath):
+    """The configured repository's Git common directory, from its ``.git``
+    entry (the directory itself, or the administrative directory a ``.git``
+    file names) and then that Git directory's ``commondir``, as Git resolves
+    it. None when it holds no usable Git directory."""
+    dot_git = os.path.join(repository_realpath, ".git")
+    try:
+        mode = os.lstat(dot_git).st_mode
+    except OSError:
+        return None
+    if stat.S_ISDIR(mode):
+        git_dir = os.path.realpath(dot_git)
+    else:
+        git_dir = _pointer_target(repository_realpath, dot_git, GITDIR_PREFIX)
+    if git_dir is None or not os.path.isdir(git_dir):
+        return None
+    return _common_of(git_dir)
+
+
+def _is_worktree_of(checkout, common_dir):
+    """Three ways, on Git's own pointer files (the shape of
+    ``target_runtime.mission_workspace``'s pointer proof, without its Git
+    confirmation): the checkout's ``.git`` file names one administrative
+    directory directly under ``<common>/worktrees``; that directory's
+    ``gitdir`` names this checkout's ``.git`` back; and its ``commondir``,
+    from which Git takes the objects, refs and config the checkout uses,
+    resolves to exactly ``common_dir`` (with none, the administrative
+    directory would be its own repository, which is not the approved one)."""
+    dot_git = os.path.join(checkout, ".git")
+    admin = _pointer_target(checkout, dot_git, GITDIR_PREFIX)
+    if admin is None or os.path.dirname(admin) != os.path.join(
+        common_dir, "worktrees"
+    ):
+        return False
+    if _pointer_target(admin, os.path.join(admin, "gitdir")) != dot_git:
+        return False
+    return _common_of(admin) == common_dir
+
+
+def approved_repository(repo, configured_repository, workspaces_root):
+    """``repo`` when, by filesystem shape, it is the configured, approved
+    repository, or one of its worktrees directly under the configured
+    workspaces root; otherwise a refusal. ``repo`` must be its own realpath:
+    no symlink, ``.`` or ``..`` component and no trailing separator, so the
+    name checked is the name pr_delivery receives. A refusal never echoes
+    what a path resolves to. Shape, not Git's resolution: see above for what
+    this does not exclude."""
+    if configured_repository is None:
+        _refuse(PROBLEM_NOT_CONFIGURED,
+                "delivery is not configured: no approved repository was given"
+                " (--workspace-repository), so every delivery tool is refused."
+                " Nothing was read with Git and no ceremony ran")
+    if not isinstance(repo, str) or not os.path.isabs(repo):
+        _not_approved("the repository is not an absolute path")
+    if os.path.realpath(repo) != repo:
+        _not_approved("the repository is not named by its own realpath (it"
+                      " has a symlink, '.' or '..' component, or a trailing"
+                      " separator)")
+    approved = os.path.realpath(configured_repository)
+    common = _common_dir(approved)
+    if common is None:
+        _not_approved("the configured repository holds no Git repository")
+    if repo == approved:
+        return repo
+    if workspaces_root is not None and os.path.dirname(repo) == (
+        os.path.realpath(workspaces_root)
+    ) and _is_worktree_of(repo, common):
+        return repo
+    _not_approved("the repository is not the approved one")
+
+
+def bound_repository(document, configured_repository, workspaces_root):
+    """The repository a presented delivery proposal (``binding.repository
+    .realpath``) or a delivery record (``repository.realpath``) binds,
+    checked against the same identity as ``approved_repository``. One that
+    binds none in pr_delivery's shape is refused."""
+    if configured_repository is None:
+        approved_repository(None, None, None)
+    binding = document.get("binding", document) if isinstance(
+        document, dict) else None
+    repository = binding.get("repository") if isinstance(binding, dict) else None
+    realpath = repository.get("realpath") if isinstance(
+        repository, dict) else None
+    if not isinstance(realpath, str):
+        _not_approved("the delivery binds no repository")
+    return approved_repository(realpath, configured_repository, workspaces_root)
 
 
 def _ceremony(operation):
@@ -202,6 +397,10 @@ def display_text(document):
         " (nothing is omitted):",
     ] + adapter_module.rendered_lines("delivery_proposal", proposal) + [
         "",
+        "To approve exactly this delivery, first arm it on the DI machine:"
+        " run the arming command presented with it in your local shell,"
+        " approving that command only if every value in it matches this"
+        " delivery. It prints a one-time approval code.",
         "To approve exactly this delivery, reply with a separate message"
         " containing only: approved",
         "An engineering approval never authorizes delivery. Approving this"
@@ -276,7 +475,21 @@ def grant(delivery_id, proposal):
     }
 
 
-def status(delivery_id):
-    """Read-only: pr_delivery's status projection of one delivery."""
-    return _ceremony(lambda: delivery_boundary.PrDeliveryBoundary(
-        delivery_cli.build_machine()).status(delivery_id))
+def status(delivery_id, configured_repository, workspaces_root):
+    """Read-only: pr_delivery's status projection of one delivery, only for
+    a delivery whose repository is the approved identity. Unconfigured, it
+    is refused before pr_delivery's store is opened. Configured, the order is
+    load the record (pr_delivery's store), check the repository it names
+    (filesystem pointer files), then project: the check cannot precede the
+    load, since only the record names the repository. No Git, no network,
+    no step."""
+    if configured_repository is None:
+        approved_repository(None, None, None)
+
+    def read():
+        boundary = delivery_boundary.PrDeliveryBoundary(
+            delivery_cli.build_machine())
+        record = boundary.machine.load(delivery_id)
+        bound_repository(record, configured_repository, workspaces_root)
+        return delivery_boundary.project_status(record, boundary.machine.clock())
+    return _ceremony(read)
