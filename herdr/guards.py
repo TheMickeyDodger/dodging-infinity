@@ -796,6 +796,43 @@ def _delivery_commit_live(
     }
 
 
+def _delivery_proposed_parents(
+    repo: str | Path,
+    updates,
+    head_ref: str,
+):
+    """The COMPLETE parent set of the commit object a reference
+    transaction would put on HEAD's branch, read in the ``prepared``
+    phase BEFORE the ref moves (``rev-parse <new>^@``), or None when it
+    cannot be read exactly: not exactly one update of that ref, a new
+    value that is not a full object id, or a failed read. Never raises:
+    None is a fact the receipt check refuses, never a pass."""
+    try:
+        proposed = [
+            new
+            for _, new, ref in updates
+            if ref == head_ref
+        ]
+        if len(proposed) != 1 or not re.fullmatch(
+            r"[0-9a-f]{40}",
+            proposed[0],
+        ):
+            return None
+        parents = gitout(
+            repo,
+            "rev-parse",
+            f"{proposed[0]}^@",
+        ).split()
+        if not all(
+            re.fullmatch(r"[0-9a-f]{40}", parent)
+            for parent in parents
+        ):
+            return None
+        return parents
+    except Exception:  # never propagate out of a hook
+        return None
+
+
 def guard_precommit(
     repo: str | Path,
 ) -> int:
@@ -888,10 +925,21 @@ def guard_reference_transaction(
             # Second path, in order: an executing COMMIT receipt bound
             # to the live identity, else an executing BASE_REFRESH
             # receipt bound to EXACTLY this (ref, old, new) update line.
+            # The COMMIT live facts also carry the complete parent set of
+            # the commit object about to land, read here BEFORE the ref
+            # moves; only a pr_update receipt judges it.
+            commit_live = _delivery_commit_live(repo)
+            commit_live["proposed_commit_parents"] = (
+                _delivery_proposed_parents(
+                    repo,
+                    updates,
+                    head_ref,
+                )
+            )
             receipt_ok, receipt_message = _delivery_receipt_decision(
                 repo,
                 DELIVERY_STEP_COMMIT,
-                _delivery_commit_live(repo),
+                commit_live,
             )
 
             if not receipt_ok:

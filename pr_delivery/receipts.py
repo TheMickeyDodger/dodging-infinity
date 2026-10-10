@@ -56,6 +56,17 @@ PROBLEM_RECEIPT_AMBIGUOUS = "pr_delivery_receipt_ambiguous"
 PROBLEM_RECEIPT_BINDING = "pr_delivery_receipt_binding_mismatch"
 PROBLEM_RECEIPT_STATE = "pr_delivery_receipt_state"
 PROBLEM_EVIDENCE_STALE = "pr_delivery_evidence_stale"
+PROBLEM_PROPOSED_PARENTS = "pr_delivery_proposed_commit_parents"
+
+# A live fact only the reference-transaction ``prepared`` hook can supply:
+# the COMPLETE parent set of the commit object the transaction would put on
+# HEAD's branch, read before the ref moves (None when it cannot be read
+# exactly). It is not a receipt binding field, and it is judged only for a
+# ``pr_update`` COMMIT receipt: that kind authorizes exactly ONE new commit
+# whose parent set is exactly [the approved head], so a commit that a
+# concurrently created merge state turned into a merge is refused before
+# the branch moves. Other kinds never consult it.
+PROPOSED_PARENTS_FACT = "proposed_commit_parents"
 
 
 class ReceiptError(Exception):
@@ -68,12 +79,14 @@ def precondition_problem(record, step, now):
     """The first reason a receipt for ``step`` may not be derived now,
     as ``(problem, detail)``, or ``(None, None)``.
 
-    Every check is against the durable record: allowed action set, phase,
-    expiry, revocation, attempt bound, and the three evidence references
-    being bound to this record's exact candidate identity and its
-    ORIGINAL base (a later base refresh re-verifies and records its own
-    result on the BASE_REFRESH receipt; the original evidence stays bound
-    to the original base, which is what "recorded" means).
+    Every check is against the durable record: allowed action set, phase
+    (through the record's own kind table), expiry, revocation, attempt
+    bound, and the three evidence references being bound to this record's
+    exact candidate identity and its ORIGINAL base (a later base refresh
+    re-verifies and records its own result on the BASE_REFRESH receipt;
+    the original evidence stays bound to the original base, which is what
+    "recorded" means; for ``pr_update`` that base is the approved pull
+    request head, which is never refreshed).
     """
     if step not in record["allowed_actions"]:
         return (
@@ -81,7 +94,7 @@ def precondition_problem(record, step, now):
             "%s is not in the authorized action set %s"
             % (step, record["allowed_actions"]),
         )
-    if auth.STEP_FOR_PHASE.get(record["phase"]) != step:
+    if auth.step_for_phase(record["mode"], record["phase"]) != step:
         return (
             PROBLEM_PHASE_FORBIDS_STEP,
             "phase %s does not permit %s" % (record["phase"], step),
@@ -228,6 +241,21 @@ def guard_decision(repo_root, step, live, now, store_directory=None):
                 " (%s)" % (
                     receipt["receipt_id"], field, expected, actual,
                     PROBLEM_RECEIPT_BINDING,
+                ),
+            )
+        if (
+            step == auth.STEP_COMMIT
+            and record["mode"] == auth.MODE_PR_UPDATE
+            and PROPOSED_PARENTS_FACT in live
+            and live[PROPOSED_PARENTS_FACT]
+            != [receipt["binding"]["head_before"]]
+        ):
+            return (
+                False,
+                "receipt %s authorizes ONE new commit on %s, but the commit"
+                " about to land has parents %r (%s)" % (
+                    receipt["receipt_id"], receipt["binding"]["head_before"],
+                    live[PROPOSED_PARENTS_FACT], PROBLEM_PROPOSED_PARENTS,
                 ),
             )
         return True, "PR delivery receipt %s (%s)" % (

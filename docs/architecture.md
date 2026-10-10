@@ -1488,7 +1488,18 @@ never produces it. Live phone-to-PR delivery remains unproven. SUPERSEDED: one
 standalone live Dots-attested delivery ran in the V6 exercise:
 `prd-85cad864f6ae89b72c1c483d` (`mission: null`), whose COMMIT, PUSH and
 PR_CREATE succeeded and opened PR #37 (open, not merged). It was
-Operator-mediated, and its Mission stays `delivered: false`.] It binds the
+Operator-mediated, and its Mission stays `delivered: false`.] [A second
+delivery KIND, `pr_update`, adds ONE new commit to the head branch of an
+EXISTING open pull request, named by exact number and head branch. It is a
+strict fast-forward of that pull request's approved head and authorizes
+exactly COMMIT and PUSH: BASE_REFRESH and PR_CREATE are `not_needed` from
+mint. Its closed key tuples extend the unchanged `pull_request` tuples with
+the pull request number, the staged hash and (in its proposal) the
+pre-displayed `prd-` delivery id. Records of the existing kind therefore
+keep validating under their stored digests. The live pull request and
+remote head ref are re-proven before every effect, the approved head is
+never refreshed, and unrelated dirty paths are tolerated only when disjoint
+from the candidate.] It binds the
 candidate's changed paths, statuses, modes
 and content digests; the recorded Herdr COMPLETE, canonical Reviewer APPROVE
 and independent verification evidence; the repository, remote, source and base

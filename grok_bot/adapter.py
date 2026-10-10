@@ -140,6 +140,10 @@ DELIVERY_PRESENT_FIELDS = (
     ("validity_seconds", "integer", False, None),
     ("mission_workflow_id", "text", False, None),
     ("mission_authorization_digest", "text", False, None),
+    # Both or neither (present-dots refuses one alone): an EXISTING open
+    # pull request, which selects pr_delivery's ``pr_update`` kind.
+    ("pr_number", "integer", False, None),
+    ("head_branch", "text", False, None),
 )
 # The delivery binding a reply must restate (as displayed) and the relay.
 DELIVERY_APPROVAL_FIELDS = ("proposal_digest_sha256", "expires_at",
@@ -657,7 +661,8 @@ class GrokBotAdapter(object):
         return {
             "ok": True, "status": "delivery_authorized_by_operator_attestation",
             "delivery_id": delivery_id, "proposal_digest_sha256": digest,
-            "delivery_authorization": delivery_module.grant(delivery_id),
+            "delivery_authorization": delivery_module.grant(
+                delivery_id, receipt["proposal"]),
         }
 
     def _delivery_status(self, delivery_id=None):

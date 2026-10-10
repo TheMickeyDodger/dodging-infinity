@@ -1,7 +1,8 @@
 """The bounded, durable PR delivery state machine.
 
-Four steps in a fixed order — BASE_REFRESH, COMMIT, PUSH, PR_CREATE —
-each driven by one derived receipt, each persisted as ``executing``
+For the ``pull_request`` kind, four steps in a fixed order — BASE_REFRESH,
+COMMIT, PUSH, PR_CREATE (the ``pr_update`` kind, below, runs COMMIT and
+PUSH only) — each driven by one derived receipt, each persisted as ``executing``
 (fsync) BEFORE its external effect so a crash at any point reconciles
 forward from durable state: the exact expected commit is adopted, never
 recreated; the exact remote ref is adopted, never re-pushed to a
@@ -43,6 +44,31 @@ Base drift (request: "routine fast-forward target-base advancement"):
 
 Delivery ends at PR_OPENED -> COMPLETE. There is no merge step, no merge
 verb, and no way to widen the action set from here.
+
+The ``pr_update`` kind (one new commit on the head branch of an EXISTING
+open pull request) runs AUTHORIZED -> COMMITTED -> PUSHED -> COMPLETE:
+
+- Before EACH effect (the commit and the push) the live pull request is
+  re-read and must be open, on the authorized head and base branches,
+  with its head at the approved expected head SHA; the live remote head
+  ref must be that same SHA. Each mismatch blocks with its own problem.
+- The approved update head is never refreshed: no BASE_REFRESH, no
+  post-commit base advance. The pull request's base branch is identity
+  only. The push is a strict fast-forward whose receipt binds the
+  APPROVED head as the expected remote old OID, never a live re-read.
+- Unrelated unstaged and untracked paths may stay in the working tree when
+  they are disjoint from every candidate path; the commit takes the index
+  only, so they stay exactly as they were.
+- ONE new commit, stated as an explicit property rather than implied by a
+  first parent or by ref fast-forwardness: the delivered commit's COMPLETE
+  parent set is exactly [the approved head], and the remote head ref is
+  exactly the approved head before the push and the push receipt's
+  expected old OID. So the head branch gains exactly that one commit. A
+  pending merge, cherry-pick or revert refuses before the COMMIT receipt
+  is derived. Observation, reconciliation and pre-PUSH validation each
+  require the parent set to be exactly [the approved head]. These checks
+  are ``pr_update`` only; the ``pull_request`` kind is unchanged.
+- PUSHED -> COMPLETE is an effect-free observation (``_observe_pr_update``).
 """
 
 import os
@@ -77,6 +103,30 @@ PROBLEM_BASE_ADVANCED_OVERLAPPING_AFTER_COMMIT = (
     "pr_delivery_base_advanced_overlapping_after_commit"
 )
 PROBLEM_MISSING_RECORD = "pr_delivery_missing_record"
+# ``pr_update``: the live pull request and remote head ref must be exactly
+# the authorized ones, each mismatch with its own problem.
+PROBLEM_PR_CLOSED = "pr_delivery_pr_closed"
+PROBLEM_PR_MERGED = "pr_delivery_pr_merged"
+PROBLEM_PR_HEAD_BRANCH_MISMATCH = "pr_delivery_pr_head_branch_mismatch"
+PROBLEM_PR_BASE_BRANCH_MISMATCH = "pr_delivery_pr_base_branch_mismatch"
+PROBLEM_PR_HEAD_DRIFT = "pr_delivery_pr_head_drift"
+PROBLEM_PR_REF_MISMATCH = "pr_delivery_pr_ref_mismatch"
+PROBLEM_PR_IDENTITY_UNSUPPORTED = "pr_delivery_pr_identity_unsupported"
+PROBLEM_STAGED_HASH_MISMATCH = "pr_delivery_staged_hash_mismatch"
+# ``pr_update`` authorizes exactly ONE new commit whose COMPLETE parent set
+# is exactly [the approved head]. A pending merge (or cherry-pick or revert)
+# would make the commit carry other history, so it refuses before the
+# COMMIT receipt exists; any other parent set refuses wherever a delivered
+# commit is examined.
+PROBLEM_PENDING_MERGE = "pr_delivery_pending_merge"
+PROBLEM_COMMIT_PARENTS = "pr_delivery_commit_not_one_new_commit"
+# The pseudo-refs of a pending history-bearing operation: committing while
+# one exists would finish that operation instead of recording only the
+# staged candidate.
+_PENDING_HISTORY_REFS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")
+
+_PR_VIEW_FIELDS = ("number", "url", "state", "headRefName", "baseRefName",
+                   "headRefOid", "isCrossRepository")
 
 BASE_CI_GREEN = "green"
 BASE_CI_RED = "red"
@@ -127,6 +177,87 @@ def _porcelain_unstaged(text):
         if line.startswith("??") or line[0] not in "AMD" or line[1] != " ":
             return line
     return None
+
+
+def pr_update_identity_problem(viewed, repository_url, number, head_branch,
+                               base_branch, expected_head):
+    """``(problem, detail)`` for the first way the LIVE pull request
+    ``viewed`` (``gh pr view``) is not exactly the authorized one, or
+    ``(None, None)``. Pure; shared by the ceremony and the machine so both
+    refuse identically. Any response shape not understood exactly — a
+    missing or mistyped field, a URL naming another pull request or
+    repository, a head in another repository, an unknown state — is
+    ``pr_delivery_pr_identity_unsupported``.
+
+    Types are checked EXACTLY before any value is compared, because Python
+    equality is looser than the identity it pins: ``7.0 == 7`` and
+    ``True == 1``. ``number`` must be an int (never a bool or a float),
+    every text field a str, ``headRefOid`` a full lowercase object id, and
+    ``isCrossRepository`` exactly ``False``."""
+    if not isinstance(viewed, dict) or any(
+        field not in viewed for field in _PR_VIEW_FIELDS
+    ):
+        return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                "the pull request view does not carry %s"
+                % ", ".join(_PR_VIEW_FIELDS))
+    value = viewed["number"]
+    if not isinstance(value, int) or isinstance(value, bool) or (
+        value != number
+    ):
+        return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                "the pull request view names %r, not the integer #%d"
+                % (value, number))
+    for field in ("url", "state", "headRefName", "baseRefName",
+                  "headRefOid"):
+        if not isinstance(viewed[field], str):
+            return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                    "the pull request view's %s is %r, not a string"
+                    % (field, viewed[field]))
+    if len(viewed["headRefOid"]) != 40 or any(
+        ch not in "0123456789abcdef" for ch in viewed["headRefOid"]
+    ):
+        return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                "the pull request view's headRefOid %r is not a full object"
+                " id" % (viewed["headRefOid"],))
+    try:
+        target = canonical.canonicalize_target_url(viewed["url"])
+        repository = canonical.canonicalize_repository_url(repository_url)
+    except canonical.CanonicalizationError as exc:
+        return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                "the pull request URL did not canonicalize (%s)"
+                % exc.problem)
+    if target.kind != canonical.KIND_PR or target.number != number or not (
+        canonical.same_repository_identity(target, repository)
+    ):
+        return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                "the pull request URL %r does not name #%d of %s"
+                % (target.canonical_url, number, repository_url))
+    if viewed["isCrossRepository"] is not False:
+        return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                "pull request #%d's head is not a branch of this repository"
+                " (isCrossRepository %r)"
+                % (number, viewed["isCrossRepository"]))
+    state = viewed["state"]
+    if state == "MERGED":
+        return PROBLEM_PR_MERGED, "pull request #%d is merged" % number
+    if state == "CLOSED":
+        return PROBLEM_PR_CLOSED, "pull request #%d is closed" % number
+    if state != "OPEN":
+        return (PROBLEM_PR_IDENTITY_UNSUPPORTED,
+                "pull request #%d has unknown state %r" % (number, state))
+    if viewed["headRefName"] != head_branch:
+        return (PROBLEM_PR_HEAD_BRANCH_MISMATCH,
+                "pull request #%d's head branch is %r, not the authorized %r"
+                % (number, viewed["headRefName"], head_branch))
+    if viewed["baseRefName"] != base_branch:
+        return (PROBLEM_PR_BASE_BRANCH_MISMATCH,
+                "pull request #%d's base branch is %r, not the authorized %r"
+                % (number, viewed["baseRefName"], base_branch))
+    if viewed["headRefOid"] != expected_head:
+        return (PROBLEM_PR_HEAD_DRIFT,
+                "pull request #%d's head is %r, not the expected %s"
+                % (number, viewed["headRefOid"], expected_head))
+    return None, None
 
 
 class DeliveryMachine(object):
@@ -218,13 +349,17 @@ class DeliveryMachine(object):
             self._block(record, receipts.PROBLEM_EXPIRED,
                         "the authorization expired")
             return OUTCOME_BLOCKED
-        step = auth.STEP_FOR_PHASE[record["phase"]]
-        handler = {
-            auth.STEP_BASE_REFRESH: self._step_base_refresh,
-            auth.STEP_COMMIT: self._step_commit,
-            auth.STEP_PUSH: self._step_push,
-            auth.STEP_PR_CREATE: self._step_pr_create,
-        }[step]
+        step = auth.step_for_phase(record["mode"], record["phase"])
+        if step is None:
+            # Only a ``pr_update`` record at PUSHED: no step, no receipt.
+            handler = self._observe_pr_update
+        else:
+            handler = {
+                auth.STEP_BASE_REFRESH: self._step_base_refresh,
+                auth.STEP_COMMIT: self._step_commit,
+                auth.STEP_PUSH: self._step_push,
+                auth.STEP_PR_CREATE: self._step_pr_create,
+            }[step]
         try:
             handler(record)
         except _Block as block:
@@ -260,7 +395,7 @@ class DeliveryMachine(object):
             "detail": str(detail)[:auth.MAX_EVIDENCE_TEXT_CHARS],
             "recorded_at": now,
         }
-        step = auth.STEP_FOR_PHASE.get(record["phase"])
+        step = auth.step_for_phase(record["mode"], record["phase"])
         if step is not None:
             entry = record["steps"][step]
             if entry["state"] != auth.STEP_SUCCEEDED:
@@ -270,6 +405,11 @@ class DeliveryMachine(object):
         self._persist(record)
 
     def _retry(self, record, step, detail):
+        if step is None:
+            # The ``pr_update`` observation holds no receipt to fail.
+            record["blocker"] = None
+            self._persist(record)
+            return
         entry = record["steps"][step]
         receipt = entry["receipt"]
         if receipt is not None and receipt["state"] == auth.RECEIPT_EXECUTING:
@@ -380,6 +520,102 @@ class DeliveryMachine(object):
         )
         if problem is not None:
             raise _Block(problem, detail)
+
+    def _require_update_candidate(self, record, base_oid):
+        """The ``pr_update`` working-tree rule. The staged index against
+        the approved head must be exactly the bound candidate (an extra
+        staged entry, a missing one, or changed content each refuse with
+        their own problem), and every unstaged or untracked path must be
+        disjoint from every candidate path, exactly and by directory prefix
+        in both directions. The dirty set is read from NUL-separated
+        status output, never from quoted porcelain text."""
+        path = record["repository"]["realpath"]
+        dirty = candidate_module.worktree_dirty_paths(
+            self.transport.worktree_status_z(path)
+        )
+        self._require_candidate_matches(
+            candidate_module.parse_raw_z(
+                self.transport.diff_index_raw(path, base_oid)
+            ),
+            record,
+        )
+        conflicts = candidate_module.overlaps(
+            [entry["path"] for entry in record["candidate"]["entries"]],
+            dirty,
+        )
+        if conflicts:
+            raise _Block(
+                candidate_module.PROBLEM_WORKTREE_OVERLAP,
+                "unstaged or untracked change(s) touch candidate path(s): %s"
+                % ", ".join("%r/%r" % pair for pair in conflicts[:8]),
+            )
+
+    def _require_pr_update_identity(self, record, expected_head):
+        """Before an effect: the live pull request is exactly the
+        authorized one with its head at ``expected_head``, and the live
+        remote head ref is that same SHA (a disagreement between the two is
+        its own refusal)."""
+        number = record["pull_request_number"]
+        viewed = self.transport.gh_pr_view(
+            record["repository"]["owner"], record["repository"]["repo"],
+            number,
+        )
+        problem, detail = pr_update_identity_problem(
+            viewed, record["repository"]["repository_url"], number,
+            record["source"]["branch"], record["target_base"]["branch"],
+            expected_head,
+        )
+        if problem is not None:
+            raise _Block(problem, detail)
+        remote_head = self.transport.ls_remote(
+            record["repository"]["realpath"], record["remote"]["name"],
+            record["source"]["ref"],
+        )
+        if remote_head != expected_head:
+            raise _Block(
+                PROBLEM_PR_REF_MISMATCH,
+                "pull request #%d's head is %s but remote %r is at %s"
+                % (number, expected_head, record["source"]["ref"],
+                   remote_head),
+            )
+        return viewed
+
+    def _require_no_pending_history(self, record):
+        """``pr_update``, before the COMMIT receipt: no merge, cherry-pick
+        or revert is in progress. Committing then would FINISH that
+        operation, recording other history (a merge commit's further
+        parents), never only the one authorized commit."""
+        pending = self._pending_history(record)
+        if pending is not None:
+            raise _Block(PROBLEM_PENDING_MERGE,
+                         "%s exists: an operation is pending, and"
+                         " committing would finish it instead of"
+                         " recording only the authorized commit" % pending)
+
+    def _pending_history(self, record):
+        """The first pending history-bearing pseudo-ref, or None."""
+        path = record["repository"]["realpath"]
+        for name in _PENDING_HISTORY_REFS:
+            if self.transport.rev_parse(path, name) is not None:
+                return name
+        return None
+
+    def _require_one_new_commit(self, record, commit_oid, parent_oid):
+        """``commit_oid`` is exactly ONE new commit on ``parent_oid``: its
+        COMPLETE parent list is ``[parent_oid]``. A first-parent check
+        alone would accept a merge whose further parents bring unreviewed
+        history, and ref fast-forwardness is a different property, so
+        neither is relied on here."""
+        parents = self.transport.commit_parents(
+            record["repository"]["realpath"], commit_oid,
+        )
+        if parents != [parent_oid]:
+            raise _Block(
+                PROBLEM_COMMIT_PARENTS,
+                "commit %s has parents %s; exactly one parent, %s, is"
+                " authorized" % (commit_oid, ", ".join(parents) or "none",
+                                 parent_oid),
+            )
 
     def _remote_base(self, record):
         oid = self.transport.ls_remote(
@@ -592,9 +828,26 @@ class DeliveryMachine(object):
             raise _Block(PROBLEM_HEAD_NOT_AT_BASE,
                          "HEAD %s is not the current base %s"
                          % (head, current))
-        self._require_candidate_matches(
-            self._live_candidate(record, current), record,
-        )
+        update = record["mode"] == auth.MODE_PR_UPDATE
+        if update:
+            self._require_no_pending_history(record)
+            self._require_pr_update_identity(record, current)
+            self._require_update_candidate(record, current)
+        else:
+            self._require_candidate_matches(
+                self._live_candidate(record, current), record,
+            )
+        staged = self.transport.staged_diff_sha256(path)
+        if update and staged != record["staged_sha256"]:
+            # The approved staged hash (``git diff --cached --binary``
+            # against the expected head), re-proven before the receipt is
+            # derived; the candidate identity was re-proven just above, as
+            # a separate binding.
+            raise _Block(
+                PROBLEM_STAGED_HASH_MISMATCH,
+                "the staged hash is %s, not the approved %s"
+                % (staged, record["staged_sha256"]),
+            )
         message = pr_text.revision_message(record)
         binding = {
             "repository_realpath": path,
@@ -602,7 +855,7 @@ class DeliveryMachine(object):
             "branch": record["source"]["branch"],
             "source_ref": record["source"]["ref"],
             "head_before": current,
-            "staged_sha256": self.transport.staged_diff_sha256(path),
+            "staged_sha256": staged,
             "candidate_identity_digest": record["candidate"][
                 "identity_digest_sha256"
             ],
@@ -618,6 +871,21 @@ class DeliveryMachine(object):
                 record["committer"]["email"], message,
             )
         except DeliveryTransportError as exc:
+            if update and self.transport.head_oid(path) == current:
+                # The installed guard refuses, BEFORE the branch moves, a
+                # commit whose complete parent set is not [approved head]:
+                # a merge (or cherry-pick or revert) state that appeared
+                # after the pre-check is how that happens. The effect is
+                # proven absent (HEAD unmoved), so the receipt is voided
+                # and the refusal is durable, never a retry.
+                pending = self._pending_history(record)
+                if pending is not None:
+                    self._void(record, step)
+                    raise _Block(
+                        PROBLEM_PENDING_MERGE,
+                        "%s appeared after the pre-check; the commit was"
+                        " refused before the branch moved: %s"
+                        % (pending, exc))
             raise _Retry("commit effect failed: %s" % exc)
         self._observe_commit(record, binding)
 
@@ -635,6 +903,9 @@ class DeliveryMachine(object):
                 % (new_head, parent, tree, binding["head_before"],
                    binding["expected_tree_oid"]),
             )
+        if record["mode"] == auth.MODE_PR_UPDATE:
+            self._require_one_new_commit(
+                record, new_head, record["original_baseline"]["commit_sha"])
         live = candidate_module.parse_raw_z(
             self.transport.diff_tree_raw(path, binding["head_before"],
                                          new_head)
@@ -657,6 +928,12 @@ class DeliveryMachine(object):
         if parent == binding["head_before"] and tree == binding[
             "expected_tree_oid"
         ]:
+            if record["mode"] == auth.MODE_PR_UPDATE:
+                # Never adopt a commit whose complete parent set is not
+                # exactly [the approved head], even when its first parent
+                # and tree match: it is not the one authorized commit.
+                self._require_one_new_commit(
+                    record, head, record["original_baseline"]["commit_sha"])
             receipt["state"] = auth.RECEIPT_EXECUTING
             self._observe_commit(record, binding)
             return True
@@ -720,21 +997,25 @@ class DeliveryMachine(object):
             raise _Block(PROBLEM_UNEXPECTED_REF_MOVEMENT,
                          "HEAD %s is not the delivered commit %s"
                          % (head, commit_oid))
-        self._handle_post_commit_advance(record, commit_oid)
         remote = record["remote"]["name"]
         destination = record["source"]["ref"]
-        expected_old = self.transport.ls_remote(path, remote, destination)
-        if expected_old is None:
-            expected_old = auth.ZERO_OID
-        elif expected_old != commit_oid and not self.transport.is_ancestor(
-            path, expected_old, commit_oid,
-        ):
-            # The destination already holds something this delivery
-            # did not produce and cannot fast-forward: never attempt.
-            raise _Block(PROBLEM_UNEXPECTED_REF_MOVEMENT,
-                         "remote %r is at %s, which is not an ancestor of"
-                         " the delivered commit %s"
-                         % (destination, expected_old, commit_oid))
+        if record["mode"] == auth.MODE_PR_UPDATE:
+            expected_old = self._pr_update_push_old_oid(record, commit_oid)
+        else:
+            self._handle_post_commit_advance(record, commit_oid)
+            expected_old = self.transport.ls_remote(path, remote,
+                                                    destination)
+            if expected_old is None:
+                expected_old = auth.ZERO_OID
+            elif expected_old != commit_oid and not (
+                self.transport.is_ancestor(path, expected_old, commit_oid)
+            ):
+                # The destination already holds something this delivery
+                # did not produce and cannot fast-forward: never attempt.
+                raise _Block(PROBLEM_UNEXPECTED_REF_MOVEMENT,
+                             "remote %r is at %s, which is not an ancestor"
+                             " of the delivered commit %s"
+                             % (destination, expected_old, commit_oid))
         binding = {
             "repository_realpath": path,
             "remote_name": remote,
@@ -762,6 +1043,20 @@ class DeliveryMachine(object):
         except DeliveryTransportError as exc:
             raise _Retry("push effect failed: %s" % exc)
         self._observe_push(record, binding)
+
+    def _pr_update_push_old_oid(self, record, commit_oid):
+        """The ``pr_update`` push precondition: exactly ONE new commit on the
+        approved head. The commit's COMPLETE parent list must be exactly
+        [the approved expected head SHA], and the live pull request and
+        remote head ref must both still be exactly that SHA; anything else
+        refuses with no push attempted. Returns the APPROVED SHA as the
+        expected remote old OID: the receipt binds the approval, never a
+        live re-read, and it is never the zero OID. No base advance is
+        examined in this kind."""
+        expected = record["original_baseline"]["commit_sha"]
+        self._require_one_new_commit(record, commit_oid, expected)
+        self._require_pr_update_identity(record, expected)
+        return expected
 
     def _observe_push(self, record, binding):
         path = record["repository"]["realpath"]
@@ -947,6 +1242,50 @@ class DeliveryMachine(object):
                        "number": record["pull_request"]["number"],
                        "url": record["pull_request"]["url"]},
                       auth.PHASE_PR_OPENED)
+        auth.apply_transition(record, auth.PHASE_COMPLETE, self.clock())
+        self._persist(record)
+
+    # -- pr_update: PUSHED -> COMPLETE -----------------------------------
+
+    def _observe_pr_update(self, record):
+        """PUSHED -> COMPLETE for ``pr_update``, by an EFFECT-FREE
+        observation: re-read the live remote head ref and the live pull
+        request, require it still open on the same head and base branches
+        with its head at the pushed commit, record it into the existing
+        ``pull_request`` block, and transition. It derives NO receipt and
+        grants NO new authority, because it performs no effect: nothing is
+        written anywhere but this record. A pull request that does not yet
+        show the pushed commit (still at the approved head) is retried,
+        never assumed."""
+        self._check_repository(record, require_branch=False)
+        commit_oid = self._commit_oid(record)
+        remote_head = self.transport.ls_remote(
+            record["repository"]["realpath"], record["remote"]["name"],
+            record["source"]["ref"],
+        )
+        if remote_head != commit_oid:
+            raise _Block(PROBLEM_UNEXPECTED_REF_MOVEMENT,
+                         "remote %r is at %s, not the pushed %s"
+                         % (record["source"]["ref"], remote_head,
+                            commit_oid))
+        number = record["pull_request_number"]
+        viewed = self.transport.gh_pr_view(
+            record["repository"]["owner"], record["repository"]["repo"],
+            number,
+        )
+        problem, detail = pr_update_identity_problem(
+            viewed, record["repository"]["repository_url"], number,
+            record["source"]["branch"], record["target_base"]["branch"],
+            commit_oid,
+        )
+        if problem == PROBLEM_PR_HEAD_DRIFT and viewed.get(
+            "headRefOid"
+        ) == record["original_baseline"]["commit_sha"]:
+            raise _Retry("pull request #%d does not show the pushed commit"
+                         " yet" % number)
+        if problem is not None:
+            raise _Block(problem, detail)
+        self._record_pull_request(record, viewed)
         auth.apply_transition(record, auth.PHASE_COMPLETE, self.clock())
         self._persist(record)
 

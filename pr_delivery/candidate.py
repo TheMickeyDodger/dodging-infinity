@@ -48,8 +48,13 @@ PROBLEM_PATH_EXTRA = "pr_delivery_candidate_path_extra"
 PROBLEM_STATUS_CHANGED = "pr_delivery_candidate_status_changed"
 PROBLEM_MODE_CHANGED = "pr_delivery_candidate_mode_changed"
 PROBLEM_CONTENT_CHANGED = "pr_delivery_candidate_content_changed"
+# ``pr_update`` working-tree tolerance (see ``worktree_dirty_paths``).
+PROBLEM_WORKTREE_ENTRY = "pr_delivery_worktree_entry_unsupported"
+PROBLEM_WORKTREE_OVERLAP = "pr_delivery_worktree_overlap"
 
 _GITLINK_MODE = "160000"
+# ``git status --porcelain=v1`` XY status letters.
+_STATUS_LETTERS = " MTADRCU?!"
 
 
 class CandidateError(Exception):
@@ -223,6 +228,85 @@ def paths_from_raw_z(data):
                 PROBLEM_PATH,
             )
     return paths
+
+
+def worktree_dirty_paths(data):
+    """Every path with an UNSTAGED or UNTRACKED change, decoded, from
+    ``git status --porcelain=v1 -z --untracked-files=all --no-renames``
+    (``transport.worktree_status_z``) — used by the ``pr_update`` kind,
+    which tolerates unrelated dirty paths only when they are disjoint from
+    every candidate path.
+
+    Quoting-safe by construction: with ``-z`` git writes each path as its
+    raw bytes terminated by NUL and never C-quotes it (``core.quotePath``
+    does not apply), so a record is exactly ``X``, ``Y``, one space, then
+    the path bytes up to the NUL. Nothing is unquoted, unescaped or split
+    on whitespace. Refused, with ``pr_delivery_worktree_entry_unsupported``:
+    a record not of that shape; a rename or copy record (it would carry a
+    second NUL-terminated path, so the stream could no longer be read
+    record by record; ``--no-renames`` never produces one); an unmerged
+    record; an ignored record (never requested); a non-UTF-8 path; a
+    line-structured path. A record whose worktree letter ``Y`` is not a
+    space, or an untracked ``??`` record, is dirty; a staged-only record is
+    not (the staged set is the candidate's job, from ``diff-index``).
+    """
+    if not isinstance(data, (bytes, bytearray)):
+        raise CandidateError("status capture must be bytes",
+                             PROBLEM_WORKTREE_ENTRY)
+    tokens = bytes(data).split(b"\0")
+    if tokens and tokens[-1] == b"":
+        tokens.pop()
+    dirty = []
+    for token in tokens:
+        if len(token) < 4 or token[2:3] != b" ":
+            raise CandidateError(
+                "unrecognized status record %r" % (token,),
+                PROBLEM_WORKTREE_ENTRY,
+            )
+        index_letter = token[0:1].decode("ascii", "replace")
+        tree_letter = token[1:2].decode("ascii", "replace")
+        letters = index_letter + tree_letter
+        if any(letter not in _STATUS_LETTERS for letter in letters):
+            raise CandidateError(
+                "status record %r has unknown status %r" % (token, letters),
+                PROBLEM_WORKTREE_ENTRY,
+            )
+        if "R" in letters or "C" in letters:
+            raise CandidateError(
+                "status record %r is a rename or copy; refused" % (token,),
+                PROBLEM_WORKTREE_ENTRY,
+            )
+        if "U" in letters or letters in ("DD", "AA"):
+            raise CandidateError(
+                "status record %r is unmerged; refused" % (token,),
+                PROBLEM_WORKTREE_ENTRY,
+            )
+        if "!" in letters or ("?" in letters and letters != "??"):
+            raise CandidateError(
+                "status record %r is not a tracked or untracked entry"
+                % (token,), PROBLEM_WORKTREE_ENTRY,
+            )
+        path_bytes = token[3:]
+        try:
+            path = path_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise CandidateError(
+                "working-tree path %r is not valid UTF-8; refused"
+                % (path_bytes,), PROBLEM_WORKTREE_ENTRY,
+            )
+        # An untracked directory (a nested repository) is listed with a
+        # trailing slash; the overlap check compares the directory itself.
+        if path.endswith("/"):
+            path = path[:-1]
+        reason = path_character_problem(path)
+        if reason is not None or not path:
+            raise CandidateError(
+                "working-tree path %r %s; refused"
+                % (path, reason or "is empty"), PROBLEM_WORKTREE_ENTRY,
+            )
+        if letters == "??" or tree_letter != " ":
+            dirty.append(path)
+    return dirty
 
 
 def overlaps(candidate_paths, changed_paths):
