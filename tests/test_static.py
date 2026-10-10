@@ -1563,9 +1563,16 @@ assert not any(
 # (5) Guard wiring: herdr/guards.py imports the receipt module LAZILY
 #     inside `_delivery_receipt_decision`, inside a try that catches
 #     Exception; `guard_decision` is called exactly once there; the
-#     helper is consulted exactly four times (pre-commit 1,
-#     reference-transaction 2, pre-push 1); the legacy validators keep
+#     helper is consulted exactly five times (pre-commit 1,
+#     reference-transaction 3, pre-push 1); the legacy validators keep
 #     their call counts; the pre-tool guard never consults receipts.
+#     Reference-transaction's three are three distinct authority paths:
+#     the BASE_REFRESH receipt for an update identifiable as a merge
+#     (after the merge gate refuses), the COMMIT receipt when no commit
+#     approval is valid, then the BASE_REFRESH receipt for a single
+#     non-merge update line. The separate merge-gate path was added
+#     without this pin being updated (it said 2); 3 is a deliberate,
+#     re-reviewed re-derivation of the exact count, not a relaxation.
 guards_tree = ast.parse((R / 'herdr' / 'guards.py').read_text())
 for node in guards_tree.body:
     if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -1608,7 +1615,7 @@ assert _call_count(helper, 'guard_decision') == 1
 assert _call_count(guard_functions['guard_precommit'],
                    '_delivery_receipt_decision') == 1
 assert _call_count(guard_functions['guard_reference_transaction'],
-                   '_delivery_receipt_decision') == 2
+                   '_delivery_receipt_decision') == 3
 assert _call_count(guard_functions['guard_prepush'],
                    '_delivery_receipt_decision') == 1
 assert _call_count(guard_functions['guard_pretool'],

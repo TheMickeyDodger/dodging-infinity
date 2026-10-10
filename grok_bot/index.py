@@ -18,6 +18,12 @@ state directory as the local request surface, written with the shared
   proposals ``present_delivery`` DISPLAYED, each keyed by its own digest
   (content-addressed: the key is the digest of exactly the proposal it
   holds, validated on every load), bounded at ``MAX_DELIVERY_RECEIPTS``.
+- ``approval_consumption`` (optional; local arming) holds, per armed
+  commitment digest, whether it was CONSUMED by a fired approval, was
+  KILLED after too many wrong codes, or has collected failures so far. It
+  can only take acceptance away: nothing in it makes a commitment
+  acceptable, and the commitments themselves live in a separate file only
+  the local arming command writes (``grok_bot.authorize``).
 
 ``IN_FLIGHT`` is written BEFORE the Operator turn. It is removed when the
 turn provably proposed nothing (the Operator failed, answered in prose,
@@ -76,12 +82,17 @@ _SEAL_KEY_DOMAIN = b"grok_bot cancel-recovery seal key v1"
 _SEAL_PAD_DOMAIN = b"grok_bot cancel-recovery pad v1\x00"
 DOCUMENT_KEYS = ("schema_version", "requests", "presentations")
 # Additive (slice 3): a document written before it existed has none.
-DOCUMENT_OPTIONAL_KEYS = ("delivery_presentations",)
+DOCUMENT_OPTIONAL_KEYS = ("delivery_presentations", "approval_consumption")
 # Delivery presentation receipts, content-addressed by the proposal digest;
 # beyond this many the oldest presentation is forgotten (it can then no
 # longer be approved here: fail closed).
 MAX_DELIVERY_RECEIPTS = 16
 DELIVERY_RECEIPT_KEYS = ("proposal", "display_digest_sha256")
+# Local arming: consumption of armed commitments, keyed by ``C``.
+CONSUMPTION_KEYS = ("state", "failures", "updated_at")
+CONSUMPTION_OPEN = "OPEN"
+CONSUMPTION_CONSUMED = "CONSUMED"
+CONSUMPTION_DEAD = "DEAD"
 DELIVERY_PROPOSAL_KEYS = ("binding", "expires_at", "presented_at")
 RECEIPT_KEYS = ("binding", "display_digest_sha256", "presented_at")
 # Exactly the fields a reply must restate, as ``present`` displayed them.
@@ -182,6 +193,16 @@ def _validate(document, where):
         ) or not matches:
             bad("delivery presentation %r is not the proposal its digest"
                 " names" % (digest,))
+    consumption = document.get("approval_consumption", {})
+    if not isinstance(consumption, dict) or len(consumption) > MAX_ENTRIES:
+        bad("approval_consumption must be a map of at most %d" % MAX_ENTRIES)
+    for position, (digest, marker) in enumerate(consumption.items(), 1):
+        if not _hex64(digest) or not isinstance(marker, dict) or sorted(
+            marker
+        ) != sorted(CONSUMPTION_KEYS) or marker["state"] not in (
+            CONSUMPTION_OPEN, CONSUMPTION_CONSUMED, CONSUMPTION_DEAD
+        ) or not _count(marker["failures"]) or not _count(marker["updated_at"]):
+            bad("approval consumption marker %d is malformed" % position)
     requests = document["requests"]
     if not isinstance(requests, dict) or len(requests) > MAX_ENTRIES:
         bad("requests must be a map of at most %d" % MAX_ENTRIES)
@@ -371,6 +392,59 @@ class RequestIndex(object):
                 receipts[d]["proposal"]["presented_at"], d))
             del receipts[oldest]
         self._save(document)
+
+    def consumption(self, commitment):
+        """The consumption marker of one armed commitment, or None. A fire
+        reads it inside ``serialized()``."""
+        return self.load().get("approval_consumption", {}).get(commitment)
+
+    def _mark(self, commitment, now, consumed=False, failed=False,
+              dead_after=None):
+        document = self.load()
+        markers = document.setdefault("approval_consumption", {})
+        marker = markers.get(commitment)
+        if marker is None:
+            if len(markers) >= MAX_ENTRIES:
+                raise RequestIndexError(
+                    "%d approval markers are held; the hard bound is %d"
+                    % (MAX_ENTRIES, MAX_ENTRIES), PROBLEM_FULL)
+            marker = {"state": CONSUMPTION_OPEN, "failures": 0,
+                      "updated_at": now}
+        marker = dict(marker, updated_at=now)
+        if failed:
+            marker["failures"] += 1
+            if dead_after is not None and marker["failures"] >= dead_after:
+                marker["state"] = CONSUMPTION_DEAD
+        if consumed:
+            marker["state"] = CONSUMPTION_CONSUMED
+        markers[commitment] = marker
+        self._save(document)
+        return marker
+
+    def record_consumed(self, commitment, now):
+        """Durably mark ``commitment`` consumed, BEFORE the approval it fired
+        is applied. The caller holds ``serialized()``."""
+        return self._mark(commitment, now, consumed=True)
+
+    def record_code_failure(self, commitment, now, dead_after):
+        """Count one wrong code against ``commitment``; at ``dead_after`` it
+        is killed. The caller holds ``serialized()``."""
+        return self._mark(commitment, now, failed=True, dead_after=dead_after)
+
+    def prune_consumption(self, live_commitments):
+        """Forget markers of commitments that no longer exist (replaced or
+        expired). Only the local arming command calls this, inside
+        ``serialized()``; a fire looks a commitment up by its current
+        record, so a replaced commitment's marker can never matter again."""
+        document = self.load()
+        markers = document.get("approval_consumption")
+        if not markers:
+            return
+        kept = dict((digest, marker) for digest, marker in markers.items()
+                    if digest in live_commitments)
+        if len(kept) != len(markers):
+            document["approval_consumption"] = kept
+            self._save(document)
 
     def delivery_presentation(self, digest):
         """The receipt of the delivery proposal displayed under ``digest``,

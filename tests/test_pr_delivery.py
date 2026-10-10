@@ -83,6 +83,13 @@ GIT_PREPARED_PHASE_HOOK_ABORT_WORDINGS = (
     "in 'prepared' phase, update aborted by the reference-transaction hook",
 )
 
+# What the installed PRE-COMMIT guard's separate merge gate
+# (``herdr.guards.guard_precommit``) prints when MERGE_HEAD exists and no
+# merge approval covers it. Exact text, not a pattern.
+PRE_COMMIT_MERGE_GATE_REFUSAL = (
+    "HERD MERGE BLOCKED: completing a merge needs the merge approval for"
+    " exactly its source; a commit approval never authorizes a merge")
+
 
 class Crash(Exception):
     """Injected crash: not a transport error, so the machine cannot
@@ -3643,13 +3650,24 @@ class PrUpdateOneNewCommitTests(unittest.TestCase):
     def test_a_merge_racing_in_after_the_final_pre_check_is_refused_before_the_ref_moves(
             self):
         """The round-03 race, through the INSTALLED hooks and the receipt
-        path: the merge state appears after every preliminary check and
-        after the COMMIT receipt is executing, immediately before git
-        commits. git then builds a two-parent commit object, and the
-        reference-transaction ``prepared`` guard refuses it on its COMPLETE
-        parent set BEFORE the branch moves. Source HEAD stays at the
-        approved head, the receipt is voided, the record blocks durably and
-        nothing is pushed."""
+        path: the merge state appears after every preliminary check of the
+        machine and after the COMMIT receipt is executing, immediately
+        before git commits. That is BEFORE git's commit starts, the only
+        point at which git builds a two-parent commit from it: git reads
+        MERGE_HEAD when the commit starts, and one written later (by a
+        commit hook, after the pre-commit guard) is ignored and git builds
+        exactly one new commit.
+
+        The installed PRE-COMMIT guard's separate merge gate sees that
+        MERGE_HEAD and refuses FIRST, before any receipt is consulted, so no
+        reference transaction starts. (Before that gate existed the
+        pre-commit guard ignored MERGE_HEAD, and this same timing showed the
+        receipt authorizing and the reference-transaction guard aborting;
+        that later gate is exercised through the installed hook in
+        tests/test_pr_delivery_guards.py,
+        ``PrUpdateReferenceTransactionHookTests``.) Source HEAD stays at the
+        approved head, the receipt is voided, the record blocks durably, no
+        approval is consumed or created and nothing is pushed."""
         fx = UpdateFixture(self, hooks=True)
         delivery_id = fx.authorize_update()
         self.fx, self.delivery_id, self.approved = fx, delivery_id, fx.baseline
@@ -3699,27 +3717,28 @@ class PrUpdateOneNewCommitTests(unittest.TestCase):
             % (landed, fx.transport.commit_parents(str(fx.work), landed)))
         self.assertEqual(len(observed), 3,
                          "git's commit was not refused: %r" % (observed,))
-        # git's commit failed AFTER the pre-commit guard authorized it on
-        # the receipt (no commit object existed yet), at the installed
-        # reference-transaction guard, which aborted the ref update. That
-        # guard prints the reason of its last fallback lookup (pre-existing
-        # behaviour, unchanged), so causality — the proposed object's
-        # parent set — is pinned by the decision-level test in
-        # tests/test_pr_delivery_guards.py, the positive control below and
-        # the recorded mutation probe. git words the abort itself
-        # differently across releases; each known wording is accepted.
+        # git's commit failed at the installed PRE-COMMIT guard: its merge
+        # gate refused on the MERGE_HEAD written above, before the delivery
+        # receipt was consulted, so the receipt never authorized this commit
+        # and no reference transaction started: git reported no
+        # reference-transaction abort, in any known wording.
         self.assertTrue(observed[1].startswith("git commit failed"),
                         observed[1])
-        self.assertIn("HERD COMMIT PRE-CHECK AUTHORIZED BY PR delivery"
-                      " receipt", observed[2])
-        self.assertIn("HERD HISTORY UPDATE BLOCKED", observed[2])
-        assert_git_reported_a_prepared_phase_hook_abort(self, observed[2])
+        self.assertIn(PRE_COMMIT_MERGE_GATE_REFUSAL, observed[2])
+        self.assertNotIn("HERD COMMIT PRE-CHECK AUTHORIZED", observed[2])
+        self.assertNotIn("HERD HISTORY UPDATE BLOCKED", observed[2])
+        for wording in GIT_PREPARED_PHASE_HOOK_ABORT_WORDINGS:
+            self.assertNotIn(wording, observed[2])
         self.assertEqual(fx.head(), self.approved)
         record = self.assert_blocked_without_push(
             machine_module.PROBLEM_PENDING_MERGE)
         self.assertIsNone(record["steps"][COMMIT_STEP]["receipt"])
         self.assertEqual(len(record["steps"][COMMIT_STEP]["voided"]), 1)
         self.assertEqual(transport.pushes, [])
+        # No authority was consumed or created on the way: no commit or
+        # merge approval exists, and the receipt was voided, never spent.
+        self.assertFalse(guards.approval_path(fx.work).exists())
+        self.assertFalse(guards.merge_approval_path(fx.work).exists())
         # The candidate is still exactly staged: nothing was consumed.
         self.assertEqual(fx.live_digest(),
                          record["candidate"]["identity_digest_sha256"])

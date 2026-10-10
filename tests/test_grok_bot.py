@@ -59,6 +59,7 @@ from operator_session import FunctionOperatorSession  # noqa: E402
 from target_runtime import mission_bridge as bridge_module  # noqa: E402
 
 from grok_bot import adapter as adapter_module  # noqa: E402
+from grok_bot import authorize as authorize_module  # noqa: E402
 from grok_bot import cli as cli_module  # noqa: E402
 from grok_bot import framing  # noqa: E402
 from grok_bot import index as index_module  # noqa: E402
@@ -180,12 +181,18 @@ class Fixture(Bounded):
 
     def make_adapter(self, operator=None, surface=None):
         """A fresh adapter over the state directory alone: a restarted
-        process with no chat history."""
+        process with no chat history. The delivery tools' approved identity
+        is ``self.delivery_repository`` and
+        ``self.delivery_workspaces_root`` when a fixture configures them;
+        unconfigured, every delivery tool is refused."""
         surface = surface or local_request_cli.build_surface(
             self.state, self.clock, "/control-repo", self.factory)
         return adapter_module.GrokBotAdapter(
             surface, self.session(operator or self.operator), str(REPO_ROOT),
-            index_module.RequestIndex(self.state), self.clock)
+            index_module.RequestIndex(self.state), self.clock,
+            delivery_repository=getattr(self, "delivery_repository", None),
+            delivery_workspaces_root=getattr(
+                self, "delivery_workspaces_root", None))
 
     def missions(self):
         return mission_service.MissionService(
@@ -245,10 +252,33 @@ class Fixture(Bounded):
     def presented(self, ref, adapter=None):
         return self.ok((adapter or self.adapter).present(request_ref=ref))
 
-    def approval(self, presented, **changes):
-        """Exactly the displayed binding, plus the relayed reply."""
+    def arm(self, presented):
+        """The human's LOCAL arming of exactly the
+        displayed binding (``grok_bot.authorize``, as ``grokbot.py
+        authorize`` runs it), returning its one-time approval code."""
+        binding = presented["approval_binding"]
+        return authorize_module.arm_mission(
+            local_request_cli.build_surface(self.state, self.clock),
+            index_module.RequestIndex(self.state), self.clock,
+            binding["request_ref"], binding["mission_id"], binding["revision"],
+            binding["proposal_digest_sha256"], binding["approved_action_scope"],
+            binding["approved_delivery_targets"], binding["expires_at"],
+            presented["display_digest_sha256"])["approval_code"]
+
+    def unarmed(self, presented, **changes):
+        """Exactly the displayed binding plus the relayed reply, with no
+        approval code: what the surface itself receives."""
         args = dict(presented["approval_binding"], relayed_reply="approved",
                     relay_ref="grok-conversation-1")
+        args.update(changes)
+        return args
+
+    def approval(self, presented, **changes):
+        """Exactly the displayed binding, plus the relayed reply and the
+        code of a fresh local arming of that binding."""
+        args = dict(presented["approval_binding"], relayed_reply="approved",
+                    relay_ref="grok-conversation-1",
+                    approval_code=self.arm(presented))
         args.update(changes)
         return args
 
@@ -582,10 +612,13 @@ class B2DuplicateTests(Fixture):
         self.assertEqual(self.ok(self.adapter.present())["revision"], 1)
 
     def test_B2_a_duplicate_approval_applies_once_and_dispatches_once(self):
-        out, shown, first = self.approved()
-        again = self.ok(self.adapter.approve(**self.approval(shown)))
-        self.assertTrue(again["idempotent"])
-        self.assertEqual(again["authorization_id"], first["authorization_id"])
+        out = self.requested()
+        shown = self.presented(out["request_ref"])
+        args = self.approval(shown)
+        self.ok(self.adapter.approve(**args))
+        # Local arming: an armed approval fires ONCE; the identical
+        # call again is refused as consumed and applies nothing.
+        self.refused("grok_bot_approval_consumed", self.adapter.approve(**args))
         self.assertEqual(len(self.authorizations()), 1)
         ref, mission_id = out["request_ref"], out["mission_id"]
         self.ok(self.run_cmd(ref, "dispatch"))
@@ -637,7 +670,10 @@ class B3ApprovalBindingTests(Fixture):
         self.assertEqual(len(recording.calls), 1, recording.calls)
         name, positional, keywords = recording.calls[0]
         self.assertEqual((name, positional), ("attest_approval", ()))
-        self.assertEqual(keywords, args)
+        # Everything relayed reaches the surface unmodified, except the
+        # one-time approval code, which the adapter alone consumes.
+        self.assertEqual(keywords, dict((k, v) for k, v in args.items()
+                                        if k != "approval_code"))
         for key in ("approved_action_scope", "approved_delivery_targets"):
             self.assertIs(keywords[key], args[key])
 
@@ -685,22 +721,29 @@ class B3ApprovalBindingTests(Fixture):
     def test_S2_a_proposal_changed_after_presentation_is_refused(self):
         """SYNTHETIC edit through Mission Core. Relaying the NEW revision's
         values (never displayed) is refused by the receipt; relaying the
-        displayed ones is refused by the surface as stale."""
+        displayed ones is refused by the surface as stale (armed BEFORE the
+        edit), and arming AFTER the edit is refused by name."""
+        code = self.arm(self.shown)
         missions = self.missions()
         missions.edit(self.out["mission_id"], 1, run_request(objective="edited"),
                       missions.mint_decision_id(SYNTHETIC_AUTHENTICATED),
                       SYNTHETIC_AUTHENTICATED)
         current = self.mission(self.out["mission_id"])["revisions"][-1]
         refusal = self.refused("grok_bot_binding_not_displayed",
-                               self.adapter.approve(**self.approval(
+                               self.adapter.approve(**self.unarmed(
                                    self.shown, revision=current["revision"],
                                    proposal_digest_sha256=current[
-                                       "proposal_digest_sha256"])))
+                                       "proposal_digest_sha256"],
+                                   approval_code=code)))
         self.assertEqual(refusal["fields"],
                          ["proposal_digest_sha256", "revision"])
+        with self.assertRaises(adapter_module.surface_module
+                               .LocalRequestRefusal) as caught:
+            self.arm(self.shown)
+        self.assertEqual(caught.exception.problem, "grok_bot_arming_not_displayed")
         self.refused("local_request_binding_mismatch",
-                     self.adapter.approve(**self.approval(self.shown)),
-                     "stale revision")
+                     self.adapter.approve(**self.unarmed(
+                         self.shown, approval_code=code)), "stale revision")
         self.assertEqual(self.authorizations(), {})
 
     def test_S2_an_approval_of_something_never_presented_is_refused(self):
@@ -722,8 +765,14 @@ class B3ApprovalBindingTests(Fixture):
         latest = self.presented(self.out["request_ref"])
         self.assertNotEqual(first["approval_binding"]["expires_at"],
                             latest["approval_binding"]["expires_at"])
-        self.refused("grok_bot_binding_not_displayed",
-                     self.adapter.approve(**self.approval(first)))
+        # Local arming: the earlier display can no longer be ARMED (the
+        # re-presentation race is refused by name), nor relayed.
+        with self.assertRaises(adapter_module.surface_module
+                               .LocalRequestRefusal) as caught:
+            self.arm(first)
+        self.assertEqual(caught.exception.problem, "grok_bot_arming_not_displayed")
+        self.refused("grok_bot_binding_not_displayed", self.adapter.approve(
+            **self.unarmed(first, approval_code=self.arm(latest))))
         self.ok(self.adapter.approve(**self.approval(latest)))
 
     def test_S2_the_displayed_binding_is_compared_type_exactly(self):
@@ -753,14 +802,16 @@ class B3ApprovalBindingTests(Fixture):
 
     def test_B3_a_stale_revision_is_refused(self):
         """SYNTHETIC: Mission Core's own authenticated EDIT makes the
-        displayed revision genuinely stale; never through the adapter."""
+        displayed revision genuinely stale; never through the adapter. The
+        approval was armed before the edit, so the SURFACE's own stale check
+        is what refuses it."""
+        args = self.approval(self.shown)
         missions = self.missions()
         missions.edit(self.out["mission_id"], 1, run_request(objective="edited"),
                       missions.mint_decision_id(SYNTHETIC_AUTHENTICATED),
                       SYNTHETIC_AUTHENTICATED)
         self.refused("local_request_binding_mismatch",
-                     self.adapter.approve(**self.approval(self.shown)),
-                     "stale revision")
+                     self.adapter.approve(**args), "stale revision")
         self.assertEqual(self.authorizations(), {})
 
     def test_B3_an_altered_binding_is_refused(self):
@@ -790,15 +841,19 @@ class B3ApprovalBindingTests(Fixture):
             with self.subTest(changes=changes):
                 with self.assertRaises(adapter_module.surface_module
                                        .LocalRequestRefusal) as caught:
-                    surface.attest_approval(**self.approval(self.shown, **changes))
+                    surface.attest_approval(**self.unarmed(self.shown, **changes))
                 self.assertEqual(caught.exception.problem, problem)
         self.assert_nothing_authorized()
 
     def test_B3_an_expired_binding_is_refused(self):
+        args = self.approval(self.shown)  # armed while still unexpired
         self.clock.now = self.shown["approval_binding"]["expires_at"]
         self.refused("local_request_binding_mismatch",
-                     self.adapter.approve(**self.approval(self.shown)),
-                     "expiry is past")
+                     self.adapter.approve(**args), "expiry is past")
+        with self.assertRaises(adapter_module.surface_module
+                               .LocalRequestRefusal) as caught:
+            self.arm(self.shown)
+        self.assertEqual(caught.exception.problem, "grok_bot_arming_expired")
         self.assert_nothing_authorized()
 
     def test_B3_a_forged_or_fabricated_approval_is_refused(self):
@@ -1301,13 +1356,13 @@ class B6PauseCancelTests(Fixture):
         out = self.requested()
         ref = out["request_ref"]
         shown = self.presented(ref)
+        armed = self.approval(shown)  # armed before the cancel
         self.refused("local_request_control_capability",
                      self.adapter.cancel(request_ref=ref,
                                          control_capability="lc-" + "0" * 64))
         self.ok(self.adapter.cancel(request_ref=ref,
                                     control_capability=out["control_capability"]))
-        self.refused("local_request_cancelled",
-                     self.adapter.approve(**self.approval(shown)))
+        self.refused("local_request_cancelled", self.adapter.approve(**armed))
         self.refused("local_request_cancelled", self.run_cmd(
             ref, "dispatch"))
         self.assertEqual(self.authorizations(), {})
@@ -1686,7 +1741,12 @@ class StartupAndRegistrationTests(Bounded):
         self.assertIn("usage", text.lower())
         self.assertIn("operator-attested", text)
         self.assertIn("not cryptographically authenticated", text)
-        self.assertIn("instruction-based, not mechanically enforced", text)
+        # The request turn's posture, and what it does
+        # NOT confine, are both stated.
+        self.assertIn("read-only", text)
+        self.assertIn("continues no", text)
+        self.assertIn("confines writes, not reads", " ".join(text.split()))
+        self.assertIn("an instruction, not mechanically", " ".join(text.split()))
         self.assertNotIn(retirement.REFUSAL_MARK, result.stderr)
 
     def test_B9_importing_the_adapter_loads_no_dots_engine_or_delivery(self):
@@ -1767,10 +1827,19 @@ DELIVERY_ONLY_IMPORTS = frozenset({"io", "math", "types", "pr_delivery"})
 INDEX_ONLY_IMPORTS = frozenset({"hashlib", "hmac"})
 
 
+# Local arming: the commitment's constant-time comparison and the
+# arming command's one quoted line (pure computation; nothing is opened),
+# and the local arming command's random nonce, each in its module alone.
+ARMING_ONLY_IMPORTS = frozenset({"hmac", "shlex"})
+AUTHORIZE_ONLY_IMPORTS = frozenset({"secrets"})
+
+
 def allowed_imports_for(name):
     extra = {"server.py": SERVER_ONLY_IMPORTS,
              "delivery.py": DELIVERY_ONLY_IMPORTS,
-             "index.py": INDEX_ONLY_IMPORTS}.get(name, frozenset())
+             "index.py": INDEX_ONLY_IMPORTS,
+             "arming.py": ARMING_ONLY_IMPORTS,
+             "authorize.py": AUTHORIZE_ONLY_IMPORTS}.get(name, frozenset())
     return ALLOWED_IMPORTS | extra
 
 
@@ -2012,13 +2081,13 @@ class CliTests(Fixture):
         self.assertEqual(code, 0, out)
         code, shown = self.cli(["call", "present"], {"request_ref": out["request_ref"]})
         self.assertEqual(code, 0, shown)
-        code, approved = self.cli(["call", "approve"], self.approval(shown))
-        self.assertEqual((code, approved["status"]),
-                         (0, "approved_by_operator_attestation"))
         code, refused = self.cli(["call", "approve"],
                                  self.approval(shown, relayed_reply="no"))
         self.assertEqual((code, refused["problem"]),
                          (3, "local_request_reply_not_affirmative"))
+        code, approved = self.cli(["call", "approve"], self.approval(shown))
+        self.assertEqual((code, approved["status"]),
+                         (0, "approved_by_operator_attestation"))
         code, ran = self.cli(["call", "run"], {
             "request_ref": out["request_ref"], "command": "dispatch",
             "arguments": {}})

@@ -17,6 +17,13 @@ own ``present-dots`` and ``attest-dots``, unchanged; it is the only module
 here that imports ``pr_delivery``, and the adapter loads it lazily, for its
 three delivery tools alone.
 
+Approval needs a LOCAL ARMING first (``grok_bot.arming`` says exactly what
+carries it and what it depends on): the human runs the
+exact arming command ``present`` hands over in Grok Bot's per-command,
+user-approved local shell on the DI machine, and the relayed approval must
+carry the one-time code it printed. Possession of the MCP bearer token alone
+approves nothing.
+
 Limitation, stated and not engineered around: approval through Grok Bot
 is an OPERATOR-ATTESTED relay of a separate plain-text "approved" reply.
 It is not cryptographically authenticated human identity. Grok Bot gives
@@ -43,29 +50,46 @@ that contract, this adapter bypasses the seam and stays correspondingly
 thin.
 
 Second limitation, the Operator turn's launch posture: the ``request``
-tool runs one Codex turn through ``operator_session.CodexOperatorSession``
--> ``codex_gateway.gateway.submit`` -> ``codex_adapter.run_codex_turn``,
-whose argv is ``codex exec --json -C <repository> -`` (or ``codex exec
-resume --json <session> -``). No read-only sandbox is passed on that path
-(the gateway's argv guard bans ``--sandbox`` outside the DI-REMOTE-2
-role-turn carve-out), so the Codex process runs under the user's ambient
-Codex configuration. "Propose only: do not approve, dispatch, run,
-commit or push" is an INSTRUCTION in the turn's preamble, not a
-mechanical restriction. What DI enforces is on its own side: the adapter
-records nothing from that turn but one proposal, through the surface's
-closed schema, and approval and dispatch are separate surface calls.
+tool runs ONE FRESH Codex turn through
+``operator_session.RestrictedCodexOperatorSession`` ->
+``codex_gateway.gateway.submit_restricted`` ->
+``codex_gateway.role_turn.run_operator_turn``, whose argv is the role-turn
+restrictive posture (``codex exec --json -C <repository realpath>
+--sandbox read-only --ignore-user-config --ignore-rules --strict-config -c
+approval_policy=never -``), verified on the exact argv before the process
+starts; a posture that cannot be verified is refused, never run under
+ambient policy. It continues NO session: every ``operator_session_id`` is
+refused (``grok_bot_operator_session_refused``) before any provider call,
+because that posture is fresh-only by construction
+(``verify_restrictive_posture`` refuses any argv carrying ``resume`` or
+``fork``), so no continued session could run under it. What the posture
+confines, and what it does not: ``--sandbox read-only`` confines WRITES by
+the Operator's shell commands; it does not confine READS. Request text can
+induce the Operator to read, under its own permissions, any file the
+serving user can read, and the Operator's reply is returned to the caller
+(``operator_message``). That is a material, disclosed residual: no
+exfiltration has been demonstrated here, and nothing here prevents it.
+Read-only is not secret isolation, and nothing here scopes readable paths.
+"Propose only: do not approve, dispatch, run,
+commit or push" remains an INSTRUCTION in the turn's preamble, as does the
+neutralization of forged envelopes in the human's text: mitigations, not
+boundaries. What DI enforces is on its own side: the adapter records
+nothing from that turn but one proposal, through the surface's closed
+schema, and approval and dispatch are separate surface calls.
 
 Network: the adapter's own code opens no outbound connection and reads no
-environment variable. Its delivery tools, however, run pr_delivery's
-ceremony (``present-dots``, ``attest-dots``), which runs the installed git
+environment variable. Its ``present_delivery`` and ``approve_delivery``
+tools, however, run pr_delivery's ceremony (``present-dots``,
+``attest-dots``; ``delivery_status`` runs neither), which runs the installed git
 against the repository: ``git ls-remote`` against the configured remote
 and, when the remote base differs from HEAD, ``git fetch`` of the base
 branch. With a real remote those can reach an external host, and the fetch
 writes local repository data (``docs/grok-bot.md``, ceremony
 prerequisites). Only ``grok_bot.server`` binds a socket, on 127.0.0.1
-alone. Its optional bearer token is transport access control
-only: it is read from an owner-only file the human provisions, it is
-never installed by this code, and it approves nothing. Its loopback tests
+alone, and never without its bearer token: it is REQUIRED (the
+endpoint fails closed without one), it is transport access control only,
+it is read from an owner-only file the human provisions, it is never
+installed by this code, and it approves nothing. Its loopback tests
 prove protocol shape only; live Grok Bot compatibility is unverified until
 the live acceptance exercise (``grok_bot.server.PUBLIC_REACHABILITY``).
 """
