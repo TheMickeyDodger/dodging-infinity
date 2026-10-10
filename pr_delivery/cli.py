@@ -21,6 +21,19 @@ minted (one construction site, ``_mint``) — after one of two ceremonies:
   or claims ``local_terminal``, and an engineering approval alone never
   produces it.
 
+Two delivery kinds, chosen by the ceremony arguments: without
+``--pr-number``/``--head-branch`` a ``pull_request`` delivery (a new pull
+request, unchanged); with BOTH, a ``pr_update`` delivery: ONE new commit on
+the head branch of that EXISTING open pull request, a strict fast-forward of
+its live head, authorizing exactly COMMIT and PUSH. Either ceremony applies;
+no new prompt, typed alias or token exists for it. For ``pr_update`` the
+``prd-`` delivery id is generated when the binding is gathered, displayed,
+and minted exactly. On the Dots path it is also covered by the presented
+proposal's digest. The local-terminal path has no separate presentation
+step: there the displayed id is bound by the authority digest and by the
+human seeing it, NOT by a proposal digest, and the typed confirmation is
+unchanged.
+
 Evidence transport residual (Lead S1), stated plainly: the engineering
 and reviewer evidence arrives as a JSON document produced by
 ``herdctl delivery-evidence`` and carried by the human, and the
@@ -45,6 +58,7 @@ from workflow_authority.digest import sha256_hex, text_digest
 
 from pr_delivery import authorization as auth
 from pr_delivery import candidate as candidate_module
+from pr_delivery import machine as machine_module
 from pr_delivery.boundary import PrDeliveryBoundary
 from pr_delivery.machine import DeliveryMachine, MachineError
 from pr_delivery.store import (
@@ -102,10 +116,20 @@ def _load_herd_evidence(path):
     return document
 
 
-def _live_repository(transport, repo_path, base_branch, remote_name):
+def _live_repository(transport, repo_path, base_branch, remote_name,
+                     update=None):
     """The LIVE repository facts every ceremony binds, read now: the
     repository, its remote, the source and base refs, the baseline, and the
-    exact staged candidate with its identity digest."""
+    exact staged candidate with its identity digest.
+
+    ``update`` is ``(pull_request_number, head_branch)`` for the
+    ``pr_update`` kind and None for ``pull_request``. In that kind the
+    "HEAD must sit on the base branch" refusal does NOT apply (a pull
+    request head is deliberately ahead of its base); instead the named head
+    branch must be the checked-out branch, the live pull request must be
+    exactly the named open one with its head at HEAD, the remote head ref
+    must be that same SHA, unrelated dirty paths are tolerated only when
+    disjoint from the candidate, and the staged hash is read."""
     repo = os.path.realpath(repo_path)
     try:
         toplevel = os.path.realpath(transport.toplevel(repo))
@@ -121,6 +145,10 @@ def _live_repository(transport, repo_path, base_branch, remote_name):
     if not head_ref or not head_ref.startswith("refs/heads/"):
         raise CeremonyError("HEAD is not on a named branch")
     source_branch = head_ref[len("refs/heads/"):]
+    if update is not None and source_branch != update[1]:
+        raise CeremonyError(
+            "the named head branch %r is not the checked-out branch %r. No"
+            " delivery record created." % (update[1], source_branch))
     base_ref = "refs/heads/" + base_branch
     url_exact = transport.remote_url(repo, remote_name)
     if not url_exact:
@@ -133,6 +161,15 @@ def _live_repository(transport, repo_path, base_branch, remote_name):
     head = transport.head_oid(repo)
     if not head:
         raise CeremonyError("HEAD has no commit")
+    if update is not None:
+        return _live_update(transport, update, {
+            "repo": repo, "git_dir": git_dir, "head_ref": head_ref,
+            "source_branch": source_branch, "base_branch": base_branch,
+            "base_ref": base_ref, "remote_name": remote_name,
+            "url_exact": url_exact, "url_fetch": url_fetch,
+            "url_push": url_push, "target": target, "head": head,
+            "remote_base": None,
+        })
     remote_base = transport.ls_remote(repo, remote_name, base_ref)
     if remote_base is None:
         raise CeremonyError("remote %r has no %r" % (remote_name, base_ref))
@@ -157,13 +194,7 @@ def _live_repository(transport, repo_path, base_branch, remote_name):
     entries = candidate_module.parse_raw_z(transport.diff_index_raw(repo,
                                                                      head))
     digest = candidate_module.identity_digest(entries)
-    committer_name = transport.config_get(repo, "user.name")
-    committer_email = transport.config_get(repo, "user.email")
-    if not committer_name or not committer_email:
-        raise CeremonyError(
-            "git user.name and user.email must be configured for this"
-            " repository; the delivery commits under them"
-        )
+    committer_name, committer_email = _committer(transport, repo)
     return {
         "repo": repo, "git_dir": git_dir, "head_ref": head_ref,
         "source_branch": source_branch, "base_branch": base_branch,
@@ -175,12 +206,101 @@ def _live_repository(transport, repo_path, base_branch, remote_name):
     }
 
 
+def _committer(transport, repo):
+    committer_name = transport.config_get(repo, "user.name")
+    committer_email = transport.config_get(repo, "user.email")
+    if not committer_name or not committer_email:
+        raise CeremonyError(
+            "git user.name and user.email must be configured for this"
+            " repository; the delivery commits under them"
+        )
+    return committer_name, committer_email
+
+
+def _live_update(transport, update, live):
+    """The ``pr_update`` half of ``_live_repository``: every refusal names
+    its ``pr_delivery_*`` problem, and nothing is written."""
+    number, head_branch = update
+    repo, head, target = live["repo"], live["head"], live["target"]
+    try:
+        viewed = transport.gh_pr_view(target.owner, target.repo, number)
+    except DeliveryTransportError as exc:
+        raise CeremonyError(
+            "pull request #%d could not be read (%s): %s. No delivery record"
+            " created." % (number,
+                           machine_module.PROBLEM_PR_IDENTITY_UNSUPPORTED, exc))
+    problem, detail = machine_module.pr_update_identity_problem(
+        viewed, target.repository_url, number, head_branch,
+        live["base_branch"], head,
+    )
+    if problem is not None:
+        raise CeremonyError("%s (%s). No delivery record created."
+                            % (detail, problem))
+    remote_head = transport.ls_remote(repo, live["remote_name"],
+                                      live["head_ref"])
+    if remote_head != head:
+        raise CeremonyError(
+            "pull request #%d's head is %s but remote %r is at %s (%s). No"
+            " delivery record created." % (
+                number, head, live["head_ref"], remote_head,
+                machine_module.PROBLEM_PR_REF_MISMATCH))
+    dirty = candidate_module.worktree_dirty_paths(
+        transport.worktree_status_z(repo))
+    entries = candidate_module.parse_raw_z(transport.diff_index_raw(repo,
+                                                                     head))
+    conflicts = candidate_module.overlaps(
+        [entry["path"] for entry in entries], dirty)
+    if conflicts:
+        raise CeremonyError(
+            "unstaged or untracked change(s) touch candidate path(s): %s"
+            " (%s). No delivery record created." % (
+                ", ".join("%r/%r" % pair for pair in conflicts[:8]),
+                candidate_module.PROBLEM_WORKTREE_OVERLAP))
+    live = dict(live)
+    live["committer_name"], live["committer_email"] = _committer(transport,
+                                                                 repo)
+    live.update({
+        "entries": entries,
+        "digest": candidate_module.identity_digest(entries),
+        "staged_sha256": transport.staged_diff_sha256(repo),
+        "pull_request_number": number,
+        "pull_request_url": viewed["url"],
+    })
+    return live
+
+
+def _update_identity(args):
+    """``(pull_request_number, head_branch)`` when the ceremony names an
+    existing pull request (the ``pr_update`` kind), None when it names
+    neither; naming only one refuses."""
+    number = getattr(args, "pr_number", None)
+    head_branch = getattr(args, "head_branch", None)
+    if number is None and head_branch is None:
+        return None
+    if number is None or head_branch is None:
+        raise CeremonyError(
+            "--pr-number and --head-branch name an existing pull request"
+            " together: give both (one commit on that pull request) or"
+            " neither (a new pull request). No delivery record created.")
+    if isinstance(number, bool) or not isinstance(number, int) or not (
+        1 <= number <= auth.MAX_PULL_REQUEST_NUMBER
+    ):
+        raise CeremonyError("--pr-number must be a pull request number"
+                            " from 1 to %d" % auth.MAX_PULL_REQUEST_NUMBER)
+    if not isinstance(head_branch, str) or not head_branch:
+        raise CeremonyError("--head-branch must name a branch")
+    return number, head_branch
+
+
 def _gather(transport, args, now):
     """Every binding from the live repository and the human's inputs, with
     the display lines that present them: the FULL binding, before any
     ceremony. Returns ``(binding, lines, digest, validity)``, where
-    ``binding`` holds exactly ``auth.DELIVERY_PROPOSAL_BINDING_KEYS``."""
-    live = _live_repository(transport, args.repo, args.base_branch, args.remote)
+    ``binding`` holds exactly the kind's proposal binding tuple
+    (``auth.proposal_binding_keys``)."""
+    update = _update_identity(args)
+    live = _live_repository(transport, args.repo, args.base_branch,
+                            args.remote, update)
     repo, git_dir, head_ref = live["repo"], live["git_dir"], live["head_ref"]
     source_branch, base_branch = live["source_branch"], live["base_branch"]
     base_ref, remote_name = live["base_ref"], live["remote_name"]
@@ -222,6 +342,71 @@ def _gather(transport, args, now):
             "mission_authorization_digest_sha256":
                 args.mission_authorization_digest,
         }
+    binding = {
+        "revision": 1,
+        "previous_delivery_id": None,
+        "workflow_identity": {
+            "workflow_id": args.workflow_id,
+            "engineering_task_id": str(
+                herd["engineering_complete"].get("task_id")
+            ),
+        },
+        "mission": mission,
+        "repository": {
+            "realpath": repo,
+            "git_dir_realpath": git_dir,
+            "canonical_host": target.host,
+            "owner": target.owner,
+            "repo": target.repo,
+            "repository_url": target.repository_url,
+        },
+        "remote": {
+            "name": remote_name,
+            "url_exact": url_exact,
+            "url_fetch": url_fetch,
+            "url_push": url_push,
+            "repository_url": target.repository_url,
+        },
+        "mode": auth.MODE_PR_UPDATE if update else auth.MODE_PULL_REQUEST,
+        "source": {"branch": source_branch, "ref": head_ref},
+        "target_base": {"branch": base_branch, "ref": base_ref},
+        # A pull_request candidate sits on the target base; a pr_update
+        # candidate sits on the pull request HEAD (the head branch at the
+        # approved expected head SHA). target_base names the pull
+        # request's base branch for identity only in that kind.
+        "original_baseline": {"ref": head_ref if update else base_ref,
+                              "commit_sha": head},
+        "candidate": {
+            "identity_digest_sha256": digest,
+            "entry_count": len(entries),
+            "entries": entries,
+        },
+        "evidence": evidence,
+        "allowed_actions": list(auth.PR_UPDATE_STEPS if update
+                                else auth.STEPS),
+        "committer": {"name": committer_name, "email": committer_email},
+        "reverification": {"argv": reverify_argv},
+        "pr_content": {
+            "title": args.title,
+            "objective": _read_text(args.objective),
+            "architecture_notes": _read_text(args.architecture_notes),
+            "nonblocking_risks": _read_text(args.nonblocking_risks),
+        },
+    }
+    if update:
+        # The pr_update proposal also binds the delivery id (generated here,
+        # displayed, minted exactly), the pull request number and the
+        # staged hash: sha256 of ``git diff --cached --binary`` against the
+        # expected head, the value the COMMIT receipt binds and the
+        # pre-commit guard re-checks. It is a separate binding from the
+        # candidate identity above; neither stands in for the other.
+        binding["delivery_id"] = auth.DELIVERY_ID_PREFIX + secrets.token_hex(
+            auth.DELIVERY_ID_HEX_CHARS // 2)
+        binding["pull_request_number"] = live["pull_request_number"]
+        binding["staged_sha256"] = live["staged_sha256"]
+        lines = _update_lines(binding, live, herd, verification_argv,
+                              reverify_argv, args, log, validity)
+        return binding, lines, digest, validity
     lines = [
         "",
         "PR DELIVERY AUTHORIZATION REQUEST",
@@ -257,57 +442,89 @@ def _gather(transport, args, now):
         "Reverify with : %s" % " ".join(reverify_argv),
         "Committer     : %s <%s> (unsigned: commit.gpgsign=false on the"
         " argv)" % (committer_name, committer_email),
-        "Allowed       : %s" % ", ".join(auth.STEPS),
+        # Derived from the binding's OWN allowed actions: what is shown
+        # is what the record will hold.
+        "Allowed       : %s" % ", ".join(binding["allowed_actions"]),
         "Not allowed   : merge, auto-merge, tag, release, deploy, publish,"
         " force push",
         "Expires       : %d seconds from authorization" % validity,
     ])
-    binding = {
-        "revision": 1,
-        "previous_delivery_id": None,
-        "workflow_identity": {
-            "workflow_id": args.workflow_id,
-            "engineering_task_id": str(
-                herd["engineering_complete"].get("task_id")
-            ),
-        },
-        "mission": mission,
-        "repository": {
-            "realpath": repo,
-            "git_dir_realpath": git_dir,
-            "canonical_host": target.host,
-            "owner": target.owner,
-            "repo": target.repo,
-            "repository_url": target.repository_url,
-        },
-        "remote": {
-            "name": remote_name,
-            "url_exact": url_exact,
-            "url_fetch": url_fetch,
-            "url_push": url_push,
-            "repository_url": target.repository_url,
-        },
-        "mode": auth.MODE_PULL_REQUEST,
-        "source": {"branch": source_branch, "ref": head_ref},
-        "target_base": {"branch": base_branch, "ref": base_ref},
-        "original_baseline": {"ref": base_ref, "commit_sha": head},
-        "candidate": {
-            "identity_digest_sha256": digest,
-            "entry_count": len(entries),
-            "entries": entries,
-        },
-        "evidence": evidence,
-        "allowed_actions": list(auth.STEPS),
-        "committer": {"name": committer_name, "email": committer_email},
-        "reverification": {"argv": reverify_argv},
-        "pr_content": {
-            "title": args.title,
-            "objective": _read_text(args.objective),
-            "architecture_notes": _read_text(args.architecture_notes),
-            "nonblocking_risks": _read_text(args.nonblocking_risks),
-        },
-    }
     return binding, lines, digest, validity
+
+
+# What a pr_update record never authorizes, beyond the closed verb set.
+PR_UPDATE_NOT_ALLOWED = (
+    "base refresh, pull request creation, merge, auto-merge, tag, release,"
+    " deploy, publish, force push"
+)
+
+
+def _update_lines(binding, live, herd, verification_argv, reverify_argv,
+                  args, log, validity):
+    """The ``pr_update`` display: every line true of the binding it
+    presents, the COMPLETE candidate (no entry elided), and the
+    allowed-action line derived from the binding's own allowed actions."""
+    entries = binding["candidate"]["entries"]
+    lines = [
+        "",
+        "PR DELIVERY AUTHORIZATION REQUEST",
+        "---------------------------------",
+        "Kind          : %s (one new commit on existing open pull request"
+        " #%d, a strict fast-forward of its head)"
+        % (binding["mode"], binding["pull_request_number"]),
+        "Delivery id   : %s (the id this approval mints, exactly)"
+        % binding["delivery_id"],
+        "Repository    : %s" % binding["repository"]["realpath"],
+        "Remote        : %s = %s" % (binding["remote"]["name"],
+                                     binding["remote"]["url_exact"]),
+        "  fetches from: %s" % binding["remote"]["url_fetch"],
+        "  pushes to   : %s" % binding["remote"]["url_push"],
+        "Pull request  : #%d %s (open; head %s -> base %s)"
+        % (binding["pull_request_number"], live["pull_request_url"],
+           binding["source"]["branch"], binding["target_base"]["branch"]),
+        "Head branch   : %s (%s)" % (binding["source"]["branch"],
+                                     binding["source"]["ref"]),
+        "Expected head : %s (the live pull request head and remote head"
+        " ref; the parent of the one new commit)"
+        % binding["original_baseline"]["commit_sha"],
+        "Target base   : %s (the pull request's base; identity only, never"
+        " refreshed)" % binding["target_base"]["branch"],
+        "Staged hash   : %s (sha256 of git diff --cached --binary against"
+        " the expected head; re-checked before COMMIT and by the git hook)"
+        % binding["staged_sha256"],
+        "Candidate     : %d entries, identity %s (status, mode, blob and path"
+        " of every entry; a separate binding from the staged hash)"
+        % (len(entries), binding["candidate"]["identity_digest_sha256"]),
+    ]
+    for entry in entries:
+        lines.append("  %s %s %s" % (entry["status"], entry["mode"],
+                                     entry["path"]))
+    lines.extend([
+        "Working tree  : unstaged and untracked paths outside the candidate"
+        " may remain; they are never staged or committed and must stay"
+        " disjoint from every candidate path",
+        "Engineering   : task %s %s" % (
+            herd["engineering_complete"].get("task_id"),
+            herd["engineering_complete"].get("status"),
+        ),
+        "Reviewer      : %s round %s (%s)" % (
+            herd["reviewer_approve"].get("decision"),
+            herd["reviewer_approve"].get("round"),
+            herd["reviewer_approve"].get("review_file_name"),
+        ),
+        "Verification  : %s -> exit %d, log sha256 %s"
+        % (" ".join(verification_argv), args.verification_exit_status,
+           sha256_hex(log)),
+        "Reverify with : %s (not run in this kind)" % " ".join(reverify_argv),
+        "Committer     : %s <%s> (unsigned: commit.gpgsign=false on the"
+        " argv)" % (binding["committer"]["name"],
+                    binding["committer"]["email"]),
+        "Commit subject: %s" % binding["pr_content"]["title"],
+        "Allowed       : %s" % ", ".join(binding["allowed_actions"]),
+        "Not allowed   : %s" % PR_UPDATE_NOT_ALLOWED,
+        "Expires       : %d seconds from authorization" % validity,
+    ])
+    return lines
 
 
 def assemble_authority(transport, args, now, human_identity,
@@ -330,6 +547,10 @@ def assemble_authority(transport, args, now, human_identity,
     ).strip()
     if typed != digest[:CONFIRMATION_CHARS]:
         raise CeremonyError("Not authorized. No delivery record created.")
+    # For pr_update the binding carries the displayed delivery id. This
+    # path has no separate presentation step and no proposal digest: the
+    # id is bound by the authority digest of the record minted from this
+    # binding and by the human having seen it above, nothing more.
     authority = dict(binding)
     authority["human_authorization"] = {
         "identity": human_identity,
@@ -348,9 +569,33 @@ def _mint(machine, authority, now, out, one_shot_proposal_digest=None):
     """The ONE place a PR Delivery Authorization is constructed, for both
     ceremonies. ``one_shot_proposal_digest`` (the Dots ceremony) refuses,
     under the store lock, a second authorization of the same presented
-    proposal."""
-    delivery_id = "prd-" + secrets.token_hex(12)
+    proposal.
+
+    A ``pull_request`` authority carries no delivery id: one is minted
+    here, unchanged. A ``pr_update`` authority carries the id generated and
+    displayed when its binding was gathered, and the record is minted under
+    EXACTLY that id; anything else refuses with nothing written."""
+    presented_id = authority.get("delivery_id")
+    if authority.get("mode") == auth.MODE_PR_UPDATE:
+        if not auth.is_presented_delivery_id(presented_id):
+            raise CeremonyError(
+                "a %s authorization must carry the delivery id displayed"
+                " for approval. No delivery record created."
+                % auth.MODE_PR_UPDATE)
+        delivery_id = presented_id
+    else:
+        if "delivery_id" in authority:
+            raise CeremonyError(
+                "a %s authorization carries no presented delivery id. No"
+                " delivery record created." % auth.MODE_PULL_REQUEST)
+        delivery_id = "prd-" + secrets.token_hex(12)
     record = auth.new_authorization(delivery_id, authority, now)
+    if presented_id is not None and record["delivery_id"] != presented_id:
+        # Explicit display-to-mint identity, in addition to the validator's
+        # proposal-digest re-proof (Dots) and the authority digest.
+        raise CeremonyError(
+            "the minted delivery id %s is not the displayed %s. No delivery"
+            " record created." % (record["delivery_id"], presented_id))
     store = machine.store
     with store.lock():
         document = store.load()
@@ -459,6 +704,11 @@ def _live_matches(live, binding):
         "candidate": live["digest"], "entries": live["entries"],
         "committer": [live["committer_name"], live["committer_email"]],
     }
+    if binding["mode"] == auth.MODE_PR_UPDATE:
+        expected["pull_request_number"] = binding["pull_request_number"]
+        actual["pull_request_number"] = live["pull_request_number"]
+        expected["staged_sha256"] = binding["staged_sha256"]
+        actual["staged_sha256"] = live["staged_sha256"]
     for key in sorted(expected):
         if expected[key] != actual[key]:
             return key
@@ -495,12 +745,27 @@ def attest_dots_cmd(args, stdin_text, store_dir=None, out=None):
                 "%s is required (a reply is never applied to a guessed"
                 " proposal). No delivery record created." % name)
     proposal = document["delivery_proposal"]
+    # The binding's key set is checked against ITS OWN kind's tuple, read
+    # from the binding: a pull_request proposal presented by an earlier
+    # build keeps exactly its keys and still attests.
+    binding = proposal.get("binding") if isinstance(proposal, dict) else None
+    mode = binding.get("mode") if isinstance(binding, dict) else None
     if not isinstance(proposal, dict) or sorted(proposal) != [
         "binding", "expires_at", "presented_at"
-    ] or not isinstance(proposal["binding"], dict) or sorted(
-        proposal["binding"]
-    ) != sorted(auth.DELIVERY_PROPOSAL_BINDING_KEYS):
+    ] or not isinstance(binding, dict) or not isinstance(mode, str) or (
+        mode not in auth.MODES
+    ) or sorted(binding) != sorted(auth.proposal_binding_keys(mode)):
         raise CeremonyError("the delivery proposal is not a presented proposal")
+    update = None
+    if mode == auth.MODE_PR_UPDATE:
+        number = binding["pull_request_number"]
+        source = binding["source"]
+        if isinstance(number, bool) or not isinstance(number, int) or not (
+            isinstance(source, dict) and isinstance(source.get("branch"), str)
+        ):
+            raise CeremonyError(
+                "the delivery proposal does not name a pull request")
+        update = (number, source["branch"])
     digest = auth.delivery_proposal_digest(proposal)
     if digest != args.proposal_digest:
         raise CeremonyError(
@@ -516,11 +781,10 @@ def attest_dots_cmd(args, stdin_text, store_dir=None, out=None):
         raise CeremonyError(
             "the presented proposal expired; present it again. No delivery"
             " record created.")
-    binding = proposal["binding"]
     live = _live_repository(machine.transport,
                             binding["repository"]["realpath"],
                             binding["target_base"]["branch"],
-                            binding["remote"]["name"])
+                            binding["remote"]["name"], update)
     mismatch = _live_matches(live, binding)
     if mismatch is not None:
         raise CeremonyError(
@@ -625,6 +889,14 @@ def _ceremony_arguments(q, fn):
     q.add_argument("--nonblocking-risks", default="")
     q.add_argument("--base-branch", default="main")
     q.add_argument("--remote", default="origin")
+    # Both or neither: naming an existing open pull request selects the
+    # pr_update kind (one commit on its head branch; COMMIT and PUSH only).
+    q.add_argument("--pr-number", type=int, default=None,
+                   help="the EXISTING open pull request to add one commit"
+                        " to; requires --head-branch")
+    q.add_argument("--head-branch", default=None,
+                   help="that pull request's exact head branch; must be the"
+                        " checked-out branch")
     q.add_argument("--validity-seconds", type=int,
                    default=auth.DEFAULT_AUTHORIZATION_VALIDITY_SECONDS)
     q.add_argument("--mission-workflow-id", default=None)

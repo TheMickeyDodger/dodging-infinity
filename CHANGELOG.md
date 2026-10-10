@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- **PR delivery to an existing open pull request (`pr_update`).**
+  `pr_delivery` gains a second delivery kind: ONE new commit on the head
+  branch of an EXISTING open pull request, named by exact number and head
+  branch (`--pr-number`, `--head-branch`, both or neither; Grok Bot's
+  `present_delivery` accepts the same two fields). It is a strict
+  fast-forward of that pull request's head and authorizes exactly COMMIT and
+  PUSH. BASE_REFRESH and PR_CREATE are `not_needed`, and the approved head
+  is never refreshed.
+  - One separate human approval of the exact displayed proposal authorizes
+    both named steps. It goes through the existing ceremonies and one-shot
+    receipts and the installed hooks. There is no new prompt, typed alias or
+    token, and Mission approval still confers no delivery.
+  - The proposal binds:
+    - the `prd-` delivery id, generated when presented and minted exactly;
+    - the pull request number;
+    - the expected head SHA;
+    - the complete candidate and its identity;
+    - separately, the staged hash: the sha256 of `git diff --cached
+      --binary` that the COMMIT receipt binds and the pre-commit hook
+      re-checks.
+  - Closed or merged pull requests, branch mismatches, head drift and a
+    pull request/remote-ref disagreement each refuse before any effect, with
+    their own `pr_delivery_*` code.
+  - Unrelated unstaged or untracked paths may remain, read from
+    NUL-separated status, when disjoint from every candidate path. They are
+    never staged or committed.
+  - The existing `pull_request` kind is unchanged. Its key tuples, and so
+    every stored record's authority and proposal digests, are byte-identical,
+    and records written before this change keep validating.
+  - Known cost: a git upgrade inside the approval window can change the
+    staged hash without a content change, which refuses (fail-closed).
+  - Approval stays operator-attested when relayed, not cryptographically
+    authenticated.
+
 - **Automatic Mission workspaces (Task 8 final).** Dispatching an approved
   Mission no longer needs a path from anyone. Grok Bot's `run` `dispatch`
   takes no arguments, and `direquest.py dispatch` no longer requires

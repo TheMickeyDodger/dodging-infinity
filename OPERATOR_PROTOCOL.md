@@ -317,6 +317,19 @@ Before push, Codex should summarize the exact commit/ref and destination.
 
 Then request explicit human push approval.
 
+One narrow, existing exception does not change these gates: a `pr_delivery`
+delivery proposal that the human SEPARATELY approves as one exact displayed
+proposal. One example is a `pr_update` proposal: one new commit on an
+existing open pull request, explicitly naming both COMMIT and PUSH. That
+single approval is the commit decision and the push decision for exactly the
+steps the proposal names, and for nothing else. It is carried by one-shot
+receipts that the installed Git hooks check. It is never a token, never a
+typed alias, and never conferred by plan or Mission approval: Mission
+`delivery_authority` stays `none`, and an engineering run holds no delivery
+authority. A relayed approval is operator-attested, not cryptographically
+authenticated. Without such a separately approved proposal, the separate
+commit and push approvals above apply unchanged.
+
 Release and tag operations remain separately protected where applicable.
 
 Never bypass the existing Git or Herdr authorization gates.

@@ -527,6 +527,197 @@ class ApproveDeliveryTests(DeliveryFixture):
         self.assert_nothing_performed()
 
 
+
+# ====================================================================
+# pr_update (task 20261009-185923-53d267): the same SEPARATE ceremony for
+# ONE commit on an existing open pull request; the phone shows the pull
+# request, the expected head, the staged hash and exactly COMMIT, PUSH
+# ====================================================================
+
+
+UPDATE_PR_NUMBER = 12
+UPDATE_STAGED_SHA256 = "d" * 64
+UPDATE_HEAD_BRANCH = SOURCE_REF[len("refs/heads/"):]
+
+
+class UpdateRecordingDeliveryTransport(RecordingDeliveryTransport):
+    """SYNTHETIC, exactly like its parent, plus the three reads a
+    ``pr_update`` ceremony adds, answered from the script: the live pull
+    request, NUL-separated working-tree status (with one unrelated
+    untracked file) and the staged hash. Every other verb still raises."""
+
+    READS = RecordingDeliveryTransport.READS | frozenset({
+        "gh_pr_view", "worktree_status_z", "staged_diff_sha256",
+    })
+
+    def __init__(self, repo):
+        super(UpdateRecordingDeliveryTransport, self).__init__(repo)
+        self.pr = {
+            "number": UPDATE_PR_NUMBER,
+            "url": "https://github.com/octo/repo/pull/%d" % UPDATE_PR_NUMBER,
+            "headRefName": UPDATE_HEAD_BRANCH, "baseRefName": "main",
+            "headRefOid": BASELINE, "state": "OPEN",
+            "isCrossRepository": False,
+        }
+
+    def answer(self, name, args):
+        if name == "gh_pr_view":
+            return dict(self.pr)
+        if name == "worktree_status_z":
+            return b"".join(b"M  src/file_%03d.py\0" % index
+                            for index in range(ENTRY_COUNT)) + (
+                b"?? notes/unrelated.txt\0")
+        if name == "staged_diff_sha256":
+            return UPDATE_STAGED_SHA256
+        return super(UpdateRecordingDeliveryTransport, self).answer(name,
+                                                                    args)
+
+
+class UpdateDeliveryFixture(DeliveryFixture):
+
+    def setUp(self):
+        super(UpdateDeliveryFixture, self).setUp()
+        # The build_machine patch reads ``self.machine`` when called.
+        self.transport = UpdateRecordingDeliveryTransport(self.repo)
+        self.machine = DeliveryMachine(DeliveryStore(self.delivery_store_dir),
+                                       self.transport, lambda: 1_800_000_000.0)
+
+    def update_arguments(self, **changes):
+        arguments = dict(pr_number=UPDATE_PR_NUMBER,
+                         head_branch=UPDATE_HEAD_BRANCH)
+        arguments.update(changes)
+        return arguments
+
+    def presented_update(self, **changes):
+        return self.presented_delivery(**self.update_arguments(**changes))
+
+    def assert_nothing_performed(self):
+        effects = [call for call in self.transport.calls
+                   if call not in UpdateRecordingDeliveryTransport.READS]
+        self.assertEqual(effects, [])
+        for record in self.deliveries().values():
+            self.assertEqual(record["phase"], delivery_auth.PHASE_AUTHORIZED)
+            for step in delivery_auth.PR_UPDATE_STEPS:
+                self.assertEqual(record["steps"][step]["state"],
+                                 delivery_auth.STEP_PENDING, step)
+            for step in delivery_auth.PR_UPDATE_EXCLUDED_STEPS:
+                self.assertEqual(record["steps"][step]["state"],
+                                 delivery_auth.STEP_NOT_NEEDED, step)
+
+
+class PrUpdateDeliveryTests(UpdateDeliveryFixture):
+
+    def test_the_phone_display_names_the_pull_request_and_exact_steps(self):
+        shown = self.presented_update()
+        proposal = shown["delivery_proposal"]
+        binding = proposal["binding"]
+        text = shown["display_text"]
+        self.assertEqual(binding["mode"], "pr_update")
+        self.assertEqual(sorted(binding), sorted(
+            delivery_auth.PR_UPDATE_DELIVERY_PROPOSAL_BINDING_KEYS))
+        self.assertEqual(binding["allowed_actions"], ["COMMIT", "PUSH"])
+        for phrase in (
+            "Delivery kind: pr_update",
+            "Delivery id (minted exactly on approval): %s"
+            % binding["delivery_id"],
+            "Pull request: #%d, head branch \"%s\" -> base branch \"main\""
+            % (UPDATE_PR_NUMBER, UPDATE_HEAD_BRANCH),
+            "Expected head SHA (the one new commit's parent): %s" % BASELINE,
+            "Staged hash (sha256 of git diff --cached --binary against the"
+            " expected head): %s" % UPDATE_STAGED_SHA256,
+            "Authorizes only: COMMIT, PUSH, for exactly this candidate",
+            "Never authorized: base refresh, pull request creation, merge,",
+            "operator-attested", "not cryptographically authenticated",
+            "performs no delivery step",
+        ):
+            self.assertIn(phrase, text)
+        # Nothing displayed claims a step the record will not hold.
+        self.assertNotIn("PR_CREATE", text)
+        self.assertNotIn("BASE_REFRESH", text)
+        lines = text.splitlines()
+        for line in leaf_lines("delivery_proposal", proposal):
+            self.assertIn(line, lines)
+        for entry in binding["candidate"]["entries"]:
+            self.assertIn(json.dumps(entry["path"]), text)
+        self.assertEqual(self.deliveries(), {})
+        self.assert_nothing_performed()
+
+    def test_the_grant_states_the_records_own_steps_and_performs_none(self):
+        shown = self.presented_update()
+        binding = shown["delivery_proposal"]["binding"]
+        result = self.ok(self.adapter.approve_delivery(
+            **self.delivery_approval(shown)))
+        self.assertEqual(result["delivery_id"], binding["delivery_id"])
+        record = self.deliveries()[result["delivery_id"]]
+        delivery_auth.validate_authorization(record)
+        self.assertEqual(record["pull_request_number"], UPDATE_PR_NUMBER)
+        self.assertEqual(record["staged_sha256"], UPDATE_STAGED_SHA256)
+        grant = result["delivery_authorization"]
+        self.assertEqual(grant["authorized_steps"], record["allowed_actions"])
+        self.assertEqual(grant["authorized_steps"], ["COMMIT", "PUSH"])
+        self.assertEqual(grant["performed_steps"], [])
+        self.assertIs(grant["granted_by_this_transport"], False)
+        self.assertTrue(grant["never_authorized"].startswith(
+            "base refresh, pull request creation, merge"))
+        self.assertEqual(grant["provenance"],
+                         "operator_attested_not_independently_verified")
+        self.assertEqual(result["delivery_authority"], "none")
+        again = self.assert_labelled(
+            "grok_bot_delivery_refused",
+            self.adapter.approve_delivery(**self.delivery_approval(shown)))
+        self.assertIn("already attested", again["reason"])
+        status = self.ok(self.adapter.delivery_status(
+            delivery_id=result["delivery_id"]))
+        self.assertEqual(status["delivery"]["authorization"]["mode"],
+                         "pr_update")
+        self.assertEqual(status["delivery"]["authorization"][
+            "pull_request_number"], UPDATE_PR_NUMBER)
+        self.assert_nothing_performed()
+
+    def test_pull_request_refusals_are_labelled_and_write_nothing(self):
+        for change, problem in ((dict(state="CLOSED"), "pr_delivery_pr_closed"),
+                                (dict(state="MERGED"), "pr_delivery_pr_merged"),
+                                (dict(headRefOid="b" * 40),
+                                 "pr_delivery_pr_head_drift")):
+            with self.subTest(problem=problem):
+                self.transport.pr.update(change)
+                result = self.assert_labelled(
+                    "grok_bot_delivery_refused",
+                    self.adapter.present_delivery(**self.present_arguments(
+                        **self.update_arguments())))
+                self.assertIn(problem, result["reason"])
+                self.transport.pr = UpdateRecordingDeliveryTransport(
+                    self.repo).pr
+        for changes in (dict(head_branch=None), dict(pr_number=None)):
+            with self.subTest(changes=sorted(changes)):
+                arguments = self.present_arguments(**self.update_arguments())
+                arguments.update(changes)
+                result = self.assert_labelled(
+                    "grok_bot_delivery_refused",
+                    self.adapter.present_delivery(**arguments))
+                self.assertIn("both", result["reason"])
+        self.assert_labelled("grok_bot_bad_request",
+                             self.adapter.present_delivery(
+                                 **self.present_arguments(
+                                     **self.update_arguments(pr_number="12"))))
+        self.assertEqual(self.deliveries(), {})
+        self.assert_nothing_performed()
+
+    def test_a_new_pull_request_proposal_is_displayed_as_before(self):
+        shown = self.presented_delivery()
+        binding = shown["delivery_proposal"]["binding"]
+        self.assertEqual(binding["mode"], "pull_request")
+        self.assertEqual(sorted(binding), sorted(
+            delivery_auth.DELIVERY_PROPOSAL_BINDING_KEYS))
+        self.assertIn("Authorizes only: BASE_REFRESH, COMMIT, PUSH,"
+                      " PR_CREATE, for exactly this candidate",
+                      shown["display_text"])
+        self.assertIn("Never authorized: %s" % delivery_module.NEVER_AUTHORIZED,
+                      shown["display_text"])
+        self.assertNotIn("Delivery kind:", shown["display_text"])
+        self.assertNotIn("gh_pr_view", self.transport.calls)
+
+
 # ====================================================================
 # Separation: engineering approval never authorizes delivery; the adapter
 # grants nothing itself; merge, release and deploy are refused

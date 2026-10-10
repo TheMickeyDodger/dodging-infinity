@@ -1484,6 +1484,82 @@ assert binding_shapes_found == set(pr_authorization.STEPS), (
     binding_shapes_found,
 )
 
+# (4b) Delivery kinds (task 20261009-185923-53d267): the CLOSED kind set,
+#      the per-kind action sets, and the per-kind closed key tuples. The
+#      `pull_request` authority and proposal-binding tuples are pinned
+#      byte-identical to their values before `pr_update` existed, so every
+#      stored record's authority and proposal digests still recompute; the
+#      `pr_update` tuples are those plus their own keys, and that kind can
+#      never carry BASE_REFRESH or PR_CREATE.
+assert pr_authorization.MODES == ('pull_request', 'pr_update')
+assert pr_authorization.STEPS == (
+    'BASE_REFRESH', 'COMMIT', 'PUSH', 'PR_CREATE',
+)
+assert pr_authorization.PR_UPDATE_STEPS == ('COMMIT', 'PUSH')
+assert pr_authorization.PR_UPDATE_EXCLUDED_STEPS == (
+    'BASE_REFRESH', 'PR_CREATE',
+)
+assert not set(pr_authorization.PR_UPDATE_STEPS) & set(
+    pr_authorization.PR_UPDATE_EXCLUDED_STEPS
+)
+assert pr_authorization.AUTHORITY_KEYS == (
+    'schema_version', 'delivery_id', 'revision', 'previous_delivery_id',
+    'workflow_identity', 'mission', 'repository', 'remote', 'mode',
+    'source', 'target_base', 'original_baseline', 'candidate', 'evidence',
+    'allowed_actions', 'committer', 'reverification', 'pr_content',
+    'human_authorization', 'expiration',
+), pr_authorization.AUTHORITY_KEYS
+assert pr_authorization.DELIVERY_PROPOSAL_BINDING_KEYS == (
+    'revision', 'previous_delivery_id', 'workflow_identity', 'mission',
+    'repository', 'remote', 'mode', 'source', 'target_base',
+    'original_baseline', 'candidate', 'evidence', 'allowed_actions',
+    'committer', 'reverification', 'pr_content',
+), pr_authorization.DELIVERY_PROPOSAL_BINDING_KEYS
+assert pr_authorization.STATE_KEYS == (
+    'phase', 'steps', 'base_state', 'revocation', 'blocker',
+    'pull_request', 'updated_at',
+)
+assert pr_authorization.PR_UPDATE_AUTHORITY_KEYS == (
+    pr_authorization.AUTHORITY_KEYS + ('pull_request_number', 'staged_sha256')
+)
+assert pr_authorization.PR_UPDATE_DELIVERY_PROPOSAL_BINDING_KEYS == (
+    pr_authorization.DELIVERY_PROPOSAL_BINDING_KEYS
+    + ('delivery_id', 'pull_request_number', 'staged_sha256')
+)
+assert pr_authorization.AUTHORITY_KEYS_BY_MODE == {
+    'pull_request': pr_authorization.AUTHORITY_KEYS,
+    'pr_update': pr_authorization.PR_UPDATE_AUTHORITY_KEYS,
+}
+assert pr_authorization.DELIVERY_PROPOSAL_BINDING_KEYS_BY_MODE == {
+    'pull_request': pr_authorization.DELIVERY_PROPOSAL_BINDING_KEYS,
+    'pr_update': pr_authorization.PR_UPDATE_DELIVERY_PROPOSAL_BINDING_KEYS,
+}
+assert pr_authorization.SCHEMA_VERSION == 1
+assert pr_authorization.ALLOWED_TRANSITIONS_BY_MODE['pull_request'] is (
+    pr_authorization.ALLOWED_TRANSITIONS
+)
+assert pr_authorization.STEP_FOR_PHASE_BY_MODE['pull_request'] is (
+    pr_authorization.STEP_FOR_PHASE
+)
+assert pr_authorization.PR_UPDATE_STEP_FOR_PHASE == {
+    'AUTHORIZED': 'COMMIT', 'COMMITTED': 'PUSH',
+}
+assert {
+    phase: set(targets) for phase, targets in
+    pr_authorization.PR_UPDATE_ALLOWED_TRANSITIONS.items() if targets
+} == {
+    'AUTHORIZED': {'COMMITTED', 'BLOCKED', 'REVOKED'},
+    'COMMITTED': {'PUSHED', 'BLOCKED', 'REVOKED'},
+    'PUSHED': {'COMPLETE', 'BLOCKED', 'REVOKED'},
+}
+assert set(pr_authorization.PR_UPDATE_ALLOWED_TRANSITIONS) == set(
+    pr_authorization.PHASES
+)
+assert not any(
+    step in pr_authorization.PR_UPDATE_EXCLUDED_STEPS
+    for step in pr_authorization.PR_UPDATE_STEP_FOR_PHASE.values()
+)
+
 # (5) Guard wiring: herdr/guards.py imports the receipt module LAZILY
 #     inside `_delivery_receipt_decision`, inside a try that catches
 #     Exception; `guard_decision` is called exactly once there; the

@@ -2118,6 +2118,11 @@ class BoundConstantPinTests(unittest.TestCase):
             # Task 8: the Dots operator-attested delivery ceremony.
             "MAX_RELAY_TEXT_CHARS": 200,
             "MAX_RELAY_REF_CHARS": 128,
+            # The pr_update kind: the pull request number's hard upper
+            # bound, and the hex length of the prd- delivery id generated
+            # at presentation.
+            "MAX_PULL_REQUEST_NUMBER": 2147483647,
+            "DELIVERY_ID_HEX_CHARS": 24,
         },
         "pr_delivery/store.py": {
             "MAX_PR_DELIVERY_RECORDS": 64,

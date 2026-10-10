@@ -40,9 +40,13 @@ nothing here suppresses the ceremony's. ``present`` and ``attest`` both run
 pr_delivery's live-repository read through its real git transport: local
 reads (such as ``status --no-optional-locks``, ``diff-index``, ``config``),
 ``git ls-remote`` against the configured remote, and, when the remote base
-differs from HEAD, ``git fetch --no-tags`` of the base branch. With a real
-remote those can reach an external host, and the fetch writes local
-repository data. ``status`` reads pr_delivery's store only.
+differs from HEAD, ``git fetch --no-tags`` of the base branch. For a
+``pr_update`` proposal (``pr_number`` and ``head_branch`` given) the read
+instead runs ``gh pr view`` for that one pull request, ``git ls-remote`` of
+its head branch, NUL-separated ``git status`` and ``git diff --cached`` (the
+staged hash), and fetches nothing. With a real remote those can reach an
+external host, and a fetch writes local repository data. ``status`` reads
+pr_delivery's store only.
 
 Provenance: the relayed reply is OPERATOR-ATTESTED, not cryptographically
 authenticated; pr_delivery records its residual risk on the authorization.
@@ -84,6 +88,16 @@ LITERAL_TEXT_FIELDS = ("objective", "architecture_notes", "nonblocking_risks")
 VALIDITY_SPAN = delivery_auth.MAX_AUTHORIZATION_VALIDITY_SECONDS
 NEVER_AUTHORIZED = ("merge, auto-merge, tag, release, deploy, publish,"
                     " force push")
+# A ``pr_update`` proposal additionally never authorizes these two steps.
+PR_UPDATE_NEVER_AUTHORIZED = ("base refresh, pull request creation, "
+                              + NEVER_AUTHORIZED)
+
+
+def never_authorized(binding):
+    """What the proposal's own kind never authorizes."""
+    if binding.get("mode") == delivery_auth.MODE_PR_UPDATE:
+        return PR_UPDATE_NEVER_AUTHORIZED
+    return NEVER_AUTHORIZED
 
 
 def _is_int(value):
@@ -169,6 +183,7 @@ def display_text(document):
     """The human-facing text: what the approval authorizes and refuses,
     then the COMPLETE presented delivery proposal. Never shortened."""
     proposal = document["delivery_proposal"]
+    binding = proposal["binding"]
     lines = [
         "DODGING INFINITY DELIVERY PROPOSAL (separate from any engineering"
         " approval)",
@@ -176,9 +191,12 @@ def display_text(document):
         "Presented at (unix seconds): %s" % json.dumps(proposal["presented_at"]),
         "Approval expires at (unix seconds): %s"
         % json.dumps(proposal["expires_at"]),
+    ] + update_summary_lines(binding) + [
+        # Derived from the proposal's OWN allowed actions, which the minted
+        # record carries exactly (its proposal digest binds them).
         "Authorizes only: %s, for exactly this candidate"
-        % ", ".join(delivery_auth.STEPS),
-        "Never authorized: %s" % NEVER_AUTHORIZED,
+        % ", ".join(binding["allowed_actions"]),
+        "Never authorized: %s" % never_authorized(binding),
         "",
         "The complete delivery proposal, every field exactly as recorded"
         " (nothing is omitted):",
@@ -195,6 +213,34 @@ def display_text(document):
     return "\n".join(adapter_module.one_line(line) for line in lines)
 
 
+def update_summary_lines(binding):
+    """For a ``pr_update`` proposal, the existing pull request it updates,
+    named up front (every value is also in the complete proposal below);
+    nothing for a ``pull_request`` proposal, whose display is unchanged."""
+    if binding.get("mode") != delivery_auth.MODE_PR_UPDATE:
+        return []
+    candidate = binding["candidate"]
+    return [
+        "Delivery kind: %s (one new commit on existing open pull request #%s,"
+        " a strict fast-forward of its head)"
+        % (binding["mode"], json.dumps(binding["pull_request_number"])),
+        "Delivery id (minted exactly on approval): %s"
+        % binding["delivery_id"],
+        "Pull request: #%s, head branch %s -> base branch %s"
+        % (json.dumps(binding["pull_request_number"]),
+           json.dumps(binding["source"]["branch"]),
+           json.dumps(binding["target_base"]["branch"])),
+        "Expected head SHA (the one new commit's parent): %s"
+        % binding["original_baseline"]["commit_sha"],
+        "Staged hash (sha256 of git diff --cached --binary against the"
+        " expected head): %s" % binding["staged_sha256"],
+        "Candidate identity (status, mode, blob and path of every entry; a"
+        " separate binding): %s, %s entries"
+        % (candidate["identity_digest_sha256"],
+           json.dumps(candidate["entry_count"])),
+    ]
+
+
 def attest(proposal, digest, reply, reply_to, relay_ref):
     """``attest-dots`` for exactly ``proposal`` (the presented one named by
     ``digest``) and the relayed reply; returns the delivery id."""
@@ -206,9 +252,13 @@ def attest(proposal, digest, reply, reply_to, relay_ref):
         args, stdin_text, out=io.StringIO()))
 
 
-def grant(delivery_id):
+def grant(delivery_id, proposal):
     """What the ceremony recorded, stated plainly: an authorization granted
-    by pr_delivery, never by this transport, with no step performed."""
+    by pr_delivery, never by this transport, with no step performed. The
+    authorized steps are the attested proposal's own allowed actions, which
+    the minted record carries exactly: pr_delivery copies them from that
+    binding and its validator re-proves the proposal digest over them."""
+    binding = proposal["binding"]
     return {
         "delivery_id": delivery_id,
         "granted_by": "pr_delivery attest-dots: an operator-attested relay of"
@@ -217,9 +267,9 @@ def grant(delivery_id):
         "source": delivery_auth.AUTHORIZATION_SOURCE_DOTS_OPERATOR_ATTESTED,
         "provenance": delivery_auth.DOTS_PROVENANCE,
         "residual_risk": delivery_auth.DOTS_RESIDUAL_RISK,
-        "authorized_steps": list(delivery_auth.STEPS),
+        "authorized_steps": list(binding["allowed_actions"]),
         "performed_steps": [],
-        "never_authorized": NEVER_AUTHORIZED,
+        "never_authorized": never_authorized(binding),
         "performance": "this transport performs no step; the authorized steps"
                        " run only through pr_delivery's own drive, outside"
                        " this adapter",

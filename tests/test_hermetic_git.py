@@ -142,6 +142,21 @@ EXPECTED_FILES_WITH_IDENTITY_SITES = frozenset({
     "test_target_runtime.py",
 })
 
+# git's OWN diagnostics for a commit refused for want of an identity: the
+# causality pin of the negative control below. Which of them git prints
+# varies by environment even within one git release (under
+# user.useConfigOnly it says "no email was given and auto-detection is
+# disabled"; when auto-detection itself fails, the Ubuntu CI mode, it says
+# "unable to auto-detect email address"), so the known identity-specific
+# wordings form an explicit set. Each is git's own text (all four are in
+# git 2.39.5); none is printed for a failure that is not about identity.
+GIT_IDENTITY_UNKNOWN_MARKERS = (
+    "Author identity unknown",
+    "Please tell me who you are",
+    "unable to auto-detect email address",
+    "no email was given and auto-detection is disabled",
+)
+
 
 def scrubbed_identity_env(base_dir):
     """An environment with no ambient Git identity of any kind and no
@@ -208,7 +223,15 @@ class HermeticExecutionTests(unittest.TestCase):
             "Git identity — the hermeticity proof would be vacuous:\n"
             + completed.stdout + completed.stderr,
         )
-        self.assertIn("Please tell me who you are", completed.stderr)
+        found = [marker for marker in GIT_IDENTITY_UNKNOWN_MARKERS
+                 if marker in completed.stderr]
+        self.assertGreaterEqual(
+            len(found), 1,
+            "the commit failed, but git printed none of its identity"
+            " diagnostics %r, so the failure is not shown to be the missing"
+            " identity:\n" % (GIT_IDENTITY_UNKNOWN_MARKERS,)
+            + completed.stdout + completed.stderr,
+        )
 
     def test_hermetic_commit_succeeds_with_no_ambient_identity(self):
         run_git("-C", self.repo, "commit", "-qm", "hermetic", env=self.env)

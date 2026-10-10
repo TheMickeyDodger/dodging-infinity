@@ -184,6 +184,8 @@ Request human approval.
 
 Only after explicit human confirmation may the appropriate authorization flow be used.
 
+A `pr_delivery` proposal (for example a `pr_update`: one commit on an existing open pull request) that the human separately approves as one exact displayed proposal, explicitly naming COMMIT and PUSH, is that confirmation for exactly those named steps. It is a narrow, existing, receipt-backed path through the same hooks, not a bypass and not a token. Mission and plan approval never confer it, and Mission `delivery_authority` stays `none`. See OPERATOR_PROTOCOL.md "Git Delivery".
+
 ---
 
 ## Communication Style
