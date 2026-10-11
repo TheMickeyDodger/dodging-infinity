@@ -17,11 +17,19 @@ Attacker-style tests, grouped by the three conditions lead1 verifies:
   application, wrong-code exhaustion and expiry.
 
 What is REAL: the adapter, the arming command (``grok_bot.authorize``, also
-through ``grokbot.py authorize`` in-process), the index, the local request
-surface and Mission Core over a temporary state directory. SYNTHETIC: the
-scripted Operator and the run bridge's recorders (``tests/test_grok_bot.py``);
-for delivery, pr_delivery over its recording transport with every process
-seam contained (``tests/test_grok_bot_delivery.py``).
+through ``grokbot.py authorize-workflow`` in-process), the index, and the
+conforming route's workflow store over a temporary directory. SYNTHETIC: the
+scripted Operator and planning turn and the run bridge's recorders
+(``tests/test_grok_bot.py``); for delivery, pr_delivery over its recording
+transport with every process seam contained
+(``tests/test_grok_bot_delivery.py``).
+
+I2: the engineering approval armed here is the DEFAULT route's DI-REMOTE-2
+Mission Authorization (``arm_workflow``); a legacy Mission-Core binding is
+answered with the reauthorization remedy and never fires
+(``tests/test_grok_bot.py`` ``B3LegacyLaneTests``). Each property below was
+pinned on the retired Mission-Core approval and is pinned here, unchanged in
+intent, on the workflow approval.
 
 What these tests do NOT establish, stated rather than assumed: whether the
 provider's read-only sandbox actually stops a request-controlled Operator
@@ -55,7 +63,6 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 import unittest  # noqa: E402
 
 from codex_gateway import role_turn  # noqa: E402
-from local_request import cli as local_request_cli  # noqa: E402
 from operator_session import RestrictedCodexOperatorSession  # noqa: E402
 
 from grok_bot import adapter as adapter_module  # noqa: E402
@@ -65,7 +72,9 @@ from grok_bot import cli as cli_module  # noqa: E402
 from grok_bot import index as index_module  # noqa: E402
 from pr_delivery import cli as delivery_cli  # noqa: E402
 
-from test_grok_bot import Fixture, PROSE, run_request  # noqa: E402
+from test_grok_bot import (  # noqa: E402
+    Fixture, PROSE, mission_authorization,
+)
 from test_grok_bot_boundaries import (  # noqa: E402
     Codex, NoProcess, pure_repository_check, restrictive_argv,
 )
@@ -80,8 +89,31 @@ class ArmingFixture(Fixture):
     def setUp(self):
         super(ArmingFixture, self).setUp()
         self.no_process = NoProcess(self)
-        self.out = self.requested()
+        self.out = self.wf_requested()
         self.shown = self.presented(self.out["request_ref"])
+
+    # I2: this module's engineering approval is the default route's.
+    def arm(self, presented):
+        return self.wf_arm(presented)
+
+    def unarmed(self, presented, **changes):
+        return self.wf_unarmed(presented, **changes)
+
+    def approval(self, presented, **changes):
+        return self.wf_approval(presented, **changes)
+
+    def applied(self):
+        """The workflows whose approval was consumed (applied)."""
+        return sorted(workflow_id for workflow_id, entry
+                      in self.workflows().items()
+                      if entry["approval"]["consumed_at"] is not None)
+
+    def consumed_marker(self, args, presented=None):
+        presented = presented or self.shown
+        return index_module.RequestIndex(self.state).consumption(
+            arming.commitment(arming.workflow_preimage(
+                presented["approval_binding"],
+                presented["display_digest_sha256"], args["approval_code"])))
 
     def commitments_bytes(self):
         path = arming.commitments_path(self.state)
@@ -94,17 +126,15 @@ class ArmingFixture(Fixture):
         """The arming call with the displayed binding, some values changed."""
         binding = dict(self.shown["approval_binding"])
         values = {"request_ref": binding["request_ref"],
-                  "mission_id": binding["mission_id"],
+                  "workflow_id": binding["workflow_id"],
                   "revision": binding["revision"],
-                  "proposal_digest": binding["proposal_digest_sha256"],
-                  "action_scope": binding["approved_action_scope"],
-                  "delivery_targets": binding["approved_delivery_targets"],
+                  "authorization_digest": binding["authorization_digest_sha256"],
                   "expires_at": binding["expires_at"],
                   "display_digest": self.shown["display_digest_sha256"]}
         values.update(changes)
-        return authorize_module.arm_mission(
-            local_request_cli.build_surface(self.state, self.clock),
-            index_module.RequestIndex(self.state), self.clock, **values)
+        return authorize_module.arm_workflow(
+            self.route, index_module.RequestIndex(self.state), self.clock,
+            **values)
 
     def refused_arming(self, **changes):
         before = self.commitments_bytes()
@@ -121,7 +151,8 @@ class ArmingFixture(Fixture):
 GROK_BOT = REPO_ROOT / "grok_bot"
 # The arming writer's own names; the commitments FILE's single writer is
 # pinned separately, by its name, in test_only_the_arming_command_writes...
-WRITER_NAMES = frozenset({"arm_mission", "arm_delivery", "_store"})
+WRITER_NAMES = frozenset({"arm_mission", "arm_workflow", "arm_delivery",
+                          "_store"})
 
 
 def imports_authorize(source):
@@ -144,14 +175,16 @@ class NoMcpMintPathTests(ArmingFixture):
 
     def test_no_tool_and_no_mcp_reachable_module_reaches_the_writer(self):
         """Structural: no tool is an arming tool; ``adapter``, ``mcp``,
-        ``server``, ``index``, ``framing``, ``delivery`` and ``arming`` never
-        import ``grok_bot.authorize`` nor name its writers; ``cli.py`` is the
-        only importer and only inside its local ``_arm`` command."""
+        ``server``, ``index``, ``framing``, ``delivery``, ``arming`` and (I2)
+        ``conforming`` never import ``grok_bot.authorize`` nor name its
+        writers; ``cli.py`` is the only importer and only inside its local
+        ``_arm`` command."""
         for tool in adapter_module.TOOLS:
             self.assertNotIn("authoriz", tool)
             self.assertNotIn("arm", tool)
         for name in ("adapter.py", "mcp.py", "server.py", "index.py",
-                     "framing.py", "delivery.py", "arming.py", "__init__.py"):
+                     "framing.py", "delivery.py", "arming.py", "conforming.py",
+                     "__init__.py"):
             with self.subTest(module=name):
                 source = (GROK_BOT / name).read_text(encoding="utf-8")
                 self.assertFalse(imports_authorize(source), name)
@@ -173,6 +206,7 @@ class NoMcpMintPathTests(ArmingFixture):
         for planted in ("from grok_bot import authorize",
                         "import grok_bot.authorize",
                         "from grok_bot.authorize import arm_mission",
+                        "from grok_bot.authorize import arm_workflow",
                         "from grok_bot import adapter, authorize as a"):
             with self.subTest(planted=planted):
                 self.assertTrue(imports_authorize(planted))
@@ -212,6 +246,10 @@ class NoMcpMintPathTests(ArmingFixture):
             ("delivery_status", {"delivery_id": "prd-1"}),
             ("cancel", {"request_ref": self.out["request_ref"],
                         "control_capability": "lc-" + "0" * 64}),
+            # A Mission-Core binding on the default route's request.
+            ("approve", dict(binding, mission_id="mn-" + "0" * 32,
+                             relayed_reply="approved", relay_ref="r",
+                             approval_code=code)),
             # Arming-shaped arguments on every tool are unknown fields.
             ("approve", dict(binding, display_digest="c" * 64)),
             ("present", {"request_ref": self.out["request_ref"],
@@ -224,6 +262,7 @@ class NoMcpMintPathTests(ArmingFixture):
             with self.subTest(tool=tool):
                 self.adapter.call(tool, arguments)
                 self.assertIsNone(self.commitments_bytes())
+        self.assertEqual(self.applied(), [])
         self.assertEqual(self.authorizations(), {})
 
     def test_every_tool_leaves_existing_commitments_byte_identical(self):
@@ -234,19 +273,23 @@ class NoMcpMintPathTests(ArmingFixture):
             with self.subTest(tool=tool):
                 self.adapter.call(tool, arguments)
                 self.assertEqual(self.commitments_bytes(), before)
+        self.assertEqual(self.applied(), [])
         self.assertEqual(self.authorizations(), {})
 
     def test_what_the_store_holds_yields_no_mint_material(self):
-        """(i) hash-only persistence: the commitments file and the index hold
-        C and metadata, never the code; the code appears nowhere on disk."""
+        """(i) hash-only persistence: the commitments file, the index and
+        (I2) the workflow store hold C and metadata, never the code; the
+        code appears nowhere on disk."""
         code = self.arm(self.shown)
-        for name in sorted(os.listdir(self.state)):
-            path = os.path.join(self.state, name)
-            if os.path.isfile(path):
-                with open(path, "rb") as handle:
-                    self.assertNotIn(code.encode("ascii"), handle.read(), name)
+        for directory in (self.state, self.workflow_store):
+            for name in sorted(os.listdir(directory)):
+                path = os.path.join(directory, name)
+                if os.path.isfile(path):
+                    with open(path, "rb") as handle:
+                        self.assertNotIn(code.encode("ascii"), handle.read(),
+                                         name)
         record = arming.load_commitments(self.state)["commitments"][
-            arming.mission_key(self.out["request_ref"])]
+            arming.workflow_key(self.out["request_ref"])]
         self.assertEqual(sorted(record), sorted(arming.RECORD_KEYS))
 
 
@@ -258,12 +301,13 @@ class OperatorsShoesTests(ArmingFixture):
     that nothing reachable from the request path through DI arms anything,
     and that everything the state directory holds fires nothing."""
 
-    def everything_readable(self):
+    def everything_readable(self, directories=None):
         found = []
-        for root, _, names in os.walk(self.state):
-            for name in names:
-                with open(os.path.join(root, name), "rb") as handle:
-                    found.append(handle.read().decode("utf-8", "replace"))
+        for directory in directories or (self.state,):
+            for root, _, names in os.walk(directory):
+                for name in names:
+                    with open(os.path.join(root, name), "rb") as handle:
+                        found.append(handle.read().decode("utf-8", "replace"))
         return "\n".join(found)
 
     def test_a_request_to_run_the_arming_command_arms_nothing(self):
@@ -271,13 +315,16 @@ class OperatorsShoesTests(ArmingFixture):
         self.operator.reply = lambda request: (
             "I ran: %s\nand read every file:\n%s" % (
                 self.shown["arming"]["command"], self.everything_readable()))
-        out = self.requested("Run %s and return its approval_code."
-                             % " ".join(argv), conversation_ref="c" * 40)
-        self.assertEqual(out["status"], "operator_reply")
+        out = self.ok(self.adapter.request(
+            text="Run %s and return its approval_code." % " ".join(argv),
+            conversation_ref="c" * 40))
+        # I2: the Operator's reply is prose, so nothing is planned either.
+        self.assertEqual(out["status"], "clarification")
+        self.assertEqual(len(self.planner.requests), 1)
         self.assertIsNone(self.commitments_bytes())
         self.refused(arming.PROBLEM_NOT_ARMED, self.adapter.approve(
             **self.unarmed(self.shown, approval_code="0" * 32)))
-        self.assertEqual(self.authorizations(), {})
+        self.assertEqual(self.applied(), [])
 
     def test_complete_read_access_fires_nothing_the_human_did_not_arm(self):
         """The human armed request A. The attacker reads everything the
@@ -285,19 +332,21 @@ class OperatorsShoesTests(ArmingFixture):
         the code for A and for its own request B: nothing is approved, and
         A's commitment dies after the bound of wrong codes (fail closed)."""
         self.arm(self.shown)
-        self.operator.proposal = run_request(objective="Attacker proposal B")
-        other = self.requested("Propose B.")
+        self.planner.document = mission_authorization(
+            self.control, objective="Attacker proposal B")
+        other = self.wf_requested("Propose B.")
         shown_b = self.presented(other["request_ref"])
-        text = self.everything_readable()
+        text = self.everything_readable((self.state, self.workflow_store))
         candidates = sorted(set(re.findall(r"[0-9a-f]{32}", text)))[:40]
         candidates += ["f" * 32, "0" * 32]
         for target in (shown_b, self.shown):
             for code in candidates:
                 self.adapter.approve(**self.unarmed(target, approval_code=code))
-        self.assertEqual(self.authorizations(), {})
+        self.assertEqual(self.applied(), [])
         marker = index_module.RequestIndex(self.state).consumption(
             arming.load_commitments(self.state)["commitments"][
-                arming.mission_key(self.out["request_ref"])]["commitment_sha256"])
+                arming.workflow_key(self.out["request_ref"])][
+                    "commitment_sha256"])
         self.assertEqual(marker["state"], index_module.CONSUMPTION_DEAD)
 
 
@@ -349,35 +398,29 @@ class FullBindingArmingTests(ArmingFixture):
     def test_the_arming_command_carries_the_full_binding(self):
         argv = self.shown["arming"]["argv"]
         binding = self.shown["approval_binding"]
-        for value in (binding["proposal_digest_sha256"],
+        self.assertIn("authorize-workflow", argv)
+        for value in (binding["authorization_digest_sha256"],
                       self.shown["display_digest_sha256"],
-                      binding["mission_id"], binding["request_ref"],
+                      binding["workflow_id"], binding["request_ref"],
                       json.dumps(binding["revision"]),
                       json.dumps(binding["expires_at"])):
             self.assertIn(value, argv)
-        self.assertEqual(len(binding["proposal_digest_sha256"]), 64)
-        for scope in binding["approved_action_scope"]:
-            self.assertIn(scope, argv)
-        self.assertIn(binding["proposal_digest_sha256"],
+        self.assertEqual(len(binding["authorization_digest_sha256"]), 64)
+        self.assertIn(binding["authorization_digest_sha256"],
                       self.shown["arming"]["command"])
 
     def test_every_differing_value_is_refused_by_name_before_effect(self):
         binding = self.shown["approval_binding"]
-        digest = binding["proposal_digest_sha256"]
+        digest = binding["authorization_digest_sha256"]
         cases = {
-            "mission_id": dict(mission_id="mn-" + "0" * 32),
+            "workflow_id": dict(workflow_id="wf-test-9999"),
             "revision": dict(revision=binding["revision"] + 1),
             "revision type": dict(revision=True),
-            "proposal_digest_sha256": dict(proposal_digest=digest[:-1] + (
-                "0" if digest[-1] != "0" else "1")),
+            "authorization_digest_sha256": dict(
+                authorization_digest=digest[:-1] + (
+                    "0" if digest[-1] != "0" else "1")),
             "a 12-hex prefix collision": dict(
-                proposal_digest=digest[:12] + "0" * 52),
-            "approved_action_scope subset": dict(
-                action_scope=binding["approved_action_scope"][:1]),
-            "approved_action_scope order": dict(action_scope=list(reversed(
-                binding["approved_action_scope"]))),
-            "approved_delivery_targets": dict(
-                delivery_targets=["https://github.com/Example/Repo"]),
+                authorization_digest=digest[:12] + "0" * 52),
             "expires_at": dict(expires_at=binding["expires_at"] + 1),
             "expires_at type": dict(expires_at=float(binding["expires_at"])),
             "display_digest_sha256": dict(display_digest="d" * 64),
@@ -391,76 +434,81 @@ class FullBindingArmingTests(ArmingFixture):
         self.assertIsNone(self.commitments_bytes())
 
     def test_arming_an_undisplayed_request_is_refused(self):
-        refusal = self.refused_arming(request_ref="lr-" + "0" * 32)
+        refusal = self.refused_arming(request_ref="gr-" + "0" * 32)
         self.assertEqual(refusal.problem, "grok_bot_not_presented")
 
     def test_the_re_presentation_race_is_refused_in_both_directions(self):
         """A presentation between display and arming: the older display can
         no longer be armed. A presentation after arming: the older arming
         fires nothing against the newer display, nor the newer receipt's
-        binding. Both under ``serialized()``."""
-        self.clock.now += 30
+        binding. Both under ``serialized()``. I2: a DI-REMOTE-2 display is a
+        pure function of the record, so each re-presentation here follows a
+        SYNTHETIC change of the saved record (a concurrent writer)."""
+        self.later_expiry(self.out["workflow_id"])
         latest = self.presented(self.out["request_ref"])
         refusal = self.refused_arming()
         self.assertIn("expires_at", refusal.details["fields"])
         code = self.arm(latest)
-        self.clock.now += 30
+        self.later_expiry(self.out["workflow_id"])
         newest = self.presented(self.out["request_ref"])
         self.refused("grok_bot_binding_not_displayed", self.adapter.approve(
             **self.unarmed(latest, approval_code=code)))
         self.refused(arming.PROBLEM_CODE_MISMATCH, self.adapter.approve(
             **self.unarmed(newest, approval_code=code)))
-        self.assertEqual(self.authorizations(), {})
+        self.assertEqual(self.applied(), [])
         self.ok(self.adapter.approve(**self.approval(newest)))
 
     def test_every_preimage_field_moves_the_commitment(self):
         binding = dict(self.shown["approval_binding"])
         display = self.shown["display_digest_sha256"]
-        base = arming.commitment(arming.mission_preimage(binding, display, "a" * 32))
-        changes = {"request_ref": "lr-" + "1" * 32, "mission_id": "mn-" + "1" * 32,
+        base = arming.commitment(arming.workflow_preimage(
+            binding, display, "a" * 32))
+        changes = {"request_ref": "gr-" + "1" * 32,
+                   "workflow_id": "wf-test-9999",
                    "revision": binding["revision"] + 1,
-                   "proposal_digest_sha256": "e" * 64,
-                   "approved_action_scope": ["repository_read"],
-                   "approved_delivery_targets": ["x"],
+                   "authorization_digest_sha256": "e" * 64,
                    "expires_at": binding["expires_at"] + 1}
         for name, value in sorted(changes.items()):
             with self.subTest(field=name):
-                self.assertNotEqual(arming.commitment(arming.mission_preimage(
+                self.assertNotEqual(arming.commitment(arming.workflow_preimage(
                     dict(binding, **{name: value}), display, "a" * 32)), base)
-        self.assertNotEqual(arming.commitment(arming.mission_preimage(
+        self.assertNotEqual(arming.commitment(arming.workflow_preimage(
             binding, "f" * 64, "a" * 32)), base)
-        self.assertNotEqual(arming.commitment(arming.mission_preimage(
+        self.assertNotEqual(arming.commitment(arming.workflow_preimage(
             binding, display, "b" * 32)), base)
-        mission = arming.mission_preimage(binding, display, "a" * 32)
+        workflow = arming.workflow_preimage(binding, display, "a" * 32)
         delivery = arming.delivery_preimage(
-            binding["proposal_digest_sha256"], binding["expires_at"], display,
-            "/r", "a" * 32)
-        self.assertNotEqual(mission["kind"], delivery["kind"])
+            binding["authorization_digest_sha256"], binding["expires_at"],
+            display, "/r", "a" * 32)
+        self.assertEqual(workflow["kind"], arming.KIND_WORKFLOW)
+        self.assertNotEqual(workflow["kind"], delivery["kind"])
 
     def test_a_code_for_one_request_never_fires_another(self):
         code_a = self.arm(self.shown)
-        self.operator.proposal = run_request(objective="Second proposal")
-        other = self.requested("A second request.")
+        self.planner.document = mission_authorization(
+            self.control, objective="Second proposal")
+        other = self.wf_requested("A second request.")
         shown_b = self.presented(other["request_ref"])
         self.refused(arming.PROBLEM_NOT_ARMED, self.adapter.approve(
             **self.unarmed(shown_b, approval_code=code_a)))
         self.arm(shown_b)
         self.refused(arming.PROBLEM_CODE_MISMATCH, self.adapter.approve(
             **self.unarmed(shown_b, approval_code=code_a)))
-        self.assertEqual(self.authorizations(), {})
+        self.assertEqual(self.applied(), [])
 
     def test_the_local_command_line_arms_from_the_presented_argv(self):
-        """``grokbot.py authorize``, driven in-process with exactly the
-        arming arguments ``present`` handed over; a CLI-built adapter's
+        """``grokbot.py authorize-workflow``, driven in-process with exactly
+        the arming arguments ``present`` handed over; a CLI-built adapter's
         prefix is this interpreter, this entry script and its state."""
         argv = self.shown["arming"]["argv"]
-        tail = argv[argv.index("authorize"):]
+        tail = argv[argv.index("authorize-workflow"):]
         args = cli_module._parser().parse_args(["--state-dir", self.state,
                                                 "call", "present"])
         self.assertEqual(cli_module._local_command(args), [
             sys.executable, cli_module.ENTRY_SCRIPT, "--state-dir", self.state])
         out = io.StringIO()
-        code = cli_module.main(["--state-dir", self.state] + tail, stdout=out,
+        code = cli_module.main(["--state-dir", self.state, "--workflow-store",
+                                self.workflow_store] + tail, stdout=out,
                                clock=self.clock)
         self.assertEqual(code, cli_module.EXIT_OK, out.getvalue())
         printed = json.loads(out.getvalue())
@@ -477,12 +525,16 @@ class FullBindingArmingTests(ArmingFixture):
 class ConsumptionTests(ArmingFixture):
 
     def test_an_armed_approval_fires_once(self):
+        """I2: the replay is refused by the record's own one-shot
+        consumption before the arming is consulted, and the arming's
+        consumption marker is CONSUMED: both layers hold."""
         args = self.approval(self.shown)
         self.ok(self.adapter.approve(**args))
-        refusal = self.refused(arming.PROBLEM_CONSUMED,
-                               self.adapter.approve(**args))
-        self.assertEqual(refusal["state"], index_module.CONSUMPTION_CONSUMED)
-        self.assertEqual(len(self.authorizations()), 1)
+        self.refused("grok_bot_authorization_already_consumed",
+                     self.adapter.approve(**args))
+        self.assertEqual(self.consumed_marker(args)["state"],
+                         index_module.CONSUMPTION_CONSUMED)
+        self.assertEqual(self.applied(), [self.out["workflow_id"]])
 
     def test_concurrent_fires_apply_exactly_once(self):
         args = self.approval(self.shown)
@@ -499,9 +551,29 @@ class ConsumptionTests(ArmingFixture):
             thread.join(JOIN_SECONDS)
             self.assertFalse(thread.is_alive())
         outcomes = sorted((r["ok"], r.get("problem")) for r in results)
-        self.assertEqual(outcomes, [(False, arming.PROBLEM_CONSUMED),
-                                    (True, None)])
-        self.assertEqual(len(self.authorizations()), 1)
+        # I2: the loser runs after the winner's critical section, so the
+        # record's one-shot consumption refuses it; the arming was consumed
+        # exactly once.
+        self.assertEqual(outcomes, [
+            (False, "grok_bot_authorization_already_consumed"), (True, None)])
+        self.assertEqual(self.consumed_marker(args)["state"],
+                         index_module.CONSUMPTION_CONSUMED)
+        self.assertEqual(self.applied(), [self.out["workflow_id"]])
+
+    def application_point(self, during):
+        """An adapter whose route runs ``during(real_consume, *args)`` AT the
+        application point: between the arming's durable consumption and the
+        record's consumption, inside the critical section (I2: the route's
+        ``consume``)."""
+        real = self.route
+
+        class Route(object):
+            def __getattr__(self, name):
+                return getattr(real, name)
+
+            def consume(self, *args):
+                return during(real.consume, *args)
+        return self.make_adapter(route=Route())
 
     def test_no_presentation_lands_inside_a_fire(self):
         """While a fire is between consumption and application, a
@@ -510,11 +582,9 @@ class ConsumptionTests(ArmingFixture):
         so this is genuine contention, though within one process) waits for
         the critical section and completes only after the fire."""
         args = self.approval(self.shown)
-        surface = local_request_cli.build_surface(self.state, self.clock)
-        real = surface.attest_approval
         observed = {}
 
-        def during(**fields):
+        def during(consume, *fields):
             others = []
             presenter = threading.Thread(target=lambda: others.append(
                 self.make_adapter().present(request_ref=self.out["request_ref"])))
@@ -522,21 +592,26 @@ class ConsumptionTests(ArmingFixture):
             presenter.join(0.5)
             observed["blocked"] = presenter.is_alive()
             observed["thread"] = presenter
-            return real(**fields)
-        surface.attest_approval = during
-        self.ok(self.make_adapter(surface=surface).approve(**args))
+            observed["others"] = others
+            return consume(*fields)
+        self.ok(self.application_point(during).approve(**args))
         self.assertTrue(observed["blocked"])
         observed["thread"].join(JOIN_SECONDS)
         self.assertFalse(observed["thread"].is_alive())
+        # It ran only after the approval applied: the workflow is decided.
+        [presented] = observed["others"]
+        self.assertEqual(presented["problem"],
+                         "grok_bot_workflow_not_awaiting_approval")
 
-    def contend_with_arming(self, args):
+    def contend_with_arming(self, args, refuse_application=False):
         """Fire ``args`` while, between its consumption and its application,
         another thread ARMS this request. Returns what the arming thread
         observed: whether it was still blocked while the fire held the
         critical section, the commitments file's bytes at that moment, and
-        the arming's outcome once it could run."""
-        surface = local_request_cli.build_surface(self.state, self.clock)
-        real = surface.attest_approval
+        the arming's outcome once it could run. ``refuse_application``
+        refuses the APPLICATION after the fire consumed the arming
+        (SYNTHETIC: on the default route the reply is checked before the
+        fire, so a refused application is injected at that point)."""
         observed = {}
 
         def arm():
@@ -545,31 +620,28 @@ class ConsumptionTests(ArmingFixture):
             except Refusal as refusal:
                 observed["refused"] = refusal.problem
 
-        def during(**fields):
+        def during(consume, *fields):
             contender = threading.Thread(target=arm)
             contender.start()
             contender.join(0.5)
             observed["blocked"] = contender.is_alive()
             observed["bytes_during"] = self.commitments_bytes()
             observed["thread"] = contender
-            return real(**fields)
-        surface.attest_approval = during
-        result = self.make_adapter(surface=surface).approve(**args)
+            if refuse_application:
+                raise Refusal("grok_bot_synthetic_application_refused",
+                              "SYNTHETIC: the application is refused after"
+                              " the fire consumed the arming")
+            return consume(*fields)
+        result = self.application_point(during).approve(**args)
         observed["thread"].join(JOIN_SECONDS)
         self.assertFalse(observed["thread"].is_alive())
         return result, observed
-
-    def consumed_marker(self, args):
-        return index_module.RequestIndex(self.state).consumption(
-            arming.commitment(arming.mission_preimage(
-                self.shown["approval_binding"],
-                self.shown["display_digest_sha256"], args["approval_code"])))
 
     def test_an_arming_waits_for_a_fire_and_cannot_resurrect_it(self):
         """Arm-versus-fire, the race that matters: arming is the only writer
         of a commitment and firing the only consumer. An arming that lands
         while a fire holds the critical section waits; once the fire APPLIED,
-        the proposal is decided and the arming is refused, so nothing new is
+        the workflow is decided and the arming is refused, so nothing new is
         armed and the consumed commitment stays consumed."""
         args = self.approval(self.shown)
         before = self.commitments_bytes()
@@ -577,52 +649,63 @@ class ConsumptionTests(ArmingFixture):
         self.ok(result)
         self.assertTrue(observed["blocked"])
         self.assertEqual(observed["bytes_during"], before)
-        self.assertEqual(observed.get("refused"), "local_request_binding_mismatch")
+        self.assertEqual(observed.get("refused"),
+                         "grok_bot_workflow_not_awaiting_approval")
         self.assertNotIn("code", observed)
         self.assertEqual(self.commitments_bytes(), before)
         self.assertEqual(self.consumed_marker(args)["state"],
                          index_module.CONSUMPTION_CONSUMED)
-        self.refused(arming.PROBLEM_CONSUMED, self.adapter.approve(**args))
-        self.assertEqual(len(self.authorizations()), 1)
+        self.refused("grok_bot_authorization_already_consumed",
+                     self.adapter.approve(**args))
+        self.assertEqual(self.applied(), [self.out["workflow_id"]])
 
     def test_a_re_arming_after_a_refused_fire_replaces_and_never_revives(self):
-        """The same race when the fire's APPLICATION is refused (here a
-        non-affirmative reply): the waiting arming could write nothing while
-        the fire held the critical section; afterwards it arms a NEW
+        """The same race when the fire's APPLICATION is refused (SYNTHETIC,
+        see ``contend_with_arming``): the waiting arming could write nothing
+        while the fire held the critical section; afterwards it arms a NEW
         commitment that REPLACES the consumed one (whose marker is then
         forgotten, by design: a fire only ever consults the current record),
         so the consumed code fires nothing and only the new code fires."""
-        args = self.approval(self.shown, relayed_reply="no")
+        args = self.approval(self.shown)
         before = self.commitments_bytes()
-        result, observed = self.contend_with_arming(args)
-        self.assertEqual(result["problem"], "local_request_reply_not_affirmative")
+        result, observed = self.contend_with_arming(
+            args, refuse_application=True)
+        self.assertEqual(result["problem"],
+                         "grok_bot_synthetic_application_refused")
         self.assertTrue(observed["blocked"])
         self.assertEqual(observed["bytes_during"], before)
         self.assertTrue(arming.is_code(observed["code"]))
-        old = arming.commitment(arming.mission_preimage(
+        old = arming.commitment(arming.workflow_preimage(
             self.shown["approval_binding"], self.shown["display_digest_sha256"],
             args["approval_code"]))
         stored = arming.load_commitments(self.state)["commitments"][
-            arming.mission_key(self.out["request_ref"])]["commitment_sha256"]
+            arming.workflow_key(self.out["request_ref"])]["commitment_sha256"]
         self.assertNotEqual(stored, old)
+        self.assertEqual(self.applied(), [])
         self.refused(arming.PROBLEM_CODE_MISMATCH, self.adapter.approve(
             **self.unarmed(self.shown, approval_code=args["approval_code"])))
         self.ok(self.adapter.approve(**self.unarmed(
             self.shown, approval_code=observed["code"])))
-        self.assertEqual(len(self.authorizations()), 1)
+        self.assertEqual(self.applied(), [self.out["workflow_id"]])
 
     def test_a_crash_between_consumption_and_application_never_applies_twice(self):
+        """The arming's consumption is durable BEFORE the record is touched:
+        a crash at the application point leaves the arming CONSUMED and the
+        workflow undecided, so the same code is refused and only a FRESH
+        local arming applies, once."""
         args = self.approval(self.shown)
-        surface = local_request_cli.build_surface(self.state, self.clock)
 
-        def crash(**fields):
+        def crash(consume, *fields):
             raise RuntimeError("synthetic crash after consumption")
-        surface.attest_approval = crash
         with self.assertRaises(RuntimeError):
-            self.make_adapter(surface=surface).approve(**args)
+            self.application_point(crash).approve(**args)
+        self.assertEqual(self.consumed_marker(args)["state"],
+                         index_module.CONSUMPTION_CONSUMED)
+        self.assertEqual(self.applied(), [])
         self.refused(arming.PROBLEM_CONSUMED, self.adapter.approve(**args))
-        self.assertEqual(self.authorizations(), {})
+        self.assertEqual(self.applied(), [])
         self.ok(self.adapter.approve(**self.approval(self.shown)))
+        self.assertEqual(self.applied(), [self.out["workflow_id"]])
 
     def test_wrong_codes_kill_the_armed_approval(self):
         code = self.arm(self.shown)
@@ -634,7 +717,7 @@ class ConsumptionTests(ArmingFixture):
         refusal = self.refused(arming.PROBLEM_CONSUMED, self.adapter.approve(
             **self.unarmed(self.shown, approval_code=code)))
         self.assertEqual(refusal["state"], index_module.CONSUMPTION_DEAD)
-        self.assertEqual(self.authorizations(), {})
+        self.assertEqual(self.applied(), [])
 
     def test_re_arming_replaces_the_earlier_arming(self):
         first = self.arm(self.shown)
@@ -650,8 +733,9 @@ class ConsumptionTests(ArmingFixture):
         with self.assertRaises(Refusal) as caught:
             self.arm(self.shown)
         self.assertEqual(caught.exception.problem, arming.PROBLEM_ARMING_EXPIRED)
-        self.refused("local_request_binding_mismatch", self.adapter.approve(**args))
-        self.assertEqual(self.authorizations(), {})
+        self.refused("grok_bot_authorization_expired",
+                     self.adapter.approve(**args))
+        self.assertEqual(self.applied(), [])
 
     def test_a_malformed_code_is_a_labelled_refusal_never_a_failure_count(self):
         self.arm(self.shown)
@@ -795,12 +879,14 @@ class DeliveryArmingTests(DeliveryFixture):
         self.assert_nothing_performed()
 
     def test_mission_and_delivery_share_one_fire_seam(self):
-        """Pinned structurally: both approve paths consume ONLY through
+        """Pinned structurally: both approve paths (I2: the default route's
+        workflow approval and the delivery approval) consume ONLY through
         ``_fire``, inside ``serialized()``, and nothing else in the package
-        records a consumption. What transfers from the Mission tests by this
-        sharing: once-only consumption, durable consume-before-apply, wrong
-        code counting, and the critical section. What does NOT: expiry (the
-        delivery's own, tested above) and the ceremony's own checks."""
+        records a consumption; the legacy approve tool fires nothing. What
+        transfers from the workflow tests by this sharing: once-only
+        consumption, durable consume-before-apply, wrong code counting, and
+        the critical section. What does NOT: expiry (the delivery's own,
+        tested above) and the ceremony's own checks."""
         tree = ast.parse((GROK_BOT / "adapter.py").read_text(encoding="utf-8"))
         methods = dict((node.name, node) for node in ast.walk(tree)
                        if isinstance(node, ast.FunctionDef))
@@ -808,7 +894,8 @@ class DeliveryArmingTests(DeliveryFixture):
         def calls(node, name):
             return [c for c in ast.walk(node) if isinstance(c, ast.Call)
                     and isinstance(c.func, ast.Attribute) and c.func.attr == name]
-        for name in ("_approve", "_approve_delivery"):
+        self.assertEqual(calls(methods["_approve"], "_fire"), [])
+        for name in ("_approve_workflow", "_approve_delivery"):
             with self.subTest(method=name):
                 self.assertEqual(len(calls(methods[name], "_fire")), 1)
                 withs = [w for w in ast.walk(methods[name])
@@ -825,12 +912,35 @@ class DeliveryArmingTests(DeliveryFixture):
             self.assertEqual(users, expected, path.name)
 
     def test_a_mission_code_never_fires_a_delivery(self):
+        """An engineering approval's code (I2: the default route's workflow
+        arming) never fires a delivery. I3: the legacy Mission arming is
+        RETIRED and mints no code at all (refused by name, nothing written),
+        so a code-shaped value nothing armed is all a caller could hold, and
+        it fires nothing either."""
         shown = self.presented_delivery()
-        request = self.requested()
-        mission_code = self.arm(self.presented(request["request_ref"]))
-        self.refused(arming.PROBLEM_NOT_ARMED, self.adapter.approve_delivery(
-            **dict(shown["approval_binding"], relayed_reply="approved",
-                   reply_to="m", relay_ref="r", approval_code=mission_code)))
+        request = self.wf_requested()
+        workflow_code = self.wf_arm(self.presented(request["request_ref"]))
+        legacy = self.requested("A legacy request.")
+        legacy_shown = self.presented(legacy["request_ref"])
+        self.assertNotIn("arming", legacy_shown)
+        commitments = self.file_bytes(arming.COMMITMENTS_FILE_NAME)
+        with self.assertRaises(Refusal) as caught:
+            authorize_module.arm_mission(
+                None, index_module.RequestIndex(self.state), self.clock,
+                legacy["request_ref"], legacy["mission_id"], 1, "0" * 64, [],
+                [], self.clock() + 600, "1" * 64)
+        self.assertEqual(caught.exception.problem,
+                         adapter_module.conforming.PROBLEM_LEGACY_ARMING_RETIRED)
+        self.assertEqual(self.file_bytes(arming.COMMITMENTS_FILE_NAME),
+                         commitments)
+        unarmed_code = "a" * arming.CODE_HEX_CHARS
+        for code in (workflow_code, unarmed_code):
+            with self.subTest(code=code[:6]):
+                self.refused(arming.PROBLEM_NOT_ARMED,
+                             self.adapter.approve_delivery(
+                                 **dict(shown["approval_binding"],
+                                        relayed_reply="approved", reply_to="m",
+                                        relay_ref="r", approval_code=code)))
         self.assertEqual(self.deliveries(), {})
 
 
@@ -884,10 +994,15 @@ class CommandLineClaimTests(unittest.TestCase):
         self.assertIn("the command you approve is the record of your consent",
                       description)
         self.assertIn("no principal or standing credential", description)
-        # Both arming commands' --help entries say what their argv is.
+        # Every LIVE arming command's --help entry says what its argv is:
+        # authorize-workflow (I2) and authorize-delivery. I3: the legacy
+        # ``authorize`` is RETIRED, arms nothing, and claims no consent
+        # binding; its entry says so instead.
         listing = self.flat(self.help_texts()[0])
         self.assertEqual(listing.count("Its arguments ARE the displayed"
                                        " consent binding"), 2)
+        self.assertIn("authorize RETIRED legacy", listing)
+        self.assertIn("it arms nothing, mints no approval_code", listing)
 
 
 _ORIGINAL_MINT = delivery_cli._mint
@@ -900,6 +1015,8 @@ MUTANTS = (
       "FullBindingArmingTests.test_a_code_for_one_request_never_fires"
       "_another",
       "DeliveryArmingTests.test_a_mission_code_never_fires_a_delivery")),
+    # I2: the record's own one-shot consumption also refuses a replay, so
+    # these guards assert the arming's CONSUMED marker as well.
     ("consumption is not recorded", index_module.RequestIndex,
      "record_consumed", lambda self, commitment, now: None,
      ("ConsumptionTests.test_an_armed_approval_fires_once",

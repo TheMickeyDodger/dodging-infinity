@@ -195,6 +195,7 @@ from mission import record as mission_record
 from target_runtime import broker as broker_module
 from target_runtime import dispatch as dispatch_module
 from target_runtime import evidence as evidence_module
+from target_runtime import legacy_result as legacy_result_module
 from target_runtime import mission_workspace as workspace_module
 from target_runtime import process_ownership as ownership_module
 from target_runtime import workspace_trust as workspace_trust_module
@@ -209,8 +210,11 @@ from workflow_authority.digest import json_digest
 
 DELIVERY_AUTHORITY = "none"
 BRIDGE_TRANSPORT = "di_mission_bridge"
-RESULT_ARTIFACT_KEY = "run_result_artifact"
-REVIEW_ARTIFACT_KEY = "run_review_artifact"
+# The run-result artifact keys, locators and binding live in
+# ``target_runtime.legacy_result`` (I3): the ONE recovery implementation
+# shares them, and this module keeps its own names for them.
+RESULT_ARTIFACT_KEY = legacy_result_module.RESULT_ARTIFACT_KEY
+REVIEW_ARTIFACT_KEY = legacy_result_module.REVIEW_ARTIFACT_KEY
 LOCATOR_KIND_REPOSITORY_PATH = "REPOSITORY_PATH"
 REPORTED_RESULT_KEYS = ("result_digest_sha256", "review_digest_sha256",
                         "task_id")
@@ -292,8 +296,8 @@ ENTRY_FIELDS = (
 )
 # The two durable target artifacts a run result is bound to, as
 # workspace-relative locators the hardened primitive can re-read.
-_STATE_DIRS = (".herd", "state")
-_REVIEW_DIRS = (".herd", "state", "reviews")
+_STATE_DIRS = legacy_result_module.STATE_DIRS
+_REVIEW_DIRS = legacy_result_module.REVIEW_DIRS
 
 
 class MissionBridgeRefusal(Exception):
@@ -419,16 +423,7 @@ def handoff_text(mission_id, revision, digest, proposal, scope, targets):
     )
 
 
-def result_binding(mission_id, task_id, result_name, result_digest,
-                   review_name, review_digest):
-    """The exact content of a run's result evidence."""
-    return {
-        "mission_id": mission_id, "task_id": task_id,
-        "result_locator": "/".join(_STATE_DIRS + (result_name,)),
-        "result_digest_sha256": result_digest,
-        "review_locator": "/".join(_REVIEW_DIRS + (review_name,)),
-        "review_digest_sha256": review_digest,
-    }
+result_binding = legacy_result_module.result_binding
 
 
 def _snapshot_entry(entry):
@@ -1306,62 +1301,12 @@ class MissionBridge(object):
         caller context): the accepted evidence, its two artifacts, and the
         content re-read and re-hashed from the recorded locators. A digest
         whose content is gone or changed is UNRECOVERABLE, never a verified
-        result."""
-        mission = self._view(mission_id)["record"]
-        run = mission.get("run")
-        verification = run["verification"] if run else None
-        if not verification or not verification["verified"]:
-            return {"mission_id": mission_id, "verified_result": False,
-                    "recoverable": False, "reason": "no VERIFIED run"}
-        state = self._missions.get_state(mission_id)["record"]
-        evidence = next(e for e in state["evidence"]
-                        if e["evidence_id"] == verification["result_evidence_id"])
-        artifacts = dict((a["artifact_id"], a) for a in state["artifacts"])
-        linked = [artifacts[i] for i in evidence["artifact_ids"]]
-        by_key = dict((a["key"], a) for a in linked)
-        workspace = run["intent"]["workspace_realpath"]
-        contents = {}
-        for key in (RESULT_ARTIFACT_KEY, REVIEW_ARTIFACT_KEY):
-            artifact = by_key.get(key)
-            parts = tuple(artifact["locator"].split("/")) if artifact else ()
-            if artifact is None or parts[:-1] not in (_STATE_DIRS, _REVIEW_DIRS):
-                return self._unrecoverable(mission_id, "%s is not recorded" % key)
-            status, _, digest, text = evidence_module.read_state_artifact(
-                workspace, parts[:-1], parts[-1])
-            if digest != artifact["content_digest_sha256"] or text is None:
-                return self._unrecoverable(
-                    mission_id, "%s content is gone or changed (%s); a digest"
-                    " alone is never a verified result" % (key, status))
-            contents[key] = (artifact, text)
-        result_artifact, result_text = contents[RESULT_ARTIFACT_KEY]
-        review_artifact, review_text = contents[REVIEW_ARTIFACT_KEY]
-        binding = result_binding(
-            mission_id, run["receipt"]["task_id"],
-            result_artifact["locator"].split("/")[-1],
-            result_artifact["content_digest_sha256"],
-            review_artifact["locator"].split("/")[-1],
-            review_artifact["content_digest_sha256"])
-        if json_digest(binding) != evidence["content_digest_sha256"] or (
-            evidence["acceptance"] is None
-        ):
-            return self._unrecoverable(mission_id, "the recorded binding does"
-                                       " not match its accepted evidence")
-        return {
-            "mission_id": mission_id, "verified_result": True,
-            "recoverable": True, "task_id": run["receipt"]["task_id"],
-            "evidence_id": evidence["evidence_id"], "binding": binding,
-            "result_text": result_text, "review_text": review_text,
-            "review_evidence": "target-produced, not independent verification",
-            "delivered": surface_module.run_status(
-                mission, self._missions.get_state(mission_id))["delivery"][
-                    "delivered"],
-            "delivery_authority": DELIVERY_AUTHORITY,
-        }
-
-    @staticmethod
-    def _unrecoverable(mission_id, reason):
-        return {"mission_id": mission_id, "verified_result": False,
-                "recoverable": False, "reason": reason}
+        result. The ONE implementation is
+        ``target_runtime.legacy_result.recover_result`` (I3), shared with
+        Grok Bot's read-only result; the Mission is read here, through this
+        bridge's own refusal wrapper."""
+        return legacy_result_module.recover_result(
+            self._missions, mission_id, self._view(mission_id)["record"])
 
     # -- pause / cancel ---------------------------------------------------
 

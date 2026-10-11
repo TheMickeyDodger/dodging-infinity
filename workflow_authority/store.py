@@ -16,18 +16,20 @@ replay or erase authority. Every record is validated against the
 closed workflow schema on every load AND every save.
 
 On LOAD ONLY, and before that validation, ``_normalize_additive_keys``
-materializes the DI-REMOTE-3 additive keys as ``None`` on records
-written before those keys existed. It inserts only those keys, never
-overwrites, and never derives a value; validation afterwards is
-unchanged, so an unknown key or any other missing key still refuses
-the load. It is deliberately not applied on save.
+materializes the DI-REMOTE-3 additive keys and the I1 ``origin`` key as
+``None`` on records written before those keys existed. It inserts only
+those keys, never overwrites, and never derives a value; validation
+afterwards is unchanged, so an unknown key or any other missing key
+still refuses the load. It is deliberately not applied on save.
 
 A subsequent save PERSISTS the materialized keys, and that is forced,
-not a liberty taken: ``result_placeholder`` is in the record's
-``_TOP_LEVEL_KEYS`` and ``_require_closed_keys`` requires it, so any
-record written at all must carry it. The upgrade is value-neutral
-(``None`` is exactly what absence meant) and idempotent (both
-insertions are guarded by ``not in``), and it can never write a
+not a liberty taken: ``result_placeholder`` and ``origin`` are in the
+record's ``_TOP_LEVEL_KEYS`` and ``_require_closed_keys`` requires
+them, so any record written at all must carry them. The upgrade is
+value-neutral (``None`` is exactly what absence meant: no placeholder
+was ever requested, and every record written before ``origin`` existed
+came through Telegram) and idempotent (every insertion is guarded by
+``not in``), and it can never write a
 half-migrated store: ``load`` mutates only the freshly parsed local
 document and raises before returning if validation fails, and ``save``
 validates the whole document before anything touches the filesystem.
@@ -94,8 +96,9 @@ _TOP_LEVEL_KEYS = ("workflow_store_schema_version", "workflows")
 
 
 def _normalize_additive_keys(document):
-    """Materialize the DI-REMOTE-3 additive keys on ONE record, at the
-    LOAD boundary, before ``validate_record`` sees it.
+    """Materialize the DI-REMOTE-3 additive keys and the I1 ``origin``
+    key on ONE record, at the LOAD boundary, before ``validate_record``
+    sees it.
 
     ``WORKFLOW_SCHEMA_VERSION`` is deliberately NOT bumped for these
     keys (lead plan §2.1): a bump would route every record already on
@@ -105,15 +108,21 @@ def _normalize_additive_keys(document):
     function is the whole of the alternative, and its boundaries are
     the point:
 
-      - it inserts ONLY ``result_placeholder`` at the top level, and
-        ONLY the six ``RESULT_DELIVERY_ADDITIVE_KEYS`` inside
-        ``result_delivery``, and only when ``result_delivery`` is
-        already a dict (a null marker stays null — nothing is created);
+      - it inserts ONLY ``result_placeholder`` and ``origin`` at the
+        top level, and ONLY the six ``RESULT_DELIVERY_ADDITIVE_KEYS``
+        inside ``result_delivery``, and only when ``result_delivery``
+        is already a dict (a null marker stays null — nothing is
+        created);
       - the inserted value is ALWAYS ``None``. It NEVER derives a
         value from anything else in the record. A placeholder that was
         never requested is null, and null means "this record predates
         or sits outside the placeholder architecture" (the §4 legacy
-        lane) — never "placeholder not needed";
+        lane) — never "placeholder not needed". A null ``origin`` is
+        the TELEGRAM lane (I1 of task 20261010-164104-1761f6): every
+        record written before the key existed came through Telegram,
+        so null is exactly what absence meant. It is never derived
+        from the record — in particular not from a null telegram
+        binding, which therefore still fails closed;
       - it NEVER overwrites a key that is present, INCLUDING one
         present with the value ``None``;
       - it fills NO other missing key. An unknown key and any other
@@ -123,8 +132,9 @@ def _normalize_additive_keys(document):
     The failure mode this function must never become is "fill in
     anything missing", which would silently repair a corrupt
     authorization record instead of failing closed. It is a named
-    function with its own anti-abuse tests (T-M6/T-M7) rather than an
-    inline ``.get()`` scattered through consumers.
+    function with its own anti-abuse tests (T-M6/T-M7, whose
+    hand-written declared set names exactly these two top-level keys)
+    rather than an inline ``.get()`` scattered through consumers.
 
     Total: a non-dict document is returned untouched (the strict
     validation below reports it). Returns the same object, mutated.
@@ -133,6 +143,8 @@ def _normalize_additive_keys(document):
         return document
     if "result_placeholder" not in document:
         document["result_placeholder"] = None
+    if "origin" not in document:
+        document["origin"] = None
     delivery = document.get("result_delivery")
     if isinstance(delivery, dict):
         for key in RESULT_DELIVERY_ADDITIVE_KEYS:

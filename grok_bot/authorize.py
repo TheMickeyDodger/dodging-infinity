@@ -1,12 +1,15 @@
 """The local arming command: the ONLY writer of
 approval commitments.
 
-Reached only from ``grokbot.py ... authorize`` and ``authorize-delivery``,
-which are local subcommands and never MCP tools: no tool, the adapter, the
-MCP mapping and the server ever import this module (pinned by test). The
-human runs it in Grok Bot's per-command, user-approved local shell, and the
-command string they approve carries the FULL displayed binding (see
-``grok_bot.arming.mission_arming_argv``). Everything is checked BEFORE
+Reached only from ``grokbot.py ... authorize-workflow`` and
+``authorize-delivery``, which are local subcommands and never MCP tools: no
+tool, the adapter, the MCP mapping and the server ever import this module
+(pinned by test). The human runs it in Grok Bot's per-command, user-approved
+local shell, and the command string they approve carries the FULL displayed
+binding (see ``grok_bot.arming.workflow_arming_argv``). The legacy
+``authorize`` (``arm_mission``) is RETIRED (I3 of task
+20261010-164104-1761f6): it refuses, arming and writing nothing, because a
+legacy Mission-Core approval is always refused. Everything is checked BEFORE
 anything takes effect, inside ONE ``RequestIndex.serialized()`` critical
 section (the same cross-process lock ``present`` and the fire paths hold):
 
@@ -93,21 +96,40 @@ def _armed(code, kind, expires_at, binding):
 def arm_mission(surface, index, clock, request_ref, mission_id, revision,
                 proposal_digest, action_scope, delivery_targets, expires_at,
                 display_digest):
-    """Arm the Mission approval displayed for ``request_ref``."""
-    given = {"request_ref": request_ref, "mission_id": mission_id,
-             "revision": revision, "proposal_digest_sha256": proposal_digest,
-             "approved_action_scope": list(action_scope),
-             "approved_delivery_targets": list(delivery_targets),
+    """RETIRED (I3, B-1): the legacy Mission-Core arming. A legacy proposal's
+    approval is always refused (I2), so a code armed for it could never be
+    used. This refuses FIRST, with the reauthorization remedy, before it
+    reads, locks or writes anything: no commitment, no code, no file. The
+    signature is kept so an old caller is answered rather than broken."""
+    from grok_bot import conforming
+    _refuse(conforming.PROBLEM_LEGACY_ARMING_RETIRED,
+            conforming.LEGACY_ARMING_REMEDY, request_ref=request_ref,
+            lane=conforming.LANE_LEGACY)
+
+
+def arm_workflow(route, index, clock, request_ref, workflow_id, revision,
+                 authorization_digest, expires_at, display_digest):
+    """Arm the DI-REMOTE-2 Mission Authorization approval displayed for
+    ``request_ref`` (I2, the conforming route). The same three checks as
+    ``arm_mission``, against the workflow record: every value equals the
+    LATEST receipt; the record still carries that binding, is still
+    awaiting its first decision, and its display re-renders to the
+    recorded digest; and the displayed expiry has not passed."""
+    from grok_bot import conforming
+    given = {"request_ref": request_ref, "workflow_id": workflow_id,
+             "revision": revision,
+             "authorization_digest_sha256": authorization_digest,
              "expires_at": expires_at}
     with index.serialized():
-        receipt = index.presentation(request_ref)
-        if receipt is None:
+        receipt = index.workflow_presentation(request_ref)
+        held = index.workflow_request(request_ref)
+        if receipt is None or held is None:
             _refuse(adapter_module.PROBLEM_NOT_PRESENTED,
                     "nothing was displayed for request %r; present it first."
                     " Nothing was armed" % (request_ref,))
         shown = receipt["binding"]
         differing = sorted(
-            name for name in index_module.DISPLAYED_BINDING_KEYS
+            name for name in index_module.WORKFLOW_BINDING_KEYS
             if not adapter_module._same_as_shown(given[name], shown[name]))
         if display_digest != receipt["display_digest_sha256"]:
             differing.append("display_digest_sha256")
@@ -116,24 +138,32 @@ def arm_mission(surface, index, clock, request_ref, mission_id, revision,
         now = clock()
         if now >= shown["expires_at"]:
             _refuse(arming.PROBLEM_ARMING_EXPIRED,
-                    "the displayed approval expired at %d; present it again."
-                    " Nothing was armed" % shown["expires_at"])
-        presented = surface.present(request_ref)
-        current = [name for name in ("mission_id", "revision",
-                                     "proposal_digest_sha256")
-                   if presented[name] != shown[name]]
-        if current:
-            _not_displayed(current, "proposal (it changed after display)")
-        text = adapter_module.display_text(presented, shown)
+                    "the displayed approval expired at %d; it can never be"
+                    " approved. %s Nothing was armed"
+                    % (shown["expires_at"], conforming.FRESH_REQUEST_REMEDY))
+        entry = route.entry(request_ref, held)
+        current = conforming.binding_of(entry, request_ref)
+        changed = sorted(name for name in index_module.WORKFLOW_BINDING_KEYS
+                         if current[name] != shown[name])
+        if changed:
+            _not_displayed(changed, "Mission Authorization (it changed after"
+                           " display)")
+        if not conforming.is_pending(entry):
+            _refuse(conforming.PROBLEM_NOT_AWAITING,
+                    "workflow %s is %s and no longer awaiting its first"
+                    " decision; nothing was armed"
+                    % (entry["workflow_id"], entry["phase"]))
+        text = conforming.display_text(entry, shown)
         if text_digest(text) != receipt["display_digest_sha256"]:
             _not_displayed(["display_digest_sha256"],
-                           "display (the proposal re-renders differently)")
+                           "display (the authorization re-renders"
+                           " differently)")
         code = secrets.token_bytes(arming.NONCE_BYTES).hex()
-        digest = arming.commitment(arming.mission_preimage(
+        digest = arming.commitment(arming.workflow_preimage(
             shown, receipt["display_digest_sha256"], code))
-        _store(index.directory, arming.mission_key(request_ref),
-               arming.KIND_MISSION, digest, shown["expires_at"], now, index)
-    return _armed(code, arming.KIND_MISSION, shown["expires_at"],
+        _store(index.directory, arming.workflow_key(request_ref),
+               arming.KIND_WORKFLOW, digest, shown["expires_at"], now, index)
+    return _armed(code, arming.KIND_WORKFLOW, shown["expires_at"],
                   json.loads(json.dumps(shown)))
 
 

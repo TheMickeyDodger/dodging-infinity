@@ -534,6 +534,16 @@ observability and, on completion, runs a fresh verification turn and
 returns the verified result to Telegram exactly once. A DI-REMOTE-1
 approval can never authorize a v2 mission.
 
+A workflow relayed from Grok Bot (a record whose transport `origin` is
+not null) follows the same Runtime lifecycle and the same verification.
+Its Mission Authorization comes from the same fresh planning turn, and
+its approval is relayed by Grok Bot instead of a Telegram plan
+message: the human's separate `approved` reply, armed locally on the
+DI machine first, operator-attested and not cryptographically
+authenticated (`docs/grok-bot.md`). It has no Telegram result
+placeholder: its verified result is recorded on the workflow record
+and read by pull.
+
 For `role_outcome`, `body` remains a non-empty JSON string whose
 contents are `{role, outcome, detail}` from a fresh read-only role turn;
 an object in the outer `body` field is refused. The handoff-validation
@@ -562,8 +572,9 @@ turn is NECESSARY, NEVER SUFFICIENT: the Broker applies eight
 conjuncts, enforced through ten independent problem codes, against a
 FRESH disk read after the turn — evidence projection complete,
 evidence schema-valid, target stopped, the target's canonical
-Reviewer APPROVE present, origin identity, approved baseline
-unmoved, control policy digest, protected-surface baseline present
+Reviewer APPROVE present, origin identity (the TARGET REPOSITORY's
+live Git origin naming the approved repository, never the record's
+transport `origin`), approved baseline unmoved, control policy digest, protected-surface baseline present
 and unchanged, and delivery authority still `none` — and ONE
 failing conjunct stops the workflow durably with its own code.
 Herdr lifecycle COMPLETE alone can never produce VERIFIED.

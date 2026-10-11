@@ -5,8 +5,22 @@ Runtime holds its single-instance lock (the same file /status probes)
 for its whole life, constructs the REAL git transport and the REAL
 role-turn runner unconditionally — there is NO transport override of
 any kind: no environment variable, no CLI flag, no config key (the
-static suite proves it) — and reuses the adapter's protected
-configuration for the control repository path and state directory.
+static suite proves it) — and takes the control repository path and
+state directory from ONE configuration, never two:
+
+- ``--config PATH``: the Telegram adapter's protected configuration,
+  UNCHANGED. Such an explicit run is self-contained (Claude trust is
+  written beside its state), so a dispatch is refused when the started
+  Herdr would read another configuration
+  (``RuntimeWorker.workspace_trust_consumable``).
+- neither option: the adapter's default configuration file and default
+  state directory, UNCHANGED; Claude trust is written to the user-global
+  file the started Herdr reads, so a dispatch's trust is consumable.
+- ``--runtime-config PATH`` (I3 of task 20261010-164104-1761f6): the
+  Runtime's OWN configuration (``target_runtime.runtime_config``), for an
+  operator without Telegram. It binds the explicitly configured workflow
+  store and establishes Claude trust where the started Herdr actually
+  reads it (the same location as the default production route).
 
 Exit codes: 0 success, 2 configuration problem, 3 another Runtime
 instance already holds the lock.
@@ -30,6 +44,7 @@ from telegram_operator.state import (
 # resolves its functions from at call time, and the CLI tests replace
 # those functions through this name (``cli.runtime_module.<fn>``).
 from target_runtime import runtime as runtime_module
+from target_runtime import runtime_config as runtime_config_module
 from target_runtime import workspace_ownership
 from target_runtime.broker import TargetBroker
 from target_runtime.durable_execution import RuntimeDurableExecution
@@ -193,6 +208,15 @@ def _build_parser():
         " per-user location); supplies the control repository path"
         " and the state directory",
     )
+    parser.add_argument(
+        "--runtime-config",
+        metavar="PATH",
+        default=None,
+        help="the Runtime's own configuration (schema %s), in the"
+        " workflow store it binds; for an operator without Telegram."
+        " Never together with --config"
+        % runtime_config_module.RUNTIME_CONFIG_SCHEMA,
+    )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("once", help="run one claim pass and exit")
     subparsers.add_parser(
@@ -224,6 +248,28 @@ def production_role_turn(role, entry, now, target_context=None,
 
 
 def _build_broker(namespace):
+    if namespace.config is not None and namespace.runtime_config is not None:
+        # Refused before EITHER loader runs: which schema to read is never
+        # guessed, and one is never tried after the other.
+        raise runtime_config_module.RuntimeConfigError(
+            runtime_config_module.PROBLEM_AMBIGUOUS,
+            "--config (the Telegram adapter configuration) and"
+            " --runtime-config (the Runtime's own configuration) were both"
+            " given; name exactly one")
+    # The Claude configuration the started Herdr READS: the user-global
+    # file under the live HOME (RuntimeWorker.workspace_trust_consumable).
+    consumed_trust_config = default_config_path()
+    if namespace.runtime_config is not None:
+        # I3: the Runtime's own configuration. It binds the store it names
+        # (verified to be its own directory) and writes Claude trust where
+        # the started Herdr reads it, exactly as the default route does,
+        # so its dispatch is consumable. The adapter's loader is not run.
+        selected = runtime_config_module.load_runtime_config(
+            namespace.runtime_config)
+        return _composed_broker(
+            selected.workflow_store, selected.repository,
+            os.path.join(selected.workflow_store, "workspaces"),
+            consumed_trust_config)
     config_path = (
         os.path.abspath(namespace.config) if namespace.config else None
     )
@@ -245,11 +291,17 @@ def _build_broker(namespace):
     # RuntimeWorker.workspace_trust_consumable).
     claude_config_path = os.path.join(
         state_directory, ".claude.json"
-    ) if config_path else default_config_path()
+    ) if config_path else consumed_trust_config
+    return _composed_broker(state_directory, loaded.repository,
+                            workspaces_root, claude_config_path)
 
+
+def _composed_broker(state_directory, control_repository, workspaces_root,
+                     claude_config_path):
+    """The ONE production Broker composition both configurations use."""
     broker = TargetBroker(
         store_directory=state_directory,
-        control_repository_realpath=loaded.repository,
+        control_repository_realpath=control_repository,
         transport=GitTransport(),
         workspaces_root=workspaces_root,
         role_turn_fn=production_role_turn,

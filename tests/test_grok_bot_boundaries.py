@@ -64,10 +64,12 @@ from operator_session import (  # noqa: E402
 )
 from pr_delivery import boundary as delivery_boundary  # noqa: E402
 from pr_delivery import cli as delivery_cli  # noqa: E402
+from workflow_authority import store as workflow_store_module  # noqa: E402
 from workflow_authority.digest import json_digest  # noqa: E402
 
 from grok_bot import adapter as adapter_module  # noqa: E402
 from grok_bot import cli as cli_module  # noqa: E402
+from grok_bot import conforming  # noqa: E402
 from grok_bot import delivery as delivery_module  # noqa: E402
 from grok_bot import index as index_module  # noqa: E402
 from grok_bot import server as server_module  # noqa: E402
@@ -205,10 +207,26 @@ class OperatorSessionIdTests(Bounded):
         os.mkdir(self.repository)
         self.submitted = []
         self.built = []
+        self.planned = []
         self.surface = UnreachedSurface()
+        # I2: the default (conforming) route, configured; its planning
+        # turn must never run in these tests.
+        control = os.path.join(self.base, "control")
+        os.mkdir(control)
+        workflows = os.path.join(self.base, "workflows")
+        os.mkdir(workflows)
+        route = conforming.WorkflowRoute(
+            workflow_store_module.WorkflowStore(workflows), control,
+            planning_session=FunctionOperatorSession(
+                gateway_module.build_request, self.plan))
         self.adapter = adapter_module.GrokBotAdapter(
             self.surface, FunctionOperatorSession(self.build, self.submit),
-            self.repository, index_module.RequestIndex(self.state), lambda: NOW)
+            self.repository, index_module.RequestIndex(self.state), lambda: NOW,
+            route=route)
+
+    def plan(self, request):
+        self.planned.append(request)
+        raise AssertionError("no planning turn may run in these tests")
 
     def build(self, text, repository, session_id=None, source="terminal"):
         self.built.append(session_id)
@@ -227,6 +245,7 @@ class OperatorSessionIdTests(Bounded):
     def assert_no_provider_call(self):
         self.assertEqual(self.built, [])
         self.assertEqual(self.submitted, [])
+        self.assertEqual(self.planned, [])
         self.assertEqual(self.surface.calls, [])
         self.assertEqual(index_module.RequestIndex(self.state).load()["requests"],
                          {})
@@ -244,22 +263,25 @@ class OperatorSessionIdTests(Bounded):
         self.assert_no_provider_call()
 
     def test_a_session_this_transport_reported_is_still_never_continued(self):
-        """The rule is NONE, pinned: even the very session id this
-        transport's own reply carried cannot be continued. The restrictive
-        posture is fresh-only (its verifier refuses a ``resume``), so there
-        is no session it could continue."""
+        """The rule is NONE, pinned: even the provider session behind this
+        transport's own reply cannot be continued. The restrictive posture
+        is fresh-only (its verifier refuses a ``resume``), so there is no
+        session it could continue. I2: the reply no longer carries the
+        session id at all, and that id is still refused by name."""
         first = self.adapter.request(text="Fix the flaky probe.",
                                      conversation_ref="c" * 40)
         self.assertTrue(first["ok"], first)
-        self.assertEqual(first["status"], "operator_reply")
-        self.assertEqual(first["operator_session_id"], OPERATOR_SESSION_ID)
+        self.assertEqual(first["status"], "clarification")
+        self.assertNotIn("operator_session_id", first)
+        self.assertNotIn(OPERATOR_SESSION_ID, json.dumps(first))
         self.assertEqual(self.built, [None])
         result = self.adapter.request(
             text="The one in Example/Repo.", conversation_ref="c" * 40,
-            operator_session_id=first["operator_session_id"])
+            operator_session_id=OPERATOR_SESSION_ID)
         self.refused(adapter_module.PROBLEM_OPERATOR_SESSION_REFUSED, result)
         self.assertEqual(self.built, [None])
         self.assertEqual(len(self.submitted), 1)
+        self.assertEqual(self.planned, [])
 
     def test_non_string_or_oversized_ids_keep_their_bad_request_refusal(self):
         for session_id in (123, True, ["s"], {"s": 1}, 1.5,
@@ -283,7 +305,8 @@ class OperatorSessionIdTests(Bounded):
         out = io.StringIO()
         with mock.patch.object(cli_module, "RestrictedCodexOperatorSession",
                                restricted), \
-                mock.patch.object(cli_module.request_cli, "build_surface",
+                mock.patch.object(cli_module.request_surface,
+                                  "build_bridgeless_surface",
                                   lambda *args, **kwargs: self.surface):
             code = cli_module.main(
                 ["--state-dir", self.state, "--repository", self.repository,
@@ -311,6 +334,9 @@ class OperatorSessionIdTests(Bounded):
                 elif isinstance(node, ast.alias):
                     names.add((path.name, node.asname or node.name))
         self.assertIn(("cli.py", "RestrictedCodexOperatorSession"), names)
+        # I2: the planning turn's session is the restricted one too.
+        for module in ("cli.py", "conforming.py"):
+            self.assertIn((module, "RestrictedPlanningOperatorSession"), names)
         self.assertEqual(sorted(n for n in names if n[1] == "CodexOperatorSession"),
                          [])
 
@@ -496,7 +522,8 @@ class ServerFailsClosedTests(Bounded):
         out = io.StringIO()
         with mock.patch.object(server_module, "LoopbackMcpServer",
                                lambda *a, **k: constructed.append(a)), \
-                mock.patch.object(cli_module.request_cli, "build_surface",
+                mock.patch.object(cli_module.request_surface,
+                                  "build_bridgeless_surface",
                                   lambda *a, **k: constructed.append("surface")):
             code = cli_module.main(
                 ["--state-dir", state, "--repository", self.base,

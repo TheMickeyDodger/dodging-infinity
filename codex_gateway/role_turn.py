@@ -61,8 +61,11 @@ from codex_gateway.codex_adapter import (
 )
 from codex_gateway.contract import STATUS_INVALID_REQUEST, make_error
 from telegram_operator.protocol import (
+    BODY_SHAPE_OBJECT,
+    BODY_SHAPE_STRING,
     KIND_MISSION_AUTHORIZATION,
     KIND_ROLE_OUTCOME,
+    MARKER_FAMILY_PREFIX,
     MAX_INTENT_CHARS,
     ROLE_ALLOWED_OUTCOMES,
     parse_role_outcome,
@@ -1365,6 +1368,97 @@ def run_planning_turn(human_intent, control_repository_realpath, now,
         turn=turn,
         error=None,
     )
+
+
+# The fresh planning turn's answer set (OPERATOR_PROTOCOL.md: EXACTLY
+# ``mission_authorization``). A cross-module test pins it equal to the
+# Telegram adapter's own ``PLANNING_TURN_ACCEPTED_KINDS``.
+PLANNING_ACCEPTED_KINDS = frozenset((KIND_MISSION_AUTHORIZATION,))
+
+
+# The Grok Bot route's turn-specific body shapes (OPERATOR_PROTOCOL.md):
+# the shared parser accepts either shape for ``mission_authorization``
+# (INHERITED: one parser serves both Telegram turns), so each turn's own
+# shape is enforced here, by the boundary that knows which turn it parses.
+PROBLEM_PLANNING_BODY_NOT_AN_OBJECT = "planning_body_not_an_object"
+PROBLEM_ROUTING_BODY_NOT_A_STRING = "routing_signal_body_not_a_string"
+# A reply carries AT MOST ONE column-0 protocol envelope. The shared parser
+# selects the LAST envelope line (INHERITED Telegram behaviour, untouched),
+# so a second envelope, a malformed one before a valid one included, is
+# refused here, on both of the Grok Bot route's turns, before any envelope
+# is parsed: a grammar refusal of its own, separate from kind and shape.
+PROBLEM_MULTIPLE_ENVELOPES = "multiple_envelopes"
+
+
+def _envelope_line_count(message):
+    """How many column-0 lines of ``message`` begin a DI-REMOTE envelope,
+    by the shared parser's own ``str.splitlines`` grammar."""
+    if not isinstance(message, str):
+        return 0
+    return sum(1 for line in message.splitlines()
+               if line.startswith(MARKER_FAMILY_PREFIX))
+
+
+def parse_planning_response(message):
+    """The Mission Authorization body a fresh planning turn returned.
+
+    Returns ``(body, None)``, where ``body`` is the JSON text the shared
+    DI-REMOTE envelope parser (``parse_routed_operator_response``)
+    yields for a ``mission_authorization`` envelope, or ``(None,
+    problem)``. A malformed envelope keeps the parser's own problem
+    code; any other kind (a v1 ``plan`` included) is refused as
+    ``wrong_kind:<kind>``; a body that did not arrive as the JSON
+    OBJECT itself (a string holding serialized JSON included) is
+    refused as ``PROBLEM_PLANNING_BODY_NOT_AN_OBJECT``; and a reply with
+    more than one column-0 envelope is refused, before any is parsed, as
+    ``PROBLEM_MULTIPLE_ENVELOPES``. There is no
+    fallback from this turn to any other path. Parsing only: VALIDATING
+    the document is the intake seam's (``workflow_authority.intake``).
+    A transport that may not import the Telegram package reaches the
+    one parser through here.
+    """
+    if _envelope_line_count(message) > 1:
+        return None, PROBLEM_MULTIPLE_ENVELOPES
+    routed = parse_routed_operator_response(message)
+    if not routed.ok:
+        return None, routed.problem
+    if routed.kind not in PLANNING_ACCEPTED_KINDS:
+        return None, "wrong_kind:%s" % routed.kind
+    if routed.body_shape != BODY_SHAPE_OBJECT:
+        return None, PROBLEM_PLANNING_BODY_NOT_AN_OBJECT
+    return routed.body, None
+
+
+def parse_routing_signal(message):
+    """Whether an INITIAL Operator turn's envelope is the DI-REMOTE-2
+    routing signal (route (b) of OPERATOR_PROTOCOL.md).
+
+    Returns ``None`` for a routing signal, else the problem: the shared
+    parser's own code for a malformed, unknown or conflicting envelope,
+    ``wrong_kind:<kind>`` for any other kind (a v1 ``plan`` included),
+    ``PROBLEM_ROUTING_BODY_NOT_A_STRING`` for a body that did not arrive as
+    a non-empty string (an object, a whole authorization included), or
+    ``PROBLEM_MULTIPLE_ENVELOPES`` for a reply with more than one column-0
+    envelope, refused before any is parsed. The
+    signal carries NO authority: its body is never returned, validated,
+    stored or displayed — it only triggers the separate fresh planning
+    turn, whose answer set stays exactly ``mission_authorization``. The
+    caller decides first, from column-0 lines alone, whether the reply
+    carries an envelope at all.
+    """
+    if _envelope_line_count(message) > 1:
+        return PROBLEM_MULTIPLE_ENVELOPES
+    routed = parse_routed_operator_response(message)
+    if not routed.ok:
+        return routed.problem
+    if routed.kind not in PLANNING_ACCEPTED_KINDS:
+        return "wrong_kind:%s" % routed.kind
+    # The signal's body is a NON-EMPTY STRING (the shared parser refuses
+    # an empty one); an object, a Mission Authorization included, is no
+    # routing signal.
+    if routed.body_shape != BODY_SHAPE_STRING:
+        return PROBLEM_ROUTING_BODY_NOT_A_STRING
+    return None
 
 
 # --- The Grok Bot request tool's Outer Operator turn ------------------------

@@ -100,7 +100,7 @@ Each role in the fabric has a limit, and the limit is the point:
 
 | Role | What it does | What it never does |
 |---|---|---|
-| Grok Bot | The human-facing mobile interface (Task 8 final): `grokbot.py`, a thin transport that carries a phone conversation's request to the Codex Outer Operator and presentation, operator-attested approval, status and the run back through the local request surface ([Grok Bot transport](grok-bot.md)). A dispatch needs no path from the human. | Owns authority. Establishes who sent a reply: approval through it is operator-attested, not cryptographically authenticated. |
+| Grok Bot | The human-facing mobile interface (Task 8 final): `grokbot.py`, a thin transport that carries a phone conversation's request to the Codex Outer Operator, presents the resulting Mission Authorization, relays the human's operator-attested approval into Dodging Infinity's durable workflow store, and reads status and the verified result back by pull ([Grok Bot transport](grok-bot.md)). The DI Runtime, not Grok Bot, advances an approved workflow. | Owns authority. Establishes who sent a reply: approval through it is operator-attested, not cryptographically authenticated. Starts, dispatches or advances work. |
 | Dots | Optional for active operation. [History, Task 8: Dots was the human-facing mobile interface.] Carries presentation (proposals, status, results) to the human and intent (requests, questions, pause or cancel requests) from the human. | Owns authority. Carries a Mission approval without an authenticated exact binding (section 3). [SUPERSEDED in Task 8: Dots carries a Mission approval as Operator-attested Dots-chat approval under the user's declared Operator trust. Provenance is deliberately delegated, not independently verified, with the same-user fabrication risk accepted. Dots still never owns authority; exact Mission binding and the separate exact P1-A6 delivery authority stay required.] |
 | Operator | The replaceable reasoning role for one Mission. Assesses evidence, chooses bounded work, invokes approved capabilities, coordinates engineering when required. Codex is the Outer Operator today; Muse is not the Operator. | Becomes a model brand. Mints authority. |
 | Herdr | The engineering execution system: the engineering organization inside an engineering Mission (Supervisor, Lead, Executor, Reviewer). | Becomes the Mission control plane. |
@@ -231,8 +231,9 @@ another Mission's authority, state, artifacts, approvals, or context.
 
 The v0.7.0 ancestor of a Mission is a DI-REMOTE-2 workflow: a durable `wf-*`
 record in the `workflow_authority/` store carrying the Mission Authorization,
-the exact human intent, the target identity and baseline, the bound Telegram
-placeholder, the target Herdr task id, and the lifecycle phase. The
+the exact human intent, the target identity and baseline, its transport
+origin, the bound Telegram placeholder (Telegram-lane records only), the
+target Herdr task id, and the lifecycle phase. The
 local-mission path uses the Herdr mission contract (`.herd/state/mission.json`)
 with objective, constraints, rules, acceptance criteria, and verification.
 
@@ -257,6 +258,43 @@ The target Mission Manifest is the contract the human approves.
 
 The human approves an exact revision. A changed manifest is a new revision and
 needs a new approval.
+
+### The workflow record today: transport origin and version compatibility
+
+Two facts about today's DI-REMOTE-2 workflow record matter to anyone running
+more than one process against one workflow store.
+
+**`origin` is the TRANSPORT origin.** The record's `origin` key names the
+transport a workflow's request and approval came through: null for the
+Telegram lane, or `{"transport": "grok_bot", "relay_ref": ...}` for a Grok
+Bot relay (`workflow_authority/record.py:54-71`). It is not the "origin
+identity" that verification checks. That conjunct is about the TARGET
+REPOSITORY: the live workspace's Git `origin` URL, canonicalized, must name
+the approved repository (`_gate_origin_identity`,
+`target_runtime/broker.py:410`). Transport origin is validated with the rest
+of the record, but it is not repository-origin identity evidence and does
+not satisfy that check.
+
+**No supported downgrade, and no mixed versions on one store.** `origin` is a
+required key in the record's closed key set, and the record schema version
+was deliberately not bumped for it (`workflow_authority/store.py:103-107`). A
+bump would route every record already on disk into `tgop migrate-workflows`,
+whose only behaviour for an older-version record is RETIREMENT, and that
+would destroy in-flight COMPLETED records. Instead, the store adds the key,
+as null, to an older record when it loads it.
+
+That normalization protects OLD records from a NEW reader. It does nothing
+for a NEW record met by an OLD reader:
+
+- a build from before the key enforces the same closed key set, so it
+  refuses any record carrying `origin`;
+- a store load fails closed when any record fails validation;
+- once any upgraded process saves the store, every record carries the key.
+
+So every process sharing one workflow store must run a compatible version,
+including a Runtime or Telegram adapter that was already running before the
+upgrade, and there is no supported downgrade (see [Upgrading with a shared
+workflow store](operations.md#upgrading-with-a-shared-workflow-store)).
 
 ### Mainline lifecycle
 
@@ -576,6 +614,58 @@ An unknown commit outcome is a HOLD: it is never treated as unapplied and
 never retried. Adopting the design needs the human's product and setup
 decisions.
 
+### The Grok Bot conforming route
+
+Grok Bot reaches Dodging Infinity's authority through the same durable object
+the Telegram lane produces: one DI-REMOTE-2 workflow (`grok_bot/conforming.py`).
+
+1. `request` runs a fresh, read-only Outer Operator turn. It either asks a
+   clarifying question, which is returned and records nothing, or emits the
+   DI-REMOTE-2 routing signal. The signal carries no authority. It triggers a
+   separate fresh, read-only planning turn whose only accepted answer is a
+   Mission Authorization. Dodging Infinity validates that document against
+   the control repository and saves it as one PLANNED workflow. The bindings
+   (the workflow id, the approval's nonce and expiry, the transport origin
+   and the human's exact text) are stamped locally; a document that arrives
+   with any of them filled in is refused.
+2. `present` returns the exact rendered Mission Authorization and the
+   binding to approve, recorded durably before it is returned.
+3. The human arms the approval locally (`grokbot.py … authorize-workflow`,
+   never an MCP tool), and `approve` relays the human's separate `approved`
+   reply with the printed code. The approval is consumed once and the
+   workflow moves to AUTHORIZED.
+4. The DI Runtime (`dirun`), a separate process running against the same
+   workflow store, claims and advances it through the same lifecycle as a
+   Telegram-lane workflow, without a Telegram result placeholder. Grok Bot
+   starts, dispatches and advances nothing.
+5. `status` and `result` read the durable record by pull. There is no push
+   channel to Grok Bot, and none was added.
+
+Grok Bot's `run` tool performs none of the local surface's run commands
+below. It answers `result` read-only and refuses every other call, and
+nothing `grok_bot` imports reaches the dispatch path, `dispatch.production_spawn`
+included. `tests/test_grok_runtime_i3.py` pins both, statically and
+behaviourally.
+
+How the Runtime is started decides which store it advances and where it
+writes Claude workspace trust:
+
+- `dirun --runtime-config PATH`: the Runtime's own configuration, with no
+  Telegram fields, for an operator without Telegram credentials. It
+  advances the store that holds the file and writes trust to the
+  user-global Claude configuration the started Herdr reads.
+- Neither option: the Telegram adapter's default configuration and state
+  directory, with trust written to that same user-global configuration.
+- `dirun --config PATH`: the Telegram adapter configuration, named
+  explicitly. Trust is written beside that run's own state. Unless that file
+  resolves to the user-global one, the dispatch-time trust check refuses
+  every dispatch (`workspace_trust_config_not_the_one_consumed`): the cause
+  is the path mismatch, not the flag.
+
+Naming both options is refused (`runtime_config_ambiguous`) before either
+file is read. The details are in [Grok Bot
+transport](grok-bot.md#the-runtime-advances-the-work).
+
 ### The local operator request surface (`local_request`, `direquest.py`)
 
 What a local Codex task can invoke today (Task 8, a local candidate under
@@ -585,6 +675,13 @@ with `propose|status|approve|cancel|recover|present|attest-approval` and the
 run commands `dispatch|observe|reconcile|prove|verify|result|pause|resume|cancel-run`.
 It is not a Dots adapter and models no Dots identity, API, session or
 principal. Its tests are synthetic and are not evidence of live Dots behaviour.
+
+**Not reached from Grok Bot.** The run route described below belongs to this
+local surface, used on the DI machine under the operator's own authority,
+and it is unchanged. Grok Bot does not reach it: Grok Bot's own requests take
+the conforming route above, and for a request made before that route Grok
+Bot only shows, reads, recovers or withdraws it (see [Grok Bot
+transport](grok-bot.md#requests-made-before-the-conforming-route)).
 
 **Current behaviour (supersedes the fail-closed-only and nothing-dispatched
 statements in the list that follows, which describe the earlier candidate):**
@@ -1182,6 +1279,11 @@ conjuncts, never independent verification. Herdr lifecycle COMPLETE alone can
 never verify a workflow, and the fresh verification turn's `verified_result` is
 necessary but never sufficient.
 
+This holds for every DI-REMOTE-2 workflow, whichever transport relayed its
+approval. A Grok Bot workflow is verified by the same Broker conjunction as a
+Telegram-lane one, and its target's Reviewer APPROVE is the same
+target-produced evidence, never independent verification.
+
 The historical external-target mountain is the concrete case: target Herdr task
 `20260830-094026-9fef2d` reached COMPLETE and a canonical target Reviewer
 APPROVE was recorded, and the workflow still correctly terminated BLOCKED at
@@ -1371,6 +1473,12 @@ AI self-report never completes a Mission:
   Its `verified_result` is NECESSARY, NEVER SUFFICIENT.
 - VERIFIED is a Broker-decided conjunction: eight conjuncts (ten independent
   problem codes) applied against a fresh disk read.
+- The "origin identity" conjunct is the target repository's identity: the
+  live workspace's Git `origin`, canonicalized, must name the approved
+  repository (`_gate_origin_identity`, `target_runtime/broker.py:410`). The
+  record's transport `origin` key (section 2) is validated, by name, every
+  time a record passes the Broker's gate, but it is not repository-origin
+  identity evidence and does not satisfy that conjunct.
 - Observation completeness is SOURCE-SCOPED (ruling R-6): a decision is blocked
   only by a demoting diagnostic in its registered consumed-source set; the raw
   global completeness is recorded and rendered unaltered; an agents-unprobed
@@ -1391,9 +1499,11 @@ AI self-report never completes a Mission:
    WAITS.
 3. **Verification.** The fresh verification turn, the eight-conjunct gate, and
    the protected-surface receipt check.
-4. **Delivery.** The verified result edits the bot-owned placeholder bound
-   before dispatch, exactly once. Terminal delivery states are disclosed rather
-   than retried.
+4. **Delivery.** For a Telegram-lane workflow, the verified result edits the
+   bot-owned placeholder bound before dispatch, exactly once. Terminal delivery
+   states are disclosed rather than retried. A Grok Bot workflow has no
+   placeholder: its verified result stays on the durable record, and Grok Bot
+   reads it by pull.
 
 Failed or ambiguous states fail closed durably and surface through `/status`
 with concrete remedies. A record at a hard bound stops that one workflow with a
@@ -2046,7 +2156,10 @@ transport (`grok_bot`, `grokbot.py`) is a separate, thin transport.
 | Mission Harness, Mission Registry and Manifest, `M-####` identity, Authority Ledger, Evidence Graph, Blocker Ledger, Artifact Registry, budgets, checkpoints, event journal | Target | Sections 2 and 5 |
 | Mission Router, Attention Router, Scheduler, multi-mission execution | Target | Section 4 |
 | Reconciler and Observation Service | Target | Section 12 |
-| Grok Bot as the human-facing mobile interface: the loopback MCP transport and automatic Mission workspaces (a dispatch needs no path). Live phone interoperability is unverified; loopback tests prove protocol shape only | Proven | `grok_bot/`, `grokbot.py`, `target_runtime/mission_workspace.py`; `tests/test_grok_bot.py`, `tests/test_grok_bot_mcp.py`, `tests/test_mission_workspace.py` |
+| Grok Bot as the human-facing mobile interface: the loopback MCP transport. Live phone interoperability is unverified; loopback tests prove protocol shape only | Proven | `grok_bot/`, `grokbot.py`; `tests/test_grok_bot.py`, `tests/test_grok_bot_mcp.py` |
+| The Grok Bot conforming route: a request becomes one PLANNED DI-REMOTE-2 workflow; local arming and a relayed approval make it AUTHORIZED; the Runtime advances it; `status` and `result` read it by pull. Grok Bot runs nothing. Hermetic tests only: no live execution was exercised by this verification | Proven | `grok_bot/conforming.py`; `tests/test_grok_origin_i1.py`, `tests/test_grok_conforming_i2.py`, `tests/test_grok_runtime_i3.py` |
+| The Runtime's own configuration, `dirun --runtime-config`, for an operator without Telegram credentials. Foreground only: no installer support | Proven | `target_runtime/runtime_config.py`; `tests/test_grok_runtime_i3.py` |
+| Automatic Mission workspaces for the local operator surface: `direquest.py dispatch` needs no path | Proven | `target_runtime/mission_workspace.py`; `tests/test_mission_workspace.py` |
 | Dots, optional for active operation. [History: Dots as the human-facing mobile interface.] [Historical, the pre-V6 count and claims, kept as history: two user-observed results only (reach, read, and reply; a connected same-task durable status read); authenticated exact approval binding, outage and restart recovery, background notification, verified-result delivery fidelity, and full live Mission acceptance are NOT ESTABLISHED.] [Task 8: Mission approval is operator-attested Dots-chat approval; authenticated exact approval binding is deliberately delegated with the risk accepted and is not an acceptance blocker.] [Task 8 live V6: one Operator-mediated run with dispatch, verification, a human-reported verified-result return and a separate standalone PR delivery. Demonstrated live: earlier attempts (w37, w39, v4 and v5) each exercised HOLD, then `reconcile`, then BLOCKED after a failed start. Still unproven live: outage or restart recovery, recovery of a running, successful Mission, and live pause or cancel.] No Dots adapter is in the tree | Target | Section 3 |
 | The broader interaction surface set (coordinator and specialist bots) | Target | Section 3 |
 | Full `OperatorSession` lifecycle, provider selection, Domain Operator Profiles, Skill Packs | Target | Section 6 |
@@ -2066,6 +2179,72 @@ and adversarially. A fresh post-fix live mountain is not release evidence, and
 separate artifact delivery is not certified. The exact record is on the
 [release evidence](release-evidence-v0.7.0.md) page, and it is never described
 as a successful end-to-end run.
+
+No live execution of the Grok Bot conforming route or of a Runtime started
+with its own configuration was exercised by this verification: their tests
+are hermetic, with every effect seam injected, and these limits stand:
+
+- **Injected composition, NOT live-provider execution.** The production
+  composition of a Runtime started with `--runtime-config` is tested with
+  real configuration files and the real configuration loader, and its
+  effects (the Codex turns, the Herdr spawn, the Git transport) are injected
+  after that validation. That establishes **injected composition, NOT
+  live-provider execution**: no live Codex, Herdr or Git provider ran in
+  those tests.
+- **Presentation to the model, NOT comprehension.** The verification turn's
+  prompt is proven to CONTAIN the target's canonical Reviewer artifact text.
+  That establishes **presentation to the model, NOT comprehension**: nothing
+  shows the model read it or reasoned from it.
+- **The workspace-trust exclusion and the contained-run cleanup limitation
+  persist, and they are not disproved by passing tests.**
+  - A contained verification run of the full suite excludes the standalone
+    module `tests/test_workspace_trust.py`. It resolves the real `claude` CLI
+    through the password database, so HOME and PATH containment cannot steer
+    it, and faking the CLI would destroy the assertion the module exists to
+    make.
+  - The same module is also one of the 15 modules in the nested identity sweep
+    that `tests/test_hermetic_git.py` runs in child processes. There its
+    non-CLI tests run, and its real-CLI classes skip themselves
+    (`tests/test_workspace_trust.py:1858-1864`). What such a run lacks is
+    real-CLI coverage, not the module's coverage as a whole.
+  - The contained runs' signal gate, loaded through the harness's
+    `PYTHONPATH`, lets a test signal only a process the run can prove it
+    started. In the focused contained verification runs performed for this
+    work, it intercepted and refused process signals. It is not in force in
+    the nested sweep's child processes: the sweep sets their `PYTHONPATH` to
+    the repository root, replacing the harness path, and its child runner
+    loads no gate (`tests/test_hermetic_git.py:863`). Production code that
+    sends a real `SIGKILL` (`target_runtime/process_ownership.py:145`, `:160`,
+    `:469`, `:904`) is reachable from several of those modules.
+  - What did hold in those children is PATH containment: `git` resolves to the
+    sweep's logging shim, which each child checks itself, exiting 97 or 98 if
+    it does not, and `codex` stays absent.
+  - The evidence about descendant processes is incomplete. After the contained
+    runs performed for this work, a sweep of live processes for references to
+    the runs' paths found none: that establishes no live process carrying
+    those references, not that no unrecorded descendant existed. A
+    pre-existing long-running process that kept its identity and start time
+    shows only that it survived; that is not a historical no-effect audit,
+    because an interaction that did not kill it would look the same.
+  - Passing tests do not by themselves establish that no best-effort cleanup
+    was affected, because best-effort cleanup may carry no postcondition
+    assertion.
+- **Status promptness is bounded.** Grok `status`/`result` promptness holds
+  for an **ordinary validated regular-file store**, with **NO blanket
+  guarantee that an arbitrary substituted store object cannot block**. The
+  lock probes never block; the store file itself is read with an ordinary
+  blocking open (`workflow_authority/store.py:288`, unchanged from
+  `306c1a6`, where it is line 276), so a FIFO in place of `workflows.json`
+  would block that read. That is a known defect and a recommended
+  follow-up.
+- **NO installer support for `--runtime-config`.** `scripts/dirun-agent.sh`
+  does not take a Runtime configuration, and the existing service path is
+  unchanged. A Runtime started with `--runtime-config` runs in the
+  FOREGROUND, which satisfies unattended advancement WHILE IT RUNS, and only
+  while it runs.
+- **Results are pulled, never pushed.** A verified result reaches Grok Bot
+  only when `result` reads the durable record. There is no push channel, and
+  none was added.
 
 ### How to check a claim yourself
 
@@ -2117,7 +2296,7 @@ known limits. [OPERATOR_PROTOCOL.md](../OPERATOR_PROTOCOL.md) and
 | DurableExecution | The interface (start, enqueue, schedule, cancel, resume, checkpoint, inspect, recover) between the Harness and a durability substrate. |
 | Evidence Graph | Durable proof of what was tested, reviewed, measured, or verified, per Mission. |
 | Executor | The Herdr role that implements. |
-| Grok Bot | The human-facing mobile interface (Task 8 final): `grokbot.py`, a thin transport to the Codex Outer Operator and the local request surface. Owns no authority. [History: the earlier target conversational plane and its MCP spike, `grok_mcp`, were retired in Task 8 and stay retired.] Grok as a model provider is separate. |
+| Grok Bot | The human-facing mobile interface (Task 8 final): `grokbot.py`, a thin transport to the Codex Outer Operator and Dodging Infinity's durable records. Runs nothing, and owns no authority. [History: the earlier target conversational plane and its MCP spike, `grok_mcp`, were retired in Task 8 and stay retired.] Grok as a model provider is separate. |
 | Herdr | The engineering organization inside an engineering Mission: Supervisor, Lead, Executor, Reviewer. Not the Mission control plane. |
 | Herdr Pod | The isolated Herdr created for one engineering Mission. |
 | `herdctl` | The Herdr command-line tool: setup, presets, rules, missions, tasks, review decisions, human Git gates, health, observation. |

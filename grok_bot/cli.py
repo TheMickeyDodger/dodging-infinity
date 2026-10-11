@@ -1,35 +1,45 @@
 """Command line for the Grok Bot transport adapter: one tool call, JSON in
 (stdin) and JSON out (stdout).
 
-    grokbot.py --state-dir DIR --repository REPO call request  < {"text": ...}
-    grokbot.py --state-dir DIR call present|status|recover     < {"request_ref": ...}
+    grokbot.py --state-dir DIR --control-repo C --workflow-store S call request < {"text": ...}
+    grokbot.py --state-dir DIR [--control-repo C --workflow-store S] call present|status|result|recover < {"request_ref": ...}
     grokbot.py --state-dir DIR call approve                    < the displayed binding and approval_code
     grokbot.py --state-dir DIR call cancel                     < {"request_ref", "control_capability"}
-    grokbot.py --state-dir DIR --control-repo C [WORKSPACES] call run < {"request_ref", "command", "arguments"}
+    grokbot.py --state-dir DIR call run                        < refused: Grok Bot runs nothing
     grokbot.py --state-dir DIR [WORKSPACES] call present_delivery|approve_delivery|delivery_status < ...
-    grokbot.py --state-dir DIR --repository REPO --control-repo C [WORKSPACES] serve
+    grokbot.py --state-dir DIR --control-repo C --workflow-store S [WORKSPACES] serve
                --auth-token-file TOKEN_FILE [--port N]
-    grokbot.py --state-dir DIR authorize --request-ref R --mission-id M --revision N
-               --proposal-digest D [--action-scope S ...] [--delivery-target T ...]
-               --expires-at E --display-digest X
+    grokbot.py --state-dir DIR authorize ...                   RETIRED: arms nothing (below)
     grokbot.py --state-dir DIR [WORKSPACES] authorize-delivery --proposal-digest D
                --expires-at E --display-digest X --repository REPO_REALPATH
+    grokbot.py --state-dir DIR --workflow-store S authorize-workflow --request-ref R
+               --workflow-id W --revision N --authorization-digest A
+               --expires-at E --display-digest X
 
-``authorize`` and ``authorize-delivery`` are the LOCAL arming commands
-(``grok_bot.authorize``), never MCP tools: run in Grok Bot's
+``authorize-workflow`` and ``authorize-delivery`` are the LOCAL arming
+commands (``grok_bot.authorize``), never MCP tools: run in Grok Bot's
 per-command, user-approved local shell, each carries the FULL displayed
 binding (as ``present`` / ``present_delivery`` hand it over in ``arming``),
 checks every value against the latest presentation before anything takes
 effect, stores only a one-way commitment, and prints a one-time
 approval_code that ``approve`` / ``approve_delivery`` then fire, once.
 
-WORKSPACES is ``--workspace-repository R --workspaces-root W``: configured
-once, they let ``run`` ``dispatch`` prepare the Mission's own isolated
-worktree, so no conversation ever supplies a path. Without them every
-dispatch is refused (durably) as unavailable. The optional
-``workspace_path`` argument is operator recovery only: it may re-name the
-Mission's own prepared workspace, never another path. They are also the
-ONLY repositories the delivery tools accept: ``R`` itself, or one of its
+``authorize`` (the legacy Mission-Core arming) is RETIRED (I3 of task
+20261010-164104-1761f6): a legacy proposal's approval is always refused, so
+a code for it could never be used. It still parses, so an old command is
+answered rather than misread, but it arms nothing, mints no code, writes
+nothing, and prints ``grok_bot_legacy_arming_retired`` with the
+reauthorization remedy.
+
+Grok Bot RUNS NOTHING. ``run`` keeps its argument checks and then refuses
+every command by name; no run bridge is ever built here, and nothing this
+module imports reaches the dispatch path. ``status`` and ``result`` read
+the durable records instead. The local operator surface (``direquest.py``)
+keeps its run commands, under the operator's own authority on the DI
+machine.
+
+WORKSPACES is ``--workspace-repository R --workspaces-root W``. They are
+the ONLY repositories the delivery tools accept: ``R`` itself, or one of its
 worktrees directly under ``W``, named by its realpath and checked by
 filesystem shape (not Git's own resolution;
 ``grok_bot.delivery.approved_repository``): ``present_delivery`` and
@@ -37,16 +47,23 @@ filesystem shape (not Git's own resolution;
 ``delivery_status``, which runs no Git, checks after loading the record
 that names the repository. Without ``R`` every delivery tool is refused.
 
-``request`` runs one FRESH turn of the Codex Outer Operator
-(``operator_session.RestrictedCodexOperatorSession``) in REPO, under the
-role-turn read-only posture (``--sandbox read-only``, no user config or
-rules, ``approval_policy=never``), verified on the exact argv before the
-process starts; it continues no session. Read-only confines writes, not
-reads: request text can induce the Operator to read any file the serving
-user can read, and its reply returns to the caller (a disclosed residual:
-not demonstrated as an exploit, and not prevented). ``run`` builds the
-real run bridge through ``local_request.cli.build_bridge``, for that tool
-alone.
+``request`` is the CONFORMING route (I2, ``grok_bot.conforming``),
+OPERATOR_PROTOCOL.md route (b), two fresh turns rooted at the control
+repository C, each under the role-turn read-only posture (``--sandbox
+read-only``, no user config or rules, ``approval_policy=never``) verified
+on the exact argv before the process starts, neither continuing a session:
+the INITIAL Operator turn
+(``operator_session.RestrictedCodexOperatorSession``) clarifies in prose or
+emits the routing signal, and the signal triggers the separate planning
+turn (``operator_session.codex.RestrictedPlanningOperatorSession`` ->
+``codex_gateway.role_turn.run_planning_turn``). Its Mission Authorization
+is validated against C (pinned by its realpath) and saved as ONE PLANNED
+DI-REMOTE-2 workflow in the workflow store S, the store a Runtime
+(``dirun``) running against S claims from. ``--control-repo`` and
+``--workflow-store`` have NO default: without them ``request`` is refused,
+naming the missing flag. Read-only confines writes, not reads: request text
+can induce the planning turn to read any file the serving user can read (a
+disclosed residual: not demonstrated as an exploit, and not prevented).
 
 What comes in, and how. A TOOL CALL's arguments (``call``) are read from
 stdin, never from argv, and this module reads no environment variable. Two
@@ -55,8 +72,8 @@ things DO come in on argv, deliberately:
 - ``serve --auth-token-file`` names the owner-only file holding the bearer
   token (transport access control, which approves nothing). The token itself
   is read from that file, never from argv.
-- The arming commands (``authorize``, ``authorize-delivery``) carry the
-  FULL displayed consent binding in argv (the full digests, revision, expiry
+- The arming commands (``authorize-workflow``, ``authorize-delivery``)
+  carry the FULL displayed consent binding in argv (the full digests, revision, expiry
   and the rest), on purpose: the command string the human approves in the
   local shell IS the artefact of consent.
 
@@ -69,8 +86,8 @@ capability:
 - it expires with that commitment: the displayed expiry is part of the
   binding it fires, and the approval it completes refuses an expired
   proposal;
-- what it can do depends on its kind. A MISSION code (from ``authorize``)
-  confers NO delivery authority. A DELIVERY code (from
+- what it can do depends on its kind. A WORKFLOW code (from
+  ``authorize-workflow``) confers NO delivery authority. A DELIVERY code (from
   ``authorize-delivery``) redeems EXACTLY ONE locally armed delivery
   authorization. Presented to ``approve_delivery`` with the displayed
   binding (public values) over the endpoint (bearer access), it has
@@ -104,26 +121,36 @@ import os
 import sys
 import time
 
-from local_request import cli as request_cli
+from local_request import surface as request_surface
 from operator_session import RestrictedCodexOperatorSession
+from operator_session.codex import RestrictedPlanningOperatorSession
 
 from grok_bot import adapter as adapter_module
+from grok_bot import conforming
 from grok_bot import index as index_module
 
 EXIT_OK = 0
 EXIT_USAGE = 2
 EXIT_REFUSED = 3
 EXIT_STORE = 4
-MAX_ARGUMENTS_CHARS = request_cli.MAX_REQUEST_CHARS
+# The same bound as ``local_request.cli.MAX_REQUEST_CHARS`` (pinned equal by
+# test), written here so this module never imports that one: it carries the
+# run bridge's construction (I3).
+MAX_ARGUMENTS_CHARS = 65536
 DELIVERY_TOOLS = ("present_delivery", "approve_delivery", "delivery_status")
 
 DESCRIPTION = (
     "Grok Bot transport adapter for Dodging Infinity. A plain-text request\n"
-    "goes to the Codex Outer Operator, which authors the Mission proposal;\n"
-    "presentation, approval, status and the run commands are the local\n"
-    "request surface's own. The adapter decides nothing and grants no\n"
-    "delivery authority: no commit, push, pull request, merge, release or\n"
-    "deploy.\n"
+    "goes to one fresh restrictive Codex planning turn, which authors a\n"
+    "DI-REMOTE-2 Mission Authorization; it is saved as one workflow in the\n"
+    "workflow store (--workflow-store) that the Runtime (dirun) claims\n"
+    "after you present, arm and approve it. Grok Bot runs nothing: only a\n"
+    "DI Runtime running against that workflow store advances an approved\n"
+    "workflow, and status and result read its durable record. Requests made\n"
+    "before this route stay readable but can no longer be approved or run;\n"
+    "they show a reauthorization remedy instead. The adapter decides\n"
+    "nothing and grants no delivery authority: no commit, push, pull\n"
+    "request, merge, release or deploy.\n"
     "\n"
     "Delivery is a separate ceremony (present_delivery, approve_delivery):\n"
     "pr_delivery's own present-dots and attest-dots record an\n"
@@ -131,7 +158,7 @@ DESCRIPTION = (
     "delivery proposal. An engineering approval never authorizes delivery,\n"
     "and nothing here performs a delivery step.\n"
     "\n"
-    "Approval needs a local arming first: authorize (or\n"
+    "Approval needs a local arming first: authorize-workflow (or\n"
     "authorize-delivery), run in your local shell with exactly the values\n"
     "present handed over, prints a one-time approval_code the approval must\n"
     "carry. The arming command carries the full displayed binding in its\n"
@@ -146,13 +173,14 @@ DESCRIPTION = (
     "gives DI no signed sender attribution, so DI does not establish who\n"
     "sent the reply.\n"
     "\n"
-    "The request tool's Codex turn is one fresh session under a read-only\n"
-    "sandbox, with your Codex user configuration and rules ignored and\n"
-    "approval_policy=never, verified before it starts; it continues no\n"
-    "session. Read-only confines writes, not reads: request text can\n"
-    "induce the Operator to read any file your user can read, and its\n"
-    "reply returns to the caller. That residual is disclosed, not\n"
-    "prevented. That it only proposes is an instruction, not mechanically\n"
+    "The request tool's Codex planning turn is one fresh session under a\n"
+    "read-only sandbox, rooted at --control-repo, with your Codex user\n"
+    "configuration and rules ignored and approval_policy=never, verified\n"
+    "before it starts; it continues no session. Read-only confines writes,\n"
+    "not reads: request text can induce it to read any file your user can\n"
+    "read. That residual is disclosed, not prevented. Its document is\n"
+    "validated against the closed Mission Authorization schema. That the\n"
+    "initial turn only routes or asks is an instruction, not mechanically\n"
     "enforced.\n"
     "\n"
     "Network: only serve listens, on 127.0.0.1 alone, and the adapter's own\n"
@@ -183,16 +211,23 @@ def _parser():
                         help="absolute path of the repository the Outer"
                              " Operator runs in (request only)")
     parser.add_argument("--control-repo",
-                        help="absolute path of the control repository the"
-                             " run bridge uses (run only)")
+                        help="absolute path of the control repository: the"
+                             " planning turn runs in it and every Mission"
+                             " Authorization is pinned to it (request)")
+    parser.add_argument("--workflow-store",
+                        help="absolute path of the DI-REMOTE-2 workflow store"
+                             " directory the Runtime (dirun) claims from"
+                             " (request and the conforming route); no default")
     parser.add_argument("--workspace-repository",
                         help="absolute path of the local checkout of the"
-                             " approved repository DI prepares Mission"
-                             " worktrees from (run and serve)")
+                             " approved repository: the delivery tools accept"
+                             " only it or its worktrees under"
+                             " --workspaces-root (delivery and serve)")
     parser.add_argument("--workspaces-root",
                         help="absolute path of the existing directory, outside"
-                             " every repository, that holds the prepared"
-                             " Mission worktrees (run and serve)")
+                             " every repository, whose direct worktrees of"
+                             " --workspace-repository the delivery tools"
+                             " accept (delivery and serve)")
     commands = parser.add_subparsers(dest="command")
     commands.required = True
     call = commands.add_parser("call", help="one tool call; arguments from stdin")
@@ -201,11 +236,11 @@ def _parser():
         "serve", help="the MCP endpoint on 127.0.0.1 only (no host option)")
     serve.add_argument("--port", type=int, default=0,
                        help="loopback port; 0 (the default) picks a free one")
-    arm = commands.add_parser(
-        "authorize", help="LOCAL arming of a displayed Mission approval (never"
-                          " an MCP tool). Its arguments ARE the displayed"
-                          " consent binding; it prints a single-use"
-                          " approval_code bound to that one approval")
+    retired = ("RETIRED legacy Mission-Core arming: it arms nothing, mints"
+               " no approval_code and writes nothing. A legacy proposal can"
+               " no longer be approved; it prints the reauthorization remedy"
+               " (send a request that differs)")
+    arm = commands.add_parser("authorize", help=retired, description=retired)
     arm.add_argument("--request-ref", required=True)
     arm.add_argument("--mission-id", required=True)
     arm.add_argument("--revision", required=True, type=json.loads)
@@ -216,6 +251,20 @@ def _parser():
     arm.add_argument("--expires-at", required=True, type=json.loads)
     arm.add_argument("--display-digest", required=True,
                      help="the FULL digest of the displayed text")
+    arm_workflow = commands.add_parser(
+        "authorize-workflow", help="LOCAL arming of a displayed DI-REMOTE-2"
+                                   " Mission Authorization approval (never an"
+                                   " MCP tool). Its arguments ARE the displayed"
+                                   " consent binding; it prints a single-use"
+                                   " approval_code bound to that one approval")
+    arm_workflow.add_argument("--request-ref", required=True)
+    arm_workflow.add_argument("--workflow-id", required=True)
+    arm_workflow.add_argument("--revision", required=True, type=json.loads)
+    arm_workflow.add_argument("--authorization-digest", required=True,
+                              help="the FULL displayed authorization digest")
+    arm_workflow.add_argument("--expires-at", required=True, type=json.loads)
+    arm_workflow.add_argument("--display-digest", required=True,
+                              help="the FULL digest of the displayed text")
     arm_delivery = commands.add_parser(
         "authorize-delivery", help="LOCAL arming of a displayed delivery"
                                    " approval (never an MCP tool). Its"
@@ -235,7 +284,7 @@ def _parser():
 
 ENTRY_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "grokbot.py")
-ARMING_COMMANDS = ("authorize", "authorize-delivery")
+ARMING_COMMANDS = ("authorize", "authorize-workflow", "authorize-delivery")
 
 
 def _local_command(args):
@@ -244,7 +293,8 @@ def _local_command(args):
     workspaces (the delivery arming checks the same approved identity)."""
     prefix = [sys.executable, ENTRY_SCRIPT, "--state-dir", args.state_dir]
     for flag, value in (("--workspace-repository", args.workspace_repository),
-                        ("--workspaces-root", args.workspaces_root)):
+                        ("--workspaces-root", args.workspaces_root),
+                        ("--workflow-store", args.workflow_store)):
         if value is not None:
             prefix += [flag, value]
     return prefix
@@ -256,9 +306,42 @@ def _delivery_scope(args):
             "delivery_workspaces_root": args.workspaces_root}
 
 
-def _bridge_factory(args):
-    return request_cli.configured_bridge_factory(args.workspace_repository,
-                                                 args.workspaces_root)
+def _route(args, clock, planning_session=None):
+    """The conforming route, or None with the flags it is missing. Both
+    flags are explicit; neither has a default. The control repository is
+    pinned by its realpath (the form the planning request and the Runtime's
+    configuration both carry). The planning turn's session is the restricted
+    planning session unless a hermetic test injects one."""
+    missing = tuple(flag for flag, value in (
+        ("--control-repo", args.control_repo),
+        ("--workflow-store", args.workflow_store)) if value is None)
+    if missing:
+        return None, missing
+    return conforming.WorkflowRoute(
+        conforming.workflow_store().WorkflowStore(args.workflow_store),
+        os.path.realpath(args.control_repo),
+        planning_session=(planning_session
+                          or RestrictedPlanningOperatorSession(clock=clock))), ()
+
+
+def recover_legacy_result(missions, mission_id):
+    """The ONE legacy result recovery (``target_runtime.legacy_result``,
+    which ``MissionBridge.result`` also runs), imported here, lazily, for a
+    legacy ``result`` read alone. It is READ-ONLY, and its import closure
+    excludes the dispatch path (pinned by test): handing the adapter this
+    function hands it no handle that can start work."""
+    from target_runtime import legacy_result
+    return legacy_result.recover_result(missions, mission_id)
+
+
+def _adapter(args, surface, operator_session, clock, planning_session):
+    route, missing = _route(args, clock, planning_session)
+    return adapter_module.GrokBotAdapter(
+        surface, operator_session, args.repository,
+        index_module.RequestIndex(args.state_dir), clock,
+        local_command=_local_command(args), route=route,
+        route_missing=missing, legacy_result=recover_legacy_result,
+        **_delivery_scope(args))
 
 
 def _arm(args, stdout, clock):
@@ -269,12 +352,26 @@ def _arm(args, stdout, clock):
     index = index_module.RequestIndex(args.state_dir)
 
     def operation():
+        if args.command == "authorize-workflow":
+            if args.workflow_store is None:
+                return adapter_module.refused(
+                    conforming.PROBLEM_NOT_CONFIGURED,
+                    "authorize-workflow needs --workflow-store (the workflow"
+                    " store directory); nothing was armed")
+            return authorize.arm_workflow(
+                conforming.WorkflowRoute(
+                    conforming.workflow_store().WorkflowStore(args.workflow_store),
+                    args.control_repo),
+                index, clock, args.request_ref, args.workflow_id,
+                args.revision, args.authorization_digest, args.expires_at,
+                args.display_digest)
         if args.command == "authorize":
+            # Retired: refuses with the remedy before reading or writing
+            # anything.
             return authorize.arm_mission(
-                request_cli.build_surface(args.state_dir, clock), index, clock,
-                args.request_ref, args.mission_id, args.revision,
-                args.proposal_digest, args.action_scope, args.delivery_target,
-                args.expires_at, args.display_digest)
+                None, index, clock, args.request_ref, args.mission_id,
+                args.revision, args.proposal_digest, args.action_scope,
+                args.delivery_target, args.expires_at, args.display_digest)
         return authorize.arm_delivery(
             index, clock, args.proposal_digest, args.expires_at,
             args.display_digest, args.repository, args.workspace_repository,
@@ -286,6 +383,10 @@ def _arm(args, stdout, clock):
     except (index_module.RequestIndexError, arming.CommitmentsError) as exc:
         result = adapter_module.refused(exc.problem, str(exc))
         result["status"] = "store_error"
+    except conforming.workflow_store().StoreError as exc:
+        result = adapter_module.refused(
+            conforming.PROBLEM_WORKFLOW_STORE_UNREADABLE, str(exc))
+        result["status"] = "store_error"
     except adapter_module.surface_module.MISSION_CORE_ERRORS as exc:
         result = adapter_module.refused(getattr(exc, "problem", None), str(exc))
     stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -294,7 +395,7 @@ def _arm(args, stdout, clock):
     return EXIT_STORE if result.get("status") == "store_error" else EXIT_REFUSED
 
 
-def _serve(args, stdout, clock, bridge_factory, operator_session):
+def _serve(args, stdout, clock, operator_session, planning_session=None):
     # The only network module in the package, imported for serve alone.
     from grok_bot import server as server_module
     # Fail closed FIRST: without a token nothing is built, read or bound.
@@ -312,13 +413,10 @@ def _serve(args, stdout, clock, bridge_factory, operator_session):
             adapter_module.PROBLEM_BAD_REQUEST, str(exc)), sort_keys=True)
             + "\n")
         return EXIT_USAGE
-    surface = request_cli.build_surface(
-        args.state_dir, clock, args.control_repo,
-        bridge_factory or _bridge_factory(args))
-    adapter = adapter_module.GrokBotAdapter(
-        surface, operator_session or RestrictedCodexOperatorSession(),
-        args.repository, index_module.RequestIndex(args.state_dir), clock,
-        local_command=_local_command(args), **_delivery_scope(args))
+    adapter = _adapter(
+        args, request_surface.build_bridgeless_surface(args.state_dir, clock),
+        operator_session or RestrictedCodexOperatorSession(), clock,
+        planning_session)
     try:
         server = server_module.LoopbackMcpServer(adapter, args.port,
                                                  log=sys.stderr, bearer_token=token)
@@ -350,11 +448,12 @@ def _serve(args, stdout, clock, bridge_factory, operator_session):
     return EXIT_OK
 
 
-def main(argv=None, stdin=None, stdout=None, clock=None, bridge_factory=None,
-         operator_session=None):
-    """``bridge_factory`` and ``operator_session`` exist for hermetic tests
-    to inject recorders; production uses the real bridge and the Codex
-    session."""
+def main(argv=None, stdin=None, stdout=None, clock=None,
+         operator_session=None, planning_session=None):
+    """``operator_session`` and ``planning_session`` exist for hermetic tests
+    to inject recorders; production uses the restricted Operator session for
+    the initial turn and the restricted planning session for the planning
+    turn. There is no run bridge to inject: Grok Bot builds none (I3)."""
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
     try:
@@ -363,13 +462,16 @@ def main(argv=None, stdin=None, stdout=None, clock=None, bridge_factory=None,
         return EXIT_OK if exc.code == 0 else EXIT_USAGE
     tool = getattr(args, "tool", None)
     paths = [("--state-dir", args.state_dir)]
-    if tool == "request" or args.command == "serve":
-        paths.append(("--repository", args.repository))
-    if tool == "run" or args.command == "serve":
+    if args.command == "serve":
         paths.append(("--control-repo", args.control_repo))
-    if tool in DELIVERY_TOOLS or tool == "run" or args.command in (
-        "serve", "authorize-delivery"
-    ):
+    # Explicit when given (no default, never inferred): absolute, always.
+    for flag, value in (("--repository", args.repository),
+                        ("--control-repo", args.control_repo),
+                        ("--workflow-store", args.workflow_store)):
+        if value is not None and (flag, value) not in paths:
+            paths.append((flag, value))
+    if tool in DELIVERY_TOOLS or args.command in ("serve",
+                                                  "authorize-delivery"):
         paths.extend((flag, value) for flag, value in (
             ("--workspace-repository", args.workspace_repository),
             ("--workspaces-root", args.workspaces_root)) if value is not None)
@@ -387,21 +489,14 @@ def main(argv=None, stdin=None, stdout=None, clock=None, bridge_factory=None,
                 adapter_module.PROBLEM_BAD_REQUEST,
                 "--port must be 0 to 65535"), sort_keys=True) + "\n")
             return EXIT_USAGE
-        return _serve(args, stdout, clock, bridge_factory, operator_session)
+        return _serve(args, stdout, clock, operator_session, planning_session)
     if args.command in ARMING_COMMANDS:
         return _arm(args, stdout, clock)
-    if args.tool == "run":
-        surface = request_cli.build_surface(
-            args.state_dir, clock, args.control_repo,
-            bridge_factory or _bridge_factory(args))
-    else:
-        surface = request_cli.build_surface(args.state_dir, clock)
     if operator_session is None and args.tool == "request":
         operator_session = RestrictedCodexOperatorSession()
-    adapter = adapter_module.GrokBotAdapter(
-        surface, operator_session, args.repository,
-        index_module.RequestIndex(args.state_dir), clock,
-        local_command=_local_command(args), **_delivery_scope(args))
+    adapter = _adapter(
+        args, request_surface.build_bridgeless_surface(args.state_dir, clock),
+        operator_session, clock, planning_session)
     text = stdin.read(MAX_ARGUMENTS_CHARS + 1)
     if len(text) > MAX_ARGUMENTS_CHARS:
         result = adapter_module.refused(

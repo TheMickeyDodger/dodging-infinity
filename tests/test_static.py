@@ -1676,11 +1676,15 @@ assert pr_delivery_importers == {'herdr/guards.py': 1,
 #     byte-for-byte what they were; pr_delivery takes only named
 #     helpers from workflow_authority and never touches its store or
 #     record mutators; workflow_authority never imports pr_delivery.
+#     The ONE deliberate change to the record key set: I1 of task
+#     20261010-164104-1761f6 added 'origin' immediately before
+#     'telegram' (null = the Telegram lane).
 assert wa_record._TOP_LEVEL_KEYS == (
     'schema_version', 'workflow_id', 'human_intent', 'control_identity',
-    'target', 'approved_baseline', 'mission_authorization', 'telegram',
-    'approval', 'handoff', 'phase', 'workspace_lease', 'receipts',
-    'codex_turns', 'ambiguity', 'target_engine', 'verified_result',
+    'target', 'approved_baseline', 'mission_authorization', 'origin',
+    'telegram', 'approval', 'handoff', 'phase', 'workspace_lease',
+    'receipts', 'codex_turns', 'ambiguity', 'target_engine',
+    'verified_result',
     'result_placeholder', 'result_delivery', 'last_observation',
     'delivery_authority',
 ), wa_record._TOP_LEVEL_KEYS

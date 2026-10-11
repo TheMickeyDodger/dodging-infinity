@@ -63,6 +63,11 @@ EXPECTED_LEGACY_DELIVERY_KEYS = (
     "state", "reserved_at", "telegram_message_id",
 )
 
+# The COMPLETE set of top-level keys the load-boundary normalizer may
+# fill (T-M6/T-M7). Hand-written: "result_placeholder" from DI-REMOTE-3
+# I1, "origin" from I1 of task 20261010-164104-1761f6 (lead ruling R1).
+NORMALIZED_TOP_LEVEL_KEYS = frozenset({"result_placeholder", "origin"})
+
 # plan §3.1. True == the field MUST be non-null in that state;
 # False == it MUST be null.
 EXPECTED_PLACEHOLDER_TABLE = {
@@ -691,9 +696,10 @@ class NormalizerTests(unittest.TestCase):
     def test_M6_normalizer_inserts_only_the_new_key_and_never_overwrites(
         self
     ):
-        """T-M6: the normalizer inserts ONLY result_placeholder (and,
-        nested, only the six additive delivery keys), always as None,
-        never derived, and NEVER overwrites a value that is present."""
+        """T-M6: the normalizer inserts ONLY result_placeholder and
+        origin (and, nested, only the six additive delivery keys),
+        always as None, never derived, and NEVER overwrites a value that
+        is present."""
         # (i) absent -> inserted as None; and the set of keys ADDED at
         # the top level is EXACTLY {"result_placeholder"}. A normalizer
         # broadened to "fill anything missing" fails this by adding
@@ -708,6 +714,22 @@ class NormalizerTests(unittest.TestCase):
         )
         self.assertEqual(before - set(document), set())
         self.assertIsNone(document["result_placeholder"])
+
+        # (i-b) with EVERY declared key absent, the top-level keys added
+        # are EXACTLY the hand-written declared set (lead ruling R1) —
+        # no more, no fewer — each as None, and the record validates.
+        document = make_record()
+        for key in NORMALIZED_TOP_LEVEL_KEYS:
+            del document[key]
+        before = set(document)
+        wa_store._normalize_additive_keys(document)
+        self.assertEqual(
+            set(document) - before, set(NORMALIZED_TOP_LEVEL_KEYS)
+        )
+        self.assertEqual(before - set(document), set())
+        for key in NORMALIZED_TOP_LEVEL_KEYS:
+            self.assertIsNone(document[key], key)
+        wa_record.validate_record(document)
 
         # (ii) never DERIVED: the inserted value is None even when the
         # record carries a chat id, a verified result and a delivery
@@ -811,9 +833,14 @@ class NormalizerTests(unittest.TestCase):
         runs UNCHANGED after the normalizer. It fills no other missing
         key, and it repairs nothing."""
         # Every other top-level key stays required after normalization,
-        # and the normalizer does not re-insert it.
+        # and the normalizer does not re-insert it. The set the
+        # normalizer MAY fill is written out by hand here, never
+        # derived from production code: it is an independent
+        # specification, so a normalizer that starts filling a third
+        # key fails this test instead of redefining it (I1 of task
+        # 20261010-164104-1761f6 added "origin", lead ruling R1).
         for key in wa_record._TOP_LEVEL_KEYS:
-            if key == "result_placeholder":
+            if key in NORMALIZED_TOP_LEVEL_KEYS:
                 continue
             document = make_record()
             del document[key]

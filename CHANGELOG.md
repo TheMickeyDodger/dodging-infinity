@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+- **Grok Bot's conforming route; Grok Bot runs nothing.** A Grok Bot
+  `request` now produces one DI-REMOTE-2 workflow, the same durable authority
+  object the Telegram lane produces, instead of a Mission-Core proposal. A
+  fresh read-only Outer Operator turn clarifies or routes, and a separate
+  fresh read-only planning turn authors the Mission Authorization. It is
+  validated against the control repository (`--control-repo`) and saved
+  PLANNED in the workflow store (`--workflow-store`). `present` shows the
+  exact rendered authorization, the local `authorize-workflow` command arms
+  it, and `approve` relays the human's separate reply and moves it to
+  AUTHORIZED. Only a DI Runtime running against that store advances it.
+  - The record gains one required key, `origin`: the TRANSPORT origin, null
+    for the Telegram lane. It is distinct from verification's target
+    repository origin identity. The schema version is deliberately not
+    bumped, so once this build saves a store, an older build refuses to load
+    it. Every process sharing a store must be upgraded together, and there
+    is no supported downgrade (docs/operations.md, "Upgrading with a shared
+    workflow store").
+  - Grok Bot's `run` tool starts, dispatches and advances no work. `run`
+    `result` answers as the new read-only `result` tool, and every other
+    call is refused by name. This supersedes the Grok Bot `run` `dispatch`
+    and "run commands" statements in the entries below. The local operator
+    surface (`direquest.py`) keeps its own run commands, unchanged.
+  - `status` and `result` read a complete snapshot of the durable record,
+    by pull. The Runtime-lock probe never blocks, and a held lock is
+    reported as a process present, never as progress.
+  - A request made before this route (`lr-`) can still be shown, read and
+    withdrawn through Grok Bot, but no longer approved, armed, dispatched or
+    advanced there. The local `authorize` command is retired.
+  - Before saving its own record, each Grok `request` runs an expiry sweep.
+    The sweep voids Grok-origin workflows that are still PLANNED with an
+    approval that has expired and was neither consumed nor superseded, and
+    it touches nothing else. Saving the new record is a separate step: at
+    the store's shared 64-record cap it can prune the oldest terminal
+    records of either transport, as adding any record can.
+- **`dirun --runtime-config PATH`.** The Runtime's own configuration file
+  (`dodging-infinity.runtime-config.v1`: exactly `schema`,
+  `control_repository` and `workflow_store`) starts a Runtime for an operator
+  without Telegram credentials. It advances the store that holds the file
+  and writes Claude workspace trust where the started Herdr reads it.
+  `--config` and the default are unchanged, and naming both flags is refused
+  (`runtime_config_ambiguous`). There is no installer support for it: it
+  runs in the foreground.
+- **Documented limits.** Two known pre-existing defects are recorded with
+  their sources: the blocking store-file open
+  (`workflow_authority/store.py:288`) and the Telegram lane's
+  `RecursionError` on Python 3.9 for a deeply nested reply
+  (docs/grok-bot.md, "Limitations"). No live execution of the conforming
+  route was exercised by this verification; its tests are hermetic
+  (docs/architecture.md, section 16).
+
 - **PR delivery to an existing open pull request (`pr_update`).**
   `pr_delivery` gains a second delivery kind: ONE new commit on the head
   branch of an EXISTING open pull request, named by exact number and head

@@ -1869,15 +1869,21 @@ class WorkspaceTrustTests(Fixture):
 
 
 class SurfaceTests(Fixture):
-    """Criterion 10: Grok Bot dispatch needs no path; the override is
-    documented as recovery-only."""
+    """Criterion 10: a dispatch needs no path; the override is
+    recovery-only. I3: that dispatch is the LOCAL operator surface's
+    (``direquest.py``); Grok Bot dispatches nothing and its surface carries
+    no bridge."""
 
     def adapter(self):
+        """Grok Bot's adapter, built as grok_bot.cli builds it (bridge-less),
+        and the LOCAL operator surface with the run bridge."""
         surface = request_cli.build_surface(
             self.state, self.clock, self.control,
             lambda missions, control, clock: self.make_bridge(missions=missions))
         return adapter_module.GrokBotAdapter(
-            surface, None, str(REPO_ROOT), index_module.RequestIndex(self.state),
+            adapter_module.surface_module.build_bridgeless_surface(
+                self.state, self.clock),
+            None, str(REPO_ROOT), index_module.RequestIndex(self.state),
             self.clock), surface
 
     def approved_ref(self, objective):
@@ -1894,34 +1900,47 @@ class SurfaceTests(Fixture):
         return out["request_ref"], out["mission_id"]
 
     def test_G1_grok_dispatch_takes_no_path(self):
-        adapter, _ = self.adapter()
+        """I3: Grok Bot's dispatch is refused by name and starts nothing; the
+        operator surface's dispatch takes no path."""
+        adapter, surface = self.adapter()
         for arguments in (None, {}):
             with self.subTest(arguments=arguments):
                 ref, mission_id = self.approved_ref("grok %r" % (arguments,))
-                result = adapter.run(request_ref=ref, command="dispatch",
-                                     arguments=arguments)
+                refused = adapter.run(request_ref=ref, command="dispatch",
+                                      arguments=arguments)
+                self.assertFalse(refused["ok"], refused)
+                self.assertEqual(refused["problem"],
+                                 "grok_bot_legacy_reauthorization_required")
+                self.assertEqual(refused["transport"], "grok_bot")
+                result = surface.run_command(ref, "dispatch",
+                                             **(arguments or {}))
                 self.assertTrue(result["ok"], result)
                 self.assertEqual(result["workspace"]["path_realpath"],
                                  self.path(mission_id))
-                self.assertEqual(result["transport"], "grok_bot")
         self.assertEqual(len(self.spawn.calls), 2)
 
     def test_G2_the_recovery_path_is_optional_and_checked(self):
-        adapter, _ = self.adapter()
+        adapter, surface = self.adapter()
         ref, mission_id = self.approved_ref("grok recovery")
         # A lost preparation acknowledgement, recovered through the tool.
         with self.assertRaises(Crash):
             self.make_bridge(transport=RecordingTransport(
                 after=self.crash)).dispatch(mission_id)
-        result = adapter.run(request_ref=ref, command="dispatch",
-                             arguments={"workspace_path": self.path(mission_id)})
+        self.assertEqual(
+            adapter.run(request_ref=ref, command="dispatch",
+                        arguments={"workspace_path": self.path(mission_id)}
+                        )["problem"],
+            "grok_bot_legacy_reauthorization_required")
+        result = surface.run_command(ref, "dispatch",
+                                     workspace_path=self.path(mission_id))
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["workspace"]["path_realpath"], self.path(mission_id))
         ref, mission_id = self.approved_ref("grok unrelated path")
         checkout = make_repository(self.base, "grok-unrelated")
-        refused = adapter.run(request_ref=ref, command="dispatch",
-                              arguments={"workspace_path": checkout})
-        self.assertFalse(refused["ok"])
+        with self.assertRaises(
+                adapter_module.surface_module.LocalRequestRefusal) as caught:
+            surface.run_command(ref, "dispatch", workspace_path=checkout)
+        refused = caught.exception.as_dict()
         self.assertEqual(refused["problem"], bridge_module.PROBLEM_WORKSPACE_FOREIGN)
         self.assertTrue(refused["refusal_recorded"])
         for arguments in ({"workspace_path": 5},
@@ -1947,9 +1966,11 @@ class SurfaceTests(Fixture):
         self.assertEqual(arguments["required"], [])
         self.assertEqual(arguments["type"], ["object", "null"])
         note = arguments["properties"]["workspace_path"]["description"]
-        self.assertIn("operator recovery only", note)
+        # I3: Grok Bot's run checks the argument's shape only and never uses
+        # it; the operator surface's recovery override is direquest's.
+        self.assertIn("checked for shape only and never used", note)
         self.assertIn("dispatch takes no arguments", description)
-        self.assertIn("operator recovery only", description)
+        self.assertIn("Grok Bot RUNS NOTHING", description)
 
     def test_G4_the_command_lines_take_the_configuration_not_a_path(self):
         parser = request_cli._parser()

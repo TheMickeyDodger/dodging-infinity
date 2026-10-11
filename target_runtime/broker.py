@@ -1484,7 +1484,10 @@ class TargetBroker(object):
         — so a target polled repeatedly never churns the store, while a
         target that becomes unobservable records the (None, None) pair
         once, making /status able to surface it. Never authority: a
-        bounded projection of the read-only observation."""
+        bounded projection of the read-only observation. ``observed_at``
+        is when the stored pair was first recorded, not the latest poll:
+        the pair is the LAST RECORDED observation, not the present
+        condition, and its age is not evidence of current health."""
         status = (
             observation["task_status"]
             if isinstance(observation["task_status"], str) else None

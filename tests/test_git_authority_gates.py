@@ -1306,11 +1306,24 @@ class MissionApprovalSeparationTests(Fixture):
                       for name in files if name in names)
 
     def test_a_genuine_mission_approval_confers_no_git_or_delivery_authority(self):
-        out, shown, decision = self.approved()
-        self.assertEqual(decision["status"], "approved_by_operator_attestation")
+        """I2: the genuine Grok Bot ceremony is the default route's (a
+        DI-REMOTE-2 Mission Authorization, presented, locally armed, fired,
+        applied); a legacy Mission approval (applied as the pre-I2 approve
+        tool applied it) is checked alongside it."""
+        out = self.wf_requested()
+        shown = self.presented(out["request_ref"])
+        decision = self.ok(self.adapter.approve(**self.wf_approval(shown)))
+        self.assertEqual(decision["status"], "authorized")
         self.assertTrue(decision["arming"]["locally_armed"])
         self.assertEqual(decision["delivery_authority"], "none")
-        self.assertEqual(self.mission(out["mission_id"])["state"], "AUTHORIZED")
+        self.assertEqual(self.workflows()[out["workflow_id"]]["phase"],
+                         "AUTHORIZED")
+        legacy, _, legacy_decision = self.approved("A legacy request.")
+        self.assertEqual(legacy_decision["status"],
+                         "approved_by_operator_attestation")
+        self.assertEqual(legacy_decision["delivery_authority"], "none")
+        self.assertEqual(self.mission(legacy["mission_id"])["state"],
+                         "AUTHORIZED")
         self.assertEqual(self.authority_records(), [])
         self.assertEqual(self.delivery_reached, [])
         for command in (COMMIT_TEXT, PUSH_TEXT, "git merge topic",
