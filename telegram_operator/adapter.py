@@ -400,8 +400,11 @@ def _render_observation_line(entry):
     """The actionable target-observation line for /status (I6 carried
     item). Returns None when there is nothing distinct to say; a string
     otherwise. An UNOBSERVABLE target (task_status recorded as null)
-    reads distinctly from a healthy running one, so an indefinitely
-    stuck target is visible rather than silently identical."""
+    reads distinctly from a target whose status was recorded, so an
+    indefinitely stuck target is visible rather than silently identical.
+    The time shown is ``observed_at``: when that pair was first recorded
+    (the Broker records only changes), not the latest poll. It is the
+    LAST RECORDED observation, not the target's present condition."""
     observation = entry["last_observation"]
     if observation is None:
         return None
@@ -1373,9 +1376,15 @@ class Adapter(object):
         and is thereafter immutable — the record schema refuses any
         other value, so a placeholder bound in another chat is
         unrepresentable. An existing placeholder is never overwritten.
+
+        A relay-origin workflow (I1: non-null ``origin``) never
+        requests a Telegram placeholder: it has no Telegram chat, and
+        the record schema refuses a placeholder on it.
         """
         entry = workflows["workflows"].get(workflow_id)
-        if entry is None or entry.get("result_placeholder") is not None:
+        if entry is None or entry["origin"] is not None:
+            return False
+        if entry.get("result_placeholder") is not None:
             return False
         entry["result_placeholder"] = {
             "state": wa_record.PLACEHOLDER_REQUIRED,
@@ -2108,6 +2117,12 @@ class Adapter(object):
                         # reachable ONLY by records that never entered
                         # the placeholder architecture.
                         and entry.get("result_placeholder") is None
+                        # I1: and ONLY by Telegram-lane records. A
+                        # relay-origin workflow has no Telegram chat to
+                        # deliver to; it is excluded HERE, at selection,
+                        # before any marker is written — never selected
+                        # and then caught or repaired later.
+                        and entry["origin"] is None
                     ):
                         pending.append((workflow_id, entry))
                 if not pending:
@@ -2723,15 +2738,27 @@ class Adapter(object):
                         line += "; target engine task: %s" % (
                             bound_task
                         )
-                    line += "; %s" % _render_placeholder_status(
-                        entry.get("result_placeholder")
-                    )
-                    if entry["verified_result"] is not None:
-                        line += "; verified result %s" % (
-                            _render_delivery_status(
-                                entry["result_delivery"]
-                            )
+                    if entry["origin"] is not None:
+                        # I1: a relay-origin workflow is labelled by
+                        # its origin, never by a Telegram lane — it has
+                        # no placeholder and no Telegram delivery.
+                        line += (
+                            "; origin: %s relay (not a Telegram-lane"
+                            " workflow; this adapter sends nothing for"
+                            " it)" % entry["origin"]["transport"]
                         )
+                        if entry["verified_result"] is not None:
+                            line += "; verified result recorded"
+                    else:
+                        line += "; %s" % _render_placeholder_status(
+                            entry.get("result_placeholder")
+                        )
+                        if entry["verified_result"] is not None:
+                            line += "; verified result %s" % (
+                                _render_delivery_status(
+                                    entry["result_delivery"]
+                                )
+                            )
                     lines.append(line)
                     observation_line = _render_observation_line(entry)
                     if observation_line is not None:

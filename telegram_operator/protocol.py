@@ -234,6 +234,12 @@ def parse_operator_response(message):
     return OperatorResponse(ok=True, kind=kind, body=body, problem=None)
 
 
+# The shape an accepted envelope's ``body`` ARRIVED in, before any
+# canonicalization (``RoutedResponse.body_shape``).
+BODY_SHAPE_STRING = "string"
+BODY_SHAPE_OBJECT = "object"
+
+
 @dataclass(frozen=True)
 class RoutedResponse:
     """Fail-closed parse outcome for a version-routed Operator message.
@@ -242,6 +248,13 @@ class RoutedResponse:
     known protocol version; ``protocol_version`` is then 1 or 2. On
     failure everything except ``problem`` is None, so a failed parse
     can never be mistaken for a plan or a mission authorization.
+
+    ``body_shape`` is ADDITIVE and changes nothing above: for an
+    accepted envelope it reports whether the body arrived as a string
+    (``BODY_SHAPE_STRING``) or as an object canonicalized to ``body``
+    (``BODY_SHAPE_OBJECT``), which ``body`` alone no longer shows. A
+    caller that knows its turn's required shape narrows on it; this
+    parser accepts the same envelopes as before.
     """
 
     ok: bool
@@ -249,6 +262,7 @@ class RoutedResponse:
     kind: Optional[str]
     body: Optional[str]
     problem: Optional[str]
+    body_shape: Optional[str] = None
 
 
 def _routed_malformed(problem):
@@ -321,6 +335,8 @@ def parse_routed_operator_response(message):
         if kind not in RESPONSE_KINDS_V2:
             return _routed_malformed(PROBLEM_UNRECOGNIZED_KIND)
         body = document["body"]
+        body_shape = (BODY_SHAPE_OBJECT if isinstance(body, dict)
+                      else BODY_SHAPE_STRING)
         if kind == KIND_MISSION_AUTHORIZATION:
             if isinstance(body, dict):
                 body = json.dumps(
@@ -339,6 +355,7 @@ def parse_routed_operator_response(message):
             kind=kind,
             body=body,
             problem=None,
+            body_shape=body_shape,
         )
     parsed = parse_operator_response(message)
     return RoutedResponse(
@@ -347,6 +364,7 @@ def parse_routed_operator_response(message):
         kind=parsed.kind,
         body=parsed.body,
         problem=parsed.problem,
+        body_shape=BODY_SHAPE_STRING if parsed.ok else None,
     )
 
 

@@ -2,7 +2,8 @@
 
 An approval relayed through Grok Bot is accepted only when the human first
 ARMED it by a local action on this Mac: the arming command
-(``grokbot.py ... authorize`` or ``authorize-delivery``), run in Grok Bot's
+(``grokbot.py ... authorize-workflow`` or ``authorize-delivery``; the legacy
+``authorize`` is retired and arms nothing), run in Grok Bot's
 per-command, user-approved local shell, carries the FULL displayed binding.
 The human approves that exact command string. ``grok_bot.authorize``, the
 ONLY writer, checks every value against the latest presentation receipt
@@ -63,8 +64,16 @@ import stat
 from workflow_authority.digest import json_digest
 
 SCHEME = "grok_bot.approval-commitment.v1"
+# The legacy Mission-Core kind. Nothing mints it any more (I3: the legacy
+# ``authorize`` is retired); it stays a valid kind so a commitments file
+# written before then still loads, and its code can still never fire.
 KIND_MISSION = "mission"
 KIND_DELIVERY = "delivery"
+# I2 (task 20261010-164104-1761f6): a DI-REMOTE-2 Mission Authorization
+# approval on the conforming route. Its own kind, key prefix and preimage:
+# no Mission-Core (``mission``) code can fire it, nor it a Mission-Core one.
+KIND_WORKFLOW = "workflow"
+KINDS = (KIND_MISSION, KIND_DELIVERY, KIND_WORKFLOW)
 COMMITMENTS_FILE_NAME = "grok_bot_approval_commitments.json"
 SCHEMA_VERSION = 1
 NONCE_BYTES = 16
@@ -107,6 +116,10 @@ def delivery_key(proposal_digest):
     return "delivery:" + proposal_digest
 
 
+def workflow_key(request_ref):
+    return "workflow:" + request_ref
+
+
 def mission_preimage(binding, display_digest, nonce):
     """``P`` for a Mission approval: every displayed binding field, the
     display digest and the nonce. Lists keep their displayed order."""
@@ -138,6 +151,23 @@ def delivery_preimage(proposal_digest, expires_at, display_digest,
     }
 
 
+def workflow_preimage(binding, display_digest, nonce):
+    """``P`` for a DI-REMOTE-2 Mission Authorization approval: every
+    displayed binding field (the request, the workflow, the mission
+    revision, the digest of the exact rendered authorization text and the
+    expiry), the digest of the whole display, and the nonce."""
+    return {
+        "scheme": SCHEME, "kind": KIND_WORKFLOW,
+        "request_ref": binding["request_ref"],
+        "workflow_id": binding["workflow_id"],
+        "revision": binding["revision"],
+        "authorization_digest_sha256": binding["authorization_digest_sha256"],
+        "expires_at": binding["expires_at"],
+        "display_digest_sha256": display_digest,
+        "nonce": nonce,
+    }
+
+
 def commitment(preimage):
     return json_digest(preimage)
 
@@ -161,7 +191,7 @@ def validate(document, where):
         bad("commitments must be a map of at most %d" % MAX_COMMITMENTS)
     for position, (key, record) in enumerate(records.items(), 1):
         kind = key.split(":", 1)[0] if isinstance(key, str) else None
-        if kind not in (KIND_MISSION, KIND_DELIVERY) or not isinstance(
+        if kind not in KINDS or not isinstance(
             record, dict
         ) or sorted(record) != sorted(RECORD_KEYS) or record["kind"] != kind or (
             not _hex(record["commitment_sha256"], 64)
@@ -214,22 +244,18 @@ def _json_arg(value):
     return json.dumps(value)
 
 
-def mission_arming_argv(prefix, binding, display_digest):
-    """The exact local command the human approves: every displayed value,
-    the FULL digests, nothing shortened."""
-    argv = list(prefix) + [
-        "authorize",
+def workflow_arming_argv(prefix, binding, display_digest):
+    """The exact local command arming a DI-REMOTE-2 Mission Authorization
+    approval: every displayed binding value, the FULL digests."""
+    return list(prefix) + [
+        "authorize-workflow",
         "--request-ref", binding["request_ref"],
-        "--mission-id", binding["mission_id"],
+        "--workflow-id", binding["workflow_id"],
         "--revision", _json_arg(binding["revision"]),
-        "--proposal-digest", binding["proposal_digest_sha256"],
+        "--authorization-digest", binding["authorization_digest_sha256"],
+        "--expires-at", _json_arg(binding["expires_at"]),
+        "--display-digest", display_digest,
     ]
-    for scope in binding["approved_action_scope"]:
-        argv += ["--action-scope", scope]
-    for target in binding["approved_delivery_targets"]:
-        argv += ["--delivery-target", target]
-    return argv + ["--expires-at", _json_arg(binding["expires_at"]),
-                   "--display-digest", display_digest]
 
 
 def delivery_arming_argv(prefix, proposal_digest, expires_at, display_digest,

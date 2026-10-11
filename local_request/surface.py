@@ -81,6 +81,12 @@ What each operation does, exactly:
   foreign Mission), it calls the injected run bridge for dispatch, observe,
   reconcile, verify, result, pause, resume, cancel and prove (the existing
   evidence and acceptance seams, each step explicit, nothing auto-accepted).
+- ``read_result`` (I3 of task 20261010-164104-1761f6): the run route's
+  ``result``, READ-ONLY and without any bridge: the caller hands in the one
+  recovery implementation (``target_runtime.legacy_result.recover_result``),
+  and nothing here can start, advance or record anything.
+- ``build_bridgeless_surface``: a surface built with NO run bridge (Grok
+  Bot's), so its run commands refuse and nothing reaches engineering work.
 
 Imports. This module imports Mission Core, the capability seam and the
 atomic-write helpers, and nothing that can start, route or reach
@@ -97,6 +103,7 @@ import copy
 import json
 
 from mission import record as mission_record
+from mission import service as mission_service
 from mission import state as mission_state
 from mission import store as mission_store
 from workflow_authority.digest import json_digest
@@ -689,6 +696,27 @@ class LocalRequestSurface(object):
                        "delivery_authority": DELIVERY_AUTHORITY})
         return result
 
+    def read_result(self, request_ref, recover):
+        """READ-ONLY: the request's OWN Mission's VERIFIED run result, by
+        the one recovery implementation the caller hands in as ``recover``
+        (``target_runtime.legacy_result.recover_result``, which
+        ``MissionBridge.result`` runs too; this module imports no runtime).
+        The run route's ``result`` preconditions, with NO bridge: nothing
+        here starts, advances, records or consumes anything, and
+        ``recover`` uses Mission Core's service for reads alone."""
+        document = self._store.load()
+        entry = self._record(document, request_ref)
+        if entry["state"] == store_module.STATE_CANCELLED:
+            _refuse(PROBLEM_CANCELLED, CANCELLED_REASON, request_ref=request_ref)
+        if entry["mission_id"] is None:
+            _refuse(PROBLEM_UNCONFIRMED,
+                    "the proposal is not confirmed in Mission Core yet")
+        result = copy.deepcopy(recover(self._missions, entry["mission_id"]))
+        result.update({"ok": True, "status": "result", "request_ref": request_ref,
+                       "mission_id": entry["mission_id"],
+                       "delivery_authority": DELIVERY_AUTHORITY})
+        return result
+
     # -- approval: always refused ----------------------------------------
 
     def approve(self, request_ref, revision, proposal_digest_sha256,
@@ -1147,6 +1175,17 @@ class LocalRequestSurface(object):
 
 
 MISSION_CORE_ERRORS = (mission_record.MissionError, mission_store.MissionStoreError)
+
+
+def build_bridgeless_surface(state_dir, clock):
+    """The local request surface over ``state_dir`` built with NO run bridge
+    (I3): its run commands refuse as unavailable, and nothing it holds can
+    reach engineering work. Grok Bot's surface; ``local_request.cli``
+    builds its own, with the bridge for the run commands."""
+    return LocalRequestSurface(
+        mission_service.MissionService(mission_store.MissionStore(state_dir),
+                                       clock),
+        store_module.LocalRequestStore(state_dir), clock, bridge=None)
 
 
 def dumps(value):

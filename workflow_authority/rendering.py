@@ -38,18 +38,35 @@ carries a proven containment property, declared once in
 - TYPE- OR ALPHABET-CONSTRAINED: ints, 40/64-hex digests, the closed
   workflow-id alphabet, the canonicalized target URL, and the closed
   issue/PR value set cannot carry line structure by construction.
+  The approval identity is one of them in BOTH of its forms (I1 of
+  task 20261010-164104-1761f6): the Telegram form renders two ints;
+  the relay form renders a transport from a closed member set and a
+  relay ref from a closed alphabet of ASCII letters, digits, ``-`` and
+  ``_`` (``record.RELAY_REF_ALPHABET``, 1..128 characters). The relay
+  ref arrives from outside the record layer and is rendered UNQUOTED
+  on the approval line — so, exactly as for the baseline ref,
+  validation makes line structure UNREPRESENTABLE in it: no line
+  terminator of any kind, no whitespace, no ``:``, and no ``>``, so it
+  can never forge a ``policy digest:`` / ``target:`` / ``control:`` /
+  ``delivery authority:`` line or a quoted line.
 
 Together: distinct field tuples never render to identical bytes, so
 "altered independently of the digested text" covers joint
 multi-field alterations, not only single-field ones — and no
 component's bytes can start a rendered line except through its own
-declared, validated form. A test derives the renderer's parameter
+declared, validated form. The two approval-identity forms share no
+template (``approved by: telegram user …`` against ``approval relayed
+by: …``), so a Telegram-origin and a relay-origin record never render
+the same approval line, and neither can be edited into the other by
+changing a record field without breaking the rendered-text equality.
+A test derives the renderer's parameter
 list and FAILS if a component ever appears without a containment
 classification. Quoting is DISPLAY-ONLY: the dispatched handoff is
 the stored ``handoff.text`` byte-exact, never the quoted rendering.
 
 Layout, fixed: the binding lines first (workflow/revision, control,
-policy digest, target, baseline), then the approval identity and
+policy digest, target, baseline), then the approval identity (one of
+two distinct forms, see ``approval_identity_line``) and
 ``delivery authority: none``, then the ORIGINAL REQUEST section (the
 exact human intent, quoted, with its digest), then the seven
 authority-content sections (each header carrying the field digest,
@@ -103,8 +120,9 @@ RENDERED_COMPONENT_CONTAINMENT = {
     "issue_or_pr": CONTAINMENT_TYPE_CONSTRAINED,      # closed set+int
     "baseline_ref": CONTAINMENT_LINE_FREE,            # ref grammar
     "baseline_sha": CONTAINMENT_TYPE_CONSTRAINED,     # 40-hex
-    "user_id": CONTAINMENT_TYPE_CONSTRAINED,          # int
-    "chat_id": CONTAINMENT_TYPE_CONSTRAINED,          # int
+    # closed transport set + closed relay-ref alphabet
+    "origin": CONTAINMENT_TYPE_CONSTRAINED,
+    "telegram": CONTAINMENT_TYPE_CONSTRAINED,         # user/chat ints
     "human_intent": CONTAINMENT_QUOTED,
     "authority_content": CONTAINMENT_QUOTED,          # all 7 fields
     "handoff_revision": CONTAINMENT_TYPE_CONSTRAINED,  # int
@@ -136,6 +154,40 @@ def target_binding_line(canonical_url, issue_or_pr):
         )
     return "target: %s (%s #%d)" % (
         canonical_url, issue_or_pr["kind"], issue_or_pr["number"],
+    )
+
+
+def approval_identity_line(origin, telegram):
+    """The rendered approval-identity line, one of two DISTINCT forms.
+
+    ``origin`` is None for the TELEGRAM lane, which renders from
+    ``telegram`` (a mapping carrying ``user_id`` and ``chat_id``; no
+    other key of it is rendered) the exact bytes every record before
+    I1 carries. A non-null ``origin`` (``transport`` and
+    ``relay_ref``) renders the RELAY form, and ``telegram`` must then
+    be None: a relayed approval has no Telegram identity, and this
+    form never prints one. The relay form states its weaker provenance
+    rather than hiding it — DI receives a relay's attestation, not
+    authenticated sender evidence.
+
+    Mirrors ``target_binding_line``: the two forms share no template,
+    so neither can be edited into the other by changing a record field
+    without breaking the rendered-text equality.
+    """
+    if (origin is None) == (telegram is None):
+        raise ValueError(
+            "exactly one of origin and telegram must be present to"
+            " render the approval identity"
+        )
+    if origin is None:
+        return "approved by: telegram user %d, chat %d" % (
+            telegram["user_id"], telegram["chat_id"],
+        )
+    return (
+        "approval relayed by: %s, relay ref %s (operator-attested relay;"
+        " not authenticated sender evidence)" % (
+            origin["transport"], origin["relay_ref"],
+        )
     )
 
 
@@ -173,23 +225,26 @@ def quoted_intent_lines(text):
 def render_authorization_text(workflow_id, revision, control_realpath,
                               policy_digest, canonical_url,
                               issue_or_pr, baseline_ref, baseline_sha,
-                              user_id, chat_id, human_intent,
+                              origin, telegram, human_intent,
                               authority_content, handoff_revision,
                               handoff_text):
     """Render the complete Mission Authorization text, deterministic.
 
-    ``authority_content`` maps each authority-content field name
-    (objective, constraints, rules, desired_outcome, acceptance,
-    unresolved_questions, execution_scope) to its exact text. Composed
-    field-by-field from explicit values (an ALLOWLIST): a newly added
-    key can never leak into the rendering.
+    ``origin`` and ``telegram`` are the record's two approval-identity
+    fields, exactly one of them non-null (see
+    ``approval_identity_line``). ``authority_content`` maps each
+    authority-content field name (objective, constraints, rules,
+    desired_outcome, acceptance, unresolved_questions,
+    execution_scope) to its exact text. Composed field-by-field from
+    explicit values (an ALLOWLIST): a newly added key can never leak
+    into the rendering.
     """
     lines = list(binding_lines(
         workflow_id, revision, control_realpath, policy_digest,
         canonical_url, issue_or_pr, baseline_ref, baseline_sha,
     ))
     lines += [
-        "approved by: telegram user %d, chat %d" % (user_id, chat_id),
+        approval_identity_line(origin, telegram),
         "delivery authority: none",
         "",
         "ORIGINAL REQUEST (verbatim, quoted, sha256 %s; typed text"
@@ -232,8 +287,8 @@ def render_record_text(entry):
         issue_or_pr=entry["target"]["issue_or_pr"],
         baseline_ref=entry["approved_baseline"]["ref"],
         baseline_sha=entry["approved_baseline"]["commit_sha"],
-        user_id=entry["telegram"]["user_id"],
-        chat_id=entry["telegram"]["chat_id"],
+        origin=entry["origin"],
+        telegram=entry["telegram"],
         human_intent=entry["human_intent"],
         authority_content={
             key: authorization[key]

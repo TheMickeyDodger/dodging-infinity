@@ -105,6 +105,50 @@ herdctl doctor --repo example-repo
 
 Existing Herdr safety boundaries, repository isolation, review validation, and Git authorization controls remain intact.
 
+### Upgrading with a shared workflow store
+
+Several processes can share one DI-REMOTE-2 workflow store: the Runtime
+(`dirun`), the Telegram adapter (`tgop`), and Grok Bot (`grokbot.py`, through
+`--workflow-store`). Every one of them must run a compatible version of
+Dodging Infinity. That includes a Runtime or Telegram adapter that was already
+running before you upgraded the checkout: a running process keeps the code it
+started with.
+
+Why: a record written by a newer build can carry a key an older build does
+not know, and the older build refuses it, because the record's key set is
+closed. The record schema version was deliberately not bumped for the newest
+such key, `origin` (`workflow_authority/store.py:103-107`), so an older build
+does not see a version it would reject. It sees a record with an unknown key,
+and its store load fails closed. A newer build's load adds the missing key to
+older records, so old records stay readable after an upgrade; nothing makes a
+new record readable to an older build (see
+[architecture](architecture.md#the-workflow-record-today-transport-origin-and-version-compatibility)).
+
+When you upgrade:
+
+1. Stop every process that uses the store: the Runtime, the Telegram adapter
+   and Grok Bot's `serve`. A LaunchAgent restarts its process when it exits,
+   so unload it first (`scripts/dirun-agent.sh uninstall`,
+   `tgop uninstall-agent`).
+2. Upgrade the checkout they run from.
+3. Start each of them again from the upgraded checkout, reinstalling any
+   LaunchAgent the way it was installed.
+
+Starting a new Grok Bot process alone does not upgrade a Runtime or Telegram
+adapter that is already running. It creates exactly the mixed state this
+rules out, because its first `request` that records a workflow saves the
+store.
+
+There is no supported downgrade. Once an upgraded process has saved the
+store, every record carries the new key, and an older build refuses the
+store.
+
+### A Runtime for Grok Bot without Telegram
+
+An operator who uses Grok Bot need not have Telegram credentials. The Runtime
+is then started from its own configuration file; see [Running a Runtime
+without Telegram](#running-a-runtime-without-telegram).
+
 ## 4. Presets
 
 List presets:
@@ -406,6 +450,43 @@ Bounds are disclosed rather than silently presenting partial information as comp
 - a replacement Mission Control
 
 It is an instrument panel.
+
+### DI-REMOTE-2 Runtime status: a process present is not work advancing
+
+The DI-REMOTE-2 Runtime (`dirun`, section 10) is a separate, long-lived
+process. An AUTHORIZED workflow advances only while a Runtime runs against its
+workflow store, and nothing records a heartbeat. So each status surface
+answers a narrower question than "is my workflow progressing?". Each limit
+below names the code or test that establishes it.
+
+- **A held Runtime lock shows a process, not progress.** Telegram `/status`
+  and Grok Bot `status` both probe the Runtime's single-instance lock file
+  without waiting for it. A held lock shows only that some process held it at
+  the probe. It is not evidence that a given workflow is advancing, and not
+  evidence that its work is verified. Grok Bot `status` says so in its own
+  output (`tests/test_grok_runtime_i3.py`, `WorkflowStatusProjectionTests`).
+- **Telegram's "Runtime is running" means the probe could not take the
+  lock.** `runtime_status` (`telegram_operator/mission.py:386`) reports the
+  Runtime as running whenever its non-blocking lock attempt fails with any
+  OS error (`telegram_operator/mission.py:423-425`). A lock held by another
+  process is the expected cause, but any other error reads the same way.
+- **The last recorded observation is not the present condition.** The
+  Runtime records the target's observed pair (task status and completeness)
+  only when that pair changes (`_note_observation`,
+  `target_runtime/broker.py:1480`), so its timestamp is when the pair was
+  first recorded, not the latest poll. Grok Bot `status` shows it with its
+  age and states that the age proves neither present health nor present
+  failure. Telegram `/status` shows the same pair "as of t=…", or, for a
+  target that could not be read, "NOT OBSERVABLE since t=…". Read both as:
+  first recorded at that time, and no different pair recorded since. Neither
+  says whether a Runtime is still observing.
+- **No heartbeat.** A quiet wait writes nothing to a workflow record. A record that has not changed for a long time is not evidence of a
+  stall, and a recent change is not evidence of present progress (Grok Bot
+  `status` reports this as `last_recorded_change_at`).
+- **A Runtime that is not running advances nothing.** An approved workflow
+  stays in whatever phase it last reached until a Runtime runs against its
+  store again. A Runtime started in the foreground advances work only while
+  it runs.
 
 ## 8. Herdr operations
 
@@ -1301,7 +1382,7 @@ automatically.
 
 ### Remote mission result delivery (DI-REMOTE-2)
 
-A remote target mission returns its verified
+A Telegram-lane remote target mission returns its verified
 result to Telegram exactly once, by editing one bot-owned placeholder that
 was bound before dispatch. The exact delivery contract, pinned by the
 release narrative suite:
@@ -1325,6 +1406,11 @@ release narrative suite:
   `indefinite`) are terminal; `/status` says so, and recovering a terminal
   outcome is a human step. Records from the pre-DI-REMOTE-3 legacy lane
   (`reserved` / `partial`) are AT-MOST-ONCE and are never re-sent either.
+
+These delivery terms apply to Telegram-lane workflows. A workflow relayed from
+Grok Bot has no Telegram placeholder and no Telegram delivery: its verified
+result is recorded on the workflow record, and Grok Bot reads it with
+`result`, by pull ([Grok Bot transport](grok-bot.md#reading-status-and-result)).
 
 ### Delivery authority: local today, Telegram-native planned
 
@@ -1389,6 +1475,83 @@ RunAtLoad, KeepAlive with a restart throttle, logs beside the
 protected state, the validated `codex` directory first on the job
 PATH, fail-closed install when `codex` is not resolvable, and a
 single-instance lock (the same lock `/status` probes).
+
+**`--config` and dispatch.** A Runtime started with an explicit `--config
+PATH`, from the command line or from an agent installed with `install
+--config PATH`, writes Claude workspace trust to `.claude.json` beside that
+configuration's state (`target_runtime/cli.py:292-294`). Immediately before
+each dispatch, the Runtime checks trust in the configuration the started
+Herdr actually reads: the user-global file under the live `HOME`. It refuses
+the dispatch on either of two conditions (`target_runtime/worker.py:242-263`):
+the configuration trust was written to is not that file
+(`workspace_trust_config_not_the_one_consumed`), or that file no longer
+records trust for the workspace (`workspace_trust_absent_at_point_of_use`).
+Either refusal stops the workflow durably BLOCKED. Both paths are compared
+after resolving symlinks, so unless the file beside the state resolves to the
+user-global one, the first condition refuses every dispatch such a Runtime
+attempts, and approved workflows stop at dispatch with their approval spent.
+The cause is the path mismatch, not the flag. For approved work, start the
+Runtime with the default configuration or with `--runtime-config`.
+
+### Running a Runtime without Telegram
+
+An operator who uses Grok Bot need not have Telegram credentials.
+`dirun --runtime-config PATH` starts a Runtime from the Runtime's own
+configuration file instead of the Telegram adapter's
+(`target_runtime/runtime_config.py`). It is the supported path for an
+operator without Telegram. It does not make a store Grok-only: the workflow
+record is transport-neutral, and one store can hold both Telegram-lane and
+Grok Bot records.
+
+1. Choose the workflow store: a directory with no group or other permission
+   (mode `700`). It must lie outside the control repository, and the control
+   repository must not lie inside it.
+2. Write the configuration file in that directory, with no group or other
+   permission (mode `600`), holding exactly these three keys:
+
+   ```json
+   {"schema": "dodging-infinity.runtime-config.v1",
+    "control_repository": "/canonical/path/of/the/control/repository",
+    "workflow_store": "/canonical/path/of/this/directory"}
+   ```
+
+   - `control_repository` must be an absolute path that is already its own
+     realpath (no symlink anywhere in it), and must hold a regular
+     `AGENTS.md` and `OPERATOR_PROTOCOL.md`.
+   - `workflow_store` must be the canonical path of the directory the file
+     is in.
+   - The file's own realpath must lie outside the control repository too, so
+     a symlink cannot place it inside.
+   - No other key is accepted. A Telegram adapter key (`bot_token`,
+     `allowed_user_ids`, `repository`) is refused as ambiguous: one file is
+     one schema. Never add placeholder Telegram fields.
+   - The conventional name is `runtime-config.json`; any name inside the
+     store is accepted.
+3. Start the Runtime in the foreground:
+   `dirun --runtime-config /canonical/store/runtime-config.json run`, or
+   `once` for a single claim pass.
+4. Point Grok Bot at the same store:
+   `grokbot.py … --control-repo C --workflow-store /canonical/store …`.
+
+Each refusal names its own problem code (`runtime_config_missing`,
+`runtime_config_permissions`, `runtime_config_malformed`,
+`runtime_config_ambiguous`, `runtime_config_path_invalid`,
+`runtime_config_store_mismatch`, `runtime_config_inside_control_repository`),
+and `dirun` exits 2 for each. Naming both `--config` and `--runtime-config`
+is refused as ambiguous before either file is read.
+
+A Runtime started this way writes Claude workspace trust to the user-global
+Claude configuration under the live `HOME`, which is the file the started
+Herdr reads, so its dispatches can pass the first trust condition above
+(`target_runtime/cli.py:259-272`).
+
+There is **NO installer support for `--runtime-config`**.
+`scripts/dirun-agent.sh` does not take a Runtime configuration, and the
+existing service path is unchanged. A Runtime started this way runs in the
+FOREGROUND, which satisfies unattended advancement WHILE IT RUNS, and only
+while it runs: once it stops, AUTHORIZED workflows wait until a Runtime runs
+against the store again. No installer command is given for it, because none
+would work.
 
 ### Host requirements
 
@@ -1924,12 +2087,15 @@ tgop [--config PATH] migrate-workflows
 ### `dirun`
 
 ```text
-dirun [--config PATH] once
-dirun [--config PATH] run
+dirun [--config PATH | --runtime-config PATH] once
+dirun [--config PATH | --runtime-config PATH] run
 
 scripts/dirun-agent.sh install [--config PATH]
 scripts/dirun-agent.sh uninstall
 ```
+
+`--runtime-config` has no installer form; see
+[Running a Runtime without Telegram](#running-a-runtime-without-telegram).
 
 ### `codexgw`
 

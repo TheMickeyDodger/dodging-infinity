@@ -62,9 +62,10 @@ LABELS = {"delivery_authority": adapter_module.DELIVERY_AUTHORITY,
 
 INSTRUCTIONS = (
     "Dodging Infinity, through its Grok Bot transport. Send the human's plain"
-    " request with request; the Codex Outer Operator authors a Mission"
-    " proposal (or asks a question). Show the human the exact display_text"
-    " from present. Before approving, the human ARMS it on the DI machine:"
+    " request with request; a fresh restrictive Codex planning turn authors a"
+    " DI-REMOTE-2 Mission Authorization, saved as one workflow the Runtime"
+    " runs after approval. Show the human the exact display_text from"
+    " present. Before approving, the human ARMS it on the DI machine:"
     " run present's arming command, unchanged, in your local shell, where the"
     " human approves that exact command; it prints a one-time approval_code."
     " Only after the human sends a separate message containing"
@@ -73,8 +74,11 @@ INSTRUCTIONS = (
     " (delivery: present_delivery's arming, then approve_delivery the same"
     " way). Nothing reachable here can arm an approval. That approval is"
     " operator-attested, not cryptographically authenticated: DI does not"
-    " establish who sent the reply. status, recover, cancel and run report"
-    " and drive the request's own Mission from DI's durable records. Give"
+    " establish who sent the reply. Once approved, the Runtime advances the"
+    " workflow on its own: no further call is needed. status reports a"
+    " request's state and lane from DI's durable records; cancel withdraws"
+    " the request's own pending authorization; recover and run apply only to"
+    " requests made before this route. Give"
     " request a conversation_ref that is private, unguessable and random (a"
     " long random value made for this conversation, kept to it, and never a"
     " visible or sequential identifier such as a chat or message id): if a"
@@ -89,7 +93,9 @@ INSTRUCTIONS = (
     " delivery authorization. This transport performs no commit, push or pull"
     " request, and nothing here merges, tags, releases or deploys.")
 
-_REF = {"type": "string", "description": "the lr- request_ref a request returned"}
+_REF = {"type": "string", "description": (
+    "the request_ref a request returned: gr- for the conforming route, lr-"
+    " for a request made before it")}
 _NULLABLE_REF = {"type": ["string", "null"],
                  "maxLength": adapter_module.MAX_REF_CHARS}
 _TEXT = {"type": "string", "description": "the human's request, exactly",
@@ -110,20 +116,29 @@ _APPROVAL_CODE = {"type": "string", "description": (
 _OPERATOR_SESSION_ID = {"type": "null", "description": (
     "omit it: no Operator session is ever continued (every request is one"
     " fresh, read-only Operator turn), so any value is refused")}
+# The fields every approval carries, on either lane; each lane's binding
+# fields are then checked by the adapter, which names any that differ.
+APPROVE_REQUIRED = ("request_ref", "revision", "expires_at", "relayed_reply",
+                    "relay_ref", "approval_code")
 TOOL_DEFINITIONS = {
     "request": (
-        "Send the human's plain-text request to the Codex Outer Operator, which"
-        " authors a Mission proposal or asks a clarifying question. Proposes"
-        " only; approves and starts nothing. Every call is one fresh Operator"
-        " session: to answer its question, send the whole request again with"
-        " the answer in text.",
+        "Send the human's plain-text request to one fresh restrictive Codex"
+        " planning turn, which authors a DI-REMOTE-2 Mission Authorization"
+        " for an explicitly named target repository. Proposes only; approves"
+        " and starts nothing. Returns a one-shot control_capability that can"
+        " withdraw this request while it awaits its first decision. Every"
+        " call is one fresh session: to change the request, send the whole"
+        " request again.",
         {"text": _TEXT, "conversation_ref": _CONVERSATION_REF,
          "operator_session_id": _OPERATOR_SESSION_ID},
         ["text"]),
     "present": (
-        "The exact proposal to show the human: display_text (show it whole) and"
-        " approval_binding (copy it exactly into approve). Records what was"
-        " displayed.",
+        "The exact Mission Authorization to show the human: display_text"
+        " (show it whole; it contains the exact rendered authorization) and"
+        " approval_binding (copy it exactly into approve), plus the local"
+        " arming command. Records what was displayed. A legacy (lr-) request"
+        " is shown exactly as recorded with its remedy instead: it offers no"
+        " binding and no arming, because it can no longer be approved.",
         {"request_ref": _REF}, []),
     "approve": (
         "Relay the human's approval. Call ONLY after the human sent a separate"
@@ -136,7 +151,12 @@ TOOL_DEFINITIONS = {
         " wrong or used one, nothing is approved. The approval is"
         " operator-attested, not cryptographically authenticated, and grants"
         " no delivery authority.",
-        {"request_ref": _REF, "mission_id": {"type": "string"},
+        {"request_ref": _REF,
+         "workflow_id": {"type": "string", "description": (
+             "the Mission Authorization's workflow, as displayed")},
+         "authorization_digest_sha256": {"type": "string", "description": (
+             "the displayed sha256 of the exact rendered authorization")},
+         "mission_id": {"type": "string"},
          "revision": {"type": "integer"},
          "proposal_digest_sha256": {"type": "string"},
          "approved_action_scope": {"type": "array", "items": {"type": "string"}},
@@ -145,18 +165,34 @@ TOOL_DEFINITIONS = {
          "expires_at": {"type": "integer"},
          "relayed_reply": {"type": "string"}, "relay_ref": {"type": "string"},
          "approval_code": _APPROVAL_CODE},
-        list(adapter_module.APPROVE_ARGUMENTS)),
+        list(APPROVE_REQUIRED)),
     "status": (
-        "The request's durable status and its run, from DI's own records.",
+        "READ-ONLY: what DI's durable records hold for the request, as a"
+        " snapshot as of the read. For a workflow (gr-): its phase, receipts,"
+        " any recorded stop reason, its last recorded observation and that"
+        " record's age, whether a process held the Runtime lock here at the"
+        " probe (never evidence of progress), and what to do next. For a"
+        " legacy (lr-) request: Mission Core's record. Starts, advances and"
+        " consumes nothing, and claims nothing about the present.",
+        {"request_ref": _REF}, ["request_ref"]),
+    "result": (
+        "READ-ONLY: the request's verified result, pulled from DI's durable"
+        " records. For a workflow (gr-): the result the Broker recorded, or"
+        " a statement that none is. For a legacy (lr-) request: its recovered"
+        " result text and review text, re-read from the recorded locators and"
+        " re-hashed (content that is gone or changed is UNRECOVERABLE, never"
+        " a verified result). Starts, advances and consumes nothing, and"
+        " depends on no Telegram delivery.",
         {"request_ref": _REF}, ["request_ref"]),
     "recover": (
         "Bind the Mission of a request whose proposal was interrupted.",
         {"request_ref": _REF}, ["request_ref"]),
     "cancel": (
-        "Withdraw the caller's own pending proposal: pass the one-shot"
+        "Withdraw the caller's own pending request: pass the one-shot"
         " control_capability its request returned or, if that reply was lost,"
         " the request's exact text and conversation_ref instead (never both)."
-        " Works only for a proposal still awaiting a decision.",
+        " Works only while it still awaits its first decision; once approved"
+        " it is refused, and no running work is ever stopped.",
         {"request_ref": _REF, "control_capability": {"type": "string"},
          "text": _TEXT, "conversation_ref": _CONVERSATION_REF},
         ["request_ref"]),
@@ -202,16 +238,15 @@ def _argument_room():
     return room
 
 
+# Every run argument is checked for shape only: Grok Bot runs nothing, so
+# none of them is ever used (I3).
 _RUN_ARGUMENT_NOTES = {
-    ("dispatch", "workspace_path"): "operator recovery only: omit it. DI"
-    " prepares the Mission's own isolated workspace. An operator recovering"
-    " a dispatch may name that same, already prepared workspace (its absolute"
-    " path on the DI machine); any other path is refused, and every check"
-    " still applies",
-    ("verify", "reported_result"): "the target's reported result (DI checks"
-    " it against its own fresh reads)",
-    ("prove", "operation"): "one existing Mission State proof seam",
-    ("prove", "arguments"): "exactly that seam's own arguments",
+    ("dispatch", "workspace_path"): "checked for shape only and never used:"
+    " Grok Bot dispatches nothing; omit it",
+    ("verify", "reported_result"): "checked for shape only and never used:"
+    " Grok Bot verifies nothing",
+    ("prove", "operation"): "checked for shape only and never used",
+    ("prove", "arguments"): "checked for shape only and never used",
 }
 
 
@@ -264,12 +299,13 @@ def run_tool_definition():
             "".join(" (optional %s: %s)" % (name, schema.get("description", text))
                     for name, (schema, text) in sorted(extra.items()))))
     return (
-        "One run command for the request's own AUTHORIZED Mission: dispatch,"
-        " observe, reconcile, prove, verify, result, pause, resume or cancel."
-        " An unknown outcome is a HOLD that only reconcile resolves. dispatch"
-        " needs no path: DI prepares the Mission's own isolated workspace, so"
-        " never ask the human for one. Its arguments object takes exactly:"
-        " %s." % "; ".join(prose),
+        "Grok Bot RUNS NOTHING: this tool starts, dispatches and advances no"
+        " work. command result answers exactly as the result tool"
+        " (read-only). Every other command is refused by name with what to"
+        " do instead: a workflow (gr-) is advanced only by a DI Runtime (read"
+        " it with status and result); a legacy (lr-) request is never"
+        " dispatched or advanced here. The arguments are still checked for"
+        " shape; its arguments object takes exactly: %s." % "; ".join(prose),
         {"request_ref": _REF,
          "command": {"type": "string", "enum": list(commands)},
          "arguments": {"type": ["object", "null"]}},

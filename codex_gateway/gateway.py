@@ -139,6 +139,38 @@ def submit_restricted(request, runner=None):
     return _result(request, status, session_id, message, error, unrecognized)
 
 
+def submit_planning(request, now, runner=None):
+    """Run ONE fresh restrictive DI-REMOTE-2 PLANNING turn for a request.
+
+    The Grok Bot conforming route's planning step (route (b) of
+    OPERATOR_PROTOCOL.md): the request's text is the human's exact request
+    and its repository the control repository. The turn is
+    ``codex_gateway.role_turn.run_planning_turn``, unchanged: the role-turn
+    read-only posture built and verified on the exact argv before any
+    process exists, a prompt carrying only the quoted request and the
+    control identity, and NO session parameter. A session id is therefore
+    refused here, before anything runs. Returns the turn's
+    ``RoleTurnResult`` unchanged; parsing and validating its Mission
+    Authorization is the caller's layer. ``runner`` exists for hermetic
+    tests to inject a recorder in place of the one spawn.
+    """
+    # Imported here, for this path alone, exactly as submit_restricted.
+    from codex_gateway import role_turn
+    if request.session_id is not None:
+        return role_turn.RoleTurnResult(
+            status=role_turn.ROLE_TURN_REFUSED,
+            reason=ERROR_SESSION_NOT_PERMITTED,
+            message=None, outcome=None, turn=None,
+            error=make_error(
+                ERROR_SESSION_NOT_PERMITTED,
+                "the planning turn is a fresh session only; it continues no"
+                " session, so a session id is refused",
+            ),
+        )
+    return role_turn.run_planning_turn(request.text, request.repository, now,
+                                       runner=runner)
+
+
 def _result(request, status, session_id, message, error, unrecognized):
     return GatewayResult(
         contract_version=GATEWAY_CONTRACT_VERSION,

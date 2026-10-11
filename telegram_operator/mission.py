@@ -10,6 +10,17 @@ approval that the displayed-content ordering contract arms. A v2 approval dispat
 durably records authorization in the workflow store, and the Runtime
 (a separate process) picks it up.
 
+The document validation and the record construction are the
+transport-neutral intake seam, ``workflow_authority.intake`` (I2 of
+task 20261010-164104-1761f6), which the Grok Bot lane calls too. This
+module keeps them under their existing names as THIN WRAPPERS, so the
+Telegram lane is unchanged byte for byte: the same refusals, problem
+codes, messages, records, rendered text and digests. The one
+translation is deliberate: the seam names a minted ``workflow_id`` and
+a minted ``telegram_approval`` with distinct codes, and this lane keeps
+reporting both under its one historical code,
+``mission_codex_minted_transport_binding``.
+
 Authority split, enforced fail-closed:
 
 - Codex authors the AUTHORITY content and the target/baseline/handoff
@@ -37,25 +48,22 @@ Authority split, enforced fail-closed:
 """
 
 import fcntl
-import json
 import os
 import secrets
 
 from telegram_operator.state import RUNTIME_LOCK_FILE_NAME
 from workflow_authority import canonical as canonical_module
+from workflow_authority import intake as intake_module
 from workflow_authority import record as record_module
 from workflow_authority import rendering as rendering_module
-from workflow_authority.authorization import (
-    AuthorizationError,
-    validate_authorization_structure,
-    validate_authorization_values_deep,
-)
-from workflow_authority.digest import text_digest
+from workflow_authority.authorization import AuthorizationError  # noqa: F401 (re-exported)
 from workflow_authority.migrate import SUPERSEDED_FOR_V2_KEY
 
-# One-shot mission approval validity, seconds from creation. Hard
-# constant, same bound as the v1 plan approval.
-MISSION_APPROVAL_VALIDITY_SECONDS = 15 * 60
+# One-shot mission approval validity, seconds from creation. The single
+# source is the intake seam; this lane's name for it is unchanged.
+MISSION_APPROVAL_VALIDITY_SECONDS = (
+    intake_module.MISSION_APPROVAL_VALIDITY_SECONDS
+)
 
 # v2 callback prefixes (v1 uses lowercase "a:"/"r:").
 CALLBACK_MISSION_APPROVE_PREFIX = "A:"
@@ -77,21 +85,24 @@ MAX_TARGET_NAME_CHARS = canonical_module.MAX_TARGET_NAME_CHARS
 
 AUTHORITY_CONTENT_KEYS = rendering_module.AUTHORITY_CONTENT_KEYS
 
-PROBLEM_BODY_INVALID_JSON = "mission_body_invalid_json"
+# The document-validation problem codes are the intake seam's, re-exported
+# under this lane's existing names (single source).
+PROBLEM_BODY_INVALID_JSON = intake_module.PROBLEM_BODY_INVALID_JSON
+# This lane's ONE historical code for either minted transport binding.
 PROBLEM_MINTED_BINDING = "mission_codex_minted_transport_binding"
-PROBLEM_MINTED_INTENT = "mission_codex_minted_human_intent"
-PROBLEM_AUTHORITY_TEXT = "mission_authority_text_invalid"
-PROBLEM_CONTROL_SHAPE = "mission_control_shape"
-PROBLEM_CONTROL_PATH = "mission_control_path_character"
-PROBLEM_CONTROL_MISMATCH = "mission_control_mismatch"
-PROBLEM_BASELINE_REF = "mission_baseline_ref_grammar"
-PROBLEM_TARGET_SHAPE = "mission_target_shape"
-PROBLEM_TARGET_HOST = "mission_target_host"
-PROBLEM_TARGET_URL = "mission_target_url_not_canonical"
-PROBLEM_ISSUE_SHAPE = "mission_issue_or_pr_shape"
-PROBLEM_BASELINE_SHAPE = "mission_baseline_shape"
-PROBLEM_HANDOFF_SHAPE = "mission_handoff_shape"
-PROBLEM_REVISION_SHAPE = "mission_revision_shape"
+PROBLEM_MINTED_INTENT = intake_module.PROBLEM_MINTED_INTENT
+PROBLEM_AUTHORITY_TEXT = intake_module.PROBLEM_AUTHORITY_TEXT
+PROBLEM_CONTROL_SHAPE = intake_module.PROBLEM_CONTROL_SHAPE
+PROBLEM_CONTROL_PATH = intake_module.PROBLEM_CONTROL_PATH
+PROBLEM_CONTROL_MISMATCH = intake_module.PROBLEM_CONTROL_MISMATCH
+PROBLEM_BASELINE_REF = intake_module.PROBLEM_BASELINE_REF
+PROBLEM_TARGET_SHAPE = intake_module.PROBLEM_TARGET_SHAPE
+PROBLEM_TARGET_HOST = intake_module.PROBLEM_TARGET_HOST
+PROBLEM_TARGET_URL = intake_module.PROBLEM_TARGET_URL
+PROBLEM_ISSUE_SHAPE = intake_module.PROBLEM_ISSUE_SHAPE
+PROBLEM_BASELINE_SHAPE = intake_module.PROBLEM_BASELINE_SHAPE
+PROBLEM_HANDOFF_SHAPE = intake_module.PROBLEM_HANDOFF_SHAPE
+PROBLEM_REVISION_SHAPE = intake_module.PROBLEM_REVISION_SHAPE
 
 PROBLEM_UNKNOWN_WORKFLOW = "mission_unknown_workflow"
 PROBLEM_RECORD_INVALID = "mission_record_invalid"
@@ -108,14 +119,18 @@ PROBLEM_WRONG_PHASE = "mission_wrong_phase"
 PROBLEM_EXPIRED = "mission_expired"
 PROBLEM_V1_APPROVAL = "v1_approval_never_authorizes_v2"
 PROBLEM_STORE_UNREADABLE = "mission_store_unreadable"
+# I1 (task 20261010-164104-1761f6): a Telegram decision callback named
+# a workflow that did not originate on the Telegram lane.
+PROBLEM_NOT_TELEGRAM_ORIGIN = "mission_not_telegram_origin"
 
+# The seam's exception class, under this lane's existing name.
+MissionError = intake_module.MissionError
 
-class MissionError(Exception):
-    """A Mission Authorization failed validation; message actionable."""
-
-    def __init__(self, message, problem):
-        super(MissionError, self).__init__(message)
-        self.problem = problem
+# The seam's distinct minted-binding codes, which this lane reports under
+# PROBLEM_MINTED_BINDING.
+_SEAM_MINTED_BINDING_PROBLEMS = frozenset(
+    problem for _, problem in intake_module.MINTED_BINDING_PROBLEMS
+)
 
 
 def _default_workflow_id_factory():
@@ -126,236 +141,25 @@ def _default_nonce_factory():
     return secrets.token_hex(32)
 
 
-def _require_text(document, key):
-    value = document.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise MissionError(
-            "Mission Authorization %r must be a non-empty string"
-            % (key,),
-            PROBLEM_AUTHORITY_TEXT,
-        )
-    if len(value) > MAX_AUTHORITY_FIELD_CHARS:
-        raise MissionError(
-            "Mission Authorization %r is %d characters; the hard"
-            " bound is %d and the document is refused, not truncated"
-            % (key, len(value), MAX_AUTHORITY_FIELD_CHARS),
-            PROBLEM_AUTHORITY_TEXT,
-        )
-    return value
-
-
 def validate_mission_document(body, configured_repository):
     """Parse and validate a Mission Authorization body, failing closed.
 
-    Runs the closed-structure guards, the deep nested-strategy walk,
-    and every VALUE check the adapter can make deterministically.
+    The Telegram lane's wrapper around the shared intake seam
+    (``workflow_authority.intake.validate_mission_document``): the same
+    validator, unchanged, with this lane's one historical code for a
+    minted transport binding (the message is the seam's, unchanged).
     Returns the validated document. Raises MissionError (or
     AuthorizationError from the structural guards) on every failure;
     never partially accepts.
     """
     try:
-        document = json.loads(body)
-    except (TypeError, ValueError):
-        raise MissionError(
-            "Mission Authorization body is not valid JSON",
-            PROBLEM_BODY_INVALID_JSON,
+        return intake_module.validate_mission_document(
+            body, configured_repository
         )
-    validate_authorization_structure(document)
-    validate_authorization_values_deep(document)
-    # Transport bindings are the ADAPTER's authority: Codex must not
-    # mint them.
-    for key in ("workflow_id", "telegram_approval"):
-        if document.get(key) is not None:
-            raise MissionError(
-                "Mission Authorization %r must be null: transport"
-                " bindings are stamped by the adapter, never minted by"
-                " the Operator" % (key,),
-                PROBLEM_MINTED_BINDING,
-            )
-    # The exact original human intent is in the same adapter-stamped
-    # class, with its own problem code: a document that supplies or
-    # alters it is refused outright — the Operator can never change
-    # what the human said.
-    if document.get("human_intent") is not None:
-        raise MissionError(
-            "Mission Authorization 'human_intent' must be null: the"
-            " exact original human intent is stamped by the adapter"
-            " from the text the transport accepted, never minted or"
-            " altered by the Operator",
-            PROBLEM_MINTED_INTENT,
-        )
-    for key in AUTHORITY_CONTENT_KEYS:
-        _require_text(document, key)
-    control = document.get("control")
-    if not isinstance(control, dict) or set(control.keys()) != {
-        "repository_realpath", "policy_digest_sha256"
-    }:
-        raise MissionError(
-            "Mission Authorization control must be an object with"
-            " exactly repository_realpath and policy_digest_sha256",
-            PROBLEM_CONTROL_SHAPE,
-        )
-    # Round-02 F-6: the control path is rendered UNQUOTED on a
-    # binding line, so a path carrying control characters or line
-    # terminators is refused with its own code, BEFORE the mismatch
-    # check (so this layer is independently load-bearing, not
-    # shadowed by the exact-equality pin below). The line-free rule
-    # is the SHARED public helper — single source, two layers, each
-    # with its own code.
-    realpath = control["repository_realpath"]
-    if isinstance(realpath, str) and (
-        record_module.path_character_problem(realpath) is not None
-    ):
-        raise MissionError(
-            "Mission Authorization control repository path %s; a path"
-            " with line structure could forge displayed binding"
-            " lines. Refused"
-            % record_module.path_character_problem(realpath),
-            PROBLEM_CONTROL_PATH,
-        )
-    if control["repository_realpath"] != configured_repository:
-        raise MissionError(
-            "Mission Authorization names control repository %r; this"
-            " adapter is pinned to %r. Refused"
-            % (control["repository_realpath"], configured_repository),
-            PROBLEM_CONTROL_MISMATCH,
-        )
-    policy_digest = control["policy_digest_sha256"]
-    if (
-        not isinstance(policy_digest, str)
-        or len(policy_digest) != 64
-        or any(ch not in "0123456789abcdef" for ch in policy_digest)
-    ):
-        raise MissionError(
-            "Mission Authorization policy digest must be 64 lowercase"
-            " hex characters",
-            PROBLEM_CONTROL_SHAPE,
-        )
-    target = document.get("target")
-    if not isinstance(target, dict) or set(target.keys()) != {
-        "canonical_host", "owner", "repo", "canonical_url"
-    }:
-        raise MissionError(
-            "Mission Authorization target must be an object with"
-            " exactly canonical_host, owner, repo, canonical_url",
-            PROBLEM_TARGET_SHAPE,
-        )
-    if target["canonical_host"] != CANONICAL_TARGET_HOST:
-        raise MissionError(
-            "Mission Authorization target host %r is not the canonical"
-            " %r" % (target["canonical_host"], CANONICAL_TARGET_HOST),
-            PROBLEM_TARGET_HOST,
-        )
-    # The ONE canonicalizer (workflow_authority.canonical) validates
-    # the URL; its distinct problem codes propagate so every hostile
-    # shape (confusable host, traversal, multi-target, ...) is
-    # refused with its own code. The displayed owner/repo must equal
-    # the canonical parse, or the URL could name a different
-    # repository than the displayed identity.
-    try:
-        parsed_target = canonical_module.canonicalize_repository_url(
-            target["canonical_url"]
-        )
-    except canonical_module.CanonicalizationError as exc:
-        raise MissionError(str(exc), exc.problem)
-    if (
-        target["owner"] != parsed_target.owner
-        or target["repo"] != parsed_target.repo
-    ):
-        raise MissionError(
-            "Mission Authorization target owner/repo (%r, %r) do not"
-            " match the canonical parse of the target URL (%r, %r)"
-            % (target["owner"], target["repo"], parsed_target.owner,
-               parsed_target.repo),
-            PROBLEM_TARGET_URL,
-        )
-    issue_or_pr = document.get("issue_or_pr")
-    if issue_or_pr is not None and (
-        not isinstance(issue_or_pr, dict)
-        or set(issue_or_pr.keys()) != {"kind", "number"}
-        or issue_or_pr["kind"] not in record_module.ISSUE_OR_PR_KINDS
-        or isinstance(issue_or_pr["number"], bool)
-        or not isinstance(issue_or_pr["number"], int)
-        or issue_or_pr["number"] < 1
-    ):
-        raise MissionError(
-            "Mission Authorization issue_or_pr must be null"
-            " (repository-only target) or {kind: issue|pr, number:"
-            " positive integer}",
-            PROBLEM_ISSUE_SHAPE,
-        )
-    baseline = document.get("baseline")
-    if (
-        not isinstance(baseline, dict)
-        or set(baseline.keys()) != {"ref", "commit_sha"}
-        or not isinstance(baseline["ref"], str)
-        or not baseline["ref"]
-        or not isinstance(baseline["commit_sha"], str)
-        or len(baseline["commit_sha"]) != 40
-        or any(
-            ch not in "0123456789abcdef"
-            for ch in baseline["commit_sha"]
-        )
-    ):
-        raise MissionError(
-            "Mission Authorization baseline must be {ref: non-empty"
-            " string, commit_sha: 40 lowercase hex}",
-            PROBLEM_BASELINE_SHAPE,
-        )
-    # Round-02 F-6: the ref is Codex-authored and rendered UNQUOTED
-    # on a binding line — the closed git ref grammar (single source:
-    # workflow_authority.record.baseline_ref_grammar_problem) is
-    # enforced HERE, before any record exists, with this layer's own
-    # problem code; the record layer enforces it again on every
-    # load/save.
-    reason = record_module.baseline_ref_grammar_problem(
-        baseline["ref"]
-    )
-    if reason is not None:
-        raise MissionError(
-            "Mission Authorization baseline ref %s; a ref outside"
-            " the closed git ref grammar could forge displayed"
-            " binding lines. Refused" % reason,
-            PROBLEM_BASELINE_REF,
-        )
-    handoff = document.get("handoff")
-    if (
-        not isinstance(handoff, dict)
-        or set(handoff.keys()) != {"revision", "text"}
-        or isinstance(handoff["revision"], bool)
-        or not isinstance(handoff["revision"], int)
-        or handoff["revision"] < 1
-        or not isinstance(handoff["text"], str)
-        or not handoff["text"].strip()
-        or handoff["text"] != handoff["text"].strip()
-    ):
-        raise MissionError(
-            "Mission Authorization handoff must be {revision: positive"
-            " integer, text: non-empty string with no leading or"
-            " trailing whitespace (byte-exact dispatch requirement)}",
-            PROBLEM_HANDOFF_SHAPE,
-        )
-    if len(handoff["text"]) > record_module.MAX_AUTHORITY_TEXT_CHARS:
-        raise MissionError(
-            "Mission Authorization handoff text is %d characters; the"
-            " hard bound is %d and the document is refused, not"
-            " truncated" % (
-                len(handoff["text"]),
-                record_module.MAX_AUTHORITY_TEXT_CHARS,
-            ),
-            PROBLEM_HANDOFF_SHAPE,
-        )
-    revision = document.get("revision")
-    if (
-        isinstance(revision, bool)
-        or not isinstance(revision, int)
-        or revision < 1
-    ):
-        raise MissionError(
-            "Mission Authorization revision must be a positive integer",
-            PROBLEM_REVISION_SHAPE,
-        )
-    return document
+    except MissionError as exc:
+        if exc.problem not in _SEAM_MINTED_BINDING_PROBLEMS:
+            raise
+        raise MissionError(str(exc), PROBLEM_MINTED_BINDING)
 
 
 def build_workflow_record(document, human_intent, user_id, chat_id,
@@ -368,46 +172,15 @@ def build_workflow_record(document, human_intent, user_id, chat_id,
     single renderer, so the render binding holds by construction.
     Raises workflow_authority RecordError when any bound is exceeded
     (the rendered text over the authority-text bound included) — the
-    caller refuses honestly and nothing is persisted.
+    caller refuses honestly and nothing is persisted. The Telegram
+    lane's wrapper around ``workflow_authority.intake``: this lane
+    stamps the Telegram user and chat, and no origin.
     """
     make_nonce = nonce_factory or _default_nonce_factory
-    issue_or_pr = document["issue_or_pr"]
-    return record_module.new_record(
-        workflow_id=workflow_id,
-        human_intent=human_intent,
-        repository_realpath=(
-            document["control"]["repository_realpath"]
-        ),
-        policy_digest_sha256=(
-            document["control"]["policy_digest_sha256"]
-        ),
-        canonical_host=document["target"]["canonical_host"],
-        owner=document["target"]["owner"],
-        repo=document["target"]["repo"],
-        canonical_url=document["target"]["canonical_url"],
-        issue_or_pr_kind=(
-            None if issue_or_pr is None else issue_or_pr["kind"]
-        ),
-        issue_or_pr_number=(
-            None if issue_or_pr is None else issue_or_pr["number"]
-        ),
-        baseline_ref=document["baseline"]["ref"],
-        baseline_commit_sha=document["baseline"]["commit_sha"],
-        objective=document["objective"],
-        constraints=document["constraints"],
-        rules=document["rules"],
-        desired_outcome=document["desired_outcome"],
-        acceptance=document["acceptance"],
-        unresolved_questions=document["unresolved_questions"],
-        execution_scope=document["execution_scope"],
-        mission_revision=document["revision"],
-        telegram_user_id=user_id,
+    return intake_module.build_workflow_record(
+        document, human_intent, now=now, workflow_id=workflow_id,
+        nonce=make_nonce(), telegram_user_id=user_id,
         telegram_chat_id=chat_id,
-        approval_nonce=make_nonce(),
-        approval_created_at=now,
-        approval_expires_at=now + MISSION_APPROVAL_VALIDITY_SECONDS,
-        handoff_revision=document["handoff"]["revision"],
-        handoff_text=document["handoff"]["text"],
     )
 
 
@@ -418,9 +191,15 @@ def supersede_chat_missions(workflows_document, chat_id):
     invalidation, the v1 precedent). Superseded records leave the
     active set (phase -> BLOCKED, a table-allowed transition) so the
     store cap can prune them. Returns the exact count superseded.
+
+    A relay-origin workflow (I1: non-null ``origin``) is in NO Telegram
+    chat's scope, so it is skipped: never superseded, voided or
+    altered by a Telegram chat's newer mission.
     """
     count = 0
     for entry in workflows_document["workflows"].values():
+        if entry["origin"] is not None:
+            continue
         if (
             entry["telegram"]["chat_id"] == chat_id
             and entry["phase"] == record_module.PHASE_PLANNED
@@ -445,11 +224,9 @@ def void_mission(workflows_document, workflow_id):
     entry = workflows_document["workflows"].get(workflow_id)
     if entry is None:
         return False
-    entry["approval"]["superseded"] = True
-    if entry["phase"] not in record_module.TERMINAL_PHASES:
-        record_module.apply_transition(
-            entry, record_module.PHASE_BLOCKED
-        )
+    # The shared intake seam's step (supersede + terminal phase),
+    # unchanged in behaviour.
+    intake_module.void_workflow(entry)
     return True
 
 
@@ -505,6 +282,11 @@ def evaluate_mission_callback(workflows_document, workflow_id, user_id,
         # here. The former first-binding-line check was subsumed by
         # that equality and removed as dead code.
         return None, PROBLEM_RECORD_INVALID
+    # I1: a Telegram callback never resolves against a workflow that
+    # did not originate on the Telegram lane. Refused FIRST, before any
+    # binding below reads the (null) telegram binding.
+    if entry["origin"] is not None:
+        return None, PROBLEM_NOT_TELEGRAM_ORIGIN
     # I3 (D4c authority gap): a PLANNED record armed by the pre-I2
     # resumed/ambient path carries NO planning-turn identity
     # (codex_turns holds no role "planning" entry). An approval must
@@ -569,6 +351,11 @@ def consume_mission(workflows_document, workflow_id, decision,
     entry = workflows_document["workflows"].get(workflow_id)
     if entry is None:
         return False
+    # I1: this consumption records a Telegram update id, which a
+    # relay-origin workflow must never carry. Refused here AND by the
+    # record validator (two independent layers).
+    if entry["origin"] is not None:
+        return False
     approval = entry["approval"]
     if approval["consumed_at"] is not None or approval["superseded"]:
         return False
@@ -599,11 +386,17 @@ def workflow_phase_counts(workflows_document):
 def runtime_status(state_directory):
     """Probe the Runtime's single-instance lock, non-destructively.
 
-    Returns ``(running, detail)``. ``running`` is True only when a
-    live process holds the Runtime lock. The probe acquires nothing
-    when the lock is held and releases immediately when it is not; it
-    never blocks. Every not-running shape carries an ACTIONABLE
-    detail: authorized missions will not start until the Runtime runs.
+    Returns ``(running, detail)``. ``running`` is True when the
+    probe's non-blocking exclusive ``flock`` attempt fails with ANY
+    ``OSError``: a lock held by another process is the expected cause,
+    but every other flock error is reported the same way, so True means
+    the probe could not take the lock, not proof that a live Runtime
+    holds it. It is False when the lock file is absent, cannot be
+    opened, or was free (the probe took it and released it at once).
+    The lock attempt never waits (``LOCK_NB``); the lock file itself is
+    opened with an ordinary open. Every not-running shape carries an
+    ACTIONABLE detail: authorized missions will not start until the
+    Runtime runs.
     """
     lock_path = os.path.join(state_directory, RUNTIME_LOCK_FILE_NAME)
     if not os.path.exists(lock_path):

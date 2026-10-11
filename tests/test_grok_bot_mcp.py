@@ -28,6 +28,7 @@ child interpreter is read under the watchdog and killed in cleanup.
 
 import ast
 import contextlib
+import hashlib
 import http.client
 import json
 import os
@@ -50,8 +51,15 @@ from grok_bot import cli as cli_module  # noqa: E402
 from grok_bot import mcp  # noqa: E402
 from grok_bot import server as server_module  # noqa: E402
 
+from mission import record as mission_record  # noqa: E402
+from target_runtime import evidence as evidence_module  # noqa: E402
+from target_runtime import legacy_result  # noqa: E402
+from target_runtime import mission_bridge as bridge_module  # noqa: E402
+from workflow_authority.digest import json_digest  # noqa: E402
+
 from test_grok_bot import (  # noqa: E402
-    EVIDENCE, PROSE, Fixture, raw_observation, run_request,
+    EVIDENCE, PROSE, RESULT_TEXT, REVIEW_TEXT, TASK_ID, TESTS_PASS_DIGEST,
+    Fixture, raw_observation, run_request,
 )
 from test_grok_bot_delivery import (  # noqa: E402
     DeliveryFixture, delivery_cli, index_module,
@@ -212,37 +220,67 @@ class ProtocolTests(ServerFixture):
                                 .RUN_COMMANDS))
 
     def test_a_prose_request_to_one_dispatch_over_loopback(self):
-        """B10's real tool calls, the whole slice-1 path, over HTTP."""
+        """B10's real tool calls over HTTP. I2: the DEFAULT route's request,
+        present and approve (the approved workflow is the Runtime's to run,
+        never this transport's dispatch). I3: the legacy lane's one dispatch
+        and observation are the LOCAL operator surface's; over MCP the run is
+        refused by name and the run's state and result are READ."""
         result, out = self.tool("request", {"text": PROSE})
         self.assertFalse(result["isError"])
-        self.assertEqual(out["status"], "proposed")
+        self.assertEqual(out["status"], "authorization_proposed")
         self.assert_labels(out)
         self.assertEqual(self.operator.requests[0].source, "grok_bot")
         result, shown = self.tool("present", {"request_ref": out["request_ref"]})
         self.assertEqual(result["content"][0]["text"], shown["display_text"])
         # Local arming: unarmed, the relayed reply approves nothing.
-        result, unarmed = self.tool("approve", self.unarmed(shown))
+        result, unarmed = self.tool("approve", self.wf_unarmed(shown))
         self.assertEqual(unarmed["problem"], "grok_bot_approval_not_armed")
-        result, approved = self.tool("approve", self.approval(shown))
-        self.assertEqual(approved["status"], "approved_by_operator_attestation")
+        result, approved = self.tool("approve", self.wf_approval(shown))
+        self.assertEqual(approved["status"], "authorized")
         self.assert_labels(approved)
+        self.assertEqual(self.claimable(), [out["workflow_id"]])
         result, ran = self.tool("run", {
             "request_ref": out["request_ref"], "command": "dispatch",
             "arguments": {}})
-        self.assertEqual(ran["phase"], "dispatched_not_yet_observed")
-        self.observer.raw = raw_observation()
-        result, observed = self.tool("run", {"request_ref": out["request_ref"],
-                                             "command": "observe"})
-        self.assertEqual(observed["phase"], "running_observed")
+        self.assertTrue(result["isError"])
+        self.assertEqual(ran["problem"], "grok_bot_workflow_run_not_applicable")
         result, status = self.tool("status", {"request_ref": out["request_ref"]})
+        self.assertEqual((status["lane"], status["phase"]),
+                         ("di_remote_2_workflow", "AUTHORIZED"))
+        self.assertEqual(self.spawn.calls, [])
+        # The legacy lane, approved as the pre-I2 approve tool applied it.
+        legacy, _, _ = self.approved("A legacy request.")
+        ref = legacy["request_ref"]
+        result, ran = self.tool("run", {
+            "request_ref": ref, "command": "dispatch", "arguments": {}})
+        self.assertTrue(result["isError"])
+        self.assertEqual(ran["problem"],
+                         "grok_bot_legacy_reauthorization_required")
+        self.assertEqual(self.spawn.calls, [])
+        self.assertEqual(self.op_cmd(ref, "dispatch")["phase"],
+                         "dispatched_not_yet_observed")
+        self.observer.raw = raw_observation()
+        self.assertEqual(self.op_cmd(ref, "observe")["phase"],
+                         "running_observed")
+        result, status = self.tool("status", {"request_ref": ref})
         self.assertEqual(status["run"]["phase"], "running_observed")
         self.assertEqual(status["run"]["delivery_authority"], "none")
+        result, read = self.tool("result", {"request_ref": ref})
+        self.assertFalse(result["isError"])
+        self.assertFalse(read["verified_result"])
         self.assertEqual(len(self.spawn.calls), 1)
 
     def test_a_refusal_is_a_labelled_tool_error_not_a_protocol_error(self):
-        result, out = self.tool("approve", {"request_ref": "lr-" + "0" * 32})
+        result, out = self.tool("approve", {
+            "request_ref": "gr-" + "0" * 32, "relayed_reply": "approved",
+            "relay_ref": "r"})
         self.assertTrue(result["isError"])
         self.assertEqual(out["problem"], "grok_bot_not_presented")
+        self.assert_labels(out)
+        # I2: a legacy binding's remedy is a labelled tool error too.
+        result, out = self.tool("approve", {"request_ref": "lr-" + "0" * 32})
+        self.assertTrue(result["isError"])
+        self.assertEqual(out["problem"], "local_request_unknown_request")
         self.assert_labels(out)
         result, out = self.tool("status", {"request_ref": []})
         self.assertTrue(result["isError"])
@@ -269,7 +307,8 @@ class ProtocolTests(ServerFixture):
         pure ASCII; no decoded string anywhere in the reply is unencodable,
         so a strict client JSON parser accepts it."""
         self.operator.proposal = run_request(objective="Fix \ud800")
-        result, out = self.tool("request", {"text": PROSE})
+        # I2: a legacy proposal (seeded; the request tool records none).
+        out = self.requested()
         status, response, body = self.post(rpc("tools/call", {
             "name": "present", "arguments": {"request_ref": out["request_ref"]}}))
         self.assertEqual(status, 200)
@@ -837,22 +876,24 @@ class BearerTokenTests(Fixture):
         self.assertEqual(unarmed["problem"], "grok_bot_approval_not_armed")
         refused = tool("approve", dict(shown["approval_binding"],
                                        relayed_reply="", relay_ref="r",
-                                       approval_code=self.arm(shown)))
+                                       approval_code=self.wf_arm(shown)))
         self.assertEqual(refused["problem"], "local_request_reply_not_affirmative")
         approved = tool("approve", dict(shown["approval_binding"],
                                         relayed_reply="approved", relay_ref="r",
-                                        approval_code=self.arm(shown)))
-        self.assertEqual(approved["status"], "approved_by_operator_attestation")
+                                        approval_code=self.wf_arm(shown)))
+        self.assertEqual(approved["status"], "authorized")
         self.assertEqual(approved["provenance_label"]["proof"],
                          "operator_attested_not_independently_verified")
         self.assertEqual(approved["evidence_status"], EVIDENCE)
         self.assertTrue(seen)
         self.assertFalse([s for s in seen if SYNTHETIC_TOKEN in s])
-        for name in os.listdir(self.state):
-            path = os.path.join(self.state, name)
-            if os.path.isfile(path):
-                with open(path, "rb") as handle:
-                    self.assertNotIn(SYNTHETIC_TOKEN.encode(), handle.read(), name)
+        for directory in (self.state, self.workflow_store):
+            for name in os.listdir(directory):
+                path = os.path.join(directory, name)
+                if os.path.isfile(path):
+                    with open(path, "rb") as handle:
+                        self.assertNotIn(SYNTHETIC_TOKEN.encode(),
+                                         handle.read(), name)
 
     def test_a_malformed_configured_token_is_refused_at_startup(self):
         for token in ("short", "x" * 31, "has space " + "x" * 40,
@@ -920,10 +961,12 @@ class BearerTokenFileTests(unittest.TestCase):
 class CompleteDisplayTests(ServerFixture):
 
     def test_present_carries_the_complete_display_untruncated(self):
+        """The legacy display (a seeded proposal: I2's request tool records
+        none) and the default route's display, each complete over HTTP."""
         from test_grok_bot import leaf_lines
         long_scope = ("readiness probe and its tests; " * 120).strip()
         self.operator.proposal = run_request(requested_scope=long_scope)
-        result, out = self.tool("request", {"text": PROSE})
+        out = self.requested()
         result, shown = self.tool("present", {"request_ref": out["request_ref"]})
         text = result["content"][0]["text"]
         self.assertEqual(text, shown["display_text"])
@@ -931,6 +974,22 @@ class CompleteDisplayTests(ServerFixture):
         lines = text.splitlines()
         for line in leaf_lines("proposal", shown["proposal"]):
             self.assertIn(line, lines)
+        # A DIFFERENT origin from the seeded legacy request above: the same
+        # text and conversation_ref would be answered as its duplicate.
+        default_text = PROSE + " (on the default route)"
+        result, out = self.tool("request", {"text": default_text})
+        self.assertEqual(out["status"], "authorization_proposed", out)
+        result, shown = self.tool("present", {"request_ref": out["request_ref"]})
+        self.assertEqual(shown["lane"], "di_remote_2_workflow")
+        text = result["content"][0]["text"]
+        self.assertEqual(text, shown["display_text"])
+        # The exact rendered authorization is carried whole, every line of
+        # it a line of the display (no field forges or joins a line).
+        self.assertIn(shown["rendered_text"], text)
+        lines = text.splitlines()
+        for line in shown["rendered_text"].splitlines():
+            self.assertIn(line, lines)
+        self.assertIn(default_text, shown["rendered_text"])
 
 
 class DeliveryOverMcpTests(ServerFixture, DeliveryFixture):
@@ -1182,6 +1241,116 @@ class D1NoSecretExposureTests(DeliveryFixture):
             index_module.INDEX_FILE_NAME).decode("ascii"))
         return found
 
+    def legacy_verified_ref(self):
+        """I3: a legacy request whose run is VERIFIED, so the sweep's
+        ``result`` returns REAL legacy content (the result and review text
+        re-read from the recorded workspace locators). The state is
+        RECORDED DIRECTLY through Mission Core's own methods (the ones the
+        Mission bridge calls) and the two artifacts are written for real:
+        no bridge, no transport and no spawn, so nothing here reaches this
+        fixture's no-effect delivery guard. Grok Bot's index is not
+        touched, so a sweep over a corrupted index still reaches it. Made
+        once per test. (The same builder is proven in
+        tests/test_grok_runtime_i3.py DirectlyRecordedLegacyResultTests.)"""
+        if getattr(self, "_legacy_ref", None) is not None:
+            return self._legacy_ref
+        context = mission_record.AuthenticatedContext(
+            transport="synthetic_test", principal_kind="local_process_user",
+            principal_ref="synthetic-tester")
+        surface = adapter_module.surface_module.build_bridgeless_surface(
+            self.state, self.clock)
+        missions = self.missions()
+        proposed = surface.submit(run_request(
+            objective="A legacy run whose result the sweep reads"))
+        ref, mission_id = proposed["request_ref"], proposed["mission_id"]
+        presented = surface.present(ref)
+        surface.attest_approval(
+            request_ref=ref, mission_id=presented["mission_id"],
+            revision=presented["revision"],
+            proposal_digest_sha256=presented["proposal_digest_sha256"],
+            approved_action_scope=list(presented["approved_action_scope"]),
+            approved_delivery_targets=list(
+                presented["approved_delivery_targets"]),
+            expires_at=presented["latest_expires_at"],
+            relayed_reply="approved", relay_ref="synthetic-relay")
+        mission = missions.get(mission_id)["record"]
+        authorization_id = mission["authorization_ids"][-1]
+        url = mission["revisions"][-1]["proposal"]["repository_url"]
+        baseline = "a" * 40
+        workspace = os.path.realpath(os.path.join(self.tmp.name,
+                                                  "legacy-workspace"))
+        repository = os.path.realpath(os.path.join(self.tmp.name,
+                                                   "legacy-repository"))
+        os.makedirs(workspace)
+        os.makedirs(repository)
+        binding = missions.record_workspace_binding(
+            mission_id, workspace, repository, url, baseline, context)
+        missions.record_workspace_prepared(
+            mission_id, binding["binding_digest_sha256"], context)
+        missions.activate_proof_contract(
+            mission_id, missions.mint_state_operation_id(context),
+            missions.get_state(mission_id)["sequence"], context)
+        missions.record_run_intent(
+            mission_id, authorization_id, presented["revision"],
+            presented["proposal_digest_sha256"], url, workspace, baseline,
+            "c" * 64, "d" * 64, "b" * 64,
+            list(presented["approved_action_scope"]),
+            list(presented["approved_delivery_targets"]), context)
+        missions.record_run_receipt(mission_id, TASK_ID, "start_result", None,
+                                    context)
+        missions.record_observed_running(mission_id, TASK_ID, False, context)
+        state_dir = os.path.join(workspace, ".herd", "state")
+        os.makedirs(os.path.join(state_dir, "reviews"))
+        review_name = evidence_module.REVIEW_ROUND_FILE_FORMAT % (TASK_ID, 1)
+        with open(os.path.join(state_dir, evidence_module.CHECKPOINT_FILE_NAME),
+                  "w") as handle:
+            handle.write(RESULT_TEXT)
+        with open(os.path.join(state_dir, "reviews", review_name),
+                  "w") as handle:
+            handle.write(REVIEW_TEXT)
+        binding = legacy_result.result_binding(
+            mission_id, TASK_ID, evidence_module.CHECKPOINT_FILE_NAME,
+            hashlib.sha256(RESULT_TEXT.encode("utf-8")).hexdigest(),
+            review_name, hashlib.sha256(REVIEW_TEXT.encode("utf-8")).hexdigest())
+        result_digest = json_digest(binding)
+
+        def apply(method, *args):
+            return method(mission_id, missions.mint_state_operation_id(context),
+                          missions.get_state(mission_id)["sequence"],
+                          *(args + (context,)))
+        produced = apply(missions.record_artifact,
+                         legacy_result.RESULT_ARTIFACT_KEY,
+                         mission_record.ARTIFACT_ROLE_PRODUCED,
+                         bridge_module.LOCATOR_KIND_REPOSITORY_PATH,
+                         binding["result_locator"],
+                         binding["result_digest_sha256"], True, [])
+        reviewed = apply(missions.record_artifact,
+                         legacy_result.REVIEW_ARTIFACT_KEY,
+                         mission_record.ARTIFACT_ROLE_VERIFICATION,
+                         bridge_module.LOCATOR_KIND_REPOSITORY_PATH,
+                         binding["review_locator"],
+                         binding["review_digest_sha256"], True,
+                         [produced["artifact_id"]])
+        submitted = apply(missions.submit_evidence,
+                          mission_record.RUN_RESULT_REQUIREMENT_KEY,
+                          mission_record.EVIDENCE_KIND_VERIFICATION_RECORD,
+                          result_digest,
+                          [produced["artifact_id"], reviewed["artifact_id"]])
+        apply(missions.accept_evidence, submitted["evidence_id"], result_digest)
+        tests = apply(missions.submit_evidence, "tests_pass",
+                      mission_record.EVIDENCE_KIND_VERIFICATION_RECORD,
+                      TESTS_PASS_DIGEST, [])
+        apply(missions.accept_evidence, tests["evidence_id"], TESTS_PASS_DIGEST)
+        missions.record_verification(
+            mission_id,
+            dict((name, True) for name, _ in mission_record.VERIFY_CONJUNCTS),
+            "PARTIAL", True, json_digest({"task_id": TASK_ID}),
+            submitted["evidence_id"], "COMPLETE", context)
+        self.assertEqual(missions.get(mission_id)["record"]["state"],
+                         "COMPLETED")
+        self._legacy_ref = ref
+        return ref
+
     def sweep(self, out):
         """One call per tool, and more where a tool has distinct paths."""
         ref = out["request_ref"]
@@ -1204,6 +1373,13 @@ class D1NoSecretExposureTests(DeliveryFixture):
                      "arguments": {"x": 1}}),
             ("present_delivery", self.present_arguments()),
             ("delivery_status", {"delivery_id": "prd-unknown"}),
+            # I3: the READ-ONLY result tool, on this request (its workflow
+            # record), through run's read-only alias, and on a legacy
+            # request whose reply carries REAL content read from the
+            # target workspace: the tool most worth sweeping.
+            ("result", {"request_ref": ref}),
+            ("run", {"request_ref": ref, "command": "result"}),
+            ("result", {"request_ref": self.legacy_verified_ref()}),
         ]
         replies = [(name, arguments) + self.tool_reply(name, arguments)
                    for name, arguments in calls]
@@ -1243,6 +1419,16 @@ class D1NoSecretExposureTests(DeliveryFixture):
         replies = self.sweep(out)
         self.assertEqual(sorted(set(r[0] for r in replies)),
                          sorted(adapter_module.TOOLS))
+        # I3: the swept result replies include REAL legacy content, so the
+        # secret check below covers a reply carrying workspace text.
+        [legacy] = [r[3] for r in replies if r[0] == "result"
+                    and r[3].get("lane") == "legacy_mission_core"]
+        self.assertTrue(legacy["verified_result"], legacy)
+        self.assertEqual((legacy["result_text"], legacy["review_text"]),
+                         (RESULT_TEXT, REVIEW_TEXT))
+        [workflow] = [r[3] for r in replies if r[0] == "result"
+                      and r[3].get("lane") == "di_remote_2_workflow"]
+        self.assertTrue(workflow["ok"], workflow)
         cancelled = [r[3] for r in replies
                      if r[0] == "cancel" and r[3].get("ok")]
         self.assertEqual([c["cancelled_through"] for c in cancelled],
@@ -1548,14 +1734,24 @@ def nested(depth, kind=list):
 
 
 class StubRunSurface(object):
-    """Records every run command that passed the adapter's shape checks."""
+    """Records every run command handed to it. I3: Grok Bot runs nothing,
+    so NOTHING ever is; a call that passes the adapter's shape checks is
+    refused by name after a read-only legacy status."""
+
+    RUN_COMMANDS = adapter_module.surface_module.LocalRequestSurface.RUN_COMMANDS
 
     def __init__(self):
         self.calls = []
+        self.reads = []
 
     def run_command(self, request_ref, command, **arguments):
         self.calls.append((request_ref, command, arguments))
         return {"ok": True, "status": command}
+
+    def status(self, request_ref):
+        self.reads.append(request_ref)
+        return {"ok": True, "surface_state": "OPEN",
+                "run": {"lifecycle_state": "AUTHORIZED"}}
 
 
 class D3RunSchemaTests(Fixture):
@@ -1594,10 +1790,14 @@ class D3RunSchemaTests(Fixture):
         self.assertEqual(dispatch["properties"]["workspace_path"]["type"], "string")
         self.assertEqual(dispatch["required"], [])
         self.assertNotIn("required", variants["dispatch"])
-        self.assertIn("operator recovery only",
+        # I3: every argument is checked for shape only; Grok Bot runs
+        # nothing, and the tool's description says so.
+        self.assertIn("checked for shape only and never used",
                       dispatch["properties"]["workspace_path"]["description"])
         self.assertIn("workspace_path", self.run_tool()["description"])
-        self.assertIn("never ask the human for one", self.run_tool()["description"])
+        self.assertIn("Grok Bot RUNS NOTHING", self.run_tool()["description"])
+        self.assertNotIn("never ask the human for one",
+                         self.run_tool()["description"])
 
     def test_D3_the_schema_follows_RUN_ARGUMENTS_when_it_changes(self):
         surface = adapter_module.surface_module.LocalRequestSurface
@@ -1674,16 +1874,18 @@ class D3RunSchemaTests(Fixture):
                     call["arguments"] = value
                 with self.subTest(command=command, arguments=repr(value)):
                     admitted_by_schema = schema_admits(schema, call)
-                    before = len(stub.calls)
                     result = adapter.run(**call)
-                    admitted_by_adapter = result["ok"]
-                    if not admitted_by_adapter:
-                        self.assertEqual(result["problem"], "grok_bot_bad_request")
-                    else:
-                        self.assertEqual(len(stub.calls), before + 1)
+                    # I3: a call the shape checks admit is REFUSED BY NAME
+                    # (Grok Bot runs nothing); one they refuse is a bad
+                    # request. Admission is "not a bad request".
+                    self.assertFalse(result["ok"], result)
+                    admitted_by_adapter = (
+                        result["problem"] != "grok_bot_bad_request")
                     self.assertEqual(admitted_by_schema, admitted_by_adapter)
                     checked += 1
         self.assertGreater(checked, 150)
+        # Nothing reached a run command, whatever was admitted.
+        self.assertEqual(stub.calls, [])
 
     def test_D3_the_nesting_bound_is_stated_at_its_boundary(self):
         """Both sides of the adapter's bound, for the two arguments that can
@@ -1724,7 +1926,8 @@ class D3RunSchemaTests(Fixture):
     def test_D3_no_new_tool_and_no_new_revision(self):
         self.assertEqual(sorted(t["name"] for t in mcp.tool_definitions()),
                          sorted(adapter_module.TOOLS))
-        self.assertEqual(len(adapter_module.TOOLS), 10)
+        # I3 adds exactly one READ-ONLY tool, ``result``.
+        self.assertEqual(len(adapter_module.TOOLS), 11)
         self.assertEqual(mcp.PROTOCOL_VERSIONS, ("2025-11-25", "2025-06-18"))
 
     def test_D3_the_document_names_each_commands_arguments(self):

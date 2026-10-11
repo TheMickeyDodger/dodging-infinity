@@ -1,12 +1,29 @@
 # Grok Bot transport
 
 `grok_bot` is a thin transport adapter between a Grok Bot conversation and
-Dodging Infinity. It decides nothing.
+Dodging Infinity. It decides nothing, and it runs nothing.
 
-- A plain-text request goes to the Codex Outer Operator, which authors the
-  Mission proposal.
-- Presentation, approval, status and the run commands belong to the local
-  request surface (`local_request`).
+- A plain-text `request` goes to a fresh, read-only Codex Outer Operator
+  turn. That turn either asks a clarifying question or routes the request to
+  a second fresh, read-only planning turn, which authors a DI-REMOTE-2
+  Mission Authorization for an explicitly named target repository. Dodging
+  Infinity validates it against the control repository and saves it as one
+  PLANNED workflow in the workflow store named by `--workflow-store`.
+- `present`, a local arming command and `approve` move that workflow from
+  PLANNED to AUTHORIZED. From there only a DI Runtime (`dirun`) running
+  against the same workflow store advances it (see [The Runtime advances
+  the work](#the-runtime-advances-the-work)).
+- `status` and `result` only read what the durable records hold. Nothing is
+  pushed to Grok Bot: a verified result is read by pull.
+- Grok Bot exposes no effect-bearing run command: its `run` tool starts,
+  dispatches and advances nothing (see [`run`](#run-commands-and-their-arguments)).
+  The local operator request surface (`local_request`, `direquest.py`) keeps
+  its own run commands, used on the DI machine under the operator's own
+  authority. Grok Bot does not reach them.
+- A request made before this route (an `lr-` request_ref) can still be
+  shown, read and withdrawn, but no longer approved, armed, dispatched or
+  advanced here (see [Requests made before the conforming
+  route](#requests-made-before-the-conforming-route)).
 - A separate delivery approval belongs to `pr_delivery`'s own ceremony.
 
 Every result carries `delivery_authority: "none"`, meaning this transport
@@ -28,13 +45,14 @@ pull request, and no merge, release or deploy tool.
 
 | Tool | What it does |
 |---|---|
-| `request` | Sends the human's plain text to the Outer Operator, which proposes a Mission or asks a question. |
-| `present` | Returns the exact display text, the binding the human approves and the exact local `arming` command, and durably records what was displayed. |
-| `approve` | Relays a separate reply whose whole text is `approved`, with the `approval_code` the local arming printed. Its binding must equal the displayed one in every field, and the code must fire the approval armed for exactly that binding, once. |
-| `status` | Durable status and run, read from DI's records. |
-| `recover` | Rebinds a request whose proposal step was interrupted. |
-| `cancel` | Withdraws the caller's own pending proposal using its one-shot control capability or, if the `request` reply was lost, the request's exact `text` and `conversation_ref` (see [Cancelling after a lost `request` reply](#cancelling-after-a-lost-request-reply)). |
-| `run` | Drives the request's own authorized Mission: `dispatch`, `observe`, `reconcile`, `prove`, `verify`, `result`, `pause`, `resume`, `cancel`. Each command's exact arguments are listed below. |
+| `request` | Sends the human's plain text to a fresh, read-only Outer Operator turn. If that turn asks a clarifying question, the question is returned and nothing is recorded. Otherwise a separate fresh planning turn authors a Mission Authorization, which is validated and saved as one PLANNED workflow. Returns a `gr-` `request_ref` and a one-shot `control_capability`. Approves and starts nothing. |
+| `present` | Returns `display_text` (the exact rendered Mission Authorization), the `approval_binding` the human approves and the exact local `arming` command (`authorize-workflow`). What was displayed is durably recorded before it is returned. |
+| `approve` | Relays a separate reply whose whole text is `approved`, with the `approval_code` the local arming printed. Its binding must equal the displayed one in every field, and the code must fire the approval armed for exactly that binding, once. The approval is then consumed once on the workflow record, which moves from PLANNED to AUTHORIZED. Starts nothing. |
+| `status` | Read-only: a snapshot of what the durable records hold (see [Reading `status` and `result`](#reading-status-and-result)). |
+| `result` | Read-only: the verified result the Broker recorded on the workflow record, read by pull, or a statement that none is recorded. |
+| `recover` | Rebinds a request made before the conforming route whose proposal step was interrupted. A `gr-` request has nothing to recover and is refused (`grok_bot_workflow_recover_not_applicable`). |
+| `cancel` | Withdraws the caller's own request while it still awaits its first decision, using its one-shot control capability or, if the `request` reply was lost, the request's exact `text` and `conversation_ref` (see [Cancelling after a lost `request` reply](#cancelling-after-a-lost-request-reply)). Once its approval is consumed it is refused: no running work is ever stopped. |
+| `run` | Runs nothing. `result` with no arguments answers exactly as the `result` tool; every other call is refused by name with what to do instead (see below). |
 | `present_delivery` | The separate delivery: `pr_delivery present-dots` proposes exactly `BASE_REFRESH`, `COMMIT`, `PUSH`, `PR_CREATE` for the live candidate. It displays the complete proposal, returns its local `arming` command, and records what was displayed. |
 | `approve_delivery` | Relays the human's separate `approved` reply, with the `approval_code` of the delivery's local arming, to `pr_delivery attest-dots`, for exactly the displayed delivery. |
 | `delivery_status` | A delivery's status. It loads `pr_delivery`'s record first, then checks the identity of the repository that record names (reading that repository's `.git` pointer files), then projects the status. It runs no Git, opens no network connection and performs no step. |
@@ -43,6 +61,174 @@ Approval is **operator-attested, not cryptographically authenticated**. Grok
 Bot gives DI no signed sender attribution, so DI does not establish who sent
 the reply.
 
+### The Runtime advances the work
+
+An AUTHORIZED workflow advances only while a DI Runtime (`dirun`) runs
+against the same workflow store. The Runtime is a separate, long-lived local
+process. It claims the workflow and takes it through the DI-REMOTE-2
+lifecycle: an isolated workspace, handoff validation by a fresh read-only
+Codex turn, dispatch to a target Herdr, observation, a fresh verification
+turn, and VERIFIED as the Broker's own conjunction, then COMPLETED. Grok Bot
+never starts it and never waits for it. With no Runtime running against the
+store, an approved workflow stays AUTHORIZED.
+
+An operator who uses Grok Bot need not have Telegram credentials. The
+Runtime's own configuration file, `dirun --runtime-config PATH run`, is the
+supported way to start a Runtime without them (setup: [Runtime
+service](operations.md#runtime-service)). It does not make a store
+Grok-only: the workflow record is transport-neutral, and one store can hold
+both Telegram-lane and Grok Bot records. How `dirun` is started decides
+which store it advances and where it writes Claude workspace trust:
+
+| `dirun` started with | Workflow store it advances | Claude workspace trust is written to |
+|---|---|---|
+| `--runtime-config PATH` | the directory holding `PATH` | the user-global Claude configuration under the live `HOME` |
+| neither option | the Telegram adapter's default state directory (its default configuration file must load) | the user-global Claude configuration under the live `HOME` |
+| `--config PATH` | the directory holding `PATH`, a Telegram adapter configuration | `.claude.json` beside that state |
+
+Immediately before each dispatch the Runtime checks workspace trust in the
+configuration the started Herdr will actually read: the user-global file
+under the live `HOME`. It refuses the dispatch on either of two conditions
+(`target_runtime/worker.py:242-263`):
+
+- the configuration trust was written to is not that file
+  (`workspace_trust_config_not_the_one_consumed`);
+- that file no longer records trust for the workspace
+  (`workspace_trust_absent_at_point_of_use`).
+
+A refusal records a receipt naming its code and stops the workflow durably
+BLOCKED (`target_runtime/broker.py:1279-1291`). With `--config`, trust is
+written to `.claude.json` beside that run's own state
+(`target_runtime/cli.py:292-294`). Both paths are compared after resolving
+symlinks, and unless that file resolves to the user-global one, they differ:
+the first condition then refuses every dispatch that Runtime attempts, and
+an approved workflow stops at dispatch with its approval spent. That is why
+`--config` is the wrong way to start a Runtime for approved work. The cause
+is the path mismatch, not the flag itself, and the second condition can
+refuse independently however the Runtime was started.
+
+Naming both `--config` and `--runtime-config` is refused
+(`runtime_config_ambiguous`) before either file is read, and neither file is
+inspected to choose which kind it is (`target_runtime/cli.py:250-258`).
+
+There is **NO installer support for `--runtime-config`**:
+`scripts/dirun-agent.sh` does not take a Runtime configuration, and the
+existing service path is unchanged. A Grok-only Runtime runs in the
+FOREGROUND, which satisfies unattended advancement WHILE IT RUNS, and only
+while it runs.
+
+### Reading `status` and `result`
+
+Both are read-only: they start, advance, record and consume nothing.
+
+- **A snapshot, not the present.** `status` reads the workflow record
+  without waiting for the store's writer lock. Every save replaces the store
+  file atomically, so the read is a complete snapshot, never a torn record,
+  but it may precede a save that was in progress. `read_at` is when the read
+  happened, not when anything was committed.
+- **A process present is not a workflow advancing.** `status` probes the
+  Runtime's lock file in the workflow store without blocking. `held` shows
+  only that some process held that lock at the probe. It is not evidence
+  that this workflow is advancing, nor that its work is verified. The
+  store's writer lock is reported the same way, without naming the holder.
+  A probe error, or anything other than a regular file at a lock path (a
+  FIFO, for example), reads `unreadable_or_unknown`, never held.
+- **The probe can briefly hold a free lock.** When the Runtime lock is free,
+  the probe takes it and releases it at once. A Runtime starting in exactly
+  that instant would find it held and exit. Whether anything starts it again
+  depends on how it is run: a foreground Runtime has no such recovery.
+- **The last recorded observation.** The Runtime records an observation of
+  the target only when the observed pair (task status and completeness)
+  changes. `status` shows the last one with its age at the read. That age
+  bounds only what was last recorded: it proves neither present health nor
+  present failure.
+- **No heartbeat.** `last_recorded_change_at` is the latest time the record
+  itself carries. A quiet wait writes nothing, so an old value is not
+  evidence of a stall and a recent one is not evidence of progress.
+- **`result` is a pull.** It returns the verified result the Broker recorded
+  on the workflow record, or says that none is recorded. It does not depend
+  on, wait for or use any Telegram delivery.
+- **Promptness is bounded.** Grok `status`/`result` promptness holds for an
+  **ordinary validated regular-file store**, with **NO blanket guarantee
+  that an arbitrary substituted store object cannot block**. The lock probes
+  never block, but the store file itself is read with an ordinary blocking
+  open (`workflow_authority/store.py:288`, unchanged from `306c1a6`, where it
+  is line 276). A FIFO put in place of `workflows.json` would block that
+  read, and the same read in every process that loads the store through
+  `WorkflowStore.load`. This is a known defect, recommended as a follow-up.
+
+### Which `origin` is meant
+
+A workflow record created by Grok Bot carries `origin: {"transport":
+"grok_bot", "relay_ref": "<its gr- request_ref>"}`. That is the TRANSPORT
+origin: the relay the request and its approval came through. A Telegram-lane
+record has a null `origin` and its own Telegram binding, and a relay-origin
+record carries no Telegram identity of any kind.
+
+It is a different thing from the "origin identity" that verification checks.
+That check is about the TARGET REPOSITORY: the live workspace's Git `origin`
+URL, canonicalized, must name the approved repository
+(`_gate_origin_identity`, `target_runtime/broker.py:410`). The transport
+origin is validated with the rest of the record whenever the record is
+checked, but it is not repository-origin identity evidence and does not
+satisfy that check.
+
+### The shared workflow store: capacity and expired requests
+
+A workflow store holds at most 64 records (`MAX_WORKFLOW_RECORDS`,
+`workflow_authority/store.py:90`), shared by every process and every
+transport that writes to it.
+
+- **At the cap.** When a record is added to a full store, the store first
+  drops terminal records (COMPLETED or BLOCKED), oldest approval first, and
+  only as many as it needs. It never evicts an active record. If it still
+  cannot make room, it refuses the new record (`workflow_store_full`), and a
+  Grok `request` answers `grok_bot_workflow_store_refused` with nothing
+  recorded (`workflow_authority/store.py:336-386`).
+- **A dropped record takes its result with it.** For a COMPLETED record
+  dropped this way, `status` and `result` answer `grok_bot_workflow_missing`.
+- **Expired Grok requests are voided.** A Grok request's approval expires
+  15 minutes after its record is built (`MISSION_APPROVAL_VALIDITY_SECONDS`,
+  `workflow_authority/intake.py:53`). Before saving its own record, each
+  Grok `request` voids (marks superseded and moves to BLOCKED) every
+  Grok-origin workflow that is still PLANNED, whose approval was neither
+  consumed nor superseded, and whose approval has expired
+  (`void_expired_relay_workflows`, `grok_bot/conforming.py:436`). Nothing
+  else is touched: never a Telegram-lane record, never an approval still
+  within its validity, never one consumed or superseded, and never a
+  workflow AUTHORIZED or beyond. Such a request could never be approved
+  again; voiding it lets it leave the store's active set.
+- **This is not a way to clear a pending request.** A request that can
+  still be approved is never voided by another request. Withdraw it with
+  `cancel`.
+
+### Requests made before the conforming route
+
+A request made before this route has an `lr-` request_ref and holds a
+Mission-Core proposal, not a Mission Authorization. It is never converted
+into one.
+
+- `present` shows it exactly as recorded, with its remedy, and offers no
+  binding and no arming: it can no longer be approved here.
+- `approve` is refused (`grok_bot_legacy_reauthorization_required`), and
+  the retired local `authorize` command arms nothing
+  (`grok_bot_legacy_arming_retired`).
+- `status`, `recover` and `cancel` still answer from the local request
+  surface; `status` also carries the remedy.
+- `result` (and `run` `result`) recovers its verified result READ-ONLY, with
+  the same implementation the local operator surface's `result` uses: the
+  result and review text are read only from the two locators Mission Core
+  recorded, and re-hashed against the recorded digests. Missing, gone or
+  changed content is UNRECOVERABLE, never a verified result.
+- `run` `dispatch`, `reconcile`, `prove` and `verify` are refused with the
+  remedy (`grok_bot_legacy_reauthorization_required`). `observe` is refused
+  with what to read instead, and `pause`, `resume` and `cancel` are refused
+  with the exact `direquest.py` command the operator can run on the DI
+  machine (both `grok_bot_legacy_run_unavailable`).
+- The remedy is a new request that DIFFERS from the old one: other text, or
+  a different `conversation_ref`. An identical request is answered with the
+  request it already made, never a new one.
+
 ### Local arming: the approval boundary
 
 Holding the MCP bearer token is not enough to approve anything. Before
@@ -50,10 +236,12 @@ Holding the MCP bearer token is not enough to approve anything. Before
 by a local action on the DI machine:
 
 1. `present` (or `present_delivery`) returns `arming`: one exact local command,
-   `grokbot.py … authorize` (or `authorize-delivery`). It carries the **full**
-   displayed binding: request, Mission id, revision, all 64 hex characters of
-   the proposal digest, the action scope, the delivery targets, the expiry and
-   the digest of the displayed text. Nothing in it is shortened.
+   `grokbot.py … authorize-workflow` (or `authorize-delivery`). It carries the
+   **full** displayed binding. For a workflow that is the request, the
+   workflow id, the revision, all 64 hex characters of the Mission
+   Authorization's digest, the expiry and the digest of the displayed text;
+   for a delivery, the full proposal digest, the expiry, the display digest
+   and the repository. Nothing in it is shortened.
 2. Grok Bot runs that command in its per-command, user-approved local shell
    on the DI machine (a vendor capability that must be enabled; see the
    vendor references below). Under the default "Ask every time" policy the
@@ -77,7 +265,12 @@ by a local action on the DI machine:
 
 **What a code can do depends on its kind:**
 
-- **A Mission code** (from `authorize`) confers NO delivery authority.
+- **A workflow code** (from `authorize-workflow`) confers NO delivery
+  authority.
+- **The legacy `authorize` command is retired.** It still parses, so an old
+  command is answered rather than misread, but it arms nothing, mints no
+  code, writes nothing, and answers `grok_bot_legacy_arming_retired` with
+  the remedy.
 - **A delivery code** (from `authorize-delivery`) redeems EXACTLY ONE locally
   armed delivery authorization. Presented to `approve_delivery` with the
   displayed binding (public values) over the endpoint (bearer access), it has
@@ -92,10 +285,10 @@ What carries this, stated precisely:
 - **Hash-only persistence.** The commitments file holds the commitment and
   metadata, never the nonce or the code, so read access to anything DI stores
   yields nothing that fires.
-- **A dependency, not a property of the scheme:** the `request` tool's Operator
-  runs under the pinned fail-closed read-only sandbox posture, which is what
-  is relied on to stop it writing the commitments file or running the arming
-  command itself. DI cannot enforce the provider's sandbox. If that
+- **A dependency, not a property of the scheme:** the `request` tool's
+  Operator turns run under the pinned fail-closed read-only sandbox posture,
+  which is what is relied on to stop them writing the commitments file or
+  running the arming command themselves. DI cannot enforce the provider's sandbox. If that
   confinement does not hold on some host or provider version, a
   request-controlled Operator could arm an approval, and this separation
   fails.
@@ -110,25 +303,37 @@ What carries this, stated precisely:
   human approval occurs. No part of this is cryptographic human
   authentication.
 
-`present` shows the complete proposal: nothing is truncated or elided. Every
-field of the recorded proposal, including the whole proof contract, appears
-in `display_text`. Over MCP, `display_text` is the first text content of
+`present` shows the complete Mission Authorization: nothing is truncated or
+elided. `display_text` contains the exact rendered text whose digest the
+approval binding carries. Over MCP, `display_text` is the first text content of
 `present`'s result, whole.
 
 ### `run` commands and their arguments
 
+Grok Bot runs nothing. `run` starts, dispatches and advances no work: the
+adapter is built without a run bridge, and nothing `grok_bot` imports reaches
+the dispatch path. `run` `result` with no arguments answers exactly as the
+`result` tool. Every other call is refused by name with what to do instead.
+For a workflow (`gr-`) it is refused at once
+(`grok_bot_workflow_run_not_applicable`): only a DI Runtime advances it. A
+request made before the conforming route is never dispatched or advanced
+here (see [Requests made before the conforming
+route](#requests-made-before-the-conforming-route)); for it the arguments
+below are checked for shape first, so a malformed call keeps its
+bad-request refusal.
+
 `run` takes `request_ref`, `command` and an `arguments` object. The
 `arguments` object must hold exactly these names, with these types, and
-may add only the optional ones listed:
+may add only the optional ones listed. None of them is ever used:
 
 | Command | Arguments | Notes |
 |---|---|---|
-| `dispatch` | none; `workspace_path` (string, optional, operator recovery only) | No path is needed: DI prepares the Mission's own isolated workspace (see [Automatic Mission workspaces](#automatic-mission-workspaces)). `workspace_path` is operator recovery only: it may name that same, already prepared workspace and nothing else. |
+| `dispatch` | none; `workspace_path` (string, optional) | Never used: Grok Bot dispatches nothing. The same option on the local operator surface, `direquest.py dispatch --workspace`, is operator recovery only (see [Automatic Mission workspaces](#automatic-mission-workspaces)). |
 | `observe` | none | |
-| `reconcile` | none | Resolves an unknown dispatch outcome; see below. |
-| `prove` | `operation` (string, required), `arguments` (object nesting at most 14 deep, required) | One existing Mission State proof seam, with exactly that seam's own arguments. |
-| `verify` | `reported_result` (any JSON value nesting at most 14 deep, required) | DI checks it against its own fresh reads. |
-| `result` | none | |
+| `reconcile` | none | |
+| `prove` | `operation` (string, required), `arguments` (object nesting at most 14 deep, required) | Never used. |
+| `verify` | `reported_result` (any JSON value nesting at most 14 deep, required) | Never used: Grok Bot verifies nothing. |
+| `result` | none | Answers exactly as the `result` tool. |
 | `pause` | none | |
 | `resume` | none | |
 | `cancel` | none | |
@@ -147,42 +352,19 @@ may add only the optional ones listed:
 - The schema and the adapter are checked to accept exactly the same calls,
   including both sides of that boundary.
 
-**`reconcile` and a late child.** A dispatch whose outcome was lost may still
-have started a child, possibly late.
-
-- If the workspace cleanly shows no task record yet, `reconcile` records an
-  evidence-only attempt and binds, spawns and re-dispatches nothing. Call it
-  again later.
-- Degraded or malformed observation evidence is not "not yet": an
-  unreadable, malformed or unsupported observation, or a task record without
-  a usable id, still stops the run at once (`reconcile_degraded`).
-- At most 16 such attempts are allowed (`MAX_RECONCILE_ATTEMPTS`). The 16th
-  stops the run durably (`reconcile_not_observable`).
-- A late child is adopted only on the full proof:
-  - its own task record names this Mission's dispatch;
-  - the control repository's spawn listing is clean and complete;
-  - exactly one listed child names the workspace, with the workspace's own
-    task id.
-- Anything else stops the run durably, each with its own reason.
-- A proven late child whose own task record says `ABORTED` stops the run
-  (`reconcile_late_child_aborted`). It is never observed `RUNNING`, verified
-  or written to. The child's status is read from its own task record, never
-  from the parent's spawn listing, which can be stale.
-- `BLOCKED` stays terminal. For a run stopped because nothing was observable
-  yet (including the `reconcile_degraded` stop the first reconcile recorded
-  before this change), `reconcile` records one durable, evidence-only late
-  resolution: the proven late child and its own status. The Mission stays
-  `BLOCKED`, nothing is adopted or resumed, and continuing needs a new
-  Mission.
-
 ## Automatic Mission workspaces
 
-An ordinary Grok Bot conversation dispatches an approved Mission **without
-any path**: `run` `dispatch` takes no arguments. DI prepares one isolated Git
-worktree for the Mission and dispatches Herdr there.
+**This section describes the local operator request surface
+(`direquest.py`), not Grok Bot.** Grok Bot dispatches nothing. On the DI
+machine, under the operator's own authority, `direquest.py dispatch`
+dispatches a request's own AUTHORIZED Mission-Core Mission **without any
+path**: DI prepares one isolated Git worktree for the Mission and dispatches
+Herdr there, through the real spawn bridge. `grokbot.py` takes the same two
+flags below only to bound which repositories its delivery tools accept (see
+[Running the endpoint locally](#running-the-endpoint-locally)).
 
-**Configure once, on the DI machine.** Give the endpoint (or the `run`
-command line) two absolute paths:
+**Configure once, on the DI machine.** Give `direquest.py dispatch` two
+absolute paths:
 
 - `--workspace-repository R`: a local checkout of the approved repository.
   Its `origin` must canonicalize to the repository the Mission names.
@@ -300,7 +482,7 @@ change has no cleanup.
 
 **Operator recovery only: `workspace_path`.** `dispatch` accepts one optional
 argument, `workspace_path`, for an operator recovering a dispatch. It is
-never needed in a conversation, and it is not a bypass:
+never needed for an ordinary dispatch, and it is not a bypass:
 
 - the configuration must still be present;
 - the path must be exactly this Mission's own derived workspace, so any
@@ -315,8 +497,38 @@ crash after the worktree was created but before it was recorded `prepared`.
 Losing the durable binding itself is not recoverable this way. Authority is
 never rebuilt from a path, a marker, a clean tree or a matching origin.
 
-On the command line, `direquest.py dispatch` takes the same two flags, and
-`--workspace P` is the same operator recovery path.
+On the command line, this operator recovery path is `direquest.py dispatch
+--workspace P`.
+
+### `reconcile` and a late child (local operator surface)
+
+A dispatch whose outcome was lost may still have started a child, possibly
+late. `direquest.py reconcile` resolves it:
+
+- If the workspace cleanly shows no task record yet, `reconcile` records an
+  evidence-only attempt and binds, spawns and re-dispatches nothing. Call it
+  again later.
+- Degraded or malformed observation evidence is not "not yet": an
+  unreadable, malformed or unsupported observation, or a task record without
+  a usable id, still stops the run at once (`reconcile_degraded`).
+- At most 16 such attempts are allowed (`MAX_RECONCILE_ATTEMPTS`). The 16th
+  stops the run durably (`reconcile_not_observable`).
+- A late child is adopted only on the full proof:
+  - its own task record names this Mission's dispatch;
+  - the control repository's spawn listing is clean and complete;
+  - exactly one listed child names the workspace, with the workspace's own
+    task id.
+- Anything else stops the run durably, each with its own reason.
+- A proven late child whose own task record says `ABORTED` stops the run
+  (`reconcile_late_child_aborted`). It is never observed `RUNNING`, verified
+  or written to. The child's status is read from its own task record, never
+  from the parent's spawn listing, which can be stale.
+- `BLOCKED` stays terminal. For a run stopped because nothing was observable
+  yet (including the `reconcile_degraded` stop the first reconcile recorded
+  before this change), `reconcile` records one durable, evidence-only late
+  resolution: the proven late child and its own status. The Mission stays
+  `BLOCKED`, nothing is adopted or resumed, and continuing needs a new
+  Mission.
 
 ## Cancelling after a lost `request` reply
 
@@ -352,11 +564,18 @@ How it works, and what it does not do:
     that digest.
   - The protection therefore rests on the `conversation_ref` staying private
     and unguessable.
-- **The surface's checks are unchanged.** The unsealed capability goes to
-  the surface's own `cancel`, with its existing checks and refusal codes. It
-  works only while the proposal is still awaiting a decision, and only
-  within the capability's seven-day validity. A decided, edited, authorized
-  or running Mission stays out of scope.
+- **The usual checks are unchanged.** The unsealed capability goes to the
+  same withdrawal a `control_capability` reaches, with the same checks and
+  refusal codes. For a workflow (`gr-`) that is the conforming route's
+  withdrawal, which works only while the workflow is still PLANNED with its
+  approval neither consumed nor superseded. For a request made before the
+  conforming route it is the local request surface's own `cancel`, which
+  works only while the proposal is still awaiting a decision. Either way it
+  works only within the capability's seven-day validity. A decided, edited,
+  authorized or running request stays out of scope: a workflow whose
+  approval was already consumed is refused
+  (`grok_bot_workflow_running_cancel_unsupported`), and no running work is
+  stopped.
 - **One proof, one request.** A proof cancels only the request it created.
   A `request_ref` or Mission id alone never cancels anything.
 - **No capability is returned.** No response returns a control capability
@@ -385,7 +604,8 @@ recovery itself (`completed_interrupted_cancellation: true`).
   `mn-4e5b7eb6b74c8564f78bc57d06cf22d1`). If such a request's reply was lost,
   it cannot be cancelled through this transport. While its Mission is still
   `AWAITING_DECISION` (as that live one was when last read), it can still be
-  presented and approved.
+  presented here, but it can no longer be approved here (see [Requests made
+  before the conforming route](#requests-made-before-the-conforming-route)).
 - **A crash can still lose recovery.** If the process stops between the
   surface recording a proposal and the adapter recording it, no recovery
   material exists (`in_flight`).
@@ -578,15 +798,21 @@ git or `gh` process starts and no step is performed.
 ```
 grokbot.py --state-dir /abs/state --repository /abs/control-repo \
            --control-repo /abs/control-repo \
+           --workflow-store /abs/workflow-store \
            --workspace-repository /abs/approved-checkout \
            --workspaces-root /abs/mission-workspaces serve [--port N] \
            --auth-token-file /abs/token-file
 ```
 
-The two workspace paths configure [automatic Mission
-workspaces](#automatic-mission-workspaces). Without them every `dispatch`
-is refused as unavailable. They are also the only repositories the delivery
-tools accept: the `--workspace-repository` checkout itself, or one of its
+`--control-repo` and `--workflow-store` have no default: without them
+`request` is refused, naming the missing flag. An approved workflow
+advances only if this is the store a DI Runtime advances: the directory that
+holds that Runtime's configuration file (see [The Runtime advances the
+work](#the-runtime-advances-the-work)). Nothing here checks that one is.
+
+For `grokbot.py` the two workspace paths only bound the delivery tools,
+since Grok Bot dispatches nothing. They are the only repositories the
+delivery tools accept: the `--workspace-repository` checkout itself, or one of its
 worktrees directly under `--workspaces-root`, named by its realpath. When
 that identity is checked differs by tool:
 
@@ -724,10 +950,13 @@ tunnel's controller is gone, stopping it is manual
 
 1. **Local, already in this repository:**
    - `grokbot.py serve --auth-token-file …` runs on loopback.
-   - Engineering goes `request` → `present` → local arming (`authorize`) →
-     the human's `approved` reply → `approve` with the `approval_code` →
-     `run` (`dispatch` … `verify`, `result`). `dispatch` needs no path: DI
-     prepares the Mission's own workspace.
+   - A DI Runtime runs against the same workflow store, in the foreground:
+     `dirun --runtime-config PATH run`.
+   - Engineering goes `request` → `present` → local arming
+     (`authorize-workflow`) → the human's `approved` reply → `approve` with
+     the `approval_code`. The Runtime then claims the AUTHORIZED workflow
+     and advances it. Grok Bot reads it with `status` and, once a verified
+     result is recorded, with `result`.
    - Delivery goes `present_delivery` → local arming (`authorize-delivery`)
      → the human's separate `approved` reply → `approve_delivery` with the
      `approval_code`.
@@ -844,19 +1073,73 @@ In particular:
 - **The `mcp_2025_03_26_batch_reception` gap stays recorded.** A client that
   negotiates only `2025-03-26` cannot use this endpoint.
 
+For the conforming route and its Runtime, every test is hermetic, with each
+effect seam injected:
+
+- **No live execution was exercised by this verification.** Neither the
+  conforming route nor a Runtime advancing one of its workflows ran against
+  a live Grok Bot, Codex, Herdr or Git provider in the tests that verify it.
+- **Injected composition, NOT live-provider execution.** The production
+  composition of a Grok-only Runtime (`dirun --runtime-config`) is tested
+  with real configuration files and the real configuration loader, and its
+  effects (the Codex turns, the Herdr spawn, the Git transport) are injected
+  after that validation. That establishes **injected composition, NOT
+  live-provider execution**: no live Codex, Herdr or Git provider ran in
+  those tests.
+- **Presentation to the model, NOT comprehension.** The verification turn's
+  prompt is proven to CONTAIN the target's canonical Reviewer artifact text.
+  That establishes **presentation to the model, NOT comprehension**: nothing
+  shows the model read it or reasoned from it.
+- **The workspace-trust exclusion and the contained-run cleanup limitation
+  persist, and they are not disproved by passing tests.**
+  - A contained verification run of the full suite excludes the standalone
+    module `tests/test_workspace_trust.py`. It resolves the real `claude` CLI
+    through the password database, so HOME and PATH containment cannot steer
+    it, and faking the CLI would destroy the assertion the module exists to
+    make.
+  - The same module is also one of the 15 modules in the nested identity sweep
+    that `tests/test_hermetic_git.py` runs in child processes. There its
+    non-CLI tests run, and its real-CLI classes skip themselves
+    (`tests/test_workspace_trust.py:1858-1864`). What such a run lacks is
+    real-CLI coverage, not the module's coverage as a whole.
+  - The contained runs' signal gate, loaded through the harness's
+    `PYTHONPATH`, lets a test signal only a process the run can prove it
+    started. In the focused contained verification runs performed for this
+    work, it intercepted and refused process signals. It is not in force in
+    the nested sweep's child processes: the sweep sets their `PYTHONPATH` to
+    the repository root, replacing the harness path, and its child runner
+    loads no gate (`tests/test_hermetic_git.py:863`). Production code that
+    sends a real `SIGKILL` (`target_runtime/process_ownership.py:145`, `:160`,
+    `:469`, `:904`) is reachable from several of those modules.
+  - What did hold in those children is PATH containment: `git` resolves to the
+    sweep's logging shim, which each child checks itself, exiting 97 or 98 if
+    it does not, and `codex` stays absent.
+  - The evidence about descendant processes is incomplete. After the contained
+    runs performed for this work, a sweep of live processes for references to
+    the runs' paths found none: that establishes no live process carrying
+    those references, not that no unrecorded descendant existed. A
+    pre-existing long-running process that kept its identity and start time
+    shows only that it survived; that is not a historical no-effect audit,
+    because an interaction that did not kill it would look the same.
+  - Passing tests do not by themselves establish that no best-effort cleanup
+    was affected, because best-effort cleanup may carry no postcondition
+    assertion.
+
 ## Limitations
 
-- **The request turn is read-only for writes, not for reads.** Each
-  `request` runs one fresh Codex turn under the role-turn restrictive
-  posture (`--sandbox read-only`, `--ignore-user-config`, `--ignore-rules`,
-  `--strict-config`, `-c approval_policy=never`), verified on the exact
-  argv before the process starts. It continues no session: any
+- **The request turns are read-only for writes, not for reads.** Each
+  `request` runs up to two fresh Codex turns (the initial Operator turn and,
+  when it routes the request, the planning turn), each under the role-turn
+  restrictive posture (`--sandbox read-only`, `--ignore-user-config`,
+  `--ignore-rules`, `--strict-config`, `-c approval_policy=never`), verified
+  on the exact argv before the process starts. It continues no session: any
   `operator_session_id` is refused (`grok_bot_operator_session_refused`)
   before any Operator turn runs. Read-only confines writes by the
   Operator's shell commands; it does not confine reads. Request text can
   induce the Operator to read, under its own permissions, any file the
-  serving user can read, and the Operator's reply is returned to the
-  caller. That is a material, disclosed residual: no exfiltration has been
+  serving user can read, and what it writes can reach the caller: the
+  initial turn's clarifying reply is returned, and the planning turn's
+  Mission Authorization is shown by `present`. That is a material, disclosed residual: no exfiltration has been
   demonstrated, and nothing here prevents it. Read-only is not secret
   isolation, and nothing here scopes readable paths.
 - **Proposal-only is an instruction, not enforced.** That the Operator only
@@ -864,7 +1147,8 @@ In particular:
   forged envelopes in the human's text is a mitigation, not a boundary.
 - **Not implemented:** rate limiting, MCP sessions and OAuth.
 - **Workspace trust is written to the live configuration and never
-  revoked.** In production, preparation writes one `hasTrustDialogAccepted`
+  revoked.** In production, the local operator surface's workspace
+  preparation (`direquest.py dispatch`) writes one `hasTrustDialogAccepted`
   key for each Mission worktree into the Claude configuration the started
   Herdr reads (`~/.claude.json`). Nothing removes a Mission worktree, so
   nothing revokes that entry either. The vendor behaviour this relies on was
@@ -873,7 +1157,35 @@ In particular:
   from Git (`rev-parse --show-toplevel`); it was not observed live. The
   tests establish trust only in a temporary configuration, so they are not
   evidence of an unattended live start.
-- **The Herdr-state check is not a lock.** It runs immediately before the
-  intent. A herd that starts in the worktree after that check and before the
+- **The local operator surface's Herdr-state check is not a lock.** It runs
+  immediately before the intent. A herd that starts in the worktree after that check and before the
   spawn is outside what this check sees. Association proof (`reconcile`,
   `observe`) still never adopts a child that does not name this intent.
+- **Known pre-existing defect: a deeply nested reply can crash the Telegram
+  lane on Python 3.9.** On CPython 3.9, `json.loads` raises
+  `RecursionError`, which is not a `ValueError`, for a JSON value nested
+  about 3,000 levels deep, and such a line fits inside the 16,384-character
+  envelope cap.
+  - The Telegram lane's decode sites catch only `ValueError`
+    (`telegram_operator/protocol.py:218` and `:322`) or only `TypeError`
+    and `ValueError` (`workflow_authority/intake.py:117`, for a Mission
+    Authorization body).
+  - Their callers in the Telegram adapter do not catch it either:
+    `telegram_operator/adapter.py:1101`, `:2272` and `:2609` call the parser
+    unguarded, and the validation at `:2322-2328` catches only
+    `MissionError` and `AuthorizationError`. Read from the source, nothing in that path
+    catches it; the adapter itself was not run with such a reply.
+  - The input is the Codex Operator's reply, which the request text may
+    steer.
+  - It reproduced on CPython 3.9.6 by calling the parsers directly. It did
+    not reproduce on CPython 3.14.8, whose decoder parses those depths.
+  - Grok Bot refuses such a reply with a labelled refusal at its own
+    boundary. The Telegram lane was deliberately left unchanged. Catching
+    `RecursionError` at those sites, as the existing invalid-JSON and
+    invalid-document refusals, is a recommended follow-up outside this
+    change, not accepted behaviour.
+  - The same parsers are also called from the Runtime's role turns
+    (`codex_gateway/role_turn.py:1199`, and `:1212`, whose
+    `parse_role_outcome` decodes at `telegram_operator/protocol.py:391`,
+    also catching only `ValueError`). That path was not part of the
+    reproduction and is not characterized here.

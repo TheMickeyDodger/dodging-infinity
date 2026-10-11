@@ -55,6 +55,24 @@ as safe as that proof: with a weak (visible, sequential or guessable)
 Recovery is kept only for a request that carried a ``conversation_ref``.
 An entry written before recovery existed carries none, and nothing is
 ever fabricated for it. No error message ever names an entry key.
+
+The conforming route (I2 of task 20261010-164104-1761f6). A request on the
+default route produces ONE DI-REMOTE-2 workflow and no Mission-Core
+proposal. Its request_ref is of its own family, ``gr-`` plus 32 lowercase
+hex (``WORKFLOW_REF_PREFIX``), never ``lr-``, so it can never reach the
+local request surface. Two additive, optional maps hold its bookkeeping:
+
+- ``workflow_requests`` maps a ``gr-`` request_ref to the workflow it
+  produced, plus the DIGEST (never the token) of the request's one-shot
+  withdrawal capability and that capability's ORIGINAL expiry. Written in
+  the same atomic save that records the request ``PROPOSED``;
+- ``workflow_presentations`` holds, per ``gr-`` request_ref, the receipt of
+  what ``present`` last DISPLAYED for its Mission Authorization: the exact
+  binding and the digest of the display text.
+
+The cancel-recovery seal applies to a ``gr-`` request exactly as to an
+``lr-`` one. An index written before these maps existed holds none, and
+every entry it holds keeps validating.
 """
 
 import hashlib
@@ -81,8 +99,18 @@ SEAL_SCHEME = "hmac-sha256-xor-v1"
 _SEAL_KEY_DOMAIN = b"grok_bot cancel-recovery seal key v1"
 _SEAL_PAD_DOMAIN = b"grok_bot cancel-recovery pad v1\x00"
 DOCUMENT_KEYS = ("schema_version", "requests", "presentations")
-# Additive (slice 3): a document written before it existed has none.
-DOCUMENT_OPTIONAL_KEYS = ("delivery_presentations", "approval_consumption")
+# Additive (slice 3; I2): a document written before them has none.
+DOCUMENT_OPTIONAL_KEYS = ("delivery_presentations", "approval_consumption",
+                          "workflow_requests", "workflow_presentations")
+# I2: the conforming route's own request_ref family.
+WORKFLOW_REF_PREFIX = "gr-"
+WORKFLOW_REF_HEX = 32
+WORKFLOW_REQUEST_KEYS = ("workflow_id", "recorded_at", "capability_sha256",
+                         "capability_expires_at")
+# Exactly the fields a reply must restate, as ``present`` displayed them,
+# for a DI-REMOTE-2 Mission Authorization.
+WORKFLOW_BINDING_KEYS = ("request_ref", "workflow_id", "revision",
+                         "authorization_digest_sha256", "expires_at")
 # Delivery presentation receipts, content-addressed by the proposal digest;
 # beyond this many the oldest presentation is forgotten (it can then no
 # longer be approved here: fail closed).
@@ -122,6 +150,28 @@ def _hex64(value):
 
 def _strings(value):
     return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
+def workflow_ref_problem(value):
+    """None for a conforming-route request_ref (``gr-`` plus 32 lowercase
+    hex), else why not."""
+    if not isinstance(value, str) or not value.startswith(WORKFLOW_REF_PREFIX):
+        return "must be a string starting %r" % WORKFLOW_REF_PREFIX
+    body = value[len(WORKFLOW_REF_PREFIX):]
+    if len(body) != WORKFLOW_REF_HEX or set(body) - _HEX:
+        return "must be %r plus %d lowercase hex characters" % (
+            WORKFLOW_REF_PREFIX, WORKFLOW_REF_HEX)
+    return None
+
+
+def is_workflow_ref(value):
+    """Whether ``value`` names a request on the conforming route."""
+    return workflow_ref_problem(value) is None
+
+
+def _workflow_id_ok(value):
+    return isinstance(value, str) and 0 < len(value) <= 128 and not set(
+        value) - set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
 
 # -- cancel recovery: the capability sealed under the request's origin ----
@@ -221,7 +271,9 @@ def _validate(document, where):
         if entry["state"] == STATE_IN_FLIGHT:
             ok = entry["request_ref"] is None and "recovery" not in entry
         elif entry["state"] == STATE_PROPOSED:
-            ok = request_store.request_ref_problem(entry["request_ref"]) is None
+            ok = request_store.request_ref_problem(
+                entry["request_ref"]) is None or is_workflow_ref(
+                entry["request_ref"])
         else:
             ok = False
         if not ok or not _count(entry["recorded_at"]):
@@ -257,6 +309,38 @@ def _validate(document, where):
             receipt["display_digest_sha256"]
         ) or not _count(receipt["presented_at"]):
             bad("presentation %s is malformed" % ref)
+    workflows = document.get("workflow_requests", {})
+    if not isinstance(workflows, dict) or len(workflows) > MAX_ENTRIES:
+        bad("workflow_requests must be a map of at most %d" % MAX_ENTRIES)
+    for ref, held in workflows.items():
+        if not is_workflow_ref(ref) or not isinstance(held, dict) or sorted(
+            held
+        ) != sorted(WORKFLOW_REQUEST_KEYS) or not _workflow_id_ok(
+            held["workflow_id"]
+        ) or not _count(held["recorded_at"]) or not _hex64(
+            held["capability_sha256"]
+        ) or not _count(held["capability_expires_at"]):
+            bad("workflow request %r is malformed" % (ref,))
+    shown = document.get("workflow_presentations", {})
+    if not isinstance(shown, dict) or len(shown) > MAX_ENTRIES:
+        bad("workflow_presentations must be a map of at most %d" % MAX_ENTRIES)
+    for ref, receipt in shown.items():
+        if not is_workflow_ref(ref) or not isinstance(receipt, dict) or sorted(
+            receipt
+        ) != sorted(RECEIPT_KEYS):
+            bad("workflow presentation %r must be a gr- key carrying exactly"
+                " %s" % (ref, ", ".join(RECEIPT_KEYS)))
+        binding = receipt["binding"]
+        if not isinstance(binding, dict) or sorted(binding) != sorted(
+            WORKFLOW_BINDING_KEYS
+        ) or binding["request_ref"] != ref or not _workflow_id_ok(
+            binding["workflow_id"]
+        ) or not _count(binding["revision"]) or not _hex64(
+            binding["authorization_digest_sha256"]
+        ) or not _count(binding["expires_at"]) or not _hex64(
+            receipt["display_digest_sha256"]
+        ) or not _count(receipt["presented_at"]):
+            bad("workflow presentation %s is malformed" % ref)
     return document
 
 
@@ -335,6 +419,66 @@ class RequestIndex(object):
                 entry["recovery"] = dict(recovery)
             document["requests"][key] = entry
             self._save(document)
+
+    def record_workflow_proposed(self, key, request_ref, workflow_id,
+                                 capability_digest, capability_expires_at,
+                                 now, recovery=None):
+        """A conforming-route request: ``PROPOSED`` with its ``gr-``
+        request_ref, the sealed cancel recovery (if any), and the
+        request_ref -> workflow mapping with the DIGEST of its one-shot
+        withdrawal capability and that capability's original expiry, all
+        in ONE atomic write. The reply is returned only after it is
+        durable."""
+        with self._locked():
+            document = self.load()
+            workflows = document.setdefault("workflow_requests", {})
+            if request_ref in workflows:
+                raise RequestIndexError(
+                    "request %s is already indexed; nothing was recorded"
+                    % request_ref)
+            if len(workflows) >= MAX_ENTRIES:
+                raise RequestIndexError(
+                    "%d workflow requests are indexed; the hard bound is %d"
+                    % (MAX_ENTRIES, MAX_ENTRIES), PROBLEM_FULL)
+            entry = {"state": STATE_PROPOSED, "request_ref": request_ref,
+                     "recorded_at": now}
+            if recovery is not None:
+                entry["recovery"] = dict(recovery)
+            document["requests"][key] = entry
+            workflows[request_ref] = {
+                "workflow_id": workflow_id, "recorded_at": now,
+                "capability_sha256": capability_digest,
+                "capability_expires_at": capability_expires_at,
+            }
+            self._save(document)
+
+    def workflow_request(self, request_ref):
+        """A copy of the conforming-route mapping for ``request_ref``, or
+        None."""
+        found = self.load().get("workflow_requests", {}).get(request_ref)
+        return None if found is None else dict(found)
+
+    def record_workflow_presentation(self, binding, display_digest, now):
+        """Durably record the Mission Authorization display about to be
+        returned for one ``gr-`` request. The caller holds
+        ``serialized()``."""
+        document = self.load()
+        receipts = document.setdefault("workflow_presentations", {})
+        ref = binding["request_ref"]
+        if ref not in receipts and len(receipts) >= MAX_ENTRIES:
+            raise RequestIndexError(
+                "%d workflow presentations are held; the hard bound is %d"
+                % (MAX_ENTRIES, MAX_ENTRIES), PROBLEM_FULL)
+        receipts[ref] = {"binding": json.loads(json.dumps(binding)),
+                         "display_digest_sha256": display_digest,
+                         "presented_at": now}
+        self._save(document)
+
+    def workflow_presentation(self, request_ref):
+        """The receipt of the latest Mission Authorization display for
+        ``request_ref``, or None. An approval reads it inside
+        ``serialized()``."""
+        return self.load().get("workflow_presentations", {}).get(request_ref)
 
     def entry(self, key):
         """A copy of the entry for one request key, or None."""

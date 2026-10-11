@@ -50,6 +50,26 @@ NOT bumped for them; see ``_TOP_LEVEL_KEYS`` and
 tests/test_di_remote_3_schema.py:
 ``test_X3_delivery_authority_stays_none_on_every_new_field`` and
 ``test_schema_version_is_not_bumped``.)
+
+I1 of task 20261010-164104-1761f6 adds ONE top-level key, ``origin``,
+so a workflow that did not arrive through Telegram is representable.
+``origin is None`` IS the Telegram lane — the only lane that existed
+before the key, and the one fact has exactly one representation (there
+is no ``{"transport": "telegram"}``). A non-null ``origin`` is the
+closed object ``{"transport", "relay_ref"}`` with the transport from
+``ORIGIN_TRANSPORTS`` and a closed-alphabet relay ref. The two lanes
+are EXCLUSIVE and exact: ``telegram`` is required exactly when
+``origin`` is null, and a relay-origin record carries no Telegram
+identity of any kind — ``telegram``, ``result_placeholder``,
+``result_delivery`` and ``approval.consumed_by_update_id`` must all be
+null, each refused with its own problem code, so no writer can persist
+a fabricated Telegram user, chat, update or message id on one. The
+approval identity is rendered (and therefore digest-bound) in one of
+two distinct forms (``rendering.approval_identity_line``); every
+Telegram-lane record renders byte-identically to before. The schema
+version is NOT bumped, for the same reason as the DI-REMOTE-3 keys;
+the load boundary materializes ``origin`` as ``None`` on older records
+and derives nothing.
 """
 
 import os
@@ -168,6 +188,27 @@ AMBIGUITY_NONE = "none"
 AMBIGUITY_CRASH_UNCERTAIN = "crash_uncertain"
 AMBIGUITY_STATES = (AMBIGUITY_NONE, AMBIGUITY_CRASH_UNCERTAIN)
 
+# I1 (task 20261010-164104-1761f6): the closed set of NON-Telegram
+# transports a workflow may originate from. The Telegram lane is
+# ``origin is None`` and is deliberately NOT a member: one fact, one
+# representation.
+ORIGIN_TRANSPORT_GROK_BOT = "grok_bot"
+ORIGIN_TRANSPORTS = (ORIGIN_TRANSPORT_GROK_BOT,)
+ORIGIN_KEYS = ("transport", "relay_ref")
+# The relay ref is rendered UNQUOTED on the approval-identity line, so
+# its grammar makes line structure UNREPRESENTABLE: ASCII letters,
+# digits, '-' and '_' only, 1..MAX_ID_CHARS characters. No whitespace,
+# no line terminator, no ':' and no '>' can appear, so a relay ref can
+# never forge a "policy digest:" / "target:" / "control:" /
+# "delivery authority:" line or a quoted line (the containment class
+# the rendering registry calls "type_or_alphabet_constrained"). The
+# bound reuses MAX_ID_CHARS; a test pins it to the value 128 directly.
+RELAY_REF_ALPHABET = frozenset(
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789-_"
+)
+
 # Hard bounds, never derived from input. A value beyond its bound is
 # REFUSED with the exact observed and allowed sizes, never truncated
 # (standing truthfulness rule: a silently shortened record would
@@ -253,6 +294,25 @@ PROBLEM_DELIVERY_STATE_FIELDS = (
 # re-claims a delivered_by_edit — so the lie would suppress delivery
 # permanently. Failing closed here makes it UNREPRESENTABLE.
 PROBLEM_DELIVERY_BINDING = "workflow_record_delivery_binding"
+# I1 (task 20261010-164104-1761f6): the transport origin. Each refusal
+# has its OWN code, so an out-of-contract origin names exactly what is
+# wrong.
+PROBLEM_ORIGIN_SHAPE = "workflow_record_origin_shape"
+PROBLEM_ORIGIN_TRANSPORT = "workflow_record_origin_transport"
+PROBLEM_RELAY_REF_GRAMMAR = "workflow_record_relay_ref_grammar"
+PROBLEM_RELAY_REF_LINE_TERMINATOR = (
+    "workflow_record_relay_ref_line_terminator"
+)
+PROBLEM_RELAY_REF_TOO_LONG = "workflow_record_relay_ref_too_long"
+PROBLEM_ORIGIN_TELEGRAM_CONFLICT = (
+    "workflow_record_origin_telegram_conflict"
+)
+PROBLEM_TELEGRAM_REQUIRED = "workflow_record_telegram_required"
+PROBLEM_ORIGIN_PLACEHOLDER = "workflow_record_origin_placeholder"
+PROBLEM_ORIGIN_RESULT_DELIVERY = (
+    "workflow_record_origin_result_delivery"
+)
+PROBLEM_ORIGIN_UPDATE_ID = "workflow_record_origin_update_id"
 PROBLEM_UNKNOWN_PHASE = "workflow_unknown_phase"
 PROBLEM_INVALID_TRANSITION = "workflow_invalid_transition"
 
@@ -447,6 +507,48 @@ def path_character_problem(value):
     return None
 
 
+# Every line terminator str.splitlines() honours: the ASCII ones plus
+# the three above.
+_LINE_TERMINATORS = "\n\r\x0b\x0c\x1c\x1d\x1e" + _NON_ASCII_LINE_TERMINATORS
+
+
+def relay_ref_problem(value):
+    """The closed grammar for an origin's relay ref (I1).
+
+    Returns ``(problem_code, reason)`` when ``value`` violates the
+    grammar, or None when it conforms. The SINGLE source for the
+    record validator and the constructor. Line terminators and the
+    length bound get their own codes; anything else outside the closed
+    alphabet (``RELAY_REF_ALPHABET``) — including an empty or
+    non-string value — is a grammar violation.
+    """
+    if not isinstance(value, str):
+        return PROBLEM_RELAY_REF_GRAMMAR, (
+            "must be a string, not %s" % type(value).__name__
+        )
+    if not value:
+        return PROBLEM_RELAY_REF_GRAMMAR, "must be non-empty"
+    for ch in value:
+        if ch in _LINE_TERMINATORS:
+            return PROBLEM_RELAY_REF_LINE_TERMINATOR, (
+                "contains line terminator %r (a relay ref with line"
+                " structure could forge displayed binding lines)" % ch
+            )
+    if len(value) > MAX_ID_CHARS:
+        return PROBLEM_RELAY_REF_TOO_LONG, (
+            "is %d characters; the hard bound is %d characters and the"
+            " record is refused, not truncated"
+            % (len(value), MAX_ID_CHARS)
+        )
+    for ch in value:
+        if ch not in RELAY_REF_ALPHABET:
+            return PROBLEM_RELAY_REF_GRAMMAR, (
+                "contains %r, outside the closed alphabet (ASCII"
+                " letters, digits, '-' and '_')" % ch
+            )
+    return None
+
+
 def _require_realpath(value, location):
     _require_str(value, location, max_chars=1024)
     if not os.path.isabs(value):
@@ -472,6 +574,15 @@ _TOP_LEVEL_KEYS = (
     "target",
     "approved_baseline",
     "mission_authorization",
+    # I1 (task 20261010-164104-1761f6): the transport origin. NULLABLE,
+    # and null is the TELEGRAM lane (the only lane before this key), so
+    # it is materialized as None on records already on disk by
+    # store._normalize_additive_keys at the LOAD boundary, and
+    # WORKFLOW_SCHEMA_VERSION is NOT bumped (same reason as
+    # result_placeholder below). Unlike result_placeholder it is
+    # AUTHORITY-BEARING: it is rendered, so it is inside the render
+    # binding and the digest the human approves.
+    "origin",
     "telegram",
     "approval",
     "handoff",
@@ -679,6 +790,103 @@ def _validate_mission_authorization(value, location):
             "%s.digest_sha256 does not match the digest of the stored"
             " rendered_text; the record no longer binds the exact"
             " authorized text and is refused" % location,
+        )
+
+
+def _validate_origin(value, location):
+    """The transport origin: None (the Telegram lane) or the closed
+    ``{"transport", "relay_ref"}`` object."""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        _fail(
+            PROBLEM_ORIGIN_SHAPE,
+            "%s must be null (the Telegram lane) or an object with"
+            " exactly the keys %s, not %s"
+            % (location, ", ".join(ORIGIN_KEYS), type(value).__name__),
+        )
+    unknown = sorted(set(value) - set(ORIGIN_KEYS))
+    missing = sorted(set(ORIGIN_KEYS) - set(value))
+    if unknown or missing:
+        _fail(
+            PROBLEM_ORIGIN_SHAPE,
+            "%s must have exactly the keys %s (unknown: %s; missing:"
+            " %s); the key set is closed"
+            % (location, ", ".join(ORIGIN_KEYS),
+               ", ".join(repr(key) for key in unknown) or "none",
+               ", ".join(repr(key) for key in missing) or "none"),
+        )
+    transport = value["transport"]
+    if not isinstance(transport, str) or (
+        transport not in ORIGIN_TRANSPORTS
+    ):
+        _fail(
+            PROBLEM_ORIGIN_TRANSPORT,
+            "%s.transport must be one of %s; got %r. The Telegram"
+            " lane is represented ONLY by a null origin, and an"
+            " unknown transport fails closed"
+            % (location, ", ".join(ORIGIN_TRANSPORTS), transport),
+        )
+    problem = relay_ref_problem(value["relay_ref"])
+    if problem is not None:
+        _fail(
+            problem[0],
+            "%s.relay_ref %s; it is rendered unquoted on the approval"
+            " line, so anything outside its closed grammar is refused"
+            % (location, problem[1]),
+        )
+
+
+def _validate_transport_binding(document, location):
+    """Exact agreement between ``origin`` and ``telegram``: the
+    Telegram lane (null origin) REQUIRES a Telegram binding, and a
+    relay origin FORBIDS one. Both directions, each its own code."""
+    if document["origin"] is None and document["telegram"] is None:
+        _fail(
+            PROBLEM_TELEGRAM_REQUIRED,
+            "%s has a null origin (the Telegram lane) but a null"
+            " telegram binding; a Telegram-lane record must carry the"
+            " Telegram identity it was approved under" % location,
+        )
+    if document["origin"] is not None and (
+        document["telegram"] is not None
+    ):
+        _fail(
+            PROBLEM_ORIGIN_TELEGRAM_CONFLICT,
+            "%s has a %r origin AND a telegram binding; a relayed"
+            " workflow has no Telegram identity, so telegram must be"
+            " null" % (location, document["origin"].get("transport")),
+        )
+
+
+def _validate_relay_origin_nulls(document, location):
+    """A relay-origin record carries NO Telegram identity anywhere.
+
+    A Telegram update id is evidence of a Telegram callback, and a
+    result placeholder or delivery marker names a Telegram chat or
+    message; a relay has none of these, so each must be null — refused
+    here, at the durable boundary, so no writer can persist one.
+    """
+    if document["approval"]["consumed_by_update_id"] is not None:
+        _fail(
+            PROBLEM_ORIGIN_UPDATE_ID,
+            "%s.approval.consumed_by_update_id is %r on a relay-origin"
+            " record; it is Telegram callback evidence a relay does"
+            " not have, so it must be null"
+            % (location, document["approval"]["consumed_by_update_id"]),
+        )
+    if document["result_placeholder"] is not None:
+        _fail(
+            PROBLEM_ORIGIN_PLACEHOLDER,
+            "%s.result_placeholder must be null on a relay-origin"
+            " record; the placeholder is a Telegram message binding"
+            % location,
+        )
+    if document["result_delivery"] is not None:
+        _fail(
+            PROBLEM_ORIGIN_RESULT_DELIVERY,
+            "%s.result_delivery must be null on a relay-origin record;"
+            " it is the Telegram result-delivery lane's marker" % location,
         )
 
 
@@ -1452,8 +1660,13 @@ def validate_record(document, location="workflow record"):
         document["mission_authorization"],
         location + ".mission_authorization",
     )
-    _validate_telegram(document["telegram"], location + ".telegram")
+    _validate_origin(document["origin"], location + ".origin")
+    _validate_transport_binding(document, location)
+    if document["telegram"] is not None:
+        _validate_telegram(document["telegram"], location + ".telegram")
     _validate_approval(document["approval"], location + ".approval")
+    if document["origin"] is not None:
+        _validate_relay_origin_nulls(document, location)
     _validate_handoff(document["handoff"], location + ".handoff")
     _require_member(document["phase"], PHASES, location + ".phase")
     _validate_workspace_lease(
@@ -1470,10 +1683,13 @@ def validate_record(document, location="workflow record"):
     _validate_verified_result(
         document["verified_result"], location + ".verified_result"
     )
+    # A relay-origin record's placeholder is already known null here
+    # (above), so the chat pin is consulted only on the Telegram lane.
     _validate_result_placeholder(
         document["result_placeholder"],
         location + ".result_placeholder",
-        document["telegram"]["chat_id"],
+        None if document["telegram"] is None
+        else document["telegram"]["chat_id"],
     )
     _validate_result_delivery(
         document["result_delivery"], location + ".result_delivery"
@@ -1500,8 +1716,9 @@ def validate_record(document, location="workflow record"):
     # so the render cannot fail) and require byte-equality with the
     # stored, digest-bound rendered_text. Every rendered field —
     # workflow id, revision, control, policy digest, both target
-    # forms, baseline, approval identity, the exact human intent, all
-    # seven authority-content sections, and the handoff — is thereby
+    # forms, baseline, approval identity (both forms, origin
+    # included), the exact human intent, all seven
+    # authority-content sections, and the handoff — is thereby
     # bound: altering any stored field independently of the digested
     # text can never validate.
     if rendering.render_record_text(document) != (
@@ -1556,7 +1773,8 @@ def new_record(workflow_id, human_intent, repository_realpath,
                unresolved_questions, execution_scope,
                mission_revision, telegram_user_id, telegram_chat_id,
                approval_nonce, approval_created_at,
-               approval_expires_at, handoff_revision, handoff_text):
+               approval_expires_at, handoff_revision, handoff_text,
+               origin=None):
     """Build a fresh PLANNED workflow record with exact bindings.
 
     The rendered Mission Authorization text is computed HERE, by the
@@ -1568,6 +1786,13 @@ def new_record(workflow_id, human_intent, repository_realpath,
     Digests are computed here from the exact stored texts, so the
     record validates by construction; the result is validated before
     it is returned, as a self-check.
+
+    ``origin`` None (the default) builds a TELEGRAM-lane record exactly
+    as before I1: the same checks, and byte-identical rendered text.
+    A relay-origin record passes ``origin`` (``{"transport",
+    "relay_ref"}``) and None for BOTH Telegram ids; it is built with a
+    null telegram binding and no Telegram identity anywhere. Supplying
+    an origin together with either Telegram id is refused.
     """
     if issue_or_pr_kind is None and issue_or_pr_number is None:
         issue_or_pr = None
@@ -1597,8 +1822,31 @@ def new_record(workflow_id, human_intent, repository_realpath,
                  max_chars=MAX_AUTHORITY_TEXT_CHARS)
     _require_int(mission_revision, "mission_revision", minimum=1)
     _require_int(handoff_revision, "handoff_revision", minimum=1)
-    _require_int(telegram_user_id, "telegram_user_id", minimum=1)
-    _require_int(telegram_chat_id, "telegram_chat_id", minimum=1)
+    if origin is None:
+        _require_int(telegram_user_id, "telegram_user_id", minimum=1)
+        _require_int(telegram_chat_id, "telegram_chat_id", minimum=1)
+        telegram = {
+            "user_id": telegram_user_id,
+            "chat_id": telegram_chat_id,
+            "message_ids": [],
+            "plan_message_id": None,
+        }
+    else:
+        _validate_origin(origin, "origin")
+        if telegram_user_id is not None or telegram_chat_id is not None:
+            _fail(
+                PROBLEM_ORIGIN_TELEGRAM_CONFLICT,
+                "a %r-origin record takes no Telegram identity; got"
+                " telegram_user_id=%r, telegram_chat_id=%r"
+                % (origin["transport"], telegram_user_id,
+                   telegram_chat_id),
+            )
+        # Allowlist copy: only the two validated keys are stored.
+        origin = {
+            "transport": origin["transport"],
+            "relay_ref": origin["relay_ref"],
+        }
+        telegram = None
     if issue_or_pr is not None:
         _require_member(issue_or_pr["kind"], ISSUE_OR_PR_KINDS,
                         "issue_or_pr_kind")
@@ -1613,8 +1861,8 @@ def new_record(workflow_id, human_intent, repository_realpath,
         issue_or_pr=issue_or_pr,
         baseline_ref=baseline_ref,
         baseline_sha=baseline_commit_sha,
-        user_id=telegram_user_id,
-        chat_id=telegram_chat_id,
+        origin=origin,
+        telegram=telegram,
         human_intent=human_intent,
         authority_content=authority_content,
         handoff_revision=handoff_revision,
@@ -1646,12 +1894,8 @@ def new_record(workflow_id, human_intent, repository_realpath,
             "commit_sha": baseline_commit_sha,
         },
         "mission_authorization": mission_authorization,
-        "telegram": {
-            "user_id": telegram_user_id,
-            "chat_id": telegram_chat_id,
-            "message_ids": [],
-            "plan_message_id": None,
-        },
+        "origin": origin,
+        "telegram": telegram,
         "approval": {
             "approval_kind": APPROVAL_KIND_MISSION_V2,
             "nonce": approval_nonce,

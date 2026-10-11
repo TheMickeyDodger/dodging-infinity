@@ -745,9 +745,13 @@ class PrUpdateDeliveryTests(UpdateDeliveryFixture):
 class SeparationTests(DeliveryFixture):
 
     def test_an_engineering_approval_alone_authorizes_no_delivery(self):
-        out = self.requested()
+        """I2: the engineering approval is the default route's DI-REMOTE-2
+        Mission Authorization. Approved, it authorizes no delivery, and its
+        binding is not a delivery binding; a legacy approval (applied as
+        the pre-I2 approve tool applied it) authorizes none either."""
+        out = self.wf_requested()
         shown = self.presented(out["request_ref"])
-        approved = self.ok(self.adapter.approve(**self.approval(shown)))
+        approved = self.ok(self.adapter.approve(**self.wf_approval(shown)))
         self.assertEqual(approved["delivery_authority"], "none")
         self.assertEqual(self.deliveries(), {})
         self.assertEqual(self.transport.calls, [])
@@ -756,10 +760,14 @@ class SeparationTests(DeliveryFixture):
             "approve_delivery", dict(shown["approval_binding"],
                                      relayed_reply="approved")))
         self.assert_labelled("grok_bot_not_presented", self.adapter.approve_delivery(
-            proposal_digest_sha256=out["proposal_digest_sha256"],
+            proposal_digest_sha256=out["authorization_digest_sha256"],
             expires_at=shown["approval_binding"]["expires_at"],
             relayed_reply="approved", reply_to="r", relay_ref="r"))
         self.assertEqual(self.deliveries(), {})
+        _, _, decision = self.approved("A legacy request.")
+        self.assertEqual(decision["delivery_authority"], "none")
+        self.assertEqual(self.deliveries(), {})
+        self.assertEqual(self.transport.calls, [])
 
     def test_merge_release_deploy_and_performing_steps_have_no_tool(self):
         for tool in ("merge", "release", "deploy", "advance", "advance_delivery",
