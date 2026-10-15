@@ -1699,7 +1699,11 @@ class ETrustSeparationTests(unittest.TestCase):
         # bridge, may consume Mission Core. It records run facts through
         # Mission Core's own methods; every other execution seam stays
         # forbidden, and delivery stays with pr_delivery/mission_parent.py.
-        allowed_runtime_consumers = ("target_runtime/mission_bridge.py",)
+        # Query contract v2 (deliberate, exact): the read-only Mission State
+        # composer runs Mission Core's OWN observe over a store shim whose
+        # lock and save refuse; its calls are pinned in test_static (12h).
+        allowed_runtime_consumers = ("target_runtime/mission_bridge.py",
+                                     "target_runtime/mission_state.py")
         for relpath in importers:
             root = relpath.split("/")[0]
             if relpath not in allowed_runtime_consumers:
@@ -1711,13 +1715,21 @@ class ETrustSeparationTests(unittest.TestCase):
             {"pr_delivery/mission_parent.py"},
         )
         # With the Grok Bot relay retired (Task 8), the external importers
-        # are exactly the parent seam, the local request surface and (Task 8
-        # increment 2, intentional) the run bridge.
+        # are exactly the parent seam, the local request surface, (Task 8
+        # increment 2, intentional) the run bridge, and (native Munder
+        # integration increment 1, intentional) the read-only DI mission
+        # source reader, which reads through Mission Core's own load
+        # boundary and calls no store mutation (pinned in test_static 12d).
+        # Its readiness module is not landed in this read-only subset.
+        # Query contract v2 (deliberate, exact): the read-only Mission State
+        # composer (observe only; pinned in test_static 12h).
         self.assertEqual(
             {r for r in importers if not r.startswith("mission/")},
             {"pr_delivery/mission_parent.py", "local_request/cli.py",
              "local_request/store.py", "local_request/surface.py",
-             "target_runtime/mission_bridge.py"},
+             "target_runtime/mission_bridge.py",
+             "mission_sources/sources.py",
+             "target_runtime/mission_state.py"},
         )
 
     def test_E4_mission_never_names_pr_delivery_or_a_provider(self):

@@ -170,6 +170,13 @@ Acceptance requires every lower layer to be stable first. Munder Difflin is the
 presentation design reference for it: its ideas about showing a multi-agent
 organization are reused; its orchestration and authority backend are not.
 
+An early, read-only office import exists in this repository
+([docs/pixel-agents-office.md](pixel-agents-office.md)). It is not Phase 11 and
+not its acceptance. It is consistent with the constraint above: a passive
+projection that is never the backend and holds no authority. Phase 11 itself,
+with any controls, is unchanged: it is still last, and still requires every
+lower layer to be stable first.
+
 ### Why the visual world is last
 
 A visual world is only worth building over state that is already canonical,

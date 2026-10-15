@@ -1,0 +1,212 @@
+{
+  "detail": null,
+  "endpoint": "di.mission_catalog",
+  "endpoint_version": 1,
+  "problem": null,
+  "requested_at": 1800000000,
+  "response": {
+    "contract": "di.mission_sources.query",
+    "contract_version": 1,
+    "generated_at": 1800000000,
+    "limits": {
+      "max_json_depth": 64,
+      "max_query_input_bytes": 67108864,
+      "max_query_missions": 2048,
+      "max_registry_bytes": 262144,
+      "max_snapshot_agents": 512,
+      "max_snapshot_tasks": 256,
+      "max_sources": 128,
+      "max_store_read_bytes": 16777216,
+      "max_task_bindings": 32,
+      "min_poll_interval_seconds": 5
+    },
+    "max_age_seconds": 60,
+    "missions": [
+      {
+        "binding": {
+          "reason": "canonical_chain_complete",
+          "state": "bound",
+          "task_id": "synthetic-task-00000000-000000-aaaaaa"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "start_result",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "synthetic-task-00000000-000000-aaaaaa",
+          "workspace_realpath": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/ws-mn-1714199978b50a9d93349749406a85a7"
+        },
+        "lifecycle": {
+          "model": "mission_core.mission_state/1",
+          "standing": "active",
+          "state": "RUNNING"
+        },
+        "members": [
+          {
+            "activity": "busy",
+            "agent": "pod-exec1",
+            "classification": "present",
+            "cost": "unknown",
+            "logical": "executor1",
+            "member_ref": "synthetic-core:mn-1714199978b50a9d93349749406a85a7#executor1",
+            "mission_ref": "synthetic-core:mn-1714199978b50a9d93349749406a85a7",
+            "model": "unknown",
+            "observed_at": 1800000000,
+            "pane_id": "w1:p3",
+            "progress": "unknown",
+            "provider": "claude",
+            "reason": "session_confirmed",
+            "role": "executor",
+            "session": {
+              "live": "sess-exec-1",
+              "recorded": "sess-exec-1"
+            },
+            "task_id": "synthetic-task-00000000-000000-aaaaaa",
+            "tokens": "unknown",
+            "workspace_id": "w1"
+          }
+        ],
+        "mission_ref": "synthetic-core:mn-1714199978b50a9d93349749406a85a7",
+        "native": {
+          "cancel_requested": false,
+          "paused": false
+        },
+        "native_id": "mn-1714199978b50a9d93349749406a85a7",
+        "objective": "SYNTHETIC FIXTURE mission - not a real Mission",
+        "producer": {
+          "declared": "synthetic-producer-core",
+          "recorded": {
+            "principal_kind": "unauthenticated_local_caller",
+            "transport": "local_request"
+          }
+        },
+        "revision": 1,
+        "source_id": "synthetic-core",
+        "updated_at": 1000000
+      },
+      {
+        "binding": {
+          "reason": "task_not_in_snapshot",
+          "state": "disappeared",
+          "task_id": "synthetic-task-legacy-0002"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": null,
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "synthetic-task-legacy-0002",
+          "workspace_realpath": "/synthetic/ws/legacy"
+        },
+        "lifecycle": {
+          "model": "workflow_authority.workflow_phase/2",
+          "standing": "active",
+          "state": "DISPATCHED"
+        },
+        "members": [],
+        "mission_ref": "synthetic-legacy:synthetic-wf-0001",
+        "native": {
+          "ambiguity": "none"
+        },
+        "native_id": "synthetic-wf-0001",
+        "objective": "Resolve the defect",
+        "producer": {
+          "declared": "synthetic-producer-legacy",
+          "recorded": {
+            "origin_transport": "grok_bot",
+            "telegram_bound": false
+          }
+        },
+        "revision": 1,
+        "source_id": "synthetic-legacy",
+        "updated_at": null
+      }
+    ],
+    "registry": {
+      "directory": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/registry",
+      "health": "fresh",
+      "max_serialized_bytes": 262144,
+      "max_sources": 128,
+      "problem": null,
+      "serialized_bytes": 632,
+      "source_count": 2
+    },
+    "runtime_snapshot": {
+      "agent_count": 1,
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "problem": null,
+      "producer": "synthetic-herdr",
+      "task_count": 1
+    },
+    "sources": [
+      {
+        "health": "fresh",
+        "kind": "mission_core",
+        "max_age_seconds": 60,
+        "observed_at": 1800000000,
+        "problem": null,
+        "producer": "synthetic-producer-core",
+        "record_count": 1,
+        "source_id": "synthetic-core",
+        "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-core"
+      },
+      {
+        "health": "fresh",
+        "kind": "workflow_store",
+        "max_age_seconds": 60,
+        "observed_at": 1800000000,
+        "problem": null,
+        "producer": "synthetic-producer-legacy",
+        "record_count": 1,
+        "source_id": "synthetic-legacy",
+        "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-legacy"
+      }
+    ],
+    "unmatched_runtime_agent_count": 0,
+    "valid_until": 1800000060
+  },
+  "retry_after_seconds": null,
+  "runtime_capture": {
+    "available": true,
+    "configured": true,
+    "detail": null,
+    "discovery": {
+      "bindings": {},
+      "conflicts": [],
+      "missions_by_root": {
+        "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/ws-mn-1714199978b50a9d93349749406a85a7": "synthetic-core:mn-1714199978b50a9d93349749406a85a7"
+      },
+      "roots": [
+        "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/ws-mn-1714199978b50a9d93349749406a85a7"
+      ]
+    },
+    "observed_at": 1800000000,
+    "problem": null,
+    "refresh_budget": {
+      "per_pass_max_query_input_bytes": 67108864,
+      "per_pass_max_query_missions": 2048,
+      "per_pass_max_registry_bytes": 262144,
+      "source_passes": 2,
+      "sum_max_query_input_bytes": 134217728,
+      "sum_max_query_missions": 4096,
+      "sum_max_registry_bytes": 524288
+    },
+    "registered_roots": [],
+    "roots": {
+      "captured": [
+        "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/ws-mn-1714199978b50a9d93349749406a85a7"
+      ],
+      "discovered": [
+        "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/ws-mn-1714199978b50a9d93349749406a85a7"
+      ],
+      "over_capacity": [],
+      "registered": [],
+      "unavailable": []
+    }
+  },
+  "served": "refreshed"
+}

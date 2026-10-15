@@ -1,0 +1,1989 @@
+# NOTE: pinned to 3.0.0 deliberately. @asyncapi/modelina v5.10.1 hardcodes
+# `supportedVersions: ['3.0.0']` in its AsyncAPIInputProcessor. Bumping to
+# 3.1.0 makes Modelina fall through to a generic JSON-schema parser that emits
+# only `export type Root = any` instead of our 52 named interfaces. Bump when
+# Modelina adds 3.1.0 support; the upgrade is `npx asyncapi convert` + a regen.
+# `npm run asyncapi:validate` will keep emitting an info note recommending 3.1.0;
+# that's expected and harmless until Modelina catches up.
+asyncapi: 3.0.0
+info:
+  title: Pixel Agents Protocol
+  version: 1.0.0
+  description: |
+    Bidirectional WebSocket protocol between the Pixel Agents server and any UI client
+    (the bundled VS Code webview, the standalone browser SPA, or future third-party
+    clients). The server watches AI-coding-agent transcripts, parses tool activity, 
+    owns office layout, and streams events to all connected clients. 
+    Clients send commands to launch agents, save layout, and toggle settings.
+
+    The protocol is provider-agnostic: a HookProvider implementation defines how raw
+    CLI events are normalized to the AgentEvent shape, which the server translates
+    into ServerMessage broadcasts.
+  license:
+    name: MIT
+  contact:
+    name: Pixel Agents
+    url: https://github.com/pablodelucca/pixel-agents
+
+servers:
+  local:
+    host: 127.0.0.1:3100
+    protocol: ws
+    description: Local Pixel Agents server (default port 3100)
+    pathname: /ws
+
+channels:
+  ws:
+    address: /ws
+    description: |
+      Single bidirectional channel. The server pushes ServerMessage events on agent
+      lifecycle, tool activity, asset loading, and settings. Clients send
+      ClientMessage commands.
+    messages:
+      ServerMessage:
+        $ref: '#/components/messages/ServerMessage'
+      ClientMessage:
+        $ref: '#/components/messages/ClientMessage'
+
+operations:
+  receiveServerMessage:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    messages:
+      - $ref: '#/channels/ws/messages/ServerMessage'
+  sendClientMessage:
+    action: send
+    channel:
+      $ref: '#/channels/ws'
+    messages:
+      - $ref: '#/channels/ws/messages/ClientMessage'
+
+components:
+  messages:
+    ServerMessage:
+      title: Server-to-client message
+      summary: Any message broadcast by the server to connected clients.
+      payload:
+        $ref: '#/components/schemas/ServerMessage'
+    ClientMessage:
+      title: Client-to-server message
+      summary: Any command sent by a client to the server.
+      payload:
+        $ref: '#/components/schemas/ClientMessage'
+
+  schemas:
+    # ── Top-level discriminated unions ────────────────────────────
+
+    ServerMessage:
+      oneOf:
+        # Provider capabilities
+        - $ref: '#/components/schemas/ProviderCapabilities'
+        # Agent lifecycle
+        - $ref: '#/components/schemas/AgentCreated'
+        - $ref: '#/components/schemas/AgentClosed'
+        - $ref: '#/components/schemas/AgentSelected'
+        - $ref: '#/components/schemas/ExistingAgents'
+        # Agent status / tool activity
+        - $ref: '#/components/schemas/AgentStatus'
+        - $ref: '#/components/schemas/AgentToolStart'
+        - $ref: '#/components/schemas/AgentToolDone'
+        - $ref: '#/components/schemas/AgentToolsClear'
+        - $ref: '#/components/schemas/AgentToolPermission'
+        - $ref: '#/components/schemas/AgentToolPermissionClear'
+        # Sub-agent activity
+        - $ref: '#/components/schemas/SubagentToolStart'
+        - $ref: '#/components/schemas/SubagentToolDone'
+        - $ref: '#/components/schemas/SubagentClear'
+        - $ref: '#/components/schemas/SubagentToolPermission'
+        # Agent Teams
+        - $ref: '#/components/schemas/AgentTeamInfo'
+        # Context window
+        - $ref: '#/components/schemas/AgentContextUsage'
+        # Layout
+        - $ref: '#/components/schemas/LayoutLoaded'
+        # Assets
+        - $ref: '#/components/schemas/FurnitureAssetsLoaded'
+        - $ref: '#/components/schemas/CharacterSpritesLoaded'
+        - $ref: '#/components/schemas/PetSpritesLoaded'
+        - $ref: '#/components/schemas/FloorTilesLoaded'
+        - $ref: '#/components/schemas/WallTilesLoaded'
+        - $ref: '#/components/schemas/CarpetTilesLoaded'
+        # Settings & config
+        - $ref: '#/components/schemas/SettingsLoaded'
+        - $ref: '#/components/schemas/HooksStatus'
+        - $ref: '#/components/schemas/HooksConsentRequest'
+        - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
+        - $ref: '#/components/schemas/AreaMappingsLoaded'
+        - $ref: '#/components/schemas/WorkspaceFolders'
+        # Diagnostics
+        - $ref: '#/components/schemas/AgentDiagnostics'
+        # DI office (additive; sent only by the DI office surface)
+        - $ref: '#/components/schemas/DiOfficeState'
+      discriminator: type
+
+    ClientMessage:
+      oneOf:
+        - $ref: '#/components/schemas/WebviewReady'
+        - $ref: '#/components/schemas/LaunchAgent'
+        - $ref: '#/components/schemas/FocusAgent'
+        - $ref: '#/components/schemas/CloseAgent'
+        - $ref: '#/components/schemas/SaveAgentSeats'
+        - $ref: '#/components/schemas/SaveLayout'
+        - $ref: '#/components/schemas/SetSoundEnabled'
+        - $ref: '#/components/schemas/SetLastSeenVersion'
+        - $ref: '#/components/schemas/SetAlwaysShowLabels'
+        - $ref: '#/components/schemas/SetGhostHeadlessAgents'
+        - $ref: '#/components/schemas/SetHooksEnabled'
+        - $ref: '#/components/schemas/HooksConsentResponse'
+        - $ref: '#/components/schemas/SetHooksInfoShown'
+        - $ref: '#/components/schemas/SetWatchAllSessions'
+        - $ref: '#/components/schemas/ExportLayout'
+        - $ref: '#/components/schemas/ImportLayout'
+        - $ref: '#/components/schemas/OpenSessionsFolder'
+        - $ref: '#/components/schemas/AddExternalAssetDirectory'
+        - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
+        - $ref: '#/components/schemas/SaveAreaMappings'
+        - $ref: '#/components/schemas/SetShowAreas'
+        - $ref: '#/components/schemas/RequestDiagnostics'
+      discriminator: type
+
+    # ── Server message variants ────────────────────────────────────
+
+    ProviderCapabilities:
+      description: |
+        Sent once after `webviewReady`, before any agent messages. Tells the client
+        which tool names should render with the "reading" animation and which spawn
+        sub-agent characters.
+      type: object
+      additionalProperties: false
+      required: [type, readingTools, subagentToolNames]
+      properties:
+        type:
+          const: providerCapabilities
+        readingTools:
+          type: array
+          items:
+            type: string
+          description: Tool names that should render the reading animation (vs typing).
+        subagentToolNames:
+          type: array
+          items:
+            type: string
+          description: Tool names that spawn sub-agent characters (e.g. Task, Agent).
+
+    AgentCreated:
+      description: A new agent has appeared in the office.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentCreated
+        id:
+          type: integer
+        folderName:
+          type: string
+        isExternal:
+          type: boolean
+        palette:
+          type: integer
+          description: Server-assigned character palette index.
+        hueShift:
+          type: integer
+          description: Server-assigned hue shift in degrees (0-360).
+
+    AgentClosed:
+      description: An agent has been removed from the office.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentClosed
+        id:
+          type: integer
+
+    AgentSelected:
+      description: An agent's terminal was focused (VS Code only). UI should highlight it.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentSelected
+        id:
+          type: integer
+
+    ExistingAgents:
+      description: |
+        Snapshot of all current agents. Sent on initial connect and after agent set
+        changes that the client missed. Includes seat/palette assignments.
+      type: object
+      additionalProperties: false
+      required: [type, agents, agentMeta, folderNames, externalAgents]
+      properties:
+        type:
+          const: existingAgents
+        agents:
+          type: array
+          items:
+            type: integer
+        agentMeta:
+          type: object
+          description: Map of agent ID (string) to seat metadata.
+          additionalProperties:
+            $ref: '#/components/schemas/AgentSeatMeta'
+        folderNames:
+          type: object
+          description: Map of agent ID (string) to workspace folder name.
+          additionalProperties:
+            type: string
+        externalAgents:
+          type: object
+          description: Map of agent ID (string) to external flag.
+          additionalProperties:
+            type: boolean
+
+    AgentStatus:
+      description: Active vs waiting state for an agent (drives character animation).
+      type: object
+      additionalProperties: false
+      required: [type, id, status]
+      properties:
+        type:
+          const: agentStatus
+        id:
+          type: integer
+        status:
+          $ref: '#/components/schemas/AgentActivityStatus'
+        awaitingInput:
+          type: boolean
+          description: >-
+            Only meaningful when status is "waiting". True when the agent went
+            idle waiting on the user (drives the "Waiting for input" label);
+            absent/false means the agent finished its turn ("Done").
+
+    AgentActivityStatus:
+      description: Activity state of an agent.
+      type: string
+      enum: [active, waiting]
+
+    AgentToolStart:
+      description: Agent began executing a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, toolId, status]
+      properties:
+        type:
+          const: agentToolStart
+        id:
+          type: integer
+        toolId:
+          type: string
+        status:
+          type: string
+          description: Human-readable status to display (e.g. "Reading foo.ts").
+        toolName:
+          type: string
+        permissionActive:
+          type: boolean
+        runInBackground:
+          type: boolean
+        isTeammateSpawn:
+          type: boolean
+          description: >-
+            True when this spawn tool call carries a name, making the spawn a
+            Teammate-to-be. The office must not create a Subtask sub-character
+            for it — a teammate character will represent the spawn instead.
+
+    AgentToolDone:
+      description: Agent finished executing a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, toolId]
+      properties:
+        type:
+          const: agentToolDone
+        id:
+          type: integer
+        toolId:
+          type: string
+
+    AgentToolsClear:
+      description: All foreground tools cleared (turn end). Background agents preserved.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentToolsClear
+        id:
+          type: integer
+
+    AgentToolPermission:
+      description: Permission prompt detected for the agent's current tool.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentToolPermission
+        id:
+          type: integer
+
+    AgentToolPermissionClear:
+      description: Permission prompt resolved.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentToolPermissionClear
+        id:
+          type: integer
+
+    SubagentToolStart:
+      description: Sub-agent (e.g. Task) started a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId, toolId, status]
+      properties:
+        type:
+          const: subagentToolStart
+        id:
+          type: integer
+        parentToolId:
+          type: string
+        toolId:
+          type: string
+        status:
+          type: string
+
+    SubagentToolDone:
+      description: Sub-agent finished a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId, toolId]
+      properties:
+        type:
+          const: subagentToolDone
+        id:
+          type: integer
+        parentToolId:
+          type: string
+        toolId:
+          type: string
+
+    SubagentClear:
+      description: A sub-agent task completed.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId]
+      properties:
+        type:
+          const: subagentClear
+        id:
+          type: integer
+        parentToolId:
+          type: string
+
+    SubagentToolPermission:
+      description: Permission prompt for a sub-agent's tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId]
+      properties:
+        type:
+          const: subagentToolPermission
+        id:
+          type: integer
+        parentToolId:
+          type: string
+
+    AgentTeamInfo:
+      description: Agent Teams metadata (lead, teammate, tmux usage).
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentTeamInfo
+        id:
+          type: integer
+        teamName:
+          type: string
+        agentName:
+          type: string
+        isTeamLead:
+          type: boolean
+        leadAgentId:
+          type: integer
+        teamUsesTmux:
+          type: boolean
+
+    AgentContextUsage:
+      description: |
+        How much of the agent's context window is in use, as of its most recent
+        turn. A snapshot, NOT a running total: it falls when the session
+        compacts or clears. `maxContextTokens` is the runtime's best estimate of
+        the window size — transcripts don't state it, so it starts at the
+        default and widens (never shrinks) once a larger context is observed.
+        Sent for every agent, including leads and teammates; sub-agents have no
+        session of their own and never report it.
+      type: object
+      additionalProperties: false
+      required: [type, id, contextTokens, maxContextTokens]
+      properties:
+        type:
+          const: agentContextUsage
+        id:
+          type: integer
+        contextTokens:
+          type: integer
+        maxContextTokens:
+          type: integer
+
+    LayoutLoaded:
+      description: |
+        Office layout (tiles, furniture, colors). `null` when no layout file or
+        bundled default exists. `wasReset` is true when the bundled default
+        replaced an outdated user layout.
+      type: object
+      additionalProperties: false
+      required: [type, layout]
+      properties:
+        type:
+          const: layoutLoaded
+        layout:
+          oneOf:
+            - type: object
+              description: |
+                Opaque layout object (cols, rows, tiles, furniture, tileColors).
+                Format defined by the OfficeLayout schema in webview-ui; not
+                modeled here because it's owned by the rendering layer.
+            - type: 'null'
+        wasReset:
+          type: boolean
+
+    FurnitureAssetsLoaded:
+      description: Furniture catalog and sprite data, sent once after webviewReady.
+      type: object
+      additionalProperties: false
+      required: [type, catalog, sprites]
+      properties:
+        type:
+          const: furnitureAssetsLoaded
+        catalog:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureAssetMessage'
+        sprites:
+          type: object
+          description: Map of furniture asset ID to its sprite (2D hex string array).
+          additionalProperties:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
+    CharacterSpritesLoaded:
+      description: Pre-colored character sprite sets (6 palettes), sent once at startup.
+      type: object
+      additionalProperties: false
+      required: [type, characters]
+      properties:
+        type:
+          const: characterSpritesLoaded
+        characters:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterSpriteSet'
+
+    PetSpritesLoaded:
+      description: Pet sprite frame sets and display names, sent once after webviewReady (between characterSpritesLoaded and floorTilesLoaded).
+      type: object
+      additionalProperties: false
+      required: [type, pets, petNames]
+      properties:
+        type:
+          const: petSpritesLoaded
+        pets:
+          type: array
+          description: One frame-set per loaded pet, indexed by petType.
+          items:
+            $ref: '#/components/schemas/PetSpriteFrameSet'
+        petNames:
+          type: array
+          description: Display names parallel-indexed to `pets` (sourced from each pet's manifest.json).
+          items:
+            type: string
+
+    PetSpriteFrameSet:
+      description: One pet's frames keyed by direction + state. All arrays are 3D hex-string arrays (frames × rows × pixels).
+      type: object
+      additionalProperties: false
+      required: [walkDown, idleDown, walkUp, idleUp, walkRight]
+      properties:
+        walkDown:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        idleDown:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        walkUp:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        idleUp:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        walkRight:
+          type: array
+          description: 3 frames at 32×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
+    FloorTilesLoaded:
+      description: Floor tile sprites (7 patterns).
+      type: object
+      additionalProperties: false
+      required: [type, sprites]
+      properties:
+        type:
+          const: floorTilesLoaded
+        sprites:
+          type: array
+          description: Array of 2D hex string arrays (one per pattern).
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
+    WallTilesLoaded:
+      description: Wall auto-tile sprite sets (16 bitmask pieces).
+      type: object
+      additionalProperties: false
+      required: [type, sets]
+      properties:
+        type:
+          const: wallTilesLoaded
+        sets:
+          type: array
+          description: Array of wall tile sets; each set is an array of 2D hex string arrays.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: array
+                items:
+                  type: string
+
+    CarpetTilesLoaded:
+      description: Carpet auto-tile sprite sets (16 marching-squares pieces per variant).
+      type: object
+      additionalProperties: false
+      required: [type, sets]
+      properties:
+        type:
+          const: carpetTilesLoaded
+        sets:
+          type: array
+          description: Array of carpet variants; each variant is an array of 2D hex string arrays.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: array
+                items:
+                  type: string
+
+    SettingsLoaded:
+      description: All persisted user-level settings, sent once on connect.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - soundEnabled
+        - lastSeenVersion
+        - extensionVersion
+        - watchAllSessions
+        - alwaysShowLabels
+        - ghostHeadlessAgents
+        - hooksEnabled
+        - hooksInfoShown
+        - externalAssetDirectories
+        - showAreas
+      properties:
+        type:
+          const: settingsLoaded
+        soundEnabled:
+          type: boolean
+        lastSeenVersion:
+          type: string
+        extensionVersion:
+          type: string
+        watchAllSessions:
+          type: boolean
+        alwaysShowLabels:
+          type: boolean
+        ghostHeadlessAgents:
+          type: boolean
+        hooksEnabled:
+          type: boolean
+        hooksInfoShown:
+          type: boolean
+        externalAssetDirectories:
+          type: array
+          items:
+            type: string
+        showAreas:
+          type: boolean
+
+    HooksStatus:
+      description: |
+        Actual hook installation state, as opposed to the hooksEnabled
+        preference in SettingsLoaded. The two can disagree: hooksEnabled
+        defaults to true while first-run consent is still pending and nothing
+        is installed yet. Sent after the connect handshake and whenever the
+        install state changes (consent granted, settings toggle, uninstall).
+      type: object
+      additionalProperties: false
+      required: [type, providerId, installed]
+      properties:
+        type:
+          const: hooksStatus
+        providerId:
+          type: string
+          description: >-
+            The hook provider this install state is about (HookProvider.id,
+            e.g. "claude"). Consumers keyed on install state must never mix
+            one provider's status into another's — the Intro's install
+            verdict in particular reads only the provider it asked about.
+        installed:
+          type: boolean
+
+    HooksConsentRequest:
+      description: |
+        Ask this client to run the first-run hooks consent dialog. Sent during the
+        `webviewReady` handshake when the hooks preference is on, consent has not
+        been recorded, and nothing of ours is installed — and, in standalone, only
+        on privileged (tokened) connections, since an untokened spectator could not
+        act on it anyway (its `hooksConsentResponse` would be ignored).
+
+        Carries the provider being asked about and its disclosure copy so the
+        client renders the server's exact terms (the provider's
+        consentDisclosure(), shared with no client-side duplicate to drift).
+        The client answers with `hooksConsentResponse`, echoing the providerId;
+        dismissing the dialog sends nothing and the request fires again on the
+        next connect. One request per provider that needs an answer.
+      type: object
+      additionalProperties: false
+      required: [type, providerId, headline, disclosure]
+      properties:
+        type:
+          const: hooksConsentRequest
+        providerId:
+          type: string
+          description: >-
+            The hook provider whose install is being approved (HookProvider.id).
+            The client never originates this value — it echoes it back in its
+            `hooksConsentResponse`.
+        headline:
+          type: string
+          description: One-sentence summary of what is being approved.
+        disclosure:
+          type: string
+          description: |
+            Full disclosure body (what is written, what data moves, how to undo),
+            paragraphs separated by blank lines.
+
+    AreaMappingsLoaded:
+      description: |
+        Workspace-folder-to-Area mappings. Folder names map to one or more Area
+        labels; new agents from that folder prefer seats inside those Areas.
+      type: object
+      additionalProperties: false
+      required: [type, mappings]
+      properties:
+        type:
+          const: areaMappingsLoaded
+        mappings:
+          type: object
+          description: Map of folder name (string) to array of Area labels.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    ExternalAssetDirectoriesUpdated:
+      description: External asset directory list changed (after add/remove).
+      type: object
+      additionalProperties: false
+      required: [type, dirs]
+      properties:
+        type:
+          const: externalAssetDirectoriesUpdated
+        dirs:
+          type: array
+          items:
+            type: string
+
+    WorkspaceFolders:
+      description: Multi-root workspace folders (VS Code only).
+      type: object
+      additionalProperties: false
+      required: [type, folders]
+      properties:
+        type:
+          const: workspaceFolders
+        folders:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceFolder'
+
+    AgentDiagnostics:
+      description: Connection diagnostics for all agents (response to requestDiagnostics).
+      type: object
+      additionalProperties: false
+      required: [type, agents]
+      properties:
+        type:
+          const: agentDiagnostics
+        agents:
+          type: array
+          description: Per-agent diagnostic info; shape opaque to the protocol.
+          items:
+            type: object
+
+    DiOfficeState:
+      description: |
+        DI office only (additive; the standalone and VS Code surfaces never send it).
+        The office state projected SERVER-SIDE from the DI backend's read-only catalog:
+        each source-qualified Mission with its roster (the direct receipt task in contract v1;
+        direct and linked-child chains at depth 1 in contract v2), the roster coverage label,
+        the two independent freshness levels and the distinct times.
+        Fully projected — the webview renders it and derives nothing (no store reads,
+        no lifecycle derivation, no ref parsing).
+      type: object
+      additionalProperties: false
+      required:
+        [
+          type,
+          live,
+          notLiveReason,
+          connection,
+          envelope,
+          runtime,
+          times,
+          coverage,
+          missions,
+          contractVersion,
+          chainObservation,
+        ]
+      properties:
+        type:
+          const: diOfficeState
+        live:
+          type: boolean
+          description: True only when BOTH freshness levels hold.
+        notLiveReason:
+          type: [string, 'null']
+        connection:
+          $ref: '#/components/schemas/DiObservedValue'
+        envelope:
+          $ref: '#/components/schemas/DiEnvelopeStatus'
+        runtime:
+          $ref: '#/components/schemas/DiRuntimeStatus'
+        times:
+          $ref: '#/components/schemas/DiTimes'
+        coverage:
+          $ref: '#/components/schemas/DiCoverage'
+        missions:
+          $ref: '#/components/schemas/DiMissionList'
+        contractVersion:
+          type: integer
+          description: The catalog contract version this office process was launched to read (one per process).
+        chainObservation:
+          $ref: '#/components/schemas/DiChainObservation'
+
+    DiObservationState:
+      description: |
+        How a value was observed. observed = read and present; known_empty = read,
+        there are none; not_recorded = read, null for this record; projected_reason =
+        the backend projected a specific reason instead; not_applicable = the field does
+        not exist for this source kind; unavailable = could not read.
+      type: string
+      enum: [observed, known_empty, not_recorded, projected_reason, not_applicable, unavailable]
+
+    DiObservedValue:
+      description: One displayed value with how it was observed. `value` is display text.
+      type: object
+      additionalProperties: false
+      required: [state, value, reason]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiObservationState'
+        value:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+
+    DiEnvelopeStatus:
+      description: LEVEL 1 — the catalog answer and the backend's serve-time freshness verdict.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          fresh,
+          reason,
+          served,
+          verdictHealth,
+          verdictProblem,
+          envelopeProblem,
+          envelopeDetail,
+          retryAfterSeconds,
+          registryHealth,
+        ]
+      properties:
+        fresh:
+          type: boolean
+        reason:
+          type: [string, 'null']
+        served:
+          type: [string, 'null']
+        verdictHealth:
+          type: [string, 'null']
+        verdictProblem:
+          type: [string, 'null']
+        envelopeProblem:
+          type: [string, 'null']
+        envelopeDetail:
+          type: [string, 'null']
+        retryAfterSeconds:
+          type: [number, 'null']
+        registryHealth:
+          type: [string, 'null']
+
+    DiRuntimeStatus:
+      description: LEVEL 2 — the nested runtime capture and the runtime snapshot.
+      type: object
+      additionalProperties: false
+      required:
+        [fresh, reason, configured, available, captureProblem, snapshotHealth, snapshotProblem]
+      properties:
+        fresh:
+          type: boolean
+        reason:
+          type: [string, 'null']
+        configured:
+          type: [boolean, 'null']
+        available:
+          type: [boolean, 'null']
+        captureProblem:
+          type: [string, 'null']
+        snapshotHealth:
+          type: [string, 'null']
+        snapshotProblem:
+          type: [string, 'null']
+
+    DiTimes:
+      description: |
+        Kept DISTINCT, never collapsed into one "last updated". Integer epoch seconds.
+        evaluatedAt is the office's own clock at evaluation.
+      type: object
+      additionalProperties: false
+      required: [requestedAt, generatedAt, validUntil, snapshotObservedAt, evaluatedAt]
+      properties:
+        requestedAt:
+          type: [integer, 'null']
+        generatedAt:
+          type: [integer, 'null']
+        validUntil:
+          type: [integer, 'null']
+        snapshotObservedAt:
+          type: [integer, 'null']
+        evaluatedAt:
+          type: integer
+
+    DiCoverage:
+      description: Roster coverage, stated explicitly (direct receipt task only).
+      type: object
+      additionalProperties: false
+      required: [scope, statement, linkedChildRoles, linkedChildStatement]
+      properties:
+        scope:
+          type: string
+        statement:
+          type: string
+        linkedChildRoles:
+          type: string
+        linkedChildStatement:
+          type: string
+
+    DiMissionList:
+      type: object
+      additionalProperties: false
+      required: [state, reason, missions]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiObservationState'
+        reason:
+          type: [string, 'null']
+        missions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiMission'
+
+    DiMission:
+      description: One source-qualified Mission. Strings are verbatim from the backend.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          missionRef,
+          sourceId,
+          nativeId,
+          sourceKind,
+          lifecycleModel,
+          lifecycleState,
+          standing,
+          bindingState,
+          bindingReason,
+          producerDeclared,
+          live,
+          notLiveReason,
+          objective,
+          updatedAt,
+          identitySource,
+          paused,
+          cancelRequested,
+          ambiguity,
+          members,
+          v2,
+        ]
+      properties:
+        missionRef:
+          type: string
+        sourceId:
+          type: string
+        nativeId:
+          type: string
+        sourceKind:
+          type: string
+        lifecycleModel:
+          type: string
+        lifecycleState:
+          type: string
+          description: The source's native state literal, verbatim and case-preserved.
+        standing:
+          type: string
+        bindingState:
+          type: string
+        bindingReason:
+          type: string
+        producerDeclared:
+          type: string
+          description: Declared provenance only — never an identity join.
+        live:
+          type: boolean
+        notLiveReason:
+          type: [string, 'null']
+        objective:
+          $ref: '#/components/schemas/DiObservedValue'
+        updatedAt:
+          $ref: '#/components/schemas/DiObservedValue'
+        identitySource:
+          $ref: '#/components/schemas/DiObservedValue'
+        paused:
+          $ref: '#/components/schemas/DiObservedValue'
+        cancelRequested:
+          $ref: '#/components/schemas/DiObservedValue'
+        ambiguity:
+          $ref: '#/components/schemas/DiObservedValue'
+        members:
+          $ref: '#/components/schemas/DiMemberList'
+        v2:
+          $ref: '#/components/schemas/DiMissionV2'
+
+    DiMemberList:
+      type: object
+      additionalProperties: false
+      required: [state, reason, members]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiObservationState'
+        reason:
+          type: [string, 'null']
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiMember'
+
+    DiMember:
+      description: |
+        One member of a Mission's direct receipt task (contract v1), or of one of its chains —
+        the direct task or a linked child task at depth 1 (contract v2, `chain`). Identity is
+        task-qualified; session/pane/workspace are EVIDENCE fields and never confer liveness.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          characterId,
+          coverage,
+          memberRef,
+          missionRef,
+          logical,
+          role,
+          agent,
+          provider,
+          taskId,
+          paneId,
+          workspaceId,
+          sessionRecorded,
+          sessionLive,
+          classification,
+          reason,
+          activity,
+          live,
+          notLiveReason,
+          animateActive,
+          model,
+          cost,
+          tokens,
+          progress,
+          chain,
+          chainTaskId,
+        ]
+      properties:
+        characterId:
+          type: [integer, 'null']
+          description: The office character for this member, or null when it has none (not live).
+        coverage:
+          type: string
+        memberRef:
+          type: string
+        missionRef:
+          type: string
+        logical:
+          type: string
+        role:
+          type: string
+        agent:
+          type: string
+        provider:
+          type: string
+        taskId:
+          $ref: '#/components/schemas/DiObservedValue'
+        paneId:
+          $ref: '#/components/schemas/DiObservedValue'
+        workspaceId:
+          $ref: '#/components/schemas/DiObservedValue'
+        sessionRecorded:
+          $ref: '#/components/schemas/DiObservedValue'
+        sessionLive:
+          $ref: '#/components/schemas/DiObservedValue'
+        classification:
+          type: string
+        reason:
+          type: string
+        activity:
+          type: string
+        live:
+          type: boolean
+        notLiveReason:
+          type: [string, 'null']
+        animateActive:
+          type: boolean
+          description: Server-decided — true only for a live member whose activity is busy.
+        model:
+          $ref: '#/components/schemas/DiObservedValue'
+        cost:
+          $ref: '#/components/schemas/DiObservedValue'
+        tokens:
+          $ref: '#/components/schemas/DiObservedValue'
+        progress:
+          $ref: '#/components/schemas/DiObservedValue'
+        chain:
+          type: string
+          description: contract v2 — the member's chain, `direct` or `child` (verbatim); v1 members are `direct`.
+        chainTaskId:
+          type: [string, 'null']
+
+    DiChainObservation:
+      description: |
+        contract v2 — health of the chain observation (same capture and vocabulary as the
+        runtime snapshot). `projected` is false for a v1 office; every value is then null.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          projected,
+          health,
+          problem,
+          observedAt,
+          maxAgeSeconds,
+          rootCount,
+          unavailableCount,
+          overCapacityCount,
+        ]
+      properties:
+        projected:
+          type: boolean
+        health:
+          type: [string, 'null']
+        problem:
+          type: [string, 'null']
+        observedAt:
+          type: [integer, 'null']
+        maxAgeSeconds:
+          type: [integer, 'null']
+        rootCount:
+          type: [integer, 'null']
+        unavailableCount:
+          type: [integer, 'null']
+        overCapacityCount:
+          type: [integer, 'null']
+
+    DiMissionV2:
+      description: |
+        contract v2 blocks of one Mission, verbatim from the backend (`projected` is false
+        for a v1 office: no chain, children, Mission State or review is then shown).
+      type: object
+      additionalProperties: false
+      required: [projected, taskChains, childrenRecord, missionState, canonicalReview]
+      properties:
+        projected:
+          type: boolean
+        taskChains:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiTaskChain'
+        childrenRecord:
+          $ref: '#/components/schemas/DiChildrenRecord'
+        missionState:
+          $ref: '#/components/schemas/DiMissionStateSummary'
+        canonicalReview:
+          $ref: '#/components/schemas/DiCanonicalReview'
+
+    DiTaskChain:
+      description: |
+        One task chain (depth 1): the direct chain first, then one per recorded child.
+        `descendantsNotFollowed` counts a child root's own children, never captured: a
+        DEPTH LIMIT, never "no children".
+      type: object
+      additionalProperties: false
+      required:
+        [
+          chain,
+          chainTaskId,
+          parentTaskId,
+          bindingState,
+          bindingReason,
+          rootObservation,
+          rootProblem,
+          membershipEnded,
+          membershipStatus,
+          membershipRule,
+          dependencyRecorded,
+          dependencyResolution,
+          dependencyRule,
+          descendantsNotFollowed,
+          declaredAgents,
+        ]
+      properties:
+        chain:
+          type: string
+        chainTaskId:
+          type: [string, 'null']
+        parentTaskId:
+          type: [string, 'null']
+        bindingState:
+          type: string
+        bindingReason:
+          type: string
+        rootObservation:
+          type: string
+        rootProblem:
+          type: [string, 'null']
+        membershipEnded:
+          type: [boolean, 'null']
+        membershipStatus:
+          type: [string, 'null']
+        membershipRule:
+          type: string
+        dependencyRecorded:
+          type: [boolean, 'null']
+        dependencyResolution:
+          type: [string, 'null']
+        dependencyRule:
+          type: [string, 'null']
+        descendantsNotFollowed:
+          type: [integer, 'null']
+        declaredAgents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiDeclaredAgent'
+
+    DiDeclaredAgent:
+      type: object
+      additionalProperties: false
+      required: [logical, agent]
+      properties:
+        logical:
+          type: string
+        agent:
+          type: string
+
+    DiChildrenRecord:
+      description: The children record — observed, observed_empty (with its caveat), unavailable (with its problem) or not_applicable; never collapsed.
+      type: object
+      additionalProperties: false
+      required: [state, problem, caveat, recordCount, otherParentCount]
+      properties:
+        state:
+          type: [string, 'null']
+        problem:
+          type: [string, 'null']
+        caveat:
+          type: [string, 'null']
+        recordCount:
+          type: [integer, 'null']
+        otherParentCount:
+          type: [integer, 'null']
+
+    DiMissionStateSummary:
+      description: |
+        Mission State: per-kind inputs, the ALLOWLISTED canonical report facts (each with its
+        certainty and observation state), completion and provenance. Nothing else of the
+        report is relayed; references are displayed, never dereferenced.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          state,
+          problem,
+          detail,
+          cursor,
+          baseline,
+          candidateApplicability,
+          kinds,
+          facts,
+          completion,
+          provenance,
+        ]
+      properties:
+        state:
+          type: [string, 'null']
+        problem:
+          type: [string, 'null']
+        detail:
+          type: [string, 'null']
+        cursor:
+          type: [string, 'null']
+        baseline:
+          type: [string, 'null']
+        candidateApplicability:
+          type: [string, 'null']
+        kinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiMissionStateKind'
+        facts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReportFact'
+        completion:
+          $ref: '#/components/schemas/DiCompletion'
+        provenance:
+          $ref: '#/components/schemas/DiReportProvenance'
+
+    DiReportFact:
+      description: |
+        One allowlisted canonical fact. `state` keeps null (not_recorded), empty
+        (known_empty), unavailable and not_applicable distinct; proof, readiness,
+        dependencies and budget with no activation contract are not_applicable, never "none".
+      type: object
+      additionalProperties: false
+      required:
+        [
+          name,
+          state,
+          reason,
+          standing,
+          source,
+          freshness,
+          detail,
+          observedAt,
+          revision,
+          position,
+          entries,
+        ]
+      properties:
+        name:
+          type: string
+        state:
+          $ref: '#/components/schemas/DiObservationState'
+        reason:
+          type: [string, 'null']
+        standing:
+          type: [string, 'null']
+        source:
+          type: [string, 'null']
+        freshness:
+          type: [string, 'null']
+        detail:
+          type: [string, 'null']
+        observedAt:
+          type: [integer, 'null']
+        revision:
+          type: [integer, 'null']
+        position:
+          type: [integer, 'null']
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReportEntry'
+
+    DiReportEntry:
+      type: object
+      additionalProperties: false
+      required: [label, value]
+      properties:
+        label:
+          type: string
+        value:
+          type: [string, 'null']
+
+    DiCompletion:
+      description: Completion, with reported_* and verified_* as DIFFERENT facts (never merged).
+      type: object
+      additionalProperties: false
+      required:
+        [
+          state,
+          reason,
+          reportedComplete,
+          reportedSuccess,
+          verifiedSuccess,
+          closureVerified,
+          contradicted,
+          closure,
+          holds,
+          holdsTotal,
+          limitsIdentity,
+          limitsSeparationOfDuties,
+          limitsNonVerifyingEvidenceKinds,
+          limitsNonVerifyingEvidenceKindsTotal,
+        ]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiObservationState'
+        reason:
+          type: [string, 'null']
+        reportedComplete:
+          type: [boolean, 'null']
+        reportedSuccess:
+          type: [boolean, 'null']
+        verifiedSuccess:
+          type: [boolean, 'null']
+        closureVerified:
+          type: [boolean, 'null']
+        contradicted:
+          type: [boolean, 'null']
+        closure:
+          type: [string, 'null']
+        holds:
+          type: array
+          items:
+            type: string
+        holdsTotal:
+          type: [integer, 'null']
+          description: The real number of holds (null = unknown, not a list); `holds` may be a capped prefix.
+        limitsIdentity:
+          type: [string, 'null']
+        limitsSeparationOfDuties:
+          type: [string, 'null']
+        limitsNonVerifyingEvidenceKinds:
+          type: array
+          items:
+            type: string
+        limitsNonVerifyingEvidenceKindsTotal:
+          type: [integer, 'null']
+
+    DiReportProvenance:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          state,
+          reason,
+          recordSource,
+          revision,
+          position,
+          freshnessBoundSeconds,
+          journalDigest,
+          movedDuringCollection,
+          collectionStatus,
+          collectedAtPosition,
+          headPosition,
+          cursorPosition,
+          drift,
+          driftTotal,
+          sources,
+        ]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiObservationState'
+        reason:
+          type: [string, 'null']
+        recordSource:
+          type: [string, 'null']
+        revision:
+          type: [integer, 'null']
+        position:
+          type: [integer, 'null']
+        freshnessBoundSeconds:
+          type: [integer, 'null']
+        journalDigest:
+          type: [string, 'null']
+        movedDuringCollection:
+          type: [string, 'null']
+        collectionStatus:
+          type: [string, 'null']
+        collectedAtPosition:
+          type: [integer, 'null']
+        headPosition:
+          type: [integer, 'null']
+        cursorPosition:
+          type: [integer, 'null']
+        drift:
+          type: array
+          items:
+            type: string
+        driftTotal:
+          type: [integer, 'null']
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReportSource'
+
+    DiReportSource:
+      type: object
+      additionalProperties: false
+      required: [kind, source, standing, observedAt, detail]
+      properties:
+        kind:
+          type: string
+        source:
+          type: [string, 'null']
+        standing:
+          type: [string, 'null']
+        observedAt:
+          type: [integer, 'null']
+        detail:
+          type: [string, 'null']
+
+    DiMissionStateKind:
+      type: object
+      additionalProperties: false
+      required: [kind, supplied, reason]
+      properties:
+        kind:
+          type: string
+        supplied:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+
+    DiCanonicalReview:
+      description: |
+        The ADMITTED canonical review record: READ-ONLY preamble context only (round,
+        reviewer logical, reviewer agent, protocol token). Linkage-corroborated, NOT
+        digest-anchored; candidate applicability is never proven by it. `gate` (parsed |
+        unparsed) is the GATE fact and `verdict` the REVIEW fact, never collapsed.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          state,
+          problem,
+          gate,
+          verdict,
+          currency,
+          integrity,
+          taskStatus,
+          candidateApplicability,
+          round,
+          reviewerLogical,
+          reviewerAgent,
+          protocolToken,
+        ]
+      properties:
+        state:
+          type: [string, 'null']
+        problem:
+          type: [string, 'null']
+        gate:
+          type: [string, 'null']
+        verdict:
+          type: [string, 'null']
+        currency:
+          type: [string, 'null']
+        integrity:
+          type: [string, 'null']
+        taskStatus:
+          type: [string, 'null']
+        candidateApplicability:
+          type: [string, 'null']
+        round:
+          type: [integer, 'null']
+        reviewerLogical:
+          type: [string, 'null']
+        reviewerAgent:
+          type: [string, 'null']
+        protocolToken:
+          type: [string, 'null']
+
+    # ── Client message variants ────────────────────────────────────
+
+    WebviewReady:
+      description: Client signals it's ready to receive state.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: webviewReady
+
+    LaunchAgent:
+      description: Launch a new Claude agent in a new terminal.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: launchAgent
+        folderPath:
+          type: string
+          description: Workspace folder path (for multi-root workspaces).
+        bypassPermissions:
+          type: boolean
+
+    FocusAgent:
+      description: Focus an agent's terminal.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: focusAgent
+        id:
+          type: integer
+
+    CloseAgent:
+      description: Close (dismiss) an agent.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: closeAgent
+        id:
+          type: integer
+
+    SaveAgentSeats:
+      description: Persist seat assignments for current agents.
+      type: object
+      additionalProperties: false
+      required: [type, seats]
+      properties:
+        type:
+          const: saveAgentSeats
+        seats:
+          type: object
+          description: Map of agent ID (string) to seat assignment.
+          additionalProperties:
+            $ref: '#/components/schemas/SeatAssignment'
+
+    SaveLayout:
+      description: Save the office layout to ~/.pixel-agents/layout.json.
+      type: object
+      additionalProperties: false
+      required: [type, layout]
+      properties:
+        type:
+          const: saveLayout
+        layout:
+          type: object
+          description: Opaque layout object; format owned by the rendering layer.
+
+    SetSoundEnabled:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setSoundEnabled
+        enabled:
+          type: boolean
+
+    SetLastSeenVersion:
+      type: object
+      additionalProperties: false
+      required: [type, version]
+      properties:
+        type:
+          const: setLastSeenVersion
+        version:
+          type: string
+
+    SetAlwaysShowLabels:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setAlwaysShowLabels
+        enabled:
+          type: boolean
+
+    SetGhostHeadlessAgents:
+      description: >-
+        Toggle translucent rendering for headless agents (adopted sessions with no
+        terminal to focus).
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setGhostHeadlessAgents
+        enabled:
+          type: boolean
+
+    SetHooksEnabled:
+      type: object
+      additionalProperties: false
+      required: [type, providerId, enabled]
+      properties:
+        type:
+          const: setHooksEnabled
+        providerId:
+          type: string
+          description: >-
+            The hook provider being toggled (HookProvider.id). The client
+            echoes the id of the hooksStatus row the checkbox renders; it
+            never originates one.
+        enabled:
+          type: boolean
+
+    HooksConsentResponse:
+      description: |
+        The user's answer to `hooksConsentRequest` — an ABSOLUTE statement of
+        the state the user wants, revisable from the Intro's closing step. Only
+        an exact `install` grants consent and installs; only an exact `never`
+        records a durable decline and persists hooks-off (uninstalling first
+        when this provider's hooks are on disk from an earlier answer).
+        `notNow` writes nothing on a fresh ask, but over anything an EARLIER
+        answer left behind it reverts it — uninstalling a landed install,
+        clearing a recorded grant or decline — so the ask genuinely returns on
+        the next connect. Any unrecognized value writes NOTHING and the user is
+        asked again — a malformed choice must never be read as approval, a
+        durable decline, or an uninstall trigger. The server ignores this
+        message on unprivileged standalone connections, which were never sent
+        the request.
+      type: object
+      additionalProperties: false
+      required: [type, providerId, choice]
+      properties:
+        type:
+          const: hooksConsentResponse
+        providerId:
+          type: string
+          description: >-
+            The provider this answer is about, echoed verbatim from the
+            `hooksConsentRequest` that solicited it. An id naming no
+            registered provider is treated exactly like a junk choice:
+            write nothing.
+        choice:
+          $ref: '#/components/schemas/HooksConsentChoice'
+
+    HooksConsentChoice:
+      description: >-
+        The three consent outcomes. Receivers must treat any other value as a
+        no-op: write nothing, ask again. (An exact notNow itself is a no-op
+        only on a fresh ask — over an earlier answer it is a revision that
+        undoes what that answer left behind.)
+      type: string
+      enum: [install, notNow, never]
+
+    SetHooksInfoShown:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: setHooksInfoShown
+
+    SetWatchAllSessions:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setWatchAllSessions
+        enabled:
+          type: boolean
+
+    ExportLayout:
+      description: Trigger layout export via host-native save dialog.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: exportLayout
+
+    ImportLayout:
+      description: Trigger layout import via host-native open dialog.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: importLayout
+
+    OpenSessionsFolder:
+      description: Open ~/.claude/projects in the OS file manager.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: openSessionsFolder
+
+    AddExternalAssetDirectory:
+      description: >-
+        Add an external asset directory. In VS Code the host shows a native
+        directory picker and omits `path`; the standalone browser has no native
+        picker, so it supplies an absolute `path` typed by the user.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: addExternalAssetDirectory
+        path:
+          type: string
+          description: Absolute directory path (standalone browser only; omitted in VS Code).
+
+    RemoveExternalAssetDirectory:
+      description: Remove an external asset directory by path.
+      type: object
+      additionalProperties: false
+      required: [type, path]
+      properties:
+        type:
+          const: removeExternalAssetDirectory
+        path:
+          type: string
+
+    SaveAreaMappings:
+      description: Persist folder-to-Area mappings for seat assignment.
+      type: object
+      additionalProperties: false
+      required: [type, mappings]
+      properties:
+        type:
+          const: saveAreaMappings
+        mappings:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    SetShowAreas:
+      description: Toggle the Areas overlay (translucent rendering on top of the office).
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setShowAreas
+        enabled:
+          type: boolean
+
+    RequestDiagnostics:
+      description: Request agent connection diagnostics (server responds with agentDiagnostics).
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: requestDiagnostics
+
+    # ── Supporting schemas ─────────────────────────────────────────
+
+    AgentSeatMeta:
+      description: |
+        Seat metadata associated with an agent (palette index, hue shift, seat ID).
+        Used in `existingAgents.agentMeta`. All fields optional because some agents
+        may not have a seat assignment yet.
+      type: object
+      additionalProperties: false
+      properties:
+        palette:
+          type: integer
+        hueShift:
+          type: integer
+        seatId:
+          type: string
+
+    SeatAssignment:
+      description: |
+        Required seat assignment payload sent in `saveAgentSeats`. `seatId` may be
+        null when the agent is unseated (left their chair). All other fields required.
+      type: object
+      additionalProperties: false
+      required: [palette, hueShift, seatId]
+      properties:
+        palette:
+          type: integer
+        hueShift:
+          type: integer
+        seatId:
+          type: [string, 'null']
+
+    WorkspaceFolder:
+      type: object
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+
+    CharacterSpriteSet:
+      description: |
+        One palette's character sprites as 3D hex-string arrays (frames × rows × pixels).
+        Three direction sets per palette: down, up, right (left is rendered as flipped right).
+      type: object
+      additionalProperties: false
+      required: [down, up, right]
+      properties:
+        down:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        up:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        right:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
+    FurnitureAssetMessage:
+      description: One entry in the furniture catalog (sent in `furnitureAssetsLoaded`).
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - label
+        - category
+        - file
+        - width
+        - height
+        - footprintW
+        - footprintH
+        - isDesk
+        - canPlaceOnWalls
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        label:
+          type: string
+        category:
+          type: string
+        file:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        footprintW:
+          type: integer
+        footprintH:
+          type: integer
+        isDesk:
+          type: boolean
+        canPlaceOnWalls:
+          type: boolean
+        groupId:
+          type: string
+        canPlaceOnSurfaces:
+          type: boolean
+        backgroundTiles:
+          type: integer
+        orientation:
+          type: string
+        state:
+          type: string
+        mirrorSide:
+          type: boolean
+        rotationScheme:
+          type: string
+        animationGroup:
+          type: string
+        frame:
+          type: integer

@@ -36,6 +36,9 @@ Key components include:
 - `dirun.py` — repository-root entry script for the Runtime CLI
 - `operator_session/` — provider-neutral operator session seam (prepare a turn, then execute it with one provider call per execute invocation); the base and function-backed sessions are provider-free, only the Codex-backed session imports the Codex Gateway, and the seam owns no authority or lifecycle
 - `human_interaction/` — provider-neutral human-interaction seam (receive authenticated events, send/edit/acknowledge, offer controls, presentation-limit queries, one provider call per method); the contract is stdlib-only, the only implementation lives with the Telegram adapter, and the seam owns no authority, no durable state, and no retry policy
+- `mission_sources/` — read-only Mission catalog sources: the source registry, the bounded store readers and the catalog queries behind `target_runtime/catalog.py`
+- `dicatalog.py` / `dicatalog_http.py` — repository-root entry scripts for catalog source registration and one-shot queries, and for the passive loopback catalog adapter the Pixel Agents DI office reads
+- `integrations/pixel-agents/` — the vendored Pixel Agents DI office (Node.js/TypeScript, MIT): its own dependency and build boundary, installed only with `HUSKY=0`; see `docs/pixel-agents-office.md`
 - `scripts/dirun-agent.sh` — optional per-user LaunchAgent installer for the Runtime service
 - `roles/` — logical role contracts
 - `tests/` — regression coverage
@@ -81,7 +84,7 @@ fail fast instead of hanging the suite (or escaping to the network).
 Compile-check the Python sources:
 
 ```bash
-python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py dirun.py target_runtime/*.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py worker/*.py pr_delivery/*.py mission/*.py coordination/*.py local_request/*.py direquest.py grok_bot/*.py grokbot.py tunnel_control/*.py ditunnel.py
+python3 -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py dirun.py target_runtime/*.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py worker/*.py pr_delivery/*.py mission/*.py coordination/*.py mission_sources/*.py local_request/*.py direquest.py grok_bot/*.py grokbot.py tunnel_control/*.py ditunnel.py dicatalog.py dicatalog_http.py
 ```
 
 ## Model and runtime contributions

@@ -2506,6 +2506,87 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_HANDOFF_RECORDS": 4096,
             "MAX_PARTICIPANT_ROSTERS": 1024,
         },
+        # mission_sources: the read-only DI mission source query.
+        "mission_sources/contract.py": {
+            # The proof contract's <=60 s readiness bound is the default.
+            "DEFAULT_MAX_AGE_SECONDS": 60,
+            "MIN_MAX_AGE_SECONDS": 1,
+            "MAX_MAX_AGE_SECONDS": 3600,
+            "MAX_SNAPSHOT_TASKS": 256,
+            "MAX_TASK_BINDINGS": 32,
+            "MAX_SNAPSHOT_AGENTS": 512,
+            "MAX_SNAPSHOT_TEXT_CHARS": 1024,
+            # Declared polling contract exposed to consumers.
+            "MIN_POLL_INTERVAL_SECONDS": 5,
+        },
+        "mission_sources/registry.py": {
+            # Usable bound with headroom over observed use; reaching it is
+            # an explicit registry_full refusal, exposed in every response.
+            "MAX_REGISTERED_SOURCES": 128,
+            "MAX_SOURCE_ID_CHARS": 64,
+            "MAX_PRODUCER_CHARS": 128,
+            "MAX_STORE_DIR_CHARS": 1024,
+            "MAX_REGISTRY_BYTES": 262144,
+        },
+        "mission_sources/fileread.py": {
+            # Non-recursive pre-parse nesting bound for every JSON file read.
+            "MAX_JSON_DEPTH": 64,
+        },
+        "mission_sources/sources.py": {
+            # Per query, charged before the read / the expansion.
+            "MAX_STORE_READ_BYTES": 16777216,
+            "MAX_QUERY_INPUT_BYTES": 67108864,
+            "MAX_QUERY_MISSIONS": 2048,
+        },
+        # Increment 2: the runtime snapshot owner, the catalog endpoint,
+        # the dedicated Jarvis state and the typed Jarvis tools.
+        "target_runtime/runtime_snapshot.py": {
+            "MAX_HERD_ROOTS": 16,
+            "MAX_LISTING_ARGV": 8,
+            # Input LENGTH bounds, refused before anything starts.
+            "MAX_ARGV_ELEMENT_CHARS": 4096,
+            "MAX_ROOT_PATH_CHARS": 4096,
+            # Below the per-argument limit some kernels impose.
+            "MAX_PAYLOAD_BYTES": 126976,
+            "MAX_WAIT_SECONDS": 30,
+            "ONE_SHOT_WAIT_SECONDS": 30,
+            # Existence-only observations after a reap; the first absence
+            # ends the window, its end is UNKNOWN (capacity held).
+            "ABSENCE_WINDOW_SECONDS": 1.0,
+            "ABSENCE_POLL_SECONDS": 0.02,
+        },
+        "target_runtime/catalog.py": {
+            "MAX_WAIT_SECONDS": 30,
+            "DEFAULT_WAIT_SECONDS": 10,
+            # The enforced cadence: the contract's declared poll interval.
+            "MIN_REFRESH_INTERVAL_SECONDS": 5,
+            "MAX_REQUEST_LINE_BYTES": 4096,
+        },
+        # The passive loopback HTTP adapter over the catalog owner (the
+        # typed Jarvis controls are not landed in this read-only subset).
+        "target_runtime/catalog_http.py": {
+            "MAX_CONCURRENT_REQUESTS": 8,
+            "REQUEST_TIMEOUT_SECONDS": 10,
+            "MAX_DISCOVERY_FILE_BYTES": 4096,
+        },
+        # Query contract v2: the contract's own bounds and the read-only
+        # Mission State composer's, pinned by exact value.
+        "mission_sources/contract_v2.py": {
+            "MAX_CHILD_RECORDS": 32,
+            "MAX_CHAIN_DEPTH": 1,
+            "MAX_OBSERVED_MISSIONS": 16,
+            "MAX_REVIEW_PREAMBLE_BYTES": 4096,
+            "MAX_REVIEW_PREAMBLE_LINES": 16,
+            "MAX_REVIEW_ROUND": 99,
+            "MAX_REVIEWER_NAME_CHARS": 128,
+            "MAX_HERD_ROOTS_V2": 16,
+            "MAX_RESPONSE_MISSIONS": 2048,
+            "REPORTED_FRESHNESS_BOUND_SECONDS": 600,
+        },
+        "target_runtime/mission_state.py": {
+            "MAX_DELIVERY_STORE_BYTES": 4194304,
+            "MAX_LOCATOR_PARTS": 16,
+        },
     }
 
     # (module relpath, constant name) -> NON-EMPTY justification.

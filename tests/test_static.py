@@ -183,7 +183,7 @@ for known in ('codex_gateway/role_turn.py', 'telegram_operator/adapter.py',
 _HERDR_FREE_ROOTS = (
     'codex_gateway', 'telegram_operator', 'workflow_authority',
     'operator_session', 'human_interaction', 'durable_execution',
-    'capability', 'worker', 'mission', 'coordination',
+    'capability', 'worker', 'mission', 'coordination', 'mission_sources',
 )
 gateway_files = sorted(
     p for p in product_files
@@ -218,6 +218,9 @@ assert any(
 assert any(
     p.relative_to(R).parts[0] == 'coordination' for p in gateway_files
 ), 'coordination sources not found'
+assert any(
+    p.relative_to(R).parts[0] == 'mission_sources' for p in gateway_files
+), 'mission_sources sources not found'
 FORBIDDEN_ROOTS = {'herdr', 'herdctl'}
 
 # 1. AST: no Import/ImportFrom naming herdr/herdctl, and no dynamic-import
@@ -1665,8 +1668,12 @@ for path in product_files + sorted((R / 'herdr').glob('*.py')):
             pr_delivery_importers[relpath] = (
                 pr_delivery_importers.get(relpath, 0) + 1
             )
+# Query contract v2 (Lead D5, deliberate and minimal): the read-only Mission
+# State composer takes the delivery layer's pure receipt VALIDATION, in ONE
+# import statement; what it may call is pinned in (12h).
 assert pr_delivery_importers == {'herdr/guards.py': 1,
-                                 'grok_bot/delivery.py': 1}, (
+                                 'grok_bot/delivery.py': 1,
+                                 'target_runtime/mission_state.py': 1}, (
     'only the git guard may reach the delivery package',
     pr_delivery_importers,
 )
@@ -2000,6 +2007,18 @@ MISSION_ALLOWED_CONSUMERS = frozenset({
     # Core's own methods. It is NOT a delivery seam: it imports nothing
     # from pr_delivery and delivery_authority stays structurally none.
     'target_runtime/mission_bridge.py',
+    # Native Munder integration increment 1 (deliberate, Lead-reviewed):
+    # the read-only DI mission source reader reads canonical Mission Core
+    # through the store's OWN load boundary (accept_loaded_document) rather
+    # than re-implementing it. Read-only; pinned in (12d): within
+    # mission_sources only the reader may import mission, and it may call no
+    # store mutation. (The readiness module, a Mission state writer client,
+    # is not landed in this read-only subset.)
+    'mission_sources/sources.py',
+    # Query contract v2 (Lead D5, deliberate): the read-only Mission State
+    # composer runs Mission Core's OWN observe over a read-only store shim
+    # whose lock and save refuse; what it may call is pinned in (12h).
+    'target_runtime/mission_state.py',
 })
 MISSION_READ_ONLY_OPEN_FILE = 'mission/store.py'
 
@@ -2587,6 +2606,707 @@ assert coordination_probe.returncode == 0, (
     ' a process or a network module',
     coordination_probe.returncode, coordination_probe.stdout,
     coordination_probe.stderr,
+)
+
+# (12d) mission_sources: the read-only DI mission source query and roster
+#       (native Munder integration, increment 1). The passive boundary is
+#       pinned STRUCTURALLY, not by docstring:
+#       (a) imports: no process, network, terminal, clock, dynamic-import or
+#           tree-mutation module and no transport, delivery, orchestration
+#           or runtime-engine package (the herdr-free token scan above
+#           already covers the engine itself via _HERDR_FREE_ROOTS);
+#       (b) calls: no process / transport / tree-mutation call, no store
+#           mutation (save / lock / record_* / mint_* / apply_* / reserve*)
+#           and no agent-control verb (spawn, restore, restart, archive,
+#           enqueue, submit, prompt, write, terminate, pause, resume,
+#           cancel, reload, ...); every open() is read-only;
+#       (c) the ONLY durable write is the registry's own file (the atomic
+#           write and its lock are called only from mission_sources/
+#           registry.py); Mission Core's observe_resource_readiness is called
+#           by NO module here (mission_sources/readiness.py, the only file
+#           that may call it, is not landed in this read-only subset);
+#       (d) identifiers and non-docstring literals carry no agent-control,
+#           process or network vocabulary;
+#       (e) consumer pin: exactly these product files import mission_sources:
+#           the read-only runtime snapshot producer (pinned in 12e), the
+#           catalog endpoint (12f) and its passive loopback HTTP adapter,
+#           which takes the contract only (12g);
+#       (f) a fresh interpreter importing every module loads no process,
+#           network, runtime-engine, transport or delivery module.
+mission_sources_files = sorted(
+    p for p in product_files
+    if p.relative_to(R).parts[0] == 'mission_sources'
+)
+assert {p.relative_to(R).as_posix() for p in mission_sources_files} >= {
+    'mission_sources/__init__.py', 'mission_sources/contract.py',
+    'mission_sources/registry.py', 'mission_sources/fileread.py',
+    'mission_sources/sources.py', 'mission_sources/roster.py',
+    'mission_sources/query.py',
+}, 'mission_sources scan lost a package file'
+MISSION_SOURCES_FORBIDDEN_IMPORT_ROOTS = MISSION_FORBIDDEN_IMPORT_ROOTS | {
+    'pty', 'tty', 'termios', 'fcntl', 'resource', 'webbrowser', 'smtplib',
+    'ftplib', 'xmlrpc', 'grok_bot', 'local_request', 'tunnel_control',
+    'coordination', 'codexgw', 'tgop', 'grokbot', 'dirun', 'direquest',
+}
+MISSION_SOURCES_FORBIDDEN_CALL_NAMES = MISSION_FORBIDDEN_CALL_NAMES | {
+    'save', 'lock', 'spawn', 'respawn', 'restore', 'restart', 'archive',
+    'unarchive', 'enqueue', 'submit', 'prompt', 'send_message', 'write',
+    'writelines', 'terminate', 'killpg', 'pause', 'resume', 'cancel',
+    'reload', 'propose', 'edit', 'withdraw_proposal', 'reconcile',
+    'add_workflow', 'new_record', 'sendall',
+}
+MISSION_SOURCES_FORBIDDEN_CALL_PREFIXES = ('record_', 'mint_', 'apply_',
+                                           'reserve')
+MISSION_SOURCES_WRITE_CALLS = {'atomic_write_json', 'exclusive_store_lock'}
+MISSION_SOURCES_WRITE_FILE = 'mission_sources/registry.py'
+# The one Mission state write, through Mission Core's own validated writer.
+MISSION_SOURCES_READINESS_CALL = 'observe_resource_readiness'
+MISSION_SOURCES_READINESS_FILE = 'mission_sources/readiness.py'
+# Set literal on purpose: an unordered word list, never an argv.
+MISSION_SOURCES_FORBIDDEN_WORDS = frozenset({
+    'spawn', 'respawn', 'restore', 'restart', 'archive', 'unarchive',
+    'enqueue', 'queue', 'submit', 'keystroke', 'keystrokes', 'popen',
+    'subprocess', 'socket', 'dispatch', 'dispatcher', 'kill', 'killpg',
+    'terminate', 'launch', 'exec', 'execute', 'pty', 'tty', 'urlopen',
+    'http', 'https', 'network', 'fetch', 'upload', 'download',
+})
+MISSION_SOURCES_ALLOWED_CONSUMERS = frozenset({
+    'target_runtime/runtime_snapshot.py', 'target_runtime/catalog.py',
+    'target_runtime/catalog_http.py',
+    # Query contract v2: the canonical review record reader (contract_v2
+    # only) and the Mission State composer (contract_v2, fileread, sources
+    # only); their exact imported names are pinned in (12h).
+    'target_runtime/review_record.py', 'target_runtime/mission_state.py',
+})
+# Within the package, only the reader may import mission; every other module
+# stays mission-free.
+MISSION_SOURCES_MISSION_IMPORTERS_ALLOWED = frozenset({
+    'mission_sources/sources.py',
+})
+
+
+def _mission_sources_word_violations(token_text):
+    return sorted(
+        set(re.findall(r'[a-z]+', token_text.lower()))
+        & MISSION_SOURCES_FORBIDDEN_WORDS
+    )
+
+
+def _mission_sources_call_violation(name):
+    if name is None:
+        return False
+    return (name in MISSION_SOURCES_FORBIDDEN_CALL_NAMES
+            or name.startswith(MISSION_SOURCES_FORBIDDEN_CALL_PREFIXES))
+
+
+# Planted-probe self-checks: the detectors fire on what they exist to catch.
+assert _mission_sources_word_violations('restart_agent') == ['restart']
+assert _mission_sources_word_violations('"enqueue the prompt"') == ['enqueue']
+assert _mission_sources_word_violations('queue_depth') == ['queue']
+assert _mission_sources_word_violations('replaced_disappeared_ambiguous') == []
+assert _mission_sources_call_violation('record_run_receipt')
+assert _mission_sources_call_violation('mint_request_id')
+assert _mission_sources_call_violation('save')
+assert _mission_sources_call_violation('spawn')
+assert not _mission_sources_call_violation('load')
+assert not _mission_sources_call_violation('read_runtime_snapshot')
+
+_ms_imports_seen = 0
+_ms_calls_seen = 0
+_ms_tokens_seen = 0
+_ms_values_seen = 0
+_ms_open_calls_seen = 0
+_ms_write_calls_seen = 0
+_ms_readiness_calls_seen = 0
+for path in mission_sources_files:
+    relpath = path.relative_to(R).as_posix()
+    source = path.read_text()
+    tree = ast.parse(source)
+    docstring_positions = _docstring_positions_of(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name for alias in node.names]
+            module = getattr(node, 'module', None) or ''
+            for root in [module.split('.')[0]] + [n.split('.')[0] for n in names]:
+                _ms_imports_seen += 1
+                if root == 'mission':
+                    assert relpath in MISSION_SOURCES_MISSION_IMPORTERS_ALLOWED, (
+                        relpath, 'only the reader imports mission')
+                assert root not in MISSION_SOURCES_FORBIDDEN_IMPORT_ROOTS, (
+                    relpath, root, 'mission_sources imports no process,'
+                    ' network, terminal, clock, transport, delivery,'
+                    ' orchestration or runtime-engine root')
+        elif isinstance(node, ast.Call):
+            _ms_calls_seen += 1
+            name = getattr(node.func, 'id', getattr(node.func, 'attr', None))
+            if name == MISSION_SOURCES_READINESS_CALL:
+                _ms_readiness_calls_seen += 1
+                assert relpath == MISSION_SOURCES_READINESS_FILE, (
+                    relpath, node.lineno, name,
+                    'readiness is reported only from readiness.py')
+            if name in MISSION_SOURCES_WRITE_CALLS:
+                _ms_write_calls_seen += 1
+                assert relpath == MISSION_SOURCES_WRITE_FILE, (
+                    relpath, node.lineno, name,
+                    'the only durable write is the registry file')
+                continue
+            assert not _mission_sources_call_violation(name), (
+                relpath, node.lineno, name,
+                'mission_sources performs no process, transport, store'
+                ' mutation or agent-control call')
+            if name == 'open':
+                _ms_open_calls_seen += 1
+                if isinstance(node.func, ast.Attribute):
+                    # os.open: the flags may name ONLY read-only, no-follow,
+                    # non-blocking flags, and must include O_RDONLY and
+                    # O_NOFOLLOW.
+                    assert getattr(node.func.value, 'id', None) == 'os', (
+                        relpath, node.lineno, 'only os.open or builtin open')
+                    flags = {getattr(n, 'attr', getattr(n, 'id', None))
+                             for n in ast.walk(node.args[1])
+                             if isinstance(n, (ast.Attribute, ast.Name))}
+                    assert flags <= {'os', 'O_RDONLY', 'O_NOFOLLOW',
+                                     'O_NONBLOCK', 'O_CLOEXEC'}, (
+                        relpath, node.lineno, sorted(flags))
+                    assert {'O_RDONLY', 'O_NOFOLLOW'} <= flags, (
+                        relpath, node.lineno, 'os.open is read-only no-follow')
+                else:
+                    modes = [a.value for a in node.args[1:2]
+                             if isinstance(a, ast.Constant)]
+                    modes += [k.value.value for k in node.keywords
+                              if k.arg == 'mode'
+                              and isinstance(k.value, ast.Constant)]
+                    assert modes == ['r'], (
+                        relpath, node.lineno, modes,
+                        'every mission_sources open() is read-only')
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME or (
+            token.type == tokenize.STRING
+            and token.start not in docstring_positions
+        ):
+            _ms_tokens_seen += 1
+            violations = _mission_sources_word_violations(token.string)
+            assert not violations, (
+                relpath, token.start, token.string, violations,
+                'no agent-control, process or network vocabulary in'
+                ' mission_sources identifiers or literals')
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and (
+            (node.lineno, node.col_offset) not in docstring_positions
+        ):
+            _ms_values_seen += 1
+            assert not _mission_sources_word_violations(node.value), (
+                relpath, (node.lineno, node.col_offset), node.value)
+# Thresholds sit below the counts measured when the pin was written, so
+# the scans cannot pass on an empty or mis-filtered scope.
+assert _ms_imports_seen > 10, 'mission_sources import scan saw too few'
+assert _ms_calls_seen > 100, 'mission_sources call scan saw too few calls'
+assert _ms_tokens_seen > 1000, 'mission_sources token scan saw too few'
+assert _ms_values_seen > 100, 'mission_sources literal scan saw too few'
+assert _ms_open_calls_seen >= 1, 'the read-only open() pin saw no open()'
+assert _ms_write_calls_seen >= 2, 'the registry write pin saw no write path'
+assert _ms_readiness_calls_seen == 0, (
+    'no mission_sources module reports readiness in the read-only subset')
+
+_mission_sources_consumers = set()
+for path in product_files:
+    relpath = path.relative_to(R).as_posix()
+    if relpath.startswith('mission_sources/'):
+        continue
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or '']
+        else:
+            continue
+        if any(n.split('.')[0] == 'mission_sources' for n in names):
+            _mission_sources_consumers.add(relpath)
+assert _mission_sources_consumers == MISSION_SOURCES_ALLOWED_CONSUMERS, (
+    'mission_sources gained or lost a consumer',
+    sorted(_mission_sources_consumers))
+assert 'mission_sources/*.py' in ci_text, 'CI must compile mission_sources'
+
+# (12e) target_runtime/runtime_snapshot.py: the read-only runtime snapshot
+#       producer (increment 2, part 1), pinned STRUCTURALLY on the AST:
+#       (a) it WRITES NOTHING: no open() at all (its only file reads go
+#           through state_artifact.read_state_artifact) and no write,
+#           replace, rename, unlink, mkdir, chmod or link call;
+#       (b) it enters no agent-control path: no spawn, restore, restart,
+#           archive, edit, prompt, send, enqueue, submit, kill or Popen call,
+#           and it SIGNALS NOTHING: its ONE ``killpg`` is ``killpg(group, 0)``
+#           inside ``_group_absent`` (signal 0 sends nothing; an
+#           existence-only observation taken after the runner's reap);
+#       (c) it starts processes in exactly ONE place: the engine's owned
+#           runner ``_bounded_command`` is called once, inside ``_owned_run``;
+#           ``_owned_run`` is called only by ``_boundary`` and the owner's
+#           ``_capture_work``, ``_boundary`` only by ``_capture_work``, and
+#           ``_capture_work`` only by the owner's worker (``_work``);
+#       (d) a BOUNDARY CHILD STARTS NO PROCESS: nothing reachable from
+#           ``boundary_main`` reaches ``_owned_run``, ``_boundary``,
+#           ``_capture_work``, the owner or ``capture`` (so no group is ever
+#           nested inside another);
+#       (e) the PARENT DOES NO FILESYSTEM WORK: nothing reachable from
+#           ``capture`` or the owner (``SnapshotService``) other than through
+#           a boundary child reaches the root validation, the state passes,
+#           the projection or a filesystem call — those run only inside a
+#           boundary;
+#       (f) ``capture`` and the owner take the listing argv as a REQUIRED
+#           argument (``capture``'s only default is its wait), so nothing
+#           reaches the engine by omission, and a boundary child is started
+#           isolated (``-I``) and writes no bytecode cache (``-B``);
+#       (g) imports: from mission_sources only the contract and the bounded
+#           JSON reader; from the engine only identity, runtime and vintage;
+#           never subprocess, socket or pty;
+#       (h) the owner's worker is NOT a daemon thread (``daemon=False``), so
+#           interpreter exit cannot kill it mid-run without its ``finally``.
+RUNTIME_SNAPSHOT_FILE = 'target_runtime/runtime_snapshot.py'
+RUNTIME_SNAPSHOT_FORBIDDEN_CALLS = frozenset({
+    'open', 'write', 'writelines', 'replace', 'rename', 'renames', 'unlink',
+    'remove', 'removedirs', 'rmdir', 'rmtree', 'mkdir', 'makedirs', 'chmod',
+    'fchmod', 'chown', 'symlink', 'link', 'truncate', 'ftruncate', 'fsync',
+    'spawn', 'spawn_owned', 'restore', 'restart', 'archive', 'edit', 'prompt',
+    'send', 'send_keys', 'enqueue', 'submit', 'kill', 'killpg', 'terminate',
+    'Popen', 'run', 'call', 'check_call', 'check_output', 'system',
+    'save', 'save_task', 'save_bindings', 'dispatch_task',
+})
+RUNTIME_SNAPSHOT_FILESYSTEM_WORK = frozenset({
+    '_require_roots', '_state_pass', '_state', '_project', '_task',
+    '_bindings', 'read_state_artifact', 'realpath', 'isdir', 'isabs',
+    'lstat', 'stat', 'listdir', 'scandir', 'exists',
+    # Query contract v2 (a CHAIN request): its passes and the canonical
+    # review record read run only inside a boundary child too.
+    '_state_pass_v2', '_children_state', '_tolerant_pass',
+    '_first_pass_chains', '_project_chains', 'canonical_review',
+})
+_runtime_snapshot_tree = ast.parse((R / RUNTIME_SNAPSHOT_FILE).read_text())
+_runtime_snapshot_functions = {
+    _node.name: _node for _node in _runtime_snapshot_tree.body
+    if isinstance(_node, (ast.FunctionDef, ast.ClassDef))
+}
+# The OWNER's methods, by bare name (calls reach them as attributes).
+for _class in [_n for _n in _runtime_snapshot_tree.body
+               if isinstance(_n, ast.ClassDef)
+               and _n.name == 'SnapshotService']:
+    for _method in _class.body:
+        if isinstance(_method, ast.FunctionDef):
+            assert _method.name not in _runtime_snapshot_functions, (
+                RUNTIME_SNAPSHOT_FILE, _method.name)
+            _runtime_snapshot_functions[_method.name] = _method
+
+
+def _runtime_snapshot_calls(function):
+    return {
+        getattr(_n.func, 'id', getattr(_n.func, 'attr', None))
+        for _n in ast.walk(function) if isinstance(_n, ast.Call)
+    }
+
+
+def _runtime_snapshot_reach(start, stop=frozenset()):
+    seen, todo = set(), [start]
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        if name in _runtime_snapshot_functions and name not in stop:
+            todo.extend(_runtime_snapshot_calls(
+                _runtime_snapshot_functions[name]))
+    return seen
+
+
+_runtime_snapshot_engine_calls = []
+_runtime_snapshot_killpg = []
+for _node in ast.walk(_runtime_snapshot_tree):
+    if isinstance(_node, ast.Call):
+        _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+        if _name == 'killpg':
+            _runtime_snapshot_killpg.append(_node)
+            continue
+        assert _name not in RUNTIME_SNAPSHOT_FORBIDDEN_CALLS, (
+            RUNTIME_SNAPSHOT_FILE, _node.lineno, _name)
+        if _name == '_bounded_command':
+            _runtime_snapshot_engine_calls.append(_node.lineno)
+    if isinstance(_node, ast.ImportFrom) and _node.module:
+        if _node.module.split('.')[0] == 'mission_sources':
+            # Query contract v2 adds contract_v2 (the chain observation's own
+            # self-check), nothing else.
+            assert {a.name for a in _node.names} <= {
+                'contract', 'contract_v2', 'fileread'}, (
+                RUNTIME_SNAPSHOT_FILE, _node.lineno)
+        if _node.module.split('.')[0] == 'target_runtime':
+            # The hardened readers only; review_record is query contract
+            # v2's canonical review record reader (pinned in 12h).
+            assert {a.name for a in _node.names} <= {
+                'prepare', 'review_record', 'state_artifact'}, (
+                RUNTIME_SNAPSHOT_FILE, _node.lineno)
+        if _node.module.split('.')[0] in ('herdr', 'herdctl'):
+            assert {a.name for a in _node.names} <= {
+                'identity', 'runtime', 'vintage'}, (
+                RUNTIME_SNAPSHOT_FILE, _node.lineno)
+    if isinstance(_node, ast.Import):
+        for _alias in _node.names:
+            assert _alias.name.split('.')[0] not in (
+                'subprocess', 'herdr', 'herdctl', 'socket', 'pty'), (
+                RUNTIME_SNAPSHOT_FILE, _node.lineno, _alias.name)
+# (b) the one existence-only observation
+assert len(_runtime_snapshot_killpg) == 1 and (
+    _runtime_snapshot_killpg[0] in list(ast.walk(
+        _runtime_snapshot_functions['_group_absent']))) and (
+    isinstance(_runtime_snapshot_killpg[0].args[1], ast.Constant)
+    and _runtime_snapshot_killpg[0].args[1].value == 0
+    and len(_runtime_snapshot_killpg[0].args) == 2
+    and not _runtime_snapshot_killpg[0].keywords), (
+    'the only killpg is killpg(group, 0) inside _group_absent',
+    [_n.lineno for _n in _runtime_snapshot_killpg])
+# (c)
+assert len(_runtime_snapshot_engine_calls) == 1 and (
+    '_bounded_command' in _runtime_snapshot_calls(
+        _runtime_snapshot_functions['_owned_run'])), (
+    'the engine runner is called exactly once, inside _owned_run',
+    _runtime_snapshot_engine_calls)
+
+
+def _runtime_snapshot_callers(name):
+    return {
+        _fn for _fn, _def in _runtime_snapshot_functions.items()
+        if not isinstance(_def, ast.ClassDef)
+        and name in _runtime_snapshot_calls(_def)
+    }
+
+
+assert _runtime_snapshot_callers('_owned_run') == {
+    '_boundary', '_capture_work'}, 'only the owner starts a process'
+assert _runtime_snapshot_callers('_boundary') == {'_capture_work'}, (
+    'only the owner runs a boundary')
+assert _runtime_snapshot_callers('_capture_work') == {'_work'}, (
+    "only the owner's worker runs a capture")
+# (d)
+assert not _runtime_snapshot_reach('boundary_main') & {
+    '_owned_run', '_boundary', '_capture_work', 'SnapshotService',
+    'capture', '_bounded_command'}, (
+    'a boundary child must start no process')
+# (e)
+for _entry in ('capture', 'SnapshotService'):
+    assert not _runtime_snapshot_reach(_entry) & (
+        RUNTIME_SNAPSHOT_FILESYSTEM_WORK), (
+        'the parent does filesystem work outside a boundary', _entry,
+        sorted(_runtime_snapshot_reach(_entry)
+               & RUNTIME_SNAPSHOT_FILESYSTEM_WORK))
+assert {'_require_roots', '_state_pass', '_project'} <= (
+    _runtime_snapshot_reach('boundary_main')), 'boundary scan lost its work'
+assert {'_state_pass_v2', '_first_pass_chains', '_project_chains',
+        'canonical_review'} <= _runtime_snapshot_reach('boundary_main'), (
+    'boundary scan lost the chain work')
+# (f)
+_capture_args = _runtime_snapshot_functions['capture'].args
+assert [a.arg for a in _capture_args.args] == [
+    'herd_roots', 'clock', 'listing_argv', 'wait_seconds'] and (
+    len(_capture_args.defaults) == 1), (
+    'capture takes herd_roots, clock, listing_argv (required) and a wait')
+_owner_args = _runtime_snapshot_functions['__init__'].args
+assert [a.arg for a in _owner_args.args] == [
+    'self', 'herd_roots', 'clock', 'listing_argv'] and (
+    not _owner_args.defaults), 'the owner requires its listing argv'
+# (h)
+_owner_threads = [
+    _n for _n in ast.walk(_runtime_snapshot_functions['SnapshotService'])
+    if isinstance(_n, ast.Call)
+    and getattr(_n.func, 'attr', None) == 'Thread'
+]
+assert len(_owner_threads) == 1 and [
+    (_k.arg, getattr(_k.value, 'value', None))
+    for _k in _owner_threads[0].keywords if _k.arg == 'daemon'
+] == [('daemon', False)], 'the owner worker must not be a daemon thread'
+assert {'-I', '-B'} <= {
+    _n.value for _n in ast.walk(_runtime_snapshot_functions['_boundary'])
+    if isinstance(_n, ast.Constant)
+}, 'a boundary child is started isolated (-I) and writes no bytecode (-B)'
+
+# (12f) target_runtime/catalog.py: the producer-neutral catalog endpoint is
+#       PASSIVE. It READS registered sources through mission_sources and the
+#       runtime through runtime_snapshot's owner, and controls nothing:
+#       (a) imports: from mission_sources only the contract, the query, the
+#           registry and the roster (its pure ``discovery`` projection);
+#           from target_runtime only runtime_snapshot; no
+#           control or delivery package (local_request, mission,
+#           workflow_authority, capability, jarvis_di, grok_bot, pr_delivery,
+#           herdr, herdctl) and never subprocess, socket or pty;
+#       (b) its ONLY writes are the registry's own ``register`` and
+#           ``unregister`` (and the answer stream's ``os.write``): no open(),
+#           no file write, replace, rename, unlink, mkdir or chmod, and no
+#           spawn, kill or Popen.
+CATALOG_FILE = 'target_runtime/catalog.py'
+CATALOG_CONTROL_PACKAGES = frozenset({
+    'local_request', 'mission', 'workflow_authority', 'capability',
+    'jarvis_di', 'grok_bot', 'pr_delivery', 'herdr', 'herdctl',
+    'subprocess', 'socket', 'pty',
+})
+_catalog_tree = ast.parse((R / CATALOG_FILE).read_text())
+_catalog_calls = set()
+for _node in ast.walk(_catalog_tree):
+    if isinstance(_node, ast.ImportFrom) and _node.module:
+        _root = _node.module.split('.')[0]
+        assert _root not in CATALOG_CONTROL_PACKAGES, (
+            CATALOG_FILE, _node.lineno, _node.module)
+        if _root == 'mission_sources':
+            # Query contract v2 adds its contract and its query, nothing else.
+            assert {a.name for a in _node.names} <= {
+                'contract', 'contract_v2', 'query', 'query_v2', 'registry',
+                'roster'}, (CATALOG_FILE, _node.lineno)
+        if _root == 'target_runtime':
+            # Query contract v2 adds the read-only Mission State composer
+            # (pinned in 12h); the catalog itself still imports no control,
+            # delivery or Mission package.
+            assert {a.name for a in _node.names} <= {
+                'mission_state', 'runtime_snapshot'}, (
+                CATALOG_FILE, _node.lineno)
+    if isinstance(_node, ast.Import):
+        for _alias in _node.names:
+            assert _alias.name.split('.')[0] not in (
+                CATALOG_CONTROL_PACKAGES), (CATALOG_FILE, _node.lineno,
+                                            _alias.name)
+    if isinstance(_node, ast.Call):
+        _catalog_calls.add(getattr(_node.func, 'id',
+                                   getattr(_node.func, 'attr', None)))
+assert not _catalog_calls & (RUNTIME_SNAPSHOT_FORBIDDEN_CALLS - {
+    'write'}), ('the catalog endpoint calls a write or control primitive',
+                sorted(_catalog_calls & RUNTIME_SNAPSHOT_FORBIDDEN_CALLS))
+assert {'register', 'unregister'} <= _catalog_calls, (
+    'registration must stay explicit, through the registry')
+# Query contract v2: the read-only composer is imported ONLY inside the
+# version 2 owner branch, never at module level, so a default (version 1)
+# process loads neither Mission Core's state service nor any delivery
+# module (the accepted adapter import boundary).
+assert not [n for n in _catalog_tree.body if isinstance(n, ast.ImportFrom)
+            and any(a.name == 'mission_state' for a in n.names)], (
+    'catalog.py must not import mission_state at module level')
+assert len([n for n in ast.walk(_catalog_tree)
+            if isinstance(n, ast.ImportFrom)
+            and any(a.name == 'mission_state' for a in n.names)]) == 1
+
+# (12g) target_runtime/catalog_http.py: the passive loopback HTTP adapter
+#       over the catalog owner reaches nothing but that owner:
+#       (a) imports: from target_runtime only catalog and runtime_snapshot,
+#           from mission_sources only the contract (the canonical serve-time
+#           response_freshness); no control, delivery or engine package and
+#           never subprocess, socket or pty directly;
+#       (b) no registration over HTTP and no process start: it calls neither
+#           register nor unregister, and nothing that spawns, kills or runs
+#           a process or imports dynamically;
+#       (c) the bind address is the 127.0.0.1 literal and the routes are
+#           exactly /catalog, /diagnostics and /healthz.
+CATALOG_HTTP_FILE = 'target_runtime/catalog_http.py'
+_catalog_http_tree = ast.parse((R / CATALOG_HTTP_FILE).read_text())
+_catalog_http_imports = set()
+_catalog_http_calls = set()
+_catalog_http_literals = {}
+for _node in ast.walk(_catalog_http_tree):
+    if isinstance(_node, ast.ImportFrom) and _node.module:
+        _root = _node.module.split('.')[0]
+        assert _root not in CATALOG_CONTROL_PACKAGES, (
+            CATALOG_HTTP_FILE, _node.lineno, _node.module)
+        if _root in ('target_runtime', 'mission_sources'):
+            _catalog_http_imports |= {
+                '%s.%s' % (_node.module, a.name) for a in _node.names}
+    if isinstance(_node, ast.Import):
+        for _alias in _node.names:
+            assert _alias.name.split('.')[0] not in (
+                CATALOG_CONTROL_PACKAGES
+                | {'target_runtime', 'mission_sources'}), (
+                CATALOG_HTTP_FILE, _node.lineno, _alias.name)
+    if isinstance(_node, ast.Call):
+        _catalog_http_calls.add(getattr(_node.func, 'id',
+                                        getattr(_node.func, 'attr', None)))
+for _node in _catalog_http_tree.body:
+    if isinstance(_node, ast.Assign) and len(_node.targets) == 1 and (
+            isinstance(_node.targets[0], ast.Name)):
+        _catalog_http_literals[_node.targets[0].id] = _node.value
+assert _catalog_http_imports == {
+    'target_runtime.catalog', 'target_runtime.runtime_snapshot',
+    'mission_sources.contract'}, sorted(_catalog_http_imports)
+assert not _catalog_http_calls & {
+    'register', 'unregister', 'spawn', 'spawn_owned', 'Popen', 'system',
+    'kill', 'killpg', 'fork', 'execv', 'execvp', 'run', 'call',
+    'check_call', 'check_output', 'import_module', '__import__'}, sorted(
+    _catalog_http_calls)
+assert ast.literal_eval(_catalog_http_literals['LOOPBACK_HOST']) == (
+    '127.0.0.1'), 'the adapter binds the loopback literal only'
+assert [ast.literal_eval(_catalog_http_literals[_name.id])
+        for _name in _catalog_http_literals['ROUTES'].elts] == [
+    '/catalog', '/diagnostics', '/healthz'], 'exactly the three read routes'
+
+# (12h) Query contract v2's two new target_runtime modules, pinned
+#       STRUCTURALLY so a later, broader import or call fails here:
+#       (a) target_runtime/review_record.py, NARROW canonical review record
+#           inspection: imports exactly errno/os/re/stat and
+#           mission_sources.contract_v2; every os.open is read-only and
+#           no-follow and names only the pinned root, an EXPECTED component
+#           or the expected leaf (the recorded path is only compared, by
+#           string functions); os.read reads ONE byte at a time; nothing
+#           writes, removes, renames or links;
+#       (b) target_runtime/mission_state.py, the read-only Mission State
+#           composer: exactly these imports; from pr_delivery it CALLS only
+#           validated_receipt and names only AuthorizationError (never an
+#           attest_* path, a store, a transport or a machine); from Mission
+#           Core it constructs MissionService once and calls only observe;
+#           it calls no save / lock / record_* / mint_* / apply_* /
+#           reserve* / attest* name and no file write.
+REVIEW_RECORD_FILE = 'target_runtime/review_record.py'
+_rr_tree = ast.parse((R / REVIEW_RECORD_FILE).read_text())
+_rr_imports = sorted(
+    [(None, a.name) for n in ast.walk(_rr_tree) if isinstance(n, ast.Import)
+     for a in n.names]
+    + [(n.module, a.name) for n in ast.walk(_rr_tree)
+       if isinstance(n, ast.ImportFrom) for a in n.names], key=repr)
+assert _rr_imports == sorted([
+    (None, 'errno'), (None, 'os'), (None, 're'), (None, 'stat'),
+    ('mission_sources', 'contract_v2')], key=repr), _rr_imports
+_rr_flags = {}
+for _node in _rr_tree.body:
+    if isinstance(_node, ast.Assign) and isinstance(
+            _node.targets[0], ast.Name) and _node.targets[0].id.endswith(
+                '_FLAGS'):
+        _rr_flags[_node.targets[0].id] = {
+            n.attr for n in ast.walk(_node.value)
+            if isinstance(n, ast.Attribute)}
+assert _rr_flags == {
+    '_DIRECTORY_FLAGS': {'O_RDONLY', 'O_DIRECTORY', 'O_NOFOLLOW',
+                         'O_CLOEXEC'},
+    '_LEAF_FLAGS': {'O_RDONLY', 'O_NOFOLLOW', 'O_NONBLOCK', 'O_CLOEXEC'},
+}, _rr_flags
+assert not {n.attr for n in ast.walk(_rr_tree)
+            if isinstance(n, ast.Attribute)} & {
+    'O_WRONLY', 'O_RDWR', 'O_CREAT', 'O_TRUNC', 'O_APPEND', 'O_EXCL'}, (
+    'the review record reader opens nothing writable')
+_rr_opens = [n for n in ast.walk(_rr_tree) if isinstance(n, ast.Call)
+             and getattr(n.func, 'attr', None) == 'open']
+assert len(_rr_opens) == 3 and all(
+    isinstance(n.func.value, ast.Name) and n.func.value.id == 'os'
+    and isinstance(n.args[0], ast.Name)
+    and n.args[0].id in ('root', 'component', 'name')
+    and isinstance(n.args[1], ast.Name)
+    and n.args[1].id in ('_DIRECTORY_FLAGS', '_LEAF_FLAGS')
+    for n in _rr_opens), 'os.open names only the root and EXPECTED parts'
+for _node in ast.walk(_rr_tree):
+    if isinstance(_node, ast.Call):
+        _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+        assert _name not in RUNTIME_SNAPSHOT_FORBIDDEN_CALLS - {'open'}, (
+            REVIEW_RECORD_FILE, _node.lineno, _name)
+        if any(isinstance(a, ast.Name) and a.id == 'recorded'
+               for a in _node.args):
+            assert _name in ('isabs', 'normpath', 'dirname', 'basename',
+                             'type'), (
+                REVIEW_RECORD_FILE, _node.lineno,
+                'the recorded path is only compared, never opened')
+        if _name == 'read':
+            assert isinstance(_node.args[1], ast.Constant) and (
+                _node.args[1].value == 1), (
+                REVIEW_RECORD_FILE, _node.lineno, 'one byte at a time')
+
+MISSION_STATE_FILE = 'target_runtime/mission_state.py'
+_ms_tree = ast.parse((R / MISSION_STATE_FILE).read_text())
+_ms_import_rows = sorted(
+    [(None, tuple(a.name for a in n.names)) for n in ast.walk(_ms_tree)
+     if isinstance(n, ast.Import)]
+    + [(n.module, tuple(a.name for a in n.names)) for n in ast.walk(_ms_tree)
+       if isinstance(n, ast.ImportFrom)], key=repr)
+assert _ms_import_rows == sorted([
+    (None, ('copy',)), (None, ('os',)), (None, ('stat',)),
+    ('mission', ('journal', 'record', 'reconciliation', 'service', 'state',
+                 'store')),
+    ('mission_sources', ('contract_v2', 'fileread', 'sources')),
+    ('pr_delivery', ('authorization', 'mission_parent')),
+    ('target_runtime', ('prepare',)), ('target_runtime', ('state_artifact',)),
+], key=repr), _ms_import_rows
+_ms_attributes = {}
+for _node in ast.walk(_ms_tree):
+    if isinstance(_node, ast.Attribute) and isinstance(_node.value, ast.Name):
+        _ms_attributes.setdefault(_node.value.id, set()).add(_node.attr)
+assert _ms_attributes.get('mission_parent') == {'validated_receipt'}, (
+    _ms_attributes.get('mission_parent'))
+assert _ms_attributes.get('authorization') == {'AuthorizationError'}, (
+    _ms_attributes.get('authorization'))
+assert _ms_attributes.get('service') == {'MissionService'}, (
+    _ms_attributes.get('service'))
+assert _ms_attributes.get('missions') == {'observe'}, (
+    'the composer calls only MissionService.observe',
+    _ms_attributes.get('missions'))
+# Read-call level: exactly ONE validated_receipt call and ONE observe call.
+_ms_read_calls = sorted(
+    (n.func.value.id, n.func.attr) for n in ast.walk(_ms_tree)
+    if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+    and isinstance(n.func.value, ast.Name)
+    and n.func.value.id in ('mission_parent', 'missions'))
+assert _ms_read_calls == [('mission_parent', 'validated_receipt'),
+                          ('missions', 'observe')], _ms_read_calls
+_ms_service_builds = [
+    n for n in ast.walk(_ms_tree) if isinstance(n, ast.Call)
+    and getattr(n.func, 'attr', None) == 'MissionService']
+assert len(_ms_service_builds) == 1, len(_ms_service_builds)
+for _node in ast.walk(_ms_tree):
+    if isinstance(_node, ast.Name) or isinstance(_node, ast.Attribute):
+        _word = getattr(_node, 'id', getattr(_node, 'attr', ''))
+        assert _word not in ('DeliveryStore', 'DeliveryTransport',
+                             'build_machine', 'attest_validated_receipt',
+                             'attest_delivery_receipt'), (
+            MISSION_STATE_FILE, _node.lineno, _word)
+    if isinstance(_node, ast.Call):
+        _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+        assert _name not in RUNTIME_SNAPSHOT_FORBIDDEN_CALLS, (
+            MISSION_STATE_FILE, _node.lineno, _name)
+        assert not (_name or '').startswith((
+            'record_', 'mint_', 'apply_', 'reserve', 'attest', 'submit',
+            'propose', 'decide', 'reconcile')), (
+            MISSION_STATE_FILE, _node.lineno, _name)
+# The read-only shim's own lock and save are DEFINITIONS that refuse.
+_ms_shim = [n for n in _ms_tree.body if isinstance(n, ast.ClassDef)
+            and n.name == 'ReadOnlyMissionStore']
+assert len(_ms_shim) == 1 and {
+    m.name: [type(s).__name__ for s in m.body]
+    for m in _ms_shim[0].body if isinstance(m, ast.FunctionDef)
+    and m.name in ('lock', 'save')} == {'lock': ['Raise'],
+                                         'save': ['Raise']}, (
+    'the composer store refuses lock and save')
+
+mission_sources_probe = subprocess.run(
+    [
+        sys.executable,
+        '-c',
+        (
+            'import sys, pkgutil\n'
+            'import mission_sources\n'
+            'for info in pkgutil.iter_modules(mission_sources.__path__):\n'
+            '    __import__("mission_sources." + info.name)\n'
+            'allowed_telegram = {"telegram_operator", "telegram_operator.config",'
+            ' "telegram_operator.state"}\n'
+            'bad = sorted(\n'
+            '    name for name in sys.modules\n'
+            '    if name in ("subprocess", "socket", "pty", "ssl")\n'
+            '    or name.split(".")[0] in ("grok_mcp", "grok_bot", "pr_delivery",'
+            ' "herdr", "herdctl", "target_runtime", "local_request",'
+            ' "codex_gateway", "operator_session", "human_interaction",'
+            ' "capability", "worker", "durable_execution", "coordination",'
+            ' "tunnel_control")\n'
+            '    or (name.split(".")[0] == "telegram_operator"'
+            ' and name not in allowed_telegram)\n'
+            ')\n'
+            'print("\\n".join(bad))\n'
+            'sys.exit(1 if bad else 0)\n'
+        ),
+    ],
+    cwd=str(R),
+    capture_output=True,
+    text=True,
+    # Independent termination bound (CONTRIBUTING.md): a hung import fails
+    # this probe instead of hanging the suite.
+    timeout=120,
+)
+assert mission_sources_probe.returncode == 0, (
+    'mission_sources loaded a process, network, runtime-engine, transport or'
+    ' delivery module',
+    mission_sources_probe.returncode, mission_sources_probe.stdout,
+    mission_sources_probe.stderr,
 )
 
 print('static tests: OK')
