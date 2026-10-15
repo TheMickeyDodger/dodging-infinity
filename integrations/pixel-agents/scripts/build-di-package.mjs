@@ -17,6 +17,9 @@
  *                                       transitive dependencies, copied from the installed tree
  *   LICENSE, THIRD-PARTY-NOTICES.txt, CREDITS.txt, README.txt, package.json,
  *   dist/webview/fonts/OFL.txt          notices (font bytes are copied unchanged)
+ *   worlds/expanded-office.json, pixel  the opt-in world preset and the open-in-browser
+ *                                       launcher, from packaging/di/ (byte-exact; the
+ *                                       office itself never loads or runs either)
  * Excluded by ruling (W3): Screenshot.jpg, icon.png and the README composites.
  * Writes <out>/pixel-agents-di-office-<version>/, PACKAGE-INVENTORY.txt inside it, and
  * <out>/pixel-agents-di-office-<version>.tgz; prints the tarball's sha256.
@@ -253,6 +256,15 @@ function main() {
   if (pending && !draft)
     fail(`README.txt still has ${pending.length} unfilled FROM-FINAL-CONTRACT item(s)`);
   copyFile(path.join(ROOT, 'packaging/di/README.txt'), path.join(pkgDir, 'README.txt'));
+
+  // ── opt-in extras: the world preset (imported by the user, never auto-loaded) and the
+  // `pixel` launcher (opens an already running office; must stay executable) ──
+  copyFile(
+    path.join(ROOT, 'packaging/di/worlds/expanded-office.json'),
+    path.join(pkgDir, 'worlds/expanded-office.json'),
+  );
+  copyFile(path.join(ROOT, 'packaging/di/pixel'), path.join(pkgDir, 'pixel'));
+  fs.chmodSync(path.join(pkgDir, 'pixel'), 0o755);
   const names = fontNames(path.join(ROOT, FONT_REL));
   fs.writeFileSync(
     path.join(pkgDir, 'dist/webview/fonts/OFL.txt'),

@@ -55,9 +55,10 @@ npm run build                            # dist/di-cli.js and the production web
   `postinstall` of one dependency.
 - **What stays out of Git.** The subtree's own `.gitignore` keeps `node_modules/`, `dist/`,
   `out/`, test results, Allure output, `*.vsix` and `.env*` out of the repository.
-- **The standalone package.** `node scripts/build-di-package.mjs --out <absolute dir>`
-  assembles the self-contained office package, its `.tgz` and a `.tgz.sha256` sidecar from
-  the build above.
+- **The standalone package.**
+  `node scripts/build-di-package.mjs --out "$HOME/pixel-agents-di-package"` (any absolute
+  directory) assembles the self-contained office package, its `.tgz` and a `.tgz.sha256`
+  sidecar from the build above.
 
 Office tests, run from `integrations/pixel-agents/` after the build:
 
@@ -125,7 +126,8 @@ node dist/di-cli.js --state-dir /absolute/office-state \
   0600 file in a 0700 directory, removes it at shutdown, and refuses a second launch on the
   same path (exit 2). Its startup line never carries the token.
 - **Opening the office.** The office prints the path of its access file, not the URL. Open
-  the URL stored in `<state-dir>/run/browser-access.json`. That URL carries a per-launch
+  the URL stored in `<state-dir>/run/browser-access.json`, or let the
+  [`pixel` launcher](#the-pixel-launcher) open it for you. That URL carries a per-launch
   token, so treat it as a secret.
 - **One-shot read.** Instead of a listener,
   `python3 -B dicatalog.py query --registry "$EX/registry" --discover-roots --wait-seconds 25`
@@ -133,6 +135,145 @@ node dist/di-cli.js --state-dir /absolute/office-state \
 
 Recovery after a killed office, profiles, and the full limits are in
 [`packaging/di/README.txt`](../integrations/pixel-agents/packaging/di/README.txt).
+
+## World preset
+
+[`packaging/di/worlds/expanded-office.json`](../integrations/pixel-agents/packaging/di/worlds/expanded-office.json)
+is an office layout authored for Dodging Infinity. It arranges the existing upstream Pixel
+Agents assets already in this directory (furniture, floors, walls and pets), whose
+attribution and licences are in
+[`UPSTREAM.md`](../integrations/pixel-agents/UPSTREAM.md#licensing). It keeps the original
+office's rooms and adds six computer rooms with 24 room computers, plus a connected lobby
+whose reception desk carries one more computer. It has no rug or carpet. It is 60 columns by
+27 rows, with 161 furniture items and the original two pets.
+
+**This preset is opt-in.** It does not install itself, it does not replace a saved layout,
+and it adds or raises no bundled layout revision. Nothing in it writes
+`<state-dir>/layout.json` on your behalf: an office with a saved layout goes on loading that
+layout, and an office without one still starts from the bundled default.
+
+That is a statement about this preset only, not a promise about upgrades in general. The
+office's layout loader (`loadLayout()` in
+`integrations/pixel-agents/server/src/layoutPersistence.ts`) can replace a saved layout when a
+bundled layout revision is raised, and this preset does not change that.
+Keep an exported backup of any layout you care about.
+
+**Adopting it is your explicit choice**, made in the office in your browser:
+
+1. **Back up first.** Settings → **Export Layout**. Keep the downloaded file: it is the
+   layout the office is showing now.
+2. Settings → **Import Layout**, and pick `expanded-office.json`.
+3. **Reload the office page.**
+
+The import saves the preset as the office's own layout, in `<state-dir>/layout.json`, and
+shows it at once. The reload is part of the procedure. Until the page is reloaded, a session
+that started on the bundled default can still reflow back to that default world, for example
+when the window is resized. After the reload, the saved preset is the layout the office loads.
+Later changes in the layout editor save to the same file. If the editor holds unsaved edits,
+the import asks before replacing them.
+
+**Going back.** Import the backup from step 1 the same way, then reload the page. If the
+office was showing the bundled default when you exported it, the backup is a fixed snapshot
+of the default world as it looked then, not the responsive default. To return to the
+responsive default, import the bundled `default-layout-1.json` instead, then reload. In a
+checkout it is `integrations/pixel-agents/webview-ui/public/assets/default-layout-1.json`; in
+the standalone package it is `dist/assets/default-layout-1.json`.
+
+- **Its shape is kept once it is loaded.** A custom layout that arrives when the page loads
+  is never reshaped: the office keeps its exact columns, rows and furniture and only fits it
+  to the window with whole-number zoom. Zooming by hand overrides the fit. Right after an
+  import, before the reload, this does not yet hold.
+- **Saving edits.** The preset is within the office's layout limits, so moving a desk in the
+  editor saves normally.
+- **Where it is.** In a checkout:
+  `integrations/pixel-agents/packaging/di/worlds/expanded-office.json`. In the standalone
+  office package: `worlds/expanded-office.json`.
+
+## The `pixel` launcher
+
+[`packaging/di/pixel`](../integrations/pixel-agents/packaging/di/pixel) opens the address
+that a running office recorded, in your default browser, without printing the address or its
+token.
+
+- **The command is lowercase `pixel`.** "Pixel" is only how the office is spoken of. File
+  names are case-sensitive on Linux, so `Pixel` is not found there.
+- **Where it is.** In a checkout: `integrations/pixel-agents/packaging/di/pixel`. In the
+  standalone office package: `pixel`, at the package root.
+- **What it needs.** Python 3 (standard library only), and macOS (`/usr/bin/open`) or Linux
+  (`xdg-open`).
+- **Putting it on your PATH.** Run it by path, or link it yourself into a directory on your
+  PATH, for example from the checkout root:
+
+  ```bash
+  BIN_DIR="$HOME/bin"          # set this to a directory on your PATH
+  ln -s "$PWD/integrations/pixel-agents/packaging/di/pixel" "$BIN_DIR/pixel"
+  ```
+
+  Without `-f`, `ln -s` refuses to replace an existing `pixel`.
+
+**Tell it which office.** You give it the office's state directory, never its token or URL.
+The first of these that is present wins:
+
+1. `pixel --state-dir /absolute/office-state`
+2. `PIXEL_AGENTS_DI_STATE_DIR=/absolute/office-state`, in your environment
+3. a user-local file, `${XDG_CONFIG_HOME:-~/.config}/pixel-agents-di/pixel.json`:
+
+   ```json
+   {"state_dir": "/absolute/office-state"}
+   ```
+
+The directory is the absolute `--state-dir` the office was started with. Keep this
+configuration out of Git. `pixel` only reads it and never creates it.
+
+**What it does.**
+
+1. It reads the office's own access file, `<state-dir>/run/browser-access.json`. The
+   office writes it at launch as `{url, port, token}`, owner-only.
+2. It checks the file's shape: `url`, `port` and `token` are present and of the right
+   type; the `url` is plain `http` on `127.0.0.1` with a port and no embedded credentials;
+   the `url` carries the file's `token`; and the `url`'s port is the file's `port`.
+3. It checks that something accepts a TCP connection on that loopback port.
+4. It hands the recorded address to the browser opener. On success it prints what it did and
+   what it did not check.
+
+It never starts the office, the backend, a model or a Mission. It installs nothing and writes
+nothing. It never prints the address or the token: each message names the cause instead, and
+the opener's own output is discarded because it can echo the address.
+
+| Exit | Meaning |
+|---|---|
+| 0 | The recorded address was handed to your browser |
+| 2 | Usage error |
+| 3 | No office configured: no `--state-dir`, no environment variable, no config file |
+| 4 | The configuration is invalid: not an absolute directory, or an unreadable or malformed config file |
+| 5 | No access file: no office is running from that state directory, or it is the wrong directory |
+| 6 | The access file is unreadable |
+| 7 | The access file is not JSON |
+| 8 | The access file's `url`, `port` or `token` is missing or of the wrong type |
+| 9 | The address was refused: not `http`, not `127.0.0.1`, no port, or embedded credentials |
+| 10 | The address does not carry the access file's token |
+| 11 | The address's port is not the access file's port |
+| 12 | Nothing is listening on that port: no office is running, and the access file is stale. A killed office leaves it behind, with a token for a launch that is gone; see `STOP, REMOVE, RECOVER` in `packaging/di/README.txt` |
+| 13 | The browser opener failed, is missing, or the platform is not macOS or Linux |
+
+**Limits.**
+
+- **Nothing is authenticated.** The shape checks are not authentication, and liveness is
+  only a TCP connect to a loopback port. `pixel` does not identify the process that is
+  listening and does not validate the token. If the office was killed and another program
+  now listens on its old port, the stale address is opened anyway, and the page will not be
+  the office.
+- **The token reaches other processes.** The address, token included, is an argument of the
+  opener process while it runs, and the browser receives it. While the opener runs, anything
+  that can list this machine's processes can read it; on most macOS and Linux systems that
+  includes other users' processes. Browser history keeps it too. `pixel` keeps it out of its
+  own output only.
+- **It does not check that the page loads.**
+- **A slow opener.** If the opener is still running after 15 seconds, `pixel` reports the
+  hand-off and returns without waiting for it.
+- **Platform coverage.** It was exercised on macOS with the macOS opener replaced by a
+  recorder, so no real browser opened. The Linux branch was exercised on macOS with a
+  stand-in `xdg-open`, not on a Linux host.
 
 ## Architecture and trust boundary
 

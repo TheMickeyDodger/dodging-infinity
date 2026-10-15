@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""pixel: open the address recorded by a Pixel Agents DI office in your default browser.
+
+The command is lowercase `pixel` (the office is often called "Pixel"; the file name is
+case-sensitive on Linux).
+
+It reads the office's own access file, <state-dir>/run/browser-access.json, which the
+office writes at launch as {url, port, token}. It checks the file's shape: url, port and
+token are present and well-typed, the url is plain http on 127.0.0.1 with a port and no
+embedded credentials, the url carries the file's token, and the url's port is the file's
+port. It then checks that something accepts a TCP connection on that loopback port, and
+hands the url to the platform's opener (macOS: /usr/bin/open, Linux: xdg-open). It never
+starts the office, the backend, a model or a Mission; it installs nothing and writes
+nothing.
+
+LIMIT, stated plainly: none of this authenticates anything. The shape check is not
+authentication, and the liveness check is only a TCP connect to a loopback port. It does
+not identify the listening process and does not validate the token. If the office was
+killed and another program now listens on its old port, the stale address is opened.
+
+The url carries the office's per-launch token, so this command never prints the url or the
+token: messages name the cause instead. The opener's own output is discarded because it
+may echo the url.
+
+Which office (the first source present wins):
+  1. --state-dir DIR
+  2. the PIXEL_AGENTS_DI_STATE_DIR environment variable
+  3. ${XDG_CONFIG_HOME:-~/.config}/pixel-agents-di/pixel.json, a user-local file
+     holding {"state_dir": "/absolute/office-state"}
+DIR is the absolute --state-dir the office was started with.
+"""
+import argparse
+import json
+import os
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+from urllib.parse import parse_qs, urlsplit
+
+ENV_VAR = "PIXEL_AGENTS_DI_STATE_DIR"
+CONFIG_RELATIVE = os.path.join("pixel-agents-di", "pixel.json")
+ACCESS_RELATIVE = os.path.join("run", "browser-access.json")
+LOOPBACK = "127.0.0.1"
+MAX_FILE_BYTES = 64 * 1024
+CONNECT_TIMEOUT_SECONDS = 2.0
+OPENER_WAIT_SECONDS = 15.0
+
+EXIT_NOT_CONFIGURED = 3
+EXIT_BAD_CONFIG = 4
+EXIT_ACCESS_MISSING = 5
+EXIT_ACCESS_UNREADABLE = 6
+EXIT_ACCESS_NOT_JSON = 7
+EXIT_ACCESS_FIELDS = 8
+EXIT_ADDRESS_REFUSED = 9
+EXIT_TOKEN_MISMATCH = 10
+EXIT_PORT_MISMATCH = 11
+EXIT_NOT_LISTENING = 12
+EXIT_OPEN_FAILED = 13
+
+EPILOG = """\
+which office (the first source present wins):
+  --state-dir DIR, else $PIXEL_AGENTS_DI_STATE_DIR, else
+  ${XDG_CONFIG_HOME:-~/.config}/pixel-agents-di/pixel.json holding
+  {"state_dir": "/absolute/office-state"}
+
+exit codes:
+   0  the recorded address was handed to your browser
+   2  usage error
+   3  no office configured
+   4  configuration invalid (not an absolute directory, unreadable or malformed file)
+   5  no access file: no office is running from that state dir, or it is the wrong dir
+   6  access file unreadable
+   7  access file is not JSON
+   8  access file url, port or token missing or of the wrong type
+   9  address refused: not http, not 127.0.0.1, no port, or embedded credentials
+  10  the address does not carry the access file's token
+  11  the address's port is not the access file's port
+  12  nothing listening on that loopback port: the office is not running, and the
+      access file is stale (a killed office leaves it behind)
+  13  the browser opener failed or is unavailable
+
+limit: the checks are of the file's shape, plus a TCP connect to a loopback port. They
+do not identify the listening process and do not validate the token, so a stale address
+whose port another program now uses is opened anyway. The url and token are never
+printed, but the opener and the browser receive the url as an argument.
+"""
+
+
+class Failure(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def read_small_file(path):
+    """Bytes of a regular file; refuses a symlink, a non-file and anything oversized."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("not a regular file")
+        data = b""
+        while len(data) <= MAX_FILE_BYTES:
+            chunk = os.read(fd, MAX_FILE_BYTES + 1 - len(data))
+            if not chunk:
+                break
+            data += chunk
+        if len(data) > MAX_FILE_BYTES:
+            raise ValueError("file too large")
+        return data
+    finally:
+        os.close(fd)
+
+
+def checked_state_dir(value, source):
+    expanded = os.path.expanduser(value) if isinstance(value, str) else ""
+    if not expanded or "\0" in expanded or not os.path.isabs(expanded):
+        raise Failure(
+            EXIT_BAD_CONFIG,
+            "%s must be the absolute --state-dir the office was started with" % source,
+        )
+    return expanded
+
+
+def config_file_path(environ):
+    config_home = environ.get("XDG_CONFIG_HOME", "")
+    if not os.path.isabs(config_home):
+        config_home = os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(config_home, CONFIG_RELATIVE)
+
+
+def resolve_state_dir(arg_state_dir, environ):
+    if arg_state_dir is not None:
+        return checked_state_dir(arg_state_dir, "--state-dir")
+    if ENV_VAR in environ:
+        return checked_state_dir(environ[ENV_VAR], ENV_VAR)
+    path = config_file_path(environ)
+    try:
+        raw = read_small_file(path)
+    except FileNotFoundError:
+        raise Failure(
+            EXIT_NOT_CONFIGURED,
+            "no office configured: pass --state-dir DIR, set %s, or create %s"
+            % (ENV_VAR, path),
+        )
+    except (OSError, ValueError):
+        raise Failure(EXIT_BAD_CONFIG, "the configuration file %s is unreadable" % path)
+    try:
+        value = json.loads(raw.decode("utf-8"))["state_dir"]
+    except (UnicodeDecodeError, ValueError, KeyError, TypeError):
+        raise Failure(
+            EXIT_BAD_CONFIG,
+            'the configuration file %s is malformed: expected {"state_dir": "/absolute/dir"}'
+            % path,
+        )
+    return checked_state_dir(value, "state_dir in %s" % path)
+
+
+def read_access(state_dir):
+    """(url, port, token) from the office's access file. Never echoes its content."""
+    path = os.path.join(state_dir, ACCESS_RELATIVE)
+    try:
+        raw = read_small_file(path)
+    except FileNotFoundError:
+        raise Failure(
+            EXIT_ACCESS_MISSING,
+            "no access file at %s: no office is running from this state dir, "
+            "or the state dir is not the one the office was started with" % path,
+        )
+    except (OSError, ValueError):
+        raise Failure(EXIT_ACCESS_UNREADABLE, "the access file at %s could not be read" % path)
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise Failure(EXIT_ACCESS_NOT_JSON, "the access file at %s is not JSON" % path)
+    if not isinstance(data, dict):
+        raise Failure(EXIT_ACCESS_FIELDS, "the access file at %s is not a JSON object" % path)
+    url, port, token = data.get("url"), data.get("port"), data.get("token")
+    for field, ok in (
+        ("url", isinstance(url, str) and url != ""),
+        ("port", isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535),
+        ("token", isinstance(token, str) and token != ""),
+    ):
+        if not ok:
+            raise Failure(
+                EXIT_ACCESS_FIELDS,
+                "the access file at %s has no valid %s field" % (path, field),
+            )
+    return url, port, token
+
+
+def check_address(url, port, token):
+    """Refuse anything but http://127.0.0.1:<port>/...?token=<token> matching the file."""
+
+    def refuse(reason):
+        return Failure(EXIT_ADDRESS_REFUSED, "refused the recorded address: %s" % reason)
+
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in url):
+        raise refuse("it contains whitespace or control characters")
+    try:
+        parts = urlsplit(url)
+        url_port = parts.port
+    except ValueError:
+        raise refuse("it is not a valid URL")
+    if parts.scheme != "http":
+        raise refuse("it is not plain http")
+    if "@" in parts.netloc:
+        raise refuse("it carries embedded credentials")
+    if parts.hostname != LOOPBACK:
+        raise refuse("it is not on %s" % LOOPBACK)
+    if url_port is None or not 1 <= url_port <= 65535:
+        raise refuse("it has no port")
+    if parts.netloc != "%s:%d" % (LOOPBACK, url_port):
+        raise refuse("its host is not exactly %s:<port>" % LOOPBACK)
+    if parse_qs(parts.query, keep_blank_values=True).get("token") != [token]:
+        raise Failure(
+            EXIT_TOKEN_MISMATCH,
+            "the recorded address does not carry the access file's token",
+        )
+    if url_port != port:
+        raise Failure(
+            EXIT_PORT_MISMATCH,
+            "the recorded address's port is not the access file's port",
+        )
+
+
+def check_listening(port):
+    """A TCP connect only: it does not identify the process or validate the token."""
+    try:
+        with socket.create_connection((LOOPBACK, port), timeout=CONNECT_TIMEOUT_SECONDS):
+            pass
+    except OSError:
+        raise Failure(
+            EXIT_NOT_LISTENING,
+            "nothing is listening on %s port %d: no office is running from this state "
+            "dir, so its access file is stale (a killed office leaves it behind, with a "
+            "token for a launch that is gone). See 'STOP, REMOVE, RECOVER' in the office "
+            "README.txt (packaging/di/README.txt in a checkout)" % (LOOPBACK, port),
+        )
+
+
+def opener_command():
+    if sys.platform == "darwin":
+        return ["/usr/bin/open"]
+    if sys.platform.startswith("linux"):
+        found = shutil.which("xdg-open")
+        if found:
+            return [found]
+        raise Failure(EXIT_OPEN_FAILED, "xdg-open was not found on PATH")
+    raise Failure(
+        EXIT_OPEN_FAILED, "unsupported platform %s: pixel supports macOS and Linux" % sys.platform
+    )
+
+
+def open_in_browser(url):
+    """Hand the url to the opener. Its output is discarded: it may echo the url."""
+    try:
+        child = subprocess.Popen(
+            opener_command() + [url],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        raise Failure(EXIT_OPEN_FAILED, "the browser opener could not be started")
+    try:
+        returncode = child.wait(timeout=OPENER_WAIT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return "Handed the address recorded in the office's access file to your browser opener, which is still running."
+    if returncode != 0:
+        raise Failure(
+            EXIT_OPEN_FAILED, "the browser opener exited with status %d" % returncode
+        )
+    return "Opened the address recorded in the office's access file in your default browser."
+
+
+def main(argv=None, environ=None):
+    parser = argparse.ArgumentParser(
+        prog="pixel",
+        description="Open the address recorded by a running Pixel Agents DI office, "
+        "without printing its url or token.",
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--state-dir",
+        metavar="DIR",
+        help="the absolute --state-dir the office was started with",
+    )
+    args = parser.parse_args(argv)
+    environ = os.environ if environ is None else environ
+    try:
+        state_dir = resolve_state_dir(args.state_dir, environ)
+        url, port, token = read_access(state_dir)
+        check_address(url, port, token)
+        check_listening(port)
+        outcome = open_in_browser(url)
+    except Failure as failure:
+        print("pixel: %s" % failure, file=sys.stderr)
+        return failure.code
+    print(outcome)
+    print(
+        "Checked: the access file's shape, and a TCP connect to its loopback port. "
+        "Not checked: that the listener is the office, or that the token is still valid."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
