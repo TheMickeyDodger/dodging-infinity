@@ -1,0 +1,325 @@
+#!/usr/bin/env node
+
+/**
+ * DI office entry point — a SEPARATE composition, not the standalone CLI with a flag.
+ *
+ *   node dist/di-cli.js --state-dir <abs dir> --backend-discovery <abs file> [--port <n>]
+ *
+ * What it composes: the agent store, the bundled assets, the layout, and the DI
+ * office's own authenticated loopback HTTP/WS surface (diHttpServer.ts), plus a
+ * read-only consumer of the DI backend's catalog API (diOffice.ts).
+ *
+ * What it never composes — by construction, not by a disabled branch: no hook
+ * provider (so no consent ask and no installer), no AgentRuntime (so no session
+ * scanners, transcript watching or ~/.claude reads), no PixelAgentsServer (so no
+ * server.json / servers/ discovery publishing), no terminal or launch path, no model
+ * invocation, and no external asset directories. It never starts, supervises or owns
+ * the backend: it only READS the backend's discovery file, and an absent file is an
+ * honest "unavailable" state.
+ *
+ * Every file it persists (settings, layout, seats) lands under --state-dir, injected
+ * as the state root before anything resolves a path.
+ */
+
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
+
+import { AgentStateStore } from '../agentStateStore.js';
+import { buildAssetCache } from '../assetReload.js';
+import { getConfigFilePath } from '../configPersistence.js';
+import {
+  DI_CATALOG_WAIT_SECONDS,
+  DI_CONSUMER_POLL_INTERVAL_SECONDS,
+  DI_SHUTDOWN_DRAIN_TIMEOUT_MS,
+  MAX_PORT,
+  MIN_PORT,
+} from '../constants.js';
+import { FileStateAdapter } from '../fileStateAdapter.js';
+import { setStateRoot, setStateWriteGuard } from '../stateRoot.js';
+import {
+  BrowserAccessExists,
+  publishBrowserAccess,
+  unpublishBrowserAccess,
+} from './browserAccess.js';
+import type { QueryContractVersion } from './catalogContract.js';
+import { DEFAULT_QUERY_CONTRACT_VERSION } from './catalogContract.js';
+import { handleDiClientMessage, initDiDefaults } from './diClientMessages.js';
+import { createDiHttpServer, DI_BIND_HOST } from './diHttpServer.js';
+import { DiOffice } from './diOffice.js';
+import { makeDiStateWriteGuard, validateDiStateRoot } from './diStateRoot.js';
+
+export interface DiCliArgs {
+  stateDir: string;
+  backendDiscovery: string;
+  /** The ONE catalog contract version this process reads (launch-time; default 1). */
+  contractVersion: QueryContractVersion;
+  /** Unset -> OS-assigned port. */
+  port?: number;
+}
+
+export class DiCliArgsError extends Error {}
+
+const USAGE = `Usage: pixel-agents-di --state-dir <absolute dir> --backend-discovery <absolute file> [--port <n>]
+
+  --state-dir <dir>              DI office state root (settings, layout, seats). Required,
+                                 absolute, and physically separate from ~/.pixel-agents.
+  --backend-discovery <file>     The DI backend's discovery file, READ ONLY. Required, absolute.
+  --port, -p <n>                 Loopback port (default: OS-assigned)
+  --contract-version <1|2>       The catalog contract version this process reads (default 1).
+                                 ONE version per process: a response of any other version is
+                                 shown as INCOMPATIBLE, never negotiated per request.
+
+Consumer policy (pinned, not configurable): every catalog request sends
+wait_seconds=${DI_CATALOG_WAIT_SECONDS}; the next request starts ${DI_CONSUMER_POLL_INTERVAL_SECONDS} s after the previous RESPONSE
+completes, or after the backend's declared min_poll_interval_seconds if that is larger.
+
+The office binds ${DI_BIND_HOST} only. It never starts the backend.
+
+Restart after a KILLED office (e.g. SIGKILL): its owner-only browser access file
+<state-dir>/run/browser-access.json is left behind, and the next launch from the same state
+dir REFUSES. Refusal is keyed on that file's PRESENCE — it is not proof that a live office
+holds it, and the office never guesses (no pid or owner inference). If no DI office is running
+from that state dir, delete that one file yourself and start again; layout and settings are
+kept. Then open the NEW URL from the new access file: a browser tab from the killed launch
+cannot resume (its token was minted for that launch only).`;
+
+export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
+  let stateDir: string | undefined;
+  let backendDiscovery: string | undefined;
+  let port: number | undefined;
+  let contractVersion: QueryContractVersion = DEFAULT_QUERY_CONTRACT_VERSION;
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    const value = argv[i + 1];
+    if (flag === '--help') return 'help';
+    if (
+      flag === '--state-dir' ||
+      flag === '--backend-discovery' ||
+      flag === '--port' ||
+      flag === '-p'
+    ) {
+      if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
+      i++;
+      if (flag === '--state-dir') stateDir = value;
+      else if (flag === '--backend-discovery') backendDiscovery = value;
+      else {
+        const parsed = Number(value);
+        if (!Number.isInteger(parsed) || parsed < MIN_PORT || parsed > MAX_PORT) {
+          throw new DiCliArgsError(`Invalid --port "${value}"`);
+        }
+        port = parsed;
+      }
+    } else if (flag === '--contract-version') {
+      if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
+      i++;
+      if (value !== '1' && value !== '2') {
+        throw new DiCliArgsError(`Invalid --contract-version "${value}" (supported: 1, 2)`);
+      }
+      contractVersion = value === '2' ? 2 : 1;
+    } else if (flag === '--catalog-wait-seconds') {
+      throw new DiCliArgsError(
+        `The catalog wait is pinned consumer policy (wait_seconds=${DI_CATALOG_WAIT_SECONDS}); --catalog-wait-seconds is not accepted`,
+      );
+    } else if (flag === '--host') {
+      throw new DiCliArgsError(`The DI office binds ${DI_BIND_HOST} only; --host is not accepted`);
+    } else {
+      throw new DiCliArgsError(`Unknown argument "${flag}"`);
+    }
+  }
+  if (!stateDir || !path.isAbsolute(stateDir)) {
+    throw new DiCliArgsError('--state-dir is required and must be an absolute path');
+  }
+  if (!backendDiscovery || !path.isAbsolute(backendDiscovery)) {
+    throw new DiCliArgsError('--backend-discovery is required and must be an absolute path');
+  }
+  return {
+    stateDir: path.normalize(stateDir),
+    backendDiscovery: path.normalize(backendDiscovery),
+    port,
+    contractVersion,
+  };
+}
+
+async function main(): Promise<void> {
+  let args: DiCliArgs | 'help';
+  try {
+    args = parseDiArgs(process.argv.slice(2));
+  } catch (err) {
+    console.error(
+      `[Pixel Agents DI] ${err instanceof Error ? err.message : String(err)}\n\n${USAGE}`,
+    );
+    process.exit(2);
+  }
+  if (args === 'help') {
+    console.log(USAGE);
+    process.exit(0);
+  }
+  // The standalone debug log appends to an arbitrary path outside any root.
+  if (process.env['PIXEL_AGENTS_DEBUG_LOG']) {
+    console.error(
+      '[Pixel Agents DI] PIXEL_AGENTS_DEBUG_LOG is not supported in DI mode; unset it.',
+    );
+    process.exit(2);
+  }
+
+  // FIRST: the state root, before anything resolves a persisted path. Validated on the
+  // PHYSICAL path against the shared profile; a conflict refuses to start (fail closed).
+  let stateRoot: string;
+  try {
+    stateRoot = validateDiStateRoot(args.stateDir);
+  } catch (err) {
+    console.error(
+      `[Pixel Agents DI] refusing to start: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(2);
+  }
+  setStateRoot(stateRoot);
+  // Every write beneath the root is contained AT WRITE TIME (a validated root does not
+  // contain a symlinked descendant): config, layout, state and the browser access file.
+  setStateWriteGuard(makeDiStateWriteGuard(stateRoot));
+  fs.mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+
+  const distRoot = __dirname;
+  const staticDir = path.join(distRoot, 'webview');
+  // Bundled assets only: DI mode loads no external asset directory.
+  const cache = await buildAssetCache(distRoot, []);
+
+  const store = new AgentStateStore();
+  const adapter = new FileStateAdapter({ namespace: 'standalone' });
+  store.setAdapter(adapter);
+  initDiDefaults(adapter, fs.existsSync(getConfigFilePath()));
+
+  const token = crypto.randomUUID();
+  const extensionVersion = process.env.PIXEL_AGENTS_VERSION ?? '';
+  const office = new DiOffice({
+    store,
+    discoveryPath: args.backendDiscovery,
+    contractVersion: args.contractVersion,
+  });
+
+  const { app, port, forceCloseAll } = await createDiHttpServer({
+    port: args.port,
+    token,
+    store,
+    staticDir,
+    // The office state is the FIRST message on every authenticated connection (fresh or
+    // reconnected): the client knows it is a DI office before any agentCreated can arrive.
+    onConnected: (send) => office.sendOfficeState(send),
+    onClientMessage: (msg, send) => {
+      const disposition = handleDiClientMessage(msg, send, { store, cache, extensionVersion });
+      if (typeof disposition === 'object') {
+        // The type and the reason only — never the payload.
+        console.warn(`[Pixel Agents DI] refused ${String(msg.type)}: ${disposition.refused}`);
+      }
+      if (msg.type === 'webviewReady') office.sendOfficeState(send);
+    },
+  });
+
+  // Publish the browser access file BEFORE the office starts polling. EXCLUSIVE: a second
+  // launch at the same root refuses to start rather than clobbering the first's file.
+  let published: ReturnType<typeof publishBrowserAccess>;
+  try {
+    published = publishBrowserAccess(stateRoot, {
+      url: `http://${DI_BIND_HOST}:${port}/?token=${token}`,
+      port,
+      token,
+    });
+  } catch (err) {
+    console.error(
+      `[Pixel Agents DI] refusing to start: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    await app.close();
+    process.exit(err instanceof BrowserAccessExists ? 2 : 1);
+  }
+  const accessFile = published.path;
+
+  office.start();
+
+  console.log(`[Pixel Agents DI] state root: ${stateRoot}`);
+  console.log(`[Pixel Agents DI] backend discovery (read-only): ${args.backendDiscovery}`);
+  console.log(
+    `[Pixel Agents DI] catalog contract version: ${args.contractVersion} (one per process; any other served version is INCOMPATIBLE)`,
+  );
+  console.log(
+    `[Pixel Agents DI] consumer policy: wait_seconds=${DI_CATALOG_WAIT_SECONDS}, poll ${DI_CONSUMER_POLL_INTERVAL_SECONDS} s after each response (or the backend's declared minimum if larger)`,
+  );
+  // The per-launch browser token is NEVER printed (stdout reaches scrollback, captured
+  // logs, evidence and screenshots). The openable URL goes to one owner-only file in the
+  // isolated state root; stdout carries safe metadata only: host, port, the URL WITHOUT
+  // the token, and where the openable URL is.
+  // Last resort on any other exit path: still OWNER-CHECKED, so it never deletes a file
+  // another launch published.
+  process.on('exit', () => {
+    try {
+      unpublishBrowserAccess(published);
+    } catch {
+      // exiting anyway; nothing else to do
+    }
+  });
+  console.log(
+    `\n  Pixel Agents DI office listening on http://${DI_BIND_HOST}:${port}/ (loopback only)` +
+      `\n  Open the URL stored in ${accessFile}` +
+      `\n  (owner-only file; it holds this launch's access token and is removed on shutdown)\n`,
+  );
+
+  // Shutdown: stop accepting and DRAIN in-flight handlers FIRST (against a live office),
+  // BOUNDED by DI_SHUTDOWN_DRAIN_TIMEOUT_MS; THEN stop the office; THEN unpublish
+  // (owner-checked) — the access file outlives the last request — THEN exit. Cleanup runs
+  // on BOTH paths, so a forced exit cannot leave a stale file that bricks the next launch.
+  // Idempotent: a repeated signal is a no-op.
+  let shuttingDown = false;
+  const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    void (async () => {
+      let code = 0;
+      const outcome = await Promise.race([
+        app.close().then(
+          () => 'drained' as const,
+          (err: unknown) => {
+            console.error('[Pixel Agents DI] shutdown: server close failed:', err);
+            return 'failed' as const;
+          },
+        ),
+        new Promise<'timeout'>((resolve) =>
+          setTimeout(() => resolve('timeout'), DI_SHUTDOWN_DRAIN_TIMEOUT_MS).unref(),
+        ),
+      ]);
+      if (outcome === 'drained') {
+        console.log('[Pixel Agents DI] shutdown: server closed, in-flight requests drained');
+      } else if (outcome === 'timeout') {
+        forceCloseAll();
+        code = 1; // visible to whatever supervises the process: the drain did NOT complete
+        console.log(
+          `[Pixel Agents DI] shutdown: FORCE-TERMINATED after ${DI_SHUTDOWN_DRAIN_TIMEOUT_MS / 1000} s — NOT drained; in-flight work may have been cut`,
+        );
+      } else {
+        code = 1;
+      }
+      office.stop();
+      console.log('[Pixel Agents DI] shutdown: office stopped');
+      try {
+        const outcome = unpublishBrowserAccess(published);
+        console.log(
+          outcome === 'not-ours'
+            ? `[Pixel Agents DI] shutdown: ${accessFile} is no longer this launch's file; left in place`
+            : `[Pixel Agents DI] shutdown: browser access file ${outcome}`,
+        );
+      } catch (err) {
+        code = 1;
+        console.error('[Pixel Agents DI] shutdown: could not remove the access file:', err);
+      }
+      process.exit(code);
+    })();
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    console.error('[Pixel Agents DI] failed to start:', err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

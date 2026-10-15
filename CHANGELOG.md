@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Pixel Agents DI office: an early, read-only increment.** The office is
+  vendored into its own subtree, `integrations/pixel-agents/`, with its own
+  Node.js dependency and build boundary, alongside the read-only catalog
+  bridge it reads. It observes and does not control: it does not spawn Herdr,
+  approve Missions, mark Missions complete, create Git authority, deploy, or
+  rewrite durable state. It is not Phase 11, which remains last. See
+  docs/pixel-agents-office.md and the new README section.
+  - The bridge adds `mission_sources/`, `target_runtime/catalog.py`,
+    `catalog_http.py`, `mission_state.py`, `review_record.py`,
+    `runtime_snapshot.py`, and the entry scripts `dicatalog.py` (source
+    registration and one-shot queries) and `dicatalog_http.py` (a passive
+    loopback adapter: `GET /catalog`, `/diagnostics`, `/healthz` only). Catalog
+    contract version 1 stays the default; version 2 must be chosen explicitly
+    at launch.
+  - `mission/store.py` and `workflow_authority/store.py` expose their load
+    validation as `accept_loaded_document`, so a read-only reader applies the
+    same validation as `load()`. `herdr/runtime.py`'s bounded command reports
+    its `process_group`. CI compiles the new modules.
+  - Pixel Agents keeps its own licences (MIT code, CC0-derived character art,
+    SIL OFL 1.1 font). Provenance, omitted files and the upstream update
+    procedure are in `integrations/pixel-agents/UPSTREAM.md`.
+  - Every dependency install in the subtree runs with `HUSKY=0`, and
+    `core.hooksPath` is checked unchanged before and after.
 - **Grok Bot's conforming route; Grok Bot runs nothing.** A Grok Bot
   `request` now produces one DI-REMOTE-2 workflow, the same durable authority
   object the Telegram lane produces, instead of a Mission-Core proposal. A

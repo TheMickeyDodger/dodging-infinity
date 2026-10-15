@@ -266,6 +266,28 @@ def _validate_document(document, path):
             )
 
 
+def accept_loaded_document(document, path):
+    """The load boundary, shared: additive-key materialization plus the
+    full closed-schema validation, applied to a document already parsed
+    from ``workflows.json``. ``WorkflowStore.load`` calls exactly this; a
+    read-only reader that obtained the bytes itself (bounded, no-follow)
+    calls it too, so both see the identical validation. Raises
+    ``StoreError``."""
+    # LOAD boundary: materialize the additive keys on every
+    # record BEFORE the strict closed-schema validation below.
+    # Deliberately not applied on save — a writer must produce a
+    # complete record, and normalizing on the way out would hide
+    # exactly that defect.
+    workflows = document.get("workflows") if isinstance(
+        document, dict
+    ) else None
+    if isinstance(workflows, dict):
+        for record in workflows.values():
+            _normalize_additive_keys(record)
+    _validate_document(document, path)
+    return document
+
+
 class WorkflowStore(object):
     """Atomic load/save of the workflow store document."""
 
@@ -294,19 +316,7 @@ class WorkflowStore(object):
                 " it is NOT safe to delete it: it carries"
                 " authorization records" % (self.path, exc)
             )
-        # LOAD boundary: materialize the additive keys on every
-        # record BEFORE the strict closed-schema validation below.
-        # Deliberately not applied on save — a writer must produce a
-        # complete record, and normalizing on the way out would hide
-        # exactly that defect.
-        workflows = document.get("workflows") if isinstance(
-            document, dict
-        ) else None
-        if isinstance(workflows, dict):
-            for record in workflows.values():
-                _normalize_additive_keys(record)
-        _validate_document(document, self.path)
-        return document
+        return accept_loaded_document(document, self.path)
 
     def save(self, document):
         """Atomically persist the store: temp file, fsync, replace.

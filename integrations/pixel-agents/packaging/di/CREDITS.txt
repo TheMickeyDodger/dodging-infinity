@@ -1,0 +1,31 @@
+CREDITS — Pixel Agents DI office package
+
+Where these files are
+  The dist/... and THIRD-PARTY-NOTICES.txt paths below name files of the BUILT package. In the
+  source tree (integrations/pixel-agents/ in Dodging Infinity) the sources are:
+    dist/assets/characters/char_0..5.png  <- webview-ui/public/assets/characters/char_0..5.png
+    the font binary                       <- webview-ui/public/fonts/FSPixelSansUnicode-Regular.ttf
+    its licence text                      <- packaging/di/OFL-1.1.txt
+  scripts/build-di-package.mjs GENERATES dist/webview/fonts/OFL.txt (the font's embedded notices
+  plus packaging/di/OFL-1.1.txt) and THIRD-PARTY-NOTICES.txt (from the installed packages' own
+  licence files) when it assembles the package; neither is a source file.
+
+Character art
+  The office characters are based on the work of JIK-A-4: "MetroCity — Free Topdown
+  Character Pack", https://jik-a-4.itch.io/metrocity-free-topdown-character-pack
+  The source declares the pack CC0 1.0 (public domain dedication). CC0 does not require
+  attribution; this credit is retained deliberately, under the Mission's attribution
+  instruction.
+  The bundled character PNGs (dist/assets/characters/char_0..5.png) are derivatives that
+  were generated in the Pixel Agents repository; their per-file correspondence to the
+  source pack is declared by the project, not independently established.
+
+Font
+  FS Pixel Sans Unicode Regular, by NZWStudios2024 — SIL Open Font License 1.1, NOT the
+  MIT licence. See dist/webview/fonts/OFL.txt (the embedded copyright notice, the current
+  source notice and the full licence text).
+
+Code
+  Pixel Agents: MIT licence (LICENSE). Third-party code bundled into the shipped files:
+  THIRD-PARTY-NOTICES.txt. Runtime packages under node_modules/ ship with their own
+  licence files.

@@ -1,0 +1,6 @@
+# Vendored files kept byte-identical to their reviewed source input (see
+# pixel-agents/UPSTREAM.md). Their whitespace is upstream's, so CI's
+# `git diff --check` does not judge these three paths.
+pixel-agents/.prettierignore -whitespace
+pixel-agents/core/asyncapi.yaml -whitespace
+pixel-agents/scripts/generate-messages.ts -whitespace

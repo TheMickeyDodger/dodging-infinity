@@ -863,6 +863,20 @@ def _refuse_open_directory(directory):
         )
 
 
+def accept_loaded_document(document, path):
+    """The load boundary, shared: the ONE compatibility rule plus the full
+    fail-closed validation, applied to a document already parsed from the
+    store file. ``MissionStore.load`` calls exactly this; a read-only
+    reader that obtained the bytes itself (bounded, no-follow) calls it too,
+    so both see the identical validation. Raises ``MissionStoreError``."""
+    # The ONE compatibility rule (R-3): a document written before the
+    # Mission State key existed loads with an empty map. Nothing else
+    # is supplied, and ``save`` supplies nothing.
+    if isinstance(document, dict) and OPTIONAL_TOP_LEVEL_KEY not in document:
+        document[OPTIONAL_TOP_LEVEL_KEY] = {}
+    return validate_document(document, path)
+
+
 class MissionStore(object):
     """Atomic load/save of the one Mission store document."""
 
@@ -886,12 +900,7 @@ class MissionStore(object):
                 document = json.load(handle)
         except (OSError, ValueError) as exc:
             _unreadable(self.path, "could not be read as JSON (%s)" % exc)
-        # The ONE compatibility rule (R-3): a document written before the
-        # Mission State key existed loads with an empty map. Nothing else
-        # is supplied, and ``save`` supplies nothing.
-        if isinstance(document, dict) and OPTIONAL_TOP_LEVEL_KEY not in document:
-            document[OPTIONAL_TOP_LEVEL_KEY] = {}
-        return validate_document(document, self.path)
+        return accept_loaded_document(document, self.path)
 
     def save(self, document):
         _refuse_open_directory(self.directory)

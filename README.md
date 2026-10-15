@@ -629,7 +629,26 @@ For the full operating surface, see [Operational Reference](docs/operations.md).
 
 ---
 
-# 4. Closing note
+# 4. Pixel Agents DI office
+
+An early, read-only Pixel Agents office for Dodging Infinity lives in its own subtree, [`integrations/pixel-agents/`](integrations/pixel-agents/). It draws the Missions a Dodging Infinity catalog reports and their roles, as a pixel-art office in a browser. When the catalog is launched with contract version 2 (version 1 is the default), it also shows their task chains, report facts and review preamble.
+
+It observes; it does not control. It does not spawn Herdr, approve Missions, mark Missions complete, create Git authority, deploy, or rewrite durable state. It is a browser package only, with no controls and no native wrapper. Dots and R1 are separate and not part of it.
+
+| Topic | Where |
+|---|---|
+| Installation | [Install and build](docs/pixel-agents-office.md#install-and-build) |
+| Source registration | [Register the sources](docs/pixel-agents-office.md#register-the-sources) |
+| Launch | [Launch](docs/pixel-agents-office.md#launch) |
+| Architecture and trust boundary | [Architecture and trust boundary](docs/pixel-agents-office.md#architecture-and-trust-boundary) |
+| Licensing | [Licensing](integrations/pixel-agents/UPSTREAM.md#licensing) |
+| Upstream updates | [Updating from upstream](integrations/pixel-agents/UPSTREAM.md#updating-from-upstream) |
+
+The office has its own Node.js dependency and build boundary inside that subtree. The rest of Dodging Infinity still uses only the Python standard library.
+
+---
+
+# 5. Closing note
 
 I built Dodging Infinity because I wanted to hand AI a real problem, walk away, and come back to something I could inspect without treating a chat transcript as the source of truth.
 
@@ -673,3 +692,5 @@ That is what this project is trying to make normal.
 ## License
 
 Apache 2.0. See [LICENSE](LICENSE).
+
+The vendored Pixel Agents office in [`integrations/pixel-agents/`](integrations/pixel-agents/) keeps its own licences (MIT code, CC0-derived character art, an SIL OFL 1.1 font). See [its licensing table](integrations/pixel-agents/UPSTREAM.md#licensing).

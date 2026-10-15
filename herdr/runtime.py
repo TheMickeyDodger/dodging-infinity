@@ -352,6 +352,7 @@ def _bounded_command(cmd):
                     pass
     result = {
         "started": True,
+        "process_group": proc.pid,
         "returncode": proc.returncode,
         "timed_out": timed_out,
         "elapsed_seconds": round(time.monotonic() - started, 3),
