@@ -1365,6 +1365,23 @@ WORK_PENDING = "pending"        # a worker is still running its capture
 WORK_UNCERTAIN = "uncertain"    # the worker ended; cleanup NOT established
 
 
+def _await_worker(worker, ended, timeout):
+    """Wait at most ``timeout`` seconds (``None``: no bound) for an owner's
+    worker to END, and return whether its thread is gone. The RUN is awaited
+    on ``ended``, NEVER by ``Thread.join``: on CPython with the bpo-45274
+    join handling (seen on 3.9.25 to 3.12), an exception interrupting a join
+    of a LIVE thread marks it stopped and drops it from interpreter-exit
+    joining, so the process would abandon its owned work at exit. ``ended``
+    is the run's last act (owned work and its kill/reap are over), so the
+    join that follows waits for the thread's own teardown only."""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    if not ended.wait(timeout):
+        return False
+    worker.join(None if deadline is None
+                else max(0.0, deadline - time.monotonic()))
+    return not worker.is_alive()
+
+
 class SnapshotService(object):
     """THE supported owner: ONE long-lived instance with ONE in-flight
     capture slot (see "The owner and its caller contract").
@@ -1401,6 +1418,7 @@ class SnapshotService(object):
         self._mutex = threading.Lock()
         self._slot = None
         self._worker = None
+        self._ended = None
         self._accepting = True
         self._released = threading.Event()
         self._released.set()
@@ -1412,7 +1430,7 @@ class SnapshotService(object):
         with self._mutex:
             accepting = self._accepting
             slot = None if self._slot is None else dict(self._slot)
-            running = self._worker is not None and self._worker.is_alive()
+            running = self._worker_running()
         if slot is None:
             return {"accepting": accepting, "slot": "free",
                     "work": WORK_SETTLED}
@@ -1448,12 +1466,10 @@ class SnapshotService(object):
         ``diagnostics()``. Its ``work`` says what is still owed: ending is
         not cleanup, and ``uncertain`` stays uncertain."""
         with self._mutex:
-            worker = self._worker
-        if worker is not None:
-            try:
-                worker.join(timeout)
-            except RuntimeError:
-                pass        # never started (or unjoinable): the hold stands
+            worker, ended = self._worker, self._ended
+        if worker is not None and worker.ident is not None:
+            _await_worker(worker, ended, timeout)
+        # (a worker that never started is not waited for: the hold stands)
         with self._mutex:
             self._observe_open_question()
         return self.diagnostics()
@@ -1497,12 +1513,13 @@ class SnapshotService(object):
                           "observed_at": observed_at,
                           "held_because": "a capture is in progress"}
             self._released.clear()
+            ended = threading.Event()   # the run's last act (_await_worker)
             worker = threading.Thread(
                 target=self._work,
-                args=(roots, argv, observed_at, outcome, discovered, over,
-                      chains),
+                args=(ended, roots, argv, observed_at, outcome, discovered,
+                      over, chains),
                 name="runtime-snapshot-owner", daemon=False)
-            self._worker = worker
+            self._worker, self._ended = worker, ended
             try:
                 worker.start()
             except BaseException:
@@ -1512,8 +1529,7 @@ class SnapshotService(object):
                     "the worker's start was interrupted or failed: whether"
                     " it began is unknown")
                 raise
-        worker.join(wait_seconds)
-        if worker.is_alive():
+        if not _await_worker(worker, ended, wait_seconds):
             return Capture(
                 None, PROBLEM_CAPTURE_PENDING,
                 "the capture did not finish within the %s s wait; its owned"
@@ -1528,7 +1544,13 @@ class SnapshotService(object):
             if self._slot is not None:
                 self._slot["phase"] = name
 
-    def _work(self, roots, argv, observed_at, outcome, discovered=(),
+    def _worker_running(self):
+        """With the mutex held: the current worker started and has not
+        ended its run (``ended`` is the run's last act)."""
+        return (self._worker is not None and self._worker.ident is not None
+                and not self._ended.is_set())
+
+    def _work(self, ended, roots, argv, observed_at, outcome, discovered=(),
               over_capacity=(), chains=None):
         release, held_because = False, "a capture is in progress"
         settles = None
@@ -1548,13 +1570,16 @@ class SnapshotService(object):
             held_because = "a defect in the capture (%s)" % type(exc).__name__
             outcome["raised"] = exc
         finally:
-            with self._mutex:
-                if release:
-                    self._slot = None
-                    self._released.set()
-                elif self._slot is not None:
-                    self._slot["held_because"] = held_because
-                    self._slot["absence_settles_group"] = settles
+            try:
+                with self._mutex:
+                    if release:
+                        self._slot = None
+                        self._released.set()
+                    elif self._slot is not None:
+                        self._slot["held_because"] = held_because
+                        self._slot["absence_settles_group"] = settles
+            finally:
+                ended.set()         # the run's LAST act; teardown follows
 
 
 def capture(herd_roots, clock, listing_argv,

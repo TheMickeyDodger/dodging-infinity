@@ -19,6 +19,7 @@ independent SIGALRM watchdog (``Bounded``).
 """
 
 import contextlib
+import hashlib
 import inspect
 import io
 import json
@@ -54,7 +55,16 @@ CLI_HAS_SNAPSHOT = hasattr(runtime_cli, "_snapshot_command")
 #: The engine's real owned runner, captured before any test patches it.
 REAL_RUNNER = engine_runtime._bounded_command
 REAL_POPEN = subprocess.Popen
+#: The commit the runner change is measured against, and the SHA-256 of
+#: ``herdr/runtime.py`` at that commit. The DIGEST is what the fence test
+#: requires, so it holds in a depth-1 checkout (CI) or an exported tree with
+#: no history; where the BASELINE commit is present, its blob must agree too.
+#: To re-pin after an INTENTIONAL baseline move, set BASELINE to the new
+#: commit and BASELINE_RUNTIME_SHA256 to the output of
+#: ``git show <commit>:herdr/runtime.py | shasum -a 256``.
 BASELINE = "88543887059ed5944732f3d04d6dfea77188392c"
+BASELINE_RUNTIME_SHA256 = (
+    "cd8960206e878f8958d223bc13d826c9fb6c59df23db2e3eb27d2a27c315c961")
 TASK = "20261014-000000-aaaaaa"
 OTHER_TASK = "20261014-000001-bbbbbb"
 
@@ -492,15 +502,24 @@ class FenceAndWiringTests(Fixture):
     def test_the_runner_change_is_one_additive_datum(self):
         """``herdr/runtime.py`` is BASELINE plus exactly ONE line, the group
         id as a datum (its pre-reap SIGKILL and its reap are untouched), and
-        ``_command_record``'s explicit projection is not widened."""
-        baseline = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "show",
-             "%s:herdr/runtime.py" % BASELINE],
-            capture_output=True, check=True, timeout=30).stdout.decode()
-        current = (REPO_ROOT / "herdr" / "runtime.py").read_text()
-        added = '        "process_group": proc.pid,\n'
+        ``_command_record``'s explicit projection is not widened. BASELINE
+        is identified by its pinned digest, not by Git history."""
+        current = (REPO_ROOT / "herdr" / "runtime.py").read_bytes()
+        added = b'        "process_group": proc.pid,\n'
         self.assertEqual(current.count(added), 1)
-        self.assertEqual(current.replace(added, "", 1), baseline)
+        # ...and the line sits where it belongs: next in the result dict.
+        self.assertEqual(current.count(
+            b'    result = {\n        "started": True,\n' + added), 1)
+        remainder = current.replace(added, b"", 1)
+        self.assertEqual(hashlib.sha256(remainder).hexdigest(),
+                         BASELINE_RUNTIME_SHA256)
+        blob = "%s:herdr/runtime.py" % BASELINE
+        if subprocess.run(["git", "-C", str(REPO_ROOT), "cat-file", "-e",
+                           blob], capture_output=True,
+                          timeout=30).returncode == 0:
+            self.assertEqual(remainder, subprocess.run(
+                ["git", "-C", str(REPO_ROOT), "show", blob],
+                capture_output=True, check=True, timeout=30).stdout)
         full = {"started": True, "process_group": 7, "returncode": 0,
                 "timed_out": False, "elapsed_seconds": 0.0, "stdout": "",
                 "stderr": "", "stdout_truncated_at_read": False,
@@ -1124,16 +1143,32 @@ else:
 #: (watchdog 1 s) runs the REAL one-shot ``capture`` while an OWNED listing
 #: process is outstanding (a fake listing that sleeps; the runner's own
 #: deadline, 4 s here, is what ends it). Nothing in the child is fenced or
-#: faked except that listing's argv, which the parent supplies.
+#: faked except that listing's argv, which the parent supplies. Its atexit
+#: hook runs AFTER interpreter shutdown has joined the non-daemon threads and
+#: reports what that shutdown left behind.
 OWNED_EXPIRY_CHILD = r'''
-import json, os, signal, sys, threading, time, unittest
+import atexit, json, os, signal, sys, threading, time, unittest
 root, herd, argv, now = sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), int(sys.argv[4])
+pidfile = sys.argv[5]
 sys.path.insert(0, root)
 sys.path.insert(0, os.path.join(root, "tests"))
 from herdr import runtime as engine_runtime
 from target_runtime import runtime_snapshot as service
 import test_mission_sources as base
 engine_runtime.DIAGNOSTIC_COMMAND_TIMEOUT_SECONDS = 4.0
+def disposition():
+    with open(pidfile) as handle:
+        leader = json.load(handle)[0]
+    try:
+        os.kill(leader, 0)
+        state = "exists"        # still running, or our never-reaped zombie
+    except ProcessLookupError:
+        state = "reaped"
+    print(json.dumps({"owner_workers": [
+        t.name for t in threading.enumerate()
+        if t.name == "runtime-snapshot-owner"], "listing_leader": state}),
+          flush=True)
+atexit.register(disposition)
 class Inner(base.Bounded):
     watchdog_seconds = 1
     def test_one_shot_capture_with_owned_work_outstanding(self):
@@ -1146,7 +1181,8 @@ signal.alarm(0)
 print(json.dumps({"returned_after": returned, "problems": [
     text for _test, text in result.errors + result.failures],
     "owner_workers_alive": [t.name for t in threading.enumerate()
-                            if t.name == "runtime-snapshot-owner"]}),
+                            if t.name == "runtime-snapshot-owner"
+                            and t.is_alive()]}),
       flush=True)
 '''
 
@@ -1208,11 +1244,12 @@ class WatchdogOwnedWorkTests(Fixture):
         started = time.monotonic()
         done = subprocess.run(
             [sys.executable, "-I", "-B", script, service._REPO_ROOT, herd,
-             json.dumps(argv), str(NOW)], stdin=subprocess.DEVNULL,
+             json.dumps(argv), str(NOW), pidfile], stdin=subprocess.DEVNULL,
             capture_output=True, timeout=60)
         exited_after = time.monotonic() - started
         self.assertEqual(done.returncode, 0, done.stderr)
-        report = json.loads(done.stdout.decode().strip().splitlines()[-1])
+        report, at_exit = [json.loads(line) for line in
+                           done.stdout.decode().strip().splitlines()[-2:]]
         # The TEST was bounded although owned work was outstanding: the
         # expiry and its re-armed repeat ended request() and settle(None).
         self.assertLess(report["returned_after"], 3.5)
@@ -1229,6 +1266,12 @@ class WatchdogOwnedWorkTests(Fixture):
         [listing] = self.pids(pidfile)
         with self.assertRaises(ProcessLookupError):
             os.kill(listing, 0)
+        # Observed inside the process once interpreter shutdown had joined
+        # its non-daemon threads: the worker was joined, and the leader was
+        # killed and reaped BY THIS PROCESS (unreaped, it would still exist
+        # as this process's zombie child), not left to the system.
+        self.assertEqual(at_exit, {"owner_workers": [],
+                                   "listing_leader": "reaped"})
 
 
 class OwnerContractTests(Fixture):
@@ -1479,6 +1522,53 @@ class OwnerContractTests(Fixture):
         self.assertEqual(got.problem, service.PROBLEM_CAPTURE_PENDING)
         self.assertFalse([t for t in threading.enumerate()
                           if t.name == "runtime-snapshot-owner"])
+
+    def test_a_finished_capture_returns_only_once_its_thread_is_gone(self):
+        """A DETERMINISTIC interleaving: the worker thread is HELD after its
+        run's completion notification (``ended``) and before its teardown,
+        and released only 0.5 s AFTER it is held. Neither the one-shot
+        ``capture`` nor a finished long-lived ``request`` returns before
+        that release, so no returned capture leaves its thread behind."""
+        real_work = service.SnapshotService._work
+        holds = []
+
+        def work(owner, ended, *args):
+            try:
+                real_work(owner, ended, *args)
+            finally:
+                holds[-1]["notified"] = ended.is_set()
+                holds[-1]["held"].set()
+                holds[-1]["release"].wait(20)       # self-terminating
+
+        def releaser(hold):
+            if hold["held"].wait(20):
+                time.sleep(0.5)
+                hold["released_at"] = time.monotonic()
+                hold["release"].set()
+        patcher = mock.patch.object(service.SnapshotService, "_work", work)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for name, call in (
+                ("capture", lambda: service.capture(
+                    [self.herd()], self.clock, self.plan())),
+                ("request", lambda: self.owner(
+                    [self.herd()], self.plan()).request(
+                        service.MAX_WAIT_SECONDS))):
+            with self.subTest(name):
+                hold = {"held": threading.Event(),
+                        "release": threading.Event()}
+                holds.append(hold)
+                self.addCleanup(hold["release"].set)
+                threading.Thread(target=releaser, args=(hold,),
+                                 daemon=True).start()
+                got = call()
+                returned_at = time.monotonic()
+                self.assertTrue(got.is_available(), got)
+                self.assertIs(hold["notified"], True)
+                self.assertIn("released_at", hold, "returned while held")
+                self.assertGreaterEqual(returned_at, hold["released_at"])
+                self.assertFalse([t for t in threading.enumerate()
+                                  if t.name == "runtime-snapshot-owner"])
 
     def test_the_one_shot_lifecycle_runs_on_error_paths(self):
         calls = []
