@@ -640,11 +640,25 @@ It observes; it does not control. It does not spawn Herdr, approve Missions, mar
 | Installation | [Install and build](docs/pixel-agents-office.md#install-and-build) |
 | Source registration | [Register the sources](docs/pixel-agents-office.md#register-the-sources) |
 | Launch | [Launch](docs/pixel-agents-office.md#launch) |
+| World preset | [World preset](docs/pixel-agents-office.md#world-preset) |
+| Opening a running office | [The `pixel` launcher](docs/pixel-agents-office.md#the-pixel-launcher) |
 | Architecture and trust boundary | [Architecture and trust boundary](docs/pixel-agents-office.md#architecture-and-trust-boundary) |
 | Licensing | [Licensing](integrations/pixel-agents/UPSTREAM.md#licensing) |
 | Upstream updates | [Updating from upstream](integrations/pixel-agents/UPSTREAM.md#updating-from-upstream) |
 
 The office has its own Node.js dependency and build boundary inside that subtree. The rest of Dodging Infinity still uses only the Python standard library.
+
+## The visual world
+
+By default the office shows the bundled Pixel Agents office. A world preset in this repository expands it: the original rooms stay as they were, and six computer rooms with 24 room computers join them, connected to a lobby whose reception desk has one more computer.
+
+- **Actual agents.** Each character is an agent that the Dodging Infinity catalog actually reports for a Mission. Click a character to select it, and the side panel shows that agent and the Mission it belongs to.
+- **Honest statuses.** "unknown" is not zero, and "stale" is not live. An activity of "done" is terminal activity, not task, Mission, verification or delivery completion. Seeing an agent in the office is not evidence that its task, its Mission or any demo succeeded.
+- **Fit and zoom.** The office fits the world to the window automatically, with whole-number zoom. Zooming by hand overrides the fit.
+- **The world preset is opt-in.** It is a layout authored for Dodging Infinity from the existing, already-attributed Pixel Agents assets. In the office's Settings, export your current layout as a backup and import the preset, then reload the page: until the reload, a session that started on the bundled default can still reflow back to that default world. The preset does not install itself, does not replace a saved layout and raises no bundled layout revision. This is about the preset only: the general upgrade behaviour of the office's layout loader is described in [World preset](docs/pixel-agents-office.md#world-preset).
+- **The `pixel` launcher.** Type `pixel`, in lowercase, to open the address that a running office recorded, in your browser, without printing its token. It starts nothing and installs nothing. It checks the access file's shape and that a loopback port answers, but it cannot tell whether the listener is the office or whether the token is still valid. See [The `pixel` launcher](docs/pixel-agents-office.md#the-pixel-launcher).
+- **Checkout and package.** The preset and the launcher are in a Dodging Infinity checkout and in the standalone office package.
+- **Read-only.** All of this is the same read-only increment described above. The world and the launcher add no controls and no route to any action.
 
 ---
 

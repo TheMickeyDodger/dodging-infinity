@@ -17,7 +17,7 @@ bytes came from, what was left out, which licences apply, and how to take upstre
 
 ### Files the DI office changes relative to the upstream baseline
 
-These 72 paths differ from upstream `d1e007a`. Apart from the
+These 74 paths differ from upstream `d1e007a`. Apart from the
 [publication edits](#publication-edits-made-on-import) below, every other imported file is
 unchanged upstream source.
 
@@ -31,6 +31,8 @@ unchanged upstream source.
 - `packaging/di/CREDITS.txt`
 - `packaging/di/OFL-1.1.txt`
 - `packaging/di/README.txt`
+- `packaging/di/pixel`
+- `packaging/di/worlds/expanded-office.json`
 - `scripts/build-di-package.mjs`
 - `server/__tests__/diBackendClient.test.ts`
 - `server/__tests__/diBackendDiscovery.test.ts`
@@ -157,7 +159,7 @@ There is no automatic update. To take a newer upstream release:
 
 1. In a separate clone of the upstream repository (never inside this checkout), diff the
    baseline `d1e007a9fdf3003c252d2973abe1999ae59aec33` against the new upstream commit.
-2. Apply that upstream diff here. Resolve conflicts in the 72 DI-changed files above in favour of
+2. Apply that upstream diff here. Resolve conflicts in the 74 DI-changed files above in favour of
    the DI office behaviour, and leave the [Not imported](#not-imported) files out again.
 3. Review any new or changed image, font or other binary asset for a stated licence basis
    before adding it, and record it in [Licensing](#licensing).

@@ -15,8 +15,12 @@ WHAT THIS IS
 RUN (no install: extract the package and run it)
   Node >= 20. The runtime dependencies are in node_modules/.
 
-  node dist/di-cli.js --state-dir <absolute dir> --backend-discovery <absolute file> \
-       [--contract-version 1|2] [--port <n>]
+  OFFICE_STATE="$HOME/pixel-office-state"     # the office's own state dir; your choice
+  DISCOVERY="${TMPDIR:-/tmp}/di-v2-EXAMPLE/runtime-v1/backend-discovery.json"
+                                              # the backend's discovery file (THE BACKEND)
+  node dist/di-cli.js --state-dir "$OFFICE_STATE" --backend-discovery "$DISCOVERY"
+
+  Both paths must be absolute. Optional flags: --contract-version 1|2 and --port N.
 
   --state-dir           the office's own state root (settings, layout, seats); never ~/.pixel-agents
   --backend-discovery   the DI backend's discovery file, READ ONLY — the office never starts,
@@ -25,15 +29,61 @@ RUN (no install: extract the package and run it)
                         response of any other version is shown as INCOMPATIBLE
 
   The office binds 127.0.0.1 only. It prints the path of its access file, not the URL. Open the
-  URL stored in <state-dir>/run/browser-access.json.
+  URL stored in <state-dir>/run/browser-access.json, or run ./pixel (see OPENING A RUNNING
+  OFFICE below).
+
+WORLD PRESET (opt-in: the office never loads it on its own)
+  worlds/expanded-office.json (source tree: packaging/di/worlds/expanded-office.json) is an
+  office layout authored for Dodging Infinity. It arranges the existing, already-attributed
+  Pixel Agents assets in this package (furniture, floors, walls, pets; see NOTICES AND
+  UPDATES below). It keeps the original rooms and adds six computer rooms with 24 room
+  computers, plus a connected lobby whose reception desk carries one more computer. No rug or
+  carpet. 60 x 27 tiles, 161 furniture items, the original two pets.
+  It does not install itself, does not replace a saved layout and raises no bundled layout
+  revision; nothing in it writes <state-dir>/layout.json. That is about this preset only, not
+  a promise about upgrades: the office's layout loader can replace a saved layout when a
+  bundled layout revision is raised. Keep an exported backup of any layout you care about.
+  To adopt it, in the office in your browser:
+    1. Settings -> Export Layout. Keep the downloaded file: it is your backup.
+    2. Settings -> Import Layout, and pick worlds/expanded-office.json.
+    3. Reload the office page.
+  The import saves the preset as the office's own layout, <state-dir>/layout.json. The reload
+  is part of the procedure: until the page is reloaded, a session that started on the bundled
+  default can still reflow back to that default world (for example on a window resize). After
+  the reload the saved preset is the layout the office loads. A custom layout that arrives when
+  the page loads is never reshaped, only fitted to the window with whole-number zoom.
+  To go back, import your backup the same way, then reload. A backup exported while the bundled
+  default was showing is a fixed snapshot of it, not the responsive default; to return to the
+  responsive default, import dist/assets/default-layout-1.json (source tree:
+  webview-ui/public/assets/default-layout-1.json), then reload.
+
+OPENING A RUNNING OFFICE: pixel (lowercase; file names are case-sensitive on Linux)
+  ./pixel (source tree: packaging/di/pixel) opens the address that a running office recorded in
+  <state-dir>/run/browser-access.json, in your default browser, without printing the address
+  or its token. Needs Python 3 (standard library only) and macOS (/usr/bin/open) or Linux
+  (xdg-open). It starts nothing, installs nothing and writes nothing.
+  Which office (the first source present wins): --state-dir DIR; else the environment variable
+  PIXEL_AGENTS_DI_STATE_DIR; else ${XDG_CONFIG_HOME:-~/.config}/pixel-agents-di/pixel.json
+  holding {"state_dir": "/absolute/office-state"}. Keep that configuration out of version
+  control; pixel only reads it.
+  It checks the access file's shape (url, port and token present and of the right type; the url
+  is http on 127.0.0.1 with a port and no credentials, and carries the file's token and port),
+  then makes a TCP connect to that loopback port. Each failure has its own exit code, listed by
+  ./pixel --help. A killed office leaves a STALE access file behind: with nothing listening,
+  pixel exits 12 (see STOP, REMOVE, RECOVER below).
+  LIMIT: nothing is authenticated. The TCP connect does not identify the listening process and
+  does not validate the token, so a stale access file whose port another program now uses is
+  opened anyway. The opener and the browser receive the address, token included, as a process
+  argument, which process listings can show while the opener runs.
 
 BUILD FROM SOURCE (what was actually done for this package, from the office source root:
 integrations/pixel-agents/ in a Dodging Infinity checkout)
   Install — LOCKED, OFFLINE, and with git hooks left alone:
-    HUSKY=0 npm ci --offline --cache <a populated npm cache dir> --foreground-scripts --no-audit \
+    HUSKY=0 npm ci --offline --cache "$HOME/.npm" --foreground-scripts --no-audit \
          --no-fund --no-update-notifier
-    (with SCARF_ANALYTICS=false DO_NOT_TRACK=1). The cache already held every locked package,
-    so nothing was fetched; npm ci resolved strictly from package-lock.json.
+    (with SCARF_ANALYTICS=false DO_NOT_TRACK=1). --cache names an npm cache that already holds
+    every locked package ("$HOME/.npm" is npm's default; use yours if it differs). For this
+    package it did, so nothing was fetched; npm ci resolved strictly from package-lock.json.
   Never a plain `npm install`: the package's "prepare" script runs husky, which can rewrite git
   hooks — and integrations/pixel-agents/ has no .git of its own, so the hooks at stake are those
   of the Dodging Infinity repository. HUSKY=0 disables it. ASSERT, before and after the install,
@@ -43,8 +93,9 @@ integrations/pixel-agents/ in a Dodging Infinity checkout)
     npm run build                     # asyncapi:generate, check-types and lint, then
                                       # node esbuild.js (dist/di-cli.js and the other entries)
                                       # and build:webview (the production webview, dist/webview/)
-    node scripts/build-di-package.mjs --out <absolute dir>
-                                      # assembles this package, its .tgz and a .tgz.sha256 sidecar
+    node scripts/build-di-package.mjs --out "$HOME/pixel-agents-di-package"
+                                      # (any absolute dir) assembles this package, its .tgz
+                                      # and a .tgz.sha256 sidecar
 
 THE BACKEND (launched by its owners, never by this office)
   THE REGISTRY THIS OFFICE CONSUMES is a SEPARATE, DEDICATED one, bound to exactly two sources:
