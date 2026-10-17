@@ -121,6 +121,8 @@ The contribution passed upstream checks and was accepted and merged by a qBraid 
 
 ## Inside the engineering team
 
+<img width="1774" height="887" alt="Pixel World Mission Handoff" src="https://github.com/user-attachments/assets/459f553c-2e7b-416f-93bc-09e6379432e5" />
+
 Herdr gives engineering work an explicit organization.
 
 | Role | Responsibility |
@@ -438,6 +440,8 @@ These principles apply across the technical work DI supports, from a repository 
 [Architecture](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/architecture.md) · [Security](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/SECURITY.md) · [Operator rules](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/AGENTS.md)
 
 ## Where DI is going
+
+<img width="1774" height="887" alt="Pixel world teamwork hub" src="https://github.com/user-attachments/assets/9d6a4d47-ecfb-4113-b4ea-b3b05c8f0a2b" />
 
 The goal is a system you can direct in ordinary language, leave working through supported interruptions, and return to with a clear account of what happened. You should be able to move between your phone, the Operator, and the office while following the same Missions, teams, decisions, and evidence.
 
