@@ -33,9 +33,11 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SECRET_TOKEN = "987654321:ZZsecretZZ-qwerty-uiop-9f8e7d6c"
 
-# The REAL production job on the engineering Mac (copied verbatim; the
-# real file is never read at test time). It DIFFERS from what this
-# checkout would install: a different root, and no ExitTimeOut.
+# A generic fixture modelled on the shape of the production job (the
+# real file is never read at test time, and its machine-specific paths
+# are replaced by the generic /Users/x form that LIST_TEMPLATE also
+# uses). Like the production job it DIFFERS from what this checkout
+# would install: a different root, and no ExitTimeOut.
 PRODUCTION_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -44,16 +46,16 @@ PRODUCTION_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
-    <string>/Users/travissellers/tools/dodging-infinity/dirun.py</string>
+    <string>/Users/x/tools/dodging-infinity/dirun.py</string>
     <string>run</string>
   </array>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/Users/travissellers/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <dict><key>PATH</key><string>/Users/x/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>/Users/travissellers/Library/Application Support/DodgingInfinity/telegram/dirun.out.log</string>
-  <key>StandardErrorPath</key><string>/Users/travissellers/Library/Application Support/DodgingInfinity/telegram/dirun.err.log</string>
+  <key>StandardOutPath</key><string>/Users/x/Library/Application Support/DodgingInfinity/telegram/dirun.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/x/Library/Application Support/DodgingInfinity/telegram/dirun.err.log</string>
 </dict>
 </plist>
 """
@@ -932,7 +934,7 @@ class StatusTests(Fixture):
         # Also without assuming a dict at the foreign-detail site itself.
         self.assertFalse(runtime_service._owned_definition(["x"]))
         self.assertFalse(runtime_service._owned_definition("x"))
-        # The real production job IS ours (a dirun job under our label):
+        # The production-shaped job IS ours (a dirun job under our label):
         # status reports its bound code path rather than calling it foreign.
         with open(self.plist_path(), "w", encoding="utf-8") as handle:
             handle.write(PRODUCTION_PLIST)
@@ -940,7 +942,7 @@ class StatusTests(Fixture):
         self.assertEqual(report["state"], "installed_stopped")
         self.assertEqual(
             report["code_path"],
-            "/Users/travissellers/tools/dodging-infinity/dirun.py",
+            "/Users/x/tools/dodging-infinity/dirun.py",
         )
 
 
