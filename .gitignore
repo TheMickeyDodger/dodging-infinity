@@ -19,6 +19,45 @@ dist/
 .env
 .env.*
 
+# Herd runtime and local operator state: herd.config.json, state/, memory/ and
+# roles/. `herdctl init` already writes ".herd/" to .git/info/exclude; this
+# also covers a fresh clone.
+.herd/
+
+# Pixel Agents DI office and catalog bridge access files. Each holds a
+# per-launch bearer token ({url, port, token}, written 0600). Their directories
+# are chosen by the operator (--state-dir, --discovery-file), so they can land
+# inside a checkout. Their temp files end in .tmp (covered below).
+**/run/browser-access.json
+backend-discovery.json
+
+# Local runtime logs, written into an operator-chosen state directory (which can be inside a checkout).
+# Exact basenames only: dirun.py and tgop.py are tracked source, so no dirun.* / tgop.* globs.
+dirun.out.log
+dirun.err.log
+tgop.out.log
+tgop.err.log
+controller.log
+cloudflared.log
+
+# Local config and state that carry a credential or authority, by their fixed names. config.json is the
+# Telegram adapter config (bot token); runtime-config.json repeats its keys; tunnel.json records the public
+# tunnel URL; capabilities.json holds the Runtime's one-shot capability records; workflows.json holds Mission
+# Authorization records. No tracked or historical path uses these names. Generic names such as settings.json
+# (tracked in the Pixel subtree), layout.json or state.json are deliberately NOT ignored.
+config.json
+runtime-config.json
+tunnel.json
+capabilities.json
+workflows.json
+
+# Office launcher configuration: the `pixel` launcher (integrations/pixel-agents/packaging/di/pixel) reads
+# ${XDG_CONFIG_HOME:-~/.config}/pixel-agents-di/pixel.json, which only names an office state directory (it is not a
+# credential). docs/pixel-agents-office.md says to keep it out of Git, and XDG_CONFIG_HOME is an operator-chosen
+# absolute path that can point inside a checkout. The rule uses the launcher's FIXED two-segment suffix so a bare
+# pixel.json elsewhere is not ignored.
+**/pixel-agents-di/pixel.json
+
 # Temporary files
 *.tmp
 *.swp

@@ -7,7 +7,7 @@ formats.
 
 **Investigated:** 2026-07-29
 **CLI under test:** `claude --version` → `2.1.220 (Claude Code)`
-(binary at `/Users/pablo/.local/share/claude/versions/2.1.220`)
+(binary at `$HOME/.local/share/claude/versions/2.1.220`)
 **Evidence base:** official docs, the official changelog, the installed binary, and a
 machine-wide sweep of every JSONL transcript under `~/.claude/projects/` — 939 files
 across 46 project directories, spanning 30 distinct CLI versions (2.1.170 – 2.1.220)
