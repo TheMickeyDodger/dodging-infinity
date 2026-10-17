@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V14",
+  "name": "Twin Belfries",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 7,
+  "width": 64,
+  "height": 160,
+  "footprintW": 4,
+  "footprintH": 10
+}

@@ -1,0 +1,13 @@
+{
+  "id": "CATHEDRAL_TOWER_TOP",
+  "name": "Bell-tower upper stage",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 10,
+  "width": 96,
+  "height": 160,
+  "footprintW": 6,
+  "footprintH": 10
+}

@@ -1,0 +1,13 @@
+{
+  "id": "SUBWAY_HEADHOUSE_DECO",
+  "name": "Art-deco station headhouse",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 5,
+  "width": 80,
+  "height": 112,
+  "footprintW": 5,
+  "footprintH": 7
+}

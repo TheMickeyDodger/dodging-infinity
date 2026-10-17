@@ -1,0 +1,13 @@
+{
+  "id": "CITY_HOTEL",
+  "name": "Boutique Hotel",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 128,
+  "height": 112,
+  "footprintW": 8,
+  "footprintH": 7
+}

@@ -1,0 +1,13 @@
+{
+  "id": "CITY_SUPERTALL",
+  "name": "Slender Supertall",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 10,
+  "width": 64,
+  "height": 208,
+  "footprintW": 4,
+  "footprintH": 13
+}

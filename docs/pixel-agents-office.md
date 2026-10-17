@@ -162,7 +162,9 @@ Keep an exported backup of any layout you care about.
 
 1. **Back up first.** Settings → **Export Layout**. Keep the downloaded file: it is the
    layout the office is showing now.
-2. Settings → **Import Layout**, and pick `expanded-office.json`.
+2. Settings → **Import Layout**, and pick `expanded-office.json`. In the DI office in a browser
+   this opens a paste box instead of a file chooser: open the JSON file in a text editor, copy
+   all of it, paste it, and choose **Import** (see *Importing by paste* below).
 3. **Reload the office page.**
 
 The import saves the preset as the office's own layout, in `<state-dir>/layout.json`, and
@@ -188,6 +190,111 @@ the standalone package it is `dist/assets/default-layout-1.json`.
 - **Where it is.** In a checkout:
   `integrations/pixel-agents/packaging/di/worlds/expanded-office.json`. In the standalone
   office package: `worlds/expanded-office.json`.
+
+### Importing by paste (DI office in a browser)
+
+In the DI office opened in a browser, **Import Layout (paste JSON)** and **Import Ambient
+Snapshot (paste JSON)** both open one small paste box. No file chooser is offered there: in
+native testing the browser's file chooser would not open a valid `.json` file (Open stayed
+disabled). That cause was **not** diagnosed, and the paste box is an alternative supported
+route, not a repair of the chooser.
+
+- **Layout.** Pasted text goes through exactly the checks an imported file goes through: at most
+  104 MiB of UTF-8, checked before parsing; then the layout limits; a refused layout changes
+  nothing. When it is accepted the office shows it at once and sends the save; the message says
+  the save was sent (it is queued while disconnected) and does not claim a confirmed write.
+- **Ambient snapshot.** Settings → **Export Ambient Snapshot** downloads one file,
+  `pixel-agents-ambient-<N>-aboard.json` (N = residents riding a train when exported). Pasting it
+  back restores the decorative residents and trains of the SAME world and resident set: at most
+  65,536 bytes, checked before parsing; a snapshot from another world or resident set, a
+  malformed one or one over the bound is refused whole, with the reason shown, and nothing
+  changes.
+- Outside the DI office (the standalone Pixel Agents surface) **Import Layout** still uses the
+  file chooser as before.
+
+### The forest and connected-world presets
+
+Two larger presets follow the same opt-in procedure: back up with Export Layout, Import the
+preset, reload the page. Like the expanded office, neither installs itself, replaces a saved
+layout or raises a bundled layout revision.
+
+- [`vast-forest.json`](../integrations/pixel-agents/packaging/di/worlds/vast-forest.json): the
+  palace placed whole inside a 176 by 112 world of woodland, trails, a pond and an observation
+  deck. Its art is drawn in code by this project.
+- [`metropolis.json`](../integrations/pixel-agents/packaging/di/worlds/metropolis.json): the
+  connected world, 352 by 224. The forest world sits unchanged in its top-left corner, and eight
+  districts surround it: the Metropolis, the North Shore, the Autumn Wildwood, Mirror Lakes, the
+  Silver Pine Highlands, the River Valley Farmland, the Harbour and the Aquarium Quarter. Roads,
+  trails, bridges and boardwalks join them. Water is never walkable.
+
+**Getting around.** These controls move the camera only.
+
+- **Camera views** (top left). Office frames the palace, the home of the office's agents. Deck
+  frames the observation deck and the view north. Woods shows the middle of the world at the
+  smallest pixel-perfect zoom; it is a framed region, not an overview.
+- **Districts.** The readable list alternative to the Map. It names every district and goes to
+  one. With the keyboard: Tab to Districts and press Enter, Tab to a name and press Enter. Esc
+  closes the list, and a status line announces where the camera went.
+- **Map.** Shows the whole world with district labels. Click a spot to go there at the office
+  zoom. Esc closes it.
+- **Panning and reduced motion.** Arrow keys pan. Manual zoom or pan takes over until a view is
+  chosen again. With reduced motion set, the Map refreshes less often.
+
+**Static art, and where animation comes from.** The legacy art baseline is static: every
+sprite extracted for the connected world is one frame, never animated, and so are the woodland
+variants and the lounge seating. In that art set the only animated original companions are the
+two pets that the office already had. That describes the artwork, not what moves at runtime: in
+the DI office, ambient residents animate on whatever layout is loaded, the legacy presets
+included, and trains run where the loaded world contains a subway line (of the bundled presets,
+only the living metropolis). The inherited decorative animal and vehicle artwork stays static.
+Decorative animals, vehicles, companions and residents never create agents and never imply
+Mission work. Per-sprite provenance (source atlas, its hash, the source rectangle) is in
+[`ASSET-PROVENANCE.json`](../integrations/pixel-agents/packaging/di/ASSET-PROVENANCE.json).
+
+**The living metropolis (opt-in).**
+[`living-metropolis.json`](../integrations/pixel-agents/packaging/di/worlds/living-metropolis.json)
+is 352 by 312 (109,824 tiles): the connected world extended south with two further office
+complexes, a Gothic cathedral quarter, retail and dining destinations, and a subway. Import it
+like the other presets (Settings, Import Layout (paste JSON), then reload). In current use:
+
+- **Ambient residents and jobs.** A decorative local population walks routines while the office
+  is open, even with no real agents: in this world, 145 residents (140 ordinary, with jobs such
+  as bellhop, police officer, firefighter, store clerk and barista, plus five Easter-egg
+  families). They are labelled Ambient and decorative, are never agents, never take a seat, and
+  a real agent always wins selection and seating.
+- **Subway.** Four stations and two trains; residents board at one station and alight at
+  another. The Stations list moves the camera only: a jump is instant camera travel, not a ride.
+- **Saving and moving the simulation.** While open, the office saves the residents' and trains'
+  state (identities, routines, journeys in progress) under its own state folder. Settings,
+  Export Ambient Snapshot downloads it; Import Ambient Snapshot (paste JSON) restores it. A
+  snapshot from a different world or resident set, or over 65,536 bytes, is refused whole and
+  nothing changes.
+- **Viewer closed.** Nothing runs while the office page is closed: no simulation time passes. A
+  hidden tab is caught up by at most 20 seconds when it is shown again.
+- **The glow.** An agent glows, with a soft pale-gold aura around its body, only while the
+  catalog reports it working at its terminal with fresh data. Idle, unknown, stale, expired and
+  disconnected agents never glow, and residents never glow. Reduced motion makes it steady. A
+  glow is not evidence of task, Mission or delivery completion.
+- **Passive.** Observation only: no dispatch, no model invocation and no change to the canonical
+  catalog.
+
+**Bounds.** The office admits any layout within these limits, from every path a layout enters
+by:
+
+- grid: up to 384 tiles on each axis, and at most 110,400 tiles in all (the living metropolis is
+  352 by 312 = 109,824);
+- objects: 16,384 furniture items, 64 pets and 64 areas;
+- carpet: 4,096 carpeted tiles;
+- distinct colour variants: 1,024 tile, 256 carpet and 1,024 furniture;
+- bytes: a saved layout file over 104 MiB and a save message over 64 MiB are refused.
+
+The colour and carpet caps bound one layout. The office also clears its rendering caches
+whenever a layout is loaded or imported, so they cannot grow across imports.
+
+**Still read-only.** These presets change what the office draws, not what it can do. The
+office stays the home of the agents the catalog actually reports. The DI, Grok and Codex
+action routes are unchanged, and the world adds no orchestration, dispatch, messaging, shell
+or execution route.
 
 ## The `pixel` launcher
 

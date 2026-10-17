@@ -1,0 +1,13 @@
+{
+  "id": "MUSEUM_PAINTING_ABSTRACT",
+  "name": "Abstract canvas",
+  "category": "wall",
+  "type": "asset",
+  "canPlaceOnWalls": true,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 32,
+  "height": 48,
+  "footprintW": 2,
+  "footprintH": 3
+}

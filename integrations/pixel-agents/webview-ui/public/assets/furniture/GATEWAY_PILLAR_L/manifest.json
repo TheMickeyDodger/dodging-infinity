@@ -1,0 +1,13 @@
+{
+  "id": "GATEWAY_PILLAR_L",
+  "name": "Gateway Pillar (West)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 5,
+  "width": 32,
+  "height": 96,
+  "footprintW": 2,
+  "footprintH": 6
+}

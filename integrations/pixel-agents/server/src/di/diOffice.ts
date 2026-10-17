@@ -60,6 +60,8 @@ export interface DiOfficeOptions {
   discoveryPath: string;
   /** The ONE catalog contract version this process reads (launch-time; default 1). */
   contractVersion?: QueryContractVersion;
+  /** EXPLICIT fixture preview (--fixture-preview): every office message carries fixtureMode. */
+  fixturePreview?: boolean;
   deps?: Partial<DiOfficeDeps>;
 }
 
@@ -72,6 +74,7 @@ export class DiOffice {
   private readonly store: AgentStateStore;
   private readonly discoveryPath: string;
   private readonly contractVersion: QueryContractVersion;
+  private readonly fixturePreview: boolean;
   private readonly deps: DiOfficeDeps;
   private readonly identities = new DiIdentityMap();
   /** Live characters: number -> member ref. */
@@ -88,6 +91,7 @@ export class DiOffice {
     this.store = options.store;
     this.discoveryPath = options.discoveryPath;
     this.contractVersion = options.contractVersion ?? DEFAULT_QUERY_CONTRACT_VERSION;
+    this.fixturePreview = options.fixturePreview === true;
     this.deps = {
       readDiscovery: options.deps?.readDiscovery ?? readBackendDiscovery,
       request:
@@ -134,7 +138,8 @@ export class DiOffice {
 
   /** The additive `diOfficeState` message for the current view. */
   officeStateMessage(): DiOfficeState {
-    return buildDiOfficeStateMessage(this.view, (member) => this.characterIdFor(member));
+    const message = buildDiOfficeStateMessage(this.view, (member) => this.characterIdFor(member));
+    return this.fixturePreview ? { ...message, fixtureMode: true } : message;
   }
 
   private characterIdFor(member: MemberPresentation): number | null {

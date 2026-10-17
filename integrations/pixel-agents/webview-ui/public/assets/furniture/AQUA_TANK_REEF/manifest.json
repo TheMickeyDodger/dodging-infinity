@@ -1,0 +1,13 @@
+{
+  "id": "AQUA_TANK_REEF",
+  "name": "Open-Top Reef Tank",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 1,
+  "width": 48,
+  "height": 48,
+  "footprintW": 3,
+  "footprintH": 3
+}

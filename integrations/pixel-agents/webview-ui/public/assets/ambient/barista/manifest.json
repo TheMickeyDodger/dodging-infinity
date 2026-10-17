@@ -1,0 +1,51 @@
+{
+  "id": "barista",
+  "label": "Barista",
+  "source": {
+    "id": "S07",
+    "file": "lw-S07-barista.png",
+    "sha256": "80bea6e2622ff2b4d92748b0ba8a4248a142f3515c2175306fdd2353767a054b"
+  },
+  "contract": "FULL 8x4",
+  "frameWidth": 20,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "walk3",
+    "walk4",
+    "idle1",
+    "idle2",
+    "gesture1",
+    "gesture2"
+  ],
+  "walk": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "idle": [
+    4,
+    5
+  ],
+  "gesture": [
+    6,
+    7
+  ],
+  "walkCycle": "4-frame (C1-C4, all drawn)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": false
+}

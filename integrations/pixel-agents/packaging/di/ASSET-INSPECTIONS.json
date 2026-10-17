@@ -1,0 +1,583 @@
+{
+ "kind": "inspection record per catalog entry admitted since M2 (assets.admission_uninspected_cap = 0)",
+ "baseline": "packaging/di/ASSET-BASELINE-M2.json",
+ "count": 96,
+ "records": [
+  {
+   "id": "BIGBOX_TARGET",
+   "source": "LIVING-WORLD-ART-QA.json#S02",
+   "inspection": "projection segmentation and alpha census; Target and Walmart seen natively by the Operator (Target at 7x and 8x)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (S02); Operator images operator-s6-target*.jpg"
+  },
+  {
+   "id": "BIGBOX_TARGET_FORECOURT",
+   "source": "LIVING-WORLD-ART-QA.json#S02",
+   "inspection": "projection segmentation and alpha census; Target and Walmart seen natively by the Operator (Target at 7x and 8x)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (S02); Operator images operator-s6-target*.jpg"
+  },
+  {
+   "id": "BIGBOX_WALMART",
+   "source": "LIVING-WORLD-ART-QA.json#S02",
+   "inspection": "projection segmentation and alpha census; Target and Walmart seen natively by the Operator (Target at 7x and 8x)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (S02); Operator images operator-s6-target*.jpg"
+  },
+  {
+   "id": "BIGBOX_WALMART_FORECOURT",
+   "source": "LIVING-WORLD-ART-QA.json#S02",
+   "inspection": "projection segmentation and alpha census; Target and Walmart seen natively by the Operator (Target at 7x and 8x)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (S02); Operator images operator-s6-target*.jpg"
+  },
+  {
+   "id": "CATHEDRAL_ALTAR",
+   "source": "LIVING-WORLD-ART-QA.json#G01",
+   "inspection": "band segmentation and alpha census; the cathedral (portal, windows, interior) inspected natively by the Operator at S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (G01); m3/s2b-capture; EIGHT-ADDITION-MATRIX.md R3"
+  },
+  {
+   "id": "CATHEDRAL_COLUMN",
+   "source": "LIVING-WORLD-ART-QA.json#G01",
+   "inspection": "band segmentation and alpha census; the cathedral (portal, windows, interior) inspected natively by the Operator at S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (G01); m3/s2b-capture; EIGHT-ADDITION-MATRIX.md R3"
+  },
+  {
+   "id": "CATHEDRAL_LANCET",
+   "source": "LIVING-WORLD-ART-QA.json#G01",
+   "inspection": "band segmentation and alpha census; the cathedral (portal, windows, interior) inspected natively by the Operator at S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (G01); m3/s2b-capture; EIGHT-ADDITION-MATRIX.md R3"
+  },
+  {
+   "id": "CATHEDRAL_PEW_L",
+   "source": "scripts/generate-procedural-props.ts",
+   "inspection": "generated in code (scripts/generate-procedural-props.ts); inspected natively by the Operator at S2b: long continuous runs read as Gothic pews (R7)",
+   "evidence": "EIGHT-ADDITION-MATRIX.md R7; m3/s2b-capture/cathedral-nave-pews.png"
+  },
+  {
+   "id": "CATHEDRAL_PEW_M",
+   "source": "scripts/generate-procedural-props.ts",
+   "inspection": "generated in code (scripts/generate-procedural-props.ts); inspected natively by the Operator at S2b: long continuous runs read as Gothic pews (R7)",
+   "evidence": "EIGHT-ADDITION-MATRIX.md R7; m3/s2b-capture/cathedral-nave-pews.png"
+  },
+  {
+   "id": "CATHEDRAL_PEW_R",
+   "source": "scripts/generate-procedural-props.ts",
+   "inspection": "generated in code (scripts/generate-procedural-props.ts); inspected natively by the Operator at S2b: long continuous runs read as Gothic pews (R7)",
+   "evidence": "EIGHT-ADDITION-MATRIX.md R7; m3/s2b-capture/cathedral-nave-pews.png"
+  },
+  {
+   "id": "CATHEDRAL_PORTAL",
+   "source": "LIVING-WORLD-ART-QA.json#G01",
+   "inspection": "band segmentation and alpha census; the cathedral (portal, windows, interior) inspected natively by the Operator at S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (G01); m3/s2b-capture; EIGHT-ADDITION-MATRIX.md R3"
+  },
+  {
+   "id": "CATHEDRAL_ROSE_WINDOW",
+   "source": "LIVING-WORLD-ART-QA.json#G01",
+   "inspection": "band segmentation and alpha census; the cathedral (portal, windows, interior) inspected natively by the Operator at S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (G01); m3/s2b-capture; EIGHT-ADDITION-MATRIX.md R3"
+  },
+  {
+   "id": "CATHEDRAL_TOWER_TOP",
+   "source": "LIVING-WORLD-ART-QA.json#G01",
+   "inspection": "band segmentation and alpha census; the cathedral (portal, windows, interior) inspected natively by the Operator at S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (G01); m3/s2b-capture; EIGHT-ADDITION-MATRIX.md R3"
+  },
+  {
+   "id": "CITY_TOWER_V01",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V02",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V03",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V04",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V05",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V06",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V07",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V08",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V09",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V10",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V11",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V12",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V13",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V14",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V15",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V16",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "CITY_TOWER_V17",
+   "source": "TOWER-VARIANTS.json",
+   "inspection": "composed variant: distinctness measured (0 weak pairs) and roofs reviewed in-world by lead1 (V02/V03/V05 repaired); the 23-tower census settled; the normal-zoom visual sweep is the Operator's at cutover",
+   "evidence": "packaging/di/TOWER-VARIANTS.json; EIGHT-ADDITION-MATRIX.md R4"
+  },
+  {
+   "id": "MUSEUM_ABSTRACT_STONE",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_BOTANICAL_PAIR",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_BRONZE",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_BUST",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_DISPLAY_CASE",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_FOSSIL",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_PAINTING_ABSTRACT",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_PAINTING_LANDSCAPE",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_PAINTING_PORTRAIT",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_PAINTING_SEASCAPE",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_PAINTING_STILL_LIFE",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_PLACARD",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_TAPESTRY",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_TRIPTYCH",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_URN",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "MUSEUM_VITRINE",
+   "source": "LIVING-WORLD-ART-QA.json#M01",
+   "inspection": "component segmentation and alpha census; each exhibit placed once in the Gallery Office and observed natively by the Operator (R5)",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (M01); EIGHT-ADDITION-MATRIX.md R5"
+  },
+  {
+   "id": "SUBWAY_BALLAST",
+   "source": "scripts/generate-procedural-props.ts",
+   "inspection": "generated in code (scripts/generate-procedural-props.ts); the trackbed observed natively by the Operator at S3",
+   "evidence": "m3/S3-STATUS.md"
+  },
+  {
+   "id": "SUBWAY_CAR_A",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_CAR_A2",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_CAR_B",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_CAR_B2",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_ELEVATOR",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_GANTRY",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_HEADHOUSE_BRICK",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_HEADHOUSE_CONSERVATORY",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_HEADHOUSE_DECO",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_INTERIOR_STRIP",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_KIOSK",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_LEAD_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_LEAD_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_PLATFORM_SHELTER",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_RAIL",
+   "source": "scripts/generate-procedural-props.ts",
+   "inspection": "generated in code (scripts/generate-procedural-props.ts); the line and its rails observed natively by the Operator at S3",
+   "evidence": "m3/S3-STATUS.md"
+  },
+  {
+   "id": "SUBWAY_ROUTE_BOARD",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_TICKET_MACHINE",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_TUNNEL_MOUTH",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_TURNSTILES",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_WAITING_GROUP",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "SUBWAY_WARNING_STRIP",
+   "source": "LIVING-WORLD-ART-QA.json#SUB",
+   "inspection": "row-band segmentation and alpha census; stations and trains observed natively by the Operator at S3",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (SUB); m3/S3-STATUS.md (native vs fixture split)"
+  },
+  {
+   "id": "VEHICLE_AMBULANCE_DOWN",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_AMBULANCE_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_AMBULANCE_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_AMBULANCE_UP",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_FIRE_ENGINE_DOWN",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_FIRE_ENGINE_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_FIRE_ENGINE_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_FIRE_ENGINE_UP",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_HATCHBACK_RED_DOWN",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_HATCHBACK_RED_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_HATCHBACK_RED_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_HATCHBACK_RED_UP",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_POLICE_CRUISER_DOWN",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_POLICE_CRUISER_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_POLICE_CRUISER_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_POLICE_CRUISER_UP",
+   "source": "LIVING-WORLD-ART-QA.json#T01",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SEDAN_BLUE_DOWN",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SEDAN_BLUE_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SEDAN_BLUE_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SEDAN_BLUE_UP",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SUV_SILVER_DOWN",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SUV_SILVER_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SUV_SILVER_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_SUV_SILVER_UP",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_TAXI_DOWN",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_TAXI_LEFT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_TAXI_RIGHT",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  },
+  {
+   "id": "VEHICLE_TAXI_UP",
+   "source": "LIVING-WORLD-ART-QA.json#T02",
+   "inspection": "facings visually adjudicated by executor1 on a named cue (tail lamp vs bonnet/windscreen), recorded per sheet; traffic inspected natively by the Operator at S2/S2b",
+   "evidence": "packaging/di/LIVING-WORLD-ART-QA.json (T01, T02 facing); m3/S2-STATUS.md"
+  }
+ ]
+}

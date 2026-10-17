@@ -1,0 +1,13 @@
+{
+  "id": "DETAIL_BRIDGE_STONE",
+  "name": "Stone Bridge",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 80,
+  "height": 48,
+  "footprintW": 5,
+  "footprintH": 3
+}

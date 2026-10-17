@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V09",
+  "name": "Garden Block",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 96,
+  "height": 128,
+  "footprintW": 6,
+  "footprintH": 8
+}

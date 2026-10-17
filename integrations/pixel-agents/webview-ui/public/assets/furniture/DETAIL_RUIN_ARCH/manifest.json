@@ -1,0 +1,13 @@
+{
+  "id": "DETAIL_RUIN_ARCH",
+  "name": "Stone Ruin Arch",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 64,
+  "height": 48,
+  "footprintW": 4,
+  "footprintH": 3
+}

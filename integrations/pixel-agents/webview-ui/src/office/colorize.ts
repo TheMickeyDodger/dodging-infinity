@@ -7,6 +7,7 @@
  */
 
 import type { ColorValue } from '../components/ui/types.js';
+import { PREVIEW_CACHE_MAX_ENTRIES } from '../constants.js';
 import type { SpriteData } from './types.js';
 
 /** Generic colorized sprite cache: arbitrary string key → SpriteData */
@@ -29,9 +30,44 @@ export function getColorizedSprite(
   return result;
 }
 
-/** Clear all cached colorized sprites (e.g., on asset reload) */
+/** EDITOR PREVIEW cache — brush swatches, catalogue thumbnails, the placement ghost: never the
+ *  layout's own art. Bounded AT INSERTION (PREVIEW_CACHE_MAX_ENTRIES): a brush-colour change makes
+ *  new entries with no layout rebuild, so the rebuild-time bound could never reach them. */
+const previewCache = new Map<string, SpriteData>();
+
+/** getColorizedSprite for an editor PREVIEW (see previewCache). */
+export function getPreviewColorizedSprite(
+  cacheKey: string,
+  sprite: SpriteData,
+  color: ColorValue,
+): SpriteData {
+  const cached = previewCache.get(cacheKey);
+  if (cached) return cached;
+  if (previewCache.size >= PREVIEW_CACHE_MAX_ENTRIES) previewCache.clear();
+  const result = color.colorize ? colorizeSprite(sprite, color) : adjustSprite(sprite, color);
+  previewCache.set(cacheKey, result);
+  return result;
+}
+
+/** The render-cache lifecycle (office/renderCaches.ts). */
+export function clearPreviewCache(): void {
+  previewCache.clear();
+}
+
+/** Preview entries held (render-cache accounting). */
+export function previewCacheSize(): number {
+  return previewCache.size;
+}
+
+/** Clear all cached colorized sprites (asset reload; and the render-cache lifecycle —
+ *  office/renderCaches.ts: every layout load or replacement, and the bound across edits). */
 export function clearColorizeCache(): void {
   colorizeCache.clear();
+}
+
+/** Entries held (render-cache accounting). */
+export function colorizeCacheSize(): number {
+  return colorizeCache.size;
 }
 
 /**

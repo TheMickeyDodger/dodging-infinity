@@ -1,0 +1,13 @@
+{
+  "id": "AQUA_TANK_CYLINDER",
+  "name": "Cylinder Tank",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 32,
+  "height": 64,
+  "footprintW": 2,
+  "footprintH": 4
+}

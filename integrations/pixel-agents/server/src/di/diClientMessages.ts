@@ -12,6 +12,7 @@
  * root (see stateRoot.ts).
  */
 
+import type { AmbientSpriteSheet } from '../../../core/src/messages.js';
 import { resendAgentActivity } from '../agentActivityResend.js';
 import type { AgentSeatMeta } from '../agentSeats.js';
 import { applyAgentSeats } from '../agentSeats.js';
@@ -19,6 +20,7 @@ import type { AgentStateStore } from '../agentStateStore.js';
 import type { AssetCache } from '../clientMessageHandler.js';
 import { PALETTE_COUNT } from '../constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../layoutPersistence.js';
+import { readAmbientState, writeAmbientState } from './ambientStatePersistence.js';
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
 
 export type DiSend = (message: Record<string, unknown>) => void;
@@ -27,6 +29,8 @@ export interface DiMessageContext {
   store: AgentStateStore;
   cache: AssetCache;
   extensionVersion: string;
+  /** The bounded ambient character sheets (ambientSprites.ts), loaded once at startup. */
+  ambientSprites?: AmbientSpriteSheet[];
 }
 
 /** What the handler did with one message (returned for tests and diagnostics). */
@@ -42,6 +46,7 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'setAlwaysShowLabels',
   'setGhostHeadlessAgents',
   'setShowAreas',
+  'saveAmbientState',
 ] as const;
 
 /**
@@ -113,9 +118,24 @@ export function handleDiClientMessage(
     // (diInputLimits.ts); nothing malformed or oversized reaches persistence.
     case 'saveLayout': {
       const reason = validateDiLayout(msg.layout);
-      if (reason !== null) return { refused: reason };
-      writeLayoutToFile(msg.layout as Record<string, unknown>);
+      if (reason !== null) {
+        // Nothing is acknowledged on this protocol, so a refused save must not leave the client
+        // showing a layout that was never persisted: re-send the persisted one (bound-checked).
+        send({ type: 'layoutLoaded', layout: readLayoutFromFile() ?? cache.defaultLayout ?? null });
+        return { refused: reason };
+      }
+      const notWritten = writeLayoutToFile(msg.layout as Record<string, unknown>);
+      if (notWritten !== null) {
+        send({ type: 'layoutLoaded', layout: readLayoutFromFile() ?? cache.defaultLayout ?? null });
+        return { refused: notWritten };
+      }
       return 'handled';
+    }
+
+    // The decorative ambient snapshot (M3 S4): checked against its contract before it is written.
+    case 'saveAmbientState': {
+      const notWritten = writeAmbientState(msg.state);
+      return notWritten === null ? 'handled' : { refused: notWritten };
     }
 
     case 'saveAgentSeats': {
@@ -215,6 +235,11 @@ export function sendDiHandshake(send: DiSend, ctx: DiMessageContext): void {
     };
   }
   send({ type: 'existingAgents', agents: agentIds, agentMeta, folderNames, externalAgents: {} });
+
+  // the decorative ambient snapshot BEFORE the layout: the webview holds it until it builds the
+  // residents for that layout, then applies it once if the world fingerprint matches
+  if (ctx.ambientSprites && ctx.ambientSprites.length > 0) send({ type: 'ambientSpritesLoaded', sheets: ctx.ambientSprites });
+  send({ type: 'ambientStateLoaded', state: readAmbientState() });
 
   send({ type: 'layoutLoaded', layout: readLayoutFromFile() ?? cache.defaultLayout ?? null });
 

@@ -1,11 +1,33 @@
+import { LAYOUT_MAX_CELLS, LAYOUT_MAX_DIM } from '../../core/src/layoutLimits.js';
 import type { ColorValue } from './components/ui/types.js';
 
 // ── Grid & Layout ────────────────────────────────────────────
 export const TILE_SIZE = 16;
 export const DEFAULT_COLS = 20;
 export const DEFAULT_ROWS = 11;
-export const MAX_COLS = 64;
-export const MAX_ROWS = 64;
+/**
+ * WORLD CEILING: the editor's grid bound (expandLayout refuses past it). DEFINED ONCE, in
+ * core/src/layoutLimits.ts (LAYOUT_MAX_DIM), which the DI server's DI_LAYOUT_MAX_DIM and every
+ * layout entry path also use — so the editor can never build what the server refuses. Each axis
+ * up to 384 AND at most MAX_CELLS (110,400) cells in all — an independent cap, not 384 x 384: room
+ * for the 352 x 304 living metropolis (107,008 cells) with editor headroom. The renderer
+ * culls to the viewport, so per-frame tile work is bounded by the window.
+ */
+export const MAX_COLS = LAYOUT_MAX_DIM;
+export const MAX_ROWS = LAYOUT_MAX_DIM;
+export const MAX_CELLS = LAYOUT_MAX_CELLS;
+/**
+ * WATER floors are never walkable (no false walkability on ponds, rivers, shallows or sea): tile
+ * values FLOOR_14 (still water — the forest pond), FLOOR_22 (deep sea) and FLOOR_23 (river, lake
+ * shallows). Bridges, piers and jetties are plank floors (FLOOR_13 deck, FLOOR_24 boardwalk) laid
+ * over the crossing, so a crossing exists exactly where a bridge does.
+ */
+// TileType.FLOOR_14 (still water), FLOOR_22 (sea), FLOOR_23 (river / lake) — numbers here because
+// office/types.ts imports this module (types.ts names every tile value, append-only)
+export const WATER_FLOOR_TILES: ReadonlySet<number> = new Set([14, 22, 23]);
+/** The former 64 x 64 ceiling. A layout within it is a LEGACY-SIZE world and keeps the original
+ *  whole-world fit framing exactly; a larger one is a LARGE world (named camera views). */
+export const LEGACY_WORLD_MAX_DIM = 64;
 
 // ── Character Animation ─────────────────────────────────────
 export const WALK_SPEED_PX_PER_SEC = 48;
@@ -41,6 +63,19 @@ export const CHARACTER_Z_SORT_OFFSET = 0.5;
 export const OUTLINE_Z_SORT_OFFSET = 0.001;
 export const SELECTED_OUTLINE_ALPHA = 1.0;
 export const HOVERED_OUTLINE_ALPHA = 0.5;
+/** The working halo (M3 S5), drawn as the human asked ("they should just glow"): a soft AURA hugging an
+ *  eligible real agent's own silhouette, behind the body. It reaches HALO_AURA_RADIUS_PX sprite pixels
+ *  out from the silhouette, fading with distance, and never below the sprite's lowest opaque row: no
+ *  ring, no floor ellipse, nothing under the feet. Eligibility is office/halo.ts alone. */
+export const HALO_AURA_RGB = '#FFD666';
+export const HALO_AURA_RADIUS_PX = 3;
+/** Aura alpha (0-255) at 1, 2 and 3 sprite pixels from the silhouette; the draw multiplies by the halo
+ *  intensity (haloIntensity: steady under reduced motion). */
+export const HALO_AURA_ALPHAS: readonly number[] = [0xff, 0xb0, 0x60];
+/** The aura-mask cache's HARD entry cap (least-recently-used eviction; getAuraSprite). The character
+ *  sprite cache it reads from is a strong map over palette:hue keys, so the masks need their own bound.
+ *  256 covers 48 working agents' typing and reading frames without thrashing. */
+export const HALO_AURA_CACHE_MAX_ENTRIES = 256;
 /** Headless agents (adopted, no terminal to focus) render slightly translucent. */
 export const HEADLESS_CHARACTER_ALPHA = 0.5;
 export const GHOST_PREVIEW_SPRITE_ALPHA = 0.5;
@@ -55,6 +90,39 @@ export const BUBBLE_FADE_DURATION_SEC = 0.5;
 export const BUBBLE_SITTING_OFFSET_PX = 10;
 export const BUBBLE_VERTICAL_OFFSET_PX = 24;
 export const FALLBACK_FLOOR_COLOR = '#808080';
+/**
+ * The PRE-COMPOSED CARPET LAYER (renderer.ts) is one offscreen canvas holding every carpet at BASE
+ * resolution (one pixel per sprite pixel), whatever the zoom, so it spans at most
+ * (cols + 1) x (rows + 1) x 16 x 16 pixels. This guard (28 Mi px = 29,360,128 px, 117,440,512 B
+ * RGBA; r4 had 24 Mi px) is above that for every admitted grid — the worst, 382 x 289, needs
+ * 28,433,920 px; the living metropolis 352 x 304 needs 27,562,240 px — so an admitted layout never
+ * falls back to drawing junctions directly (a unit test asserts it over every width). These are
+ * allocation ARITHMETIC, not measured process memory. M3 S2 raised the guard with the cell cap.
+ */
+export const CARPET_LAYER_MAX_PIXELS = 28 * 1024 * 1024;
+/**
+ * RENDER-CACHE BOUND across edits (office/renderCaches.ts): when the colorize and carpet caches
+ * together hold more entries than this after a layout rebuild, both are cleared at that safe
+ * point and the current layout's sprites are recomputed lazily. MEASURED need of one layout
+ * (lifecycle evidence, measurements/proofs-*): the shipped connected world 424 entries, the
+ * capped render workload 3,072 — neither reaches 4,096 on its own; edits that keep bringing new
+ * colours can, and then the caches clear and refill with what is in use. Each entry
+ * pins small canvases (one per zoom drawn), so the bound is kept near that need: at 16,384 an
+ * edits-only run grew Chrome RSS by about 1 GB before the first clear (receipt retained). A layout
+ * whose WALLS use many colour variants can need more (up to 16 auto-tile sprites per wall colour);
+ * it then recomputes its sprites once per rebuild — memory stays bounded, edits are slower.
+ */
+export const RENDER_CACHE_MAX_ENTRIES = 4_096;
+/**
+ * PREVIEW caches (office/colorize.ts, office/sprites/carpetTiles.ts): sprites colorized for EDITOR
+ * previews — brush swatches (floor, wall, carpet), catalogue thumbnails and the placement ghost —
+ * are kept apart from the layout's own art and bounded AT INSERTION, because a brush-colour change
+ * creates them without any layout rebuild. When full, a preview cache is cleared and refilled with
+ * what is on screen. 1,024 holds the furniture catalogue's thumbnails for one brush colour (~330 at
+ * the shipped catalogue) a few times over; carpet swatches need far fewer.
+ */
+export const PREVIEW_CACHE_MAX_ENTRIES = 1_024;
+export const CARPET_PREVIEW_CACHE_MAX_ENTRIES = 256;
 
 // ── Rendering - Overlay Colors (canvas, not CSS) ─────────────
 export const SEAT_OWN_COLOR = 'rgba(0, 127, 212, 0.35)';
@@ -90,6 +158,39 @@ export const ZOOM_LEVEL_FADE_DURATION_SEC = 0.5;
 export const ZOOM_SCROLL_THRESHOLD = 50;
 export const PAN_MARGIN_FRACTION = 0.25;
 
+// ── Large-world views (worlds beyond LEGACY_WORLD_MAX_DIM; see office/layout/worldViews.ts) ──
+/** Named views never go below 1 CSS pixel per sprite pixel (zoom = round(DPR) on Retina): the
+ *  office stays legible instead of shrinking to fit a world it cannot fit. */
+export const WORLD_VIEW_MIN_CSS_PX_PER_SPRITE_PX = 1;
+/** Furniture types whose footprints define the observation deck view. */
+export const WORLD_DECK_TYPE_PREFIX = 'DECK_';
+/** Deck view: where the deck's south edge sits, as a fraction of the canvas height from the top,
+ *  so the frame looks out over what lies north of the deck. */
+export const WORLD_DECK_VIEW_SOUTH_EDGE_FRACTION = 0.85;
+/** Arrow-key pan step, as a fraction of the canvas (presentation only; not in edit mode). */
+export const WORLD_KEY_PAN_FRACTION = 0.2;
+/** The whole-world Map overlay: margin inside the office area, redraw cadence (characters move;
+ *  slower under reduced motion), and the colour of the current-camera rectangle drawn on it. */
+export const WORLD_MAP_MARGIN_PX = 24;
+/** District labels drawn on the whole-world Map (readable at whole-world scale). */
+export const WORLD_MAP_LABEL_FONT_CSS_PX = 13;
+export const WORLD_MAP_LABEL_COLOR = '#fff4d6';
+export const WORLD_MAP_LABEL_SHADOW_COLOR = '#10121a';
+export const WORLD_MAP_HOME_LABEL = 'Palace (home)';
+/** The camera-view controls (Districts list included) sit this far from the top of the office and
+ *  stop this far short of its bottom, clear of the bottom toolbar (bottom 10 px, ~40 px tall) and
+ *  the residents legend (bottom 56 px, ~26 px tall); the list scrolls inside that box. */
+export const WORLD_VIEW_CONTROLS_TOP_PX = 104;
+export const WORLD_VIEW_CONTROLS_BOTTOM_GAP_PX = 104;
+export const WORLD_MAP_REFRESH_MS = 500;
+export const WORLD_MAP_REFRESH_REDUCED_MS = 2000;
+/** The Map's living layer markers (C3): resident dot and train bar sizes, canvas pixels. */
+export const WORLD_MAP_RESIDENT_DOT_PX = 3;
+export const WORLD_MAP_TRAIN_BAR_PX = 4;
+export const TRANSIT_MAP_TRAIN_COLOR = '#2f8f8a';
+export const WORLD_MAP_CAMERA_COLOR = '#ffe28a';
+export const WORLD_MAP_CAMERA_LINE_CSS_PX = 2;
+
 // ── Editor ───────────────────────────────────────────────────
 export const UNDO_STACK_MAX_SIZE = 50;
 export const LAYOUT_SAVE_DEBOUNCE_MS = 500;
@@ -97,6 +198,15 @@ export const LAYOUT_SAVE_DEBOUNCE_MS = 500;
 // ── Layout Import/Export (browser-native, standalone) ────────
 /** Suggested filename when exporting the office layout from the standalone browser. */
 export const LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json';
+/** DI office: the decorative ambient snapshot export (M3 S4) is named by what it carries:
+ *  `pixel-agents-ambient-<N>-aboard.json`, N = residents aboard a train at export. */
+export const AMBIENT_EXPORT_FILENAME_STEM = 'pixel-agents-ambient';
+/** File-picker filter for JSON imports (the non-DI file route): the extension AND the MIME type.
+ *  It was TRIED for the DI office's native macOS picker (Brave), where Open stayed disabled for a valid
+ *  owned .json file, and it did NOT fix it (Open stayed disabled under All Files too). The picker's
+ *  cause was NOT diagnosed. The DI office in a browser imports by PASTED JSON instead (an alternative
+ *  supported route, not a repair); this value is kept only because it is harmless. */
+export const JSON_FILE_ACCEPT = '.json,application/json';
 /** MIME type for the exported layout Blob. */
 export const LAYOUT_EXPORT_MIME = 'application/json';
 export const DEFAULT_FLOOR_COLOR: ColorValue = { h: 35, s: 30, b: 15, c: 0 };
@@ -194,6 +304,14 @@ export const WHATS_NEW_FADE_MS = 1000;
 
 // ── Game Logic ───────────────────────────────────────────────
 export const MAX_DELTA_TIME_SEC = 0.1;
+/** The game loop's tick-rate bound (frameStep.ts): visible time earns one tick (simulation AND render)
+ *  per this interval, held at most SIM_TICK_BURST, so in any T seconds there are at most
+ *  T / 0.015 + 2 ticks (about 66.7 per second sustained) on ANY display. A 60 Hz display still ticks
+ *  every frame; a faster one is held to that rate. Per-tick budgets (path searches, updates) are
+ *  therefore per-second bounds. */
+export const SIM_MIN_TICK_INTERVAL_SEC = 0.015;
+/** The most tick credit the loop may hold (see SIM_MIN_TICK_INTERVAL_SEC). */
+export const SIM_TICK_BURST = 2;
 export const WAITING_BUBBLE_DURATION_SEC = 2.0;
 export const DISMISS_BUBBLE_FAST_FADE_SEC = 0.3;
 export const INACTIVE_SEAT_TIMER_MIN_SEC = 3.0;
@@ -376,3 +494,124 @@ export const DI_ZONE_COLORS = [
 ];
 /** Debounce for re-fitting the DI world after the main area resizes. */
 export const DI_WORLD_REFLOW_MS = 150;
+/**
+ * Row cap for the DI DEFAULT world's workstation bands — deliberately the former 64-row
+ * ceiling, NOT MAX_ROWS: raising the world ceiling for large custom worlds must not multiply
+ * the default office's band capacity.
+ */
+export const DI_WORLD_MAX_ROWS = LEGACY_WORLD_MAX_DIM;
+
+// ── Ambient residents (DI mode; decorative only) ─────────────────────────────
+// Ambient residents are a LOCAL, DECORATIVE simulation that runs only while the viewer is open.
+// They are never agents: they are not in OfficeState.characters, never take a seat, never
+// receive real-agent status styling, and carry no Mission, activity or authority meaning.
+/** Fixed world seed: the same world always yields the same roster, posts and routines. */
+export const AMBIENT_WORLD_SEED = 0x5eedd1a9;
+/** Ordinary population target (enforced: the roster never exceeds it unless raised below the cap). */
+export const AMBIENT_POPULATION_ORDINARY = 140;
+/** District share of the population grows with walkable area to this power (sub-linear). */
+export const AMBIENT_DISTRICT_WEIGHT_EXPONENT = 0.7;
+/** Hard population cap: no roster, however requested, holds more residents than this. */
+export const AMBIENT_POPULATION_CAP = 200;
+/** Every resident is animated, so the animated-sprite cap equals the hard population cap. */
+export const AMBIENT_ANIMATED_CAP = AMBIENT_POPULATION_CAP;
+/** Bounded A*: nodes a single path search may expand before it gives up. */
+export const AMBIENT_PATH_MAX_EXPANSIONS = 6_000;
+/** Longest path (tiles) a resident will walk in one leg; longer results are refused. */
+export const AMBIENT_PATH_MAX_LENGTH = 220;
+/** Path searches allowed per simulation tick across ALL residents; the rest wait their turn. */
+export const AMBIENT_PATH_SEARCHES_PER_TICK = 4;
+/** Pedestrian graph: one hub per HUB_SPACING x HUB_SPACING block with walkable floor. */
+export const AMBIENT_HUB_SPACING = 12;
+/** Legs up to this Manhattan distance try bounded A* first; longer ones route on the graph. */
+export const AMBIENT_LOCAL_ROUTE_RADIUS = 48;
+/** Longest graph route (tiles) a resident will walk in one leg. */
+export const AMBIENT_ROUTE_MAX_LENGTH = 1_400;
+/** Minimum residents in the original palace and on the deck (C1: inhabited at zero agents). */
+export const AMBIENT_PALACE_MIN = 10;
+export const AMBIENT_DECK_MIN = 4;
+/** Congestion: a resident blocked by another resident waits, then passes through (no gridlock). */
+export const AMBIENT_CONGESTION_PASS_SEC = 2.5;
+/** A resident blocked by a REAL AGENT never passes through; it re-plans after this long. */
+export const AMBIENT_AGENT_BLOCK_REPLAN_SEC = 0.8;
+/** Yield search radius (tiles) when a resident must clear an agent's tile or assigned seat. */
+export const AMBIENT_YIELD_RADIUS = 3;
+/** Cached leg paths per resident (one per routine leg); the cache is dropped with the roster. */
+export const AMBIENT_LEG_CACHE_PER_RESIDENT = 6;
+/** Routine stops per resident (its post plus patrol stops). */
+// ── Transit (M3 S3; decorative subway) ─────────────────
+/** Train cruise speed and acceleration/braking, in tiles. */
+export const TRANSIT_CRUISE_TILES_PER_SEC = 5;
+export const TRANSIT_ACCEL_TILES_PER_SEC2 = 1.6;
+/** Seconds a train stands at a platform; seconds a terminus crossover takes. */
+export const TRANSIT_DWELL_SEC = 7;
+export const TRANSIT_CROSSOVER_SEC = 2.5;
+/** Passenger-car animation frame interval (frames A and B) while moving. */
+export const TRANSIT_FRAME_SEC = 0.22;
+/** Bounded transit event log (arrivals, departures, boardings, alightings, crossovers). */
+export const TRANSIT_EVENT_LOG_MAX = 200;
+/** Residents who commute by subway (a bounded subset of the station, boulevard and market places). */
+export const AMBIENT_RIDERS_MAX = 16;
+/** Hidden-view resume catch-up: at most this many seconds are simulated, in fixed steps. */
+export const AMBIENT_CATCHUP_MAX_SEC = 20;
+export const AMBIENT_CATCHUP_STEP_SEC = 0.1;
+/** How often the DI office saves the decorative ambient snapshot while visible (also on hide). */
+export const AMBIENT_SAVE_INTERVAL_MS = 30_000;
+/** A rider gives up waiting and walks after this long. */
+export const AMBIENT_RIDE_WAIT_MAX_SEC = 150;
+export const AMBIENT_ROUTINE_STOPS = 4;
+/**
+ * HARD bound on one routine's length (post, patrol stops, a sibling stop, a cross-world stop and
+ * room-coverage stops). Room coverage never exceeds it; rooms it would leave uncovered are COUNTED
+ * (AmbientWorld.coverage) rather than silently dropped.
+ */
+export const AMBIENT_ROUTINE_MAX_STOPS = 10;
+/** Patrol stops are drawn within this Manhattan radius of the post. */
+export const AMBIENT_PATROL_RADIUS_TILES = 28;
+/** Dwell at a stop, seconds (seeded per resident). */
+export const AMBIENT_DWELL_MIN_SEC = 2.5;
+export const AMBIENT_DWELL_MAX_SEC = 9.0;
+/** Walk speed and walk-cycle frame duration. */
+export const AMBIENT_WALK_SPEED_PX_PER_SEC = 36;
+export const AMBIENT_WALK_FRAME_DURATION_SEC = 0.16;
+/** A resident whose next path search failed retries after this long. */
+export const AMBIENT_PATH_RETRY_SEC = 4.0;
+/** Job badge: a small coloured mark above the head (world pixels). */
+export const AMBIENT_BADGE_W = 4;
+export const AMBIENT_BADGE_H = 2;
+export const AMBIENT_BADGE_OFFSET_Y = 27;
+/** Badge colours by job id (canvas fill). */
+export const AMBIENT_JOB_COLORS: Readonly<Record<string, string>> = {
+  bellhop: '#d4a017',
+  police: '#2f5bd3',
+  firefighter: '#e03a2f',
+  'store-clerk': '#2fa84f',
+  barista: '#8b5a2b',
+  courier: '#f08c2a',
+  'street-sweeper': '#9aa0a6',
+  gardener: '#5fbf3f',
+  farmhand: '#c9b458',
+  'dock-worker': '#3a7ca5',
+  angler: '#4fb3bf',
+  aquarist: '#29c4d6',
+  ranger: '#4b7f3a',
+  jogger: '#e85fa8',
+  tourist: '#b98be0',
+  receptionist: '#c06090',
+  custodian: '#7a6a5a',
+  'office-visitor': '#60a0e0',
+  verger: '#806040',
+  'cathedral-visitor': '#b090d0',
+  shopper: '#e07040',
+  'egg-pocket-creature': '#f2d33c',
+  'egg-shinobi': '#f07a24',
+  'egg-martial-artist': '#e8a020',
+  'egg-cul-de-sac-kid': '#5aa0e0',
+  'egg-trickster-hare': '#b8b8c8',
+};
+/** Standing residents drawn from a sheet step through idle, idle, gesture at this cadence. */
+export const AMBIENT_IDLE_FRAME_SEC = 0.7;
+/** Hover label for a resident (canvas). */
+export const AMBIENT_LABEL_BG = 'rgba(20, 20, 32, 0.88)';
+export const AMBIENT_LABEL_FG = '#e8e8f0';
+export const AMBIENT_LABEL_FONT_PX = 9;

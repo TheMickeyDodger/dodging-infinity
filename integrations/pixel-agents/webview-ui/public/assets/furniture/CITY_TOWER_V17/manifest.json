@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V17",
+  "name": "Stepped Deco Crown",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 112,
+  "height": 128,
+  "footprintW": 7,
+  "footprintH": 8
+}

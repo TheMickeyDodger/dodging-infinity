@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V04",
+  "name": "Slender Glass-Crown Drum",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 11,
+  "width": 96,
+  "height": 240,
+  "footprintW": 6,
+  "footprintH": 15
+}

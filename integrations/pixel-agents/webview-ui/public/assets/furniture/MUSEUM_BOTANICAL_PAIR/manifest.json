@@ -1,0 +1,13 @@
+{
+  "id": "MUSEUM_BOTANICAL_PAIR",
+  "name": "Botanical studies (pair)",
+  "category": "wall",
+  "type": "asset",
+  "canPlaceOnWalls": true,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 1,
+  "width": 32,
+  "height": 32,
+  "footprintW": 2,
+  "footprintH": 2
+}

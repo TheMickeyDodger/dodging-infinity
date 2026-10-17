@@ -1,0 +1,13 @@
+{
+  "id": "VEHICLE_TAXI_DOWN",
+  "name": "Yellow taxi (parked) facing down",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 1,
+  "width": 32,
+  "height": 32,
+  "footprintW": 2,
+  "footprintH": 2
+}

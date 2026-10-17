@@ -1,0 +1,13 @@
+{
+  "id": "BIGBOX_TARGET",
+  "name": "Target",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 160,
+  "height": 96,
+  "footprintW": 10,
+  "footprintH": 6
+}

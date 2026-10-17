@@ -17,9 +17,13 @@
  *                                       transitive dependencies, copied from the installed tree
  *   LICENSE, THIRD-PARTY-NOTICES.txt, CREDITS.txt, README.txt, package.json,
  *   dist/webview/fonts/OFL.txt          notices (font bytes are copied unchanged)
- *   worlds/expanded-office.json, pixel  the opt-in world preset and the open-in-browser
+ *   worlds/expanded-office.json,        the opt-in world presets (the 60x27 expanded office, the
+ *   worlds/vast-forest.json,            176x112 palace-in-the-forest and the 352x224 connected
+ *   worlds/metropolis.json, pixel       metropolis world around it) and the open-in-browser
  *                                       launcher, from packaging/di/ (byte-exact; the
- *                                       office itself never loads or runs either)
+ *                                       office itself never loads or runs any of them)
+ *   fixtures/*.FIXTURE.json,            the labelled synthetic fixtures and the isolated fixture
+ *   fixture-viewer.mjs                  viewer (visual testing; --fixture-source, no backend)
  * Excluded by ruling (W3): Screenshot.jpg, icon.png and the README composites.
  * Writes <out>/pixel-agents-di-office-<version>/, PACKAGE-INVENTORY.txt inside it, and
  * <out>/pixel-agents-di-office-<version>.tgz; prints the tarball's sha256.
@@ -29,6 +33,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { assetFacts, checkAssetBudget } from './asset-budget.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const EXTERNALS = ['fastify', '@fastify/websocket', '@fastify/static', '@fastify/cors'];
@@ -249,6 +255,11 @@ function main() {
   // ── notices ──
   copyFile(path.join(ROOT, 'LICENSE'), path.join(pkgDir, 'LICENSE'));
   copyFile(path.join(ROOT, 'packaging/di/CREDITS.txt'), path.join(pkgDir, 'CREDITS.txt'));
+  // ASSET BUDGET AND ADMISSION (scripts/asset-budget.mjs): refuse to seal over any ceiling, or with
+  // any sprite admitted since M2 that has no inspection record
+  const assetRefusals = checkAssetBudget(assetFacts(ROOT));
+  if (assetRefusals.length) fail(`asset budget: ${assetRefusals.join('; ')}`);
+  copyFile(path.join(ROOT, 'packaging/di/ASSET-PROVENANCE.json'), path.join(pkgDir, 'ASSET-PROVENANCE.json'));
   // The Operator doc ships INSIDE the sealed bytes: refuse to seal while any item that must be
   // copied verbatim from the backend's FINAL contract is still a marker.
   const readme = fs.readFileSync(path.join(ROOT, 'packaging/di/README.txt'), 'utf-8');
@@ -259,12 +270,16 @@ function main() {
 
   // ── opt-in extras: the world preset (imported by the user, never auto-loaded) and the
   // `pixel` launcher (opens an already running office; must stay executable) ──
-  copyFile(
-    path.join(ROOT, 'packaging/di/worlds/expanded-office.json'),
-    path.join(pkgDir, 'worlds/expanded-office.json'),
-  );
+  for (const world of ['expanded-office.json', 'vast-forest.json', 'metropolis.json', 'living-metropolis.json'])
+    copyFile(path.join(ROOT, 'packaging/di/worlds', world), path.join(pkgDir, 'worlds', world));
   copyFile(path.join(ROOT, 'packaging/di/pixel'), path.join(pkgDir, 'pixel'));
   fs.chmodSync(path.join(pkgDir, 'pixel'), 0o755);
+  // ── visual-testing extras: the labelled FIXTURE scripts and the isolated fixture viewer
+  // (runs dist/di-cli.js with --fixture-source; never reads backend discovery) ──
+  for (const f of fs.readdirSync(path.join(ROOT, 'packaging/di/fixtures')).sort())
+    if (f.endsWith('.FIXTURE.json'))
+      copyFile(path.join(ROOT, 'packaging/di/fixtures', f), path.join(pkgDir, 'fixtures', f));
+  copyFile(path.join(ROOT, 'packaging/di/fixture-viewer.mjs'), path.join(pkgDir, 'fixture-viewer.mjs'));
   const names = fontNames(path.join(ROOT, FONT_REL));
   fs.writeFileSync(
     path.join(pkgDir, 'dist/webview/fonts/OFL.txt'),

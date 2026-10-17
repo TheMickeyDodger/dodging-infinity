@@ -17,7 +17,11 @@ import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
-import { readLayoutFromFile, writeLayoutToFile } from '../../server/src/layoutPersistence.js';
+import {
+  layoutFileExists,
+  readLayoutFromFile,
+  writeLayoutToFile,
+} from '../../server/src/layoutPersistence.js';
 
 /** VS Code globalState keys → setting key passed to adapter.getSetting/setSetting.
  *  `pixel-agents.hooksEnabled` is NOT here: a legacy hooks-off is deliberately
@@ -106,7 +110,9 @@ export function migrateVsCodeState(context: vscode.ExtensionContext, adapter: St
   const legacyLayout = context.workspaceState.get<Record<string, unknown>>(WORKSPACE_KEY_LAYOUT);
   if (legacyLayout) {
     try {
-      if (readLayoutFromFile()) {
+      if (layoutFileExists()) {
+        // Existence, not a successful bounded read: a present file is never clobbered, even
+        // one the bounded reader refuses.
         void context.workspaceState.update(WORKSPACE_KEY_LAYOUT, undefined);
       } else {
         writeLayoutToFile(legacyLayout);

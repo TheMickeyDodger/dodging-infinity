@@ -1,0 +1,13 @@
+{
+  "id": "SUBWAY_HEADHOUSE_BRICK",
+  "name": "Red-brick station headhouse",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 80,
+  "height": 96,
+  "footprintW": 5,
+  "footprintH": 6
+}

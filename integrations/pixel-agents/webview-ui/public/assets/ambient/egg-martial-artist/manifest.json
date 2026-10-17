@@ -1,0 +1,43 @@
+{
+  "id": "egg-martial-artist",
+  "label": "Martial-artist homage",
+  "source": {
+    "id": "S23",
+    "file": "lw-S23-martial-artist.png",
+    "sha256": "35986084ced5d0b08680f7458dfb04de975a638ff05145b28316b296f5383919"
+  },
+  "contract": "MIN 4x4",
+  "frameWidth": 22,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "idle1",
+    "gesture1"
+  ],
+  "walk": [
+    0,
+    1
+  ],
+  "idle": [
+    2
+  ],
+  "gesture": [
+    3
+  ],
+  "walkCycle": "2-frame (C1, C2, both drawn; no derived frames)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": false
+}

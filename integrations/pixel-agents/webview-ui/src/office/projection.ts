@@ -36,6 +36,39 @@ export function mapOffset(
   };
 }
 
+/** The tile range a frame can show: [c0, c1) x [r0, r1), clamped to the grid. */
+export interface VisibleTiles {
+  c0: number;
+  c1: number;
+  r0: number;
+  r1: number;
+}
+
+/**
+ * VIEWPORT CULLING: the tiles that intersect the canvas, plus `marginTiles` on every side
+ * (sprites taller or wider than their tile — walls' raised faces, carpet junctions — still
+ * draw when their anchor is just off-screen). The per-frame tile work is then bounded by the
+ * window, not by the world: a 176x112 world at zoom 2 draws the ~70x55 tiles in view.
+ */
+export function visibleTiles(
+  canvasWidth: number,
+  canvasHeight: number,
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+  cols: number,
+  rows: number,
+  marginTiles = 1,
+): VisibleTiles {
+  const s = TILE_SIZE * zoom;
+  return {
+    c0: Math.max(0, Math.floor(-offsetX / s) - marginTiles),
+    c1: Math.min(cols, Math.ceil((canvasWidth - offsetX) / s) + marginTiles),
+    r0: Math.max(0, Math.floor(-offsetY / s) - marginTiles),
+    r1: Math.min(rows, Math.ceil((canvasHeight - offsetY) / s) + marginTiles),
+  };
+}
+
 /** Projects world points into CSS pixels within the overlay container that
  *  sits on top of the canvas. */
 export interface OverlayProjection {

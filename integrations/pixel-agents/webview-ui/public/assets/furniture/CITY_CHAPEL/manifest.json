@@ -1,0 +1,13 @@
+{
+  "id": "CITY_CHAPEL",
+  "name": "Stone Chapel",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 80,
+  "height": 96,
+  "footprintW": 5,
+  "footprintH": 6
+}

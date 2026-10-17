@@ -1,0 +1,43 @@
+{
+  "id": "egg-cul-de-sac-kid",
+  "label": "Cul-de-sac-kid homage",
+  "source": {
+    "id": "S27",
+    "file": "lw-S27-cul-de-sac-kid.png",
+    "sha256": "467c2f2ea00b194e9ee44227a7aea6699a1905c740d3e8b7437e5a4292ada12f"
+  },
+  "contract": "MIN 4x4",
+  "frameWidth": 18,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "idle1",
+    "gesture1"
+  ],
+  "walk": [
+    0,
+    1
+  ],
+  "idle": [
+    2
+  ],
+  "gesture": [
+    3
+  ],
+  "walkCycle": "2-frame (C1, C2, both drawn; no derived frames)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": false
+}

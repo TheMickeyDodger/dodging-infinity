@@ -1,0 +1,120 @@
+{
+  "fixture": true,
+  "fixture_id": "zero-agent",
+  "label": "FIXTURE — zero-agent: a fresh, healthy catalog with ZERO Missions and ZERO agents",
+  "description": "The backend answers fresh and healthy but reports no Missions, so no real agent exists. The world must still be visibly inhabited by Ambient residents.",
+  "after_last": "hold",
+  "frames": [
+    {
+      "kind": "catalog",
+      "timing": "fresh",
+      "envelope": {
+        "detail": null,
+        "endpoint": "di.mission_catalog",
+        "endpoint_version": 1,
+        "problem": null,
+        "requested_at": 1800000000,
+        "response": {
+          "contract": "di.mission_sources.query",
+          "contract_version": 1,
+          "generated_at": 1800000000,
+          "limits": {
+            "max_json_depth": 64,
+            "max_query_input_bytes": 67108864,
+            "max_query_missions": 2048,
+            "max_registry_bytes": 262144,
+            "max_snapshot_agents": 512,
+            "max_snapshot_tasks": 256,
+            "max_sources": 128,
+            "max_store_read_bytes": 16777216,
+            "max_task_bindings": 32,
+            "min_poll_interval_seconds": 5
+          },
+          "max_age_seconds": 60,
+          "missions": [],
+          "registry": {
+            "directory": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/registry",
+            "health": "fresh",
+            "max_serialized_bytes": 262144,
+            "max_sources": 128,
+            "problem": null,
+            "serialized_bytes": 632,
+            "source_count": 2
+          },
+          "runtime_snapshot": {
+            "agent_count": 0,
+            "health": "fresh",
+            "max_age_seconds": 60,
+            "observed_at": 1800000000,
+            "problem": null,
+            "producer": "synthetic-herdr",
+            "task_count": 0
+          },
+          "sources": [
+            {
+              "health": "fresh",
+              "kind": "mission_core",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-core",
+              "record_count": 0,
+              "source_id": "synthetic-core",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-core"
+            },
+            {
+              "health": "fresh",
+              "kind": "workflow_store",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-legacy",
+              "record_count": 0,
+              "source_id": "synthetic-legacy",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-legacy"
+            }
+          ],
+          "unmatched_runtime_agent_count": 0,
+          "valid_until": 1800000060
+        },
+        "retry_after_seconds": null,
+        "runtime_capture": {
+          "available": true,
+          "configured": true,
+          "detail": null,
+          "discovery": {
+            "bindings": {},
+            "conflicts": [],
+            "missions_by_root": {},
+            "roots": []
+          },
+          "observed_at": 1800000000,
+          "problem": null,
+          "refresh_budget": {
+            "per_pass_max_query_input_bytes": 67108864,
+            "per_pass_max_query_missions": 2048,
+            "per_pass_max_registry_bytes": 262144,
+            "source_passes": 2,
+            "sum_max_query_input_bytes": 134217728,
+            "sum_max_query_missions": 4096,
+            "sum_max_registry_bytes": 524288
+          },
+          "registered_roots": [],
+          "roots": {
+            "captured": [],
+            "discovered": [],
+            "over_capacity": [],
+            "registered": [],
+            "unavailable": []
+          }
+        },
+        "served": "refreshed"
+      }
+    }
+  ],
+  "derived_from": {
+    "path": "server/__tests__/fixtures/di-backend/v3-canonical-fixture.FIXTURE.json",
+    "sha256": "c7dcd7284ee5566f0dee9d20084074e8aa96aeb274b2bc93d159cbe7d815b823"
+  },
+  "generator": "scripts/build-di-fixtures.mjs"
+}

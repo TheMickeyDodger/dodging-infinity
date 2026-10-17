@@ -8,7 +8,7 @@
  * bench) is added below it until the world's proportions suit the available aspect. Integer
  * fit-zoom then does only the scaling.
  *
- * The same bands carry CAPACITY (more bound workers -> more bands, within MAX_ROWS) and MISSION
+ * The same bands carry CAPACITY (more bound workers -> more bands, within DI_WORLD_MAX_ROWS) and MISSION
  * GROUPING: the first Mission holds the room; every further Mission gets its own SLOTS (half
  * bands, so small Missions share a band), each an Area labelled for it and mapped through
  * areaMappings so the seat picker keeps it together.
@@ -25,8 +25,8 @@ import {
   DI_POD_SEAT,
   DI_POD_SEATS,
   DI_SLOTS_PER_BAND,
+  DI_WORLD_MAX_ROWS,
   DI_ZONE_COLORS,
-  MAX_ROWS,
   TILE_SIZE,
   ZOOM_MAX,
   ZOOM_MIN,
@@ -135,7 +135,7 @@ export function worldRows(roomRows: number, bands: number): number {
 }
 
 export function maxBands(roomRows: number): number {
-  return Math.max(0, Math.floor((MAX_ROWS - roomRows - DI_HALL_HEAD_ROWS) / DI_BAND_ROWS));
+  return Math.max(0, Math.floor((DI_WORLD_MAX_ROWS - roomRows - DI_HALL_HEAD_ROWS) / DI_BAND_ROWS));
 }
 
 /** Band count whose world proportions best suit `aspect` (main area width / height). */

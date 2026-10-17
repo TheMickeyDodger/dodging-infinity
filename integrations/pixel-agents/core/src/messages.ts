@@ -39,7 +39,9 @@ export type ServerMessage =
   | AreaMappingsLoaded
   | WorkspaceFolders
   | AgentDiagnostics
-  | DiOfficeState;
+  | DiOfficeState
+  | AmbientStateLoaded
+  | AmbientSpritesLoaded;
 
 export type ClientMessage =
   | WebviewReady
@@ -63,7 +65,8 @@ export type ClientMessage =
   | RemoveExternalAssetDirectory
   | SaveAreaMappings
   | SetShowAreas
-  | RequestDiagnostics;
+  | RequestDiagnostics
+  | SaveAmbientState;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -328,6 +331,7 @@ export interface DiOfficeState {
   missions: DiMissionList;
   contractVersion: number;
   chainObservation: DiChainObservation;
+  fixtureMode?: boolean;
 }
 
 export interface DiObservedValue {
@@ -590,6 +594,28 @@ export interface DiChainObservation {
   overCapacityCount: number | null;
 }
 
+export interface AmbientStateLoaded {
+  type: 'ambientStateLoaded';
+  state: Record<string, any> | null;
+}
+
+export interface AmbientSpritesLoaded {
+  type: 'ambientSpritesLoaded';
+  sheets: AmbientSpriteSheet[];
+}
+
+export interface AmbientSpriteSheet {
+  id: string;
+  label: string;
+  frameWidth: number;
+  frameHeight: number;
+  rows: string[];
+  walk: number[];
+  idle: number[];
+  gesture: number[];
+  frames: string[][][][];
+}
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -703,4 +729,9 @@ export interface SetShowAreas {
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';
+}
+
+export interface SaveAmbientState {
+  type: 'saveAmbientState';
+  state: Record<string, any>;
 }

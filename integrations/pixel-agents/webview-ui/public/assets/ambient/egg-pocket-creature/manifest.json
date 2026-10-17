@@ -1,0 +1,43 @@
+{
+  "id": "egg-pocket-creature",
+  "label": "Pocket-creature homage",
+  "source": {
+    "id": "S16",
+    "file": "lw-S16-pocket-creature.png",
+    "sha256": "ece8acd8f1abe3bdaba0ba49b33afc6d92b0760670b163a8073d6c703d41946e"
+  },
+  "contract": "MIN 4x4",
+  "frameWidth": 30,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "idle1",
+    "gesture1"
+  ],
+  "walk": [
+    0,
+    1
+  ],
+  "idle": [
+    2
+  ],
+  "gesture": [
+    3
+  ],
+  "walkCycle": "2-frame (C1, C2, both drawn; no derived frames)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": false
+}

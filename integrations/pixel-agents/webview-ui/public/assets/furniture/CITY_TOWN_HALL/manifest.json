@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWN_HALL",
+  "name": "Town Hall",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 112,
+  "height": 112,
+  "footprintW": 7,
+  "footprintH": 7
+}

@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_ROUND",
+  "name": "Round Office Tower",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 6,
+  "width": 96,
+  "height": 160,
+  "footprintW": 6,
+  "footprintH": 10
+}

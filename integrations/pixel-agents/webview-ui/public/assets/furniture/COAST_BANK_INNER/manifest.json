@@ -1,0 +1,13 @@
+{
+  "id": "COAST_BANK_INNER",
+  "name": "Grassy Bank Inner Corner",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "width": 48,
+  "height": 48,
+  "footprintW": 3,
+  "footprintH": 3
+}

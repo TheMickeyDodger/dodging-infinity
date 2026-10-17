@@ -1,0 +1,13 @@
+{
+  "id": "SUBWAY_ROUTE_BOARD",
+  "name": "Route-map board (blank)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 32,
+  "height": 48,
+  "footprintW": 2,
+  "footprintH": 3
+}

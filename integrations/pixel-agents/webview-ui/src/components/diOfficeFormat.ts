@@ -43,9 +43,18 @@ export function formatEpoch(seconds: number | null): string {
   return `${new Date(seconds * 1000).toISOString().replace('.000Z', 'Z')} (${seconds})`;
 }
 
-export function formatLive(live: boolean, reason: string | null): string {
+export function formatLive(live: boolean, reason: string | null, fixture = false): string {
+  // FIXTURE PREVIEW (explicit --fixture-preview): LIVE never stands unqualified over fixture data.
+  if (fixture)
+    return live
+      ? 'LIVE - FIXTURE DATA'
+      : `NOT LIVE (FIXTURE DATA): ${reason ?? 'reason not given'}`;
   return live ? 'LIVE' : `NOT LIVE: ${reason ?? 'reason not given'}`;
 }
+
+/** The persistent label of an EXPLICIT fixture preview (diOfficeState.fixtureMode). */
+export const DI_FIXTURE_BANNER =
+  'FIXTURE / VISUAL TEST - synthetic hash-pinned fixture data, not live Missions';
 
 export function formatMaybe(value: string | number | boolean | null): string {
   return value === null ? 'not reported' : String(value);
@@ -185,6 +194,16 @@ export function withClientInvalidation(state: DiOfficeState, reason: string): Di
       })),
     },
   };
+}
+
+/**
+ * The PRESENTED office state: the server projection, or — whenever the client cannot vouch for it
+ * (clientInvalidationReason) — that projection with nothing live and nothing animating. This ONE
+ * state feeds labels, animation AND the working halo (useExtensionMessages assigns it to
+ * OfficeState.diOffice, the halo's only input), so the surfaces cannot disagree.
+ */
+export function presentDiOffice(server: DiOfficeState | null, clientReason: string | null): DiOfficeState | null {
+  return server && clientReason ? withClientInvalidation(server, clientReason) : server;
 }
 
 /**

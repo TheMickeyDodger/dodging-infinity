@@ -1,0 +1,13 @@
+{
+  "id": "CITY_CLOCK_TOWER",
+  "name": "Brick Clock Tower",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 7,
+  "width": 64,
+  "height": 160,
+  "footprintW": 4,
+  "footprintH": 10
+}

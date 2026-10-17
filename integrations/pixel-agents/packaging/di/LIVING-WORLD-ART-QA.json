@@ -1,0 +1,3313 @@
+{
+  "kind": "living-world art preparation QA (M3 S6)",
+  "alphaCutoff": 16,
+  "generator": "scripts/prepare-living-world-art.ts",
+  "note": "Counts are per stage: delivered cells, extracted, alpha-verified. INTEGRATED counts are recorded by the runtime evidence, not here.",
+  "sheets": [
+    {
+      "id": "S02",
+      "file": "lw-S02-retail.png",
+      "kind": "retail STATIC",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 771918,
+        "alpha0WithHiddenRgb": 2479,
+        "alpha255": 1394,
+        "alpha1to2Fringe": 35684,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 2479,
+      "alphaCutoff": 16,
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (unequal columns, no fixed stride)",
+        "observedPerRow": [
+          2,
+          2
+        ]
+      },
+      "scale": 0.2065,
+      "assets": [
+        {
+          "id": "BIGBOX_TARGET",
+          "label": "Target",
+          "sourceBox": {
+            "x0": 20,
+            "y0": 145,
+            "x1": 789,
+            "y1": 555
+          },
+          "drawn": {
+            "w": 159,
+            "h": 85
+          },
+          "footprint": {
+            "w": 10,
+            "h": 6,
+            "solidRows": 3,
+            "backgroundTiles": 3
+          }
+        },
+        {
+          "id": "BIGBOX_TARGET_FORECOURT",
+          "label": "Target forecourt",
+          "sourceBox": {
+            "x0": 822,
+            "y0": 156,
+            "x1": 1236,
+            "y1": 557
+          },
+          "drawn": {
+            "w": 86,
+            "h": 83
+          },
+          "footprint": {
+            "w": 6,
+            "h": 6,
+            "solidRows": 2,
+            "backgroundTiles": 4
+          }
+        },
+        {
+          "id": "BIGBOX_WALMART",
+          "label": "Walmart",
+          "sourceBox": {
+            "x0": 21,
+            "y0": 699,
+            "x1": 796,
+            "y1": 1119
+          },
+          "drawn": {
+            "w": 160,
+            "h": 87
+          },
+          "footprint": {
+            "w": 10,
+            "h": 6,
+            "solidRows": 3,
+            "backgroundTiles": 3
+          }
+        },
+        {
+          "id": "BIGBOX_WALMART_FORECOURT",
+          "label": "Walmart forecourt",
+          "sourceBox": {
+            "x0": 821,
+            "y0": 721,
+            "x1": 1235,
+            "y1": 1126
+          },
+          "drawn": {
+            "w": 86,
+            "h": 84
+          },
+          "footprint": {
+            "w": 6,
+            "h": 6,
+            "solidRows": 2,
+            "backgroundTiles": 4
+          }
+        }
+      ],
+      "cells": {
+        "delivered": 4,
+        "extracted": 4,
+        "alphaVerified": 4
+      },
+      "lettering": "TARGET and Walmart store names, plus a \"Grocery\" band on the Walmart facade (authorized retail exception)"
+    },
+    {
+      "id": "S03",
+      "runtimeId": "bellhop",
+      "file": "lw-S03-bellhop.png",
+      "kind": "full",
+      "census": {
+        "pixels": 1572864,
+        "alpha0": 938418,
+        "alpha0WithHiddenRgb": 938418,
+        "alpha255": 0,
+        "alpha1to2Fringe": 92561,
+        "maxAlpha": 254
+      },
+      "zeroedHiddenRgb": 938418,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 47,
+          "y0": 28,
+          "x1": 200,
+          "y1": 284
+        },
+        "alphaAtCutoff": {
+          "x0": 61,
+          "y0": 30,
+          "x1": 165,
+          "y1": 284
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          8,
+          8,
+          8,
+          8
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "face and nose point left in band 2, right in band 3; band 1 shows the face, band 4 the back of the cap",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": 4.37681382726818,
+              "headShift": 0.9720103289037656,
+              "skinShift": -15.619513166394883,
+              "skinPixels": 6789,
+              "votes": [
+                1,
+                1,
+                -1
+              ],
+              "facing": "RIGHT"
+            },
+            {
+              "row": 3,
+              "extension": 0.4161713618064802,
+              "headShift": 1.107941509456845,
+              "skinShift": 14.291172573498493,
+              "skinPixels": 6956,
+              "votes": [
+                1,
+                1,
+                1
+              ],
+              "facing": "RIGHT"
+            }
+          ],
+          "downRowSkinPixels": 9874,
+          "upRowSkinPixels": 2231
+        },
+        "mirrorSimilarityIoU": 0.908,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.125,
+      "frame": {
+        "w": 19,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        2.33,
+        0.32,
+        0.64,
+        2.76
+      ],
+      "cells": {
+        "delivered": 32,
+        "extracted": 32,
+        "alphaVerified": 32
+      },
+      "output": "webview-ui/public/assets/ambient/bellhop"
+    },
+    {
+      "id": "S04",
+      "runtimeId": "police",
+      "file": "lw-S04-police.png",
+      "kind": "full",
+      "census": {
+        "pixels": 1572864,
+        "alpha0": 837281,
+        "alpha0WithHiddenRgb": 837281,
+        "alpha255": 0,
+        "alpha1to2Fringe": 102619,
+        "maxAlpha": 254
+      },
+      "zeroedHiddenRgb": 837281,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 31,
+          "y0": 17,
+          "x1": 204,
+          "y1": 294
+        },
+        "alphaAtCutoff": {
+          "x0": 46,
+          "y0": 28,
+          "x1": 167,
+          "y1": 294
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          8,
+          8,
+          8,
+          8
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "cap brim and face point left in band 2 (ponytail trails right), right in band 3 (ponytail trails left) — matches lead1 visual adjudication",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": 2.0698397481864355,
+              "headShift": 2.0074025902049417,
+              "skinShift": -22.62333728082684,
+              "skinPixels": 3418,
+              "votes": [
+                1,
+                1,
+                -1
+              ],
+              "facing": "RIGHT"
+            },
+            {
+              "row": 3,
+              "extension": -2.0428769972059584,
+              "headShift": -1.1953983451668897,
+              "skinShift": 23.966669843963018,
+              "skinPixels": 3564,
+              "votes": [
+                -1,
+                -1,
+                1
+              ],
+              "facing": "LEFT"
+            }
+          ],
+          "downRowSkinPixels": 5242,
+          "upRowSkinPixels": 758
+        },
+        "mirrorSimilarityIoU": 0.936,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.1195,
+      "frame": {
+        "w": 23,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        1.93,
+        0.42,
+        0.22,
+        1.55
+      ],
+      "cells": {
+        "delivered": 32,
+        "extracted": 32,
+        "alphaVerified": 32
+      },
+      "output": "webview-ui/public/assets/ambient/police"
+    },
+    {
+      "id": "S05",
+      "runtimeId": "firefighter",
+      "file": "lw-S05-firefighter.png",
+      "kind": "full",
+      "census": {
+        "pixels": 1572864,
+        "alpha0": 794177,
+        "alpha0WithHiddenRgb": 794177,
+        "alpha255": 0,
+        "alpha1to2Fringe": 109087,
+        "maxAlpha": 254
+      },
+      "zeroedHiddenRgb": 794177,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 33,
+          "y0": 15,
+          "x1": 216,
+          "y1": 287
+        },
+        "alphaAtCutoff": {
+          "x0": 46,
+          "y0": 17,
+          "x1": 179,
+          "y1": 287
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          8,
+          8,
+          8,
+          8
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "face and helmet brim point left in band 2 with the air tank on the trailing right; mirrored in band 3",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": -16.21036080495709,
+              "headShift": -10.536974162100353,
+              "skinShift": -4.883518601078448,
+              "skinPixels": 9226,
+              "votes": [
+                -1,
+                -1,
+                -1
+              ],
+              "facing": "LEFT"
+            },
+            {
+              "row": 3,
+              "extension": 16.297420171707213,
+              "headShift": 11.722750490769947,
+              "skinShift": 4.333158638767049,
+              "skinPixels": 8235,
+              "votes": [
+                1,
+                1,
+                1
+              ],
+              "facing": "RIGHT"
+            }
+          ],
+          "downRowSkinPixels": 8135,
+          "upRowSkinPixels": 5570
+        },
+        "mirrorSimilarityIoU": 0.913,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.1164,
+      "frame": {
+        "w": 21,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        3.22,
+        1.15,
+        0.61,
+        3.76
+      ],
+      "cells": {
+        "delivered": 32,
+        "extracted": 32,
+        "alphaVerified": 32
+      },
+      "output": "webview-ui/public/assets/ambient/firefighter"
+    },
+    {
+      "id": "S06",
+      "runtimeId": "store-clerk",
+      "file": "lw-S06-store-clerk.png",
+      "kind": "full",
+      "census": {
+        "pixels": 1572864,
+        "alpha0": 943213,
+        "alpha0WithHiddenRgb": 943213,
+        "alpha255": 0,
+        "alpha1to2Fringe": 104686,
+        "maxAlpha": 254
+      },
+      "zeroedHiddenRgb": 943213,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 39,
+          "y0": 17,
+          "x1": 210,
+          "y1": 291
+        },
+        "alphaAtCutoff": {
+          "x0": 74,
+          "y0": 28,
+          "x1": 171,
+          "y1": 291
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          8,
+          8,
+          8,
+          8
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "nose and face point left in band 2 with the hair bun trailing right; reversed in band 3",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": 7.3764706158404465,
+              "headShift": 4.551863545071214,
+              "skinShift": -11.828015939454207,
+              "skinPixels": 14384,
+              "votes": [
+                1,
+                1,
+                -1
+              ],
+              "facing": "RIGHT"
+            },
+            {
+              "row": 3,
+              "extension": -9.65754152174296,
+              "headShift": -5.514537663847808,
+              "skinShift": 10.538245055490984,
+              "skinPixels": 15014,
+              "votes": [
+                -1,
+                -1,
+                1
+              ],
+              "facing": "LEFT"
+            }
+          ],
+          "downRowSkinPixels": 15473,
+          "upRowSkinPixels": 11184
+        },
+        "mirrorSimilarityIoU": 0.913,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.1195,
+      "frame": {
+        "w": 21,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        1.87,
+        1.16,
+        1.06,
+        2
+      ],
+      "cells": {
+        "delivered": 32,
+        "extracted": 32,
+        "alphaVerified": 32
+      },
+      "output": "webview-ui/public/assets/ambient/store-clerk"
+    },
+    {
+      "id": "S07",
+      "runtimeId": "barista",
+      "file": "lw-S07-barista.png",
+      "kind": "full",
+      "census": {
+        "pixels": 1572864,
+        "alpha0": 967939,
+        "alpha0WithHiddenRgb": 967939,
+        "alpha255": 0,
+        "alpha1to2Fringe": 77851,
+        "maxAlpha": 254
+      },
+      "zeroedHiddenRgb": 967939,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 59,
+          "y0": 40,
+          "x1": 211,
+          "y1": 294
+        },
+        "alphaAtCutoff": {
+          "x0": 65,
+          "y0": 42,
+          "x1": 171,
+          "y1": 294
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          8,
+          8,
+          8,
+          8
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "cap brim and face point left in band 2; right in band 3",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": -12.90154010756326,
+              "headShift": -2.9428933933098342,
+              "skinShift": -14.3507841298135,
+              "skinPixels": 3708,
+              "votes": [
+                -1,
+                -1,
+                -1
+              ],
+              "facing": "LEFT"
+            },
+            {
+              "row": 3,
+              "extension": 14.777863350520168,
+              "headShift": 4.615357642329739,
+              "skinShift": 15.679158185554673,
+              "skinPixels": 3653,
+              "votes": [
+                1,
+                1,
+                1
+              ],
+              "facing": "RIGHT"
+            }
+          ],
+          "downRowSkinPixels": 5195,
+          "upRowSkinPixels": 724
+        },
+        "mirrorSimilarityIoU": 0.929,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.1268,
+      "frame": {
+        "w": 20,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        3.35,
+        1.57,
+        0.45,
+        3.53
+      ],
+      "cells": {
+        "delivered": 32,
+        "extracted": 32,
+        "alphaVerified": 32
+      },
+      "output": "webview-ui/public/assets/ambient/barista"
+    },
+    {
+      "id": "S16",
+      "runtimeId": "egg-pocket-creature",
+      "file": "lw-S16-pocket-creature.png",
+      "kind": "min",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 936212,
+        "alpha0WithHiddenRgb": 2021,
+        "alpha255": 793,
+        "alpha1to2Fringe": 98622,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 2021,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 35,
+          "y0": 6,
+          "x1": 328,
+          "y1": 346
+        },
+        "alphaAtCutoff": {
+          "x0": 75,
+          "y0": 46,
+          "x1": 288,
+          "y1": 306
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "eye and cheek blush on the left with the bolt tail trailing right in band 2; reversed in band 3; band 1 shows the face, band 4 the back",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": -21.36391336516644,
+              "headShift": -7.478658137920682,
+              "skinShift": -17.60736777057081,
+              "skinPixels": 13165,
+              "votes": [
+                -1,
+                -1,
+                -1
+              ],
+              "facing": "LEFT"
+            },
+            {
+              "row": 3,
+              "extension": 31.86260864571534,
+              "headShift": 3.8202597057324894,
+              "skinShift": 24.11335308215311,
+              "skinPixels": 12434,
+              "votes": [
+                1,
+                1,
+                1
+              ],
+              "facing": "RIGHT"
+            }
+          ],
+          "downRowSkinPixels": 19164,
+          "upRowSkinPixels": 24794
+        },
+        "mirrorSimilarityIoU": 0.845,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.1038,
+      "frame": {
+        "w": 30,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        0.76,
+        0.22,
+        1.51,
+        1.2
+      ],
+      "cells": {
+        "delivered": 16,
+        "extracted": 16,
+        "alphaVerified": 16
+      },
+      "output": "webview-ui/public/assets/ambient/egg-pocket-creature"
+    },
+    {
+      "id": "S19",
+      "runtimeId": "egg-shinobi",
+      "file": "lw-S19-shinobi.png",
+      "kind": "min",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 1073471,
+        "alpha0WithHiddenRgb": 774,
+        "alpha255": 191,
+        "alpha1to2Fringe": 80159,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 774,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 73,
+          "y0": 28,
+          "x1": 300,
+          "y1": 340
+        },
+        "alphaAtCutoff": {
+          "x0": 111,
+          "y0": 38,
+          "x1": 261,
+          "y1": 300
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "face points left in band 2 with the headband tails trailing right; reversed in band 3",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": 24.71930424519691,
+              "headShift": 2.691729934274292,
+              "skinShift": -13.782811194112085,
+              "skinPixels": 13373,
+              "votes": [
+                1,
+                1,
+                -1
+              ],
+              "facing": "RIGHT"
+            },
+            {
+              "row": 3,
+              "extension": -22.351658955831226,
+              "headShift": -0.9361659199441519,
+              "skinShift": 13.972157451079767,
+              "skinPixels": 13518,
+              "votes": [
+                -1,
+                -1,
+                1
+              ],
+              "facing": "LEFT"
+            }
+          ],
+          "downRowSkinPixels": 12431,
+          "upRowSkinPixels": 12280
+        },
+        "mirrorSimilarityIoU": 0.874,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.1004,
+      "frame": {
+        "w": 24,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        2.08,
+        0.67,
+        1.07,
+        2.6
+      ],
+      "cells": {
+        "delivered": 16,
+        "extracted": 16,
+        "alphaVerified": 16
+      },
+      "output": "webview-ui/public/assets/ambient/egg-shinobi"
+    },
+    {
+      "id": "S23",
+      "runtimeId": "egg-martial-artist",
+      "file": "lw-S23-martial-artist.png",
+      "kind": "min",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 1012236,
+        "alpha0WithHiddenRgb": 1501,
+        "alpha255": 1126,
+        "alpha1to2Fringe": 79535,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 1501,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 67,
+          "y0": 17,
+          "x1": 300,
+          "y1": 342
+        },
+        "alphaAtCutoff": {
+          "x0": 105,
+          "y0": 24,
+          "x1": 260,
+          "y1": 342
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "face and gaze point left in band 2; right in band 3",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": -20.16261980192374,
+              "headShift": -12.243675911747566,
+              "skinShift": -6.767664110294376,
+              "skinPixels": 1644,
+              "votes": [
+                -1,
+                -1,
+                -1
+              ],
+              "facing": "LEFT"
+            },
+            {
+              "row": 3,
+              "extension": 19.60538657609058,
+              "headShift": 12.149040696356337,
+              "skinShift": 6.260138908027109,
+              "skinPixels": 1858,
+              "votes": [
+                1,
+                1,
+                1
+              ],
+              "facing": "RIGHT"
+            }
+          ],
+          "downRowSkinPixels": 1510,
+          "upRowSkinPixels": 318
+        },
+        "mirrorSimilarityIoU": 0.916,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.0928,
+      "frame": {
+        "w": 22,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        0.08,
+        0.55,
+        1.44,
+        0.43
+      ],
+      "cells": {
+        "delivered": 16,
+        "extracted": 16,
+        "alphaVerified": 16
+      },
+      "output": "webview-ui/public/assets/ambient/egg-martial-artist"
+    },
+    {
+      "id": "S27",
+      "runtimeId": "egg-cul-de-sac-kid",
+      "file": "lw-S27-cul-de-sac-kid.png",
+      "kind": "min",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 1015995,
+        "alpha0WithHiddenRgb": 910,
+        "alpha255": 230,
+        "alpha1to2Fringe": 93811,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 910,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 41,
+          "y0": 6,
+          "x1": 263,
+          "y1": 335
+        },
+        "alphaAtCutoff": {
+          "x0": 81,
+          "y0": 12,
+          "x1": 223,
+          "y1": 335
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "cue": "nose and face point left in band 2; right in band 3",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "LEFT",
+              "skinSignal": "LEFT",
+              "agrees": true
+            },
+            {
+              "row": 3,
+              "adjudicated": "RIGHT",
+              "skinSignal": "RIGHT",
+              "agrees": true
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": -3.417536261443928,
+              "headShift": -0.940118303199803,
+              "skinShift": -15.15077637945982,
+              "skinPixels": 7114,
+              "votes": [
+                -1,
+                -1,
+                -1
+              ],
+              "facing": "LEFT"
+            },
+            {
+              "row": 3,
+              "extension": 6.101930229323159,
+              "headShift": 3.1926309637409105,
+              "skinShift": 17.975671896245785,
+              "skinPixels": 6912,
+              "votes": [
+                1,
+                1,
+                1
+              ],
+              "facing": "RIGHT"
+            }
+          ],
+          "downRowSkinPixels": 9215,
+          "upRowSkinPixels": 852
+        },
+        "mirrorSimilarityIoU": 0.897,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.0928,
+      "frame": {
+        "w": 18,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        0.71,
+        0.05,
+        0.75,
+        0.11
+      ],
+      "cells": {
+        "delivered": 16,
+        "extracted": 16,
+        "alphaVerified": 16
+      },
+      "output": "webview-ui/public/assets/ambient/egg-cul-de-sac-kid"
+    },
+    {
+      "id": "T01",
+      "file": "lw-T01-emergency-vehicles.png",
+      "kind": "vehicles STATIC (parked props; no motion, no vehicle AI)",
+      "census": {
+        "pixels": 1572864,
+        "alpha0": 835491,
+        "alpha0WithHiddenRgb": 835491,
+        "alpha255": 0,
+        "alpha1to2Fringe": 52926,
+        "maxAlpha": 254
+      },
+      "zeroedHiddenRgb": 835491,
+      "alphaCutoff": 16,
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          4,
+          4,
+          4
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1)",
+        "adjudicatedColumnOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "cue": "side views: red tail lamp at the rear end, bonnet + raked windscreen + side mirror at the front; front view: headlights, grille, windscreen; rear view: tail lamps, rear window/doors, plate",
+        "corroboration": [
+          {
+            "id": "VEHICLE_FIRE_ENGINE_LEFT",
+            "adjudicated": "LEFT",
+            "redLampPixels": {
+              "left": 687,
+              "right": 777
+            },
+            "signal": "not applicable (red body)",
+            "agrees": null
+          },
+          {
+            "id": "VEHICLE_FIRE_ENGINE_RIGHT",
+            "adjudicated": "RIGHT",
+            "redLampPixels": {
+              "left": 852,
+              "right": 658
+            },
+            "signal": "not applicable (red body)",
+            "agrees": null
+          },
+          {
+            "id": "VEHICLE_POLICE_CRUISER_LEFT",
+            "adjudicated": "LEFT",
+            "redLampPixels": {
+              "left": 0,
+              "right": 200
+            },
+            "signal": "LEFT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_POLICE_CRUISER_RIGHT",
+            "adjudicated": "RIGHT",
+            "redLampPixels": {
+              "left": 184,
+              "right": 0
+            },
+            "signal": "RIGHT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_AMBULANCE_LEFT",
+            "adjudicated": "LEFT",
+            "redLampPixels": {
+              "left": 240,
+              "right": 805
+            },
+            "signal": "LEFT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_AMBULANCE_RIGHT",
+            "adjudicated": "RIGHT",
+            "redLampPixels": {
+              "left": 772,
+              "right": 256
+            },
+            "signal": "RIGHT",
+            "agrees": true
+          }
+        ]
+      },
+      "assets": [
+        {
+          "id": "VEHICLE_FIRE_ENGINE_DOWN",
+          "facing": "DOWN",
+          "sourceBox": {
+            "x0": 33,
+            "y0": 70,
+            "x1": 254,
+            "y1": 352
+          },
+          "drawn": {
+            "w": 28,
+            "h": 36
+          },
+          "footprint": {
+            "w": 2,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2
+          }
+        },
+        {
+          "id": "VEHICLE_FIRE_ENGINE_LEFT",
+          "facing": "LEFT",
+          "sourceBox": {
+            "x0": 337,
+            "y0": 107,
+            "x1": 740,
+            "y1": 325
+          },
+          "drawn": {
+            "w": 51,
+            "h": 28
+          },
+          "footprint": {
+            "w": 4,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_FIRE_ENGINE_RIGHT",
+          "facing": "RIGHT",
+          "sourceBox": {
+            "x0": 797,
+            "y0": 107,
+            "x1": 1199,
+            "y1": 325
+          },
+          "drawn": {
+            "w": 50,
+            "h": 28
+          },
+          "footprint": {
+            "w": 4,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_FIRE_ENGINE_UP",
+          "facing": "UP",
+          "sourceBox": {
+            "x0": 1282,
+            "y0": 70,
+            "x1": 1503,
+            "y1": 345
+          },
+          "drawn": {
+            "w": 28,
+            "h": 35
+          },
+          "footprint": {
+            "w": 2,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2
+          }
+        },
+        {
+          "id": "VEHICLE_POLICE_CRUISER_DOWN",
+          "facing": "DOWN",
+          "sourceBox": {
+            "x0": 33,
+            "y0": 434,
+            "x1": 256,
+            "y1": 632
+          },
+          "drawn": {
+            "w": 19,
+            "h": 16
+          },
+          "footprint": {
+            "w": 2,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0
+          }
+        },
+        {
+          "id": "VEHICLE_POLICE_CRUISER_LEFT",
+          "facing": "LEFT",
+          "sourceBox": {
+            "x0": 318,
+            "y0": 443,
+            "x1": 739,
+            "y1": 623
+          },
+          "drawn": {
+            "w": 34,
+            "h": 15
+          },
+          "footprint": {
+            "w": 3,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0
+          }
+        },
+        {
+          "id": "VEHICLE_POLICE_CRUISER_RIGHT",
+          "facing": "RIGHT",
+          "sourceBox": {
+            "x0": 797,
+            "y0": 443,
+            "x1": 1218,
+            "y1": 623
+          },
+          "drawn": {
+            "w": 34,
+            "h": 15
+          },
+          "footprint": {
+            "w": 3,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0
+          }
+        },
+        {
+          "id": "VEHICLE_POLICE_CRUISER_UP",
+          "facing": "UP",
+          "sourceBox": {
+            "x0": 1286,
+            "y0": 435,
+            "x1": 1500,
+            "y1": 631
+          },
+          "drawn": {
+            "w": 18,
+            "h": 16
+          },
+          "footprint": {
+            "w": 2,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0
+          }
+        },
+        {
+          "id": "VEHICLE_AMBULANCE_DOWN",
+          "facing": "DOWN",
+          "sourceBox": {
+            "x0": 33,
+            "y0": 691,
+            "x1": 257,
+            "y1": 947
+          },
+          "drawn": {
+            "w": 24,
+            "h": 27
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_AMBULANCE_LEFT",
+          "facing": "LEFT",
+          "sourceBox": {
+            "x0": 315,
+            "y0": 707,
+            "x1": 739,
+            "y1": 945
+          },
+          "drawn": {
+            "w": 44,
+            "h": 25
+          },
+          "footprint": {
+            "w": 3,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_AMBULANCE_RIGHT",
+          "facing": "RIGHT",
+          "sourceBox": {
+            "x0": 797,
+            "y0": 707,
+            "x1": 1221,
+            "y1": 945
+          },
+          "drawn": {
+            "w": 44,
+            "h": 25
+          },
+          "footprint": {
+            "w": 3,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_AMBULANCE_UP",
+          "facing": "UP",
+          "sourceBox": {
+            "x0": 1293,
+            "y0": 704,
+            "x1": 1495,
+            "y1": 946
+          },
+          "drawn": {
+            "w": 21,
+            "h": 26
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        }
+      ],
+      "cells": {
+        "delivered": 12,
+        "extracted": 12,
+        "alphaVerified": 12
+      }
+    },
+    {
+      "id": "T02",
+      "file": "lw-T02-city-cars.png",
+      "kind": "vehicles STATIC (parked props; no motion, no vehicle AI)",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 941675,
+        "alpha0WithHiddenRgb": 1511,
+        "alpha255": 1089,
+        "alpha1to2Fringe": 86110,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 1511,
+      "alphaCutoff": 16,
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1)",
+        "adjudicatedColumnOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": false,
+        "cue": "side views: red tail lamp at the rear end, bonnet + raked windscreen + side mirror at the front; front view: headlights, grille, windscreen; rear view: tail lamps, rear window/doors, plate",
+        "corroboration": [
+          {
+            "id": "VEHICLE_TAXI_LEFT",
+            "adjudicated": "LEFT",
+            "redLampPixels": {
+              "left": 0,
+              "right": 163
+            },
+            "signal": "LEFT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_TAXI_RIGHT",
+            "adjudicated": "RIGHT",
+            "redLampPixels": {
+              "left": 167,
+              "right": 0
+            },
+            "signal": "RIGHT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_HATCHBACK_RED_LEFT",
+            "adjudicated": "LEFT",
+            "redLampPixels": {
+              "left": 793,
+              "right": 681
+            },
+            "signal": "not applicable (red body)",
+            "agrees": null
+          },
+          {
+            "id": "VEHICLE_HATCHBACK_RED_RIGHT",
+            "adjudicated": "RIGHT",
+            "redLampPixels": {
+              "left": 753,
+              "right": 793
+            },
+            "signal": "not applicable (red body)",
+            "agrees": null
+          },
+          {
+            "id": "VEHICLE_SEDAN_BLUE_LEFT",
+            "adjudicated": "LEFT",
+            "redLampPixels": {
+              "left": 1,
+              "right": 162
+            },
+            "signal": "LEFT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_SEDAN_BLUE_RIGHT",
+            "adjudicated": "RIGHT",
+            "redLampPixels": {
+              "left": 158,
+              "right": 0
+            },
+            "signal": "RIGHT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_SUV_SILVER_LEFT",
+            "adjudicated": "LEFT",
+            "redLampPixels": {
+              "left": 1,
+              "right": 182
+            },
+            "signal": "LEFT",
+            "agrees": true
+          },
+          {
+            "id": "VEHICLE_SUV_SILVER_RIGHT",
+            "adjudicated": "RIGHT",
+            "redLampPixels": {
+              "left": 194,
+              "right": 0
+            },
+            "signal": "RIGHT",
+            "agrees": true
+          }
+        ]
+      },
+      "assets": [
+        {
+          "id": "VEHICLE_TAXI_DOWN",
+          "facing": "DOWN",
+          "sourceBox": {
+            "x0": 63,
+            "y0": 128,
+            "x1": 228,
+            "y1": 319
+          },
+          "drawn": {
+            "w": 19,
+            "h": 22
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_TAXI_LEFT",
+          "facing": "LEFT",
+          "sourceBox": {
+            "x0": 310,
+            "y0": 160,
+            "x1": 599,
+            "y1": 318
+          },
+          "drawn": {
+            "w": 32,
+            "h": 18
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_TAXI_RIGHT",
+          "facing": "RIGHT",
+          "sourceBox": {
+            "x0": 652,
+            "y0": 160,
+            "x1": 943,
+            "y1": 318
+          },
+          "drawn": {
+            "w": 33,
+            "h": 18
+          },
+          "footprint": {
+            "w": 3,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_TAXI_UP",
+          "facing": "UP",
+          "sourceBox": {
+            "x0": 1026,
+            "y0": 136,
+            "x1": 1187,
+            "y1": 318
+          },
+          "drawn": {
+            "w": 18,
+            "h": 21
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_HATCHBACK_RED_DOWN",
+          "facing": "DOWN",
+          "sourceBox": {
+            "x0": 57,
+            "y0": 414,
+            "x1": 229,
+            "y1": 598
+          },
+          "drawn": {
+            "w": 18,
+            "h": 19
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_HATCHBACK_RED_LEFT",
+          "facing": "LEFT",
+          "sourceBox": {
+            "x0": 315,
+            "y0": 422,
+            "x1": 592,
+            "y1": 584
+          },
+          "drawn": {
+            "w": 29,
+            "h": 17
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_HATCHBACK_RED_RIGHT",
+          "facing": "RIGHT",
+          "sourceBox": {
+            "x0": 663,
+            "y0": 422,
+            "x1": 939,
+            "y1": 584
+          },
+          "drawn": {
+            "w": 28,
+            "h": 17
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_HATCHBACK_RED_UP",
+          "facing": "UP",
+          "sourceBox": {
+            "x0": 1026,
+            "y0": 421,
+            "x1": 1194,
+            "y1": 592
+          },
+          "drawn": {
+            "w": 18,
+            "h": 18
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_SEDAN_BLUE_DOWN",
+          "facing": "DOWN",
+          "sourceBox": {
+            "x0": 44,
+            "y0": 688,
+            "x1": 247,
+            "y1": 881
+          },
+          "drawn": {
+            "w": 20,
+            "h": 19
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_SEDAN_BLUE_LEFT",
+          "facing": "LEFT",
+          "sourceBox": {
+            "x0": 273,
+            "y0": 714,
+            "x1": 618,
+            "y1": 863
+          },
+          "drawn": {
+            "w": 33,
+            "h": 15
+          },
+          "footprint": {
+            "w": 3,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0
+          }
+        },
+        {
+          "id": "VEHICLE_SEDAN_BLUE_RIGHT",
+          "facing": "RIGHT",
+          "sourceBox": {
+            "x0": 637,
+            "y0": 714,
+            "x1": 982,
+            "y1": 863
+          },
+          "drawn": {
+            "w": 33,
+            "h": 15
+          },
+          "footprint": {
+            "w": 3,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0
+          }
+        },
+        {
+          "id": "VEHICLE_SEDAN_BLUE_UP",
+          "facing": "UP",
+          "sourceBox": {
+            "x0": 1012,
+            "y0": 694,
+            "x1": 1208,
+            "y1": 870
+          },
+          "drawn": {
+            "w": 19,
+            "h": 17
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_SUV_SILVER_DOWN",
+          "facing": "DOWN",
+          "sourceBox": {
+            "x0": 47,
+            "y0": 946,
+            "x1": 247,
+            "y1": 1156
+          },
+          "drawn": {
+            "w": 21,
+            "h": 22
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_SUV_SILVER_LEFT",
+          "facing": "LEFT",
+          "sourceBox": {
+            "x0": 275,
+            "y0": 972,
+            "x1": 608,
+            "y1": 1156
+          },
+          "drawn": {
+            "w": 35,
+            "h": 19
+          },
+          "footprint": {
+            "w": 3,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_SUV_SILVER_RIGHT",
+          "facing": "RIGHT",
+          "sourceBox": {
+            "x0": 648,
+            "y0": 972,
+            "x1": 979,
+            "y1": 1156
+          },
+          "drawn": {
+            "w": 34,
+            "h": 19
+          },
+          "footprint": {
+            "w": 3,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        },
+        {
+          "id": "VEHICLE_SUV_SILVER_UP",
+          "facing": "UP",
+          "sourceBox": {
+            "x0": 1015,
+            "y0": 946,
+            "x1": 1201,
+            "y1": 1152
+          },
+          "drawn": {
+            "w": 20,
+            "h": 22
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1
+          }
+        }
+      ],
+      "cells": {
+        "delivered": 16,
+        "extracted": 16,
+        "alphaVerified": 16
+      }
+    },
+    {
+      "id": "G01",
+      "file": "lw-G01-cathedral.png",
+      "kind": "cathedral kit STATIC",
+      "census": {
+        "pixels": 1572864,
+        "alpha0": 861727,
+        "alpha0WithHiddenRgb": 856743,
+        "alpha255": 0,
+        "alpha1to2Fringe": 56380,
+        "maxAlpha": 254
+      },
+      "zeroedHiddenRgb": 856743,
+      "alphaCutoff": 16,
+      "segmentation": {
+        "ok": true,
+        "method": "band split at the emptiest middle row, then alpha projection columns (unequal motif widths, no fixed stride)",
+        "splitRow": 481,
+        "splitRowOpaquePixels": 3,
+        "observedPerRow": [
+          3,
+          3
+        ],
+        "columnSpans": [
+          [
+            [
+              26,
+              470
+            ],
+            [
+              603,
+              773
+            ],
+            [
+              850,
+              1508
+            ]
+          ],
+          [
+            [
+              103,
+              415
+            ],
+            [
+              578,
+              1024
+            ],
+            [
+              1199,
+              1314
+            ]
+          ]
+        ]
+      },
+      "assets": [
+        {
+          "id": "CATHEDRAL_ROSE_WINDOW",
+          "sourceBox": {
+            "x0": 26,
+            "y0": 24,
+            "x1": 471,
+            "y1": 472
+          },
+          "scale": 0.1438,
+          "drawn": {
+            "w": 64,
+            "h": 65
+          },
+          "footprint": {
+            "w": 4,
+            "h": 5,
+            "solidRows": 0,
+            "backgroundTiles": 5
+          }
+        },
+        {
+          "id": "CATHEDRAL_LANCET",
+          "sourceBox": {
+            "x0": 603,
+            "y0": 20,
+            "x1": 774,
+            "y1": 481
+          },
+          "scale": 0.0936,
+          "drawn": {
+            "w": 16,
+            "h": 44
+          },
+          "footprint": {
+            "w": 1,
+            "h": 3,
+            "solidRows": 0,
+            "backgroundTiles": 3
+          }
+        },
+        {
+          "id": "CATHEDRAL_PORTAL",
+          "sourceBox": {
+            "x0": 850,
+            "y0": 20,
+            "x1": 1509,
+            "y1": 481
+          },
+          "scale": 0.2428,
+          "drawn": {
+            "w": 160,
+            "h": 112
+          },
+          "footprint": {
+            "w": 10,
+            "h": 7,
+            "solidRows": 0,
+            "backgroundTiles": 7
+          },
+          "archTileColumns": [
+            1,
+            4,
+            5,
+            8
+          ],
+          "archBasis": "bottom tile row of the game-scale frame, >= 60% transparent; the source archways are alpha 0 (lead1 sampled (950,400), (1160,400), (1380,400))"
+        },
+        {
+          "id": "CATHEDRAL_TOWER_TOP",
+          "sourceBox": {
+            "x0": 103,
+            "y0": 481,
+            "x1": 416,
+            "y1": 1000
+          },
+          "scale": 0.3067,
+          "drawn": {
+            "w": 96,
+            "h": 160
+          },
+          "footprint": {
+            "w": 6,
+            "h": 10,
+            "solidRows": 0,
+            "backgroundTiles": 10
+          }
+        },
+        {
+          "id": "CATHEDRAL_ALTAR",
+          "sourceBox": {
+            "x0": 578,
+            "y0": 577,
+            "x1": 1025,
+            "y1": 971
+          },
+          "scale": 0.1432,
+          "drawn": {
+            "w": 64,
+            "h": 57
+          },
+          "footprint": {
+            "w": 4,
+            "h": 4,
+            "solidRows": 2,
+            "backgroundTiles": 2
+          }
+        },
+        {
+          "id": "CATHEDRAL_COLUMN",
+          "sourceBox": {
+            "x0": 1199,
+            "y0": 541,
+            "x1": 1315,
+            "y1": 975
+          },
+          "scale": 0.1379,
+          "drawn": {
+            "w": 16,
+            "h": 60
+          },
+          "footprint": {
+            "w": 1,
+            "h": 4,
+            "solidRows": 1,
+            "backgroundTiles": 3
+          }
+        }
+      ],
+      "portalArchTileColumns": [
+        1,
+        4,
+        5,
+        8
+      ],
+      "cells": {
+        "delivered": 6,
+        "extracted": 6,
+        "alphaVerified": 6
+      }
+    },
+    {
+      "id": "SUB",
+      "file": "living-world-subway.png",
+      "kind": "subway kit (static props; cars drawn by the transit runtime with A/B frames)",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 879302,
+        "alpha0WithHiddenRgb": 2822,
+        "alpha255": 1844,
+        "alpha1to2Fringe": 72349,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 2822,
+      "alphaCutoff": 16,
+      "segmentation": {
+        "ok": true,
+        "method": "row bands by projection; per row, alpha components merged at the smallest horizontal gap to the requested count (5, 5, 4, 6); no fixed stride",
+        "observedPerRow": [
+          5,
+          5,
+          4,
+          6
+        ],
+        "columnSpans": [
+          [
+            [
+              17,
+              248
+            ],
+            [
+              281,
+              495
+            ],
+            [
+              514,
+              739
+            ],
+            [
+              765,
+              961
+            ],
+            [
+              983,
+              1231
+            ]
+          ],
+          [
+            [
+              45,
+              270
+            ],
+            [
+              344,
+              436
+            ],
+            [
+              542,
+              711
+            ],
+            [
+              749,
+              988
+            ],
+            [
+              998,
+              1236
+            ]
+          ],
+          [
+            [
+              30,
+              277
+            ],
+            [
+              295,
+              540
+            ],
+            [
+              559,
+              886
+            ],
+            [
+              903,
+              1230
+            ]
+          ],
+          [
+            [
+              31,
+              218
+            ],
+            [
+              250,
+              430
+            ],
+            [
+              457,
+              659
+            ],
+            [
+              692,
+              834
+            ],
+            [
+              867,
+              1034
+            ],
+            [
+              1065,
+              1217
+            ]
+          ]
+        ]
+      },
+      "facing": {
+        "passengerCars": "end-symmetric body: the requested LEFT/RIGHT labels are not observable; used direction-neutral",
+        "passengerCarMirrorSimilarityIoU": 0.958,
+        "leadCars": "adjudicated by executor1: the streamlined cab nose and headlamp are at the LEFT end of row-3 cell 3 and at the RIGHT end of cell 4, matching the request"
+      },
+      "carScale": 0.2667,
+      "assets": [
+        {
+          "id": "SUBWAY_HEADHOUSE_CONSERVATORY",
+          "sourceBox": {
+            "x0": 17,
+            "y0": 90,
+            "x1": 249,
+            "y1": 372
+          },
+          "scale": 0.3448,
+          "drawn": {
+            "w": 80,
+            "h": 98
+          },
+          "footprint": {
+            "w": 5,
+            "h": 7,
+            "solidRows": 2
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_HEADHOUSE_DECO",
+          "sourceBox": {
+            "x0": 281,
+            "y0": 68,
+            "x1": 496,
+            "y1": 369
+          },
+          "scale": 0.3721,
+          "drawn": {
+            "w": 80,
+            "h": 112
+          },
+          "footprint": {
+            "w": 5,
+            "h": 7,
+            "solidRows": 2
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_HEADHOUSE_BRICK",
+          "sourceBox": {
+            "x0": 514,
+            "y0": 123,
+            "x1": 740,
+            "y1": 369
+          },
+          "scale": 0.354,
+          "drawn": {
+            "w": 80,
+            "h": 88
+          },
+          "footprint": {
+            "w": 5,
+            "h": 6,
+            "solidRows": 2
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_KIOSK",
+          "sourceBox": {
+            "x0": 765,
+            "y0": 137,
+            "x1": 962,
+            "y1": 369
+          },
+          "scale": 0.2437,
+          "drawn": {
+            "w": 48,
+            "h": 57
+          },
+          "footprint": {
+            "w": 3,
+            "h": 4,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_PLATFORM_SHELTER",
+          "sourceBox": {
+            "x0": 983,
+            "y0": 167,
+            "x1": 1232,
+            "y1": 376
+          },
+          "scale": 0.3213,
+          "drawn": {
+            "w": 80,
+            "h": 68
+          },
+          "footprint": {
+            "w": 5,
+            "h": 5,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_TURNSTILES",
+          "sourceBox": {
+            "x0": 45,
+            "y0": 492,
+            "x1": 271,
+            "y1": 644
+          },
+          "scale": 0.2124,
+          "drawn": {
+            "w": 48,
+            "h": 33
+          },
+          "footprint": {
+            "w": 3,
+            "h": 3,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_TICKET_MACHINE",
+          "sourceBox": {
+            "x0": 344,
+            "y0": 466,
+            "x1": 437,
+            "y1": 644
+          },
+          "scale": 0.172,
+          "drawn": {
+            "w": 16,
+            "h": 31
+          },
+          "footprint": {
+            "w": 1,
+            "h": 2,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_ELEVATOR",
+          "sourceBox": {
+            "x0": 542,
+            "y0": 423,
+            "x1": 712,
+            "y1": 663
+          },
+          "scale": 0.2824,
+          "drawn": {
+            "w": 48,
+            "h": 68
+          },
+          "footprint": {
+            "w": 3,
+            "h": 5,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_CAR_A",
+          "sourceBox": {
+            "x0": 749,
+            "y0": 513,
+            "x1": 989,
+            "y1": 633
+          },
+          "scale": 0.2667,
+          "drawn": {
+            "w": 64,
+            "h": 32
+          },
+          "footprint": {
+            "w": 4,
+            "h": 2,
+            "solidRows": 0
+          },
+          "runtimeDrawn": true
+        },
+        {
+          "id": "SUBWAY_CAR_B",
+          "sourceBox": {
+            "x0": 998,
+            "y0": 513,
+            "x1": 1237,
+            "y1": 633
+          },
+          "scale": 0.2667,
+          "drawn": {
+            "w": 64,
+            "h": 32
+          },
+          "footprint": {
+            "w": 4,
+            "h": 2,
+            "solidRows": 0
+          },
+          "runtimeDrawn": true
+        },
+        {
+          "id": "SUBWAY_CAR_A2",
+          "sourceBox": {
+            "x0": 30,
+            "y0": 763,
+            "x1": 278,
+            "y1": 884
+          },
+          "scale": 0.2667,
+          "drawn": {
+            "w": 67,
+            "h": 33
+          },
+          "footprint": {
+            "w": 5,
+            "h": 3,
+            "solidRows": 0
+          },
+          "runtimeDrawn": true
+        },
+        {
+          "id": "SUBWAY_CAR_B2",
+          "sourceBox": {
+            "x0": 295,
+            "y0": 763,
+            "x1": 541,
+            "y1": 884
+          },
+          "scale": 0.2667,
+          "drawn": {
+            "w": 66,
+            "h": 33
+          },
+          "footprint": {
+            "w": 5,
+            "h": 3,
+            "solidRows": 0
+          },
+          "runtimeDrawn": true
+        },
+        {
+          "id": "SUBWAY_LEAD_LEFT",
+          "sourceBox": {
+            "x0": 559,
+            "y0": 765,
+            "x1": 887,
+            "y1": 885
+          },
+          "scale": 0.2667,
+          "drawn": {
+            "w": 88,
+            "h": 32
+          },
+          "footprint": {
+            "w": 6,
+            "h": 2,
+            "solidRows": 0
+          },
+          "runtimeDrawn": true
+        },
+        {
+          "id": "SUBWAY_LEAD_RIGHT",
+          "sourceBox": {
+            "x0": 903,
+            "y0": 766,
+            "x1": 1231,
+            "y1": 885
+          },
+          "scale": 0.2667,
+          "drawn": {
+            "w": 88,
+            "h": 32
+          },
+          "footprint": {
+            "w": 6,
+            "h": 2,
+            "solidRows": 0
+          },
+          "runtimeDrawn": true
+        },
+        {
+          "id": "SUBWAY_INTERIOR_STRIP",
+          "sourceBox": {
+            "x0": 31,
+            "y0": 1050,
+            "x1": 219,
+            "y1": 1175
+          },
+          "scale": 0.3404,
+          "drawn": {
+            "w": 64,
+            "h": 43
+          },
+          "footprint": {
+            "w": 4,
+            "h": 3,
+            "solidRows": 0
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_TUNNEL_MOUTH",
+          "sourceBox": {
+            "x0": 250,
+            "y0": 976,
+            "x1": 431,
+            "y1": 1182
+          },
+          "scale": 0.3536,
+          "drawn": {
+            "w": 64,
+            "h": 73
+          },
+          "footprint": {
+            "w": 4,
+            "h": 5,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_GANTRY",
+          "sourceBox": {
+            "x0": 457,
+            "y0": 978,
+            "x1": 660,
+            "y1": 1181
+          },
+          "scale": 0.3153,
+          "drawn": {
+            "w": 64,
+            "h": 64
+          },
+          "footprint": {
+            "w": 4,
+            "h": 4,
+            "solidRows": 0
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_ROUTE_BOARD",
+          "sourceBox": {
+            "x0": 692,
+            "y0": 1002,
+            "x1": 835,
+            "y1": 1175
+          },
+          "scale": 0.2238,
+          "drawn": {
+            "w": 32,
+            "h": 39
+          },
+          "footprint": {
+            "w": 2,
+            "h": 3,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_WARNING_STRIP",
+          "sourceBox": {
+            "x0": 867,
+            "y0": 1109,
+            "x1": 1035,
+            "y1": 1173
+          },
+          "scale": 0.2857,
+          "drawn": {
+            "w": 48,
+            "h": 19
+          },
+          "footprint": {
+            "w": 3,
+            "h": 2,
+            "solidRows": 0
+          },
+          "runtimeDrawn": false
+        },
+        {
+          "id": "SUBWAY_WAITING_GROUP",
+          "sourceBox": {
+            "x0": 1065,
+            "y0": 1052,
+            "x1": 1218,
+            "y1": 1173
+          },
+          "scale": 0.2092,
+          "drawn": {
+            "w": 32,
+            "h": 26
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1
+          },
+          "runtimeDrawn": false
+        }
+      ],
+      "cells": {
+        "delivered": 20,
+        "extracted": 20,
+        "alphaVerified": 20
+      }
+    },
+    {
+      "id": "M01",
+      "file": "lw-M01-museum-exhibits.png",
+      "kind": "museum exhibits STATIC",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 733711,
+        "alpha0WithHiddenRgb": 2198,
+        "alpha255": 1539,
+        "alpha1to2Fringe": 70697,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 2198,
+      "alphaCutoff": 16,
+      "fringe": "alpha 1-2 (faint red) excluded by the cutoff: never in a box, never in a pixel",
+      "partialAlphaPixelsKept": 1397,
+      "segmentation": {
+        "ok": true,
+        "method": "rows split at the emptiest row per quarter; within a row, 8-connected alpha components joined within 4 px (the triptych and the botanical pair stay one exhibit each; the fossil and the placard, whose boxes overlap, stay apart; no fixed stride)",
+        "rowSplits": [
+          311,
+          628,
+          948
+        ],
+        "observedPerRow": [
+          4,
+          4,
+          4,
+          4
+        ],
+        "columnSpans": [
+          [
+            [
+              86,
+              301
+            ],
+            [
+              374,
+              592
+            ],
+            [
+              680,
+              868
+            ],
+            [
+              957,
+              1187
+            ]
+          ],
+          [
+            [
+              34,
+              356
+            ],
+            [
+              391,
+              666
+            ],
+            [
+              697,
+              909
+            ],
+            [
+              950,
+              1205
+            ]
+          ],
+          [
+            [
+              109,
+              236
+            ],
+            [
+              430,
+              555
+            ],
+            [
+              677,
+              871
+            ],
+            [
+              995,
+              1190
+            ]
+          ],
+          [
+            [
+              51,
+              280
+            ],
+            [
+              335,
+              630
+            ],
+            [
+              653,
+              1069
+            ],
+            [
+              1024,
+              1226
+            ]
+          ]
+        ]
+      },
+      "assets": [
+        {
+          "id": "MUSEUM_PAINTING_LANDSCAPE",
+          "sourceBox": {
+            "x0": 86,
+            "y0": 10,
+            "x1": 302,
+            "y1": 310
+          },
+          "scale": 0.1296,
+          "drawn": {
+            "w": 28,
+            "h": 39
+          },
+          "footprint": {
+            "w": 2,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_PAINTING_PORTRAIT",
+          "sourceBox": {
+            "x0": 374,
+            "y0": 15,
+            "x1": 593,
+            "y1": 308
+          },
+          "scale": 0.1279,
+          "drawn": {
+            "w": 28,
+            "h": 37
+          },
+          "footprint": {
+            "w": 2,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_PAINTING_ABSTRACT",
+          "sourceBox": {
+            "x0": 680,
+            "y0": 32,
+            "x1": 869,
+            "y1": 289
+          },
+          "scale": 0.1481,
+          "drawn": {
+            "w": 28,
+            "h": 38
+          },
+          "footprint": {
+            "w": 2,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_PAINTING_STILL_LIFE",
+          "sourceBox": {
+            "x0": 957,
+            "y0": 11,
+            "x1": 1188,
+            "y1": 311
+          },
+          "scale": 0.1212,
+          "drawn": {
+            "w": 28,
+            "h": 36
+          },
+          "footprint": {
+            "w": 2,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_PAINTING_SEASCAPE",
+          "sourceBox": {
+            "x0": 34,
+            "y0": 348,
+            "x1": 357,
+            "y1": 572
+          },
+          "scale": 0.1116,
+          "drawn": {
+            "w": 36,
+            "h": 25
+          },
+          "footprint": {
+            "w": 3,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_TRIPTYCH",
+          "sourceBox": {
+            "x0": 391,
+            "y0": 323,
+            "x1": 667,
+            "y1": 584
+          },
+          "scale": 0.1571,
+          "drawn": {
+            "w": 43,
+            "h": 41
+          },
+          "footprint": {
+            "w": 3,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_TAPESTRY",
+          "sourceBox": {
+            "x0": 697,
+            "y0": 314,
+            "x1": 910,
+            "y1": 628
+          },
+          "scale": 0.1315,
+          "drawn": {
+            "w": 28,
+            "h": 41
+          },
+          "footprint": {
+            "w": 2,
+            "h": 4,
+            "solidRows": 1,
+            "backgroundTiles": 3,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_BOTANICAL_PAIR",
+          "sourceBox": {
+            "x0": 950,
+            "y0": 353,
+            "x1": 1206,
+            "y1": 573
+          },
+          "scale": 0.1094,
+          "drawn": {
+            "w": 28,
+            "h": 24
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1,
+            "wall": true
+          }
+        },
+        {
+          "id": "MUSEUM_BUST",
+          "sourceBox": {
+            "x0": 109,
+            "y0": 629,
+            "x1": 237,
+            "y1": 936
+          },
+          "scale": 0.0938,
+          "drawn": {
+            "w": 12,
+            "h": 29
+          },
+          "footprint": {
+            "w": 1,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1,
+            "wall": false
+          }
+        },
+        {
+          "id": "MUSEUM_BRONZE",
+          "sourceBox": {
+            "x0": 430,
+            "y0": 628,
+            "x1": 556,
+            "y1": 948
+          },
+          "scale": 0.0952,
+          "drawn": {
+            "w": 12,
+            "h": 30
+          },
+          "footprint": {
+            "w": 1,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2,
+            "wall": false
+          }
+        },
+        {
+          "id": "MUSEUM_ABSTRACT_STONE",
+          "sourceBox": {
+            "x0": 677,
+            "y0": 672,
+            "x1": 872,
+            "y1": 936
+          },
+          "scale": 0.1136,
+          "drawn": {
+            "w": 22,
+            "h": 30
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1,
+            "wall": false
+          }
+        },
+        {
+          "id": "MUSEUM_URN",
+          "sourceBox": {
+            "x0": 995,
+            "y0": 628,
+            "x1": 1191,
+            "y1": 940
+          },
+          "scale": 0.0612,
+          "drawn": {
+            "w": 12,
+            "h": 19
+          },
+          "footprint": {
+            "w": 1,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1,
+            "wall": false
+          }
+        },
+        {
+          "id": "MUSEUM_DISPLAY_CASE",
+          "sourceBox": {
+            "x0": 51,
+            "y0": 955,
+            "x1": 281,
+            "y1": 1235
+          },
+          "scale": 0.1071,
+          "drawn": {
+            "w": 25,
+            "h": 30
+          },
+          "footprint": {
+            "w": 2,
+            "h": 2,
+            "solidRows": 1,
+            "backgroundTiles": 1,
+            "wall": false
+          }
+        },
+        {
+          "id": "MUSEUM_VITRINE",
+          "sourceBox": {
+            "x0": 335,
+            "y0": 1031,
+            "x1": 631,
+            "y1": 1222
+          },
+          "scale": 0.0733,
+          "drawn": {
+            "w": 22,
+            "h": 14
+          },
+          "footprint": {
+            "w": 2,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0,
+            "wall": false
+          }
+        },
+        {
+          "id": "MUSEUM_FOSSIL",
+          "sourceBox": {
+            "x0": 653,
+            "y0": 964,
+            "x1": 1070,
+            "y1": 1223
+          },
+          "scale": 0.1055,
+          "drawn": {
+            "w": 44,
+            "h": 27
+          },
+          "footprint": {
+            "w": 3,
+            "h": 3,
+            "solidRows": 1,
+            "backgroundTiles": 2,
+            "wall": false
+          }
+        },
+        {
+          "id": "MUSEUM_PLACARD",
+          "sourceBox": {
+            "x0": 1024,
+            "y0": 1044,
+            "x1": 1227,
+            "y1": 1209
+          },
+          "scale": 0.0591,
+          "drawn": {
+            "w": 12,
+            "h": 10
+          },
+          "footprint": {
+            "w": 1,
+            "h": 1,
+            "solidRows": 1,
+            "backgroundTiles": 0,
+            "wall": false
+          }
+        }
+      ],
+      "cells": {
+        "delivered": 16,
+        "extracted": 16,
+        "alphaVerified": 16
+      }
+    },
+    {
+      "id": "S31",
+      "runtimeId": "egg-trickster-hare",
+      "file": "lw-S31-trickster-hare.png",
+      "kind": "min",
+      "census": {
+        "pixels": 1572516,
+        "alpha0": 978687,
+        "alpha0WithHiddenRgb": 716,
+        "alpha255": 222,
+        "alpha1to2Fringe": 226828,
+        "maxAlpha": 255
+      },
+      "zeroedHiddenRgb": 716,
+      "alphaCutoff": 16,
+      "bboxSample": {
+        "alphaAbove0": {
+          "x0": 70,
+          "y0": 0,
+          "x1": 276,
+          "y1": 344
+        },
+        "alphaAtCutoff": {
+          "x0": 110,
+          "y0": 11,
+          "x1": 236,
+          "y1": 344
+        }
+      },
+      "segmentation": {
+        "ok": true,
+        "method": "alpha projection bands (no fixed stride)",
+        "observedPerRow": [
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "facing": {
+        "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+        "adjudicatedSourceRowOrder": [
+          "DOWN",
+          "RIGHT",
+          "LEFT",
+          "UP"
+        ],
+        "cue": "snout points right and the carrot is held in front on the right in band 2; reversed in band 3 — DIFFERS from the contract; agrees with the Operator report. The skin-side signal is unreliable here (the head band is mostly ears)",
+        "contractRequestedOrder": [
+          "DOWN",
+          "LEFT",
+          "RIGHT",
+          "UP"
+        ],
+        "differsFromContract": true,
+        "corroboration": {
+          "skinSignalPerSideRow": [
+            {
+              "row": 2,
+              "adjudicated": "RIGHT",
+              "skinSignal": "LEFT",
+              "agrees": false
+            },
+            {
+              "row": 3,
+              "adjudicated": "LEFT",
+              "skinSignal": "RIGHT",
+              "agrees": false
+            }
+          ],
+          "sideRowSignals": [
+            {
+              "row": 2,
+              "extension": 24.468274645680125,
+              "headShift": 1.3417214181080226,
+              "skinShift": -11.175392494532915,
+              "skinPixels": 3926,
+              "votes": [
+                1,
+                1,
+                -1
+              ],
+              "facing": "RIGHT"
+            },
+            {
+              "row": 3,
+              "extension": -18.950418998217543,
+              "headShift": 1.5938692149216394,
+              "skinShift": 14.452956022131247,
+              "skinPixels": 3167,
+              "votes": [
+                -1,
+                1,
+                1
+              ],
+              "facing": "RIGHT"
+            }
+          ],
+          "downRowSkinPixels": 3362,
+          "upRowSkinPixels": 0
+        },
+        "mirrorSimilarityIoU": 0.813,
+        "mirrorSimilarityNote": "IoU of band 2 against the horizontal mirror of band 3 (bottom-centre aligned masks). SIMILARITY ONLY: separately drawn profiles of one character score high; this is not evidence that either side was derived by mirroring, and no art is labelled mirrored on this basis."
+      },
+      "scale": 0.0922,
+      "frame": {
+        "w": 18,
+        "h": 32
+      },
+      "footJitterPxPerRow": [
+        0.33,
+        0,
+        0.23,
+        0.33
+      ],
+      "cells": {
+        "delivered": 16,
+        "extracted": 16,
+        "alphaVerified": 16
+      },
+      "output": "webview-ui/public/assets/ambient/egg-trickster-hare"
+    }
+  ]
+}

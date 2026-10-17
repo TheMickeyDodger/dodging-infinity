@@ -152,7 +152,7 @@ describe('migrateVsCodeState', () => {
       version: 1,
       cols: 20,
       rows: 11,
-      tiles: [0, 1, 2],
+      tiles: new Array(20 * 11).fill(1),
       furniture: [{ type: 'desk', uid: 'd1', col: 0, row: 0 }],
     };
     const { context, workspaceStore } = makeContext({}, { 'pixel-agents.layout': legacyLayout });
@@ -166,8 +166,20 @@ describe('migrateVsCodeState', () => {
   });
 
   it('does not clobber an existing layout.json file when migrating legacy layout', () => {
-    const legacyLayout = { version: 1, cols: 20, rows: 11, tiles: [0], furniture: [] };
-    const existingLayout = { version: 1, cols: 30, rows: 15, tiles: [9], furniture: [] };
+    const legacyLayout = {
+      version: 1,
+      cols: 20,
+      rows: 11,
+      tiles: new Array(220).fill(0),
+      furniture: [],
+    };
+    const existingLayout = {
+      version: 1,
+      cols: 30,
+      rows: 15,
+      tiles: new Array(450).fill(9),
+      furniture: [],
+    };
     writeLayoutToFile(existingLayout);
     const { context, workspaceStore } = makeContext({}, { 'pixel-agents.layout': legacyLayout });
     const adapter = new FileStateAdapter({ namespace: 'vscode' });
@@ -177,6 +189,27 @@ describe('migrateVsCodeState', () => {
     // File preserved (not overwritten); legacy key cleared.
     expect(readLayoutFromFile()).toEqual(existingLayout);
     expect(workspaceStore).toEqual({});
+  });
+
+  it('never clobbers an existing layout.json the bounded reader REFUSES (malformed)', () => {
+    const legacyLayout = {
+      version: 1,
+      cols: 20,
+      rows: 11,
+      tiles: new Array(220).fill(0),
+      furniture: [],
+    };
+    // tiles do not match cols x rows: refused by the bounded reader, but it is the user's file
+    const malformed = { version: 1, cols: 30, rows: 15, tiles: [9], furniture: [] };
+    // Written directly: the sink itself refuses to write a malformed layout.
+    const filePath = path.join(homeOverride, '.pixel-agents', 'layout.json');
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(malformed, null, 2));
+    const before = fs.readFileSync(filePath, 'utf-8');
+    const { context } = makeContext({}, { 'pixel-agents.layout': legacyLayout });
+    migrateVsCodeState(context, new FileStateAdapter({ namespace: 'vscode' }));
+    expect(readLayoutFromFile()).toBeNull(); // refused...
+    expect(fs.readFileSync(filePath, 'utf-8')).toBe(before); // ...and untouched
   });
 
   it('warns + keeps legacy keys if file write fails (simulated via read-only HOME)', () => {

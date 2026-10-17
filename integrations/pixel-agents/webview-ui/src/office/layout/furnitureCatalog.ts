@@ -1,3 +1,4 @@
+import { bumpPresentationGeneration } from '../presentationGeneration.js';
 import type { FurnitureCatalogEntry, SpriteData } from '../types.js';
 
 export interface LoadedAssetData {
@@ -69,6 +70,7 @@ let dynamicCategories: FurnitureCategory[] | null = null;
  * Uses ONLY custom assets (excludes hardcoded furniture when assets are loaded).
  */
 export function buildDynamicCatalog(assets: LoadedAssetData): boolean {
+  bumpPresentationGeneration();
   if (!assets?.catalog || !assets?.sprites) return false;
 
   // Build all entries (including non-front variants)

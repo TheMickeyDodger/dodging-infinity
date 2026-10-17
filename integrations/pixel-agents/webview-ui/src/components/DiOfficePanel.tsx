@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 import type {
   DiMember,
@@ -63,8 +63,12 @@ function Observed({ value }: { value: DiObservedValue }) {
   return <span className={observedClass(value)}>{formatObserved(value)}</span>;
 }
 
+/** True only in an EXPLICIT fixture preview: every LIVE in the panel is then qualified. */
+const FixtureMode = createContext(false);
+
 function LiveBadge({ live, reason }: { live: boolean; reason: string | null }) {
-  return <span className={freshnessClass(live)}>{formatLive(live, reason)}</span>;
+  const fixture = useContext(FixtureMode);
+  return <span className={freshnessClass(live)}>{formatLive(live, reason, fixture)}</span>;
 }
 
 /** The selected character's canonical identity, with its own Mission's identity. */
@@ -392,7 +396,15 @@ function MissionV2Blocks({ v2 }: { v2: DiMissionV2 }) {
  * Mission's identity. Below: a bounded, independently scrolling Missions list, then the
  * full freshness detail (collapsed). Everything is rendered as projected; nothing derived.
  */
-export function DiOfficePanel({
+export function DiOfficePanel(props: DiOfficePanelProps) {
+  return (
+    <FixtureMode.Provider value={props.state.fixtureMode === true}>
+      <DiOfficePanelBody {...props} />
+    </FixtureMode.Provider>
+  );
+}
+
+function DiOfficePanelBody({
   state,
   officeState,
   collapsed,
@@ -449,7 +461,8 @@ export function DiOfficePanel({
           DI Mission office:{' '}
           {!state.live && waiting ? (
             <span className={WAITING_CLASS}>
-              NOT LIVE, {formatWaiting(waiting, envelope.retryAfterSeconds)}
+              NOT LIVE{state.fixtureMode ? ' (FIXTURE DATA)' : ''},{' '}
+              {formatWaiting(waiting, envelope.retryAfterSeconds)}
             </span>
           ) : (
             <LiveBadge live={state.live} reason={state.notLiveReason} />

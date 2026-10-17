@@ -9,7 +9,7 @@ import type {
   PlacedFurniture,
   TileType as TileTypeVal,
 } from '../types.js';
-import { MAX_COLS, MAX_ROWS, TileType } from '../types.js';
+import { MAX_CELLS, MAX_COLS, MAX_ROWS, TileType } from '../types.js';
 
 /** Paint a single tile with pattern and color. Returns new layout (immutable). */
 export function paintTile(
@@ -347,7 +347,8 @@ export type ExpandDirection = 'left' | 'right' | 'up' | 'down';
 /**
  * Expand layout by 1 tile in the given direction. New tiles are VOID.
  * Furniture and tile indices are shifted when expanding left or up.
- * Returns { layout, shift } or null if exceeding MAX_COLS/MAX_ROWS.
+ * Returns { layout, shift } or null if exceeding MAX_COLS/MAX_ROWS or the total-cell cap
+ * MAX_CELLS (an axis within its cap can still make a grid too large to admit).
  */
 export function expandLayout(
   layout: OfficeLayout,
@@ -373,7 +374,7 @@ export function expandLayout(
     shiftRow = 1;
   }
 
-  if (newCols > MAX_COLS || newRows > MAX_ROWS) return null;
+  if (newCols > MAX_COLS || newRows > MAX_ROWS || newCols * newRows > MAX_CELLS) return null;
 
   // Build new tile array
   const newSize = newCols * newRows;
@@ -418,6 +419,16 @@ export function expandLayout(
       furniture: newFurniture,
       ...(newCarpetTiles ? { carpetTiles: newCarpetTiles } : {}),
       ...(newAreaTiles ? { areaTiles: newAreaTiles } : {}),
+      ...(layout.home
+        ? {
+            home: {
+              c0: layout.home.c0 + shiftCol,
+              r0: layout.home.r0 + shiftRow,
+              c1: layout.home.c1 + shiftCol,
+              r1: layout.home.r1 + shiftRow,
+            },
+          }
+        : {}),
     },
     shift: { col: shiftCol, row: shiftRow },
   };

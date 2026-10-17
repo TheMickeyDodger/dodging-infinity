@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V01",
+  "name": "Stepped Glass Drum",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 6,
+  "width": 96,
+  "height": 160,
+  "footprintW": 6,
+  "footprintH": 10
+}

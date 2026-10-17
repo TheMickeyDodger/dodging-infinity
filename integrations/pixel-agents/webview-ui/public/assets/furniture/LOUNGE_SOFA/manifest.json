@@ -1,0 +1,44 @@
+{
+  "id": "LOUNGE_SOFA",
+  "name": "Lounge Sofa",
+  "category": "decor",
+  "type": "group",
+  "groupType": "rotation",
+  "rotationScheme": "3-way-mirror",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "members": [
+    {
+      "type": "asset",
+      "id": "LOUNGE_SOFA_FRONT",
+      "file": "LOUNGE_SOFA_FRONT.png",
+      "width": 32,
+      "height": 16,
+      "footprintW": 2,
+      "footprintH": 1,
+      "orientation": "front"
+    },
+    {
+      "type": "asset",
+      "id": "LOUNGE_SOFA_BACK",
+      "file": "LOUNGE_SOFA_BACK.png",
+      "width": 32,
+      "height": 16,
+      "footprintW": 2,
+      "footprintH": 1,
+      "orientation": "back"
+    },
+    {
+      "type": "asset",
+      "id": "LOUNGE_SOFA_SIDE",
+      "file": "LOUNGE_SOFA_SIDE.png",
+      "width": 16,
+      "height": 32,
+      "footprintW": 1,
+      "footprintH": 2,
+      "orientation": "side",
+      "mirrorSide": true
+    }
+  ]
+}

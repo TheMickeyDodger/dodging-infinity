@@ -1,0 +1,13 @@
+{
+  "id": "AQUA_TOUCH_POOL",
+  "name": "Touch Pool",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "width": 48,
+  "height": 32,
+  "footprintW": 3,
+  "footprintH": 2
+}

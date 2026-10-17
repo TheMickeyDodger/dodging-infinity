@@ -1,0 +1,13 @@
+{
+  "id": "FARM_FARMHOUSE",
+  "name": "Farmhouse",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 80,
+  "height": 80,
+  "footprintW": 5,
+  "footprintH": 5
+}

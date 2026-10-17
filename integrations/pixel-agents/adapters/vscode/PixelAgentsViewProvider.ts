@@ -37,6 +37,7 @@ import {
 import { setFolderNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
+  importLayoutFile,
   readLayoutFromFile,
   watchLayoutFile,
   writeLayoutToFile,
@@ -896,15 +897,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         });
         if (!uris || uris.length === 0) return;
         try {
-          const raw = fs.readFileSync(uris[0].fsPath, 'utf-8');
-          const imported = JSON.parse(raw) as Record<string, unknown>;
-          if (imported.version !== 1 || !Array.isArray(imported.tiles)) {
-            vscode.window.showErrorMessage('Pixel Agents: Invalid layout file.');
+          // Shared intake (bytes before reading, the shared bounds, then the write): a refused
+          // import leaves the saved layout untouched and is never reported as imported.
+          const result = importLayoutFile(uris[0].fsPath, () => this.layoutWatcher?.markOwnWrite());
+          if ('refused' in result) {
+            vscode.window.showErrorMessage(
+              `Pixel Agents: Invalid layout file (${result.refused}).`,
+            );
             return;
           }
-          this.layoutWatcher?.markOwnWrite();
-          writeLayoutToFile(imported);
-          this.webview?.postMessage({ type: 'layoutLoaded', layout: imported });
+          this.webview?.postMessage({ type: 'layoutLoaded', layout: result.layout });
           vscode.window.showInformationMessage('Pixel Agents: Layout imported successfully.');
         } catch {
           vscode.window.showErrorMessage('Pixel Agents: Failed to read or parse layout file.');

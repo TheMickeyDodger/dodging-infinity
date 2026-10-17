@@ -1,3 +1,9 @@
+import { admitLayout, checkLayoutTextBytes } from '../../../../core/src/layoutLimits.js';
+import {
+  DEFAULT_LEFT_ROOM_COLOR,
+  DEFAULT_RIGHT_ROOM_COLOR,
+  migrateLayout as migrateLayoutCore,
+} from '../../../../core/src/layoutMigration.js';
 import type { ColorValue } from '../../components/ui/types.js';
 import { getColorizedSprite } from '../colorize.js';
 import type {
@@ -241,8 +247,6 @@ export function getSeatTiles(seats: Map<string, Seat>): Set<string> {
 }
 
 /** Default floor colors for the two rooms */
-const DEFAULT_LEFT_ROOM_COLOR: ColorValue = { h: 35, s: 30, b: 15, c: 0 }; // warm beige
-const DEFAULT_RIGHT_ROOM_COLOR: ColorValue = { h: 25, s: 45, b: 5, c: 10 }; // warm brown
 
 /** Create a minimal fallback layout (used only when no default-layout.json exists) */
 export function createDefaultLayout(): OfficeLayout {
@@ -278,45 +282,15 @@ export function serializeLayout(layout: OfficeLayout): string {
   return JSON.stringify(layout);
 }
 
-// ── Furniture type migration ────────────────────────────────────
-
-/** Map old hardcoded FurnitureType values to new manifest-based IDs */
-const LEGACY_TYPE_MAP: Record<string, string | null> = {
-  desk: 'DESK_FRONT',
-  chair: 'WOODEN_CHAIR_FRONT',
-  bookshelf: 'BOOKSHELF',
-  plant: 'PLANT',
-  cooler: null, // no equivalent in new assets — remove
-  whiteboard: 'WHITEBOARD',
-  pc: 'PC_FRONT_OFF',
-  lamp: null, // no equivalent in new assets — remove
-};
-
-/** Migrate old furniture type strings to new manifest IDs */
-function migrateFurnitureTypes(furniture: PlacedFurniture[]): PlacedFurniture[] {
-  const migrated: PlacedFurniture[] = [];
-  for (const item of furniture) {
-    const newType = LEGACY_TYPE_MAP[item.type];
-    if (newType === undefined) {
-      // Not a legacy type — keep as-is
-      migrated.push(item);
-    } else if (newType !== null) {
-      // Migrate to new type
-      migrated.push({ ...item, type: newType });
-    }
-    // newType === null → remove the item (no equivalent)
-  }
-  return migrated;
-}
-
 /** Deserialize layout from JSON string, migrating old tile types if needed
  * @internal */
 export function deserializeLayout(json: string): OfficeLayout | null {
+  // The input-byte gate BEFORE parsing (core/src/layoutLimits.ts checkLayoutTextBytes).
+  if (checkLayoutTextBytes(json) !== null) return null;
   try {
-    const obj = JSON.parse(json);
-    if (obj && obj.version === 1 && Array.isArray(obj.tiles) && Array.isArray(obj.furniture)) {
-      return migrateLayout(obj as OfficeLayout);
-    }
+    // Shared admission (core/src/layoutLimits.ts): the raw form AND the migrated form it becomes.
+    const admitted = admitLayout(JSON.parse(json), { legacy: true });
+    return 'layout' in admitted ? (admitted.layout as unknown as OfficeLayout) : null;
   } catch {
     /* ignore parse errors */
   }
@@ -332,56 +306,10 @@ export function migrateLayoutColors(layout: OfficeLayout): OfficeLayout {
 }
 
 /**
- * Migrate old layouts that use legacy tile types (TILE_FLOOR=1, WOOD_FLOOR=2, CARPET=3, DOORWAY=4)
- * to the new pattern-based system. Also migrates old furniture type strings and old VOID value.
+ * Migrate old layouts (legacy furniture types, old VOID value, missing pets, missing or
+ * wrong-length tileColors) — the ONE definition lives in core/src/layoutMigration.ts, shared with
+ * admission so the checker and this consumer always agree on the migrated form.
  */
 function migrateLayout(layout: OfficeLayout): OfficeLayout {
-  // Migrate furniture types
-  layout = { ...layout, furniture: migrateFurnitureTypes(layout.furniture) };
-
-  // Migrate old VOID value (was 8, now 255) — only for legacy layouts since FLOOR_8 reuses value 8
-  const OLD_VOID = 8;
-  if (!layout.layoutRevision && layout.tiles.includes(OLD_VOID as TileTypeVal)) {
-    layout = {
-      ...layout,
-      tiles: layout.tiles.map((t) => (t === OLD_VOID ? (TileType.VOID as TileTypeVal) : t)),
-    };
-  }
-
-  // Default pets to empty array if absent (backward-compat for legacy layouts).
-  if (!layout.pets) {
-    layout = { ...layout, pets: [] };
-  }
-
-  if (layout.tileColors && layout.tileColors.length === layout.tiles.length) {
-    return layout; // Already migrated tile colors
-  }
-
-  // Check if any tiles use old values (1-4) — these map directly to FLOOR_1-4
-  // but need color assignments
-  const tileColors: Array<ColorValue | null> = [];
-  for (const tile of layout.tiles) {
-    switch (tile) {
-      case 0: // WALL
-        tileColors.push(null);
-        break;
-      case 1: // was TILE_FLOOR → FLOOR_1 beige
-        tileColors.push(DEFAULT_LEFT_ROOM_COLOR);
-        break;
-      case 2: // was WOOD_FLOOR → FLOOR_2 brown
-        tileColors.push(DEFAULT_RIGHT_ROOM_COLOR);
-        break;
-      case 3: // was CARPET → FLOOR_3 purple
-        tileColors.push({ h: 280, s: 40, b: -5, c: 0 });
-        break;
-      case 4: // was DOORWAY → FLOOR_4 tan
-        tileColors.push({ h: 35, s: 25, b: 10, c: 0 });
-        break;
-      default:
-        // Floor tile types without colors — use neutral gray
-        tileColors.push(tile > 0 && tile !== TileType.VOID ? { h: 0, s: 0, b: 0, c: 0 } : null);
-    }
-  }
-
-  return { ...layout, tileColors };
+  return migrateLayoutCore(layout).layout;
 }

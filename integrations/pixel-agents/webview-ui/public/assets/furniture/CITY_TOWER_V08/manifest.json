@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V08",
+  "name": "Terrace Spire",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 9,
+  "width": 96,
+  "height": 208,
+  "footprintW": 6,
+  "footprintH": 13
+}

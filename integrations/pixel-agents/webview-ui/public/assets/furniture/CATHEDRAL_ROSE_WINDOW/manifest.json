@@ -1,0 +1,13 @@
+{
+  "id": "CATHEDRAL_ROSE_WINDOW",
+  "name": "Rose window",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 5,
+  "width": 64,
+  "height": 80,
+  "footprintW": 4,
+  "footprintH": 5
+}

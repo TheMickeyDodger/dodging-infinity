@@ -1,0 +1,13 @@
+{
+  "id": "SUBWAY_PLATFORM_SHELTER",
+  "name": "Platform shelter with benches",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 80,
+  "height": 80,
+  "footprintW": 5,
+  "footprintH": 5
+}

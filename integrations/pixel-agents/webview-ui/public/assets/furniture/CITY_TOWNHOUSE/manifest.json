@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWNHOUSE",
+  "name": "Brownstone Townhouse",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 96,
+  "height": 96,
+  "footprintW": 6,
+  "footprintH": 6
+}

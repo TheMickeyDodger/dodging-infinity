@@ -36,6 +36,7 @@ import {
   getRotatedType,
   getToggledType,
 } from '../office/layout/furnitureCatalog.js';
+import { prepareSave } from '../office/layout/layoutIntake.js';
 import type {
   EditTool as EditToolType,
   OfficeLayout,
@@ -140,10 +141,16 @@ export function useEditorActions(
     setIsDirty(false);
   }, [editorState]);
 
-  // Debounced layout save
+  // Debounced layout save — only a layout that passes the shared check (structure + UTF-8 byte
+  // budgets) is sent; a refused one is not sent and the edit stays dirty (unsaved).
   const saveLayout = useCallback((layout: OfficeLayout) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
+      const save = prepareSave(layout);
+      if ('refused' in save) {
+        console.warn(`[Webview] Layout not saved: ${save.refused}`);
+        return;
+      }
       transport.send({ type: 'saveLayout', layout: layout as unknown as Record<string, unknown> });
     }, LAYOUT_SAVE_DEBOUNCE_MS);
   }, []);
@@ -535,6 +542,12 @@ export function useEditorActions(
     }
     const os = getOfficeState();
     const layout = os.getLayout();
+    // A save the shared check refuses is NOT sent and NOT recorded: the editor stays dirty.
+    const save = prepareSave(layout);
+    if ('refused' in save) {
+      window.alert(`Layout not saved: ${save.refused}`);
+      return;
+    }
     lastSavedLayoutRef.current = structuredClone(layout);
     transport.send({ type: 'saveLayout', layout: layout as unknown as Record<string, unknown> });
     editorState.isDirty = false;

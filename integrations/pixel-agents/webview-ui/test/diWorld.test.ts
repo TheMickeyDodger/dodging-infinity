@@ -4,7 +4,13 @@ import path from 'node:path';
 
 import { test } from 'vitest';
 
-import { DI_DEFAULT_LAYOUT_FINGERPRINT, MAX_ROWS, ZOOM_MAX, ZOOM_MIN } from '../src/constants.ts';
+import {
+  DI_DEFAULT_LAYOUT_FINGERPRINT,
+  DI_WORLD_MAX_ROWS,
+  MAX_ROWS,
+  ZOOM_MAX,
+  ZOOM_MIN,
+} from '../src/constants.ts';
 import {
   aspectBands,
   assignDiZones,
@@ -59,7 +65,7 @@ test('the world SHAPE follows the main area: a near-square area gets a hall, a w
   assert.equal(aspectBands(room.cols, room.rows, 860 / 800), 1);
   assert.equal(aspectBands(room.cols, room.rows, 20 / 11), 0); // already the room's shape
   assert.ok(aspectBands(room.cols, room.rows, 0.6) >= 3); // a tall area -> several bands
-  assert.ok(worldRows(room.rows, maxBands(room.rows)) <= MAX_ROWS);
+  assert.ok(worldRows(room.rows, maxBands(room.rows)) <= DI_WORLD_MAX_ROWS);
 });
 
 test('Mission zones are HALF-BAND slots: the first Mission holds the room, small Missions share a band; ended zones are released', () => {
@@ -139,5 +145,14 @@ test('the built world: hall + pods from existing furniture, doorways, labelled M
 test('no world growth beyond 64 rows', () => {
   const room = cropToContent(DEFAULT);
   const { layout } = buildDiWorld(room, 99, { room: null, slots: [] }, (r) => r);
-  assert.ok(layout.rows <= MAX_ROWS);
+  assert.ok(layout.rows <= DI_WORLD_MAX_ROWS);
+});
+
+test('raising the world ceiling does not multiply the DEFAULT world band capacity', () => {
+  // The default world keeps the former 64-row band cap, independent of the editor's world
+  // ceiling (MAX_ROWS), so a large custom-world bound never balloons the default office.
+  assert.equal(DI_WORLD_MAX_ROWS, 64);
+  assert.ok(MAX_ROWS > DI_WORLD_MAX_ROWS);
+  const room = cropToContent(DEFAULT);
+  assert.equal(maxBands(room.rows), Math.floor((64 - room.rows - 2) / 4));
 });

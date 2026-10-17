@@ -110,7 +110,7 @@
     "format:check": "prettier --check \"adapters/vscode/**/*.ts\" \"server/**/*.ts\" \"core/src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
     "test:webview": "cd webview-ui && npm test",
     "test:server": "cd server && npm test",
-    "test:package-contract": "node --test scripts/npm-package-contract.test.mjs",
+    "test:package-contract": "node --test scripts/npm-package-contract.test.mjs scripts/asset-budget.test.mjs",
     "test": "npm run test:webview && npm run test:server && npm run test:package-contract",
     "verify:npm-package": "node scripts/verify-npm-package.mjs",
     "e2e": "node scripts/run-e2e.mjs",

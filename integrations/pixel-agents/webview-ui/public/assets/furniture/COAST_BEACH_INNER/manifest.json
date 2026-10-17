@@ -1,0 +1,13 @@
+{
+  "id": "COAST_BEACH_INNER",
+  "name": "Beach Inner Corner",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "width": 64,
+  "height": 48,
+  "footprintW": 4,
+  "footprintH": 3
+}

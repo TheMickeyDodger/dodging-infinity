@@ -1,0 +1,13 @@
+{
+  "id": "AQUA_TUNNEL_ARCH_P3",
+  "name": "Tunnel Viewing Arch (leg 3/3)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 32,
+  "height": 64,
+  "footprintW": 2,
+  "footprintH": 4
+}

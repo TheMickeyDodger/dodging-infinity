@@ -12,8 +12,13 @@
  */
 
 import type { ColorValue } from '../../components/ui/types.js';
-import { CARPET_DEFAULT_ACCENT_COLOR, CARPET_DEFAULT_COLOR } from '../../constants.js';
+import {
+  CARPET_DEFAULT_ACCENT_COLOR,
+  CARPET_DEFAULT_COLOR,
+  CARPET_PREVIEW_CACHE_MAX_ENTRIES,
+} from '../../constants.js';
 import { flatColorizeSprite } from '../colorize.js';
+import { bumpPresentationGeneration } from '../presentationGeneration.js';
 import type { CarpetTile, SpriteData } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +33,9 @@ let carpetVariantPalettes: Array<{ mainRgb: string | null; accentRgb: string | n
 
 /** Cache of fully-colorized + merged sprites, keyed by `${variant}:${msCase}:${paletteKey}`. */
 const carpetCache: Map<string, SpriteData> = new Map();
+/** The same, for EDITOR PREVIEWS (the carpet brush swatches), bounded AT INSERTION
+ *  (CARPET_PREVIEW_CACHE_MAX_ENTRIES): a brush-colour change rebuilds no layout. */
+const carpetPreviewCache: Map<string, SpriteData> = new Map();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -41,9 +49,27 @@ const carpetCache: Map<string, SpriteData> = new Map();
  *             via tileHasVariant() and getCarpetJunctionSprite() guards.
  */
 export function setCarpetSprites(sets: SpriteData[][]): void {
+  bumpPresentationGeneration();
   carpetSets = sets;
   carpetCache.clear();
   carpetVariantPalettes = sets.map((variantSprites) => classifyCarpetPalette(variantSprites));
+}
+
+/** Drop the colorized junction sprites (the render-cache lifecycle, office/renderCaches.ts); the
+ *  sprite sets and their palette classification stay. */
+export function clearCarpetCache(): void {
+  carpetCache.clear();
+  carpetPreviewCache.clear();
+}
+
+/** Entries held (render-cache accounting). */
+export function carpetCacheSize(): number {
+  return carpetCache.size;
+}
+
+/** Preview entries held (render-cache accounting). */
+export function carpetPreviewCacheSize(): number {
+  return carpetPreviewCache.size;
 }
 
 export function hasCarpetSprites(): boolean {
@@ -91,6 +117,7 @@ export function getCarpetJunctionSprite(
   color: ColorValue = CARPET_DEFAULT_COLOR,
   accentColor: ColorValue = CARPET_DEFAULT_ACCENT_COLOR,
   paletteKey: string = getCarpetPaletteKey(color, accentColor),
+  preview = false,
 ): SpriteData | null {
   if (variant < 0 || variant >= carpetSets.length) return null;
 
@@ -106,7 +133,41 @@ export function getCarpetJunctionSprite(
   if (!palette || !palette.mainRgb) return null;
 
   const cacheKey = `${variant}:${msCase}:${paletteKey}`;
+  if (preview) {
+    const hit = carpetPreviewCache.get(cacheKey);
+    if (hit) return hit;
+    if (carpetPreviewCache.size >= CARPET_PREVIEW_CACHE_MAX_ENTRIES) carpetPreviewCache.clear();
+    const made = dualColorizeCarpetSprite(baseSprite, palette, color, accentColor);
+    if (made) carpetPreviewCache.set(cacheKey, made);
+    return made;
+  }
   return getDualColorizedCarpetSprite(cacheKey, baseSprite, palette, color, accentColor);
+}
+
+/** A carpet junction colorized for an editor PREVIEW (the brush swatches): into the bounded
+ *  preview cache, never the layout cache. */
+export function getCarpetPreviewJunctionSprite(
+  jx: number,
+  jy: number,
+  variant: number,
+  carpetTiles: Array<CarpetTile | null>,
+  cols: number,
+  rows: number,
+  color: ColorValue = CARPET_DEFAULT_COLOR,
+  accentColor: ColorValue = CARPET_DEFAULT_ACCENT_COLOR,
+): SpriteData | null {
+  return getCarpetJunctionSprite(
+    jx,
+    jy,
+    variant,
+    carpetTiles,
+    cols,
+    rows,
+    color,
+    accentColor,
+    getCarpetPaletteKey(color, accentColor),
+    true,
+  );
 }
 
 /**
@@ -244,7 +305,18 @@ function getDualColorizedCarpetSprite(
 ): SpriteData | null {
   const cached = carpetCache.get(cacheKey);
   if (cached) return cached;
+  const merged = dualColorizeCarpetSprite(baseSprite, palette, color, accentColor);
+  if (merged) carpetCache.set(cacheKey, merged);
+  return merged;
+}
 
+/** The dual colorize itself (no cache). */
+function dualColorizeCarpetSprite(
+  baseSprite: SpriteData,
+  palette: { mainRgb: string | null; accentRgb: string | null },
+  color: ColorValue,
+  accentColor: ColorValue,
+): SpriteData | null {
   if (!palette.mainRgb) return null;
 
   const accentRgb = palette.accentRgb ?? palette.mainRgb;
@@ -255,9 +327,7 @@ function getDualColorizedCarpetSprite(
   const mainLayer = flatColorizeSprite(mainMask, color);
   const accentLayer = flatColorizeSprite(accentMask, accentColor);
 
-  const merged = mergeCarpetLayers(mainLayer, accentLayer);
-  carpetCache.set(cacheKey, merged);
-  return merged;
+  return mergeCarpetLayers(mainLayer, accentLayer);
 }
 
 /**

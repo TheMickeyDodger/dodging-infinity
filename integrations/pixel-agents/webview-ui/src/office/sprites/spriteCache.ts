@@ -1,3 +1,4 @@
+import { HALO_AURA_ALPHAS, HALO_AURA_CACHE_MAX_ENTRIES, HALO_AURA_RADIUS_PX, HALO_AURA_RGB } from '../../constants.js';
 import type { SpriteData } from '../types.js';
 
 const zoomCaches = new Map<number, WeakMap<SpriteData, HTMLCanvasElement>>();
@@ -5,6 +6,13 @@ const zoomCaches = new Map<number, WeakMap<SpriteData, HTMLCanvasElement>>();
 // ── Outline sprite generation ─────────────────────────────────
 
 const outlineCache = new WeakMap<SpriteData, SpriteData>();
+/** Aura masks, least-recently-used first (Map insertion order); HARD cap HALO_AURA_CACHE_MAX_ENTRIES. */
+const auraCache = new Map<SpriteData, SpriteData>();
+
+/** @internal The aura-mask cache's current entry count (for its cap test). */
+export function auraCacheSize(): number {
+  return auraCache.size;
+}
 
 /** Generate a 1px white outline SpriteData (2px larger in each dimension) */
 export function getOutlineSprite(sprite: SpriteData): SpriteData {
@@ -43,6 +51,51 @@ export function getOutlineSprite(sprite: SpriteData): SpriteData {
 
   outlineCache.set(sprite, outline);
   return outline;
+}
+
+/**
+ * The working-halo AURA for a sprite: transparent pixels within HALO_AURA_RADIUS_PX (Euclidean) of the
+ * silhouette, in HALO_AURA_RGB, fading by distance band (HALO_AURA_ALPHAS). The grid is the sprite
+ * expanded by the radius on every side. Never on the sprite's own pixels, and never BELOW its lowest
+ * opaque row, so nothing is drawn on the floor under the feet. Cached under a HARD cap with
+ * least-recently-used eviction; an evicted mask is rebuilt on its next use.
+ */
+export function getAuraSprite(sprite: SpriteData): SpriteData {
+  const cached = auraCache.get(sprite);
+  if (cached) {
+    auraCache.delete(sprite);
+    auraCache.set(sprite, cached);
+    return cached;
+  }
+  const R = HALO_AURA_RADIUS_PX;
+  const rows = sprite.length;
+  const cols = sprite[0].length;
+  let lowest = -1;
+  for (let r = 0; r < rows; r++) if (sprite[r].some((p) => p !== '')) lowest = r;
+  const aura: string[][] = [];
+  for (let r = 0; r < rows + 2 * R; r++) aura.push(new Array<string>(cols + 2 * R).fill(''));
+  const alphaHex = HALO_AURA_ALPHAS.map((a) => a.toString(16).padStart(2, '0'));
+  for (let er = 0; er < rows + 2 * R && er - R <= lowest; er++) {
+    for (let ec = 0; ec < cols + 2 * R; ec++) {
+      const sr = er - R;
+      const sc = ec - R;
+      if (sr >= 0 && sr < rows && sc >= 0 && sc < cols && sprite[sr][sc] !== '') continue;
+      let best = Infinity;
+      for (let dr = -R; dr <= R; dr++) {
+        for (let dc = -R; dc <= R; dc++) {
+          const r = sr + dr;
+          const c = sc + dc;
+          if (r < 0 || r >= rows || c < 0 || c >= cols || sprite[r][c] === '') continue;
+          best = Math.min(best, Math.hypot(dr, dc));
+        }
+      }
+      const band = Math.ceil(best - 1e-9);
+      if (band >= 1 && band <= R) aura[er][ec] = HALO_AURA_RGB + alphaHex[band - 1];
+    }
+  }
+  auraCache.set(sprite, aura);
+  if (auraCache.size > HALO_AURA_CACHE_MAX_ENTRIES) auraCache.delete(auraCache.keys().next().value as SpriteData);
+  return aura;
 }
 
 export function getCachedSprite(sprite: SpriteData, zoom: number): HTMLCanvasElement {
