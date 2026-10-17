@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/banner.svg" alt="Dodging Infinity" width="100%">
+  <img src="assets/brand/banner.jpeg" alt="Dodging Infinity" width="100%">
 </p>
 
 # Dodging Infinity
