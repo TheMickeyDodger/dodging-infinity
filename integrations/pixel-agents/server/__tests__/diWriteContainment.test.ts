@@ -24,6 +24,10 @@ import {
 } from '../src/di/diStateRoot.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { writeLayoutToFile } from '../src/layoutPersistence.js';
+
+/** A layout the shared check admits, so these tests reach the WRITE GUARD (the sink refuses a
+ *  malformed layout before any path is touched). */
+const MINIMAL_LAYOUT = { version: 1, cols: 1, rows: 1, tiles: [1], furniture: [] };
 import {
   guardStateWrite,
   resetStateRootForTests,
@@ -112,7 +116,7 @@ describe('every DI persistence write goes through the guard (shared writers)', (
     const victim = path.join(outside, 'layout-victim.json');
     fs.writeFileSync(victim, 'VICTIM');
     fs.symlinkSync(victim, path.join(root, 'layout.json'));
-    writeLayoutToFile({ version: 1 });
+    writeLayoutToFile(MINIMAL_LAYOUT);
     expect(fs.readFileSync(victim, 'utf-8')).toBe('VICTIM');
     expect(errors.join('\n')).toMatch(/DI state write refused: .*layout\.json is a symbolic link/);
   });
@@ -131,7 +135,7 @@ describe('every DI persistence write goes through the guard (shared writers)', (
   it('ordinary DI writes still land inside the root', () => {
     injectGuardedRoot();
     writeConfig(readConfig());
-    writeLayoutToFile({ version: 1 });
+    writeLayoutToFile(MINIMAL_LAYOUT);
     new FileStateAdapter({ namespace: 'standalone' }).saveSeats({});
     expect(fs.readdirSync(root).sort()).toEqual([
       'config.json',

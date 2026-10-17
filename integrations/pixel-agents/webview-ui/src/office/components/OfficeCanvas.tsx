@@ -10,7 +10,7 @@ import {
 } from '../../constants.js';
 import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
-import { getColorizedSprite } from '../colorize.js';
+import { getPreviewColorizedSprite } from '../colorize.js';
 import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js';
 import type { EditorState } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
@@ -22,6 +22,7 @@ import type {
   SelectionRenderState,
 } from '../engine/renderer.js';
 import { renderFrame } from '../engine/renderer.js';
+import { haloIntensity } from '../halo.js';
 import { getCatalogEntry, isRotatable } from '../layout/furnitureCatalog.js';
 import { EditTool, TILE_SIZE } from '../types.js';
 import { computeNormalModeCursor } from './officeCanvasCursor.js';
@@ -39,7 +40,8 @@ interface OfficeCanvasProps {
   onDragMove: (uid: string, newCol: number, newRow: number) => void;
   editorTick: number;
   zoom: number;
-  onZoomChange: (zoom: number) => void;
+  /** A user zoom; `anchor` = the canvas point (device px) to zoom about (the cursor), else centre. */
+  onZoomChange: (zoom: number, anchor?: { x: number; y: number }) => void;
   panRef: React.MutableRefObject<{ x: number; y: number }>;
   /** Whether the area overlay + labels should render (settings toggle OR active edit). */
   showAreas: boolean;
@@ -48,6 +50,11 @@ interface OfficeCanvasProps {
   /** DI office: while the WHOLE world fits the canvas, a camera follow keeps it centred (a
    *  fitted office never slides off-screen when an agent is selected). Absent = Pixel. */
   centerWhenWorldFits?: boolean;
+  /** Called when the user pans by hand (middle drag, wheel/trackpad): large-world views yield. */
+  onUserPan?: () => void;
+  /** An opaque overlay (the DI Map) covers the whole canvas: the loop keeps UPDATING the world
+   *  (so the overlay's live layer moves) but skips drawing a scene nobody can see. */
+  renderPaused?: boolean;
 }
 
 export function OfficeCanvas({
@@ -68,9 +75,16 @@ export function OfficeCanvas({
   showAreas,
   activeAreaLabel,
   centerWhenWorldFits = false,
+  onUserPan,
+  renderPaused = false,
 }: OfficeCanvasProps) {
   const centerWhenWorldFitsRef = useRef(centerWhenWorldFits);
   centerWhenWorldFitsRef.current = centerWhenWorldFits;
+  const onUserPanRef = useRef(onUserPan);
+  onUserPanRef.current = onUserPan;
+  // read by the running loop each frame (a ref: toggling it never restarts the loop)
+  const renderPausedRef = useRef(renderPaused);
+  renderPausedRef.current = renderPaused;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -135,6 +149,7 @@ export function OfficeCanvas({
         officeState.update(dt);
       },
       render: (ctx) => {
+        if (renderPausedRef.current) return;
         // Canvas dimensions are in device pixels
         const w = canvas.width;
         const h = canvas.height;
@@ -176,7 +191,7 @@ export function OfficeCanvas({
               );
               const pickedColor = editorState.pickedFurnitureColor;
               editorRender.ghostSprite = pickedColor
-                ? getColorizedSprite(
+                ? getPreviewColorizedSprite(
                     `ghost-${editorState.selectedFurnitureType}-${pickedColor.h}-${pickedColor.s}-${pickedColor.b}-${pickedColor.c}-${pickedColor.colorize ?? ''}`,
                     entry.sprite,
                     pickedColor,
@@ -309,6 +324,13 @@ export function OfficeCanvas({
           showAreas,
           activeAreaLabel,
           officeState.pets,
+          officeState.getAmbientResidents(),
+          officeState.hoveredAmbientId,
+          officeState.getTrains(),
+          {
+            ids: officeState.haloCharacterIds(Date.now() / 1000),
+            intensity: haloIntensity(performance.now() / 1000, officeState.reducedMotion),
+          },
         );
         offsetRef.current = { x: offsetX, y: offsetY };
 
@@ -404,6 +426,7 @@ export function OfficeCanvas({
         const dx = (e.clientX - panStartRef.current.mouseX) * dpr;
         const dy = (e.clientY - panStartRef.current.mouseY) * dpr;
         panRef.current = clampPan(panStartRef.current.panX + dx, panStartRef.current.panY + dy);
+        onUserPanRef.current?.();
         return;
       }
 
@@ -534,6 +557,11 @@ export function OfficeCanvas({
         });
       }
       officeState.hoveredAgentId = hitId;
+      // Ambient residents are hit-tested LAST: a real agent or pet always wins the pointer.
+      officeState.hoveredAmbientId =
+        hitId === null && petId === null
+          ? (officeState.getAmbientAt(pos.worldX, pos.worldY)?.id ?? null)
+          : null;
     },
     [
       officeState,
@@ -856,7 +884,15 @@ export function OfficeCanvas({
           zoomAccumulatorRef.current = 0;
           const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
           if (newZoom !== zoom) {
-            onZoomChange(newZoom);
+            // zoom about the CURSOR: the world point under it stays under it
+            const rect = canvasRef.current?.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            onZoomChange(
+              newZoom,
+              rect
+                ? { x: (e.clientX - rect.left) * dpr, y: (e.clientY - rect.top) * dpr }
+                : undefined,
+            );
           }
         }
       } else {
@@ -868,6 +904,7 @@ export function OfficeCanvas({
           panRef.current.x - e.deltaX * dpr,
           panRef.current.y - e.deltaY * dpr,
         );
+        onUserPanRef.current?.();
       }
     },
     [zoom, onZoomChange, officeState, panRef, clampPan],

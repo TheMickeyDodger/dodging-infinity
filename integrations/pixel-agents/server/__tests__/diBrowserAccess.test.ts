@@ -308,8 +308,16 @@ describe('browser access file (BUILT office lifecycle)', () => {
         if (m.type === 'diOfficeState') resolve(m);
       });
     });
+    // The handshake's LAST message: wait for it, so the drain's close is not queued behind a
+    // still-flushing handshake (the client would then observe the close only after unpublish).
+    const handshakeDone = new Promise<void>((resolve) => {
+      socket.on('message', (d) => {
+        if ((JSON.parse(d.toString()) as { type?: string }).type === 'layoutLoaded') resolve();
+      });
+    });
     socket.on('open', () => socket.send(JSON.stringify({ type: 'webviewReady' })));
     const answered = await firstState; // answered by a LIVE office
+    await handshakeDone;
     expect(answered.notLiveReason).toBe('discovery:discovery_absent');
     const fileAtClose = new Promise<boolean>((resolve) =>
       socket.on('close', () => resolve(fs.existsSync(office.file))),

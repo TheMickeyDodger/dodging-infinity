@@ -73,11 +73,27 @@ function findNearbyCharacter(pet: Pet, characters: Map<number, Character>): Char
  * Find a walkable tile adjacent (4-connected) to a character's current tile.
  * Returns the first hit in N/S/W/E scan order, or null if all neighbours are blocked.
  */
+/** The living tiles as a lookup set, built once per walkableTiles array (it is rebuilt with the
+ *  layout, so the array's identity is the right cache key). */
+const livingSets = new WeakMap<ReadonlyArray<{ col: number; row: number }>, Set<string>>();
+function livingSet(walkableTiles: ReadonlyArray<{ col: number; row: number }>): Set<string> {
+  let set = livingSets.get(walkableTiles);
+  if (!set) {
+    set = new Set(walkableTiles.map((t) => `${t.col},${t.row}`));
+    livingSets.set(walkableTiles, set);
+  }
+  return set;
+}
+
+/** A tile beside the followed character that is walkable AND a LIVING tile (in a large world the
+ *  home and its deck): a pet follows its friend about the home, never one step out of it. */
 function findAdjacentTile(
   ch: Character,
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
+  walkableTiles: ReadonlyArray<{ col: number; row: number }>,
 ): { col: number; row: number } | null {
+  const living = livingSet(walkableTiles);
   const candidates = [
     { col: ch.tileCol, row: ch.tileRow - 1 },
     { col: ch.tileCol, row: ch.tileRow + 1 },
@@ -85,7 +101,8 @@ function findAdjacentTile(
     { col: ch.tileCol + 1, row: ch.tileRow },
   ];
   for (const t of candidates) {
-    if (isWalkable(t.col, t.row, tileMap, blockedTiles)) return t;
+    if (living.has(`${t.col},${t.row}`) && isWalkable(t.col, t.row, tileMap, blockedTiles))
+      return t;
   }
   return null;
 }
@@ -289,7 +306,7 @@ export function updatePet(
       // Continue following: recompute path periodically
       pet.followRecalcTimer -= dt;
       if (pet.followRecalcTimer <= 0) {
-        const adj = findAdjacentTile(target, tileMap, blockedTiles);
+        const adj = findAdjacentTile(target, tileMap, blockedTiles, walkableTiles);
         if (adj) {
           const path = findPath(pet.tileCol, pet.tileRow, adj.col, adj.row, tileMap, blockedTiles);
           if (path.length > 0) {

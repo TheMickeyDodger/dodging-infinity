@@ -1,0 +1,13 @@
+{
+  "id": "COAST_BANK_OUTER",
+  "name": "Grassy Bank Outer Corner",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "width": 48,
+  "height": 48,
+  "footprintW": 3,
+  "footprintH": 3
+}

@@ -1,5 +1,12 @@
 import type { ColorValue } from '../../components/ui/types.js';
 import {
+  AMBIENT_BADGE_H,
+  AMBIENT_BADGE_OFFSET_Y,
+  AMBIENT_BADGE_W,
+  AMBIENT_JOB_COLORS,
+  AMBIENT_LABEL_BG,
+  AMBIENT_LABEL_FG,
+  AMBIENT_LABEL_FONT_PX,
   AREA_ACTIVE_ALPHA_MULTIPLIER,
   AREA_LABEL_ALPHA,
   AREA_LABEL_FALLBACK_COLOR,
@@ -17,8 +24,7 @@ import {
   BUTTON_LINE_WIDTH_ZOOM_FACTOR,
   BUTTON_MIN_RADIUS,
   BUTTON_RADIUS_ZOOM_FACTOR,
-  CARPET_DEFAULT_ACCENT_COLOR,
-  CARPET_DEFAULT_COLOR,
+  CARPET_LAYER_MAX_PIXELS,
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_Z_SORT_OFFSET,
   DELETE_BUTTON_BG,
@@ -31,6 +37,7 @@ import {
   GHOST_PREVIEW_TINT_ALPHA,
   GHOST_VALID_TINT,
   GRID_LINE_COLOR,
+  HALO_AURA_RADIUS_PX,
   HEADLESS_CHARACTER_ALPHA,
   HOVERED_OUTLINE_ALPHA,
   OUTLINE_Z_SORT_OFFSET,
@@ -44,21 +51,25 @@ import {
   VOID_TILE_DASH_PATTERN,
   VOID_TILE_OUTLINE_COLOR,
 } from '../../constants.js';
+import { ambientLabel } from '../ambient/ambientJobs.js';
+import { ambientFrame, ambientSheetFor } from '../ambient/ambientSprites.js';
+import type { AmbientResident } from '../ambient/ambientWorld.js';
 import { getColorizedFloorSprite, hasFloorSprites, WALL_COLOR } from '../floorTiles.js';
-import { mapOffset } from '../projection.js';
-import {
-  getCarpetJunctionSprite,
-  getCarpetPaletteKey,
-  hasCarpetSprites,
-} from '../sprites/carpetTiles.js';
+import { getCatalogEntry } from '../layout/furnitureCatalog.js';
+import type { VisibleTiles } from '../projection.js';
+import { mapOffset, visibleTiles } from '../projection.js';
+import { registerRenderCache } from '../renderCaches.js';
+import { hasCarpetSprites } from '../sprites/carpetTiles.js';
 import { getPetSprites } from '../sprites/petSpriteData.js';
-import { getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js';
+import { getAuraSprite, getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js';
 import {
   BUBBLE_HEART_SPRITE,
   BUBBLE_PERMISSION_SPRITE,
   BUBBLE_WAITING_SPRITE,
   getCharacterSprites,
 } from '../sprites/spriteData.js';
+import type { Train } from '../transit/transitWorld.js';
+import { TRAIN_CARS } from '../transit/transitWorld.js';
 import type {
   AreaDefinition,
   CarpetTile,
@@ -71,6 +82,8 @@ import type {
 } from '../types.js';
 import { CharacterState, TILE_SIZE, TileType } from '../types.js';
 import { getWallInstances, hasWallSprites, wallColorToHex } from '../wallTiles.js';
+import type { CarpetJunctionPlan } from './carpetPlan.js';
+import { carpetJunctionPlan, resetCarpetPlan } from './carpetPlan.js';
 import { getCharacterSprite } from './characters.js';
 import { renderMatrixEffect } from './matrixEffect.js';
 import { getPetSpriteData } from './petEntity.js';
@@ -98,6 +111,95 @@ export function isGhostHeadlessAgentsEnabled(): boolean {
 // ── Render functions ────────────────────────────────────────────
 
 /**
+ * THE PRE-COMPOSED CARPET LAYER: every planned junction sprite drawn ONCE into one offscreen
+ * canvas at BASE resolution (one canvas pixel per sprite pixel) spanning the plan's bounds; every
+ * frame, at ANY zoom, blits only the part in view, scaled by the integer zoom with smoothing off
+ * — one drawImage instead of up to four per junction. (Measured: the per-junction draws, not the
+ * key building, were the cost — measurements/ablation-dpr2-*.)
+ * Invalidated by EXACTLY: a different plan (so everything that invalidates the plan, above).
+ * Zoom changes do NOT rebuild it. Bounded: ONE layer is kept (its canvas element is reused) and
+ * it is at most (cols + 1) x (rows + 1) x 256 pixels — for any ADMITTED grid at most 21.1 M px
+ * (384 x 213 cells), within CARPET_LAYER_MAX_PIXELS, so the guard never sends an admitted layout
+ * to the direct path. It is part of the render-cache lifecycle (office/renderCaches.ts:
+ * resetCarpetLayer). Pixel-identical to direct drawing: nearest-neighbour integer scaling of the
+ * same sprites, drawn in the same order at integer positions.
+ */
+interface CarpetLayer {
+  plan: CarpetJunctionPlan;
+  canvas: HTMLCanvasElement;
+}
+let carpetLayer: CarpetLayer | null = null;
+let carpetLayerCanvas: HTMLCanvasElement | null = null;
+let carpetLayerEnabled = true;
+let carpetLayerBuildCount = 0;
+
+/** e2e: switch the pre-composed layer off and on, to compare its pixels with direct drawing.
+ *  @internal */
+export function setCarpetLayerCacheEnabled(enabled: boolean): void {
+  carpetLayerEnabled = enabled;
+}
+
+/** @internal */
+export function carpetLayerBuilds(): number {
+  return carpetLayerBuildCount;
+}
+let carpetLayerBlitCount = 0;
+/** Frames (or probe renders) that drew the carpets FROM the layer. @internal */
+export function carpetLayerBlits(): number {
+  return carpetLayerBlitCount;
+}
+
+/** Pixels held by the carpet layer (render-cache accounting). */
+export function carpetLayerPixels(): number {
+  return carpetLayer ? carpetLayer.canvas.width * carpetLayer.canvas.height : 0;
+}
+
+/** The render-cache lifecycle: drop the junction plan and the carpet layer (its backing store
+ *  released), so neither pins sprites or pixels of a layout that is gone. */
+export function resetCarpetLayer(): void {
+  resetCarpetPlan();
+  carpetLayer = null;
+  if (carpetLayerCanvas) {
+    carpetLayerCanvas.width = 0;
+    carpetLayerCanvas.height = 0;
+  }
+}
+
+// the layer joins the render-cache lifecycle (renderCaches.ts does not import this DOM module)
+registerRenderCache({ reset: resetCarpetLayer, pixels: carpetLayerPixels });
+
+function carpetLayerFor(plan: CarpetJunctionPlan): CarpetLayer | null {
+  const b = plan.bounds;
+  if (!b || !carpetLayerEnabled || typeof document === 'undefined') return null;
+  if (carpetLayer && carpetLayer.plan === plan) return carpetLayer;
+  const w = (b.jx1 - b.jx0 + 1) * TILE_SIZE;
+  const h = (b.jy1 - b.jy0 + 1) * TILE_SIZE;
+  if (w * h > CARPET_LAYER_MAX_PIXELS) return null;
+  const canvas = (carpetLayerCanvas ??= document.createElement('canvas'));
+  canvas.width = w;
+  canvas.height = h;
+  const c = canvas.getContext('2d');
+  if (!c) return null;
+  c.imageSmoothingEnabled = false;
+  const jw = plan.cols + 1;
+  for (let jy = b.jy0; jy <= b.jy1; jy++) {
+    for (let jx = b.jx0; jx <= b.jx1; jx++) {
+      const j = jy * jw + jx;
+      const end = plan.offsets[j + 1];
+      for (let k = plan.offsets[j]; k < end; k++)
+        c.drawImage(
+          getCachedSprite(plan.sprites[k], 1),
+          (jx - b.jx0) * TILE_SIZE,
+          (jy - b.jy0) * TILE_SIZE,
+        );
+    }
+  }
+  carpetLayerBuildCount++;
+  carpetLayer = { plan, canvas };
+  return carpetLayer;
+}
+
+/**
  * Render the carpet layer. Called AFTER renderTileGrid and BEFORE seat
  * indicators / characters / furniture.
  *
@@ -106,6 +208,7 @@ export function isGhostHeadlessAgentsEnabled(): boolean {
  * one local "layer" drawn in ascending `order`, so the highest-order carpet
  * visually wins at overlaps. Sprite anchor: each 16×16 junction sprite is
  * centered on the corner — drawn at (offsetX + jx*s - halfS, offsetY + jy*s - halfS).
+ * The layers are resolved once per carpetJunctionPlan (above); a frame draws them.
  *
  * @internal
  */
@@ -117,66 +220,62 @@ export function renderCarpetLayer(
   offsetX: number,
   offsetY: number,
   zoom: number,
+  view?: VisibleTiles,
 ): void {
   if (!hasCarpetSprites()) return;
   if (!carpetTiles || carpetTiles.length === 0) return;
+  const plan = carpetJunctionPlan(carpetTiles, cols, rows);
+  if (plan.sprites.length === 0) return;
 
   const s = TILE_SIZE * zoom;
   const halfS = s / 2;
+  const jw = cols + 1;
+  const { offsets, sprites } = plan;
 
-  for (let jy = 0; jy <= rows; jy++) {
-    for (let jx = 0; jx <= cols; jx++) {
-      const localGroups = new Map<
-        string,
-        {
-          variant: number;
-          color: ColorValue;
-          accentColor: ColorValue;
-          paletteKey: string;
-          order: number;
-        }
-      >();
+  const layer = carpetLayerFor(plan);
+  if (layer && plan.bounds) {
+    // layer pixel (0, 0) is the top-left of junction (jx0, jy0)'s sprite; on screen it lands at
+    // (ox, oy) and each layer pixel covers zoom x zoom device pixels. Blit only what is in view,
+    // cropped on whole layer pixels so every destination edge stays on the integer grid.
+    const ox = offsetX + plan.bounds.jx0 * s - halfS;
+    const oy = offsetY + plan.bounds.jy0 * s - halfS;
+    const sx = Math.max(0, Math.floor(-ox / zoom));
+    const sy = Math.max(0, Math.floor(-oy / zoom));
+    const ex = Math.min(
+      layer.canvas.width,
+      Math.ceil(((ctx.canvas?.width ?? Infinity) - ox) / zoom),
+    );
+    const ey = Math.min(
+      layer.canvas.height,
+      Math.ceil(((ctx.canvas?.height ?? Infinity) - oy) / zoom),
+    );
+    carpetLayerBlitCount++;
+    if (ex > sx && ey > sy)
+      ctx.drawImage(
+        layer.canvas,
+        sx,
+        sy,
+        ex - sx,
+        ey - sy,
+        ox + sx * zoom,
+        oy + sy * zoom,
+        (ex - sx) * zoom,
+        (ey - sy) * zoom,
+      );
+    return;
+  }
 
-      const adjacent = [
-        { col: jx - 1, row: jy - 1 }, // NW
-        { col: jx, row: jy - 1 }, // NE
-        { col: jx, row: jy }, // SE
-        { col: jx - 1, row: jy }, // SW
-      ];
-
-      for (const pos of adjacent) {
-        if (pos.col < 0 || pos.row < 0 || pos.col >= cols || pos.row >= rows) continue;
-        const tile = carpetTiles[pos.row * cols + pos.col];
-        if (!tile) continue;
-        const color = tile.color ?? CARPET_DEFAULT_COLOR;
-        const accentColor = tile.accentColor ?? CARPET_DEFAULT_ACCENT_COLOR;
-        const paletteKey = getCarpetPaletteKey(color, accentColor);
-        const key = `${tile.variant}:${paletteKey}`;
-        const order = tile.order ?? 0;
-        const existing = localGroups.get(key);
-        if (!existing || order > existing.order) {
-          localGroups.set(key, { variant: tile.variant, color, accentColor, paletteKey, order });
-        }
-      }
-
-      if (localGroups.size === 0) continue;
-
-      // Ascending order → drawn lowest first; highest-order layer ends on top.
-      const ordered = [...localGroups.values()].sort((a, b) => a.order - b.order);
-      for (const { variant, color, accentColor, paletteKey } of ordered) {
-        const sprite = getCarpetJunctionSprite(
-          jx,
-          jy,
-          variant,
-          carpetTiles,
-          cols,
-          rows,
-          color,
-          accentColor,
-          paletteKey,
-        );
-        if (!sprite) continue;
-        const cached = getCachedSprite(sprite, zoom);
+  // Junctions are tile CORNERS: the visible range's corners run c0..c1 / r0..r1 inclusive.
+  const jy0 = Math.max(0, view ? view.r0 : 0);
+  const jy1 = Math.min(rows, view ? view.r1 : rows);
+  const jx0 = Math.max(0, view ? view.c0 : 0);
+  const jx1 = Math.min(cols, view ? view.c1 : cols);
+  for (let jy = jy0; jy <= jy1; jy++) {
+    for (let jx = jx0; jx <= jx1; jx++) {
+      const j = jy * jw + jx;
+      const end = offsets[j + 1];
+      for (let k = offsets[j]; k < end; k++) {
+        const cached = getCachedSprite(sprites[k], zoom);
         ctx.drawImage(cached, offsetX + jx * s - halfS, offsetY + jy * s - halfS);
       }
     }
@@ -202,6 +301,7 @@ export function renderAreaOverlay(
   offsetY: number,
   zoom: number,
   activeAreaLabel?: string | null,
+  view?: VisibleTiles,
 ): void {
   if (!areaTiles || areaTiles.length === 0) return;
   if (!areas || areas.length === 0) return;
@@ -211,8 +311,8 @@ export function renderAreaOverlay(
   for (const a of areas) colorMap.set(a.label, a.color);
 
   ctx.save();
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
+  for (let r = view ? view.r0 : 0; r < (view ? view.r1 : rows); r++) {
+    for (let c = view ? view.c0 : 0; c < (view ? view.c1 : cols); c++) {
       const label = areaTiles[r * cols + c];
       if (!label) continue;
       const color = colorMap.get(label);
@@ -304,16 +404,21 @@ export function renderTileGrid(
   zoom: number,
   tileColors?: Array<ColorValue | null>,
   cols?: number,
+  view?: VisibleTiles,
 ): void {
   const s = TILE_SIZE * zoom;
   const useSpriteFloors = hasFloorSprites();
   const tmRows = tileMap.length;
   const tmCols = tmRows > 0 ? tileMap[0].length : 0;
   const layoutCols = cols ?? tmCols;
+  const r0 = view ? Math.max(0, view.r0) : 0;
+  const r1 = view ? Math.min(tmRows, view.r1) : tmRows;
+  const c0 = view ? Math.max(0, view.c0) : 0;
+  const c1 = view ? Math.min(tmCols, view.c1) : tmCols;
 
-  // Floor tiles + wall base color
-  for (let r = 0; r < tmRows; r++) {
-    for (let c = 0; c < tmCols; c++) {
+  // Floor tiles + wall base color (only the tiles in view)
+  for (let r = r0; r < r1; r++) {
+    for (let c = c0; c < c1; c++) {
       const tile = tileMap[r][c];
 
       // Skip VOID tiles entirely (transparent)
@@ -358,14 +463,23 @@ export function renderScene(
   selectedAgentId: number | null,
   hoveredAgentId: number | null,
   pets: Pet[] = [],
+  ambient: readonly AmbientResident[] = [],
+  trains: readonly Train[] = [],
+  halo: { ids: ReadonlySet<number>; intensity: number } | null = null,
 ): void {
   const drawables: ZDrawable[] = [];
 
-  // Furniture
+  // Furniture (walls included) — culled to the canvas BEFORE the sprite cache is touched, so
+  // off-screen items cost neither a cached canvas nor a sort slot.
+  const canvasW = ctx.canvas?.width ?? Infinity;
+  const canvasH = ctx.canvas?.height ?? Infinity;
   for (const f of furniture) {
-    const cached = getCachedSprite(f.sprite, zoom);
     const fx = offsetX + f.x * zoom;
     const fy = offsetY + f.y * zoom;
+    const spriteW = (f.sprite[0]?.length ?? 0) * zoom;
+    const spriteH = f.sprite.length * zoom;
+    if (fx + spriteW < 0 || fy + spriteH < 0 || fx > canvasW || fy > canvasH) continue;
+    const cached = getCachedSprite(f.sprite, zoom);
     if (f.mirrored) {
       drawables.push({
         zY: f.zY,
@@ -423,6 +537,26 @@ export function renderScene(
         },
       });
       continue;
+    }
+
+    // The working halo (office/halo.ts decides; this only draws): a soft AURA hugging this agent's own
+    // silhouette, drawn just behind the body: no ring, no floor ellipse, nothing under the feet
+    // (getAuraSprite). Its strength is the halo intensity (steady under reduced motion), times the
+    // character's own alpha. Real characters only — ambient residents are never in `halo.ids`.
+    if (halo && halo.ids.has(ch.id)) {
+      const aura = getCachedSprite(getAuraSprite(spriteData), zoom);
+      const ax = drawX - HALO_AURA_RADIUS_PX * zoom;
+      const ay = drawY - HALO_AURA_RADIUS_PX * zoom;
+      const k = halo.intensity * alpha;
+      drawables.push({
+        zY: charZY - OUTLINE_Z_SORT_OFFSET * 2,
+        draw: (c) => {
+          c.save();
+          c.globalAlpha = k;
+          c.drawImage(aura, ax, ay);
+          c.restore();
+        },
+      });
     }
 
     // White outline: full opacity for selected, 50% for hover
@@ -483,12 +617,92 @@ export function renderScene(
     });
   }
 
+  // ── Ambient residents (decorative; never agents) ───────
+  // Character art with a job badge; culled to the canvas before the sprite cache is touched.
+  const canvasWidthPx = ctx.canvas?.width ?? Infinity;
+  const canvasHeightPx = ctx.canvas?.height ?? Infinity;
+  for (const r of ambient) {
+    if (r.state === 'riding') continue; // aboard a train: drawn as the train
+    const sx = offsetX + r.x * zoom;
+    const sy = offsetY + r.y * zoom;
+    if (sx < -TILE_SIZE * zoom || sy < -2 * TILE_SIZE * zoom) continue;
+    if (sx > canvasWidthPx + TILE_SIZE * zoom || sy > canvasHeightPx + 2 * TILE_SIZE * zoom) continue;
+    // a job with a delivered sheet draws from it (ambientSprites.ts); others keep the palette sprite
+    const sheet = ambientSheetFor(r.job);
+    const cached = getCachedSprite(
+      sheet
+        ? ambientFrame(sheet, r.dir, r.state === 'walk', r.frame)
+        : getCharacterSprites(r.palette, r.hueShift).walk[r.dir][r.state === 'walk' ? r.frame % 4 : 1],
+      zoom,
+    );
+    const drawX = Math.round(sx - cached.width / 2);
+    const drawY = Math.round(sy - cached.height);
+    const badge = AMBIENT_JOB_COLORS[r.job];
+    const bx = Math.round(sx - (AMBIENT_BADGE_W / 2) * zoom);
+    const by = Math.round(offsetY + (r.y - AMBIENT_BADGE_OFFSET_Y) * zoom);
+    drawables.push({
+      zY: r.y + TILE_SIZE / 2 + CHARACTER_Z_SORT_OFFSET,
+      draw: (c) => {
+        c.drawImage(cached, drawX, drawY);
+        if (badge) {
+          c.fillStyle = badge;
+          c.fillRect(bx, by, AMBIENT_BADGE_W * zoom, AMBIENT_BADGE_H * zoom);
+        }
+      },
+    });
+  }
+
+  // ── Subway trains (decorative; cabs at both ends, passenger-car frames A/B while moving) ──
+  for (const tr of trains) {
+    const cars = TRAIN_CARS.map((car) => {
+      const type = car.frameB && tr.state === 'run' && tr.frame === 1 ? car.frameB : car.type;
+      return getCatalogEntry(type)?.sprite ?? null;
+    });
+    if (cars.some((c) => !c)) continue;
+    const total = cars.reduce((n, c) => n + (c ? c[0].length : 0), 0);
+    let left = tr.x * TILE_SIZE - total / 2;
+    for (const sprite of cars) {
+      if (!sprite) continue;
+      const w = sprite[0].length;
+      const h = sprite.length;
+      const dx = Math.round(offsetX + left * zoom);
+      const dy = Math.round(offsetY + (tr.railY - h + 2) * zoom);
+      left += w;
+      if (dx > canvasWidthPx || dx + w * zoom < 0 || dy > canvasHeightPx || dy + h * zoom < 0) continue;
+      const cached = getCachedSprite(sprite, zoom);
+      drawables.push({ zY: tr.railY + 4, draw: (c) => c.drawImage(cached, dx, dy) });
+    }
+  }
+
   // Sort by Y (lower = in front = drawn later)
   drawables.sort((a, b) => a.zY - b.zY);
 
   for (const d of drawables) {
     d.draw(ctx);
   }
+}
+
+function renderAmbientLabel(
+  ctx: CanvasRenderingContext2D,
+  r: AmbientResident,
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  const text = ambientLabel(r.job);
+  const fontPx = Math.max(AMBIENT_LABEL_FONT_PX, Math.round(AMBIENT_LABEL_FONT_PX * zoom * 0.5));
+  ctx.save();
+  ctx.font = `${fontPx}px "FS Pixel Sans", monospace`;
+  const w = Math.ceil(ctx.measureText(text).width) + fontPx;
+  const h = fontPx + Math.round(fontPx * 0.6);
+  const x = Math.round(offsetX + r.x * zoom - w / 2);
+  const y = Math.round(offsetY + (r.y - AMBIENT_BADGE_OFFSET_Y - 4) * zoom - h);
+  ctx.fillStyle = AMBIENT_LABEL_BG;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = AMBIENT_LABEL_FG;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + Math.round(fontPx / 2), y + Math.round(h / 2));
+  ctx.restore();
 }
 
 // ── Seat indicators ─────────────────────────────────────────────
@@ -903,6 +1117,10 @@ export function renderFrame(
   showAreas?: boolean,
   activeAreaLabel?: string | null,
   pets?: Pet[],
+  ambient?: readonly AmbientResident[],
+  hoveredAmbientId?: string | null,
+  trains?: readonly Train[],
+  halo?: { ids: ReadonlySet<number>; intensity: number } | null,
 ): { offsetX: number; offsetY: number } {
   // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -914,18 +1132,30 @@ export function renderFrame(
   // Center map in viewport + pan offset (integer device pixels). Shared with
   // the DOM overlays so a label lands exactly on the sprite it belongs to.
   const { offsetX, offsetY } = mapOffset(canvasWidth, canvasHeight, cols, rows, zoom, panX, panY);
+  const view = visibleTiles(canvasWidth, canvasHeight, offsetX, offsetY, zoom, cols, rows);
 
   // Draw tiles (floor + wall base color)
-  renderTileGrid(ctx, tileMap, offsetX, offsetY, zoom, tileColors, layoutCols);
+  renderTileGrid(ctx, tileMap, offsetX, offsetY, zoom, tileColors, layoutCols, view);
 
   // Carpet layer (above floor, below seat indicators / furniture / characters)
   if (carpetTiles && carpetTiles.length > 0) {
-    renderCarpetLayer(ctx, carpetTiles, cols, rows, offsetX, offsetY, zoom);
+    renderCarpetLayer(ctx, carpetTiles, cols, rows, offsetX, offsetY, zoom, view);
   }
 
   // Area overlay (translucent color wash) — above carpets, below seat indicators
   if (showAreas) {
-    renderAreaOverlay(ctx, areaTiles, areas, cols, rows, offsetX, offsetY, zoom, activeAreaLabel);
+    renderAreaOverlay(
+      ctx,
+      areaTiles,
+      areas,
+      cols,
+      rows,
+      offsetX,
+      offsetY,
+      zoom,
+      activeAreaLabel,
+      view,
+    );
   }
 
   // Seat indicators (below furniture/characters, on top of floor)
@@ -959,6 +1189,9 @@ export function renderFrame(
     selectedId,
     hoveredId,
     pets ?? [],
+    ambient ?? [],
+    trains ?? [],
+    halo ?? null,
   );
 
   // Speech bubbles (always on top of characters)
@@ -966,6 +1199,11 @@ export function renderFrame(
   // Pet heart bubbles (same overlay pass)
   if (pets && pets.length > 0) {
     renderPetBubbles(ctx, pets, offsetX, offsetY, zoom);
+  }
+  // Hovered ambient resident: its label always says Ambient and decorative.
+  if (hoveredAmbientId && ambient) {
+    const r = ambient.find((a) => a.id === hoveredAmbientId);
+    if (r) renderAmbientLabel(ctx, r, offsetX, offsetY, zoom);
   }
 
   // Area labels (above bubbles + characters, below editor overlays)

@@ -1,0 +1,13 @@
+{
+  "id": "MUSEUM_PAINTING_STILL_LIFE",
+  "name": "Still-life painting",
+  "category": "wall",
+  "type": "asset",
+  "canPlaceOnWalls": true,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 32,
+  "height": 48,
+  "footprintW": 2,
+  "footprintH": 3
+}

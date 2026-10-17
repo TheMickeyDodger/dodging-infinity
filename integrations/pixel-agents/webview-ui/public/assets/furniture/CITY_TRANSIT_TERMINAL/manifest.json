@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TRANSIT_TERMINAL",
+  "name": "Transit Terminal",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 160,
+  "height": 80,
+  "footprintW": 10,
+  "footprintH": 5
+}

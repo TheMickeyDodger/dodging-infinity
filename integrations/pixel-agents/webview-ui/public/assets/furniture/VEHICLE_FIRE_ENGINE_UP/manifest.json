@@ -1,0 +1,13 @@
+{
+  "id": "VEHICLE_FIRE_ENGINE_UP",
+  "name": "Fire engine (decorative, parked) facing up",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 32,
+  "height": 48,
+  "footprintW": 2,
+  "footprintH": 3
+}

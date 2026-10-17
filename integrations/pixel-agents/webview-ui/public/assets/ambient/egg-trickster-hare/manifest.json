@@ -1,0 +1,43 @@
+{
+  "id": "egg-trickster-hare",
+  "label": "Trickster-hare homage",
+  "source": {
+    "id": "S31",
+    "file": "lw-S31-trickster-hare.png",
+    "sha256": "1fd5387dd0f04579b87b53fe2db766b12a6064ce945782f13e5b9c959a1906d0"
+  },
+  "contract": "MIN 4x4",
+  "frameWidth": 18,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "idle1",
+    "gesture1"
+  ],
+  "walk": [
+    0,
+    1
+  ],
+  "idle": [
+    2
+  ],
+  "gesture": [
+    3
+  ],
+  "walkCycle": "2-frame (C1, C2, both drawn; no derived frames)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "RIGHT",
+    "LEFT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": true
+}

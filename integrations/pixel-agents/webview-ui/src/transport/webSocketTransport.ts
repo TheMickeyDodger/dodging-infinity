@@ -92,8 +92,16 @@ export class WebSocketTransport implements MessageTransport {
   send(message: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
+    } else if (message.type === 'saveAmbientState') {
+      // The automatic DECORATIVE save is coalesced: a queued snapshot is worthless once a newer one
+      // exists, so at most ONE (the latest) is ever pending — replaced in place, never appended. This
+      // bounds what an open viewer retains while disconnected (one snapshot, not one per 30 s).
+      const at = this.pendingMessages.findIndex((m) => m.type === 'saveAmbientState');
+      if (at >= 0) this.pendingMessages[at] = message;
+      else this.pendingMessages.push(message);
     } else {
-      // Queue messages while connecting (flushed in onopen)
+      // Queue every other message while connecting (flushed in onopen): unchanged — same queueing,
+      // same order, same flush on reconnect
       this.pendingMessages.push(message);
     }
   }

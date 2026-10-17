@@ -1,0 +1,13 @@
+{
+  "id": "SUBWAY_INTERIOR_STRIP",
+  "name": "Train interior strip",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 64,
+  "height": 48,
+  "footprintW": 4,
+  "footprintH": 3
+}

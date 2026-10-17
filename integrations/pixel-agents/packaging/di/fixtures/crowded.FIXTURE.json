@@ -1,0 +1,1581 @@
+{
+  "fixture": true,
+  "fixture_id": "crowded",
+  "label": "FIXTURE — crowded: 8 synthetic Missions, 48 synthetic live members",
+  "description": "Many live members at once: seat pressure, label pressure and render load with real agents and Ambient residents together. All synthetic.",
+  "after_last": "hold",
+  "frames": [
+    {
+      "kind": "catalog",
+      "timing": "fresh",
+      "envelope": {
+        "detail": null,
+        "endpoint": "di.mission_catalog",
+        "endpoint_version": 1,
+        "problem": null,
+        "requested_at": 1800000000,
+        "response": {
+          "contract": "di.mission_sources.query",
+          "contract_version": 1,
+          "generated_at": 1800000000,
+          "limits": {
+            "max_json_depth": 64,
+            "max_query_input_bytes": 67108864,
+            "max_query_missions": 2048,
+            "max_registry_bytes": 262144,
+            "max_snapshot_agents": 512,
+            "max_snapshot_tasks": 256,
+            "max_sources": 128,
+            "max_store_read_bytes": 16777216,
+            "max_task_bindings": 32,
+            "min_poll_interval_seconds": 5
+          },
+          "max_age_seconds": 60,
+          "missions": [
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-1"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-1",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-1"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-1#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-1",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-1",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-1#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-1",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-1",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-1#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-1",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-1",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-1#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-1",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-1",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-1#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-1",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-1",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-1#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-1",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-1",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-1",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-1",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-1) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-2"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-2",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-2"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-2#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-2",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-2",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-2#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-2",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-2",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-2#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-2",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-2",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-2#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-2",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-2",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-2#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-2",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-2",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-2#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-2",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-2",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-2",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-2",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-2) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-3"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-3",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-3"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-3#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-3",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-3",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-3#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-3",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-3",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-3#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-3",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-3",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-3#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-3",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-3",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-3#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-3",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-3",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-3#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-3",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-3",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-3",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-3",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-3) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-4"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-4",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-4"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-4#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-4",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-4",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-4#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-4",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-4",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-4#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-4",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-4",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-4#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-4",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-4",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-4#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-4",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-4",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-4#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-4",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-4",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-4",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-4",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-4) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-5"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-5",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-5"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-5#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-5",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-5",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-5#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-5",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-5",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-5#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-5",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-5",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-5#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-5",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-5",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-5#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-5",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-5",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-5#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-5",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-5",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-5",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-5",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-5) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-6"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-6",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-6"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-6#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-6",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-6",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-6#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-6",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-6",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-6#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-6",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-6",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-6#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-6",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-6",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-6#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-6",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-6",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-6#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-6",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-6",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-6",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-6",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-6) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-7"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-7",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-7"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-7#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-7",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-7",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-7#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-7",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-7",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-7#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-7",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-7",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-7#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-7",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-7",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-7#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-7",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-7",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-7#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-7",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-7",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-7",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-7",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-7) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-crowded-8"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-crowded-8",
+                "workspace_realpath": "/synthetic/ws/fixture-crowded-8"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-8#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-8",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-8",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-8#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-8",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-8",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-8#reviewer1",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-8",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer1-3",
+                    "recorded": "sess-reviewer1-3"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-8",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-8#lead2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-8",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead2-4",
+                    "recorded": "sess-lead2-4"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-8",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-8#executor2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-8",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor2-5",
+                    "recorded": "sess-executor2-5"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-8",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-reviewer2",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer2",
+                  "member_ref": "synthetic-core:mn-fixture-crowded-8#reviewer2",
+                  "mission_ref": "synthetic-core:mn-fixture-crowded-8",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-reviewer2-6",
+                    "recorded": "sess-reviewer2-6"
+                  },
+                  "task_id": "synthetic-task-fixture-crowded-8",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-crowded-8",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-crowded-8",
+              "objective": "SYNTHETIC FIXTURE mission (crowded-8) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            }
+          ],
+          "registry": {
+            "directory": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/registry",
+            "health": "fresh",
+            "max_serialized_bytes": 262144,
+            "max_sources": 128,
+            "problem": null,
+            "serialized_bytes": 632,
+            "source_count": 2
+          },
+          "runtime_snapshot": {
+            "agent_count": 48,
+            "health": "fresh",
+            "max_age_seconds": 60,
+            "observed_at": 1800000000,
+            "problem": null,
+            "producer": "synthetic-herdr",
+            "task_count": 8
+          },
+          "sources": [
+            {
+              "health": "fresh",
+              "kind": "mission_core",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-core",
+              "record_count": 8,
+              "source_id": "synthetic-core",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-core"
+            },
+            {
+              "health": "fresh",
+              "kind": "workflow_store",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-legacy",
+              "record_count": 0,
+              "source_id": "synthetic-legacy",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-legacy"
+            }
+          ],
+          "unmatched_runtime_agent_count": 0,
+          "valid_until": 1800000060
+        },
+        "retry_after_seconds": null,
+        "runtime_capture": {
+          "available": true,
+          "configured": true,
+          "detail": null,
+          "discovery": {
+            "bindings": {},
+            "conflicts": [],
+            "missions_by_root": {
+              "/synthetic/ws/fixture-crowded-1": "synthetic-core:mn-fixture-crowded-1",
+              "/synthetic/ws/fixture-crowded-2": "synthetic-core:mn-fixture-crowded-2",
+              "/synthetic/ws/fixture-crowded-3": "synthetic-core:mn-fixture-crowded-3",
+              "/synthetic/ws/fixture-crowded-4": "synthetic-core:mn-fixture-crowded-4",
+              "/synthetic/ws/fixture-crowded-5": "synthetic-core:mn-fixture-crowded-5",
+              "/synthetic/ws/fixture-crowded-6": "synthetic-core:mn-fixture-crowded-6",
+              "/synthetic/ws/fixture-crowded-7": "synthetic-core:mn-fixture-crowded-7",
+              "/synthetic/ws/fixture-crowded-8": "synthetic-core:mn-fixture-crowded-8"
+            },
+            "roots": [
+              "/synthetic/ws/fixture-crowded-1",
+              "/synthetic/ws/fixture-crowded-2",
+              "/synthetic/ws/fixture-crowded-3",
+              "/synthetic/ws/fixture-crowded-4",
+              "/synthetic/ws/fixture-crowded-5",
+              "/synthetic/ws/fixture-crowded-6",
+              "/synthetic/ws/fixture-crowded-7",
+              "/synthetic/ws/fixture-crowded-8"
+            ]
+          },
+          "observed_at": 1800000000,
+          "problem": null,
+          "refresh_budget": {
+            "per_pass_max_query_input_bytes": 67108864,
+            "per_pass_max_query_missions": 2048,
+            "per_pass_max_registry_bytes": 262144,
+            "source_passes": 2,
+            "sum_max_query_input_bytes": 134217728,
+            "sum_max_query_missions": 4096,
+            "sum_max_registry_bytes": 524288
+          },
+          "registered_roots": [],
+          "roots": {
+            "captured": [
+              "/synthetic/ws/fixture-crowded-1",
+              "/synthetic/ws/fixture-crowded-2",
+              "/synthetic/ws/fixture-crowded-3",
+              "/synthetic/ws/fixture-crowded-4",
+              "/synthetic/ws/fixture-crowded-5",
+              "/synthetic/ws/fixture-crowded-6",
+              "/synthetic/ws/fixture-crowded-7",
+              "/synthetic/ws/fixture-crowded-8"
+            ],
+            "discovered": [
+              "/synthetic/ws/fixture-crowded-1",
+              "/synthetic/ws/fixture-crowded-2",
+              "/synthetic/ws/fixture-crowded-3",
+              "/synthetic/ws/fixture-crowded-4",
+              "/synthetic/ws/fixture-crowded-5",
+              "/synthetic/ws/fixture-crowded-6",
+              "/synthetic/ws/fixture-crowded-7",
+              "/synthetic/ws/fixture-crowded-8"
+            ],
+            "over_capacity": [],
+            "registered": [],
+            "unavailable": []
+          }
+        },
+        "served": "refreshed"
+      }
+    }
+  ],
+  "derived_from": {
+    "path": "server/__tests__/fixtures/di-backend/v3-canonical-fixture.FIXTURE.json",
+    "sha256": "c7dcd7284ee5566f0dee9d20084074e8aa96aeb274b2bc93d159cbe7d815b823"
+  },
+  "generator": "scripts/build-di-fixtures.mjs"
+}

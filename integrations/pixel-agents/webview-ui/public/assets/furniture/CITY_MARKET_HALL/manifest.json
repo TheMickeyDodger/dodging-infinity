@@ -1,0 +1,13 @@
+{
+  "id": "CITY_MARKET_HALL",
+  "name": "Glass Market Hall",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 112,
+  "height": 96,
+  "footprintW": 7,
+  "footprintH": 6
+}

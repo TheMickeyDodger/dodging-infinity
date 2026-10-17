@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test-dom.tsbuildinfo",
+    /* tests that drive the real renderer (canvas types; the DOM itself is stubbed in the test) */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["test/haloAura.test.ts"],
+  "exclude": []
+}

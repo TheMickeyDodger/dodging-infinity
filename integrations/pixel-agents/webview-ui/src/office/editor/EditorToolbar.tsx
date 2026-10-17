@@ -14,8 +14,8 @@ import {
   PET_THUMB_SCALE_MARGIN,
   PET_THUMB_ZOOM,
 } from '../../constants.js';
-import { getColorizedSprite } from '../colorize.js';
-import { getColorizedFloorSprite, getFloorPatternCount, hasFloorSprites } from '../floorTiles.js';
+import { getPreviewColorizedSprite } from '../colorize.js';
+import { getFloorPatternCount, getPreviewFloorSprite, hasFloorSprites } from '../floorTiles.js';
 import type { FurnitureCategory, LoadedAssetData } from '../layout/furnitureCatalog.js';
 import {
   buildDynamicCatalog,
@@ -23,7 +23,7 @@ import {
   getCatalogByCategory,
 } from '../layout/furnitureCatalog.js';
 import {
-  getCarpetJunctionSprite,
+  getCarpetPreviewJunctionSprite,
   getCarpetSetCount,
   hasCarpetSprites,
 } from '../sprites/carpetTiles.js';
@@ -211,7 +211,7 @@ export function EditorToolbar({
     const fake: Array<CarpetTile | null> = [tile, tile];
     for (let jy = 0; jy <= previewRows; jy++) {
       for (let jx = 0; jx <= previewCols; jx++) {
-        const sprite: SpriteData | null = getCarpetJunctionSprite(
+        const sprite: SpriteData | null = getCarpetPreviewJunctionSprite(
           jx,
           jy,
           variant,
@@ -327,7 +327,8 @@ export function EditorToolbar({
                     ctx.fillRect(0, 0, w, h);
                     return;
                   }
-                  const sprite = getColorizedFloorSprite(patIdx, floorColor);
+                  const sprite = getPreviewFloorSprite(patIdx, floorColor);
+                  if (!sprite) return;
                   ctx.drawImage(getCachedSprite(sprite, THUMB_ZOOM), 0, 0);
                 }}
               />
@@ -374,7 +375,7 @@ export function EditorToolbar({
                       return;
                     }
                     const cacheKey = `wall-preview-${i}-${wallColor.h}-${wallColor.s}-${wallColor.b}-${wallColor.c}`;
-                    const colorized = getColorizedSprite(cacheKey, sprite, {
+                    const colorized = getPreviewColorizedSprite(cacheKey, sprite, {
                       ...wallColor,
                       colorize: true,
                     });
@@ -607,7 +608,7 @@ export function EditorToolbar({
                   deps={[entry.type, entry.sprite, pickedFurnitureColor]}
                   draw={(ctx, w, h) => {
                     const sprite = pickedFurnitureColor
-                      ? getColorizedSprite(
+                      ? getPreviewColorizedSprite(
                           `thumb-${entry.type}-${pickedFurnitureColor.h}-${pickedFurnitureColor.s}-${pickedFurnitureColor.b}-${pickedFurnitureColor.c}-${pickedFurnitureColor.colorize ?? ''}`,
                           entry.sprite,
                           pickedFurnitureColor,

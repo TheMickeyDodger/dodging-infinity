@@ -1,4 +1,5 @@
-import { LAYOUT_EXPORT_FILENAME, LAYOUT_EXPORT_MIME } from '../../constants.js';
+import type { AmbientSaveState } from '../../../../core/src/ambientSave.js';
+import { AMBIENT_EXPORT_FILENAME_STEM, LAYOUT_EXPORT_FILENAME, LAYOUT_EXPORT_MIME } from '../../constants.js';
 import type { OfficeLayout } from '../types.js';
 
 /**
@@ -10,12 +11,26 @@ import type { OfficeLayout } from '../types.js';
  * later edits cannot mutate the exported blob.
  */
 export function exportLayoutToFile(layout: OfficeLayout): void {
-  const json = JSON.stringify(layout, null, 2);
+  downloadJson(JSON.stringify(layout, null, 2), LAYOUT_EXPORT_FILENAME);
+}
+
+/** DI office: the decorative ambient snapshot as its OWN single download, named by the residents it
+ *  holds aboard a train, so a native download shows whether it carries an active journey. */
+export function exportAmbientToFile(snapshot: AmbientSaveState): void {
+  downloadJson(JSON.stringify(snapshot), ambientExportFilename(snapshot));
+}
+
+export function ambientExportFilename(snapshot: AmbientSaveState): string {
+  const aboard = snapshot.residents.filter((r) => r[4] === 3).length;
+  return `${AMBIENT_EXPORT_FILENAME_STEM}-${aboard}-aboard.json`;
+}
+
+function downloadJson(json: string, filename: string): void {
   const blob = new Blob([json], { type: LAYOUT_EXPORT_MIME });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = LAYOUT_EXPORT_FILENAME;
+  anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

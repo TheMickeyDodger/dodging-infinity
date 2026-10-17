@@ -1,0 +1,13 @@
+{
+  "id": "AQUA_TUNNEL_ARCH_P2",
+  "name": "Tunnel Viewing Arch (opening 2/3)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 16,
+  "height": 64,
+  "footprintW": 1,
+  "footprintH": 4
+}

@@ -20,6 +20,23 @@ Character art
   were generated in the Pixel Agents repository; their per-file correspondence to the
   source pack is declared by the project, not independently established.
 
+Forest and observation-deck art
+  The trees, undergrowth, rocks, deck railings and fittings, and the north gateway arch, braziers
+  and planter (dist/assets/furniture/FOREST_*, DECK_* and GATEWAY_*) and the outdoor floor patterns (dist/assets/floors/floor_9..floor_13.png) are ORIGINAL
+  pixel art drawn in code by this project's scripts/generate-forest-assets.mjs from a fixed seed
+  — no external image, tileset or asset pack is used — and are covered by the MIT licence
+  (LICENSE). No third-party licence obligation applies to them.
+
+Metropolis world art
+  Floor patterns floor_14..floor_27 (dist/assets/floors/) and the AUTUMN_* / HIGHLAND_* woodland
+  variants (foliage recoloured from the FOREST_* art) are ORIGINAL, drawn in code by this
+  project's scripts/generate-metropolis-floors.mjs and scripts/generate-biome-variants.mjs (MIT).
+  LOUNGE_* are decor copies (bytes unchanged) of the bundled Pixel Agents seating art.
+  The CITY_*, FARM_*, ANIMAL_*, DETAIL_*, COAST_*, AQUA_* and PET_* sprites were extracted by
+  scripts/extract-atlas-sprites.mjs from seven source atlases generated for this project with
+  OpenAI's built-in image generation; ASSET-PROVENANCE.json records, per sprite, its source atlas,
+  that atlas's sha256 and the source rectangle. The source atlases themselves are not shipped.
+
 Font
   FS Pixel Sans Unicode Regular, by NZWStudios2024 — SIL Open Font License 1.1, NOT the
   MIT licence. See dist/webview/fonts/OFL.txt (the embedded copyright notice, the current

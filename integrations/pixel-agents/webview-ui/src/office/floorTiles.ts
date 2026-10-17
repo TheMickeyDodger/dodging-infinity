@@ -8,7 +8,8 @@
 
 import type { ColorValue } from '../components/ui/types.js';
 import { CANVAS_ERROR_TILE_COLOR, FALLBACK_FLOOR_COLOR, TILE_SIZE } from '../constants.js';
-import { clearColorizeCache, getColorizedSprite } from './colorize.js';
+import { clearColorizeCache, getColorizedSprite, getPreviewColorizedSprite } from './colorize.js';
+import { bumpPresentationGeneration } from './presentationGeneration.js';
 import type { SpriteData } from './types.js';
 
 /** Default solid gray 16×16 tile used when floor tile PNGs are not loaded */
@@ -25,6 +26,7 @@ export { WALL_COLOR } from '../constants.js';
 
 /** Set floor tile sprites (called once when extension sends floorTilesLoaded) */
 export function setFloorSprites(sprites: SpriteData[]): void {
+  bumpPresentationGeneration();
   floorSprites = sprites;
   clearColorizeCache();
 }
@@ -74,4 +76,13 @@ export function getColorizedFloorSprite(patternIndex: number, color: ColorValue)
 
   // Floor tiles are always colorized (grayscale patterns need Photoshop-style Colorize)
   return getColorizedSprite(key, base, { ...color, colorize: true });
+}
+
+/** A floor pattern colorized for an editor PREVIEW (the brush swatches): into the bounded preview
+ *  cache, never the layout cache (colorize.ts getPreviewColorizedSprite). */
+export function getPreviewFloorSprite(patternIndex: number, color: ColorValue): SpriteData | null {
+  const base = getFloorSprite(patternIndex);
+  if (!base) return null;
+  const key = `floor-${patternIndex}-${color.h}-${color.s}-${color.b}-${color.c}`;
+  return getPreviewColorizedSprite(key, base, { ...color, colorize: true });
 }

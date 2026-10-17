@@ -1,0 +1,1087 @@
+{
+ "provisional": false,
+ "status": "Per-crop art QA (Amendment 24) COMPLETE for a stated representative selection: 88 crops examined in situ and verified usable; every other admitted crop is admitted-NOT-examined; quarantined crops keep their reasons. See ART-QA-REPORT.json for the selection rule, criteria, per-crop verdicts and limits.",
+ "verdicts": {
+  "CITY_SKYSCRAPER_GLASS": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_SKYSCRAPER_DECO": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_SUPERTALL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_TOWER_ROUND": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_TOWER_GARDEN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_CLOCK_TOWER": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_TOWN_HALL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_LIBRARY": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_FIRE_STATION": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_TRAIN_STATION": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_OBSERVATORY": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_THEATRE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_CAFE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_BAKERY": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_TOWNHOUSE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_SHOP_ROW": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_WAREHOUSE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_MARKET_HALL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_HOTEL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_APARTMENTS": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_CHAPEL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_WORKSHOP": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "CITY_TRANSIT_TERMINAL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "CITY_MUSEUM": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_BARN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_STABLE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_FARMHOUSE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_SILO": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_WINDMILL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_COOP": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_GREENHOUSE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_PRODUCE_STAND": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_WATER_TOWER": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_WELL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_GATE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_COTTAGE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_HAY_ROUND": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_HAY_STACK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_BARRELS": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_GRAIN_SACK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_TROUGH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_HANDCART": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_TRACTOR": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_TRAILER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_WHEELBARROW": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: small at in-world scale",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_FIREWOOD": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_WATERING_CAN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_BEEHIVES": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: reads as a bee box on a stand at in-world scale",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_PUMPKINS": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_WHEAT": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_CORN": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "FARM_APPLE_TREE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_SCARECROW": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "FARM_HARVEST_CRATES": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_COW_HOLSTEIN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_COW_BROWN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_CALF": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_HIGHLAND_COW": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_PIG": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_PIGLET": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_DONKEY_L": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_DONKEY_R": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_HORSE_CHESTNUT_L": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_HORSE_CHESTNUT_R": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_HORSE_WHITE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_HORSE_BAY": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_PONY": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_SHEEP": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_LAMB": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_GOAT_WHITE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_GOAT_BROWN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_ALPACA": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_CHICKEN": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_ROOSTER": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_CHICK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_DUCK": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_GOOSE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_TURKEY": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_FARM_DOG": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_BARN_CAT": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: small at in-world scale: a sitting grey cat",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "ANIMAL_RABBIT_WHITE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_RABBIT_BROWN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_PEACOCK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "ANIMAL_DOG_SLEEPING": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_LAMP_ORNATE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_LAMP_MODERN": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_HYDRANT": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_MAILBOX": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BIN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_PHONE_BOOTH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_PARK_BENCH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_CAFE_TABLE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_FOUNTAIN_SQUARE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_FOUNTAIN_TIERED": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_SCULPTURE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_OBELISK": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_PLANTER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BIKE_RACK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BICYCLE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_KIOSK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BRIDGE_STONE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_FOOTBRIDGE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_GARDEN_ARCH": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: judged on the P1 piece clip in situ (opening piece walkability is the runtime route test's)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_IRON_GATE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BRICK_WALL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_FENCE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_STAIRS": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_SIGNPOST": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_TENT": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_FIRE_RING": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_PICNIC_TABLE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_LOOKOUT_SIGN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_VIEWER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_TELESCOPE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BACKPACK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_LOG_CIRCLE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_RUIN_ARCH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_STANDING_STONES": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_TREASURE_CHEST": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_MUSHROOMS": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_HOLLOW_LOG": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_LILY_POND": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BIRDHOUSE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_DEER_STATUE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_TAXI": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_VAN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_SCOOTER": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_CONE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_BARRIER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "DETAIL_PALLET": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: small at in-world scale",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_BOXES": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "DETAIL_RAIN_BARREL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_RIVER_STRAIGHT": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_RIVER_BEND_L": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_RIVER_BEND_R": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_RIVER_JUNCTION": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_SPRING": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_WATERFALL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_POOL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_STEPPING_STONES": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BEACH_STRAIGHT": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BEACH_INNER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BEACH_OUTER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BANK_STRAIGHT": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BANK_INNER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BANK_OUTER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_ROCKY": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_WAVES": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_ROWBOAT": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_SAILBOAT": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_FISHING_BOAT": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_CANOE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_LIGHTHOUSE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: its in-situ clip lies under the UI fixture banner (world top row); judged on the offscreen region render (renderRegionProbe), whole",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_PIER_STRAIGHT": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_PIER_END": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_PIER_CORNER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BOLLARD": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_ROPE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_DOCK_POST": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_LOBSTER_POTS": {
+   "verdict": "quarantine",
+   "reason": "wrong-scale",
+   "note": "mesh detail lost at 32 px; reads as a green bush (executor1 visual QA)"
+  },
+  "COAST_NET_RACK": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_FISH_STALL": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_LIFE_RING": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_UMBRELLA": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_ROCKS": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_TIDEPOOL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_REEDS": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_CATTAILS": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "COAST_DRIFTWOOD": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_SHELLS": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_BUOY": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "COAST_HARBOUR_WALL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_TANK_PANORAMIC": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_TANK_CURVED": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_TANK_CYLINDER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_TANK_DESK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_JELLY_CYLINDER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_TUNNEL_ARCH": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: judged on the whole-span region render and the three pieces alone; in the composed scene its left foot stands behind the aquarium front wall",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_TOUCH_POOL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_TANK_REEF": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_CLOWNFISH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_BLUE_TANG": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_BUTTERFLYFISH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_FISH_SCHOOL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_KOI": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_SEAHORSE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: small at in-world scale, distinct beside the fish",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_MANTA": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_SEA_TURTLE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_SHARK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_JELLY_PINK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_JELLY_BLUE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_OCTOPUS": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_STARFISH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_CRAB": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_LOBSTER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_PUFFERFISH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_CORAL_RED": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_CORAL_FAN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_CORAL_BRAIN": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_CORAL_TUBE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_ANEMONE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_KELP": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_SEAGRASS": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_LILY_PADS": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_BOULDER": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_RUIN_ARCH": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_TREASURE": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_SHIPWRECK": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_AERATOR": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_BENCH": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river)",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "AQUA_INFO_PEDESTAL": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "AQUA_STANCHION": {
+   "verdict": "pass",
+   "note": "admitted, NOT examined in the per-crop art QA (outside the representative selection, or not placed in the world)"
+  },
+  "PET_GOLDEN_RETRIEVER": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_LABRADOR": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: light rim strengthened (LIGHT_RIM_MIX 0.8) after it barely separated on the darkest floor; re-verified on every ground — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_CORGI": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_DACHSHUND": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_HUSKY": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_POODLE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_BEAGLE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_DALMATIAN": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_BORDER_COLLIE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_SHIBA": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_PUG": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_GERMAN_SHEPHERD": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_MAINE_COON": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_SIAMESE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_BRITISH_SHORTHAIR": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_RAGDOLL": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_BENGAL": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_SPHYNX": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_PERSIAN": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_NORWEGIAN_FOREST": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_SCOTTISH_FOLD": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_BOMBAY": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: light rim strengthened (LIGHT_RIM_MIX 0.8) after it barely separated on the darkest floor; re-verified on every ground — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_RUSSIAN_BLUE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_ABYSSINIAN": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_GOLDFISH_ORANGE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_GOLDFISH_RED_WHITE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_GOLDFISH_BLACK_MOOR": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: reads as a small black fish; the fan tail and eye of the variety are below its 12 x 9 runtime pixels. Separation needed the stronger light rim (LIGHT_RIM_MIX 0.8), re-verified on every ground — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_RABBIT_LOP": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_RABBIT_SPOTTED": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_GUINEA_PIG": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_HAMSTER": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — LIMIT: small at in-world scale: a round orange rodent — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_PARROT": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_COCKATIEL": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_TURTLE": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_FERRET": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  },
+  "PET_HEDGEHOG": {
+   "verdict": "verified",
+   "note": "VERIFIED in the per-crop art QA (Amendment 24): rendered in situ at the office legible zoom over the ground it is placed on, every placement for companions (and on the companion ground scene: light, dark, grass, pond, river) — species and coat verified, not breed",
+   "evidence": ".herd/evidence/20261016-072613-27d2ab/assets/art-qa/ART-QA-REPORT.json"
+  }
+ }
+}

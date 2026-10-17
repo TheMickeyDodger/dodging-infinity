@@ -1,0 +1,3130 @@
+{
+  "kind": "living-metropolis world build (M3 S2, FORMATIVE)",
+  "generator": "scripts/build-living-world.ts",
+  "input": {
+    "file": "packaging/di/worlds/metropolis.json",
+    "sha256": "9aca9d53805625a08fd118e0e72b20b19abb664588de094c9dc2f1f3d834bc16",
+    "cols": 352,
+    "rows": 224,
+    "furniture": 8461
+  },
+  "output": {
+    "file": "packaging/di/worlds/living-metropolis.json",
+    "sha256": "7357cee5853b913c30021b88230286810184f22f2680b3174e945207f23ce29e",
+    "bytes": 6950268,
+    "cols": 352,
+    "rows": 312,
+    "cells": 109824,
+    "furniture": 10792,
+    "newFurniture": 2331,
+    "carpetCells": 2724,
+    "areas": 21
+  },
+  "expansion": {
+    "addedRows": 88,
+    "addedCells": 30976,
+    "rule": "appended south; every r4 cell keeps its index"
+  },
+  "preservation": {
+    "r4CellsChangedOutsideSweep": 0,
+    "r4FurnitureChangedOutsideTowerSwaps": 0,
+    "original41ComputersUnchangedByUid": true,
+    "originalHomeSeatsUnchangedByUid": 99,
+    "computersTotal": 185,
+    "seatsOutsideHome": 180,
+    "seatsOutsideHomeByArea": {
+      "Botanical Atrium": 90,
+      "Deco Observatory": 90
+    },
+    "seatsOutsideHomeAssignable": false,
+    "seatRule": "webview officeState homeSeats(): only chairs inside the home/deck living regions are seats; chairs elsewhere draw and collide but are never assigned to a real agent",
+    "pets": 2,
+    "home": {
+      "c0": 56,
+      "r0": 40,
+      "c1": 120,
+      "r1": 104
+    }
+  },
+  "connectivity": {
+    "rounds": 3,
+    "removed": [
+      {
+        "type": "POT",
+        "col": 132,
+        "row": 281,
+        "uid": "lw-deco-observatory-1022"
+      },
+      {
+        "type": "POT",
+        "col": 125,
+        "row": 281,
+        "uid": "lw-deco-observatory-1021"
+      },
+      {
+        "type": "POT",
+        "col": 118,
+        "row": 281,
+        "uid": "lw-deco-observatory-1020"
+      },
+      {
+        "type": "POT",
+        "col": 111,
+        "row": 281,
+        "uid": "lw-deco-observatory-1019"
+      },
+      {
+        "type": "POT",
+        "col": 104,
+        "row": 281,
+        "uid": "lw-deco-observatory-1018"
+      },
+      {
+        "type": "POT",
+        "col": 97,
+        "row": 281,
+        "uid": "lw-deco-observatory-1017"
+      },
+      {
+        "type": "POT",
+        "col": 139,
+        "row": 249,
+        "uid": "lw-deco-observatory-1007"
+      },
+      {
+        "type": "POT",
+        "col": 97,
+        "row": 249,
+        "uid": "lw-deco-observatory-1001"
+      },
+      {
+        "type": "POT",
+        "col": 56,
+        "row": 281,
+        "uid": "lw-botanical-atrium-496"
+      },
+      {
+        "type": "POT",
+        "col": 49,
+        "row": 281,
+        "uid": "lw-botanical-atrium-495"
+      },
+      {
+        "type": "POT",
+        "col": 42,
+        "row": 281,
+        "uid": "lw-botanical-atrium-494"
+      },
+      {
+        "type": "POT",
+        "col": 35,
+        "row": 281,
+        "uid": "lw-botanical-atrium-493"
+      },
+      {
+        "type": "POT",
+        "col": 28,
+        "row": 281,
+        "uid": "lw-botanical-atrium-492"
+      },
+      {
+        "type": "POT",
+        "col": 21,
+        "row": 281,
+        "uid": "lw-botanical-atrium-491"
+      },
+      {
+        "type": "POT",
+        "col": 63,
+        "row": 249,
+        "uid": "lw-botanical-atrium-481"
+      },
+      {
+        "type": "POT",
+        "col": 21,
+        "row": 249,
+        "uid": "lw-botanical-atrium-475"
+      },
+      {
+        "type": "POT",
+        "col": 146,
+        "row": 281,
+        "uid": "lw-deco-observatory-1024"
+      },
+      {
+        "type": "POT",
+        "col": 90,
+        "row": 249,
+        "uid": "lw-deco-observatory-1000"
+      },
+      {
+        "type": "POT",
+        "col": 70,
+        "row": 281,
+        "uid": "lw-botanical-atrium-498"
+      },
+      {
+        "type": "POT",
+        "col": 14,
+        "row": 281,
+        "uid": "lw-botanical-atrium-490"
+      },
+      {
+        "type": "POT",
+        "col": 14,
+        "row": 249,
+        "uid": "lw-botanical-atrium-474"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 295,
+        "row": 93,
+        "uid": "lw-traffic-jam-2346"
+      },
+      {
+        "type": "VEHICLE_SEDAN_BLUE_LEFT",
+        "col": 292,
+        "row": 94,
+        "uid": "lw-traffic-jam-2345"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 236,
+        "row": 37,
+        "uid": "lw-traffic-jam-2308"
+      },
+      {
+        "type": "VEHICLE_SUV_SILVER_LEFT",
+        "col": 233,
+        "row": 37,
+        "uid": "lw-traffic-jam-2307"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 231,
+        "row": 37,
+        "uid": "lw-traffic-jam-2306"
+      },
+      {
+        "type": "VEHICLE_SEDAN_BLUE_LEFT",
+        "col": 228,
+        "row": 38,
+        "uid": "lw-traffic-jam-2305"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 226,
+        "row": 37,
+        "uid": "lw-traffic-jam-2304"
+      },
+      {
+        "type": "VEHICLE_HATCHBACK_RED_LEFT",
+        "col": 206,
+        "row": 37,
+        "uid": "lw-traffic-jam-2301"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 204,
+        "row": 37,
+        "uid": "lw-traffic-jam-2300"
+      },
+      {
+        "type": "VEHICLE_SUV_SILVER_LEFT",
+        "col": 201,
+        "row": 37,
+        "uid": "lw-traffic-jam-2299"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 199,
+        "row": 37,
+        "uid": "lw-traffic-jam-2298"
+      },
+      {
+        "type": "VEHICLE_SEDAN_BLUE_LEFT",
+        "col": 196,
+        "row": 38,
+        "uid": "lw-traffic-jam-2297"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 194,
+        "row": 37,
+        "uid": "lw-traffic-jam-2296"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 192,
+        "row": 37,
+        "uid": "lw-traffic-jam-2295"
+      },
+      {
+        "type": "VEHICLE_HATCHBACK_RED_LEFT",
+        "col": 238,
+        "row": 9,
+        "uid": "lw-traffic-jam-2293"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 236,
+        "row": 9,
+        "uid": "lw-traffic-jam-2292"
+      },
+      {
+        "type": "VEHICLE_SUV_SILVER_LEFT",
+        "col": 233,
+        "row": 9,
+        "uid": "lw-traffic-jam-2291"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 231,
+        "row": 9,
+        "uid": "lw-traffic-jam-2290"
+      },
+      {
+        "type": "VEHICLE_SEDAN_BLUE_LEFT",
+        "col": 228,
+        "row": 10,
+        "uid": "lw-traffic-jam-2289"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 208,
+        "row": 9,
+        "uid": "lw-traffic-jam-2286"
+      },
+      {
+        "type": "VEHICLE_HATCHBACK_RED_LEFT",
+        "col": 206,
+        "row": 9,
+        "uid": "lw-traffic-jam-2285"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 204,
+        "row": 9,
+        "uid": "lw-traffic-jam-2284"
+      },
+      {
+        "type": "VEHICLE_SUV_SILVER_LEFT",
+        "col": 201,
+        "row": 9,
+        "uid": "lw-traffic-jam-2283"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 199,
+        "row": 9,
+        "uid": "lw-traffic-jam-2282"
+      },
+      {
+        "type": "VEHICLE_SEDAN_BLUE_LEFT",
+        "col": 196,
+        "row": 10,
+        "uid": "lw-traffic-jam-2281"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 194,
+        "row": 9,
+        "uid": "lw-traffic-jam-2280"
+      },
+      {
+        "type": "VEHICLE_TAXI_LEFT",
+        "col": 192,
+        "row": 9,
+        "uid": "lw-traffic-jam-2279"
+      }
+    ],
+    "r4ReachableLost": 0,
+    "newGroundPocketCells": 0,
+    "newGroundPocketRegions": 0,
+    "removedCount": 48,
+    "removedByType": {
+      "POT": 21,
+      "VEHICLE_TAXI_LEFT": 15,
+      "VEHICLE_SEDAN_BLUE_LEFT": 5,
+      "VEHICLE_SUV_SILVER_LEFT": 4,
+      "VEHICLE_HATCHBACK_RED_LEFT": 3
+    }
+  },
+  "r1": {
+    "crossings": 38,
+    "crossingsBlocked": 43,
+    "moved": [
+      {
+        "uid": "mw-buffer-1149",
+        "type": "FOREST_BUSH",
+        "from": [
+          182,
+          13
+        ],
+        "to": [
+          181,
+          13
+        ]
+      },
+      {
+        "uid": "mw-street-480",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          183,
+          7
+        ],
+        "to": [
+          181,
+          7
+        ]
+      },
+      {
+        "uid": "mw-street-646",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          183,
+          11
+        ],
+        "to": [
+          179,
+          11
+        ]
+      },
+      {
+        "uid": "mw-street-647",
+        "type": "DETAIL_PLANTER",
+        "from": [
+          187,
+          13
+        ],
+        "to": [
+          190,
+          13
+        ]
+      },
+      {
+        "uid": "mw-street-491",
+        "type": "DETAIL_BIKE_RACK",
+        "from": [
+          213,
+          13
+        ],
+        "to": [
+          212,
+          13
+        ]
+      },
+      {
+        "uid": "mw-street-683",
+        "type": "FOREST_BUSH",
+        "from": [
+          215,
+          13
+        ],
+        "to": [
+          221,
+          13
+        ]
+      },
+      {
+        "uid": "mw-street-492",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          219,
+          7
+        ],
+        "to": [
+          221,
+          7
+        ]
+      },
+      {
+        "uid": "mw-street-493",
+        "type": "DETAIL_PHONE_BOOTH",
+        "from": [
+          219,
+          11
+        ],
+        "to": [
+          223,
+          11
+        ]
+      },
+      {
+        "uid": "mw-street-506",
+        "type": "FOREST_BUSH",
+        "from": [
+          246,
+          9
+        ],
+        "to": [
+          245,
+          9
+        ]
+      },
+      {
+        "uid": "mw-street-507",
+        "type": "DETAIL_BIN",
+        "from": [
+          246,
+          13
+        ],
+        "to": [
+          245,
+          13
+        ]
+      },
+      {
+        "uid": "mw-street-713",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          247,
+          11
+        ],
+        "to": [
+          244,
+          11
+        ]
+      },
+      {
+        "uid": "mw-street-513",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          279,
+          7
+        ],
+        "to": [
+          277,
+          7
+        ]
+      },
+      {
+        "uid": "mw-street-745",
+        "type": "FOREST_BUSH",
+        "from": [
+          279,
+          13
+        ],
+        "to": [
+          287,
+          13
+        ]
+      },
+      {
+        "uid": "mw-street-746",
+        "type": "DETAIL_PARK_BENCH",
+        "from": [
+          283,
+          12
+        ],
+        "to": [
+          283,
+          13
+        ]
+      },
+      {
+        "uid": "mw-street-528",
+        "type": "FOREST_BUSH",
+        "from": [
+          183,
+          37
+        ],
+        "to": [
+          181,
+          37
+        ]
+      },
+      {
+        "uid": "mw-street-653",
+        "type": "DETAIL_PLANTER",
+        "from": [
+          187,
+          37
+        ],
+        "to": [
+          190,
+          37
+        ]
+      },
+      {
+        "uid": "mw-street-536",
+        "type": "DETAIL_PHONE_BOOTH",
+        "from": [
+          213,
+          39
+        ],
+        "to": [
+          221,
+          39
+        ]
+      },
+      {
+        "uid": "mw-street-692",
+        "type": "FOREST_BUSH",
+        "from": [
+          215,
+          37
+        ],
+        "to": [
+          212,
+          37
+        ]
+      },
+      {
+        "uid": "mw-street-537",
+        "type": "FOREST_BUSH",
+        "from": [
+          219,
+          37
+        ],
+        "to": [
+          221,
+          37
+        ]
+      },
+      {
+        "uid": "mw-street-542",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          246,
+          35
+        ],
+        "to": [
+          245,
+          35
+        ]
+      },
+      {
+        "uid": "mw-street-722",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          247,
+          35
+        ],
+        "to": [
+          244,
+          35
+        ]
+      },
+      {
+        "uid": "mw-street-543",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          252,
+          35
+        ],
+        "to": [
+          253,
+          35
+        ]
+      },
+      {
+        "uid": "mw-street-544",
+        "type": "DETAIL_BIKE_RACK",
+        "from": [
+          252,
+          41
+        ],
+        "to": [
+          253,
+          41
+        ]
+      },
+      {
+        "uid": "mw-street-561",
+        "type": "FOREST_BUSH",
+        "from": [
+          279,
+          37
+        ],
+        "to": [
+          277,
+          37
+        ]
+      },
+      {
+        "uid": "mw-street-562",
+        "type": "DETAIL_MAILBOX",
+        "from": [
+          279,
+          40
+        ],
+        "to": [
+          277,
+          40
+        ]
+      },
+      {
+        "uid": "mw-street-756",
+        "type": "DETAIL_MAILBOX",
+        "from": [
+          283,
+          36
+        ],
+        "to": [
+          286,
+          36
+        ]
+      },
+      {
+        "uid": "mw-square-947",
+        "type": "DETAIL_BICYCLE",
+        "from": [
+          283,
+          41
+        ],
+        "to": [
+          285,
+          41
+        ]
+      },
+      {
+        "uid": "mw-street-576",
+        "type": "DETAIL_PHONE_BOOTH",
+        "from": [
+          219,
+          67
+        ],
+        "to": [
+          226,
+          67
+        ]
+      },
+      {
+        "uid": "mw-street-581",
+        "type": "DETAIL_MAILBOX",
+        "from": [
+          246,
+          68
+        ],
+        "to": [
+          245,
+          68
+        ]
+      },
+      {
+        "uid": "mw-street-582",
+        "type": "FOREST_BUSH",
+        "from": [
+          252,
+          65
+        ],
+        "to": [
+          253,
+          65
+        ]
+      },
+      {
+        "uid": "mw-street-587",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          279,
+          63
+        ],
+        "to": [
+          277,
+          63
+        ]
+      },
+      {
+        "uid": "mw-street-598",
+        "type": "FOREST_BUSH",
+        "from": [
+          183,
+          93
+        ],
+        "to": [
+          181,
+          93
+        ]
+      },
+      {
+        "uid": "mw-street-599",
+        "type": "DETAIL_BIN",
+        "from": [
+          183,
+          97
+        ],
+        "to": [
+          179,
+          97
+        ]
+      },
+      {
+        "uid": "mw-street-672",
+        "type": "DETAIL_MAILBOX",
+        "from": [
+          187,
+          96
+        ],
+        "to": [
+          191,
+          96
+        ]
+      },
+      {
+        "uid": "mw-street-705",
+        "type": "FOREST_BUSH",
+        "from": [
+          215,
+          97
+        ],
+        "to": [
+          213,
+          97
+        ]
+      },
+      {
+        "uid": "mw-street-608",
+        "type": "FOREST_BUSH",
+        "from": [
+          219,
+          93
+        ],
+        "to": [
+          221,
+          93
+        ]
+      },
+      {
+        "uid": "mw-street-609",
+        "type": "DETAIL_PHONE_BOOTH",
+        "from": [
+          219,
+          95
+        ],
+        "to": [
+          223,
+          95
+        ]
+      },
+      {
+        "uid": "mw-street-623",
+        "type": "DETAIL_LAMP_ORNATE",
+        "from": [
+          246,
+          91
+        ],
+        "to": [
+          245,
+          91
+        ]
+      },
+      {
+        "uid": "mw-street-624",
+        "type": "DETAIL_PARK_BENCH",
+        "from": [
+          246,
+          96
+        ],
+        "to": [
+          241,
+          96
+        ]
+      },
+      {
+        "uid": "mw-street-625",
+        "type": "DETAIL_BICYCLE",
+        "from": [
+          252,
+          97
+        ],
+        "to": [
+          253,
+          97
+        ]
+      },
+      {
+        "uid": "mw-park-978",
+        "type": "FOREST_OAK",
+        "from": [
+          276,
+          91
+        ],
+        "to": [
+          275,
+          91
+        ]
+      },
+      {
+        "uid": "mw-street-769",
+        "type": "FOREST_BUSH",
+        "from": [
+          279,
+          97
+        ],
+        "to": [
+          277,
+          97
+        ]
+      },
+      {
+        "uid": "mw-street-770",
+        "type": "DETAIL_PARK_BENCH",
+        "from": [
+          283,
+          96
+        ],
+        "to": [
+          287,
+          96
+        ]
+      }
+    ],
+    "unmovable": [],
+    "thresholdsFound": 4,
+    "thresholdsFixed": 4,
+    "thresholdCells": [
+      [
+        66,
+        98
+      ],
+      [
+        63,
+        101
+      ],
+      [
+        198,
+        289
+      ],
+      [
+        205,
+        289
+      ]
+    ],
+    "trimmedCells": [
+      [
+        252,
+        10
+      ],
+      [
+        252,
+        11
+      ],
+      [
+        252,
+        12
+      ]
+    ],
+    "rule": "crossing landings cleared by moving street decor along the pavement; doorway thresholds take the colour of the side sharing their floor pattern",
+    "deliberatelyLeft": [
+      {
+        "class": "isolated wall",
+        "cells": 8,
+        "reason": "designed colonnade piers between the north gallery and the atrium of both complexes (openings at every column except x%4==1)"
+      },
+      {
+        "class": "blocked doorway (by tiles)",
+        "cells": 4,
+        "reason": "inherited palace paintings hung across two-cell wall gaps at (65-66,98) and (82-83,71); they read as wall with a painting, and the rooms behind are reachable through other doors (livingWorld room-level reachability)"
+      }
+    ]
+  },
+  "sweep": {
+    "voidComponents": 11,
+    "voidComponentsTouchingWall": 11,
+    "voidTilesFixed": 157,
+    "voidTilesLeft": 0,
+    "fixedR4Cells": 166,
+    "darkFloor": {
+      "found": 4,
+      "fixed": 4,
+      "cells": [
+        [
+          95,
+          79
+        ],
+        [
+          96,
+          79
+        ],
+        [
+          97,
+          79
+        ],
+        [
+          98,
+          79
+        ]
+      ]
+    },
+    "fixedR4CellList": [
+      [
+        66,
+        50
+      ],
+      [
+        77,
+        66
+      ],
+      [
+        78,
+        66
+      ],
+      [
+        79,
+        66
+      ],
+      [
+        82,
+        66
+      ],
+      [
+        83,
+        66
+      ],
+      [
+        84,
+        66
+      ],
+      [
+        56,
+        90
+      ],
+      [
+        56,
+        91
+      ],
+      [
+        56,
+        92
+      ],
+      [
+        57,
+        91
+      ],
+      [
+        57,
+        90
+      ],
+      [
+        58,
+        90
+      ],
+      [
+        74,
+        90
+      ],
+      [
+        75,
+        90
+      ],
+      [
+        75,
+        91
+      ],
+      [
+        76,
+        91
+      ],
+      [
+        76,
+        92
+      ],
+      [
+        77,
+        92
+      ],
+      [
+        77,
+        93
+      ],
+      [
+        78,
+        93
+      ],
+      [
+        78,
+        92
+      ],
+      [
+        78,
+        91
+      ],
+      [
+        78,
+        90
+      ],
+      [
+        77,
+        90
+      ],
+      [
+        79,
+        90
+      ],
+      [
+        80,
+        90
+      ],
+      [
+        80,
+        91
+      ],
+      [
+        81,
+        91
+      ],
+      [
+        81,
+        90
+      ],
+      [
+        82,
+        90
+      ],
+      [
+        79,
+        91
+      ],
+      [
+        79,
+        92
+      ],
+      [
+        77,
+        91
+      ],
+      [
+        76,
+        90
+      ],
+      [
+        93,
+        90
+      ],
+      [
+        94,
+        90
+      ],
+      [
+        94,
+        91
+      ],
+      [
+        95,
+        91
+      ],
+      [
+        95,
+        92
+      ],
+      [
+        96,
+        92
+      ],
+      [
+        97,
+        92
+      ],
+      [
+        97,
+        91
+      ],
+      [
+        97,
+        90
+      ],
+      [
+        96,
+        90
+      ],
+      [
+        98,
+        90
+      ],
+      [
+        99,
+        90
+      ],
+      [
+        99,
+        91
+      ],
+      [
+        99,
+        92
+      ],
+      [
+        99,
+        93
+      ],
+      [
+        98,
+        93
+      ],
+      [
+        98,
+        94
+      ],
+      [
+        100,
+        92
+      ],
+      [
+        100,
+        91
+      ],
+      [
+        101,
+        91
+      ],
+      [
+        101,
+        90
+      ],
+      [
+        102,
+        90
+      ],
+      [
+        103,
+        90
+      ],
+      [
+        102,
+        91
+      ],
+      [
+        100,
+        90
+      ],
+      [
+        98,
+        91
+      ],
+      [
+        97,
+        93
+      ],
+      [
+        98,
+        92
+      ],
+      [
+        96,
+        91
+      ],
+      [
+        95,
+        90
+      ],
+      [
+        115,
+        90
+      ],
+      [
+        116,
+        90
+      ],
+      [
+        116,
+        91
+      ],
+      [
+        117,
+        91
+      ],
+      [
+        118,
+        91
+      ],
+      [
+        118,
+        90
+      ],
+      [
+        119,
+        90
+      ],
+      [
+        118,
+        92
+      ],
+      [
+        119,
+        92
+      ],
+      [
+        119,
+        93
+      ],
+      [
+        119,
+        91
+      ],
+      [
+        117,
+        90
+      ],
+      [
+        77,
+        99
+      ],
+      [
+        77,
+        100
+      ],
+      [
+        77,
+        101
+      ],
+      [
+        77,
+        102
+      ],
+      [
+        77,
+        103
+      ],
+      [
+        76,
+        103
+      ],
+      [
+        75,
+        103
+      ],
+      [
+        75,
+        102
+      ],
+      [
+        75,
+        101
+      ],
+      [
+        74,
+        102
+      ],
+      [
+        74,
+        103
+      ],
+      [
+        73,
+        103
+      ],
+      [
+        78,
+        103
+      ],
+      [
+        79,
+        103
+      ],
+      [
+        79,
+        102
+      ],
+      [
+        79,
+        101
+      ],
+      [
+        80,
+        102
+      ],
+      [
+        80,
+        103
+      ],
+      [
+        81,
+        103
+      ],
+      [
+        76,
+        102
+      ],
+      [
+        78,
+        102
+      ],
+      [
+        76,
+        101
+      ],
+      [
+        78,
+        101
+      ],
+      [
+        76,
+        100
+      ],
+      [
+        78,
+        100
+      ],
+      [
+        98,
+        99
+      ],
+      [
+        98,
+        100
+      ],
+      [
+        98,
+        101
+      ],
+      [
+        98,
+        102
+      ],
+      [
+        98,
+        103
+      ],
+      [
+        97,
+        103
+      ],
+      [
+        96,
+        103
+      ],
+      [
+        96,
+        102
+      ],
+      [
+        96,
+        101
+      ],
+      [
+        95,
+        102
+      ],
+      [
+        95,
+        103
+      ],
+      [
+        94,
+        103
+      ],
+      [
+        99,
+        103
+      ],
+      [
+        100,
+        103
+      ],
+      [
+        100,
+        102
+      ],
+      [
+        100,
+        101
+      ],
+      [
+        100,
+        100
+      ],
+      [
+        101,
+        101
+      ],
+      [
+        101,
+        102
+      ],
+      [
+        102,
+        102
+      ],
+      [
+        102,
+        103
+      ],
+      [
+        103,
+        103
+      ],
+      [
+        101,
+        103
+      ],
+      [
+        97,
+        102
+      ],
+      [
+        99,
+        102
+      ],
+      [
+        97,
+        101
+      ],
+      [
+        99,
+        101
+      ],
+      [
+        97,
+        100
+      ],
+      [
+        99,
+        100
+      ],
+      [
+        99,
+        99
+      ],
+      [
+        119,
+        99
+      ],
+      [
+        119,
+        100
+      ],
+      [
+        119,
+        101
+      ],
+      [
+        119,
+        102
+      ],
+      [
+        119,
+        103
+      ],
+      [
+        118,
+        103
+      ],
+      [
+        117,
+        103
+      ],
+      [
+        117,
+        102
+      ],
+      [
+        117,
+        101
+      ],
+      [
+        116,
+        102
+      ],
+      [
+        116,
+        103
+      ],
+      [
+        115,
+        103
+      ],
+      [
+        118,
+        102
+      ],
+      [
+        118,
+        101
+      ],
+      [
+        118,
+        100
+      ],
+      [
+        56,
+        100
+      ],
+      [
+        56,
+        101
+      ],
+      [
+        56,
+        102
+      ],
+      [
+        56,
+        103
+      ],
+      [
+        57,
+        103
+      ],
+      [
+        58,
+        103
+      ],
+      [
+        58,
+        102
+      ],
+      [
+        59,
+        103
+      ],
+      [
+        57,
+        102
+      ],
+      [
+        57,
+        101
+      ],
+      [
+        252,
+        10
+      ],
+      [
+        252,
+        11
+      ],
+      [
+        252,
+        12
+      ],
+      [
+        95,
+        79
+      ],
+      [
+        96,
+        79
+      ],
+      [
+        97,
+        79
+      ],
+      [
+        98,
+        79
+      ],
+      [
+        66,
+        98
+      ],
+      [
+        63,
+        101
+      ]
+    ],
+    "thickWallSeamTiles": 702,
+    "seamRepair": "render-time (webview-ui/src/office/wallTiles.ts thickSides/seamFree)"
+  },
+  "exhibits": {
+    "venue": {
+      "c0": 252,
+      "r0": 13,
+      "c1": 278,
+      "r1": 35
+    },
+    "replaced": [
+      {
+        "uid": "mw-office-67",
+        "from": "POT",
+        "to": "POT",
+        "at": [
+          259,
+          23
+        ],
+        "now": [
+          259,
+          22
+        ]
+      },
+      {
+        "uid": "mw-office-77",
+        "from": "POT",
+        "to": "POT",
+        "at": [
+          267,
+          23
+        ],
+        "now": [
+          267,
+          21
+        ]
+      },
+      {
+        "uid": "mw-wall-58",
+        "from": "LARGE_PAINTING",
+        "to": "MUSEUM_PAINTING_LANDSCAPE",
+        "at": [
+          253,
+          12
+        ],
+        "now": [
+          253,
+          11
+        ]
+      },
+      {
+        "uid": "mw-wall-59",
+        "from": "LARGE_PAINTING",
+        "to": "MUSEUM_PAINTING_SEASCAPE",
+        "at": [
+          255,
+          12
+        ],
+        "now": [
+          256,
+          12
+        ]
+      },
+      {
+        "uid": "mw-wall-60",
+        "from": "LARGE_PAINTING",
+        "to": "MUSEUM_PAINTING_ABSTRACT",
+        "at": [
+          257,
+          12
+        ],
+        "now": [
+          254,
+          22
+        ]
+      },
+      {
+        "uid": "mw-wall-105",
+        "from": "SMALL_PAINTING",
+        "to": "MUSEUM_BOTANICAL_PAIR",
+        "at": [
+          254,
+          23
+        ],
+        "now": [
+          258,
+          23
+        ]
+      },
+      {
+        "uid": "mw-wall-68",
+        "from": "LARGE_PAINTING",
+        "to": "MUSEUM_PAINTING_PORTRAIT",
+        "at": [
+          261,
+          12
+        ],
+        "now": [
+          262,
+          11
+        ]
+      },
+      {
+        "uid": "mw-wall-69",
+        "from": "LARGE_PAINTING",
+        "to": "MUSEUM_TRIPTYCH",
+        "at": [
+          263,
+          12
+        ],
+        "now": [
+          265,
+          11
+        ]
+      },
+      {
+        "uid": "mw-wall-70",
+        "from": "LARGE_PAINTING",
+        "to": "MUSEUM_TAPESTRY",
+        "at": [
+          265,
+          12
+        ],
+        "now": [
+          262,
+          21
+        ]
+      },
+      {
+        "uid": "mw-wall-106",
+        "from": "SMALL_PAINTING",
+        "to": "MUSEUM_PAINTING_STILL_LIFE",
+        "at": [
+          262,
+          23
+        ],
+        "now": [
+          266,
+          22
+        ]
+      },
+      {
+        "uid": "mw-office-61",
+        "from": "DETAIL_SCULPTURE",
+        "to": "MUSEUM_BUST",
+        "at": [
+          254,
+          17
+        ],
+        "now": [
+          254,
+          17
+        ]
+      },
+      {
+        "uid": "mw-office-62",
+        "from": "DETAIL_OBELISK",
+        "to": "MUSEUM_BRONZE",
+        "at": [
+          257,
+          17
+        ],
+        "now": [
+          257,
+          17
+        ]
+      },
+      {
+        "uid": "mw-office-71",
+        "from": "DETAIL_SCULPTURE",
+        "to": "MUSEUM_ABSTRACT_STONE",
+        "at": [
+          262,
+          17
+        ],
+        "now": [
+          262,
+          17
+        ]
+      },
+      {
+        "uid": "mw-office-72",
+        "from": "DETAIL_OBELISK",
+        "to": "MUSEUM_DISPLAY_CASE",
+        "at": [
+          265,
+          17
+        ],
+        "now": [
+          265,
+          18
+        ]
+      }
+    ],
+    "added": [
+      {
+        "uid": "lw-exhibit-2376",
+        "type": "MUSEUM_URN",
+        "at": [
+          258,
+          21
+        ]
+      },
+      {
+        "uid": "lw-exhibit-2377",
+        "type": "MUSEUM_VITRINE",
+        "at": [
+          264,
+          21
+        ]
+      },
+      {
+        "uid": "lw-exhibit-2378",
+        "type": "MUSEUM_FOSSIL",
+        "at": [
+          271,
+          27
+        ]
+      },
+      {
+        "uid": "lw-exhibit-2379",
+        "type": "MUSEUM_PLACARD",
+        "at": [
+          271,
+          30
+        ]
+      }
+    ],
+    "distinctDesigns": 16,
+    "rule": "replaced records keep their uid (INTENTIONAL deltas, listed); palace decor, office art and street dressing untouched"
+  },
+  "towers": {
+    "censusBefore": {
+      "CITY_SKYSCRAPER_GLASS": 1,
+      "CITY_TOWER_ROUND": 7,
+      "CITY_TOWER_GARDEN": 7,
+      "CITY_SKYSCRAPER_DECO": 2,
+      "CITY_CLOCK_TOWER": 6
+    },
+    "censusAfter": {
+      "CITY_SKYSCRAPER_GLASS": 1,
+      "CITY_TOWER_ROUND": 1,
+      "CITY_TOWER_V06": 1,
+      "CITY_TOWER_V01": 1,
+      "CITY_TOWER_V04": 1,
+      "CITY_TOWER_V10": 1,
+      "CITY_TOWER_V05": 1,
+      "CITY_SKYSCRAPER_DECO": 1,
+      "CITY_TOWER_V07": 1,
+      "CITY_TOWER_V17": 1,
+      "CITY_TOWER_V02": 1,
+      "CITY_TOWER_V11": 1,
+      "CITY_TOWER_V12": 1,
+      "CITY_TOWER_V08": 1,
+      "CITY_TOWER_V03": 1,
+      "CITY_TOWER_V09": 1,
+      "CITY_CLOCK_TOWER": 1,
+      "CITY_TOWER_V13": 1,
+      "CITY_TOWER_V14": 1,
+      "CITY_TOWER_V15": 1,
+      "CITY_TOWER_V16": 1,
+      "CITY_TOWER_GARDEN": 1,
+      "CITY_SUPERTALL": 1
+    },
+    "instances": 23,
+    "distinctDesignsAfter": 23,
+    "swaps": [
+      {
+        "uid": "mw-city-332",
+        "from": "CITY_TOWER_GARDEN",
+        "to": "CITY_TOWER_V06",
+        "at": [
+          201,
+          16
+        ],
+        "now": [
+          201,
+          11
+        ]
+      },
+      {
+        "uid": "mw-city-333",
+        "from": "CITY_TOWER_GARDEN",
+        "to": "CITY_TOWER_V01",
+        "at": [
+          207,
+          16
+        ],
+        "now": [
+          207,
+          16
+        ]
+      },
+      {
+        "uid": "mw-city-346",
+        "from": "CITY_TOWER_ROUND",
+        "to": "CITY_TOWER_V07",
+        "at": [
+          227,
+          16
+        ],
+        "now": [
+          227,
+          14
+        ]
+      },
+      {
+        "uid": "mw-city-348",
+        "from": "CITY_TOWER_ROUND",
+        "to": "CITY_TOWER_V02",
+        "at": [
+          240,
+          16
+        ],
+        "now": [
+          240,
+          10
+        ]
+      },
+      {
+        "uid": "mw-city-362",
+        "from": "CITY_TOWER_GARDEN",
+        "to": "CITY_TOWER_V08",
+        "at": [
+          284,
+          16
+        ],
+        "now": [
+          284,
+          13
+        ]
+      },
+      {
+        "uid": "mw-city-363",
+        "from": "CITY_TOWER_ROUND",
+        "to": "CITY_TOWER_V03",
+        "at": [
+          290,
+          16
+        ],
+        "now": [
+          290,
+          13
+        ]
+      },
+      {
+        "uid": "mw-city-364",
+        "from": "CITY_TOWER_GARDEN",
+        "to": "CITY_TOWER_V09",
+        "at": [
+          296,
+          16
+        ],
+        "now": [
+          296,
+          18
+        ]
+      },
+      {
+        "uid": "mw-city-334",
+        "from": "CITY_TOWER_GARDEN",
+        "to": "CITY_TOWER_V04",
+        "at": [
+          188,
+          27
+        ],
+        "now": [
+          188,
+          22
+        ]
+      },
+      {
+        "uid": "mw-city-336",
+        "from": "CITY_TOWER_ROUND",
+        "to": "CITY_TOWER_V10",
+        "at": [
+          202,
+          27
+        ],
+        "now": [
+          202,
+          25
+        ]
+      },
+      {
+        "uid": "mw-city-337",
+        "from": "CITY_TOWER_GARDEN",
+        "to": "CITY_TOWER_V05",
+        "at": [
+          208,
+          27
+        ],
+        "now": [
+          208,
+          30
+        ]
+      },
+      {
+        "uid": "mw-city-349",
+        "from": "CITY_TOWER_ROUND",
+        "to": "CITY_TOWER_V11",
+        "at": [
+          220,
+          27
+        ],
+        "now": [
+          220,
+          23
+        ]
+      },
+      {
+        "uid": "mw-city-429",
+        "from": "CITY_TOWER_ROUND",
+        "to": "CITY_SUPERTALL",
+        "at": [
+          298,
+          83
+        ],
+        "now": [
+          299,
+          80
+        ]
+      },
+      {
+        "uid": "mw-city-352",
+        "from": "CITY_CLOCK_TOWER",
+        "to": "CITY_TOWER_V12",
+        "at": [
+          242,
+          27
+        ],
+        "now": [
+          242,
+          25
+        ]
+      },
+      {
+        "uid": "mw-city-367",
+        "from": "CITY_CLOCK_TOWER",
+        "to": "CITY_TOWER_V13",
+        "at": [
+          292,
+          27
+        ],
+        "now": [
+          292,
+          30
+        ]
+      },
+      {
+        "uid": "mw-city-368",
+        "from": "CITY_CLOCK_TOWER",
+        "to": "CITY_TOWER_V14",
+        "at": [
+          296,
+          27
+        ],
+        "now": [
+          296,
+          27
+        ]
+      },
+      {
+        "uid": "mw-city-369",
+        "from": "CITY_CLOCK_TOWER",
+        "to": "CITY_TOWER_V15",
+        "at": [
+          300,
+          27
+        ],
+        "now": [
+          300,
+          24
+        ]
+      },
+      {
+        "uid": "mw-city-426",
+        "from": "CITY_CLOCK_TOWER",
+        "to": "CITY_TOWER_V16",
+        "at": [
+          300,
+          72
+        ],
+        "now": [
+          300,
+          72
+        ]
+      },
+      {
+        "uid": "mw-city-347",
+        "from": "CITY_SKYSCRAPER_DECO",
+        "to": "CITY_TOWER_V17",
+        "at": [
+          233,
+          14
+        ],
+        "now": [
+          233,
+          18
+        ]
+      }
+    ]
+  },
+  "traffic": {
+    "final": {
+      "vehicles": 106,
+      "inJams": 70,
+      "parked": 36,
+      "distinctSprites": 28,
+      "byType": {
+        "VEHICLE_TAXI_DOWN": 5,
+        "VEHICLE_TAXI_UP": 5,
+        "VEHICLE_HATCHBACK_RED_DOWN": 4,
+        "VEHICLE_HATCHBACK_RED_UP": 3,
+        "VEHICLE_SUV_SILVER_DOWN": 3,
+        "VEHICLE_SEDAN_BLUE_DOWN": 3,
+        "VEHICLE_SUV_SILVER_UP": 4,
+        "VEHICLE_SEDAN_BLUE_UP": 3,
+        "VEHICLE_FIRE_ENGINE_DOWN": 1,
+        "VEHICLE_AMBULANCE_DOWN": 1,
+        "VEHICLE_POLICE_CRUISER_DOWN": 1,
+        "VEHICLE_POLICE_CRUISER_UP": 1,
+        "VEHICLE_FIRE_ENGINE_UP": 1,
+        "VEHICLE_AMBULANCE_UP": 1,
+        "VEHICLE_TAXI_LEFT": 29,
+        "VEHICLE_HATCHBACK_RED_LEFT": 6,
+        "VEHICLE_TAXI_RIGHT": 11,
+        "VEHICLE_SEDAN_BLUE_RIGHT": 4,
+        "VEHICLE_POLICE_CRUISER_RIGHT": 4,
+        "VEHICLE_SEDAN_BLUE_LEFT": 4,
+        "VEHICLE_SUV_SILVER_LEFT": 5,
+        "VEHICLE_FIRE_ENGINE_RIGHT": 1,
+        "VEHICLE_SUV_SILVER_RIGHT": 1,
+        "VEHICLE_HATCHBACK_RED_RIGHT": 1,
+        "VEHICLE_AMBULANCE_RIGHT": 1,
+        "VEHICLE_FIRE_ENGINE_LEFT": 1,
+        "VEHICLE_POLICE_CRUISER_LEFT": 1,
+        "VEHICLE_AMBULANCE_LEFT": 1
+      }
+    },
+    "jamsAsPlaced": [
+      {
+        "row": 10,
+        "c0": 191,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 10,
+        "c0": 223,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 38,
+        "c0": 191,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 38,
+        "c0": 223,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 40,
+        "c0": 290,
+        "facing": "RIGHT",
+        "vehicles": [
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_SEDAN_BLUE_RIGHT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_POLICE_CRUISER_RIGHT"
+        ]
+      },
+      {
+        "row": 66,
+        "c0": 191,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 66,
+        "c0": 223,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 68,
+        "c0": 290,
+        "facing": "RIGHT",
+        "vehicles": [
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_SEDAN_BLUE_RIGHT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_POLICE_CRUISER_RIGHT"
+        ]
+      },
+      {
+        "row": 94,
+        "c0": 223,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 94,
+        "c0": 287,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_TAXI_LEFT"
+        ]
+      },
+      {
+        "row": 96,
+        "c0": 290,
+        "facing": "RIGHT",
+        "vehicles": [
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_SEDAN_BLUE_RIGHT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_POLICE_CRUISER_RIGHT"
+        ]
+      },
+      {
+        "row": 226,
+        "c0": 120,
+        "facing": "LEFT",
+        "vehicles": [
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_HATCHBACK_RED_LEFT"
+        ]
+      },
+      {
+        "row": 228,
+        "c0": 160,
+        "facing": "RIGHT",
+        "vehicles": [
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_FIRE_ENGINE_RIGHT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_SEDAN_BLUE_RIGHT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_POLICE_CRUISER_RIGHT"
+        ]
+      },
+      {
+        "row": 228,
+        "c0": 46,
+        "facing": "RIGHT",
+        "vehicles": [
+          "VEHICLE_SUV_SILVER_RIGHT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_HATCHBACK_RED_RIGHT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_AMBULANCE_RIGHT"
+        ]
+      }
+    ],
+    "jamVehiclesBeforeConnectivity": 94,
+    "parked": 36,
+    "honestDescription": "static parked props in lane-aligned queues and parking bays; no motion, no vehicle AI, no signals; emergency vehicles are decorative dressing with no response semantics"
+  },
+  "buildings": [
+    {
+      "label": "Botanical Atrium",
+      "frame": [
+        [
+          4,
+          234,
+          75,
+          297
+        ]
+      ],
+      "entrances": [
+        {
+          "c": 39,
+          "r": 234
+        }
+      ],
+      "rooms": [
+        {
+          "name": "Grand lobby",
+          "kind": "grand lobby",
+          "rect": [
+            25,
+            235,
+            54,
+            247
+          ]
+        },
+        {
+          "name": "North-west workroom",
+          "kind": "workroom",
+          "rect": [
+            5,
+            235,
+            23,
+            247
+          ]
+        },
+        {
+          "name": "North-east workroom",
+          "kind": "workroom",
+          "rect": [
+            56,
+            235,
+            74,
+            247
+          ]
+        },
+        {
+          "name": "North gallery",
+          "kind": "corridor",
+          "rect": [
+            5,
+            249,
+            74,
+            250
+          ]
+        },
+        {
+          "name": "West gallery",
+          "kind": "corridor",
+          "rect": [
+            24,
+            251,
+            25,
+            280
+          ]
+        },
+        {
+          "name": "East gallery",
+          "kind": "corridor",
+          "rect": [
+            54,
+            251,
+            55,
+            280
+          ]
+        },
+        {
+          "name": "South gallery",
+          "kind": "corridor",
+          "rect": [
+            5,
+            281,
+            74,
+            282
+          ]
+        },
+        {
+          "name": "Glass atrium garden",
+          "kind": "atrium",
+          "rect": [
+            27,
+            252,
+            52,
+            279
+          ]
+        },
+        {
+          "name": "West meeting room",
+          "kind": "meeting room",
+          "rect": [
+            5,
+            252,
+            22,
+            259
+          ]
+        },
+        {
+          "name": "West workroom",
+          "kind": "workroom",
+          "rect": [
+            5,
+            261,
+            22,
+            271
+          ]
+        },
+        {
+          "name": "West quiet room I",
+          "kind": "quiet room",
+          "rect": [
+            5,
+            273,
+            12,
+            279
+          ]
+        },
+        {
+          "name": "West quiet room II",
+          "kind": "quiet room",
+          "rect": [
+            14,
+            273,
+            22,
+            279
+          ]
+        },
+        {
+          "name": "East meeting room",
+          "kind": "meeting room",
+          "rect": [
+            57,
+            252,
+            74,
+            259
+          ]
+        },
+        {
+          "name": "East workroom",
+          "kind": "workroom",
+          "rect": [
+            57,
+            261,
+            74,
+            271
+          ]
+        },
+        {
+          "name": "East quiet room I",
+          "kind": "quiet room",
+          "rect": [
+            57,
+            273,
+            65,
+            279
+          ]
+        },
+        {
+          "name": "East quiet room II",
+          "kind": "quiet room",
+          "rect": [
+            67,
+            273,
+            74,
+            279
+          ]
+        },
+        {
+          "name": "South-west workroom",
+          "kind": "workroom",
+          "rect": [
+            5,
+            284,
+            26,
+            296
+          ]
+        },
+        {
+          "name": "Boardroom",
+          "kind": "meeting room",
+          "rect": [
+            28,
+            284,
+            39,
+            296
+          ]
+        },
+        {
+          "name": "Library",
+          "kind": "quiet room",
+          "rect": [
+            41,
+            284,
+            51,
+            296
+          ]
+        },
+        {
+          "name": "South-east workroom",
+          "kind": "workroom",
+          "rect": [
+            53,
+            284,
+            74,
+            296
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Deco Observatory",
+      "frame": [
+        [
+          80,
+          234,
+          151,
+          297
+        ]
+      ],
+      "entrances": [
+        {
+          "c": 115,
+          "r": 234
+        }
+      ],
+      "rooms": [
+        {
+          "name": "Grand lobby",
+          "kind": "grand lobby",
+          "rect": [
+            101,
+            235,
+            130,
+            247
+          ]
+        },
+        {
+          "name": "North-west workroom",
+          "kind": "workroom",
+          "rect": [
+            81,
+            235,
+            99,
+            247
+          ]
+        },
+        {
+          "name": "North-east workroom",
+          "kind": "workroom",
+          "rect": [
+            132,
+            235,
+            150,
+            247
+          ]
+        },
+        {
+          "name": "North gallery",
+          "kind": "corridor",
+          "rect": [
+            81,
+            249,
+            150,
+            250
+          ]
+        },
+        {
+          "name": "West gallery",
+          "kind": "corridor",
+          "rect": [
+            100,
+            251,
+            101,
+            280
+          ]
+        },
+        {
+          "name": "East gallery",
+          "kind": "corridor",
+          "rect": [
+            130,
+            251,
+            131,
+            280
+          ]
+        },
+        {
+          "name": "South gallery",
+          "kind": "corridor",
+          "rect": [
+            81,
+            281,
+            150,
+            282
+          ]
+        },
+        {
+          "name": "Observatory rotunda",
+          "kind": "atrium",
+          "rect": [
+            103,
+            252,
+            128,
+            279
+          ]
+        },
+        {
+          "name": "West meeting room",
+          "kind": "meeting room",
+          "rect": [
+            81,
+            252,
+            98,
+            259
+          ]
+        },
+        {
+          "name": "West workroom",
+          "kind": "workroom",
+          "rect": [
+            81,
+            261,
+            98,
+            271
+          ]
+        },
+        {
+          "name": "West quiet room I",
+          "kind": "quiet room",
+          "rect": [
+            81,
+            273,
+            88,
+            279
+          ]
+        },
+        {
+          "name": "West quiet room II",
+          "kind": "quiet room",
+          "rect": [
+            90,
+            273,
+            98,
+            279
+          ]
+        },
+        {
+          "name": "East meeting room",
+          "kind": "meeting room",
+          "rect": [
+            133,
+            252,
+            150,
+            259
+          ]
+        },
+        {
+          "name": "East workroom",
+          "kind": "workroom",
+          "rect": [
+            133,
+            261,
+            150,
+            271
+          ]
+        },
+        {
+          "name": "East quiet room I",
+          "kind": "quiet room",
+          "rect": [
+            133,
+            273,
+            141,
+            279
+          ]
+        },
+        {
+          "name": "East quiet room II",
+          "kind": "quiet room",
+          "rect": [
+            143,
+            273,
+            150,
+            279
+          ]
+        },
+        {
+          "name": "South-west workroom",
+          "kind": "workroom",
+          "rect": [
+            81,
+            284,
+            102,
+            296
+          ]
+        },
+        {
+          "name": "Boardroom",
+          "kind": "meeting room",
+          "rect": [
+            104,
+            284,
+            115,
+            296
+          ]
+        },
+        {
+          "name": "Library",
+          "kind": "quiet room",
+          "rect": [
+            117,
+            284,
+            127,
+            296
+          ]
+        },
+        {
+          "name": "South-east workroom",
+          "kind": "workroom",
+          "rect": [
+            129,
+            284,
+            150,
+            296
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Cathedral",
+      "frame": [
+        [
+          172,
+          238,
+          231,
+          289
+        ],
+        [
+          164,
+          252,
+          239,
+          265
+        ]
+      ],
+      "entrances": [
+        {
+          "c": 198,
+          "r": 289
+        },
+        {
+          "c": 201,
+          "r": 289
+        },
+        {
+          "c": 202,
+          "r": 289
+        },
+        {
+          "c": 205,
+          "r": 289
+        },
+        {
+          "c": 164,
+          "r": 258
+        },
+        {
+          "c": 239,
+          "r": 258
+        }
+      ],
+      "rooms": [
+        {
+          "name": "Nave",
+          "kind": "nave",
+          "rect": [
+            188,
+            250,
+            215,
+            288
+          ]
+        },
+        {
+          "name": "West aisle",
+          "kind": "nave",
+          "rect": [
+            180,
+            250,
+            187,
+            280
+          ]
+        },
+        {
+          "name": "East aisle",
+          "kind": "nave",
+          "rect": [
+            216,
+            250,
+            223,
+            280
+          ]
+        },
+        {
+          "name": "Narthex west",
+          "kind": "corridor",
+          "rect": [
+            186,
+            281,
+            187,
+            288
+          ]
+        },
+        {
+          "name": "Narthex east",
+          "kind": "corridor",
+          "rect": [
+            216,
+            281,
+            217,
+            288
+          ]
+        },
+        {
+          "name": "Transept",
+          "kind": "transept",
+          "rect": [
+            166,
+            254,
+            237,
+            263
+          ]
+        },
+        {
+          "name": "Choir",
+          "kind": "choir",
+          "rect": [
+            188,
+            240,
+            215,
+            248
+          ]
+        },
+        {
+          "name": "North-west chapel",
+          "kind": "chapel",
+          "rect": [
+            180,
+            241,
+            186,
+            248
+          ]
+        },
+        {
+          "name": "North-east chapel",
+          "kind": "chapel",
+          "rect": [
+            217,
+            241,
+            223,
+            248
+          ]
+        },
+        {
+          "name": "Sacristy",
+          "kind": "sacristy",
+          "rect": [
+            173,
+            241,
+            178,
+            250
+          ]
+        },
+        {
+          "name": "Treasury",
+          "kind": "sacristy",
+          "rect": [
+            225,
+            241,
+            230,
+            250
+          ]
+        },
+        {
+          "name": "West chapel 1",
+          "kind": "chapel",
+          "rect": [
+            173,
+            267,
+            178,
+            270
+          ]
+        },
+        {
+          "name": "East chapel 1",
+          "kind": "chapel",
+          "rect": [
+            225,
+            267,
+            230,
+            270
+          ]
+        },
+        {
+          "name": "West chapel 2",
+          "kind": "chapel",
+          "rect": [
+            173,
+            273,
+            178,
+            276
+          ]
+        },
+        {
+          "name": "East chapel 2",
+          "kind": "chapel",
+          "rect": [
+            225,
+            273,
+            230,
+            276
+          ]
+        },
+        {
+          "name": "West chapel 3",
+          "kind": "chapel",
+          "rect": [
+            173,
+            279,
+            178,
+            282
+          ]
+        },
+        {
+          "name": "East chapel 3",
+          "kind": "chapel",
+          "rect": [
+            225,
+            279,
+            230,
+            282
+          ]
+        }
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "label": "Palace (r4 home block 64 x 64)",
+      "footprintTiles": 4096,
+      "floorTiles": 3100,
+      "usableFloorTiles": 2657,
+      "furnishings": 405,
+      "computers": 41,
+      "desks": 39,
+      "seats": 99,
+      "workstations": 41,
+      "roomsByClassifier": {
+        "hall": 3,
+        "workroom": 10,
+        "quiet room": 4,
+        "corridor": 9,
+        "meeting room": 2,
+        "grand lobby": 2
+      },
+      "roomsAsDesigned": null,
+      "regions": 30
+    },
+    {
+      "label": "Botanical Atrium",
+      "footprintTiles": 4608,
+      "floorTiles": 3784,
+      "usableFloorTiles": 3213,
+      "furnishings": 512,
+      "computers": 72,
+      "desks": 72,
+      "seats": 90,
+      "workstations": 72,
+      "roomsByClassifier": {
+        "workroom": 7,
+        "grand lobby": 1,
+        "corridor": 1,
+        "meeting room": 3,
+        "hall": 1,
+        "quiet room": 5
+      },
+      "roomsAsDesigned": {
+        "grand lobby": 1,
+        "workroom": 6,
+        "corridor": 4,
+        "atrium": 1,
+        "meeting room": 3,
+        "quiet room": 5
+      },
+      "regions": 18
+    },
+    {
+      "label": "Deco Observatory",
+      "footprintTiles": 4608,
+      "floorTiles": 3884,
+      "usableFloorTiles": 3334,
+      "furnishings": 464,
+      "computers": 72,
+      "desks": 72,
+      "seats": 90,
+      "workstations": 72,
+      "roomsByClassifier": {
+        "workroom": 7,
+        "grand lobby": 1,
+        "corridor": 1,
+        "meeting room": 3,
+        "hall": 1,
+        "quiet room": 5
+      },
+      "roomsAsDesigned": {
+        "grand lobby": 1,
+        "workroom": 6,
+        "corridor": 4,
+        "atrium": 1,
+        "meeting room": 3,
+        "quiet room": 5
+      },
+      "regions": 18
+    },
+    {
+      "label": "Cathedral",
+      "footprintTiles": 3344,
+      "floorTiles": 2566,
+      "usableFloorTiles": 2314,
+      "furnishings": 266,
+      "computers": 0,
+      "desks": 0,
+      "seats": 0,
+      "workstations": 0,
+      "roomsByClassifier": {
+        "hall": 11,
+        "grand lobby": 1
+      },
+      "roomsAsDesigned": {
+        "nave": 3,
+        "corridor": 2,
+        "transept": 1,
+        "choir": 1,
+        "chapel": 8,
+        "sacristy": 2
+      },
+      "regions": 12
+    }
+  ],
+  "placed": {
+    "street": 54,
+    "botanical-atrium": 525,
+    "deco-observatory": 476,
+    "cathedral": 331,
+    "market": 47,
+    "traffic-parking": 36,
+    "subway": 809,
+    "traffic-jam": 97
+  },
+  "refusedPlacements": {
+    "botanical-atrium": 39,
+    "deco-observatory": 8,
+    "cathedral": 13,
+    "market": 2,
+    "subway": 1
+  }
+}

@@ -1,5 +1,9 @@
+import type { AmbientSaveState } from '../../../../core/src/ambientSave.js';
+import type { DiOfficeState } from '../../../../core/src/messages.js';
 import { pickDiversePalette } from '../../../../core/src/paletteUtils.js';
 import {
+  AMBIENT_CATCHUP_MAX_SEC,
+  AMBIENT_CATCHUP_STEP_SEC,
   AUTO_ON_FACING_DEPTH,
   AUTO_ON_SIDE_DEPTH,
   CHARACTER_HIT_HALF_WIDTH,
@@ -16,6 +20,11 @@ import {
   PET_HIT_HEIGHT,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
+import type { AmbientRestoreResult } from '../ambient/ambientSave.js';
+import { applyAmbientSnapshot, serializeAmbient } from '../ambient/ambientSave.js';
+import type { AmbientResident, AmbientWorld } from '../ambient/ambientWorld.js';
+import { buildAmbientWorld } from '../ambient/ambientWorld.js';
+import { haloEligibleCharacterIds } from '../halo.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
   createDefaultLayout,
@@ -25,8 +34,13 @@ import {
   layoutToTileMap,
 } from '../layout/layoutSerializer.js';
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
+import type { FootprintOf } from '../layout/worldViews.js';
+import { inRegions, livingRegions, livingTiles as confineLiving } from '../layout/worldViews.js';
+import { boundRenderCaches } from '../renderCaches.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
+import type { Train } from '../transit/transitWorld.js';
+import { deriveTransitLine, TransitWorld } from '../transit/transitWorld.js';
 import type {
   Character,
   FurnitureInstance,
@@ -57,6 +71,45 @@ function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } 
   return { dCol: 0, dRow: -1 };
 }
 
+const footprintOf: FootprintOf = (type) => {
+  const entry = getCatalogEntry(type);
+  return entry
+    ? { w: entry.footprintW, h: entry.footprintH, seat: entry.category === 'chairs' }
+    : null;
+};
+
+/**
+ * The walkable tiles characters and pets LIVE on: wander targets and spawn points. In a large
+ * world only the office and its deck (worldViews.livingRegions), and of those only what a seat
+ * can reach — the woodland is scenery, and a uniform pick over all its walkable tiles would walk
+ * the live team out of view. A legacy-size layout keeps every walkable tile, exactly as before.
+ */
+function livingTiles(
+  layout: OfficeLayout,
+  tileMap: TileTypeVal[][],
+  blockedTiles: Set<string>,
+  seats: Map<string, Seat>,
+): Array<{ col: number; row: number }> {
+  return confineLiving(
+    getWalkableTiles(tileMap, blockedTiles),
+    livingRegions(layout, footprintOf),
+    [...seats.values()].map((s) => ({ col: s.seatCol, row: s.seatRow })),
+  );
+}
+
+/**
+ * The SEATS of a layout. In a LARGE world only the chairs inside the home office and its deck
+ * (worldViews.livingRegions) are seats: a chair furnishing a satellite office is scenery — drawn and
+ * colliding like any furniture — so no bound worker is ever assigned, restored or re-seated outside
+ * the home. Legacy-size layouts (or a large one with no home seat at all) keep every chair.
+ */
+function homeSeats(layout: OfficeLayout, seats: Map<string, Seat>): Map<string, Seat> {
+  const regions = livingRegions(layout, footprintOf);
+  if (!regions) return seats;
+  const kept = new Map([...seats].filter(([, s]) => inRegions(s.seatCol, s.seatRow, regions)));
+  return kept.size > 0 ? kept : seats;
+}
+
 export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
@@ -66,8 +119,30 @@ export class OfficeState {
   walkableTiles: Array<{ col: number; row: number }>;
   characters: Map<number, Character> = new Map();
   pets: Pet[] = [];
+  /**
+   * AMBIENT RESIDENTS (DI mode only; decorative). Deliberately NOT in `characters`, for the same
+   * reason as the greeter: every agent loop stays correct by default. Null while disabled.
+   */
+  ambient: AmbientWorld | null = null;
+  /** The decorative subway (DI mode, worlds with a line); built and dropped with the residents. */
+  transit: TransitWorld | null = null;
+  /** The PRESENTED DI office state (DI mode only): the server projection after the client's own
+   *  invalidation (useExtensionMessages). The working halo reads this and nothing else. */
+  diOffice: DiOfficeState | null = null;
+  /** Seconds the decorative simulation has actually advanced (frames and catch-up alike). */
+  ambientClock = 0;
+  /** A saved ambient snapshot from the handshake, applied once to the next ambient build. */
+  private pendingAmbientSnapshot: unknown = null;
+  /** What the last snapshot application did (evidence; null if none was attempted). */
+  lastAmbientRestore: AmbientRestoreResult | null = null;
+  private ambientEnabled = false;
+  /** Resident under the pointer (hover label). Never an agent id. */
+  hoveredAmbientId: string | null = null;
   /** Accumulated time for furniture animation frame cycling */
   furnitureAnimTimer = 0;
+  /** Bumped whenever the furniture instances change for a reason OTHER than an animation frame
+   *  (layout rebuild, auto-state ON/OFF swap): what a cache of the STATIC scene keys on. */
+  furnitureStaticVersion = 0;
   /** REDUCED MOTION — set only in DI mode, from prefers-reduced-motion. Transitions settle
    *  at once and nothing moves on its own; it never changes activity, live or any other data.
    *  Normal Pixel never sets it, so its behaviour is unchanged. */
@@ -118,10 +193,10 @@ export class OfficeState {
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout();
     this.tileMap = layoutToTileMap(this.layout);
-    this.seats = layoutToSeats(this.layout.furniture);
+    this.seats = homeSeats(this.layout, layoutToSeats(this.layout.furniture));
     this.blockedTiles = getBlockedTiles(this.layout.furniture);
     this.furniture = layoutToFurnitureInstances(this.layout.furniture);
-    this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
+    this.walkableTiles = livingTiles(this.layout, this.tileMap, this.blockedTiles, this.seats);
     // Pets are built last because they need walkableTiles populated for spawn.
     this.rebuildPetsFromLayout(this.layout);
   }
@@ -129,12 +204,14 @@ export class OfficeState {
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
   rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
+    // the render-cache bound across edits, at this safe point BEFORE the instances are rebuilt
+    boundRenderCaches();
     this.layout = layout;
     this.tileMap = layoutToTileMap(layout);
-    this.seats = layoutToSeats(layout.furniture);
+    this.seats = homeSeats(layout, layoutToSeats(layout.furniture));
     this.blockedTiles = getBlockedTiles(layout.furniture);
     this.rebuildFurnitureInstances();
-    this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
+    this.walkableTiles = livingTiles(layout, this.tileMap, this.blockedTiles, this.seats);
 
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
@@ -242,6 +319,8 @@ export class OfficeState {
 
     // Reconcile pets against the layout roster (handles editor add/remove)
     this.rebuildPetsFromLayout(layout);
+    // Ambient residents are derived from the world: rebuilt (deterministically) with it.
+    this.rebuildAmbient();
   }
 
   /** Move a character to a random walkable tile */
@@ -817,6 +896,7 @@ export class OfficeState {
   setAgentActive(id: number, active: boolean): void {
     const ch = this.characters.get(id);
     if (ch) {
+      const changed = ch.isActive !== active;
       ch.isActive = active;
       if (!active) {
         // Sentinel -1: signals turn just ended, skip next seat rest timer.
@@ -825,12 +905,21 @@ export class OfficeState {
         ch.path = [];
         ch.moveProgress = 0;
       }
-      this.rebuildFurnitureInstances();
+      // The auto-state ON/OFF swap depends only on who is active: an unchanged state (the DI
+      // office re-asserts every member's activity on each refresh) rebuilds nothing.
+      if (changed) this.rebuildFurnitureInstances();
     }
   }
 
   /** Rebuild furniture instances with auto-state applied (active agents turn electronics ON) */
-  private rebuildFurnitureInstances(): void {
+  /** Recompute every furniture instance's sprite (as a layout rebuild does): the e2e render-cache
+   *  probe uses it to re-render right after a reset, with nothing kept from before. */
+  refreshFurnitureSprites(): void {
+    this.rebuildFurnitureInstances();
+  }
+
+  private rebuildFurnitureInstances(animationFrameOnly = false): void {
+    if (!animationFrameOnly) this.furnitureStaticVersion++;
     // Collect tiles where active agents face desks
     const autoOnTiles = new Set<string>();
     for (const ch of this.characters.values()) {
@@ -1120,7 +1209,7 @@ export class OfficeState {
       this.furnitureAnimTimer += dt;
       const newFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
       if (newFrame !== prevFrame) {
-        this.rebuildFurnitureInstances();
+        this.rebuildFurnitureInstances(true);
       }
     }
 
@@ -1168,6 +1257,21 @@ export class OfficeState {
       this.characters.delete(id);
     }
 
+    // ── Ambient residents ──────────────────────────────────────
+    // Decorative MOTION holds still under reduced motion, like pets; real-agent PRIORITY never does:
+    // a resident on an agent's tile or an assigned seat's zone still yields (placed at once, no
+    // animation; AmbientWorld.yieldWithoutMotion). Reduced motion holds motion, never priority.
+    if (this.ambient) {
+      if (!this.reducedMotion) {
+        this.ambient.update(dt, this.ambientAgentContext());
+        this.ambientClock += dt;
+      } else {
+        this.ambient.yieldWithoutMotion(this.ambientAgentContext());
+      }
+    }
+    // The subway holds still under reduced motion too (decorative motion)
+    if (this.transit && !this.reducedMotion) this.transit.update(dt);
+
     // ── Pet FSM ────────────────────────────────────────────────
     for (const pet of this.pets) {
       // Pets are decoration: they hold still under reduced motion (their bubbles still tick)
@@ -1184,6 +1288,134 @@ export class OfficeState {
         }
       }
     }
+  }
+
+  /** Turn the ambient population on (DI mode) or off. Idempotent. */
+  setAmbientEnabled(enabled: boolean): void {
+    if (this.ambientEnabled === enabled && (enabled ? this.ambient !== null : this.ambient === null))
+      return;
+    this.ambientEnabled = enabled;
+    this.rebuildAmbient();
+  }
+
+  private rebuildAmbient(): void {
+    this.hoveredAmbientId = null;
+    const line = this.ambientEnabled
+      ? deriveTransitLine(this.layout, (c, r) => isWalkable(c, r, this.tileMap, this.blockedTiles))
+      : null;
+    this.ambient = this.ambientEnabled
+      ? buildAmbientWorld({
+          layout: this.layout,
+          tileMap: this.tileMap,
+          blockedTiles: this.blockedTiles,
+          homeRegions: livingRegions(this.layout, footprintOf),
+          seats: [...this.seats.values()],
+          transit: line,
+        })
+      : null;
+    this.transit = this.ambient && line ? new TransitWorld(line, this.ambient) : null;
+    // a saved snapshot applies ONCE, to the first world built after it arrived, and only if its world
+    // fingerprint matches (another layout or an import discards it): never a duplicate, never a
+    // second application
+    if (this.ambient && this.pendingAmbientSnapshot !== null) this.tryPendingSnapshot();
+  }
+
+  /** What residents must give way to this tick: every real agent's tile (and the tile it is about
+   *  to step onto) and every seat assigned to a real agent. Read-only; agents never see residents. */
+  private ambientAgentContext(): { agentTiles: Set<number>; assignedSeats: string[] } {
+    const cols = this.layout.cols;
+    const agentTiles = new Set<number>();
+    for (const ch of this.characters.values()) {
+      if (ch.matrixEffect === 'despawn') continue;
+      agentTiles.add(ch.tileRow * cols + ch.tileCol);
+      const next = ch.path[0];
+      if (next) agentTiles.add(next.row * cols + next.col);
+    }
+    const assignedSeats: string[] = [];
+    for (const [uid, seat] of this.seats) if (seat.assigned) assignedSeats.push(uid);
+    return { agentTiles, assignedSeats };
+  }
+
+  /** Hold a saved snapshot (from the handshake) for the next ambient build; applies immediately if
+   *  the residents already exist for this world. */
+  setAmbientSnapshot(snapshot: unknown): void {
+    if (snapshot === null || snapshot === undefined) return;
+    this.pendingAmbientSnapshot = snapshot;
+    if (this.ambient) this.tryPendingSnapshot();
+  }
+
+  /** A user-IMPORTED snapshot: applied to the running world at once, or refused with a reason; it is
+   *  never held for a later world (unlike the handshake snapshot, which may arrive before its world). */
+  importAmbientSnapshot(snapshot: unknown): AmbientRestoreResult {
+    const result: AmbientRestoreResult = this.ambient
+      ? applyAmbientSnapshot(this.layout, this.ambient, this.transit, snapshot)
+      : { outcome: 'refused', reason: 'the residents are not running in this view', residentsRestored: 0, aboardRestored: 0, waitingRestored: 0, trainsRestored: 0 };
+    this.lastAmbientRestore = result;
+    return result;
+  }
+
+  /** Apply the held snapshot: once applied (or refused) it is dropped; a snapshot for ANOTHER world
+   *  stays held. The fingerprint guarantees it can only ever apply to the world it was saved from. */
+  private tryPendingSnapshot(): void {
+    if (!this.ambient || this.pendingAmbientSnapshot === null) return;
+    const result = applyAmbientSnapshot(this.layout, this.ambient, this.transit, this.pendingAmbientSnapshot);
+    this.lastAmbientRestore = result;
+    if (result.outcome !== 'other-world') this.pendingAmbientSnapshot = null;
+  }
+
+  /** The current snapshot to save (null while the residents are off). */
+  serializeAmbient(savedAt: number): AmbientSaveState | null {
+    return this.ambient ? serializeAmbient(this.layout, this.ambient, this.transit, savedAt) : null;
+  }
+
+  /**
+   * BOUNDED HIDDEN-VIEW CATCH-UP: after the view was hidden for `hiddenSeconds`, advance the decorative
+   * simulation by at most AMBIENT_CATCHUP_MAX_SEC in fixed steps, minus whatever was already advanced
+   * while hidden (`alreadyAdvancedSeconds`, from ambientClock). The game loop's hidden guard means
+   * frames do not advance while hidden, so that is normally 0. The rest of the interval is simply not
+   * simulated: nothing runs while closed or asleep. Held under reduced motion. Returns the seconds
+   * actually advanced.
+   */
+  catchUpAmbient(hiddenSeconds: number, alreadyAdvancedSeconds = 0): number {
+    // only the part of the hidden interval that was NOT already simulated (by any frame that ran while
+    // hidden) is caught up, so no interval is ever advanced twice
+    const owed = hiddenSeconds - Math.max(0, alreadyAdvancedSeconds);
+    if (!this.ambient || this.reducedMotion || !(owed > 0)) return 0;
+    const seconds = Math.min(owed, AMBIENT_CATCHUP_MAX_SEC);
+    // whole steps, never more than owed (a sub-step remainder is not simulated, so nothing doubles)
+    const steps = Math.min(
+      Math.floor(seconds / AMBIENT_CATCHUP_STEP_SEC + 1e-6),
+      Math.round(AMBIENT_CATCHUP_MAX_SEC / AMBIENT_CATCHUP_STEP_SEC),
+    );
+    for (let k = 0; k < steps; k++) {
+      this.ambient.update(AMBIENT_CATCHUP_STEP_SEC, this.ambientAgentContext());
+      this.transit?.update(AMBIENT_CATCHUP_STEP_SEC);
+    }
+    this.ambientClock += steps * AMBIENT_CATCHUP_STEP_SEC;
+    return steps * AMBIENT_CATCHUP_STEP_SEC;
+  }
+
+  /** Real agents eligible for the working halo NOW (office/halo.ts; read by the canvas AND the Map). */
+  haloCharacterIds(nowSec: number): Set<number> {
+    const ids = haloEligibleCharacterIds(this.diOffice, nowSec);
+    for (const id of ids) if (!this.characters.has(id)) ids.delete(id);
+    return ids;
+  }
+
+  /** The trains to draw (empty without a subway or while disabled). */
+  getTrains(): readonly Train[] {
+    return this.transit?.trains ?? [];
+  }
+
+  /** The residents to draw (empty while disabled). */
+  getAmbientResidents(): readonly AmbientResident[] {
+    return this.ambient?.residents ?? [];
+  }
+
+  /** The resident under a world-pixel point. Callers check real agents FIRST: an agent always
+   *  wins the pointer over a resident. */
+  getAmbientAt(worldX: number, worldY: number): AmbientResident | null {
+    return this.ambient?.residentAt(worldX, worldY) ?? null;
   }
 
   /** The `saveAgentSeats` payload: palette, hue and seat for every agent worth

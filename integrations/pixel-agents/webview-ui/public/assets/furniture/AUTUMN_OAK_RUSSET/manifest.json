@@ -1,0 +1,13 @@
+{
+  "id": "AUTUMN_OAK_RUSSET",
+  "name": "Oak (autumn russet)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 48,
+  "height": 48,
+  "footprintW": 3,
+  "footprintH": 3
+}

@@ -1,0 +1,13 @@
+{
+  "id": "AQUA_TANK_PANORAMIC",
+  "name": "Panoramic Tank",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 1,
+  "width": 80,
+  "height": 48,
+  "footprintW": 5,
+  "footprintH": 3
+}

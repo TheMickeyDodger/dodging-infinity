@@ -1,0 +1,51 @@
+{
+  "id": "bellhop",
+  "label": "Bellhop",
+  "source": {
+    "id": "S03",
+    "file": "lw-S03-bellhop.png",
+    "sha256": "23db60c823eb3872dda1dab9bd574f57d8047c275dac9d8578f562edb4824b8f"
+  },
+  "contract": "FULL 8x4",
+  "frameWidth": 19,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "walk3",
+    "walk4",
+    "idle1",
+    "idle2",
+    "gesture1",
+    "gesture2"
+  ],
+  "walk": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "idle": [
+    4,
+    5
+  ],
+  "gesture": [
+    6,
+    7
+  ],
+  "walkCycle": "4-frame (C1-C4, all drawn)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": false
+}

@@ -1,0 +1,13 @@
+{
+  "id": "CATHEDRAL_PORTAL",
+  "name": "Open triple portal",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 7,
+  "width": 160,
+  "height": 112,
+  "footprintW": 10,
+  "footprintH": 7
+}

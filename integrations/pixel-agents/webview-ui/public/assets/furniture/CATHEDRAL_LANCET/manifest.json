@@ -1,0 +1,13 @@
+{
+  "id": "CATHEDRAL_LANCET",
+  "name": "Stained-glass lancet",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 16,
+  "height": 48,
+  "footprintW": 1,
+  "footprintH": 3
+}

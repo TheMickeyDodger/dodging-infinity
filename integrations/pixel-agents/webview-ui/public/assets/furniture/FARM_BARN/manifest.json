@@ -1,0 +1,13 @@
+{
+  "id": "FARM_BARN",
+  "name": "Red Barn",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 64,
+  "height": 80,
+  "footprintW": 4,
+  "footprintH": 5
+}

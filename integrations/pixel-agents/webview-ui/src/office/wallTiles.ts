@@ -12,6 +12,7 @@
 
 import type { ColorValue } from '../components/ui/types.js';
 import { getColorizedSprite } from './colorize.js';
+import { bumpPresentationGeneration } from './presentationGeneration.js';
 import type { FurnitureInstance, SpriteData, TileType as TileTypeVal } from './types.js';
 import { TILE_SIZE, TileType } from './types.js';
 
@@ -20,7 +21,9 @@ let wallSets: SpriteData[][] = [];
 
 /** Set wall tile sets (called once when extension sends wallTilesLoaded) */
 export function setWallSprites(sets: SpriteData[][]): void {
+  bumpPresentationGeneration();
   wallSets = sets;
+  seamFreeCache.clear();
 }
 
 /** Check if wall sprites have been loaded */
@@ -56,6 +59,74 @@ function buildWallMask(col: number, row: number, tileMap: TileTypeVal[][]): numb
 }
 
 /**
+ * THICK-WALL SEAMS AND PINHOLES. The 16 pieces draw dark outline pixels on their east and west edges:
+ *  - a side line from row 8 down on pieces with a south neighbour plus an east (or west) one;
+ *  - corner pixels on row 0 on pieces with a north neighbour.
+ * Both are correct where the wall is ONE tile thick (they mark a face boundary). Where the wall mass
+ * continues on that side they land INSIDE the mass, at every tile boundary:
+ *  - the "regular black vertical marks" the human reported;
+ *  - the scattered black pinholes the Operator found on pale walls.
+ * So an outline pixel on the east edge is filled with the face pixel beside it when the mass continues
+ * east at that height: rows 0-7 when the north, north-east and east cells are walls; rows 8 and below
+ * when the south, south-east and east cells are walls. The west edge is mirrored. Only isolated edge
+ * pixels change (an outline whose inner neighbour is face), never a horizontal edge line, and
+ * single-thickness walls are unchanged. Purely visual; the layout is untouched.
+ */
+interface Thick {
+  e: boolean;
+  w: boolean;
+  ne: boolean;
+  nw: boolean;
+}
+function thickSides(col: number, row: number, tileMap: TileTypeVal[][]): Thick {
+  const rows = tileMap.length;
+  const cols = rows > 0 ? tileMap[0].length : 0;
+  const wall = (c: number, r: number) =>
+    r >= 0 && r < rows && c >= 0 && c < cols && tileMap[r][c] === TileType.WALL;
+  const east = wall(col + 1, row);
+  const west = wall(col - 1, row);
+  const south = wall(col, row + 1);
+  const north = wall(col, row - 1);
+  return {
+    e: south && east && wall(col + 1, row + 1),
+    w: south && west && wall(col - 1, row + 1),
+    ne: north && east && wall(col + 1, row - 1),
+    nw: north && west && wall(col - 1, row - 1),
+  };
+}
+const thickKey = (t: Thick) => `${t.e ? 'E' : ''}${t.w ? 'W' : ''}${t.ne ? 'n' : ''}${t.nw ? 'm' : ''}`;
+
+const seamFreeCache = new Map<string, SpriteData>();
+const CAP_ROWS = 8; // rows 0-7: the cap region that meets the north neighbour
+
+function isOutline(px: string): boolean {
+  if (!px || px.length < 7) return false;
+  const r = parseInt(px.slice(1, 3), 16);
+  const g = parseInt(px.slice(3, 5), 16);
+  const b = parseInt(px.slice(5, 7), 16);
+  return r + g + b < 200;
+}
+
+/** The piece with its interior edge outlines replaced by the adjacent face pixel (see above). */
+function seamFree(sprite: SpriteData, key: string, t: Thick): SpriteData {
+  if (!t.e && !t.w && !t.ne && !t.nw) return sprite;
+  const cacheKey = `${key}-${thickKey(t)}`;
+  const hit = seamFreeCache.get(cacheKey);
+  if (hit) return hit;
+  const out = sprite.map((row) => row.slice());
+  const width = out[0]?.length ?? 0;
+  for (let y = 0; y < out.length; y++) {
+    const e = y < CAP_ROWS ? t.ne : t.e;
+    const w = y < CAP_ROWS ? t.nw : t.w;
+    if (e && isOutline(out[y][width - 1]) && !isOutline(out[y][width - 2]))
+      out[y][width - 1] = out[y][width - 2];
+    if (w && isOutline(out[y][0]) && !isOutline(out[y][1])) out[y][0] = out[y][1];
+  }
+  seamFreeCache.set(cacheKey, out);
+  return out;
+}
+
+/**
  * Get the wall sprite for a tile based on its cardinal neighbors.
  * Returns the sprite + Y offset, or null to fall back to solid WALL_COLOR.
  */
@@ -69,8 +140,10 @@ function getWallSprite(
   const sprites = wallSets[setIndex] ?? wallSets[0];
 
   const mask = buildWallMask(col, row, tileMap);
-  const sprite = sprites[mask];
-  if (!sprite) return null;
+  const base = sprites[mask];
+  if (!base) return null;
+  const thick = thickSides(col, row, tileMap);
+  const sprite = seamFree(base, `wall-${setIndex}-${mask}`, thick);
 
   // Anchor sprite at bottom of tile — tall sprites extend upward
   return { sprite, offsetY: TILE_SIZE - sprite.length };
@@ -92,10 +165,12 @@ function getColorizedWallSprite(
   const sprites = wallSets[setIndex] ?? wallSets[0];
 
   const mask = buildWallMask(col, row, tileMap);
-  const sprite = sprites[mask];
-  if (!sprite) return null;
+  const base = sprites[mask];
+  if (!base) return null;
+  const thick = thickSides(col, row, tileMap);
+  const sprite = seamFree(base, `wall-${setIndex}-${mask}`, thick);
 
-  const cacheKey = `wall-${setIndex}-${mask}-${color.h}-${color.s}-${color.b}-${color.c}`;
+  const cacheKey = `wall-${setIndex}-${mask}-${thickKey(thick)}-${color.h}-${color.s}-${color.b}-${color.c}`;
   const colorized = getColorizedSprite(cacheKey, sprite, { ...color, colorize: true });
 
   return { sprite: colorized, offsetY: TILE_SIZE - sprite.length };

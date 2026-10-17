@@ -1,0 +1,13 @@
+{
+  "id": "MUSEUM_PAINTING_SEASCAPE",
+  "name": "Seascape painting",
+  "category": "wall",
+  "type": "asset",
+  "canPlaceOnWalls": true,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 1,
+  "width": 48,
+  "height": 32,
+  "footprintW": 3,
+  "footprintH": 2
+}

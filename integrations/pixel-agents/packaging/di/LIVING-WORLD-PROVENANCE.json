@@ -1,0 +1,1027 @@
+{
+  "kind": "living-world art provenance (M3 S6)",
+  "generatedBy": "scripts/record-living-world-provenance.ts",
+  "note": "Supplied inputs are read only. Every sheet hash below was re-hashed from the bytes and equals the supplied record. Original, fan-inspired generations: no third-party pack, no affiliation.",
+  "sheets": 16,
+  "uninspected": 0,
+  "records": [
+    {
+      "sheet": "SUB",
+      "pack": "subway",
+      "file": "living-world-subway.png",
+      "sha256": "f4d894278e8a2a1aff8f485f475236ff526bd8cd3bb8be4482a719b3b4d5fd2f",
+      "bytes": 1416136,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-94ddfc9c-4ad1-49f4-a90e-55e164bcd059.png",
+        "generatedAt": "2026-10-16T16:34:18.021668+00:00",
+        "prompt": "Use case: stylized-concept. Production source sprite atlas for the existing Pixel Agents DI living metropolis game. Create ORIGINAL hand-crafted 16-bit RPG pixel-art subway assets. A square 1536x1536 PNG with REAL TRANSPARENT ALPHA background. EXACTLY 5 equal columns by 4 equal rows, twenty separate equal cells, row-major order. Every object entirely inside its cell with at least 10% transparent gutter on each side. No grids, lines, labels, text, numbers, UI, background scene, base plates, drop shadows or checkerboard. Do not print names. Pixel clusters with crisp edges and subtle dark outlines, restrained warm limestone/terracotta, sage/teal, navy, cream and brass palette. Upper-left lighting. Slightly elevated front orthographic RPG view, NOT diamond isometric. Keep consistent game sprite detail, all objects complete and unobscured, bottom-centred anchors. Large station buildings show roof and front facade; train cars are horizontal with side elevation matching the slight top-down game viewpoint, 4:1 approximate width-to-height. Small props retain generous empty space, never enlarge them to fill entire cell. No real transit logos or branding. Cells 9–12 are animation source pairs: EXACT same teal/cream car geometry/anchor/scale, only wheel angle and a few window light pixels vary; left and right directions distinct. Cell 13–14 matching lead cars. Objects exactly in these cells:\n1. glass-and-brass conservatory subway station headhouse\n2. grand limestone art-deco subway station headhouse\n3. red-brick neighbourhood subway station headhouse\n4. street-level covered stair entrance kiosk\n5. modular station platform with benches and blank signpost\n6. three stainless-brass turnstiles\n7. ticket machine with blank screen\n8. glass elevator shaft head\n9. teal-and-cream passenger train car facing LEFT, window/wheel animation source frame A\n10. SAME teal-and-cream passenger train car facing LEFT, window/wheel animation source frame B, identical body dimensions and anchor\n11. SAME teal-and-cream passenger train car facing RIGHT, frame A\n12. SAME teal-and-cream passenger train car facing RIGHT, frame B, identical body dimensions and anchor\n13. matching train lead car with cab facing LEFT\n14. matching train lead car with cab facing RIGHT\n15. train interior strip with seated passenger silhouettes\n16. arched brick tunnel mouth\n17. metal overhead railway gantry\n18. blank route-map display board\n19. small platform edge warning-strip prop\n20. small waiting-passenger group\nThis is a usable-source atlas, not a scenery illustration. Preserve transparent gutters and aligned cells. Do not draw anything between cells.",
+        "promptSha256": "d3463dac5fdd6ea0018b8aa8b0f35641fcee8dafdb29893e11a68eda6c9a6208",
+        "contract": null,
+        "subject": null
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#SUB",
+        "segmentation": {
+          "ok": true,
+          "method": "row bands by projection; per row, alpha components merged at the smallest horizontal gap to the requested count (5, 5, 4, 6); no fixed stride",
+          "observedPerRow": [
+            5,
+            5,
+            4,
+            6
+          ],
+          "columnSpans": [
+            [
+              [
+                17,
+                248
+              ],
+              [
+                281,
+                495
+              ],
+              [
+                514,
+                739
+              ],
+              [
+                765,
+                961
+              ],
+              [
+                983,
+                1231
+              ]
+            ],
+            [
+              [
+                45,
+                270
+              ],
+              [
+                344,
+                436
+              ],
+              [
+                542,
+                711
+              ],
+              [
+                749,
+                988
+              ],
+              [
+                998,
+                1236
+              ]
+            ],
+            [
+              [
+                30,
+                277
+              ],
+              [
+                295,
+                540
+              ],
+              [
+                559,
+                886
+              ],
+              [
+                903,
+                1230
+              ]
+            ],
+            [
+              [
+                31,
+                218
+              ],
+              [
+                250,
+                430
+              ],
+              [
+                457,
+                659
+              ],
+              [
+                692,
+                834
+              ],
+              [
+                867,
+                1034
+              ],
+              [
+                1065,
+                1217
+              ]
+            ]
+          ]
+        },
+        "cells": {
+          "delivered": 20,
+          "extracted": 20,
+          "alphaVerified": 20
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 2822,
+        "facing": {
+          "cue": null,
+          "rows": null
+        }
+      },
+      "runtime": {
+        "assets": [
+          "SUBWAY_HEADHOUSE_CONSERVATORY",
+          "SUBWAY_HEADHOUSE_DECO",
+          "SUBWAY_HEADHOUSE_BRICK",
+          "SUBWAY_KIOSK",
+          "SUBWAY_PLATFORM_SHELTER",
+          "SUBWAY_TURNSTILES",
+          "SUBWAY_TICKET_MACHINE",
+          "SUBWAY_ELEVATOR",
+          "SUBWAY_CAR_A",
+          "SUBWAY_CAR_B",
+          "SUBWAY_CAR_A2",
+          "SUBWAY_CAR_B2",
+          "SUBWAY_LEAD_LEFT",
+          "SUBWAY_LEAD_RIGHT",
+          "SUBWAY_INTERIOR_STRIP",
+          "SUBWAY_TUNNEL_MOUTH",
+          "SUBWAY_GANTRY",
+          "SUBWAY_ROUTE_BOARD",
+          "SUBWAY_WARNING_STRIP",
+          "SUBWAY_WAITING_GROUP"
+        ]
+      }
+    },
+    {
+      "sheet": "S03",
+      "pack": "ambient-jobs",
+      "file": "lw-S03-bellhop.png",
+      "sha256": "23db60c823eb3872dda1dab9bd574f57d8047c275dac9d8578f562edb4824b8f",
+      "bytes": 1965768,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-1fc1b20c-5821-4928-88bc-eb816f44f0a9.png",
+        "generatedAt": "2026-10-16T16:40:58.365173+00:00",
+        "prompt": "Use case: stylized-concept. ORIGINAL production animation SOURCE sprite sheet for a cozy top-down 16-bit RPG office/world game. TRUE TRANSPARENT ALPHA background. ONE SAME CHARACTER in all32cells: a cheerful black bellhop with a maroon-and-brass uniform and small pillbox cap. Requested landscape sheet 1536x1024, EXACTLY8columns by4rows of equal cells, all32cells filled, wide clean transparent gutters, no frames, labels, words, numbers, watermark or scenery. Crisp discrete pixel clusters, sophisticated restrained palette, upper-left lighting, dark subtle outline, slightly elevated FRONT orthographic RPG sprites, NOT isometric. Big expressive head, compact readable body, visualheightapproximately2worldtiles; same proportions/clothes/hair/identity/scale and exactbottom-centred feet anchor throughout. Each sprite fully inside its cell, no cut-off. ROW1 facesDOWN towardviewer. ROW2 facesLEFT sideprofile. ROW3 facesRIGHT sideprofile. ROW4 facesUP showingback. Everyrow has8frames in EXACT columnorder: 1.walkcontact-leftfoot, 2.walkpass, 3.walkcontact-oppositefoot, 4.walkpass-opposite, 5.idleneutral, 6.idlesmallbreath, 7.jobgesturestart, 8.jobgesturefinish. Job gesture is lifting a small suitcase, then lowering it onto an implied trolley outside the frame. Thewalkinglegs must show distinct step phases but torso/height staystable. The twoidleframes almostidentical. Jobframes keepbody in EXACTsame place asotherframes and moveonlyarms/handheldprop; no furniture, counters, trolleys, floorplanes or largemachinery insidecells. No glow/aura/rings. Ordinary decorative civilian role, not a real emergency or codingagent. Preserve body anchors and eachrow'ssingle consistent facing. Do not repeat a front-view pose in back/profile rows. Everybackground/gutter pixel fullytransparent; no checkerboard/no solidmatte. This is rawsourceart for laterengineerQA, not a poster.",
+        "promptSha256": "261522e68398fb652956a2ff1351a51357dd93b5153c60e25ade96fab77eecd5",
+        "contract": "FULL",
+        "subject": "a cheerful black bellhop with a maroon-and-brass uniform and small pillbox cap"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S03",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            8,
+            8,
+            8,
+            8
+          ]
+        },
+        "cells": {
+          "delivered": 32,
+          "extracted": 32,
+          "alphaVerified": 32
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 938418,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "face and nose point left in band 2, right in band 3; band 1 shows the face, band 4 the back of the cap",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "bellhop"
+      }
+    },
+    {
+      "sheet": "S04",
+      "pack": "ambient-jobs",
+      "file": "lw-S04-police.png",
+      "sha256": "e84206795b00d954a550601125a658522ccc83a5540ce83190c29bd84f9ca60d",
+      "bytes": 2149237,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-c1d06952-eb9b-42b6-9aa3-a7acaddd5a31.png",
+        "generatedAt": "2026-10-16T16:40:58.394901+00:00",
+        "prompt": "Use case: stylized-concept. ORIGINAL production animation SOURCE sprite sheet for a cozy top-down 16-bit RPG office/world game. TRUE TRANSPARENT ALPHA background. ONE SAME CHARACTER in all32cells: a calm East Asian female civic police officer in a navy uniform and cap, small shoulder radio, no drawn weapon. Requested landscape sheet 1536x1024, EXACTLY8columns by4rows of equal cells, all32cells filled, wide clean transparent gutters, no frames, labels, words, numbers, watermark or scenery. Crisp discrete pixel clusters, sophisticated restrained palette, upper-left lighting, dark subtle outline, slightly elevated FRONT orthographic RPG sprites, NOT isometric. Big expressive head, compact readable body, visualheightapproximately2worldtiles; same proportions/clothes/hair/identity/scale and exactbottom-centred feet anchor throughout. Each sprite fully inside its cell, no cut-off. ROW1 facesDOWN towardviewer. ROW2 facesLEFT sideprofile. ROW3 facesRIGHT sideprofile. ROW4 facesUP showingback. Everyrow has8frames in EXACT columnorder: 1.walkcontact-leftfoot, 2.walkpass, 3.walkcontact-oppositefoot, 4.walkpass-opposite, 5.idleneutral, 6.idlesmallbreath, 7.jobgesturestart, 8.jobgesturefinish. Job gesture is a calm wave of the hand, then hand returning to neutral. Thewalkinglegs must show distinct step phases but torso/height staystable. The twoidleframes almostidentical. Jobframes keepbody in EXACTsame place asotherframes and moveonlyarms/handheldprop; no furniture, counters, trolleys, floorplanes or largemachinery insidecells. No glow/aura/rings. Ordinary decorative civilian role, not a real emergency or codingagent. Preserve body anchors and eachrow'ssingle consistent facing. Do not repeat a front-view pose in back/profile rows. Everybackground/gutter pixel fullytransparent; no checkerboard/no solidmatte. This is rawsourceart for laterengineerQA, not a poster.",
+        "promptSha256": "d7f21236630850f926d447d7a51c6680405e034450eeb3505d03658606f8e3f9",
+        "contract": "FULL",
+        "subject": "a calm East Asian female civic police officer in a navy uniform and cap, small shoulder radio, no drawn weapon"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S04",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            8,
+            8,
+            8,
+            8
+          ]
+        },
+        "cells": {
+          "delivered": 32,
+          "extracted": 32,
+          "alphaVerified": 32
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 837281,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "cap brim and face point left in band 2 (ponytail trails right), right in band 3 (ponytail trails left) — matches lead1 visual adjudication",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "police"
+      }
+    },
+    {
+      "sheet": "S05",
+      "pack": "ambient-jobs",
+      "file": "lw-S05-firefighter.png",
+      "sha256": "3820c2a11156efd55ab7033728cc6f572862d5a90531cea1fabeff5409bf0b33",
+      "bytes": 2305770,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-cad3cabe-643d-404d-8ee1-c032a1b9a721.png",
+        "generatedAt": "2026-10-16T16:43:29.060130+00:00",
+        "prompt": "Use case: stylized-concept. ORIGINAL production animation SOURCE sprite sheet for a cozy top-down 16-bit RPG office/world game. TRUE TRANSPARENT ALPHA background. ONE SAME CHARACTER in all32cells: a sturdy Latino firefighter in tan charcoal turnout coat and helmet. Requested landscape sheet 1536x1024, EXACTLY8columns by4rows of equal cells, all32cells filled, wide clean transparent gutters, no frames, labels, words, numbers, watermark or scenery. Crisp discrete pixel clusters, sophisticated restrained palette, upper-left lighting, dark subtle outline, slightly elevated FRONT orthographic RPG sprites, NOT isometric. Big expressive head, compact readable body, visualheightapproximately2worldtiles; same proportions/clothes/hair/identity/scale and exactbottom-centred feet anchor throughout. Each sprite fully inside its cell, no cut-off. ROW1 facesDOWN towardviewer. ROW2 facesLEFT sideprofile. ROW3 facesRIGHT sideprofile. ROW4 facesUP showingback. Everyrow has8frames in EXACT columnorder: 1.walkcontact-leftfoot, 2.walkpass, 3.walkcontact-oppositefoot, 4.walkpass-opposite, 5.idleneutral, 6.idlesmallbreath, 7.jobgesturestart, 8.jobgesturefinish. Job gesture is hands starting to coil a small hose loop, then completing the coil; ordinary station routine, no fire or emergency. Thewalkinglegs must show distinct step phases but torso/height staystable. The twoidleframes almostidentical. Jobframes keepbody in EXACTsame place asotherframes and moveonlyarms/handheldprop; no furniture, counters, trolleys, floorplanes or largemachinery insidecells. No glow/aura/rings. Ordinary decorative civilian role, not a real emergency or codingagent. Preserve body anchors and eachrow'ssingle consistent facing. Do not repeat a front-view pose in back/profile rows. Everybackground/gutter pixel fullytransparent; no checkerboard/no solidmatte. This is rawsourceart for laterengineerQA, not a poster.",
+        "promptSha256": "86a1ec192c0962c234d76396b7d4d2ed62e64f4b6b04161249cedc7a68862e0c",
+        "contract": "FULL",
+        "subject": "a sturdy Latino firefighter in tan charcoal turnout coat and helmet"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S05",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            8,
+            8,
+            8,
+            8
+          ]
+        },
+        "cells": {
+          "delivered": 32,
+          "extracted": 32,
+          "alphaVerified": 32
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 794177,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "face and helmet brim point left in band 2 with the air tank on the trailing right; mirrored in band 3",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "firefighter"
+      }
+    },
+    {
+      "sheet": "S06",
+      "pack": "ambient-jobs",
+      "file": "lw-S06-store-clerk.png",
+      "sha256": "6a0948d62290e357b52c133ca3c41111d710724d1de2aba8f90797ebc6159e9a",
+      "bytes": 2146818,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-faac51e6-5641-4f02-ad34-1a7ce9f2e2ed.png",
+        "generatedAt": "2026-10-16T16:43:29.090891+00:00",
+        "prompt": "Use case: stylized-concept. ORIGINAL production animation SOURCE sprite sheet for a cozy top-down 16-bit RPG office/world game. TRUE TRANSPARENT ALPHA background. ONE SAME CHARACTER in all32cells: a friendly white female store clerk in forest green polo, cream apron and blank lanyard. Requested landscape sheet 1536x1024, EXACTLY8columns by4rows of equal cells, all32cells filled, wide clean transparent gutters, no frames, labels, words, numbers, watermark or scenery. Crisp discrete pixel clusters, sophisticated restrained palette, upper-left lighting, dark subtle outline, slightly elevated FRONT orthographic RPG sprites, NOT isometric. Big expressive head, compact readable body, visualheightapproximately2worldtiles; same proportions/clothes/hair/identity/scale and exactbottom-centred feet anchor throughout. Each sprite fully inside its cell, no cut-off. ROW1 facesDOWN towardviewer. ROW2 facesLEFT sideprofile. ROW3 facesRIGHT sideprofile. ROW4 facesUP showingback. Everyrow has8frames in EXACT columnorder: 1.walkcontact-leftfoot, 2.walkpass, 3.walkcontact-oppositefoot, 4.walkpass-opposite, 5.idleneutral, 6.idlesmallbreath, 7.jobgesturestart, 8.jobgesturefinish. Job gesture is holding a small grocery item then passing it over an implied scanner outside frame. Thewalkinglegs must show distinct step phases but torso/height staystable. The twoidleframes almostidentical. Jobframes keepbody in EXACTsame place asotherframes and moveonlyarms/handheldprop; no furniture, counters, trolleys, floorplanes or largemachinery insidecells. No glow/aura/rings. Ordinary decorative civilian role, not a real emergency or codingagent. Preserve body anchors and eachrow'ssingle consistent facing. Do not repeat a front-view pose in back/profile rows. Everybackground/gutter pixel fullytransparent; no checkerboard/no solidmatte. This is rawsourceart for laterengineerQA, not a poster.",
+        "promptSha256": "53705d890680140845e58fe7ad7333232d85fc93f0dddc2218ffd81e45a4f5e0",
+        "contract": "FULL",
+        "subject": "a friendly white female store clerk in forest green polo, cream apron and blank lanyard"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S06",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            8,
+            8,
+            8,
+            8
+          ]
+        },
+        "cells": {
+          "delivered": 32,
+          "extracted": 32,
+          "alphaVerified": 32
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 943213,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "nose and face point left in band 2 with the hair bun trailing right; reversed in band 3",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "store-clerk"
+      }
+    },
+    {
+      "sheet": "S07",
+      "pack": "ambient-jobs",
+      "file": "lw-S07-barista.png",
+      "sha256": "80bea6e2622ff2b4d92748b0ba8a4248a142f3515c2175306fdd2353767a054b",
+      "bytes": 2043486,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-aa4de557-210f-4df8-92ef-daa143597716.png",
+        "generatedAt": "2026-10-16T16:43:29.120799+00:00",
+        "prompt": "Use case: stylized-concept. ORIGINAL production animation SOURCE sprite sheet for a cozy top-down 16-bit RPG office/world game. TRUE TRANSPARENT ALPHA background. ONE SAME CHARACTER in all32cells: a friendly South Asian male barista in teal apron, rolled cream sleeves and dark cap. Requested landscape sheet 1536x1024, EXACTLY8columns by4rows of equal cells, all32cells filled, wide clean transparent gutters, no frames, labels, words, numbers, watermark or scenery. Crisp discrete pixel clusters, sophisticated restrained palette, upper-left lighting, dark subtle outline, slightly elevated FRONT orthographic RPG sprites, NOT isometric. Big expressive head, compact readable body, visualheightapproximately2worldtiles; same proportions/clothes/hair/identity/scale and exactbottom-centred feet anchor throughout. Each sprite fully inside its cell, no cut-off. ROW1 facesDOWN towardviewer. ROW2 facesLEFT sideprofile. ROW3 facesRIGHT sideprofile. ROW4 facesUP showingback. Everyrow has8frames in EXACT columnorder: 1.walkcontact-leftfoot, 2.walkpass, 3.walkcontact-oppositefoot, 4.walkpass-opposite, 5.idleneutral, 6.idlesmallbreath, 7.jobgesturestart, 8.jobgesturefinish. Job gesture is holding a small metal pitcher above a cup then pouring into it. Thewalkinglegs must show distinct step phases but torso/height staystable. The twoidleframes almostidentical. Jobframes keepbody in EXACTsame place asotherframes and moveonlyarms/handheldprop; no furniture, counters, trolleys, floorplanes or largemachinery insidecells. No glow/aura/rings. Ordinary decorative civilian role, not a real emergency or codingagent. Preserve body anchors and eachrow'ssingle consistent facing. Do not repeat a front-view pose in back/profile rows. Everybackground/gutter pixel fullytransparent; no checkerboard/no solidmatte. This is rawsourceart for laterengineerQA, not a poster.",
+        "promptSha256": "20ffa40ab6bfd78a9f79483f41475b740c976362fba7b42b1f50f94c3dd86d49",
+        "contract": "FULL",
+        "subject": "a friendly South Asian male barista in teal apron, rolled cream sleeves and dark cap"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S07",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            8,
+            8,
+            8,
+            8
+          ]
+        },
+        "cells": {
+          "delivered": 32,
+          "extracted": 32,
+          "alphaVerified": 32
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 967939,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "cap brim and face point left in band 2; right in band 3",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "barista"
+      }
+    },
+    {
+      "sheet": "S02",
+      "pack": "retail",
+      "file": "lw-S02-retail.png",
+      "sha256": "e222566e8f2fa0b6c1e65cb7fbb9e93ea1ad8d5b16db83301aa79b506ffdd07e",
+      "bytes": 1790556,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-d1d782f5-a3d1-4af1-a7b7-3bc0aa205eb6.png",
+        "generatedAt": "2026-10-16T16:48:38.905035+00:00",
+        "prompt": "Original coherent 16-bit RPG pixel art for the same cozy sophisticated top-down living office metropolis: restrained earthy palette, crisp pixel clusters and subtle dark outlines, upper-left lighting, slightly elevated front orthographic view NOT isometric. Real transparent alpha everywhere outside sprites, no background scene, solid matte, checkerboard, frame, labels, watermark, text or baked glow. A production STATIC building/prop atlas, requested1536x1536square, EXACT2columns x2rows=4equallysizedcells withwidetransparentgutters. R1C1: grand red-and-cream TARGET big-boxstore with bold exactstorefrontname TARGET, fullroof+frontfacadeandglassgarden-centrewing, redbrasspylonsignalsoTARGET, open recognizable entrance. R1C2: its separate matchingforecourtmodule withshoppingcartcorral, carts,bollards,tealplantersandpedestrianpaving, no people. R2C1: grand blue-and-warm-stone Walmart big-boxstore with boldexactstorefrontname Walmart, goldenstarburstaccent and grocerywing, fullroof/frontfacadeandmatchingbluepylonsign Walmart, openentrance. R2C2: matchingforecourtmodule withcartcorral,carts,bollards,plantersandbikerack, no people. Everybuilding completeisolated inowncell, samepixelscale andeye-level; forecourts are separatepropsnottouchingbuildings. Buildings have10x7tileintendedbasefootprint, forecourt4x3. Architecture lively anddetailedbut readableatgamescale, no surroundingworld, no streetsceneryorpropertyboundary. All lettering ONLY the exacttwo requestedstore names. Fictionaloriginalfan-made retailgameprops, no officialendorsement. No celllabels, captionsorwatermarks. Blanktransparentbackground,gutterswide; no motifcrossesacellboundary.",
+        "promptSha256": "04f4a5c3e5ef2db594737434c23410ed92dc1f8de2c40ebbd993f5ddc5e3dd58",
+        "contract": "STATIC",
+        "subject": "Target/Walmart facades and forecourts"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S02",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (unequal columns, no fixed stride)",
+          "observedPerRow": [
+            2,
+            2
+          ]
+        },
+        "cells": {
+          "delivered": 4,
+          "extracted": 4,
+          "alphaVerified": 4
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 2479,
+        "facing": null
+      },
+      "runtime": {
+        "assets": [
+          "BIGBOX_TARGET",
+          "BIGBOX_TARGET_FORECOURT",
+          "BIGBOX_WALMART",
+          "BIGBOX_WALMART_FORECOURT"
+        ]
+      }
+    },
+    {
+      "sheet": "S16",
+      "pack": "fan-inspired",
+      "file": "lw-S16-pocket-creature.png",
+      "sha256": "ece8acd8f1abe3bdaba0ba49b33afc6d92b0760670b163a8073d6c703d41946e",
+      "bytes": 1158863,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-253c890c-338d-45e7-8799-bf5773140234.png",
+        "generatedAt": "2026-10-16T16:48:38.936862+00:00",
+        "prompt": "Original coherent 16-bit RPG pixel art for the same cozy sophisticated top-down living office metropolis: restrained earthy palette, crisp pixel clusters and subtle dark outlines, upper-left lighting, slightly elevated front orthographic view NOT isometric. Real transparent alpha everywhere outside sprites, no background scene, solid matte, checkerboard, frame, labels, watermark, text or baked glow. Production animation SOURCE sheet, ONE SAME CHARACTER in every cell: an original small round golden pocket-creature homage, pudgy mouse-like woodland explorer with asymmetrical dark ear tips, a short zig-zag tail and tiny teal neck scarf; friendly distinctive design, not an exact commercial character copy. Requested1536x1536 square, EXACTLY4equalcolumns x4equalrows=16 separate frames. Uniform cell size, at least10percent transparent gutter, every character complete, same body/face/scale and exactlybottom-centred feet anchor throughout. Rows top tobottom: DOWN facingviewer; LEFTprofile; RIGHTprofile; UP showingback. Columns lefttoright: walkcontact with leadfoot planted; walkpassing with legscrossing; neutralidlestraightstanding; character gesture small cheek-spark playful gesture, no baked aura. Distinct walking footposes, torso stable. Eachrowhasexactly4frames; never repeat frontview inback/profilerows. Retain any asymmetric handheldprop/scarf consistently. No letters/logos/seriesmark. This is original fan-inspired homage source for a decorative NPC, never a codingagent. Only sourceposes; engineering later derives and verifies actual walkcycles. No scenery or graphic backdrops. All 16framesmust share one identity and alignedgroundanchor.",
+        "promptSha256": "3ecae1a5c3140c12d04d6b60eb61cd7f19d6ca6ead1e72d338fd1ca18b767f15",
+        "contract": "MIN",
+        "subject": "an original small round golden pocket-creature homage, pudgy mouse-like woodland explorer with asymmetrical dark ear tips, a short zig-zag tail and tiny teal neck scarf; friendly distinctive design, not an exact commercial character copy"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S16",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "cells": {
+          "delivered": 16,
+          "extracted": 16,
+          "alphaVerified": 16
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 2021,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "eye and cheek blush on the left with the bolt tail trailing right in band 2; reversed in band 3; band 1 shows the face, band 4 the back",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "egg-pocket-creature"
+      }
+    },
+    {
+      "sheet": "S19",
+      "pack": "fan-inspired",
+      "file": "lw-S19-shinobi.png",
+      "sha256": "2f22ceb4f50db2e561c1f7061feb229266aac9ac60929973ab47a98eaff92539",
+      "bytes": 1152058,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-8e4a51a5-ce84-4705-ab83-1511e1c21ed8.png",
+        "generatedAt": "2026-10-16T16:48:38.967198+00:00",
+        "prompt": "Original coherent 16-bit RPG pixel art for the same cozy sophisticated top-down living office metropolis: restrained earthy palette, crisp pixel clusters and subtle dark outlines, upper-left lighting, slightly elevated front orthographic view NOT isometric. Real transparent alpha everywhere outside sprites, no background scene, solid matte, checkerboard, frame, labels, watermark, text or baked glow. Production animation SOURCE sheet, ONE SAME CHARACTER in every cell: an original young wandering shinobi homage in burnt-orange and navy training gear, tousled golden hair, blank metal forehead plate, small scroll pouch; not an exact commercial character copy. Requested1536x1536 square, EXACTLY4equalcolumns x4equalrows=16 separate frames. Uniform cell size, at least10percent transparent gutter, every character complete, same body/face/scale and exactlybottom-centred feet anchor throughout. Rows top tobottom: DOWN facingviewer; LEFTprofile; RIGHTprofile; UP showingback. Columns lefttoright: walkcontact with leadfoot planted; walkpassing with legscrossing; neutralidlestraightstanding; character gesture ready martial-arts hand pose, no weapon thrown. Distinct walking footposes, torso stable. Eachrowhasexactly4frames; never repeat frontview inback/profilerows. Retain any asymmetric handheldprop/scarf consistently. No letters/logos/seriesmark. This is original fan-inspired homage source for a decorative NPC, never a codingagent. Only sourceposes; engineering later derives and verifies actual walkcycles. No scenery or graphic backdrops. All 16framesmust share one identity and alignedgroundanchor.",
+        "promptSha256": "bd487e098eecec072f61fe51f6fa9cb2f49f4f9601ee7c0d5082e9582cfb07e1",
+        "contract": "MIN",
+        "subject": "an original young wandering shinobi homage in burnt-orange and navy training gear, tousled golden hair, blank metal forehead plate, small scroll pouch; not an exact commercial character copy"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S19",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "cells": {
+          "delivered": 16,
+          "extracted": 16,
+          "alphaVerified": 16
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 774,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "face points left in band 2 with the headband tails trailing right; reversed in band 3",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "egg-shinobi"
+      }
+    },
+    {
+      "sheet": "S23",
+      "pack": "fan-inspired",
+      "file": "lw-S23-martial-artist.png",
+      "sha256": "35986084ced5d0b08680f7458dfb04de975a638ff05145b28316b296f5383919",
+      "bytes": 1119690,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-959e8301-06bb-4a7b-9eea-5df483ff91e2.png",
+        "generatedAt": "2026-10-16T16:52:34.115238+00:00",
+        "prompt": "Original coherent 16-bit RPG pixel art for the same cozy sophisticated top-down living office metropolis: restrained earthy palette, crisp pixel clusters and subtle dark outlines, upper-left lighting, slightly elevated front orthographic view NOT isometric. Real transparent alpha everywhere outside sprites, no background scene, solid matte, checkerboard, frame, labels, watermark, text or baked glow. Production animation SOURCE sheet, ONE SAME CHARACTER in every cell: an original spiky-haired martial-artist homage in straw-orange training gi, deep navy sash and boots, dark-brown spiky hair, cheerful strong build; not an exact commercial character copy. Requested1536x1536 square, EXACTLY4equalcolumns x4equalrows=16 separate frames. Uniform cell size, at least10percent transparent gutter, every character complete, same body/face/scale and exactlybottom-centred feet anchor throughout. Rows top tobottom: DOWN facingviewer; LEFTprofile; RIGHTprofile; UP showingback. Columns lefttoright: walkcontact with leadfoot planted; walkpassing with legscrossing; neutralidlestraightstanding; character gesture braced determined power stance, no aura or glow. Distinct walking footposes, torso stable. Eachrowhasexactly4frames; never repeat frontview inback/profilerows. Retain any asymmetric handheldprop/scarf consistently. No letters/logos/seriesmark. This is original fan-inspired homage source for a decorative NPC, never a codingagent. Only sourceposes; engineering later derives and verifies actual walkcycles. No scenery or graphic backdrops. All 16framesmust share one identity and alignedgroundanchor.",
+        "promptSha256": "793e7f48ea61c70b4a0165e037ae07eb0c77f6144d16cd3f829ba15806197c44",
+        "contract": "MIN",
+        "subject": "an original spiky-haired martial-artist homage in straw-orange training gi, deep navy sash and boots, dark-brown spiky hair, cheerful strong build; not an exact commercial character copy"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S23",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "cells": {
+          "delivered": 16,
+          "extracted": 16,
+          "alphaVerified": 16
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 1501,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "face and gaze point left in band 2; right in band 3",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "egg-martial-artist"
+      }
+    },
+    {
+      "sheet": "S27",
+      "pack": "fan-inspired",
+      "file": "lw-S27-cul-de-sac-kid.png",
+      "sha256": "467c2f2ea00b194e9ee44227a7aea6699a1905c740d3e8b7437e5a4292ada12f",
+      "bytes": 1148060,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-ea219003-c9cf-46eb-9bbd-a0e53a2ffe06.png",
+        "generatedAt": "2026-10-16T16:52:34.148240+00:00",
+        "prompt": "Original coherent 16-bit RPG pixel art for the same cozy sophisticated top-down living office metropolis: restrained earthy palette, crisp pixel clusters and subtle dark outlines, upper-left lighting, slightly elevated front orthographic view NOT isometric. Real transparent alpha everywhere outside sprites, no background scene, solid matte, checkerboard, frame, labels, watermark, text or baked glow. Production animation SOURCE sheet, ONE SAME CHARACTER in every cell: an original short suburban 1990s cartoon boy homage, oversized yellow shirt with one red stripe, lime-green shorts, tiny brown bowler cap and sneakers, rubber-limb silhouette, playful schemer grin; not an exact commercial character copy. Requested1536x1536 square, EXACTLY4equalcolumns x4equalrows=16 separate frames. Uniform cell size, at least10percent transparent gutter, every character complete, same body/face/scale and exactlybottom-centred feet anchor throughout. Rows top tobottom: DOWN facingviewer; LEFTprofile; RIGHTprofile; UP showingback. Columns lefttoright: walkcontact with leadfoot planted; walkpassing with legscrossing; neutralidlestraightstanding; character gesture scheming hands rubbed together with mischievous grin. Distinct walking footposes, torso stable. Eachrowhasexactly4frames; never repeat frontview inback/profilerows. Retain any asymmetric handheldprop/scarf consistently. No letters/logos/seriesmark. This is original fan-inspired homage source for a decorative NPC, never a codingagent. Only sourceposes; engineering later derives and verifies actual walkcycles. No scenery or graphic backdrops. All 16framesmust share one identity and alignedgroundanchor.",
+        "promptSha256": "606ca1f76bfa293c590b62e3e6576da3780d0466ecc8728dfc08165b02fcf968",
+        "contract": "MIN",
+        "subject": "an original short suburban 1990s cartoon boy homage, oversized yellow shirt with one red stripe, lime-green shorts, tiny brown bowler cap and sneakers, rubber-limb silhouette, playful schemer grin; not an exact commercial character copy"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S27",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "cells": {
+          "delivered": 16,
+          "extracted": 16,
+          "alphaVerified": 16
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 910,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "nose and face point left in band 2; right in band 3",
+          "rows": [
+            "DOWN",
+            "LEFT",
+            "RIGHT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "egg-cul-de-sac-kid"
+      }
+    },
+    {
+      "sheet": "S31",
+      "pack": "fan-inspired",
+      "file": "lw-S31-trickster-hare.png",
+      "sha256": "1fd5387dd0f04579b87b53fe2db766b12a6064ce945782f13e5b9c959a1906d0",
+      "bytes": 1186376,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-d5aa93d8-6c89-4796-8cce-354fd6af48e8.png",
+        "generatedAt": "2026-10-16T16:52:34.180032+00:00",
+        "prompt": "Original coherent 16-bit RPG pixel art for the same cozy sophisticated top-down living office metropolis: restrained earthy palette, crisp pixel clusters and subtle dark outlines, upper-left lighting, slightly elevated front orthographic view NOT isometric. Real transparent alpha everywhere outside sprites, no background scene, solid matte, checkerboard, frame, labels, watermark, text or baked glow. Production animation SOURCE sheet, ONE SAME CHARACTER in every cell: an original tall grey rubber-hose cartoon trickster hare homage, long ears with one floppy tip, cream muzzle and belly, red neckerchief, holding a small carrot; not an exact commercial character copy. Requested1536x1536 square, EXACTLY4equalcolumns x4equalrows=16 separate frames. Uniform cell size, at least10percent transparent gutter, every character complete, same body/face/scale and exactlybottom-centred feet anchor throughout. Rows top tobottom: DOWN facingviewer; LEFTprofile; RIGHTprofile; UP showingback. Columns lefttoright: walkcontact with leadfoot planted; walkpassing with legscrossing; neutralidlestraightstanding; character gesture nonchalant leaning carrot-chew pose. Distinct walking footposes, torso stable. Eachrowhasexactly4frames; never repeat frontview inback/profilerows. Retain any asymmetric handheldprop/scarf consistently. No letters/logos/seriesmark. This is original fan-inspired homage source for a decorative NPC, never a codingagent. Only sourceposes; engineering later derives and verifies actual walkcycles. No scenery or graphic backdrops. All 16framesmust share one identity and alignedgroundanchor.",
+        "promptSha256": "ff868a004c87d08cfe03c2675b7988fe5b2e46a1824a95c3c8f3b8c5807f1155",
+        "contract": "MIN",
+        "subject": "an original tall grey rubber-hose cartoon trickster hare homage, long ears with one floppy tip, cream muzzle and belly, red neckerchief, holding a small carrot; not an exact commercial character copy"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#S31",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "cells": {
+          "delivered": 16,
+          "extracted": 16,
+          "alphaVerified": 16
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 716,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1) — not a programmatic vote",
+          "cue": "snout points right and the carrot is held in front on the right in band 2; reversed in band 3 — DIFFERS from the contract; agrees with the Operator report. The skin-side signal is unreliable here (the head band is mostly ears)",
+          "rows": [
+            "DOWN",
+            "RIGHT",
+            "LEFT",
+            "UP"
+          ]
+        }
+      },
+      "runtime": {
+        "ambientSheet": "egg-trickster-hare"
+      }
+    },
+    {
+      "sheet": "T01",
+      "pack": "decorative-traffic",
+      "file": "lw-T01-emergency-vehicles.png",
+      "sha256": "f51abbd6cbdca2beaaa71638d94cbb426c403d71c3380e8a57176000cba83c84",
+      "bytes": 1905400,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-e7bb5d9e-be8a-4edc-9c8c-7dd122e7fc3b.png",
+        "generatedAt": "2026-10-16T18:29:17.511630+00:00",
+        "prompt": "Create an ORIGINAL cohesive 16-bit RPG pixel-art VEHICLE SOURCE ATLAS for a miniature top-down office/city world. REAL transparent alpha background, no road, floor, ground plate, drop shadow, checkerboard, grid lines, labels, text, numbers or people. Crisp pixel clusters and subtle dark outlines, upper-left lighting, teal/navy/cream/red/yellow restrained palette matching a warm pixel city. Slightly elevated orthographic top-down game viewpoint, NOT diamond isometric, NOT a photograph or vector icon. Each full vehicle remains entirely inside its own equal cell with at least15% transparent margin. No motifs between cells. Consistent physical scale: ordinary cars smaller than fire engines. Source only, STATIC four-direction views, not animation frames. All four direction columns must be distinct and honest: column1 facing DOWN toward viewer (front and roof), column2 facing LEFT, column3 facing RIGHT, column4 facing UP away from viewer (rear and roof). Cab/headlights/taillights establish direction. Keep right/left body geometry consistent; use front and rear views for vertical road lanes rather than turning side-view art sideways. Ready for engineering to trim and downsample to approximately32-64px vehicle footprints. Landscape1536x1024 PNG. EXACTLY4equal columns by3equal rows,12separate vehicles. Row1 red fire engine with cab, side compartments, reflective cream stripes and a folded silver ladder on roof; no text. Row2 black-and-white police sedan with generic shield shape and static red/blue roof lightbar, no real department or text. Row3 white box ambulance with red/teal side stripe, blue star-of-life-style medical marking and static roof beacons, no text and no red-cross emblem. Every row uses the same four facing columns DOWN,LEFT,RIGHT,UP. No flashing lights or emergency scene.",
+        "promptSha256": "7f5062ab57de724a922d17903008e21e18e8037f780cd6e2c4d4b1e125082dc1",
+        "contract": "STATIC four facings per vehicle; requested grid4columns x3rows",
+        "subject": "Fire engine, police cruiser, ambulance; no actual public services"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#T01",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            4,
+            4,
+            4
+          ]
+        },
+        "cells": {
+          "delivered": 12,
+          "extracted": 12,
+          "alphaVerified": 12
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 835491,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1)",
+          "cue": "side views: red tail lamp at the rear end, bonnet + raked windscreen + side mirror at the front; front view: headlights, grille, windscreen; rear view: tail lamps, rear window/doors, plate",
+          "rows": null
+        }
+      },
+      "runtime": {
+        "assets": [
+          "VEHICLE_FIRE_ENGINE_DOWN",
+          "VEHICLE_FIRE_ENGINE_LEFT",
+          "VEHICLE_FIRE_ENGINE_RIGHT",
+          "VEHICLE_FIRE_ENGINE_UP",
+          "VEHICLE_POLICE_CRUISER_DOWN",
+          "VEHICLE_POLICE_CRUISER_LEFT",
+          "VEHICLE_POLICE_CRUISER_RIGHT",
+          "VEHICLE_POLICE_CRUISER_UP",
+          "VEHICLE_AMBULANCE_DOWN",
+          "VEHICLE_AMBULANCE_LEFT",
+          "VEHICLE_AMBULANCE_RIGHT",
+          "VEHICLE_AMBULANCE_UP"
+        ]
+      }
+    },
+    {
+      "sheet": "T02",
+      "pack": "decorative-traffic",
+      "file": "lw-T02-city-cars.png",
+      "sha256": "79c028bbf8831f1df217a710506b3b05361ab8f2b7b73bbec976a97b2df7b40d",
+      "bytes": 1092772,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-dd12427b-9f88-4a37-a5bd-b842022a9fad.png",
+        "generatedAt": "2026-10-16T18:29:17.593166+00:00",
+        "prompt": "Create an ORIGINAL cohesive 16-bit RPG pixel-art VEHICLE SOURCE ATLAS for a miniature top-down office/city world. REAL transparent alpha background, no road, floor, ground plate, drop shadow, checkerboard, grid lines, labels, text, numbers or people. Crisp pixel clusters and subtle dark outlines, upper-left lighting, teal/navy/cream/red/yellow restrained palette matching a warm pixel city. Slightly elevated orthographic top-down game viewpoint, NOT diamond isometric, NOT a photograph or vector icon. Each full vehicle remains entirely inside its own equal cell with at least15% transparent margin. No motifs between cells. Consistent physical scale: ordinary cars smaller than fire engines. Source only, STATIC four-direction views, not animation frames. All four direction columns must be distinct and honest: column1 facing DOWN toward viewer (front and roof), column2 facing LEFT, column3 facing RIGHT, column4 facing UP away from viewer (rear and roof). Cab/headlights/taillights establish direction. Keep right/left body geometry consistent; use front and rear views for vertical road lanes rather than turning side-view art sideways. Ready for engineering to trim and downsample to approximately32-64px vehicle footprints. Square1536x1536 PNG. EXACTLY4equal columns by4equal rows,16separate cars. Row1 classic yellow city taxi, small blank roof taxi light, black trim. Row2 red compact hatchback, rounded small body. Row3 blue four-door sedan, elongated elegant body. Row4 silver/cream SUV, taller robust body with roof rails. Distinct body shapes, not mere color swaps. Every row uses the same four facing columns DOWN,LEFT,RIGHT,UP. No brands, text or plate numbers. Keep all cars miniature and complete, with generous transparent gutters.",
+        "promptSha256": "6df019103d8522a9f8dd6f4918b4e8056e40671528c99f0bf4573fcab9d6e457",
+        "contract": "STATIC four facings per vehicle; requested grid4columns x4rows",
+        "subject": "Yellow taxi, red compact hatchback, blue sedan, silver SUV"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#T02",
+        "segmentation": {
+          "ok": true,
+          "method": "alpha projection bands (no fixed stride)",
+          "observedPerRow": [
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "cells": {
+          "delivered": 16,
+          "extracted": 16,
+          "alphaVerified": 16
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 1511,
+        "facing": {
+          "basis": "ADJUDICATED (visual, executor1)",
+          "cue": "side views: red tail lamp at the rear end, bonnet + raked windscreen + side mirror at the front; front view: headlights, grille, windscreen; rear view: tail lamps, rear window/doors, plate",
+          "rows": null
+        }
+      },
+      "runtime": {
+        "assets": [
+          "VEHICLE_TAXI_DOWN",
+          "VEHICLE_TAXI_LEFT",
+          "VEHICLE_TAXI_RIGHT",
+          "VEHICLE_TAXI_UP",
+          "VEHICLE_HATCHBACK_RED_DOWN",
+          "VEHICLE_HATCHBACK_RED_LEFT",
+          "VEHICLE_HATCHBACK_RED_RIGHT",
+          "VEHICLE_HATCHBACK_RED_UP",
+          "VEHICLE_SEDAN_BLUE_DOWN",
+          "VEHICLE_SEDAN_BLUE_LEFT",
+          "VEHICLE_SEDAN_BLUE_RIGHT",
+          "VEHICLE_SEDAN_BLUE_UP",
+          "VEHICLE_SUV_SILVER_DOWN",
+          "VEHICLE_SUV_SILVER_LEFT",
+          "VEHICLE_SUV_SILVER_RIGHT",
+          "VEHICLE_SUV_SILVER_UP"
+        ]
+      }
+    },
+    {
+      "sheet": "G01",
+      "pack": "gothic-cathedral",
+      "file": "lw-G01-cathedral.png",
+      "sha256": "5001efa44fd6cca0d38fe3d1f604aacc129da4d16604e9c7c1432df2a0f1d646",
+      "bytes": 2533649,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-f5df3d0a-8b9d-412a-8a57-6182316b66cb.png",
+        "generatedAt": "2026-10-16T18:36:38.394973+00:00",
+        "prompt": "Use case: stylized-concept. Asset type: original 16-bit RPG pixel-art architectural SOURCE ATLAS for a miniature top-down world. Create exactly SIX separate Gothic cathedral components on a TRUE transparent alpha background, organized three equal columns by two equal rows, generous transparent gutters of at least 12% of each cell. No lettering, numbers, grid lines, scenery, floor plates, shadows, checkerboard, people or extra motifs. Each object complete and inside its own cell. Crisp handcrafted pixel clusters, subtle dark outlines, warm pale limestone, brass, ruby and deep blue stained glass. Upper-left lighting. Slightly elevated front orthographic RPG view, not diamond isometric, no photorealism. Maintain coherent physical detail across objects. Components will be trimmed and downsampled for 16px tiles, so clear bold shapes over microdetail. Landscape1536x1024 PNG. Row1 column1: large circular rose-window wall panel with radiating stone tracery and ruby/blue stained-glass petals, square2x2 tile aspect ratio. Row1 column2: tall slender pointed-arch stained-glass lancet wall panel,1x2 tile aspect ratio. Row1 column3: broad Gothic triple portal facade frame with three carved pointed-arch openings, central trumeau, sculpted archivolts and pale limestone pinnacles,6x3 tile aspect ratio. IMPORTANT all three doorway openings fully OPEN and transparent down to the bottom edge, no dark black fill and no closed door; space beneath arches is usable passage. Row2 column1: tall square Gothic limestone bell-tower upper stage, Notre-Dame-inspired twin-tower style,4x7 tile aspect ratio: elongated louvred lancets, corner pinnacles, flat crown balustrade, NO tall central spire; single complete tower component, will be used twice. Row2 column2: stone high altar with gilded retable and candlesticks,3x2 tile aspect ratio, no lettering. Row2 column3: slender clustered Gothic column, bundled shafts with foliate capital,1x3 tile aspect ratio. Source sprites only, not a complete cathedral illustration. No base/background underneath objects. Preserve generous true transparent margins.",
+        "promptSha256": "4b122d7b0ecf811c756eaa9eedf8d163aca1ecb67879996015910c7d5bd11065",
+        "contract": "STATIC requested3columns x2rows; actual object bounds require inspection",
+        "subject": "Rose window, lancet window, open triple portal, tower top, altar, clustered column"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#G01",
+        "segmentation": {
+          "ok": true,
+          "method": "band split at the emptiest middle row, then alpha projection columns (unequal motif widths, no fixed stride)",
+          "splitRow": 481,
+          "splitRowOpaquePixels": 3,
+          "observedPerRow": [
+            3,
+            3
+          ],
+          "columnSpans": [
+            [
+              [
+                26,
+                470
+              ],
+              [
+                603,
+                773
+              ],
+              [
+                850,
+                1508
+              ]
+            ],
+            [
+              [
+                103,
+                415
+              ],
+              [
+                578,
+                1024
+              ],
+              [
+                1199,
+                1314
+              ]
+            ]
+          ]
+        },
+        "cells": {
+          "delivered": 6,
+          "extracted": 6,
+          "alphaVerified": 6
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 856743,
+        "facing": null
+      },
+      "runtime": {
+        "assets": [
+          "CATHEDRAL_ROSE_WINDOW",
+          "CATHEDRAL_LANCET",
+          "CATHEDRAL_PORTAL",
+          "CATHEDRAL_TOWER_TOP",
+          "CATHEDRAL_ALTAR",
+          "CATHEDRAL_COLUMN"
+        ]
+      }
+    },
+    {
+      "sheet": "M01",
+      "pack": "museum-exhibits",
+      "file": "lw-M01-museum-exhibits.png",
+      "sha256": "1ac7e501ee28aa759cc7ee806875569d21eb00c6a8e44e16f5e53edb1a21974b",
+      "bytes": 1930036,
+      "provenance": {
+        "generator": "built-in image_gen",
+        "original": "exec-87bca7fb-4a67-4ab0-bd79-6c5a6a698d74.png",
+        "generatedAt": "2026-10-16T19:09:39.190166+00:00",
+        "prompt": "Use case: stylized-concept. Asset type: ORIGINAL 16-bit RPG pixel-art MUSEUM EXHIBIT SOURCE ATLAS for an existing miniature office/city game. PRIMARY REQUIREMENT: SIXTEEN visually different exhibits, each a truly different artwork/object, never sixteen variants of one picture/frame. TRUE transparent alpha background. Exactly4 equal columns by4 equal rows, each object entirely within its cell, at least12% transparent margin/gutters. No grid lines, labels, numbers, writing, background floor, background scenery outside framed art, shadows, glow, people visiting, watermark or checkerboard. Crisp pixel clusters, subtle dark outlines, upper-left light, restrained warm stone/wood/brass/teal/ruby palette matching an elegant pixel city. Slightly elevated front orthographic RPG viewpoint for freestanding objects, NOT diamond isometric, no photorealism. Paintings are front-on hanging wall items with readable distinct compositions; fine frames, clear color masses that survive downsampling to32-64px. Transparent canvas outside every artwork/object. Square1536x1536 PNG. Row1 column1: upright landscape painting in gold frame, mountain valley and winding river, approximate2:3 aspect. Row1 column2: portrait of a fictional elderly sea captain, dark carved wood frame,2:3. Row1 column3: modern abstract canvas of asymmetric geometric red/teal/cream shapes, thin dark frame,2:3. Row1 column4: still-life fruit, blue vase and flowers in ornate brass frame,2:3. Row2 column1: wide seascape painting of sailboats and sunset clouds,3:2. Row2 column2: coherent three-panel triptych depicting a moonlit forest, each panel separate but grouped as ONE exhibit, overall3:3. Row2 column3: tall woven tapestry with a stylized stag and floral border,2:4. Row2 column4: pair of botanical studies, fern and flowering iris, grouped as ONE exhibit,overall2:2. Row3 column1: marble classical bust on narrow square plinth,1:2. Row3 column2: full standing bronze figure with raised arm on low base,1:3. Row3 column3: abstract interlocking pale stone rings sculpture on small dark base,2:2. Row3 column4: large decorated blue-and-cream ceramic urn on short support,1:2. Row4 column1: tall glass museum display cabinet with ancient pottery and a small bronze artifact clearly INSIDE; transparent glass and completely empty top surface,2:2. Row4 column2: low wide glass vitrine with a mineral crystal and old brass instrument inside,2:1. Row4 column3: mounted small dinosaur skeleton/fossil exhibit on discrete supports, skull ribs tail and legs recognizable,3:3. Row4 column4: small blank angled placard on a pedestal with a short curved velvet-rope barrier,1:1. No letters anywhere, placards blank. Complete separate silhouettes, coherent game scale but do not enlarge tiny props into giant furniture. This is a transparent game source sheet, NOT a museum room or a screenshot.",
+        "promptSha256": "43f399248354421b3760ec487455bb738de991c7980c5b5ff8800bda38651cd6",
+        "contract": "STATIC requested4columns x4rows16distinct exhibits; actual bounds and alpha require inspection",
+        "subject": "Eight distinct wall artworks and eight distinct sculpture, display, fossil and placard exhibits"
+      },
+      "inspection": {
+        "record": "LIVING-WORLD-ART-QA.json#M01",
+        "segmentation": {
+          "ok": true,
+          "method": "rows split at the emptiest row per quarter; within a row, 8-connected alpha components joined within 4 px (the triptych and the botanical pair stay one exhibit each; the fossil and the placard, whose boxes overlap, stay apart; no fixed stride)",
+          "rowSplits": [
+            311,
+            628,
+            948
+          ],
+          "observedPerRow": [
+            4,
+            4,
+            4,
+            4
+          ],
+          "columnSpans": [
+            [
+              [
+                86,
+                301
+              ],
+              [
+                374,
+                592
+              ],
+              [
+                680,
+                868
+              ],
+              [
+                957,
+                1187
+              ]
+            ],
+            [
+              [
+                34,
+                356
+              ],
+              [
+                391,
+                666
+              ],
+              [
+                697,
+                909
+              ],
+              [
+                950,
+                1205
+              ]
+            ],
+            [
+              [
+                109,
+                236
+              ],
+              [
+                430,
+                555
+              ],
+              [
+                677,
+                871
+              ],
+              [
+                995,
+                1190
+              ]
+            ],
+            [
+              [
+                51,
+                280
+              ],
+              [
+                335,
+                630
+              ],
+              [
+                653,
+                1069
+              ],
+              [
+                1024,
+                1226
+              ]
+            ]
+          ]
+        },
+        "cells": {
+          "delivered": 16,
+          "extracted": 16,
+          "alphaVerified": 16
+        },
+        "alphaCutoff": 16,
+        "zeroedHiddenRgb": 2198,
+        "facing": null
+      },
+      "runtime": {
+        "assets": [
+          "MUSEUM_PAINTING_LANDSCAPE",
+          "MUSEUM_PAINTING_PORTRAIT",
+          "MUSEUM_PAINTING_ABSTRACT",
+          "MUSEUM_PAINTING_STILL_LIFE",
+          "MUSEUM_PAINTING_SEASCAPE",
+          "MUSEUM_TRIPTYCH",
+          "MUSEUM_TAPESTRY",
+          "MUSEUM_BOTANICAL_PAIR",
+          "MUSEUM_BUST",
+          "MUSEUM_BRONZE",
+          "MUSEUM_ABSTRACT_STONE",
+          "MUSEUM_URN",
+          "MUSEUM_DISPLAY_CASE",
+          "MUSEUM_VITRINE",
+          "MUSEUM_FOSSIL",
+          "MUSEUM_PLACARD"
+        ]
+      }
+    }
+  ],
+  "publicationNote": "Original generated-file references are basenames; private local paths are omitted. Source-sheet hashes, prompts, inspection records and runtime mappings are unchanged."
+}

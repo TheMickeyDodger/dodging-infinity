@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V07",
+  "name": "Tall Terrace",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 8,
+  "width": 96,
+  "height": 192,
+  "footprintW": 6,
+  "footprintH": 12
+}

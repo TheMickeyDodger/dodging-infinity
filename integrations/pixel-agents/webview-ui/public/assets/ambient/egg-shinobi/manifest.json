@@ -1,0 +1,43 @@
+{
+  "id": "egg-shinobi",
+  "label": "Shinobi homage",
+  "source": {
+    "id": "S19",
+    "file": "lw-S19-shinobi.png",
+    "sha256": "2f22ceb4f50db2e561c1f7061feb229266aac9ac60929973ab47a98eaff92539"
+  },
+  "contract": "MIN 4x4",
+  "frameWidth": 24,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "idle1",
+    "gesture1"
+  ],
+  "walk": [
+    0,
+    1
+  ],
+  "idle": [
+    2
+  ],
+  "gesture": [
+    3
+  ],
+  "walkCycle": "2-frame (C1, C2, both drawn; no derived frames)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": false
+}

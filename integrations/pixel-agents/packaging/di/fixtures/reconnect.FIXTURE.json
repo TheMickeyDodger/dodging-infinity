@@ -1,0 +1,422 @@
+{
+  "fixture": true,
+  "fixture_id": "reconnect",
+  "label": "FIXTURE — reconnect: live, then the backend becomes unreachable, then it returns",
+  "description": "Two fresh answers, two unreachable polls, then fresh again: characters disappear while unavailable and the same identities return afterwards.",
+  "after_last": "hold",
+  "frames": [
+    {
+      "kind": "catalog",
+      "timing": "fresh",
+      "repeat": 2,
+      "envelope": {
+        "detail": null,
+        "endpoint": "di.mission_catalog",
+        "endpoint_version": 1,
+        "problem": null,
+        "requested_at": 1800000000,
+        "response": {
+          "contract": "di.mission_sources.query",
+          "contract_version": 1,
+          "generated_at": 1800000000,
+          "limits": {
+            "max_json_depth": 64,
+            "max_query_input_bytes": 67108864,
+            "max_query_missions": 2048,
+            "max_registry_bytes": 262144,
+            "max_snapshot_agents": 512,
+            "max_snapshot_tasks": 256,
+            "max_sources": 128,
+            "max_store_read_bytes": 16777216,
+            "max_task_bindings": 32,
+            "min_poll_interval_seconds": 5
+          },
+          "max_age_seconds": 60,
+          "missions": [
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-reconnect"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-reconnect",
+                "workspace_realpath": "/synthetic/ws/fixture-reconnect"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-reconnect#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-reconnect",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-reconnect",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-reconnect#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-reconnect",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-reconnect",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-reconnect",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-reconnect",
+              "objective": "SYNTHETIC FIXTURE mission (reconnect) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            }
+          ],
+          "registry": {
+            "directory": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/registry",
+            "health": "fresh",
+            "max_serialized_bytes": 262144,
+            "max_sources": 128,
+            "problem": null,
+            "serialized_bytes": 632,
+            "source_count": 2
+          },
+          "runtime_snapshot": {
+            "agent_count": 2,
+            "health": "fresh",
+            "max_age_seconds": 60,
+            "observed_at": 1800000000,
+            "problem": null,
+            "producer": "synthetic-herdr",
+            "task_count": 1
+          },
+          "sources": [
+            {
+              "health": "fresh",
+              "kind": "mission_core",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-core",
+              "record_count": 1,
+              "source_id": "synthetic-core",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-core"
+            },
+            {
+              "health": "fresh",
+              "kind": "workflow_store",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-legacy",
+              "record_count": 0,
+              "source_id": "synthetic-legacy",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-legacy"
+            }
+          ],
+          "unmatched_runtime_agent_count": 0,
+          "valid_until": 1800000060
+        },
+        "retry_after_seconds": null,
+        "runtime_capture": {
+          "available": true,
+          "configured": true,
+          "detail": null,
+          "discovery": {
+            "bindings": {},
+            "conflicts": [],
+            "missions_by_root": {
+              "/synthetic/ws/fixture-reconnect": "synthetic-core:mn-fixture-reconnect"
+            },
+            "roots": [
+              "/synthetic/ws/fixture-reconnect"
+            ]
+          },
+          "observed_at": 1800000000,
+          "problem": null,
+          "refresh_budget": {
+            "per_pass_max_query_input_bytes": 67108864,
+            "per_pass_max_query_missions": 2048,
+            "per_pass_max_registry_bytes": 262144,
+            "source_passes": 2,
+            "sum_max_query_input_bytes": 134217728,
+            "sum_max_query_missions": 4096,
+            "sum_max_registry_bytes": 524288
+          },
+          "registered_roots": [],
+          "roots": {
+            "captured": [
+              "/synthetic/ws/fixture-reconnect"
+            ],
+            "discovered": [
+              "/synthetic/ws/fixture-reconnect"
+            ],
+            "over_capacity": [],
+            "registered": [],
+            "unavailable": []
+          }
+        },
+        "served": "refreshed"
+      }
+    },
+    {
+      "kind": "transport_error",
+      "problem": "backend_unreachable",
+      "repeat": 2
+    },
+    {
+      "kind": "catalog",
+      "timing": "fresh",
+      "envelope": {
+        "detail": null,
+        "endpoint": "di.mission_catalog",
+        "endpoint_version": 1,
+        "problem": null,
+        "requested_at": 1800000000,
+        "response": {
+          "contract": "di.mission_sources.query",
+          "contract_version": 1,
+          "generated_at": 1800000000,
+          "limits": {
+            "max_json_depth": 64,
+            "max_query_input_bytes": 67108864,
+            "max_query_missions": 2048,
+            "max_registry_bytes": 262144,
+            "max_snapshot_agents": 512,
+            "max_snapshot_tasks": 256,
+            "max_sources": 128,
+            "max_store_read_bytes": 16777216,
+            "max_task_bindings": 32,
+            "min_poll_interval_seconds": 5
+          },
+          "max_age_seconds": 60,
+          "missions": [
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "synthetic-task-fixture-reconnect"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "synthetic-task-fixture-reconnect",
+                "workspace_realpath": "/synthetic/ws/fixture-reconnect"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "pod-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic-core:mn-fixture-reconnect#lead1",
+                  "mission_ref": "synthetic-core:mn-fixture-reconnect",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p1",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-lead1-1",
+                    "recorded": "sess-lead1-1"
+                  },
+                  "task_id": "synthetic-task-fixture-reconnect",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "pod-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic-core:mn-fixture-reconnect#executor1",
+                  "mission_ref": "synthetic-core:mn-fixture-reconnect",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p2",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-executor1-2",
+                    "recorded": "sess-executor1-2"
+                  },
+                  "task_id": "synthetic-task-fixture-reconnect",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "synthetic-core:mn-fixture-reconnect",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-fixture-reconnect",
+              "objective": "SYNTHETIC FIXTURE mission (reconnect) - not a real Mission",
+              "producer": {
+                "declared": "synthetic-producer-core",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic-core",
+              "updated_at": 1000000
+            }
+          ],
+          "registry": {
+            "directory": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/registry",
+            "health": "fresh",
+            "max_serialized_bytes": 262144,
+            "max_sources": 128,
+            "problem": null,
+            "serialized_bytes": 632,
+            "source_count": 2
+          },
+          "runtime_snapshot": {
+            "agent_count": 2,
+            "health": "fresh",
+            "max_age_seconds": 60,
+            "observed_at": 1800000000,
+            "problem": null,
+            "producer": "synthetic-herdr",
+            "task_count": 1
+          },
+          "sources": [
+            {
+              "health": "fresh",
+              "kind": "mission_core",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-core",
+              "record_count": 1,
+              "source_id": "synthetic-core",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-core"
+            },
+            {
+              "health": "fresh",
+              "kind": "workflow_store",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "synthetic-producer-legacy",
+              "record_count": 0,
+              "source_id": "synthetic-legacy",
+              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-legacy"
+            }
+          ],
+          "unmatched_runtime_agent_count": 0,
+          "valid_until": 1800000060
+        },
+        "retry_after_seconds": null,
+        "runtime_capture": {
+          "available": true,
+          "configured": true,
+          "detail": null,
+          "discovery": {
+            "bindings": {},
+            "conflicts": [],
+            "missions_by_root": {
+              "/synthetic/ws/fixture-reconnect": "synthetic-core:mn-fixture-reconnect"
+            },
+            "roots": [
+              "/synthetic/ws/fixture-reconnect"
+            ]
+          },
+          "observed_at": 1800000000,
+          "problem": null,
+          "refresh_budget": {
+            "per_pass_max_query_input_bytes": 67108864,
+            "per_pass_max_query_missions": 2048,
+            "per_pass_max_registry_bytes": 262144,
+            "source_passes": 2,
+            "sum_max_query_input_bytes": 134217728,
+            "sum_max_query_missions": 4096,
+            "sum_max_registry_bytes": 524288
+          },
+          "registered_roots": [],
+          "roots": {
+            "captured": [
+              "/synthetic/ws/fixture-reconnect"
+            ],
+            "discovered": [
+              "/synthetic/ws/fixture-reconnect"
+            ],
+            "over_capacity": [],
+            "registered": [],
+            "unavailable": []
+          }
+        },
+        "served": "refreshed"
+      }
+    }
+  ],
+  "derived_from": {
+    "path": "server/__tests__/fixtures/di-backend/v3-canonical-fixture.FIXTURE.json",
+    "sha256": "c7dcd7284ee5566f0dee9d20084074e8aa96aeb274b2bc93d159cbe7d815b823"
+  },
+  "generator": "scripts/build-di-fixtures.mjs"
+}

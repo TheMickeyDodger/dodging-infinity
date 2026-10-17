@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V02",
+  "name": "Mast Cylinder",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 12,
+  "width": 96,
+  "height": 256,
+  "footprintW": 6,
+  "footprintH": 16
+}

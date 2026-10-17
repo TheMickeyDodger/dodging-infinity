@@ -1,0 +1,13 @@
+{
+  "id": "SUBWAY_CAR_B2",
+  "name": "Passenger car (frame B, second source)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 80,
+  "height": 48,
+  "footprintW": 5,
+  "footprintH": 3
+}

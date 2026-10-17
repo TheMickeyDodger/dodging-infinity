@@ -1,0 +1,25 @@
+{
+  "fixture": true,
+  "fixture_id": "malformed",
+  "label": "FIXTURE — malformed: a body that is not JSON, then JSON that is not a catalog",
+  "description": "Malformed input must be refused into an honest unavailable state, never partially shown.",
+  "after_last": "hold",
+  "frames": [
+    {
+      "kind": "body_not_json",
+      "repeat": 2
+    },
+    {
+      "kind": "json_body",
+      "body": {
+        "endpoint": "di.mission_catalog",
+        "response": "not-an-object"
+      }
+    }
+  ],
+  "derived_from": {
+    "path": "server/__tests__/fixtures/di-backend/v3-canonical-fixture.FIXTURE.json",
+    "sha256": "c7dcd7284ee5566f0dee9d20084074e8aa96aeb274b2bc93d159cbe7d815b823"
+  },
+  "generator": "scripts/build-di-fixtures.mjs"
+}

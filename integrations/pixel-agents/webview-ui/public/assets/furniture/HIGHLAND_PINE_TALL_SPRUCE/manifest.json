@@ -1,0 +1,13 @@
+{
+  "id": "HIGHLAND_PINE_TALL_SPRUCE",
+  "name": "Tall Pine (highland spruce)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 32,
+  "height": 64,
+  "footprintW": 2,
+  "footprintH": 4
+}

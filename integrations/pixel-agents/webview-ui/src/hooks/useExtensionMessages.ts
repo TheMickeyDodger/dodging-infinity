@@ -8,11 +8,11 @@ import {
   type DiConnection,
   diZoneLabel,
   nextDiConnection,
+  presentDiOffice,
   readyTrackerAfterTransport,
   reconcileDiCharacters,
   shouldRequestDiBootstrap,
   watchTransportState,
-  withClientInvalidation,
 } from '../components/diOfficeFormat.js';
 import {
   DI_CLIENT_CHECK_MS,
@@ -20,6 +20,7 @@ import {
   DI_SLOTS_PER_BAND,
 } from '../constants.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
+import { setAmbientSheets } from '../office/ambient/ambientSprites.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -37,7 +38,9 @@ import {
   slotSeats,
 } from '../office/layout/diWorld.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
-import { layoutToSeats, migrateLayoutColors } from '../office/layout/layoutSerializer.js';
+import { acceptLayout } from '../office/layout/layoutIntake.js';
+import { layoutToSeats } from '../office/layout/layoutSerializer.js';
+import { resetRenderCaches } from '../office/renderCaches.js';
 import { setCarpetSprites } from '../office/sprites/carpetTiles.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
@@ -405,14 +408,24 @@ export function useExtensionMessages(
         return;
       }
 
+      if (msg.type === 'ambientStateLoaded') {
+        // DI office: the decorative ambient snapshot, applied once to the residents of the world
+        // built for the coming layout (a fingerprint mismatch discards it)
+        os.setAmbientSnapshot(msg.state);
+        return;
+      }
+
       if (msg.type === 'layoutLoaded') {
         // Skip external layout updates while editor has unsaved changes
         if (layoutReadyRef.current && isEditDirty?.()) {
           console.log('[Webview] Skipping external layout update — editor has unsaved changes');
           return;
         }
-        const rawLayout = msg.layout as OfficeLayout | null;
-        let layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
+        // Bounded intake (core/src/layoutLimits.ts): a refused layout is never built.
+        const intake = msg.layout ? acceptLayout(msg.layout) : null;
+        if (intake && 'refused' in intake)
+          console.warn(`[Webview] Refusing layoutLoaded: ${intake.refused}`);
+        let layout = intake && 'layout' in intake ? intake.layout : null;
         // DI: ONLY the bundled default becomes the responsive world; a custom layout is never
         // reshaped (exact cols, rows and furniture — it gets fit-zoom only).
         if (diModeRef.current && layout) {
@@ -440,6 +453,8 @@ export function useExtensionMessages(
           }
         }
         if (layout) {
+          // a layout LOADED or REPLACED: no palette of the previous one is kept (renderCaches.ts)
+          resetRenderCaches();
           os.rebuildFromLayout(layout);
           onLayoutLoaded?.(layout);
         } else {
@@ -856,6 +871,10 @@ export function useExtensionMessages(
         setSubagentCharacters((prev) =>
           prev.filter((s) => !(s.parentAgentId === id && s.parentToolId === parentToolId)),
         );
+      } else if (msg.type === 'ambientSpritesLoaded') {
+        // DI office: the decorative ambient sheets (jobs and Easter eggs); residents draw from them
+        setAmbientSheets(msg.sheets);
+        console.log(`[Webview] Received ${msg.sheets.length} ambient character sheets`);
       } else if (msg.type === 'characterSpritesLoaded') {
         const characters = msg.characters as Array<{
           down: string[][][];
@@ -1069,19 +1088,20 @@ export function useExtensionMessages(
   }, [diServerState, diConnection]);
 
   const diOfficeState = useMemo(
-    () =>
-      diServerState && diClientReason
-        ? withClientInvalidation(diServerState, diClientReason)
-        : diServerState,
+    () => presentDiOffice(diServerState, diClientReason),
     [diServerState, diClientReason],
   );
 
   // The PRESENTED state (false everywhere whenever the client cannot vouch) drives animation
   // for EVERY canvas character, including any not listed in it. Never removes or relabels.
+  // It is ALSO the working halo's only input (office/halo.ts, read by the canvas and the Map):
+  // the halo sees exactly what labels and animation see, so a disconnect, an expiry or a bare
+  // reconnect (which restores nothing until a NEW office message) darkens it on the same path.
   useEffect(() => {
     diPresentedRef.current = diOfficeState;
-    if (!diOfficeState) return;
     const os = getOfficeState();
+    os.diOffice = diOfficeState;
+    if (!diOfficeState) return;
     const ids = [...os.characters.values()].filter((ch) => !ch.isSubagent).map((ch) => ch.id);
     for (const [id, animate] of diAnimationPlan(diOfficeState, ids, diDrawnRef.current))
       os.setAgentActive(id, animate);

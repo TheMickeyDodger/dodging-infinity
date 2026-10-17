@@ -1,0 +1,13 @@
+{
+  "id": "SUBWAY_LEAD_RIGHT",
+  "name": "Lead car, cab facing right",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 2,
+  "width": 96,
+  "height": 32,
+  "footprintW": 6,
+  "footprintH": 2
+}

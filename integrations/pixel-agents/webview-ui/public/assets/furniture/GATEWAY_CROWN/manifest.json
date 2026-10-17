@@ -1,0 +1,13 @@
+{
+  "id": "GATEWAY_CROWN",
+  "name": "Gateway Crown",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 4,
+  "width": 64,
+  "height": 64,
+  "footprintW": 4,
+  "footprintH": 4
+}

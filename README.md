@@ -8,6 +8,12 @@
 
 Dodging Infinity is built for work that is too large, too long-running, or too important to live inside one chat session.
 
+Now the harness has a world you can walk through. The **[Pixel Agents DI office](#4-pixel-agents-di-office)** gives real Mission teams a home inside a sprawling pixel-art metropolis: working agents at their desks, a live Mission inspector, forests and lakes, grand offices, a waterfront, and a subway shared with a decorative population.
+
+![The complete Dodging Infinity living metropolis, with the live Mission inspector beside the world map](assets/pixel-world/world-map.png)
+
+*The running local world, captured by its owner. Real DI observations appear in the inspector; ambient residents are explicitly decorative.*
+
 ```text
 o──o──o
       \
@@ -631,9 +637,46 @@ For the full operating surface, see [Operational Reference](docs/operations.md).
 
 # 4. Pixel Agents DI office
 
-An early, read-only Pixel Agents office for Dodging Infinity lives in its own subtree, [`integrations/pixel-agents/`](integrations/pixel-agents/). It draws the Missions a Dodging Infinity catalog reports and their roles, as a pixel-art office in a browser. When the catalog is launched with contract version 2 (version 1 is the default), it also shows their task chains, report facts and review preamble.
+### Bringing the harness to life
 
-It observes; it does not control. It does not spawn Herdr, approve Missions, mark Missions complete, create Git authority, deploy, or rewrite durable state. It is a browser package only, with no controls and no native wrapper. Dots and R1 are separate and not part of it.
+The [Pixel Agents integration](integrations/pixel-agents/) turns DI's observed engineering teams into individually selectable characters inside a living pixel-art world. A Mission that starts through an existing Grok Bot or Codex route can appear here through the registered DI catalog, together with the agents canonically bound to it. The viewer can be closed when the Mission starts: reopening reconstructs the current observations. GPT/Codex and Claude agents are represented from the same observed roster; the integration does not require every worker to use the same provider.
+
+This gives the harness a visual home. Instead of hunting through terminal panes just to see who belongs to which Mission, you can select a character, inspect its role and provenance, switch Missions in the right-hand panel, and follow the available task-chain and review records. A soft pale-gold **body glow** makes a freshly observed working agent easy to spot. Unknown values stay unknown, stale data is visible, and terminal activity stays distinct from engineering completion, review, independent verification, and delivery.
+
+The world is also a place worth exploring. The palace office opens into vast forests, autumn woodland, mountain lakes, farms, a harbour and oceanfront, an aquarium quarter, and a city with distinct skyscrapers. Two additional grand offices—the **Botanical Atrium** and **Deco Observatory**—sit beside a Gothic cathedral, shops, cafés, fountains and a four-station subway. Decorative residents keep it lively even when there are no active Mission agents.
+
+DI remains the source of Mission identity, authority and evidence; Herdr owns engineering execution. The office is a **read-only presentation surface**: it cannot dispatch, message or stop agents, approve work, invoke models, write canonical lifecycle state, or perform Git/delivery actions. Existing Grok Bot and Codex action routes remain in charge. This increment is a local Node.js/browser package with bundled renderer and assets; it is not a native macOS application. Future controls, Dots integration and unrelated R1 work remain separate.
+
+### A tour of the world
+
+![The original palace office surrounded by forest, with its observation deck and gateway](assets/pixel-world/palace-and-forest.png)
+
+*The palace remains the home office, with colourful computer rooms, quiet spaces, galleries and an observation deck leading into the forest.*
+
+| Inside the office | Beyond the office |
+|---|---|
+| ![Characters moving through the palace's colourful offices and hallways](assets/pixel-world/office-life.png) | ![The waterfront promenade, buildings, beach and ocean artwork](assets/pixel-world/waterfront.png) |
+| Connected rooms, readable desks, paintings, patterned floors and wandering residents. | A waterfront with cafés, landmarks, beach details and harbour scenery. |
+| ![The Botanical Atrium and Deco Observatory offices beside the Gothic cathedral quarter](assets/pixel-world/grand-offices-and-cathedral.png) | ![River Valley Farmland with crops, barns, animal artwork, a river and a bridge](assets/pixel-world/river-valley-farmland.png) |
+| Two more fully built office complexes, an inhabited cathedral quarter and nearby subway stations. | Farms and river crossings connect the metropolis to its countryside. |
+
+These are screenshots of the running local world, not concept art or fixture renders. They show its appearance and the observations available at capture time; the pictures are not evidence that a Mission completed. Vehicles and legacy animal props are static artwork. Residents, trains and the original pets animate while the viewer is open.
+
+### Explore it locally
+
+With the office already running and [the launcher installed](docs/pixel-agents-office.md#the-pixel-launcher), open it with:
+
+```sh
+pixel
+```
+
+The command opens the running office; it does not start DI, dispatch work or launch the backend. For a fresh setup, follow [installation and build](docs/pixel-agents-office.md#install-and-build), [source registration](docs/pixel-agents-office.md#register-the-sources) and [launch](docs/pixel-agents-office.md#launch). Import the optional [living metropolis preset](integrations/pixel-agents/packaging/di/worlds/living-metropolis.json) using **Settings → Import Layout (paste JSON)**, then reload. Export your current layout first if you want to keep it. Use **Map** for the whole world, **Districts** for named destinations, and the right-hand inspector for Missions and agents.
+
+The current living preset has **145 decorative residents**, **four subway stations**, **two trains**, **23 distinct skyline designs** and **16 distinct gallery exhibits** across **352 × 312 tiles**. Bellhops, baristas, shop clerks, gardeners and other job sprites follow local routines; five original show-inspired Easter eggs reward a closer look. Residents and train journeys persist between sessions. Simulation pauses when the viewer is closed, and reduced motion is supported.
+
+### Setup and reference
+
+The catalog's version 2 contract adds task chains, report facts and a review preamble; version 1 remains the backend default. Select version 2 explicitly when setting up both sides.
 
 | Topic | Where |
 |---|---|
@@ -650,15 +693,25 @@ The office has its own Node.js dependency and build boundary inside that subtree
 
 ## The visual world
 
-By default the office shows the bundled Pixel Agents office. A world preset in this repository expands it: the original rooms stay as they were, and six computer rooms with 24 room computers join them, connected to a lobby whose reception desk has one more computer.
+By default the office shows the bundled Pixel Agents office. Four world presets in this repository expand it. The expanded office keeps the original rooms and adds six computer rooms with 24 room computers, connected to a lobby whose reception desk has one more computer. The forest preset places the palace inside a 176 by 112 woodland. The connected world, [`metropolis.json`](integrations/pixel-agents/packaging/di/worlds/metropolis.json), is 352 by 224: the forest world sits unchanged in one corner, and eight districts surround it. The living metropolis, [`living-metropolis.json`](integrations/pixel-agents/packaging/di/worlds/living-metropolis.json), is 352 by 312 (109,824 tiles): the connected world extended south with two further office complexes, a Gothic cathedral quarter, retail and dining destinations, and a subway.
 
-- **Actual agents.** Each character is an agent that the Dodging Infinity catalog actually reports for a Mission. Click a character to select it, and the side panel shows that agent and the Mission it belongs to.
+- **Actual agents, and decorative residents.** The characters that the Dodging Infinity catalog actually reports for a Mission are the real agents. Click one to select it, and the side panel shows that agent and the Mission it belongs to; a real agent carries the working glow while it is freshly observed working. Ambient residents are decorative: labelled Ambient, never reported by the catalog, never glowing, and never representing Mission work.
 - **Honest statuses.** "unknown" is not zero, and "stale" is not live. An activity of "done" is terminal activity, not task, Mission, verification or delivery completion. Seeing an agent in the office is not evidence that its task, its Mission or any demo succeeded.
 - **Fit and zoom.** The office fits the world to the window automatically, with whole-number zoom. Zooming by hand overrides the fit.
-- **The world preset is opt-in.** It is a layout authored for Dodging Infinity from the existing, already-attributed Pixel Agents assets. In the office's Settings, export your current layout as a backup and import the preset, then reload the page: until the reload, a session that started on the bundled default can still reflow back to that default world. The preset does not install itself, does not replace a saved layout and raises no bundled layout revision. This is about the preset only: the general upgrade behaviour of the office's layout loader is described in [World preset](docs/pixel-agents-office.md#world-preset).
+- **The world presets are opt-in.** Each is a layout authored for Dodging Infinity. In the office's Settings, export your current layout as a backup and import the preset, then reload the page: until the reload, a session that started on the bundled default can still reflow back to that default world. A preset does not install itself, does not replace a saved layout and raises no bundled layout revision. This is about the presets only: the general upgrade behaviour of the office's layout loader is described in [World preset](docs/pixel-agents-office.md#world-preset).
+- **Getting around the connected world.** The camera views (Office, Deck, Woods), the Districts list and the Map move the camera only. Districts is the readable list alternative to the Map: Tab to it and press Enter, then Tab to a district and press Enter. The Map shows the whole world with district labels; click a spot to go there, and Esc closes it. See [the forest and connected-world presets](docs/pixel-agents-office.md#the-forest-and-connected-world-presets).
+- **Static art, and where animation comes from.** The legacy art baseline is static: every sprite extracted for the connected world, every woodland variant and the lounge seating is one frame, and in that art set the only animated original companions are the office's two pets. That describes the artwork, not what moves at runtime. In the DI office, ambient residents animate on whatever layout is loaded, the legacy presets included, and trains run where the loaded world contains a subway line (of the bundled presets, only the living metropolis). The inherited decorative animal and vehicle artwork stays static. Decorative animals, vehicles and residents never create agents and never imply Mission work.
+- **The living metropolis is opt-in.** Import it like the other presets (Settings, then Import Layout (paste JSON), then reload). In current use:
+  - **Ambient residents and jobs.** A decorative local population walks routines across the world while the office is open, even with no real agents: in the living metropolis, 145 residents (140 ordinary, with jobs such as bellhop, police officer, firefighter, store clerk and barista, plus five Easter-egg families). They are labelled Ambient and decorative. They are never agents and never take a seat, and a real agent always wins selection and seating.
+  - **Subway.** Four stations and two trains; residents board at one station and alight at another. The Stations list moves the camera only: a jump is instant camera travel, not a ride.
+  - **Saving and moving the simulation.** While the office is open it saves the residents' and trains' state (identities, routines and journeys in progress) under its own state folder. Settings, then Export Ambient Snapshot, downloads it; Import Ambient Snapshot (paste JSON) restores it. A snapshot from a different world or resident set, or over 65,536 bytes, is refused whole and nothing changes.
+  - **While the viewer is closed, nothing runs.** No simulation time passes while the office page is closed. A hidden tab is caught up by at most 20 seconds when it is shown again.
+  - **The glow.** An agent glows, with a soft pale-gold aura around its body, only while the catalog reports it working at its terminal with fresh data. Idle, unknown, stale, expired and disconnected agents never glow, and residents never glow. With reduced motion set, the glow is steady. A glow is not evidence of task, Mission or delivery completion.
+  - **Passive.** All of this is observation only: no dispatch, no model invocation and no change to the canonical catalog.
+- **Bounds.** Up to 384 tiles on each axis and 110,400 tiles in all (the living metropolis is 352 by 312 = 109,824); 16,384 furniture items, 64 pets and 64 areas; 4,096 carpeted tiles; 1,024 tile, 256 carpet and 1,024 furniture colour variants. A saved layout file over 104 MiB and a save message over 64 MiB are refused.
 - **The `pixel` launcher.** Type `pixel`, in lowercase, to open the address that a running office recorded, in your browser, without printing its token. It starts nothing and installs nothing. It checks the access file's shape and that a loopback port answers, but it cannot tell whether the listener is the office or whether the token is still valid. See [The `pixel` launcher](docs/pixel-agents-office.md#the-pixel-launcher).
 - **Checkout and package.** The preset and the launcher are in a Dodging Infinity checkout and in the standalone office package.
-- **Read-only.** All of this is the same read-only increment described above. The world and the launcher add no controls and no route to any action.
+- **Read-only.** All of this is the same read-only increment described above. The office stays the home of the agents the catalog actually reports, and the DI, Grok and Codex action routes are unchanged. The worlds and the launcher add no controls, and no orchestration, dispatch, messaging, shell or execution route.
 
 ---
 

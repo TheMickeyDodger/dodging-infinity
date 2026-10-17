@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 
+import { JSON_FILE_ACCEPT } from '../constants.js';
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
@@ -36,6 +37,11 @@ interface SettingsModalProps {
   onExportLayout: () => void;
   /** Browser-native layout import from a chosen file (standalone only). */
   onImportLayout: (file: File) => void;
+  /** DI office (browser): export the ambient snapshot (residents and trains) as ONE file. */
+  onExportAmbient?: () => void;
+  /** DI office (browser): Import Layout and Import Ambient Snapshot open the ONE paste surface
+   *  (PasteImportModal) instead of a file chooser. */
+  onPasteImport?: (kind: 'layout' | 'ambient') => void;
   /** DI office: hide the integrations DI does not act on (their messages are dropped) and
    *  say so, instead of offering toggles that would do nothing. Visibility and wording only. */
   diMode?: boolean;
@@ -60,10 +66,16 @@ export function SettingsModal({
   showAreasAvailable,
   onExportLayout,
   onImportLayout,
+  onExportAmbient,
+  onPasteImport,
   diMode = false,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // DI office in a browser: imports are by PASTED JSON. The native file chooser could not open a
+  // valid file in the Operator's browser (cause not diagnosed), so no chooser is offered here.
+  const pasteImports = diMode && isBrowserRuntime && !!onPasteImport;
+  const ambientActions = pasteImports && !!onExportAmbient;
   const [assetDirDraft, setAssetDirDraft] = useState('');
 
   return (
@@ -93,7 +105,10 @@ export function SettingsModal({
       </MenuItem>
       <MenuItem
         onClick={() => {
-          if (isBrowserRuntime) {
+          if (pasteImports) {
+            onPasteImport?.('layout');
+            onClose();
+          } else if (isBrowserRuntime) {
             // Open the native file picker; the import is applied in onChange below.
             fileInputRef.current?.click();
           } else {
@@ -102,13 +117,13 @@ export function SettingsModal({
           }
         }}
       >
-        Import Layout
+        {pasteImports ? 'Import Layout (paste JSON)' : 'Import Layout'}
       </MenuItem>
-      {isBrowserRuntime && (
+      {isBrowserRuntime && !pasteImports && (
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/json"
+          accept={JSON_FILE_ACCEPT}
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -120,6 +135,29 @@ export function SettingsModal({
             }
           }}
         />
+      )}
+      {ambientActions && (
+        <>
+          {/* One action, one file: the decorative residents (with their pending legs) and the
+              trains (progress, operating state, onboard riders). Never bundled behind another
+              download. */}
+          <MenuItem
+            onClick={() => {
+              onExportAmbient?.();
+              onClose();
+            }}
+          >
+            Export Ambient Snapshot
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              onPasteImport?.('ambient');
+              onClose();
+            }}
+          >
+            Import Ambient Snapshot (paste JSON)
+          </MenuItem>
+        </>
       )}
       {diMode && (
         <div className="py-4 px-10 text-xs text-text-muted" data-testid="di-settings-note">

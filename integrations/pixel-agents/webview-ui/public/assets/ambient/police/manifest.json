@@ -1,0 +1,51 @@
+{
+  "id": "police",
+  "label": "Police officer",
+  "source": {
+    "id": "S04",
+    "file": "lw-S04-police.png",
+    "sha256": "e84206795b00d954a550601125a658522ccc83a5540ce83190c29bd84f9ca60d"
+  },
+  "contract": "FULL 8x4",
+  "frameWidth": 23,
+  "frameHeight": 32,
+  "rows": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "columns": [
+    "walk1",
+    "walk2",
+    "walk3",
+    "walk4",
+    "idle1",
+    "idle2",
+    "gesture1",
+    "gesture2"
+  ],
+  "walk": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "idle": [
+    4,
+    5
+  ],
+  "gesture": [
+    6,
+    7
+  ],
+  "walkCycle": "4-frame (C1-C4, all drawn)",
+  "adjudicatedSourceRowOrder": [
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "UP"
+  ],
+  "facingBasis": "visual adjudication by executor1 on a named cue (see LIVING-WORLD-ART-QA.json)",
+  "differsFromContract": false
+}

@@ -1,0 +1,13 @@
+{
+  "id": "VEHICLE_FIRE_ENGINE_LEFT",
+  "name": "Fire engine (decorative, parked) facing left",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 1,
+  "width": 64,
+  "height": 32,
+  "footprintW": 4,
+  "footprintH": 2
+}

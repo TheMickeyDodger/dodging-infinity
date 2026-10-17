@@ -1,42 +1,72 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { AMBIENT_SAVE_MAX_BYTES } from '../../core/src/ambientSave.js';
+import { LAYOUT_MAX_FILE_BYTES } from '../../core/src/layoutLimits.js';
 import { toMajorMinor } from './changelogData.js';
+import { AmbientLegend } from './components/AmbientLegend.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
-import { diCharacterLabel, diCharacterTitle } from './components/diOfficeFormat.js';
+import {
+  DI_FIXTURE_BANNER,
+  diCharacterLabel,
+  diCharacterTitle,
+} from './components/diOfficeFormat.js';
 import { DiOfficePanel } from './components/DiOfficePanel.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import type { PasteImportResult } from './components/PasteImportModal.js';
+import { PasteImportModal } from './components/PasteImportModal.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
+import { WorldMap } from './components/WorldMap.js';
+import { WorldViewControls } from './components/WorldViewControls.js';
 import { ZoomControls } from './components/ZoomControls.js';
 import {
+  AMBIENT_SAVE_INTERVAL_MS,
   DI_DOCUMENT_TITLE,
   DI_FAVICON_DATA_URI,
   DI_PANEL_WIDTH_PX,
   DI_WORLD_REFLOW_MS,
+  WORLD_KEY_PAN_FRACTION,
+  ZOOM_MAX,
+  ZOOM_MIN,
 } from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
+import { prepareAmbientText } from './office/ambient/ambientIntake.js';
+import { snapshotAgents, snapshotAmbient, snapshotTrainsRaw } from './office/ambient/ambientProbe.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { diFitZoom } from './office/layout/diWorld.js';
-import { exportLayoutToFile } from './office/layout/exportLayout.js';
-import { isRotatable } from './office/layout/furnitureCatalog.js';
-import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
+import { exportAmbientToFile, exportLayoutToFile } from './office/layout/exportLayout.js';
+import { getCatalogEntry, isRotatable } from './office/layout/furnitureCatalog.js';
+import { applyImport, importFileTooLarge } from './office/layout/layoutIntake.js';
+import type { FootprintOf, WorldViewKind } from './office/layout/worldViews.js';
+import {
+  clampPanToWorld,
+  districtsOf,
+  frameDistrict,
+  frameWorldView,
+  isLargeWorld,
+  panForZoomAroundPoint,
+  panToWorldPoint,
+  WORLD_VIEW_KINDS,
+} from './office/layout/worldViews.js';
 import { subscribeReducedMotion } from './office/reducedMotion.js';
+import { resetRenderCaches } from './office/renderCaches.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
-import { EditTool, type OfficeLayout } from './office/types.js';
+import type { OfficeLayout } from './office/types.js';
+import { EditTool } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -49,6 +79,13 @@ const editorState = new EditorState();
 // Installed only under the e2e harness so they never patch prototypes or grow
 // unbounded logs in a real user's session.
 if (isE2E) installTestHooks(officeStateRef);
+
+const footprintOf: FootprintOf = (type) => {
+  const entry = getCatalogEntry(type);
+  return entry
+    ? { w: entry.footprintW, h: entry.footprintH, seat: entry.category === 'chairs' }
+    : null;
+};
 
 function getOfficeState(): OfficeState {
   if (!officeStateRef.current) {
@@ -245,17 +282,205 @@ function App() {
     };
   }, [isDiMode]);
 
+  // DI office: AMBIENT RESIDENTS — a decorative local population that keeps the world inhabited
+  // while the office is open, even with zero real agents. DI mode only; normal Pixel never sets it.
+  useEffect(() => {
+    if (!isDiMode) return;
+    getOfficeState().setAmbientEnabled(true);
+    return () => getOfficeState().setAmbientEnabled(false);
+  }, [isDiMode]);
+
+  // DI office: PERSISTENCE of the decorative ambient snapshot (M3 S4) — saved every
+  // AMBIENT_SAVE_INTERVAL_MS while visible and whenever the view is hidden or closed; and a BOUNDED
+  // catch-up when the view becomes visible again (at most AMBIENT_CATCHUP_MAX_SEC simulated, minus
+  // anything already advanced while hidden). The game loop's hidden guard stops frames advancing while
+  // hidden; nothing runs while closed or asleep. Local presentation state only.
+  useEffect(() => {
+    if (!isDiMode) return;
+    const save = () => {
+      const state = getOfficeState().serializeAmbient(Date.now());
+      if (state) transport.send({ type: 'saveAmbientState', state: state as unknown as Record<string, unknown> });
+    };
+    let hiddenAt: number | null = null;
+    let clockAtHide = 0;
+    const onVisibility = () => {
+      const os = getOfficeState();
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = performance.now();
+        clockAtHide = os.ambientClock;
+        save();
+      } else if (hiddenAt !== null) {
+        // the hidden interval is covered ONCE: catch-up subtracts anything that did advance meanwhile
+        os.catchUpAmbient((performance.now() - hiddenAt) / 1000, os.ambientClock - clockAtHide);
+        hiddenAt = null;
+      }
+    };
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') save();
+    }, AMBIENT_SAVE_INTERVAL_MS);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', save);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', save);
+    };
+  }, [isDiMode]);
+
+  // FIXTURE PREVIEW ONLY: a read-only probe of resident positions, so evidence can track named
+  // ambient identities over time. Copies only; nothing here can change the simulation. Never
+  // installed for a live (non-fixture) office.
+  const isFixturePreview = diOfficeState?.fixtureMode === true;
+  useEffect(() => {
+    if (!isFixturePreview) return;
+    window.__pixelAgentsAmbientProbe = {
+      snapshot: () => snapshotAmbient(getOfficeState()),
+      agents: () => snapshotAgents(getOfficeState()),
+      transit: () => getOfficeState().transit?.snapshot() ?? null,
+      halo: () => [...getOfficeState().haloCharacterIds(Date.now() / 1000)],
+      restore: () => getOfficeState().lastAmbientRestore,
+      trainsRaw: () => snapshotTrainsRaw(getOfficeState().transit),
+    };
+    return () => {
+      delete window.__pixelAgentsAmbientProbe;
+    };
+  }, [isFixturePreview]);
+
   // DI office: RESPONSIVE FRAMING. The world's SHAPE follows the main area (the default
   // layout only — see diWorld.ts) and an integer fit-zoom in DEVICE pixels does the scaling.
   // The fit seeds and reflows; once the user zooms by hand it never overrides them.
   const userZoomedRef = useRef(false);
+  // LARGE WORLDS: a named view (office / deck / forest) frames the camera until the user pans or
+  // zooms by hand; choosing a view again hands framing back. Re-applied on resize and reload.
+  const userNavigatedRef = useRef(false);
+  const [worldView, setWorldView] = useState<WorldViewKind>('office');
+  const [worldViewTick, setWorldViewTick] = useState(0);
+  const [worldViewHeld, setWorldViewHeld] = useState(true);
   const { handleZoomChange, zoom: currentZoom } = editor;
+  /**
+   * THE user zoom path (zoom buttons, Ctrl+wheel). In a LARGE world the pan is reprojected so the
+   * world point under the anchor stays put — the anchor is a canvas point in device pixels: the
+   * cursor for the wheel, the viewport centre otherwise (defect S-N1). A legacy-size world keeps
+   * its pan exactly as before. Framings and Map jumps do not come through here: they write the pan
+   * FOR their target zoom and set the zoom with it, so nothing is reprojected twice.
+   */
   const handleUserZoom = useCallback(
-    (zoom: number) => {
+    (zoom: number, anchor?: { x: number; y: number }) => {
       userZoomedRef.current = true;
-      handleZoomChange(zoom);
+      userNavigatedRef.current = true;
+      setWorldViewHeld(false);
+      const layout = getOfficeState().getLayout();
+      const el = containerRef.current;
+      const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+      if (el && next !== currentZoom && isLargeWorld(layout.cols, layout.rows)) {
+        const r = el.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = Math.round(r.width * dpr);
+        const h = Math.round(r.height * dpr);
+        const p = editor.panRef.current;
+        getOfficeState().cameraFollowId = null;
+        editor.panRef.current = panForZoomAroundPoint(
+          p.x,
+          p.y,
+          currentZoom,
+          next,
+          layout.cols,
+          layout.rows,
+          w,
+          h,
+          anchor?.x ?? w / 2,
+          anchor?.y ?? h / 2,
+        );
+      }
+      handleZoomChange(next);
     },
-    [handleZoomChange],
+    [handleZoomChange, currentZoom, editor.panRef],
+  );
+  const handleUserPan = useCallback(() => {
+    if (userNavigatedRef.current) return;
+    userNavigatedRef.current = true;
+    setWorldViewHeld(false);
+  }, []);
+  // The whole-world Map overlay (presentation only).
+  const [mapOpen, setMapOpen] = useState(false);
+  const handleSelectWorldView = useCallback((view: WorldViewKind) => {
+    userNavigatedRef.current = false;
+    setWorldViewHeld(true);
+    setWorldView(view);
+    setWorldViewTick((n) => n + 1);
+    setMapOpen(false);
+  }, []);
+  const toggleMap = useCallback(() => setMapOpen((open) => !open), []);
+  // The Map and the layout editor never share the screen: entering edit mode closes the Map.
+  useEffect(() => {
+    if (editor.isEditMode) setMapOpen(false);
+  }, [editor.isEditMode]);
+  const closeMap = useCallback(() => setMapOpen(false), []);
+  const getCameraCanvas = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    return { w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) };
+  }, []);
+  // A Map click: centre the camera there at the office view's usable zoom (a manual move).
+  const jumpToWorldPoint = useCallback(
+    (worldX: number, worldY: number) => {
+      const size = getCameraCanvas();
+      if (!size) return;
+      const layout = getOfficeState().getLayout();
+      const dpr = window.devicePixelRatio || 1;
+      const zoom =
+        frameWorldView('office', layout, footprintOf, size.w, size.h, dpr)?.zoom ?? currentZoom;
+      getOfficeState().cameraFollowId = null;
+      editor.panRef.current = panToWorldPoint(
+        worldX,
+        worldY,
+        zoom,
+        layout.cols,
+        layout.rows,
+        size.w,
+        size.h,
+      );
+      userNavigatedRef.current = true;
+      setWorldViewHeld(false);
+      if (zoom !== currentZoom) handleZoomChange(zoom);
+      setMapOpen(false);
+    },
+    [getCameraCanvas, currentZoom, handleZoomChange, editor.panRef],
+  );
+  const liveLayout = getOfficeState().getLayout();
+  const layoutKey = `${liveLayout.cols}x${liveLayout.rows}`;
+  const largeWorld = isLargeWorld(liveLayout.cols, liveLayout.rows);
+  // DISTRICTS come from the layout's own areas (data): recomputed only when the layout changes
+  const districts = useMemo(
+    () => (largeWorld ? districtsOf(liveLayout) : []),
+    [liveLayout, largeWorld],
+  );
+  const [districtStatus, setDistrictStatus] = useState<string | null>(null);
+  const goToDistrict = useCallback(
+    (label: string) => {
+      const d = districts.find((x) => x.label === label);
+      const size = getCameraCanvas();
+      if (!d || !size) return;
+      const layout = getOfficeState().getLayout();
+      const framing = frameDistrict(layout, d, size.w, size.h, window.devicePixelRatio || 1);
+      if (!framing) return;
+      // a framing: the pan is written FOR its zoom, then the zoom (never reprojected twice)
+      getOfficeState().cameraFollowId = null;
+      editor.panRef.current = { x: framing.panX, y: framing.panY };
+      userNavigatedRef.current = true;
+      setWorldViewHeld(false);
+      if (framing.zoom !== currentZoom) handleZoomChange(framing.zoom);
+      setMapOpen(false);
+      // the jump is INSTANT CAMERA TRAVEL, never a ride: say so, distinctly from the subway
+      setDistrictStatus(
+        framing.centred
+          ? `Camera jump to ${label} (not a ride)`
+          : `Camera jump to ${label} (not a ride; at the world's edge, not centred)`,
+      );
+    },
+    [districts, getCameraCanvas, currentZoom, handleZoomChange, editor.panRef],
   );
   const [diViewportTick, setDiViewportTick] = useState(0);
   useEffect(() => {
@@ -289,6 +514,7 @@ function App() {
     const rect = el.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const layout = getOfficeState().getLayout();
+    if (isLargeWorld(layout.cols, layout.rows)) return; // framed by a named view instead
     const fit = diFitZoom(
       Math.round(rect.width * dpr),
       Math.round(rect.height * dpr),
@@ -296,7 +522,97 @@ function App() {
       layout.rows,
     );
     if (fit !== currentZoom) handleZoomChange(fit);
-  }, [isDiMode, layoutReady, diWorldTick, diViewportTick, currentZoom, handleZoomChange]);
+  }, [
+    isDiMode,
+    layoutReady,
+    diWorldTick,
+    diViewportTick,
+    currentZoom,
+    handleZoomChange,
+    layoutKey,
+  ]);
+  // A different world (import, reload into another layout) starts from its default framing; an
+  // editor resize of the same world does not move the camera under the editing hand.
+  const prevLayoutKeyRef = useRef(layoutKey);
+  useEffect(() => {
+    if (prevLayoutKeyRef.current === layoutKey) return;
+    prevLayoutKeyRef.current = layoutKey;
+    if (editor.isEditMode) return;
+    editor.panRef.current = { x: 0, y: 0 };
+    userNavigatedRef.current = false;
+    userZoomedRef.current = false;
+    setWorldViewHeld(true);
+    setWorldView('office');
+  }, [layoutKey, editor.isEditMode, editor.panRef]);
+  // LARGE WORLD framing: the held named view, at a usable zoom, re-applied on resize / reload.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!isDiMode || !layoutReady || !el || userNavigatedRef.current) return;
+    const layout = getOfficeState().getLayout();
+    if (!isLargeWorld(layout.cols, layout.rows)) return;
+    const rect = el.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const backingW = Math.round(rect.width * dpr);
+    const backingH = Math.round(rect.height * dpr);
+    const framing =
+      frameWorldView(worldView, layout, footprintOf, backingW, backingH, dpr) ??
+      frameWorldView('office', layout, footprintOf, backingW, backingH, dpr);
+    if (!framing) return;
+    getOfficeState().cameraFollowId = null;
+    editor.panRef.current = { x: framing.panX, y: framing.panY };
+    if (framing.zoom !== currentZoom) handleZoomChange(framing.zoom);
+  }, [
+    isDiMode,
+    layoutReady,
+    diWorldTick,
+    diViewportTick,
+    worldView,
+    worldViewTick,
+    currentZoom,
+    handleZoomChange,
+    editor.panRef,
+    layoutKey,
+  ]);
+  // Arrow keys pan a large world (presentation only). Never in the layout editor, never while
+  // a form control has focus, never with a modifier (the editor's own shortcuts stay theirs).
+  useEffect(() => {
+    if (!isDiMode || !largeWorld || editor.isEditMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const dir: Record<string, [number, number]> = {
+        ArrowLeft: [1, 0],
+        ArrowRight: [-1, 0],
+        ArrowUp: [0, 1],
+        ArrowDown: [0, -1],
+      };
+      const step = dir[e.key];
+      if (!step || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)))
+        return;
+      const el = containerRef.current;
+      if (!el) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const backingW = Math.round(rect.width * dpr);
+      const backingH = Math.round(rect.height * dpr);
+      const layout = getOfficeState().getLayout();
+      const pan = editor.panRef.current;
+      getOfficeState().cameraFollowId = null;
+      editor.panRef.current = clampPanToWorld(
+        pan.x + step[0] * backingW * WORLD_KEY_PAN_FRACTION,
+        pan.y + step[1] * backingH * WORLD_KEY_PAN_FRACTION,
+        currentZoom,
+        layout.cols,
+        layout.rows,
+        backingW,
+        backingH,
+      );
+      handleUserPan();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isDiMode, largeWorld, editor.isEditMode, editor.panRef, currentZoom, handleUserPan]);
   // A layout the user edits is theirs: the DI world never reshapes it again.
   useEffect(() => {
     if (isDiMode && editor.isDirty) markDiWorldCustom();
@@ -326,7 +642,10 @@ function App() {
     };
     hooks.editorEraseAction = (col, row) => editor.handleEditorEraseAction(col, row);
     hooks.getShowAreas = () => effectiveShowAreas;
+    // the Map's own point jump (legible office zoom), for captures centred on a world point
+    hooks.jumpToWorldPoint = (x, y) => jumpToWorldPoint(x, y);
   }, [
+    jumpToWorldPoint,
     editor.handleEditorTileAction,
     editor.handleEditorEraseAction,
     effectiveShowAreas,
@@ -385,45 +704,101 @@ function App() {
     exportLayoutToFile(getOfficeState().getLayout());
   }, []);
 
+  // DI office: the ambient snapshot (residents with their pending legs, trains with their progress
+  // and onboard riders) is its OWN single-download action, never a second download behind another.
+  const handleExportAmbient = useCallback(() => {
+    const snapshot = getOfficeState().serializeAmbient(Date.now());
+    if (snapshot) exportAmbientToFile(snapshot);
+    else window.alert('No ambient snapshot to export: the residents are not running in this view.');
+  }, []);
+
+  /** The ambient import, from TEXT (the paste import's route): bounded before parse
+   *  (ambientIntake.ts), then the one validator and apply path; when applied, a save is SENT like any
+   *  save (queued while disconnected; no write acknowledgment); refused whole with the reason
+   *  otherwise. Never touches the layout. */
+  const importAmbientText = useCallback((text: string): PasteImportResult => {
+    const intake = prepareAmbientText(text);
+    if ('refused' in intake) return { ok: false, reason: intake.refused };
+    const os = getOfficeState();
+    const result = os.importAmbientSnapshot(intake.snapshot);
+    if (result.outcome !== 'applied') return { ok: false, reason: result.reason ?? result.outcome };
+    const state = os.serializeAmbient(Date.now());
+    if (state) transport.send({ type: 'saveAmbientState', state: state as unknown as Record<string, unknown> });
+    return {
+      ok: true,
+      message: `${result.residentsRestored} residents restored (${result.aboardRestored} aboard a train, ${result.waitingRestored} waiting), ${result.trainsRestored} trains; save sent (queued if disconnected), not confirmed written`,
+    };
+  }, []);
+
+  /** The layout import, from TEXT (one route for pasted text and a file's text): the existing bounded
+   *  intake and atomic apply (layoutIntake.ts applyImport). A refused import changes nothing. */
+  const importLayoutText = useCallback(
+    (text: string): PasteImportResult => {
+      let refused: string | null = null;
+      let applied: OfficeLayout | null = null;
+      applyImport(text, {
+        rebuild: (layout) => {
+          // a layout REPLACED: no palette of the previous one is kept (renderCaches.ts)
+          resetRenderCaches();
+          getOfficeState().rebuildFromLayout(layout);
+          applied = layout;
+        },
+        setLastSaved: (layout) => editor.setLastSavedLayout(layout),
+        send: (layout) =>
+          transport.send({
+            type: 'saveLayout',
+            layout: layout as unknown as Record<string, unknown>,
+          }),
+        markClean: () => editor.markClean(),
+        refuse: (reason) => {
+          refused = reason;
+        },
+      });
+      const done = applied as OfficeLayout | null;
+      // applied LOCALLY; the save is sent (queued while disconnected) and no write is acknowledged
+      return done
+        ? { ok: true, message: `layout ${done.cols} x ${done.rows} applied; save sent (queued if disconnected), not confirmed written` }
+        : { ok: false, reason: refused ?? 'refused' };
+    },
+    [editor],
+  );
+
+  /** DI office (browser): Import Layout / Import Ambient Snapshot open the ONE paste surface. */
+  const [pasteKind, setPasteKind] = useState<'layout' | 'ambient' | null>(null);
+  const handlePasteImport = useCallback(
+    (kind: 'layout' | 'ambient', text: string): PasteImportResult => {
+      if (kind === 'ambient') return importAmbientText(text);
+      if (isEditDirty() && !window.confirm('Replace the current layout? Unsaved edits will be lost.'))
+        return { ok: false, reason: 'cancelled: unsaved edits kept' };
+      return importLayoutText(text);
+    },
+    [importAmbientText, importLayoutText, isEditDirty],
+  );
+
   const handleImportLayout = useCallback(
     (file: File) => {
-      // Browser-native import (standalone): read + validate + apply directly,
-      // bypassing the layoutLoaded message whose dirty guard would skip it.
+      // Browser-native import (standalone): bounded intake (layoutIntake.ts), then apply
+      // directly, bypassing the layoutLoaded message whose dirty guard would skip it.
       if (
         isEditDirty() &&
         !window.confirm('Replace the current layout? Unsaved edits will be lost.')
       ) {
         return;
       }
+      // Byte size BEFORE the file is read.
+      if (importFileTooLarge(file.size)) {
+        window.alert('Layout file is too large.');
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => {
-        try {
-          const imported = JSON.parse(String(reader.result)) as Record<string, unknown>;
-          // Match the VS Code guard, plus the furniture-array check VS Code omits
-          // (migrate + rebuild iterate furniture and would throw on a non-array).
-          if (
-            imported.version !== 1 ||
-            !Array.isArray(imported.tiles) ||
-            !Array.isArray(imported.furniture)
-          ) {
-            window.alert('Invalid layout file.');
-            return;
-          }
-          const migrated = migrateLayoutColors(imported as unknown as OfficeLayout);
-          getOfficeState().rebuildFromLayout(migrated);
-          editor.setLastSavedLayout(migrated);
-          transport.send({
-            type: 'saveLayout',
-            layout: migrated as unknown as Record<string, unknown>,
-          });
-          editor.markClean();
-        } catch {
-          window.alert('Failed to read or parse layout file.');
-        }
+        // A refused import changes nothing: not rendered, not sent, not marked clean.
+        const result = importLayoutText(String(reader.result));
+        if (!result.ok) window.alert(`Invalid layout file (${result.reason}).`);
       };
       reader.readAsText(file);
     },
-    [isEditDirty, editor],
+    [isEditDirty, importLayoutText],
   );
 
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
@@ -469,7 +844,9 @@ function App() {
   return (
     <div
       ref={containerRef}
-      className="h-full relative overflow-hidden"
+      // overflow CLIP, not hidden: a hidden box is still programmatically scrollable (focus,
+      // scrollIntoView), and scrolling it lifted the office canvas off the bottom of the view
+      className="h-full relative overflow-clip"
       // DI mode: the office yields the docked panel's width, so it re-centres beside it
       // and no character can sit under the panel.
       style={{
@@ -494,11 +871,39 @@ function App() {
         showAreas={effectiveShowAreas}
         activeAreaLabel={activeAreaLabel}
         centerWhenWorldFits={isDiMode}
+        onUserPan={handleUserPan}
+        renderPaused={isDiMode && largeWorld && mapOpen && !editor.isEditMode}
       />
 
       {!isDebugMode ? (
         <>
           <ZoomControls zoom={editor.zoom} onZoomChange={handleUserZoom} />
+          {isDiMode && largeWorld && (
+            <WorldViewControls
+              views={WORLD_VIEW_KINDS.filter(
+                (v) =>
+                  v !== 'deck' || frameWorldView('deck', liveLayout, footprintOf, 1, 1, 1) !== null,
+              )}
+              active={worldViewHeld && !mapOpen ? worldView : null}
+              onSelect={handleSelectWorldView}
+              mapOpen={mapOpen}
+              mapAvailable={!editor.isEditMode}
+              onToggleMap={toggleMap}
+              districts={districts.map((d) => d.label)}
+              onSelectDistrict={goToDistrict}
+              districtStatus={districtStatus}
+            />
+          )}
+          {isDiMode && largeWorld && mapOpen && !editor.isEditMode && (
+            <WorldMap
+              officeState={officeState}
+              zoom={editor.zoom}
+              panRef={editor.panRef}
+              getCameraCanvas={getCameraCanvas}
+              onJump={jumpToWorldPoint}
+              onClose={closeMap}
+            />
+          )}
 
           {/* Vignette overlay */}
           <div
@@ -582,9 +987,26 @@ function App() {
             alwaysShowOverlay={alwaysShowOverlay}
             // DI mode: every character gets a DI label (unconfirmed when no office state lists
             // it) and no Pixel controls; undefined = ordinary Pixel.
-            diLabelFor={diOfficeState ? (id) => diCharacterLabel(diOfficeState, id) : undefined}
+            diLabelFor={
+              diOfficeState
+                ? (id) =>
+                    `${diOfficeState.fixtureMode ? 'FIXTURE · ' : ''}${diCharacterLabel(diOfficeState, id)}`
+                : undefined
+            }
             diTitleFor={diOfficeState ? (id) => diCharacterTitle(diOfficeState, id) : undefined}
           />
+          {diOfficeState?.fixtureMode && (
+            // EXPLICIT fixture preview only: fixed, above every overlay (Map included), never
+            // inside the panel, so it cannot scroll away or be hidden with it.
+            <div
+              className="fixed top-4 left-1/2 -translate-x-1/2 z-50 pixel-panel px-12 py-4 text-sm text-warning pointer-events-none select-none"
+              role="status"
+              data-testid="di-fixture-banner"
+            >
+              {DI_FIXTURE_BANNER}
+            </div>
+          )}
+          {diOfficeState && <AmbientLegend officeState={officeState} />}
           {diOfficeState && (
             <DiOfficePanel
               state={diOfficeState}
@@ -730,7 +1152,16 @@ function App() {
         showAreasAvailable={areasAvailable}
         onExportLayout={handleExportLayout}
         onImportLayout={handleImportLayout}
+        onExportAmbient={handleExportAmbient}
+        onPasteImport={setPasteKind}
         diMode={diOfficeState !== null}
+      />
+
+      <PasteImportModal
+        kind={pasteKind}
+        maxBytes={pasteKind === 'ambient' ? AMBIENT_SAVE_MAX_BYTES : LAYOUT_MAX_FILE_BYTES}
+        onImport={handlePasteImport}
+        onClose={() => setPasteKind(null)}
       />
 
       {showMigrationNotice && (

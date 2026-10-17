@@ -1,0 +1,683 @@
+{
+  "kind": "skyscraper design variants (M3 S2)",
+  "generator": "scripts/generate-tower-variants.ts",
+  "sourceBands": {
+    "CITY_TOWER_ROUND": {
+      "top": 10,
+      "bodyStart": 30,
+      "baseStart": 120,
+      "solidRows": 4,
+      "fw": 6
+    },
+    "CITY_TOWER_GARDEN": {
+      "top": 10,
+      "bodyStart": 18,
+      "baseStart": 130,
+      "solidRows": 4,
+      "fw": 6
+    },
+    "CITY_CLOCK_TOWER": {
+      "top": 10,
+      "bodyStart": 44,
+      "baseStart": 92,
+      "solidRows": 3,
+      "fw": 4,
+      "slice": {
+        "at": 72,
+        "p": 10
+      }
+    },
+    "CITY_SKYSCRAPER_GLASS": {
+      "top": 0,
+      "bodyStart": 50,
+      "baseStart": 160,
+      "solidRows": 4,
+      "fw": 7
+    },
+    "CITY_SKYSCRAPER_DECO": {
+      "top": 0,
+      "bodyStart": 60,
+      "baseStart": 154,
+      "solidRows": 4,
+      "fw": 7
+    },
+    "CITY_SUPERTALL": {
+      "top": 0,
+      "bodyStart": 50,
+      "baseStart": 184,
+      "solidRows": 3,
+      "fw": 4
+    }
+  },
+  "measuredFloorPeriods": {
+    "CITY_TOWER_ROUND": {
+      "p": 12,
+      "at": 61
+    },
+    "CITY_TOWER_GARDEN": {
+      "p": 10,
+      "at": 57
+    },
+    "CITY_CLOCK_TOWER": {
+      "at": 72,
+      "p": 10
+    },
+    "CITY_SKYSCRAPER_GLASS": {
+      "p": 6,
+      "at": 88
+    },
+    "CITY_SKYSCRAPER_DECO": {
+      "p": 10,
+      "at": 92
+    },
+    "CITY_SUPERTALL": {
+      "p": 6,
+      "at": 96
+    }
+  },
+  "variants": [
+    {
+      "id": "CITY_TOWER_V01",
+      "name": "Stepped Glass Drum",
+      "slot": "CITY_TOWER_ROUND",
+      "distinct": "setback upper drum, banded glazing",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_ROUND",
+            "floors": 1,
+            "setback": 0.4,
+            "crown": "CITY_TOWER_ROUND"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "bands"
+      },
+      "size": {
+        "w": 96,
+        "h": 160
+      },
+      "footprint": {
+        "w": 6,
+        "h": 10,
+        "solidRows": 4,
+        "backgroundTiles": 6
+      }
+    },
+    {
+      "id": "CITY_TOWER_V02",
+      "name": "Mast Cylinder",
+      "slot": "CITY_TOWER_ROUND",
+      "distinct": "six floors taller, flat roof with a radio mast, gridded windows",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_ROUND",
+            "floors": 6,
+            "crown": "mast"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "grid"
+      },
+      "size": {
+        "w": 96,
+        "h": 256
+      },
+      "footprint": {
+        "w": 6,
+        "h": 16,
+        "solidRows": 4,
+        "backgroundTiles": 12
+      }
+    },
+    {
+      "id": "CITY_TOWER_V03",
+      "name": "Twin Drums",
+      "slot": "CITY_TOWER_ROUND",
+      "distinct": "two slender shafts of unequal height joined by a skybridge",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_ROUND",
+            "floors": 4,
+            "width": 0.46,
+            "dx": -24,
+            "crown": "dome"
+          },
+          {
+            "from": "CITY_TOWER_ROUND",
+            "floors": 1,
+            "width": 0.46,
+            "dx": 24,
+            "crown": "helipad"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": true,
+        "windows": "original"
+      },
+      "size": {
+        "w": 96,
+        "h": 208
+      },
+      "footprint": {
+        "w": 6,
+        "h": 13,
+        "solidRows": 4,
+        "backgroundTiles": 9
+      }
+    },
+    {
+      "id": "CITY_TOWER_V04",
+      "name": "Slender Glass-Crown Drum",
+      "slot": "CITY_TOWER_ROUND",
+      "distinct": "slender drum with the glass tower's pointed crown, vertical fins",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_ROUND",
+            "floors": 4,
+            "width": 0.72,
+            "crown": "CITY_SKYSCRAPER_GLASS"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "fins"
+      },
+      "size": {
+        "w": 96,
+        "h": 240
+      },
+      "footprint": {
+        "w": 6,
+        "h": 15,
+        "solidRows": 4,
+        "backgroundTiles": 11
+      }
+    },
+    {
+      "id": "CITY_TOWER_V05",
+      "name": "Domed Rotunda",
+      "slot": "CITY_TOWER_ROUND",
+      "distinct": "short wide rotunda under a dome, lit windows",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_ROUND",
+            "floors": -4,
+            "crown": "dome"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "lit"
+      },
+      "size": {
+        "w": 96,
+        "h": 112
+      },
+      "footprint": {
+        "w": 6,
+        "h": 7,
+        "solidRows": 4,
+        "backgroundTiles": 3
+      }
+    },
+    {
+      "id": "CITY_TOWER_V06",
+      "name": "Garden-Base Glass Spire",
+      "slot": "CITY_TOWER_GARDEN",
+      "distinct": "terraced garden podium under a glass drum with a gold deco spire",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_ROUND",
+            "floors": 3,
+            "width": 0.8,
+            "crown": "CITY_SKYSCRAPER_DECO"
+          }
+        ],
+        "hybridLower": {
+          "from": "CITY_TOWER_GARDEN",
+          "floors": 0
+        },
+        "skybridge": false,
+        "windows": "original"
+      },
+      "size": {
+        "w": 96,
+        "h": 240
+      },
+      "footprint": {
+        "w": 6,
+        "h": 15,
+        "solidRows": 4,
+        "backgroundTiles": 11
+      }
+    },
+    {
+      "id": "CITY_TOWER_V07",
+      "name": "Tall Terrace",
+      "slot": "CITY_TOWER_GARDEN",
+      "distinct": "four terraces taller, lit windows",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_GARDEN",
+            "floors": 4,
+            "crown": "CITY_TOWER_GARDEN"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "lit"
+      },
+      "size": {
+        "w": 96,
+        "h": 192
+      },
+      "footprint": {
+        "w": 6,
+        "h": 12,
+        "solidRows": 4,
+        "backgroundTiles": 8
+      }
+    },
+    {
+      "id": "CITY_TOWER_V08",
+      "name": "Terrace Spire",
+      "slot": "CITY_TOWER_GARDEN",
+      "distinct": "three terraces taller, half the height narrowed, needle spire",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_GARDEN",
+            "floors": 3,
+            "setback": 0.5,
+            "crown": "spire"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "original"
+      },
+      "size": {
+        "w": 96,
+        "h": 208
+      },
+      "footprint": {
+        "w": 6,
+        "h": 13,
+        "solidRows": 4,
+        "backgroundTiles": 9
+      }
+    },
+    {
+      "id": "CITY_TOWER_V09",
+      "name": "Garden Block",
+      "slot": "CITY_TOWER_GARDEN",
+      "distinct": "low flat-roofed terrace block with a helipad",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_GARDEN",
+            "floors": -3,
+            "crown": "helipad"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "grid"
+      },
+      "size": {
+        "w": 96,
+        "h": 128
+      },
+      "footprint": {
+        "w": 6,
+        "h": 8,
+        "solidRows": 4,
+        "backgroundTiles": 4
+      }
+    },
+    {
+      "id": "CITY_TOWER_V10",
+      "name": "Pyramid Terrace",
+      "slot": "CITY_TOWER_GARDEN",
+      "distinct": "copper pyramid roof over finned terraces",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_GARDEN",
+            "floors": 2,
+            "crown": "pyramid"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "fins"
+      },
+      "size": {
+        "w": 96,
+        "h": 192
+      },
+      "footprint": {
+        "w": 6,
+        "h": 12,
+        "solidRows": 4,
+        "backgroundTiles": 8
+      }
+    },
+    {
+      "id": "CITY_TOWER_V11",
+      "name": "Stepped Arcology",
+      "slot": "CITY_TOWER_GARDEN",
+      "distinct": "tallest terrace tower with a deep setback",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_TOWER_GARDEN",
+            "floors": 7,
+            "setback": 0.45,
+            "crown": "CITY_TOWER_GARDEN"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "bands"
+      },
+      "size": {
+        "w": 96,
+        "h": 224
+      },
+      "footprint": {
+        "w": 6,
+        "h": 14,
+        "solidRows": 4,
+        "backgroundTiles": 10
+      }
+    },
+    {
+      "id": "CITY_TOWER_V12",
+      "name": "Tall Belfry",
+      "slot": "CITY_CLOCK_TOWER",
+      "distinct": "three storeys taller belfry shaft",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_CLOCK_TOWER",
+            "floors": 3,
+            "crown": "CITY_CLOCK_TOWER"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "original"
+      },
+      "size": {
+        "w": 64,
+        "h": 192
+      },
+      "footprint": {
+        "w": 4,
+        "h": 12,
+        "solidRows": 3,
+        "backgroundTiles": 9
+      }
+    },
+    {
+      "id": "CITY_TOWER_V13",
+      "name": "Brick Keep",
+      "slot": "CITY_CLOCK_TOWER",
+      "distinct": "two storeys shorter, crenellated flat top instead of the spire",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_CLOCK_TOWER",
+            "floors": -2,
+            "crown": "crenellated"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "original"
+      },
+      "size": {
+        "w": 64,
+        "h": 112
+      },
+      "footprint": {
+        "w": 4,
+        "h": 7,
+        "solidRows": 3,
+        "backgroundTiles": 4
+      }
+    },
+    {
+      "id": "CITY_TOWER_V14",
+      "name": "Twin Belfries",
+      "slot": "CITY_CLOCK_TOWER",
+      "distinct": "two slender belfries of unequal height under copper pyramids, bridged",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_CLOCK_TOWER",
+            "floors": 3,
+            "width": 0.55,
+            "dx": -13,
+            "crown": "pyramid"
+          },
+          {
+            "from": "CITY_CLOCK_TOWER",
+            "floors": 1,
+            "width": 0.55,
+            "dx": 13,
+            "crown": "pyramid"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": true,
+        "windows": "original"
+      },
+      "size": {
+        "w": 64,
+        "h": 160
+      },
+      "footprint": {
+        "w": 4,
+        "h": 10,
+        "solidRows": 3,
+        "backgroundTiles": 7
+      }
+    },
+    {
+      "id": "CITY_TOWER_V15",
+      "name": "Domed Observatory Tower",
+      "slot": "CITY_CLOCK_TOWER",
+      "distinct": "seven storeys taller with a deep setback upper stage under a dome",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_CLOCK_TOWER",
+            "floors": 7,
+            "setback": 0.5,
+            "crown": "dome"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "original"
+      },
+      "size": {
+        "w": 64,
+        "h": 208
+      },
+      "footprint": {
+        "w": 4,
+        "h": 13,
+        "solidRows": 3,
+        "backgroundTiles": 10
+      }
+    },
+    {
+      "id": "CITY_TOWER_V16",
+      "name": "Signal Mast Tower",
+      "slot": "CITY_CLOCK_TOWER",
+      "distinct": "slimmer shaft with a lattice signal mast",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_CLOCK_TOWER",
+            "floors": 0,
+            "width": 0.8,
+            "crown": "mast"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "original"
+      },
+      "size": {
+        "w": 64,
+        "h": 160
+      },
+      "footprint": {
+        "w": 4,
+        "h": 10,
+        "solidRows": 3,
+        "backgroundTiles": 7
+      }
+    },
+    {
+      "id": "CITY_TOWER_V17",
+      "name": "Stepped Deco Crown",
+      "slot": "CITY_SKYSCRAPER_DECO",
+      "distinct": "shorter deco tower with a stepped flat crown and lit windows",
+      "composition": {
+        "shafts": [
+          {
+            "from": "CITY_SKYSCRAPER_DECO",
+            "floors": -2,
+            "crown": "crenellated"
+          }
+        ],
+        "hybridLower": null,
+        "skybridge": false,
+        "windows": "lit"
+      },
+      "size": {
+        "w": 112,
+        "h": 128
+      },
+      "footprint": {
+        "w": 7,
+        "h": 8,
+        "solidRows": 4,
+        "backgroundTiles": 4
+      }
+    }
+  ],
+  "designs": [
+    "CITY_TOWER_ROUND",
+    "CITY_TOWER_GARDEN",
+    "CITY_CLOCK_TOWER",
+    "CITY_SKYSCRAPER_GLASS",
+    "CITY_SKYSCRAPER_DECO",
+    "CITY_SUPERTALL",
+    "CITY_TOWER_V01",
+    "CITY_TOWER_V02",
+    "CITY_TOWER_V03",
+    "CITY_TOWER_V04",
+    "CITY_TOWER_V05",
+    "CITY_TOWER_V06",
+    "CITY_TOWER_V07",
+    "CITY_TOWER_V08",
+    "CITY_TOWER_V09",
+    "CITY_TOWER_V10",
+    "CITY_TOWER_V11",
+    "CITY_TOWER_V12",
+    "CITY_TOWER_V13",
+    "CITY_TOWER_V14",
+    "CITY_TOWER_V15",
+    "CITY_TOWER_V16",
+    "CITY_TOWER_V17"
+  ],
+  "distinctnessRule": "pairwise over all designs: weak when silhouette difference < 0.08 AND pixel difference < 0.15 (bottom-aligned, fractions of the union). Palette-only changes are not used.",
+  "weakPairs": [],
+  "weakestPairs": [
+    {
+      "a": "CITY_CLOCK_TOWER",
+      "b": "CITY_TOWER_V16",
+      "silhouette": 0.091,
+      "pixels": 0.119,
+      "heightDelta": 0
+    },
+    {
+      "a": "CITY_TOWER_V12",
+      "b": "CITY_TOWER_V15",
+      "silhouette": 0.106,
+      "pixels": 0.139,
+      "heightDelta": 16
+    },
+    {
+      "a": "CITY_TOWER_ROUND",
+      "b": "CITY_TOWER_V01",
+      "silhouette": 0.077,
+      "pixels": 0.175,
+      "heightDelta": 0
+    },
+    {
+      "a": "CITY_TOWER_V07",
+      "b": "CITY_TOWER_V10",
+      "silhouette": 0.067,
+      "pixels": 0.19,
+      "heightDelta": 0
+    },
+    {
+      "a": "CITY_TOWER_V13",
+      "b": "CITY_TOWER_V16",
+      "silhouette": 0.143,
+      "pixels": 0.119,
+      "heightDelta": 48
+    },
+    {
+      "a": "CITY_TOWER_V07",
+      "b": "CITY_TOWER_V11",
+      "silhouette": 0.119,
+      "pixels": 0.145,
+      "heightDelta": 32
+    },
+    {
+      "a": "CITY_SKYSCRAPER_DECO",
+      "b": "CITY_TOWER_V17",
+      "silhouette": 0.186,
+      "pixels": 0.082,
+      "heightDelta": 64
+    },
+    {
+      "a": "CITY_CLOCK_TOWER",
+      "b": "CITY_TOWER_V13",
+      "silhouette": 0.166,
+      "pixels": 0.113,
+      "heightDelta": 48
+    },
+    {
+      "a": "CITY_TOWER_GARDEN",
+      "b": "CITY_TOWER_V08",
+      "silhouette": 0.138,
+      "pixels": 0.144,
+      "heightDelta": 48
+    },
+    {
+      "a": "CITY_TOWER_V10",
+      "b": "CITY_TOWER_V11",
+      "silhouette": 0.134,
+      "pixels": 0.156,
+      "heightDelta": 32
+    }
+  ]
+}

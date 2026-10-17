@@ -1,3 +1,13 @@
+import {
+  LAYOUT_ID_MAX_LENGTH,
+  LAYOUT_MAX_AREAS,
+  LAYOUT_MAX_CELLS,
+  LAYOUT_MAX_DIM,
+  LAYOUT_MAX_FRAME_BYTES,
+  LAYOUT_MAX_FURNITURE,
+  LAYOUT_MAX_PETS,
+} from '../../core/src/layoutLimits.js';
+
 // ── JSONL File Watching ─────────────────────────────────────
 export const JSONL_POLL_INTERVAL_MS = 1000;
 export const FILE_WATCHER_POLL_INTERVAL_MS = 500;
@@ -93,6 +103,8 @@ export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';
+/** DI office only: the decorative ambient snapshot (core/src/ambientSave.ts), under the DI state root. */
+export const AMBIENT_STATE_FILE_NAME = 'ambient-state.json';
 export const LAYOUT_FILE_POLL_INTERVAL_MS = 2000;
 export const LAYOUT_REVISION_KEY = 'layoutRevision';
 export const CONFIG_FILE_NAME = 'config.json';
@@ -140,18 +152,51 @@ export const DI_CONSUMER_POLL_INTERVAL_SECONDS = 6;
 export const DI_SHUTDOWN_DRAIN_TIMEOUT_MS = 5_000;
 
 /**
+ * FIXTURE SOURCE bounds (--fixture-source, visual testing only). A fixture script is read ONCE at
+ * launch, size-checked before parsing, and served in-process: it replaces the backend discovery
+ * read and the backend HTTP request, so a fixture office makes no backend connection at all.
+ */
+export const DI_FIXTURE_SOURCE_MAX_BYTES = 4 * 1024 * 1024;
+export const DI_FIXTURE_MAX_FRAMES = 64;
+export const DI_FIXTURE_MAX_FRAME_REPEAT = 1_000;
+/** A fixture's `label` must begin with this word, so a fixture can never read as real data. */
+export const DI_FIXTURE_LABEL_PREFIX = 'FIXTURE';
+
+/**
  * DI INBOUND BOUNDS. The /ws channel carries the only write-bearing DI messages (layout,
  * seats, preferences), so it gets an explicit payload ceiling instead of the library default
- * (ws: 100 MiB). A frame above it closes the socket (1009) before any parsing. 1 MiB is
- * ~2x a maximal 64x64 layout with per-tile colors, carpet and areas.
+ * (ws: 100 MiB). A frame above it closes the socket (1009) BEFORE any parsing (the ws layer
+ * enforces maxPayload while receiving; no message event, no JSON.parse), so the ceiling bounds
+ * what a connection can make the office allocate, not what it will parse.
+ * The layout numbers are DEFINED ONCE in core/src/layoutLimits.ts and only re-exported here, so
+ * the frame ceiling cannot drift from the grid bound again: LAYOUT_MAX_FRAME_BYTES is ~2x the
+ * measured compact frame of a MAXIMAL legitimate layout at EVERY structural cap at once
+ * (LAYOUT_MAX_CELLS cells, LAYOUT_MAX_FURNITURE items, ids/labels at the character cap:
+ * 34,770,547 B, ~424 B/cell) and the "maximal layout fits the cap" test enforces it. The real
+ * 176x112 forest world is a 1,099,668-byte frame — 51 KB over the former 1 MiB ceiling, which
+ * would have dropped it.
  */
-export const DI_WS_MAX_PAYLOAD_BYTES = 1_048_576;
-/** Layout grid bound (the editor's own MAX_COLS/MAX_ROWS). */
-export const DI_LAYOUT_MAX_DIM = 64;
-export const DI_LAYOUT_MAX_FURNITURE = 4_096;
-export const DI_LAYOUT_MAX_PETS = 64;
-export const DI_LAYOUT_MAX_AREAS = 64;
+export const DI_WS_MAX_PAYLOAD_BYTES = LAYOUT_MAX_FRAME_BYTES;
+/** Layout grid bound PER AXIS — the editor's own MAX_COLS/MAX_ROWS (both re-export LAYOUT_MAX_DIM). */
+export const DI_LAYOUT_MAX_DIM = LAYOUT_MAX_DIM;
+/** Total cells per layout — an independent cap (not DI_LAYOUT_MAX_DIM squared). */
+export const DI_LAYOUT_MAX_CELLS = LAYOUT_MAX_CELLS;
+/** Furniture records per layout (16,384): the connected metropolis world spends its forest's
+ *  2,945 records (palace 406 included) plus its new districts', inside this bound. */
+export const DI_LAYOUT_MAX_FURNITURE = LAYOUT_MAX_FURNITURE;
+export const DI_LAYOUT_MAX_PETS = LAYOUT_MAX_PETS;
+export const DI_LAYOUT_MAX_AREAS = LAYOUT_MAX_AREAS;
 /** Max length of a uid, type id, area label, pet id or seat id. */
-export const DI_ID_MAX_LENGTH = 128;
+export const DI_ID_MAX_LENGTH = LAYOUT_ID_MAX_LENGTH;
 export const DI_SEATS_MAX_ENTRIES = 1_024;
 export const DI_VERSION_MAX_LENGTH = 64;
+
+// ── DI office: ambient character sheets (M3 S6) ─────────────────
+/** Folder under dist/assets holding one sub-folder per ambient sheet (manifest.json + <id>.png). */
+export const AMBIENT_SPRITE_DIR = 'ambient';
+/** Bounds the loader enforces before anything is sent: sheet count, file sizes, frame geometry. */
+export const AMBIENT_SPRITE_SHEETS_MAX = 16;
+export const AMBIENT_SPRITE_PNG_MAX_BYTES = 262_144;
+export const AMBIENT_SPRITE_MANIFEST_MAX_BYTES = 16_384;
+export const AMBIENT_SPRITE_FRAME_MAX_PX = 48;
+export const AMBIENT_SPRITE_COLUMNS_MAX = 8;

@@ -120,6 +120,8 @@ components:
         - $ref: '#/components/schemas/AgentDiagnostics'
         # DI office (additive; sent only by the DI office surface)
         - $ref: '#/components/schemas/DiOfficeState'
+        - $ref: '#/components/schemas/AmbientStateLoaded'
+        - $ref: '#/components/schemas/AmbientSpritesLoaded'
       discriminator: type
 
     ClientMessage:
@@ -146,6 +148,8 @@ components:
         - $ref: '#/components/schemas/SaveAreaMappings'
         - $ref: '#/components/schemas/SetShowAreas'
         - $ref: '#/components/schemas/RequestDiagnostics'
+        # DI office (additive; handled only by the DI office surface)
+        - $ref: '#/components/schemas/SaveAmbientState'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -788,6 +792,61 @@ components:
           items:
             type: object
 
+    AmbientStateLoaded:
+      description: |
+        DI office only: the decorative ambient simulation's last SAVED snapshot (residents with
+        their pending legs and states, trains with their progress, operating state and onboard
+        residents), or `null` when none was saved. Sent in the handshake before `layoutLoaded`.
+        The webview validates it whole against the world it builds (fingerprint, resident set,
+        tiles, rides, tracks) and applies it once or refuses it with a reason, so a load never
+        creates or duplicates a resident and never fabricates a transit event. A snapshot is not
+        simulation while closed: everything resumes from the saved point.
+      type: object
+      additionalProperties: false
+      required: [type, state]
+      properties:
+        type:
+          const: ambientStateLoaded
+        state:
+          oneOf:
+            - type: object
+              description: Opaque bounded snapshot; format owned by the webview (ambientSave.ts) and checked by the server on save.
+            - type: 'null'
+
+    AmbientSpritesLoaded:
+      description: |
+        DI office only: the decorative AMBIENT character sheets (job sheets and the Easter-egg
+        families), sent once in the handshake before `layoutLoaded`. Each sheet is four facing rows
+        (named in `rows`) of frames; `walk`, `idle` and `gesture` index the columns. Bounded by the
+        server loader (sheet count, frame size, file size). Decorative art only: never an agent's
+        sprite, never a seat, never selectable.
+      type: object
+      additionalProperties: false
+      required: [type, sheets]
+      properties:
+        type:
+          const: ambientSpritesLoaded
+        sheets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AmbientSpriteSheet'
+
+    SaveAmbientState:
+      description: |
+        DI office only: persist the decorative ambient snapshot under the DI state root
+        (ambient-state.json). Refused unless it matches the snapshot shape within its bounds
+        (at most AMBIENT_SAVE_MAX_BYTES). Local presentation state only: no Mission, agent or
+        canonical meaning.
+      type: object
+      additionalProperties: false
+      required: [type, state]
+      properties:
+        type:
+          const: saveAmbientState
+        state:
+          type: object
+          description: Opaque bounded snapshot; format owned by the webview (ambientSave.ts).
+
     DiOfficeState:
       description: |
         DI office only (additive; the standalone and VS Code surfaces never send it).
@@ -838,6 +897,13 @@ components:
           description: The catalog contract version this office process was launched to read (one per process).
         chainObservation:
           $ref: '#/components/schemas/DiChainObservation'
+        fixtureMode:
+          type: boolean
+          description: |
+            Present (true) ONLY when the office process was launched with the explicit
+            --fixture-preview flag: its backend is a hash-pinned SYNTHETIC FIXTURE stand-in
+            (visual testing), never live Missions. The webview then shows a persistent
+            FIXTURE / VISUAL TEST label and qualifies every LIVE. Absent in normal operation.
 
     DiObservationState:
       description: |
@@ -1896,6 +1962,47 @@ components:
           type: string
         path:
           type: string
+
+    AmbientSpriteSheet:
+      description: One ambient character sheet. frames[row][column] is a SpriteData (rows x pixels of hex strings, '' transparent).
+      type: object
+      additionalProperties: false
+      required: [id, label, frameWidth, frameHeight, rows, walk, idle, gesture, frames]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        frameWidth:
+          type: integer
+        frameHeight:
+          type: integer
+        rows:
+          type: array
+          items:
+            type: string
+        walk:
+          type: array
+          items:
+            type: integer
+        idle:
+          type: array
+          items:
+            type: integer
+        gesture:
+          type: array
+          items:
+            type: integer
+        frames:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: array
+                items:
+                  type: string
 
     CharacterSpriteSet:
       description: |

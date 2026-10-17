@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TOWER_V11",
+  "name": "Stepped Arcology",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 10,
+  "width": 96,
+  "height": 224,
+  "footprintW": 6,
+  "footprintH": 14
+}

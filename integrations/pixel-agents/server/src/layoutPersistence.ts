@@ -2,6 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import {
+  checkLayout,
+  LAYOUT_MAX_FILE_BYTES,
+  parseLayoutText,
+} from '../../core/src/layoutLimits.js';
+import {
   LAYOUT_FILE_NAME,
   LAYOUT_FILE_POLL_INTERVAL_MS,
   LAYOUT_REVISION_KEY,
@@ -17,19 +22,57 @@ function getLayoutFilePath(): string {
   return path.join(getStateRoot(), LAYOUT_FILE_NAME);
 }
 
+/**
+ * Read + bound-check the layout file: its BYTE SIZE before it is read or parsed, then its shape
+ * against the shared bounds (core/src/layoutLimits.ts, legacy mode — the webview migrates).
+ * Returns the raw layout, or null with the reason logged (missing, oversized or malformed).
+ */
+function readBoundedLayout(filePath: string): Record<string, unknown> | null {
+  const size = fs.statSync(filePath).size;
+  if (size > LAYOUT_MAX_FILE_BYTES) {
+    console.error(
+      `[Pixel Agents] Refusing layout file: ${size} bytes exceeds ${LAYOUT_MAX_FILE_BYTES}`,
+    );
+    return null;
+  }
+  const result = parseLayoutText(fs.readFileSync(filePath, 'utf-8'));
+  if ('refused' in result) {
+    console.error(`[Pixel Agents] Refusing layout file: ${result.refused}`);
+    return null;
+  }
+  return result.layout;
+}
+
+/** Is there a layout file at all? Decisions that must never overwrite a user's file key on THIS,
+ *  not on readLayoutFromFile() — a present but refused (oversized / malformed) file reads null. */
+export function layoutFileExists(): boolean {
+  return fs.existsSync(getLayoutFilePath());
+}
+
 export function readLayoutFromFile(): Record<string, unknown> | null {
   const filePath = getLayoutFilePath();
   try {
     if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw) as Record<string, unknown>;
+    return readBoundedLayout(filePath);
   } catch (err) {
     console.error('[Pixel Agents] Failed to read layout file:', err);
     return null;
   }
 }
 
-export function writeLayoutToFile(layout: Record<string, unknown>): void {
+/**
+ * Persist a layout — the ONE sink every path writes through (DI and standalone saves, the VS Code
+ * save and import, the bundled default, the VS Code state migration). Nothing the bounded reader
+ * would refuse is ever written: the shared check (core/src/layoutLimits.ts; structure, then the
+ * UTF-8 frame and file byte budgets) runs first, so a refused layout leaves the existing file
+ * untouched. Returns null when written, else the reason it was not (also logged).
+ */
+export function writeLayoutToFile(layout: Record<string, unknown>): string | null {
+  const refused = checkLayout(layout, { legacy: true });
+  if (refused !== null) {
+    console.error(`[Pixel Agents] Refusing to write layout file: ${refused}`);
+    return refused;
+  }
   const filePath = getLayoutFilePath();
   const dir = path.dirname(filePath);
   try {
@@ -42,9 +85,37 @@ export function writeLayoutToFile(layout: Record<string, unknown>): void {
     writeStateTemp(tmpPath, json);
     guardStateWrite(filePath); // re-checked at write time
     fs.renameSync(tmpPath, filePath);
+    return null;
   } catch (err) {
     console.error('[Pixel Agents] Failed to write layout file:', err);
+    return err instanceof Error ? err.message : String(err);
   }
+}
+
+/**
+ * Import a layout FILE chosen by the user (the VS Code Import Layout path): its byte size BEFORE it
+ * is read, then the shared check, then the write — so a refused import never replaces the saved
+ * layout and is never reported as imported. Returns the imported layout, or the refusal reason.
+ */
+export function importLayoutFile(
+  sourcePath: string,
+  /** Called only once the import is accepted, right before the write (e.g. a watcher's
+   *  markOwnWrite, so a refused import never swallows the next genuine external change). */
+  beforeWrite?: () => void,
+): { layout: Record<string, unknown> } | { refused: string } {
+  let size: number;
+  try {
+    size = fs.statSync(sourcePath).size;
+  } catch (err) {
+    return { refused: err instanceof Error ? err.message : String(err) };
+  }
+  if (size > LAYOUT_MAX_FILE_BYTES)
+    return { refused: `file is ${size} bytes, over ${LAYOUT_MAX_FILE_BYTES}` };
+  const parsed = parseLayoutText(fs.readFileSync(sourcePath, 'utf-8'));
+  if ('refused' in parsed) return parsed;
+  beforeWrite?.();
+  const notWritten = writeLayoutToFile(parsed.layout);
+  return notWritten === null ? parsed : { refused: notWritten };
 }
 
 interface LayoutLoadResult {
@@ -81,6 +152,12 @@ export function loadLayout(
     }
     console.log('[Pixel Agents] Layout loaded from file');
     return { layout: fromFile, wasReset: false };
+  }
+
+  if (layoutFileExists()) {
+    // Present but refused (oversized, malformed or unreadable — logged by the read): show the
+    // bundled default WITHOUT writing it, so the user's file is never overwritten.
+    return defaultLayout ? { layout: defaultLayout, wasReset: false } : null;
   }
 
   if (defaultLayout) {
@@ -128,8 +205,8 @@ export function watchLayoutFile(
         return;
       }
 
-      const raw = fs.readFileSync(filePath, 'utf-8');
-      const layout = JSON.parse(raw) as Record<string, unknown>;
+      const layout = readBoundedLayout(filePath);
+      if (!layout) return; // oversized or malformed: refused (logged), never forwarded
       console.log('[Pixel Agents] External layout change detected');
       onExternalChange(layout);
     } catch (err) {

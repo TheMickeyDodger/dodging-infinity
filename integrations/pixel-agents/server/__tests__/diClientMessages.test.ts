@@ -10,6 +10,24 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Shape } from './helpers/layoutCaps.js';
+import {
+  AREA_COLOUR,
+  CAP,
+  cellCapReason,
+  DIM_SQUARED,
+  heavyLabel,
+  JUST_OVER_CELLS,
+  largestAdmitted,
+  LONG_COLOUR,
+  maximalLegitimate,
+  metropolisShape,
+  overBytes,
+  TALLEST,
+  tilesOnly,
+  WIDEST,
+} from './helpers/layoutCaps.js';
+
 let sandbox: string;
 let fakeHome: string;
 
@@ -24,7 +42,15 @@ const { FileStateAdapter } = await import('../src/fileStateAdapter.js');
 const { DI_HANDLED_MESSAGE_TYPES, DI_INERT_MESSAGE_TYPES, handleDiClientMessage, initDiDefaults } =
   await import('../src/di/diClientMessages.js');
 const { validateDiLayout } = await import('../src/di/diInputLimits.js');
-const { DI_WS_MAX_PAYLOAD_BYTES } = await import('../src/constants.js');
+const {
+  DI_ID_MAX_LENGTH,
+  DI_LAYOUT_MAX_CELLS,
+  DI_LAYOUT_MAX_DIM,
+  DI_LAYOUT_MAX_FURNITURE,
+  DI_WS_MAX_PAYLOAD_BYTES,
+} = await import('../src/constants.js');
+/** Near-cap layouts take ~0.3-0.6 s per check (structure + two UTF-8 byte counts). */
+const HEAVY_MS = 120_000;
 
 const SRC = path.join(__dirname, '../src');
 
@@ -90,9 +116,9 @@ describe('DI handler: inert types do nothing at all', () => {
       .split('|')
       .map((v) => v.trim())
       .filter(Boolean);
-    expect(variants).toHaveLength(22);
+    expect(variants).toHaveLength(23); // + saveAmbientState (M3 S4, DI only)
     const declared = new Set<string>([...DI_HANDLED_MESSAGE_TYPES, ...DI_INERT_MESSAGE_TYPES]);
-    expect(declared.size).toBe(22);
+    expect(declared.size).toBe(23);
     for (const type of Object.keys(INERT_PAYLOADS)) expect(DI_INERT_MESSAGE_TYPES).toContain(type);
   });
 
@@ -162,6 +188,7 @@ describe('DI handshake carries no Claude-shaped capability', () => {
       'settingsLoaded',
       'areaMappingsLoaded',
       'existingAgents',
+      'ambientStateLoaded',
       'layoutLoaded',
     ]);
   });
@@ -225,7 +252,56 @@ describe('write-bearing DI messages: malformed or oversized input is REFUSED, no
     'not an object': [1, 2],
     'unknown field': { ...VALID, extra: true },
     'version 2': { ...VALID, version: 2 },
-    'cols 65': { ...VALID, cols: 65, tiles: new Array(65).fill(1) },
+    'cols 65 with a short tiles array': { ...VALID, cols: 65, tiles: new Array(64).fill(1) },
+    [`cols ${DI_LAYOUT_MAX_DIM + 1} (over the per-axis world ceiling)`]: {
+      ...VALID,
+      cols: DI_LAYOUT_MAX_DIM + 1,
+      rows: 1,
+      tiles: new Array(DI_LAYOUT_MAX_DIM + 1).fill(1),
+    },
+    [`rows ${DI_LAYOUT_MAX_DIM + 1} (over the per-axis world ceiling)`]: {
+      ...VALID,
+      cols: 1,
+      rows: DI_LAYOUT_MAX_DIM + 1,
+      tiles: new Array(DI_LAYOUT_MAX_DIM + 1).fill(1),
+    },
+    [`${JUST_OVER_CELLS.cols} x ${JUST_OVER_CELLS.rows} (each axis within the ceiling, cells over the total-cell cap)`]:
+      tilesOnly(JUST_OVER_CELLS),
+    'cols 0': { ...VALID, cols: 0, tiles: [] },
+    'large world, tiles one short': {
+      ...VALID,
+      cols: 176,
+      rows: 112,
+      tiles: new Array(176 * 112 - 1).fill(1),
+    },
+    'large world, tileColors one long': {
+      ...VALID,
+      cols: 176,
+      rows: 112,
+      tiles: new Array(176 * 112).fill(1),
+      tileColors: new Array(176 * 112 + 1).fill(null),
+    },
+    'large world, carpetTiles wrong length': {
+      ...VALID,
+      cols: 176,
+      rows: 112,
+      tiles: new Array(176 * 112).fill(1),
+      carpetTiles: new Array(64 * 64).fill(null),
+    },
+    'large world, areaTiles wrong length': {
+      ...VALID,
+      cols: 176,
+      rows: 112,
+      tiles: new Array(176 * 112).fill(1),
+      areas: [],
+      areaTiles: new Array(176 * 111).fill(null),
+    },
+    'furniture col beyond twice the world ceiling': {
+      ...VALID,
+      furniture: [{ uid: 'a', type: 'X', col: 2 * DI_LAYOUT_MAX_DIM + 1, row: 0 }],
+    },
+    'pet with an unknown key': { ...VALID, pets: [{ id: 'p', petType: 0, name: 'x' }] },
+    'pet type not an integer': { ...VALID, pets: [{ id: 'p', petType: 0.5 }] },
     'tiles length mismatch': { ...VALID, tiles: [1] },
     'tile value 999': { ...VALID, tiles: [1, 999] },
     'furniture item extra key': {
@@ -234,11 +310,11 @@ describe('write-bearing DI messages: malformed or oversized input is REFUSED, no
     },
     'furniture uid too long': {
       ...VALID,
-      furniture: [{ uid: 'u'.repeat(200), type: 'DESK_FRONT', col: 0, row: 0 }],
+      furniture: [{ uid: 'u'.repeat(DI_ID_MAX_LENGTH + 1), type: 'DESK_FRONT', col: 0, row: 0 }],
     },
     'too much furniture': {
       ...VALID,
-      furniture: Array.from({ length: 4_097 }, (_, i) => ({
+      furniture: Array.from({ length: DI_LAYOUT_MAX_FURNITURE + 1 }, (_, i) => ({
         uid: `f${i}`,
         type: 'X',
         col: 0,
@@ -314,29 +390,140 @@ describe('write-bearing DI messages: malformed or oversized input is REFUSED, no
     }
   });
 
-  it('the bounds are consistent: a MAXIMAL legitimate 64x64 layout validates AND fits the WS payload cap', () => {
-    const cells = 64 * 64;
-    const color = { h: 214, s: 30, b: -100, c: -55, colorize: true };
-    const layout = {
-      version: 1,
-      cols: 64,
-      rows: 64,
-      tiles: new Array(cells).fill(7),
-      furniture: Array.from({ length: 600 }, (_, i) => ({
-        uid: `f-${i}-0123456789abcdef`,
-        type: 'WOODEN_CHAIR_SIDE:left',
-        col: i % 64,
-        row: Math.floor(i / 64),
-        color,
-      })),
-      tileColors: new Array(cells).fill(color),
-      layoutRevision: 3,
-      carpetTiles: new Array(cells).fill({ variant: 2, color, accentColor: color, order: 1 }),
-      /* eslint-disable pixel-agents/no-inline-colors -- area colour as layout test data */
-      areas: [{ label: 'Mission area 01', color: '#336699' }],
-      /* eslint-enable pixel-agents/no-inline-colors */
-      areaTiles: new Array(cells).fill('Mission area 01'),
+  it('a layout wider than the former 64 ceiling is now ACCEPTED (65 x 1)', () => {
+    expect(
+      validateDiLayout({ ...VALID, cols: 65, rows: 1, tiles: new Array(65).fill(1) }),
+    ).toBeNull();
+  });
+
+  it('the per-axis ceiling is 384 and the total-cell cap 110,400 (independent): DIM x DIM is REFUSED for its cells, cap-size layouts validate', () => {
+    expect(DI_LAYOUT_MAX_DIM).toBe(384);
+    expect(DI_LAYOUT_MAX_CELLS).toBe(110_400);
+    // independent of the axis bound: DIM x DIM is NOT admitted
+    expect(DI_LAYOUT_MAX_CELLS).toBeLessThan(DI_LAYOUT_MAX_DIM * DI_LAYOUT_MAX_DIM);
+    const full = ({ cols, rows }: Shape) => {
+      const cells = cols * rows;
+      return {
+        version: 1,
+        cols,
+        rows,
+        tiles: new Array(cells).fill(1),
+        furniture: [{ uid: 'wall-item', type: 'CLOCK', col: 24, row: -1 }], // negative rows stay legal
+        tileColors: new Array(cells).fill(null),
+        carpetTiles: new Array(cells).fill(null),
+        areas: [],
+        areaTiles: new Array(cells).fill(null),
+      };
     };
+    expect(validateDiLayout(full(DIM_SQUARED))).toBe(
+      `layout cols x rows is ${DI_LAYOUT_MAX_DIM * DI_LAYOUT_MAX_DIM} cells, over ${DI_LAYOUT_MAX_CELLS}`,
+    );
+    expect(validateDiLayout(full(JUST_OVER_CELLS))).toBe(cellCapReason(JUST_OVER_CELLS));
+    // exactly the cell cap, and the widest / tallest grids within it, all validate
+    expect(CAP.cols * CAP.rows).toBe(DI_LAYOUT_MAX_CELLS);
+    for (const shape of [CAP, WIDEST, TALLEST, metropolisShape()])
+      expect(validateDiLayout(full(shape)), `${shape.cols} x ${shape.rows}`).toBeNull();
+  });
+
+  for (const shape of [CAP, WIDEST, metropolisShape()]) {
+    it(
+      `the bounds are consistent: a MAXIMAL legitimate ${shape.cols}x${shape.rows} layout (every structural cap at once) validates AND fits the WS payload cap with ~2x headroom`,
+      () => {
+        const layout = maximalLegitimate(shape);
+        expect(validateDiLayout(layout)).toBeNull();
+        const frame = Buffer.byteLength(JSON.stringify({ type: 'saveLayout', layout }));
+        expect(frame).toBeLessThan(DI_WS_MAX_PAYLOAD_BYTES);
+        // ~2x headroom over the maximal legitimate frame, not an accidental fit.
+        expect(frame * 2).toBeLessThanOrEqual(DI_WS_MAX_PAYLOAD_BYTES * 1.05);
+      },
+      HEAVY_MS,
+    );
+  }
+
+  // F2 (review round 1): ids and labels are bounded in CHARACTERS and areaTiles carries a label per
+  // cell, so UTF-8 text can make a structurally valid layout too big to TRANSPORT. Admission must
+  // measure UTF-8 bytes, so such a layout is refused BY ADMISSION, never reaching the transport
+  // ceiling (1009). At the raised caps a 3-byte label on every cell no longer crosses the ceiling on
+  // its own (asserted below), and since the carpeted-cell cap (LAYOUT_MAX_CARPET_CELLS) even every
+  // colour at its longest spelling is not enough: the furniture ids are also made of characters
+  // JSON escapes to six bytes. The three-byte labels still make the CHARACTER count fit while the
+  // UTF-8 BYTE count does not — the property under test.
+  const FRAME_OVER = new RegExp(
+    `save frame is \\d+ bytes \\(UTF-8\\), over ${DI_WS_MAX_PAYLOAD_BYTES}$`,
+  );
+  /** 128 three-byte characters (384 UTF-8 bytes), within the 128-char id bound; unique per k. */
+  const cjkLabel = (k: number) =>
+    String.fromCharCode(0x4e00 + k) + '界'.repeat(DI_ID_MAX_LENGTH - 1);
+  it(
+    'a UTF-8 maximal layout (structurally valid) is REFUSED by admission for its BYTES',
+    () => {
+      const base = maximalLegitimate(CAP, { label: cjkLabel, colour: LONG_COLOUR });
+      const layout = {
+        ...base,
+        furniture: (base.furniture as Array<Record<string, unknown>>).map((f, k) => ({
+          ...f,
+          uid: heavyLabel(k),
+          type: heavyLabel(k),
+        })),
+      };
+      const text = JSON.stringify({ type: 'saveLayout', layout });
+      // it would FIT if characters were counted; in UTF-8 bytes the transport would close 1009
+      expect(text.length).toBeLessThanOrEqual(DI_WS_MAX_PAYLOAD_BYTES);
+      expect(Buffer.byteLength(text)).toBeGreaterThan(DI_WS_MAX_PAYLOAD_BYTES);
+      expect(validateDiLayout(layout)).toMatch(FRAME_OVER);
+      // and the six-byte-escaped fixture every entry path refuses is refused here too
+      const escaped = overBytes();
+      expect(
+        Buffer.byteLength(JSON.stringify({ type: 'saveLayout', layout: escaped })),
+      ).toBeGreaterThan(DI_WS_MAX_PAYLOAD_BYTES);
+      expect(validateDiLayout(escaped)).toMatch(FRAME_OVER);
+    },
+    HEAVY_MS,
+  );
+
+  it(
+    'a 3-byte label on every cell of the maximal layout is no longer enough to cross the raised ceiling: ADMITTED, and it fits',
+    () => {
+      const layout = maximalLegitimate(CAP, { label: cjkLabel });
+      expect(validateDiLayout(layout)).toBeNull();
+      const frame = Buffer.byteLength(JSON.stringify({ type: 'saveLayout', layout }));
+      expect(frame).toBeLessThanOrEqual(DI_WS_MAX_PAYLOAD_BYTES);
+    },
+    HEAVY_MS,
+  );
+
+  it(
+    'admission == transport: at the byte boundary, admitted layouts fit and the next one is refused',
+    () => {
+      // Grow a heavy (six-byte-escaped) area label over the cells of the maximal cap-size layout
+      // until the frame crosses the ceiling: the last admitted layout's frame fits, the first
+      // refused one's does not (bytes, not structure). Binary search, so no count is hand-tuned.
+      const label = heavyLabel();
+      const base = maximalLegitimate(CAP);
+      const cells = CAP.cols * CAP.rows;
+      const labelled = (n: number) => ({
+        ...base,
+        areas: [
+          { label, color: AREA_COLOUR },
+          { label: 'a', color: AREA_COLOUR },
+        ],
+        areaTiles: Array.from({ length: cells }, (_, i) => (i < n ? label : 'a')),
+      });
+      const lo = largestAdmitted(0, cells, (n) => validateDiLayout(labelled(n)) === null);
+      const hi = lo + 1;
+      const fits = Buffer.byteLength(JSON.stringify({ type: 'saveLayout', layout: labelled(lo) }));
+      const over = Buffer.byteLength(JSON.stringify({ type: 'saveLayout', layout: labelled(hi) }));
+      expect(validateDiLayout(labelled(lo))).toBeNull();
+      expect(fits).toBeLessThanOrEqual(DI_WS_MAX_PAYLOAD_BYTES);
+      expect(validateDiLayout(labelled(hi))).toMatch(FRAME_OVER);
+      expect(over).toBeGreaterThan(DI_WS_MAX_PAYLOAD_BYTES);
+    },
+    HEAVY_MS,
+  );
+
+  it('the bounds are consistent: a MAXIMAL legitimate 64x64 layout (the former ceiling, every other cap at its maximum) validates AND fits the WS payload cap', () => {
+    const layout = maximalLegitimate({ cols: 64, rows: 64 });
+    expect((layout.furniture as unknown[]).length).toBe(DI_LAYOUT_MAX_FURNITURE);
     expect(validateDiLayout(layout)).toBeNull();
     const frame = JSON.stringify({ type: 'saveLayout', layout });
     expect(Buffer.byteLength(frame)).toBeLessThan(DI_WS_MAX_PAYLOAD_BYTES);

@@ -1,0 +1,13 @@
+{
+  "id": "CITY_TRAIN_STATION",
+  "name": "Train Station",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 3,
+  "width": 144,
+  "height": 80,
+  "footprintW": 9,
+  "footprintH": 5
+}

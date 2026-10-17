@@ -1,0 +1,13 @@
+{
+  "id": "CITY_APARTMENTS",
+  "name": "Rooftop-Garden Apartments",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 5,
+  "width": 128,
+  "height": 128,
+  "footprintW": 8,
+  "footprintH": 8
+}

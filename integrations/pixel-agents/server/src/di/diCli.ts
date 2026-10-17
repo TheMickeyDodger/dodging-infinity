@@ -4,6 +4,7 @@
  * DI office entry point — a SEPARATE composition, not the standalone CLI with a flag.
  *
  *   node dist/di-cli.js --state-dir <abs dir> --backend-discovery <abs file> [--port <n>]
+ *   node dist/di-cli.js --state-dir <abs dir> --fixture-source <abs fixture script> [--port <n>]
  *
  * What it composes: the agent store, the bundled assets, the layout, and the DI
  * office's own authenticated loopback HTTP/WS surface (diHttpServer.ts), plus a
@@ -37,6 +38,7 @@ import {
 } from '../constants.js';
 import { FileStateAdapter } from '../fileStateAdapter.js';
 import { setStateRoot, setStateWriteGuard } from '../stateRoot.js';
+import { loadAmbientSprites } from './ambientSprites.js';
 import {
   BrowserAccessExists,
   publishBrowserAccess,
@@ -48,27 +50,47 @@ import { handleDiClientMessage, initDiDefaults } from './diClientMessages.js';
 import { createDiHttpServer, DI_BIND_HOST } from './diHttpServer.js';
 import { DiOffice } from './diOffice.js';
 import { makeDiStateWriteGuard, validateDiStateRoot } from './diStateRoot.js';
+import type { FixtureSource } from './fixtureSource.js';
+import { createFixtureSource, readFixtureScript } from './fixtureSource.js';
 
 export interface DiCliArgs {
   stateDir: string;
-  backendDiscovery: string;
+  /** The canonical backend's discovery file. Absent exactly when `fixtureSource` is set. */
+  backendDiscovery?: string;
+  /**
+   * FIXTURE SOURCE: an in-process fixture script REPLACES the backend. With it, canonical
+   * discovery is disabled by composition: no discovery file is read and no backend request is
+   * made (fixtureSource.ts). Mutually exclusive with `backendDiscovery`; implies fixturePreview.
+   */
+  fixtureSource?: string;
   /** The ONE catalog contract version this process reads (launch-time; default 1). */
   contractVersion: QueryContractVersion;
   /** Unset -> OS-assigned port. */
   port?: number;
+  /** EXPLICIT: the backend is a synthetic FIXTURE stand-in; label everything as such. */
+  fixturePreview: boolean;
 }
 
 export class DiCliArgsError extends Error {}
 
 const USAGE = `Usage: pixel-agents-di --state-dir <absolute dir> --backend-discovery <absolute file> [--port <n>]
+       pixel-agents-di --state-dir <absolute dir> --fixture-source <absolute file> [--port <n>]
 
   --state-dir <dir>              DI office state root (settings, layout, seats). Required,
                                  absolute, and physically separate from ~/.pixel-agents.
-  --backend-discovery <file>     The DI backend's discovery file, READ ONLY. Required, absolute.
+  --backend-discovery <file>     The DI backend's discovery file, READ ONLY. Absolute. Required
+                                 unless --fixture-source is given; never both.
+  --fixture-source <file>        VISUAL TESTING ONLY: serve a labelled FIXTURE script in-process
+                                 INSTEAD of the backend. Canonical discovery is then DISABLED:
+                                 no discovery file is read and no backend connection is made.
+                                 Implies --fixture-preview. Absolute.
   --port, -p <n>                 Loopback port (default: OS-assigned)
   --contract-version <1|2>       The catalog contract version this process reads (default 1).
                                  ONE version per process: a response of any other version is
                                  shown as INCOMPATIBLE, never negotiated per request.
+  --fixture-preview              VISUAL TESTING ONLY: the backend is a synthetic FIXTURE
+                                 stand-in. Every view carries a persistent "FIXTURE / VISUAL
+                                 TEST" label and LIVE reads "LIVE - FIXTURE DATA". Off by default.
 
 Consumer policy (pinned, not configurable): every catalog request sends
 wait_seconds=${DI_CATALOG_WAIT_SECONDS}; the next request starts ${DI_CONSUMER_POLL_INTERVAL_SECONDS} s after the previous RESPONSE
@@ -87,15 +109,22 @@ cannot resume (its token was minted for that launch only).`;
 export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
   let stateDir: string | undefined;
   let backendDiscovery: string | undefined;
+  let fixtureSource: string | undefined;
   let port: number | undefined;
   let contractVersion: QueryContractVersion = DEFAULT_QUERY_CONTRACT_VERSION;
+  let fixturePreview = false;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
     if (flag === '--help') return 'help';
+    if (flag === '--fixture-preview') {
+      fixturePreview = true;
+      continue;
+    }
     if (
       flag === '--state-dir' ||
       flag === '--backend-discovery' ||
+      flag === '--fixture-source' ||
       flag === '--port' ||
       flag === '-p'
     ) {
@@ -103,6 +132,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
       i++;
       if (flag === '--state-dir') stateDir = value;
       else if (flag === '--backend-discovery') backendDiscovery = value;
+      else if (flag === '--fixture-source') fixtureSource = value;
       else {
         const parsed = Number(value);
         if (!Number.isInteger(parsed) || parsed < MIN_PORT || parsed > MAX_PORT) {
@@ -130,6 +160,23 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
   if (!stateDir || !path.isAbsolute(stateDir)) {
     throw new DiCliArgsError('--state-dir is required and must be an absolute path');
   }
+  if (fixtureSource !== undefined) {
+    if (backendDiscovery !== undefined) {
+      throw new DiCliArgsError(
+        '--fixture-source replaces the backend: it cannot be combined with --backend-discovery',
+      );
+    }
+    if (!path.isAbsolute(fixtureSource)) {
+      throw new DiCliArgsError('--fixture-source must be an absolute path');
+    }
+    return {
+      stateDir: path.normalize(stateDir),
+      fixtureSource: path.normalize(fixtureSource),
+      port,
+      contractVersion,
+      fixturePreview: true,
+    };
+  }
   if (!backendDiscovery || !path.isAbsolute(backendDiscovery)) {
     throw new DiCliArgsError('--backend-discovery is required and must be an absolute path');
   }
@@ -138,6 +185,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
     backendDiscovery: path.normalize(backendDiscovery),
     port,
     contractVersion,
+    fixturePreview,
   };
 }
 
@@ -163,6 +211,19 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
+  // A fixture script is validated BEFORE anything else starts: a bad script refuses to launch.
+  let fixture: FixtureSource | null = null;
+  if (args.fixtureSource !== undefined) {
+    try {
+      fixture = createFixtureSource(readFixtureScript(args.fixtureSource));
+    } catch (err) {
+      console.error(
+        `[Pixel Agents DI] refusing to start: fixture source: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      process.exit(2);
+    }
+  }
+
   // FIRST: the state root, before anything resolves a persisted path. Validated on the
   // PHYSICAL path against the shared profile; a conflict refuses to start (fail closed).
   let stateRoot: string;
@@ -184,6 +245,8 @@ async function main(): Promise<void> {
   const staticDir = path.join(distRoot, 'webview');
   // Bundled assets only: DI mode loads no external asset directory.
   const cache = await buildAssetCache(distRoot, []);
+  const ambientSprites = loadAmbientSprites(distRoot);
+  console.log(`[Pixel Agents] Ambient character sheets: ${ambientSprites.length}`);
 
   const store = new AgentStateStore();
   const adapter = new FileStateAdapter({ namespace: 'standalone' });
@@ -194,9 +257,22 @@ async function main(): Promise<void> {
   const extensionVersion = process.env.PIXEL_AGENTS_VERSION ?? '';
   const office = new DiOffice({
     store,
-    discoveryPath: args.backendDiscovery,
+    discoveryPath: fixture
+      ? `fixture-source:${args.fixtureSource ?? ''}`
+      : (args.backendDiscovery ?? ''),
     contractVersion: args.contractVersion,
+    fixturePreview: args.fixturePreview,
+    // The fixture REPLACES both backend seams; without one, the real reader and client are used.
+    deps: fixture ? fixture.deps : undefined,
   });
+  if (args.fixturePreview)
+    console.log(
+      '[Pixel Agents DI] FIXTURE PREVIEW: backend is a synthetic fixture stand-in; views are labelled',
+    );
+  if (fixture)
+    console.log(
+      `[Pixel Agents DI] canonical backend discovery: DISABLED by --fixture-source (fixture "${fixture.script.fixtureId}": no discovery file is read, no backend connection is made)`,
+    );
 
   const { app, port, forceCloseAll } = await createDiHttpServer({
     port: args.port,
@@ -207,7 +283,7 @@ async function main(): Promise<void> {
     // reconnected): the client knows it is a DI office before any agentCreated can arrive.
     onConnected: (send) => office.sendOfficeState(send),
     onClientMessage: (msg, send) => {
-      const disposition = handleDiClientMessage(msg, send, { store, cache, extensionVersion });
+      const disposition = handleDiClientMessage(msg, send, { store, cache, extensionVersion, ambientSprites });
       if (typeof disposition === 'object') {
         // The type and the reason only — never the payload.
         console.warn(`[Pixel Agents DI] refused ${String(msg.type)}: ${disposition.refused}`);
@@ -237,7 +313,8 @@ async function main(): Promise<void> {
   office.start();
 
   console.log(`[Pixel Agents DI] state root: ${stateRoot}`);
-  console.log(`[Pixel Agents DI] backend discovery (read-only): ${args.backendDiscovery}`);
+  if (fixture) console.log(`[Pixel Agents DI] fixture source (read once): ${args.fixtureSource}`);
+  else console.log(`[Pixel Agents DI] backend discovery (read-only): ${args.backendDiscovery}`);
   console.log(
     `[Pixel Agents DI] catalog contract version: ${args.contractVersion} (one per process; any other served version is INCOMPATIBLE)`,
   );
