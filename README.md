@@ -1,763 +1,637 @@
-<p align="center">
-  <img src="assets/brand/banner.jpeg" alt="Dodging Infinity" width="100%">
-</p>
+![Dodging Infinity — AI orchestration and mission control for agents](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/brand/banner.jpeg)
 
 # Dodging Infinity
 
-**AI orchestration and mission control for agents.**
+**AI orchestration and mission control for agents. A living world for the teams doing the work.**
 
-Dodging Infinity is built for work that is too large, too long-running, or too important to live inside one chat session.
+[![Multi-Agent Orchestration](https://img.shields.io/badge/Multi--Agent%20Orchestration-8B5CF6?style=flat-square)](#inside-the-engineering-team) [![Grok Bot Control](https://img.shields.io/badge/Grok%20Bot%20Control-06B6D4?style=flat-square)](#3-connect-grok-bot) [![Pixel Mission World](https://img.shields.io/badge/Pixel%20Mission%20World-F59E0B?style=flat-square)](#a-living-world-for-your-mission-teams) [![Research + Engineering](https://img.shields.io/badge/Research%20%2B%20Engineering-10B981?style=flat-square)](#built-through-real-work) [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-A6E64B?style=flat-square)](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/LICENSE)
 
-Now the harness has a world you can walk through. The **[Pixel Agents DI office](#4-pixel-agents-di-office)** gives real Mission teams a home inside a sprawling pixel-art metropolis: working agents at their desks, a live Mission inspector, forests and lakes, grand offices, a waterfront, and a subway shared with a decorative population.
+[Why DI](#why-dodging-infinity) · [How it works](#from-request-to-reviewed-delivery) · [Real work](#built-through-real-work) · [The visual world](#a-living-world-for-your-mission-teams) · [Get started](#get-started) · [Where DI is going](#where-di-is-going) · [Documentation](#documentation)
 
-![The complete Dodging Infinity living metropolis, with the live Mission inspector beside the world map](assets/pixel-world/world-map.png)
+Dodging Infinity turns complex work into **Missions**: persistent records of the objective, approvals, progress, evidence, and results. It coordinates AI engineering teams through Herdr and gives you a clear way to direct the work, inspect what happened, and decide what gets delivered.
 
-*The running local world, captured by its owner. Real DI observations appear in the inspector; ambient residents are explicitly decorative.*
+Start a Mission from your phone through **Grok Bot**, monitor it, update the work, review the result, and authorize commits and pushes. That workflow has been verified end to end. Codex provides the Outer Operator, Dodging Infinity manages the Mission and Runtime, and Herdr carries out the engineering.
 
-```text
-o──o──o
-      \
-       o──[ DI ]──o
-```
+And the team has a place you can explore. The **Pixel Agents DI office** turns observed Mission teams into selectable characters inside a living metropolis, with working offices, forests, a waterfront, a cathedral quarter, and a subway. Select an agent, inspect its Mission, and see the work in context. After setup, open the running office by typing **`pixel`** in your terminal.
 
----
+![The complete Dodging Infinity living metropolis, with the Mission inspector alongside the world map](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/pixel-world/world-map.png)
 
-# 1. What is Dodging Infinity?
+*The running DI world. The inspector connects the scene to recorded Missions, agents, and engineering activity.*
 
-Dodging Infinity is an orchestration layer for AI agents doing real work.
+## Why Dodging Infinity
 
-The unit of work is a **Mission**.
+The work I want AI to help with can stretch across many sessions, repositories, tools, and rounds of review. A scientific investigation can lead into molecular modeling, method selection, source-code analysis, and a decision about what should run next. A quantum-software bug can cross library boundaries before the correct fix reaches an upstream maintainer.
 
-A Mission keeps the objective, scope, authorization, state, evidence, artifacts, and delivery decisions together while different models, agents, tools, and machines do their part.
+That work needs continuity. The objective should stay clear. Decisions should remain attached to the work they authorize. Findings should retain their sources. A completed implementation should arrive with something you can inspect.
 
-That starts to matter once the job gets bigger than:
+I built Dodging Infinity to carry that whole process as a Mission, from the initial request through execution, review, verification, and delivery. Its design has been exercised through computational mechanosynthesis research, scientific-software contributions, remote engineering workflows, and the development of its own visual world.
 
-```text
-"Write this function."
-```
-
-A real job might need research first. It might need engineering after that. It might involve a browser, a PDF, a screenshot, a simulator, several models, a second machine, a restart, a human approval, and finally a pull request.
-
-Dodging Infinity keeps that work together instead of treating each chat or agent session as a separate universe.
-
-The basic rule is:
-
-> **Bots converse and collaborate. Dodging Infinity governs. Capabilities do bounded work. Workers execute. Humans authorize.**
-
-The Mission stays the same even when the tools underneath it change.
-
-```text
-      01001        10110
-          \        /
-           \      /
-            [ DI ]
-           /      \
-          /        \
-      10110        01001
-```
-
----
-
-# 2. How does it work?
-
-At a high level:
-
-```text
-                                  HUMAN
-                                    │
-                    text / voice / image / file
-                    requests / approvals / status
-                                    │
-                                    ▼
-              ┌──────────────────────────────────────┐
-              │             INTERACTION              │
-              │                                      │
-              │   Grok Bot (mobile interface)        │
-              │   Dots (optional)                    │
-              │   Telegram                           │
-              │   CLI                                │
-              │   Specialist bots                    │
-              └──────────────────┬───────────────────┘
-                                 │
-                                 ▼
-      ┌─────────────────────────────────────────────────────────┐
-      │                   DODGING INFINITY                      │
-      │                                                         │
-      │   Missions                Authorization                  │
-      │   Routing                 Evidence                       │
-      │   State                   Artifacts                      │
-      │   Observation             Verification                   │
-      │   Reconciliation          Delivery gates                 │
-      └───────────────────────────┬─────────────────────────────┘
-                                  │
-                                  ▼
-              ┌──────────────────────────────────────┐
-              │       OPERATOR + MODEL ROUTING       │
-              │                                      │
-              │   Pi                                 │
-              │   Codex                              │
-              │   GPT / Claude / Grok / Muse         │
-              │   Local / future models              │
-              └──────────────────┬───────────────────┘
-                                 │
-                                 ▼
-      ┌─────────────────────────────────────────────────────────┐
-      │                  BOUNDED CAPABILITIES                   │
-      │                                                         │
-      │   Engineering ───────────────────────► Herdr            │
-      │   Research                                              │
-      │   Browser                                               │
-      │   Document / Ops                                        │
-      │   Media / Multimodal                                    │
-      │   Publishing / Messaging                                │
-      └───────────────────────────┬─────────────────────────────┘
-                                  │
-                                  ▼
-              ┌──────────────────────────────────────┐
-              │               WORKERS                │
-              │                                      │
-              │   Trusted Mac                        │
-              │   GPU / simulator host               │
-              │   Browser / SaaS worker              │
-              │   Other hosts                        │
-              └──────────────────┬───────────────────┘
-                                 │
-                                 ▼
-                  GitHub / Web / SaaS / APIs
-                   Simulators / GPUs / Devices
-```
-
-Dodging Infinity sits in the middle because that is where the Mission lives.
-
-The interface can change. The model can change. The work can move between capabilities or machines. None of that should require starting the Mission over from scratch.
-
-## Interaction
-
-The interaction layer is how you talk to the system.
-
-That can be as simple as sending a request from your phone:
-
-```text
-You:
-"The export path is timing out.
-Figure out why, fix it, and prove the fix.
-Do not commit anything."
-```
-
-Telegram can carry that request into Dodging Infinity today. Grok Bot is the human-facing mobile interface: a phone conversation reaches `grokbot.py` ([Grok Bot transport](docs/grok-bot.md)), which hands the request to the Codex Outer Operator and relays the human's approval of the resulting Mission Authorization. Grok Bot runs nothing: the DI Runtime, a separate local process, advances the approved work, and Grok Bot reads its status and verified result back by pull. Codex is the Outer Operator. Dots is optional for active operation. The larger interaction layer adds a coordinator that can sit across many Missions and work with specialist bots. Grok as a model is a separate thing. [History, Task 8: this paragraph named Dots, reaching a local Codex task from the phone, as the mobile interface, and the earlier Grok Bot MCP spike (`grok_mcp`) was retired. That spike stays retired; `grokbot.py` is a new, thin transport.]
-
-The conversation can get more interesting than one request at a time:
-
-```text
-You:
-"Research Bot, did anything from the DBOS comparison
-get handed to engineering?"
-
-Research Bot:
-"Yes. The durability findings are attached to Mission #202.
-Engineering is using them in the worker design review."
-```
-
-Or:
-
-```text
-You:
-"What needs me?"
-
-Coordinator:
-"Mission #144 is waiting on content approval.
-Mission #145 needs credentials.
-Engineering and research are still running."
-```
-
-The point is not to make the bots sound clever. The point is that they can all reference the same Missions, artifacts, evidence, and status instead of making up their own version of what is happening.
-
-```text
-       .----.           .----.
-      | •  • |  ─────  | •  • |
-      |  --  |   ref   |  --  |
-       '----'           '----'
-         BOT              BOT
-```
-
-### Dots: what is shown and what is not
-
-[History, Task 8: Dots was the mobile interface for everything this section records. Dots is optional for active operation now, and Grok Bot is the mobile interface; this record stays true as history.]
-
-DEMONSTRATED, user-observed and unedited:
-
-1. Reach, read, and reply. A phone-initiated local Codex task read a repository file and returned its exact content plus session id `01a10275-e9b0-70fd-bc29-9724f5fd60e9`.
-2. Same-task connected continuation and a durable status read. Continuing that task, it read `.herd/state/task.json` and returned task `20261003-115300-782f3a` / `ACTIVE`, with no edits: a status answer from a durable Dodging Infinity record, not chat history.
-
-3. Live proposal and status exercise (2026-10-03, human-reported and corroborated from the durable stores): phone → Dots → the same local Codex task → `python3 direquest.py … propose` → durable `status` → phone, with matching request ref, Mission id, revision 1 and proposal digest; request OPEN, Mission AWAITING_DECISION and NOT_STARTED. Zero approval attempts, zero decisions, zero authorizations, no dispatch; the status approval block describes the fail-closed policy and does not show that `approve` was invoked.
-
-That is connected same-task continuation, a small durable read, and proposal identity plus connected status only. It is not a new task, not a reconnect after an outage, not a large payload, and not authenticated intent. Full Task 8 remains active and unaccepted.
-
-4. Live V6 exercise (2026-10-04), Operator-mediated, not Dots-autonomous. Dots (the same local Codex task) showed the exact Mission `mn-079a81327f76cda72d79eb241ada92d3` (revision 1, digest `7a83af04…`), and the human sent a separate `approved` reply. The Outer Operator ran the effectful DI commands; Dots' local command permission repeatedly refused DI propose and approve. DI recorded one dispatch receipt. Herdr child `20261004-172125-960973` completed in an isolated smoke clone (Lead verified, Reviewer round 2 APPROVE), and its only source change was the one-line marker `docs/task8-dots-smoke.md`. DI `verify` completed the Mission with `engineering_verified: true` (evidence `mv-5e4e0a62…`). The human reports Dots read the token-free durable files `dots-phone-status-v6.json`, `dots-phone-verified-result-v6.json` and `dots-phone-pr-result-v6.json` and returned them to the phone. Dots did not rerun verification or query GitHub or DI.
-   - Delivery stayed separate. A standalone P1-A6 delivery, `prd-85cad864f6ae89b72c1c483d` (`mission: null`), approved by its own separate Operator-attested Dots reply, completed COMMIT, PUSH and PR_CREATE and opened PR #37, which is open and not merged. The Outer Operator independently checked GitHub and the delivery store; this repository's herd did not.
-   - An earlier delivery, `prd-e87f7490…`, is REVOKED (GitHub GH007, private email) and created no remote branch or PR.
-   - Because the delivery has no Mission parent, the Mission's DI status truthfully stays `delivered: false`.
-   - Sources differ on the child: the parent's `.herd/state/children.json` still caches it as `ACTIVE`, while the copied verified result and checkpoint report it COMPLETE.
-
-That live exercise is one Operator-mediated run. It is not Task 8 acceptance, which waits for the Outer Operator's own confirmation. Not demonstrated live: an unavailable machine or session, disconnection or restart around a decision or dispatch, and live pause or cancel of a running Herdr child; local deterministic tests are not substitutes.
-
-NOT ESTABLISHED, so each is a blocked gate:
-
-1. Authenticated exact approval binding. Nothing documented gives the local process an authenticated per-message principal or approval envelope. [SUPERSEDED in part by the user's Task 8 trust decision: a Mission approval over Dots is now the Outer Operator's ATTESTATION that the human replied exactly `approved` or `approve`, recorded as `operator_attested_relay` with proof `operator_attested_not_independently_verified`. It is not authenticated and not independently verified human provenance, and a mistaken or malicious same-user operator or local process could fabricate it. Independent authenticated human provenance is NOT ESTABLISHED, and it is DELIBERATELY DELEGATED to the Outer Operator, with that fabrication risk ACCEPTED by the user. It is NOT a Task 8 prerequisite and NOT an acceptance blocker, so this item is no longer a blocked gate.]
-2. Outage and restart recovery of an in-flight approval.
-3. Background notification and durable event delivery (the computer must be online with the app open).
-4. Verified-result delivery fidelity (the verified result, not a paraphrase). [SUPERSEDED in part by the live V6 exercise: the human reports Dots returned the verified result read from the durable `dots-phone-verified-result-v6.json` file. That is one human-reported read, not a general guarantee.]
-5. Full live Mission acceptance with real human participation, real live dispatch, and the phone-to-PR loop. Each still requires exact human authorization; none has been run. [SUPERSEDED: "none has been run" is history. Real human participation, one live dispatch and a separate phone-to-PR delivery were exercised once in the Operator-mediated V6 run above. Task 8 acceptance itself is still open.]
-
-Offline is not revoked, and neither is a way to cancel: a running local Dots task may finish after admin access is disabled. Cancellation has to be a durable local Dodging Infinity record that the write and decision paths check and that fails closed.
-
-What exists locally (Task 8, a LOCAL candidate under review; Task 8 is ACTIVE and UNACCEPTED): `direquest.py` (package `local_request/`), a neutral local request surface any local caller can invoke, including a local Codex task. It is not installed as a command; run it from the repository root as `python3 direquest.py --state-dir /absolute/protected/dir COMMAND`. [SUPERSEDED: the earlier description here, "always refuses approval" with nothing dispatched, described the candidate before the user's trust decision and before the run route; it is kept only as history.] Today:
-
-- `propose`, `status`, `recover`, and `cancel` (the creator's one-time control capability withdraws its own pending revision-1 proposal: a durable marker, not a lifecycle state, that stops no running work).
-- `approve` still always refuses. `present` then `attest-approval` relay the human's exact whole-string `approved` or `approve` reply as an operator-attested approval (not independently verified), bound exactly to the Mission, revision, proposal digest, scope, targets and a short expiry.
-- The run route, for the request's own AUTHORIZED Mission, through the real Herdr spawn bridge (`target_runtime/mission_bridge.py`): `dispatch`, `observe`, `reconcile`, `prove` (one existing evidence or acceptance seam per step; nothing is auto-accepted), `verify`, `result`, `pause`, `resume` and `cancel-run`. `observe` → `prove` → `verify` is drivable in sequence; after a HOLD it is `reconcile` → `observe` (a second observe: reconciliation leaves the run AUTHORIZED, and verify before it is refused) → `prove` → `verify`, with nothing redispatched.
-- VERIFIED is a conjunction Dodging Infinity decides, and it needs the whole approved proof contract. An unmet obligation is recorded as a durable, recoverable `verification_blocked_pending_proof` state with its blocker codes; the same run verifies once the obligation is met.
-- `pause` halts Dodging Infinity's own progression only. External in-flight work is NOT suspended, and no supported suspend seam exists. `cancel-run` reports which of four achieved states occurred and reports HOLD whenever quiescence cannot be established.
-- `status` answers from durable records alone, after a restart and with no chat context.
-- Delivery stays separate: engineering approval confers no delivery, `delivery_authority` is structurally `none`, and status derives "delivered" only from an attested P1-A6 receipt. The P1-A6 delivery authorization has its own exact ceremony. Besides the unchanged local-terminal one, `python3 -m pr_delivery present-dots` / `attest-dots` take the human's simple Dots reply (no digest typed), relayed against the exact presented proposal and recorded as `dots_operator_attested` (operator-attested, not independently verified). [SUPERSEDED: "live phone-to-PR delivery remains unproven" is history; one standalone live delivery ran in V6, as item 4 above describes.]
-
-[SUPERSEDED, history: "None of this has been run live: no live approval, dispatch, spawn or delivery has occurred." The Operator-mediated V6 exercise above used the operator-attested approval, `dispatch`, `verify` and `result` live, plus one standalone P1-A6 delivery. The recovery and pause or cancel cases listed above have not run live.] It is not a Dots adapter, and the surface itself is not evidence of Dots-autonomous behaviour. The exact final candidate identity and the canonical review rounds that cover it are recorded in the operator checkpoint, not here.
-
-A structured plugin or MCP route is unproven, not impossible. The documented inline or file-declared MCP import is Desktop-only, so it is not the mobile Dots surface. Connecting one would need a registered app reference, a Secure MCP Tunnel, or public HTTPS; no usable DI connection has been established, and setup is not authorized in this task. OAuth or mTLS alone would still not prove exact human approval of a Mission revision. No existing Dodging Infinity structured connector may be assumed, and the user states there is likely none; a plugin-management catalog search cannot enumerate account-specific installed plugins, so no match is not absence.
-
-Dodging Infinity alone owns Mission identity, authority, lifecycle, durable state, dispatch, evidence, reconciliation, and delivery gates. Herdr is the engineering execution system. Muse is not the Operator. The full position is in [Architecture](docs/architecture.md#3-interaction-grok-bot-the-human-facing-mobile-interface).
-
-## Operator and model routing
-
-The Operator handles reasoning for a Mission step.
-
-Dodging Infinity does not need every job to run through the same model. A research step may want one provider. A code change may want another. A small classification job may be cheaper somewhere else. A privacy-sensitive task may eventually stay local.
-
-```text
-                         Mission step
-                              │
-                              ▼
-                       OperatorSession
-                              │
-                              ▼
-                        Model routing
-                              │
-             ┌────────────────┼────────────────┐
-             ▼                ▼                ▼
-            Pi              Codex          Other adapter
-             │                │                │
-        GPT / Claude      GPT / Claude      local model
-        Grok / Muse                         future model
-```
-
-Codex is the current reference Operator path in the repo.
-
-`OperatorSession` is the seam that keeps the Mission logic separate from the provider doing the reasoning. Codex sits behind an adapter instead of being spread throughout the control plane.
-
-Pi fits at the same boundary. The integration is designed around an adapter/RPC path so Pi can provide its model and tool runtime without becoming responsible for Mission identity, authority, evidence, or delivery.
-
-That lets the model runtime change without changing the Mission format.
-
-## Capabilities
-
-Capabilities are the kinds of work Dodging Infinity can hand out.
-
-Engineering is one capability. Research is another. Browser work, document work, media, publishing, and operations can follow the same pattern.
-
-### Engineering through Herdr
-
-Engineering routes through Herdr.
-
-```text
-                   Engineering Mission
-                           │
-                           ▼
-                         Herdr
-                           │
-                           ▼
-                      Supervisor
-                           │
-                           ▼
-                         Lead
-                           │
-                           ▼
-                       Executor
-                           │
-                    ┌──────┴──────┐
-                    ▼             ▼
-                  Tests        Reviewer
-                    │             │
-                    └──────┬──────┘
-                           ▼
-                        Evidence
-                           │
-                           ▼
-                  Dodging Infinity
-```
-
-Herdr was adapted around a bounded engineering handoff.
-
-The Supervisor receives the objective, repository context, constraints, rules, desired outcome, and unresolved questions. From there, Herdr owns the engineering route.
-
-The roles are deliberately separate:
-
-- **Supervisor** owns engineering direction and decomposition.
-- **Lead** coordinates the work and decides when the engineering task is ready to close.
-- **Executor** implements and tests.
-- **Reviewer** checks the result independently and can reject it.
-
-The Reviewer is read-only. It does not grade its own work because it did not write the work.
-
-Each Herdr instance is scoped to a repository and top-level engineering task. The result comes back with review and verification evidence for Dodging Infinity to evaluate as part of the larger Mission.
-
-### Example: engineering
-
-```text
-You:
-"Fix Mitiq issue #2802.
-Do not ship it."
-          │
-          ▼
-Dodging Infinity creates the Mission
-          │
-          ├─ target repository
-          ├─ objective
-          ├─ constraints
-          ├─ proof requirements
-          └─ no delivery authority
-          │
-          ▼
-You approve
-          │
-          ▼
-Engineering Capability
-          │
-          ▼
-Herdr
-          │
-Supervisor → Lead → Executor ↔ Reviewer
-          │
-          ▼
-tests + evidence
-          │
-          ▼
-Dodging Infinity verifies
-          │
-          ▼
-result comes back to you
-```
-
-If the work is good, you decide what happens next.
-
-Fixing the issue did not automatically authorize a commit, push, merge, release, or deployment.
-
-### Example: research
-
-```text
-You:
-"Compare DBOS, Temporal, and Postgres
-for durable execution."
-          │
-          ▼
-Research Mission
-          │
-      ┌───┴───┐
-      ▼       ▼
-  Research   Browser
-      │       │
-      └───┬───┘
-          ▼
-       Evidence
-          │
-          ▼
-  Research artifact
-          │
-     ┌────┴──────────────┐
-     ▼                   ▼
-    You           Engineering Mission
-```
-
-A follow-up can be simple:
-
-```text
-"Ask Engineering Bot whether the DBOS research
-changes how we should build the worker layer."
-```
-
-The research artifact can move directly into that Mission instead of being flattened into a pasted summary.
-
-### Example: multimodal
-
-```text
-   screenshot
-       +
- screen recording
-       +
-   voice note
-       +
-    log file
-       │
-       ▼
- Mission intake
-       │
-  ┌────┼──────────────┐
-  ▼    ▼              ▼
-file  transcription  visual analysis
-  │    │              │
-  └────┴──────┬───────┘
-              ▼
-         Mission context
-              │
-              ▼
-      appropriate capability
-```
-
-If the problem is visual, show it. If the evidence is a PDF, image, recording, log, source archive, or CSV, attach it.
-
-The original material stays with the Mission.
-
-## Workers
-
-Workers are the machines or environments that run capabilities.
-
-A trusted Mac can handle the normal local workflow. A simulation Mission may need a GPU host. Browser-heavy work may run somewhere else.
-
-```text
-Mission:
-"Run the quantum simulation."
-
-Needs:
-- repository access
-- simulator
-- GPU
-
-Worker A              Worker B
-Mac                   GPU host
-repo = yes            repo = yes
-GPU  = no             GPU  = yes
-                      simulator = yes
-
-                         │
-                         ▼
-                     Worker B
-```
-
-Worker selection answers where the work can run. The Mission already defines what the work is allowed to do.
-
-## How the pieces fit
-
-**Herdr** runs the engineering organization: Supervisor, Lead, Executor, Reviewer. Dodging Infinity gives it a bounded engineering handoff and consumes the evidence that comes back.
-
-**Pi** fits behind the Operator boundary as a provider-neutral runtime. Dodging Infinity keeps the Mission model; Pi focuses on reasoning and tools.
-
-**Codex** is the current reference Operator path and the Outer Operator. It sits behind the Codex Gateway and `OperatorSession` instead of owning orchestration directly.
-
-**Claude** is used heavily inside the engineering stack and can also be used as a reasoning provider.
-
-**Grok / Grok Bot** are two different things. Grok is a model option, and that is unchanged. Grok Bot is the human-facing mobile interface: `grokbot.py` (`grok_bot/`), a thin transport to the Codex Outer Operator and Dodging Infinity's durable records that runs nothing itself ([Grok Bot transport](docs/grok-bot.md)). Approval through it is operator-attested, not cryptographically authenticated, and live phone interoperability is unverified. [History: Grok Bot was first planned as the conversation layer across Missions and specialist bots; that MCP spike (`grok_mcp`) was retired in Task 8 and stays retired.]
-
-**Dots** is optional for active operation. [History, Task 8: Dots was the human-facing mobile interface. It reaches the machine as a local Codex task; Mission approval over it is Operator-attested (exercised live once in Task 8), and authenticated human provenance is not established (see [Dots: what is shown and what is not](#dots-what-is-shown-and-what-is-not)).]
-
-**Muse** is a possible model provider. Muse is not the Operator.
-
-**Telegram** is the current phone interface for remote Mission requests, approval, status, and verified results, and the reference and fallback transport.
-
-**GitHub** is a common source and delivery target for engineering Missions. Delivery actions stay behind separate human gates.
-
-**DBOS, browsers, GPU hosts, SaaS APIs, and future workers** can be added underneath the same Mission and capability boundaries as the system expands.
-
-```text
-      o────o────o────o
-           \        /
-            o──────o
-               │
-            .------.
-           |  •  •  |
-           |   __   |
-            '------'
-```
-
----
-
-# 3. System Requirements
-
-Dodging Infinity runs locally. The full remote workflow is built around a machine that stays available while Missions are running.
-
-## Computer requirements
-
-| Component | Recommendation |
+| What you get | What it means in practice |
 |---|---|
-| **OS** | macOS for the full remote workflow; Linux is covered for development and CI |
-| **CPU** | Apple Silicon or a modern multi-core system |
-| **Memory** | 16 GB is a reasonable starting point |
-| **Heavier use** | 24–32 GB gives multiple agent processes more room |
-| **Storage** | SSD recommended; Missions may create isolated repository workspaces |
-| **Network** | Stable internet access for GitHub and model providers |
-| **Always-on use** | A dedicated Mac or Mac mini works well for unattended Missions |
+| **Persistent Missions** | Objectives, revisions, approvals, progress, and evidence stay attached to the work across sessions. |
+| **An engineering team** | Supervisor, Lead, Executor, and Reviewer have distinct responsibilities, with independent review built into the workflow. |
+| **Remote operation** | Use Grok Bot to initiate Missions, monitor progress, request changes, inspect results, and carry approved work through commits and pushes. |
+| **Inspectable results** | Review the implementation, test evidence, findings, and remaining questions against the Mission’s requirements. |
+| **Clear delivery decisions** | Authorization to perform engineering work and authorization to deliver it are handled explicitly. |
+| **A visual home** | Explore the office, select observed agents, switch Missions, and inspect the records behind the activity. |
 
-These are practical recommendations, not hard hardware limits.
+## From request to reviewed delivery
 
-## Software requirements
+A Mission carries the work through six steps:
 
-| Software | What Dodging Infinity uses it for | Needed when |
+1. **Describe the objective.** Explain the problem, target repository, constraints, and desired result.
+2. **Review the proposed Mission.** The Operator turns the request into a scope you can inspect and approve.
+3. **Launch the work.** DI’s Runtime advances the authorized workflow and hands engineering to Herdr.
+4. **Stay involved.** Ask for progress, inspect blockers, and request updates. Changes to the approved scope receive their own decision.
+5. **Review the result.** Herdr returns its work and review evidence; DI checks the result against the Mission’s requirements.
+6. **Authorize delivery.** Commit and push the approved change through the delivery workflow, with the decision and outcome recorded.
+
+### Current verified engineering workflow
+
+```mermaid
+flowchart TD
+    U["You"] -->|Request and decisions| G["Grok Bot"]
+    G -->|Intent and planning| C["Codex Outer Operator"]
+    C -->|Mission proposal| D["DI Mission records and Runtime"]
+    G -->|Mission approval| D
+    D -->|Authorized engineering| H["Herdr"]
+    H -->|Work, review, and evidence| D
+    D -->|Status and results| G
+    D -->|Recorded observations| O["Pixel Agents office"]
+    D -->|Verified work| A["Delivery workflow"]
+    G -->|Delivery approval| A
+    A -->|Commit and push| R["GitHub repository"]
+```
+
+Grok Bot is the conversation interface. The Operator interprets the request. DI keeps the Mission’s state and advances its workflow. Herdr owns engineering execution. The office presents the recorded activity.
+
+The same Mission remains the reference point as the work moves between these parts. The [target architecture](#target-architecture-one-mission-system) extends this foundation with Dots, shared attention, adaptive teams, and richer visual interaction.
+
+### A conversation can carry the work forward
+
+These are example requests you can make through the configured Grok interface:
+
+**Start**
+
+> Create a Mission for this repository. Investigate the failing export, identify the cause, add regression coverage, and propose the scope for my approval.
+
+**Monitor**
+
+> What is the team working on, what has been verified, and what needs a decision from me?
+
+**Update**
+
+> Add backward compatibility with the existing export format to the acceptance criteria. Show me the revised Mission before continuing with that change.
+
+**Deliver**
+
+> Show me the reviewed diff and verification results, then prepare the commit and push for my approval.
+
+Progress and results can be requested while the host and its services remain available. Mission and delivery decisions stay attached to their specific scope.
+
+## Built through real work
+
+DI has been used on projects that require technical depth, sustained context, and careful review. These examples show the kinds of work that have shaped it.
+
+### Computational mechanosynthesis
+
+[**di-mechanosynthesis**](https://github.com/TheMickeyDodger/di-mechanosynthesis) investigates computational models of mechanically controlled carbon transfer at a silicon surface.
+
+The work brings together literature analysis, molecular structure construction, computational chemistry, numerical validation, and reproducible provenance. DI has coordinated the preparation and review of atom-mapped donor candidates, a **409-atom tool–surface model**, study protocols, and an auditable research record. Independent review has driven corrections to method definitions and numerical acceptance criteria, while engine-validation work has led into source-level investigation.
+
+The published work includes candidate geometries, reviewed research definitions, and documented validation attempts. Proposed structures and methods retain their scientific status throughout review; the repository distinguishes them from validated chemistry.
+
+This is the continuity DI is built for: carrying the question, sources, models, evidence, and decisions through an extended research effort.
+
+[Explore the research](https://github.com/TheMickeyDodger/di-mechanosynthesis) · [Study package](https://github.com/TheMickeyDodger/di-mechanosynthesis/tree/main/docs/ms-001) · [Structures](https://github.com/TheMickeyDodger/di-mechanosynthesis/tree/main/structures/ms-001) · [Evidence policy](https://github.com/TheMickeyDodger/di-mechanosynthesis/blob/main/docs/evidence-policy.md)
+
+### Quantum software: a merged qBraid contribution
+
+DI has also supported work on quantum software, including a [**merged qBraid SDK fix**](https://github.com/qBraid/qBraid/pull/1333) for converting Cirq reset operations into pyQuil.
+
+Cirq circuits containing a reset could fail on the direct conversion path. The change adds the corresponding Quil `RESET` instruction while preserving the target qubit and operation order. Regression tests cover the conversion and explicitly reject unsupported resets on higher-dimensional systems.
+
+The contribution passed upstream checks and was accepted and merged by a qBraid maintainer. It is a concrete example of taking a real defect through investigation, a focused implementation, verification, and upstream review.
+
+| Project | Work carried through the process | Public result |
 |---|---|---|
-| [Python 3.9+](https://www.python.org/downloads/) | Dodging Infinity runtime and CLI | Core |
-| [Git](https://git-scm.com/downloads) | Repository state and delivery | Core |
-| [Herdr](https://github.com/herdrdev/herdr) | Engineering capability | Engineering Missions |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) | Herdr roles and Claude-backed presets | Depends on preset |
-| [Codex CLI](https://github.com/openai/codex) | Current reference Operator and Codex-backed roles | Current Operator / `max-quality` |
-| [Pi](https://github.com/earendil-works/pi) | Provider-neutral Operator runtime path | Pi integration |
-| Grok / xAI access | Grok model routing; the Grok Bot connector reaches `grokbot.py`, the mobile interface (human setup in [docs/grok-bot.md](docs/grok-bot.md)) | Grok model workflows; mobile access |
-| Telegram bot | Remote phone interface | Remote Mission control |
-| Dots | Optional for active operation: a local Codex task from the phone (history: the Task 8 mobile interface); nothing to install in this repository, and the computer must be online with the app open | Optional mobile access (Operator-attested Mission approval; authenticated provenance not established) |
-| GitHub credentials | Repository access and delivery targets | GitHub Missions |
-| Tailscale / SSH | Break-glass remote access to a trusted worker | Optional |
+| **Computational mechanosynthesis** | Research planning, molecular models, method definitions, numerical criteria, provenance, and independent review | [Published research repository](https://github.com/TheMickeyDodger/di-mechanosynthesis) |
+| **qBraid SDK** | Quantum-circuit conversion, reset semantics, regression tests, and upstream review | [Merged contribution](https://github.com/qBraid/qBraid/pull/1333) |
+| **Pixel Agents DI office** | Mission catalog integration, selectable agents, observed state, and a connected visual world | [Integration and operating guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md) |
 
-Dodging Infinity itself uses the Python standard library; there is no separate `pip install` step for the project.
+## Inside the engineering team
 
-## Install Dodging Infinity
+Herdr gives engineering work an explicit organization.
+
+| Role | Responsibility |
+|---|---|
+| **Supervisor** | Understands the engineering objective, decomposes the work, and establishes its direction. |
+| **Lead** | Coordinates execution, follows dependencies, and determines when the work is ready for closure. |
+| **Executor** | Implements the change and runs the required checks. |
+| **Reviewer** | Inspects the result independently and can return it for correction. |
+
+```mermaid
+flowchart TD
+    S["Supervisor"] -->|Direction and decomposition| L["Lead"]
+    L -->|Scoped work| E["Executor"]
+    E -->|Implementation and tests| R["Reviewer"]
+    R -->|Corrections requested| E
+    R -->|Review decision| L
+    L -->|Engineering result and evidence| D["DI verification"]
+```
+
+The Reviewer works independently from the implementation. DI then evaluates the engineering result within the larger Mission, including its approved scope and proof requirements. Delivery proceeds through its own authorization. These responsibilities also underpin the [planned adaptive team](#target-engineering-a-team-chosen-for-the-assignment), where qualified models are selected for individual assignments.
+
+[Engineering architecture](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/architecture.md#8-engineering-herdr) · [Operator protocol](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/OPERATOR_PROTOCOL.md)
+
+## A living world for your Mission teams
+
+The Pixel Agents DI office gives the system a place you can explore.
+
+**Open your world with one command.** After [setup](#4-open-the-visual-office), with the office running:
+
+```bash
+pixel
+```
+
+Your default browser opens directly to the office. You can run the command from any directory.
+
+The original palace opens into forests, mountain lakes, farms, a harbour, and a city of distinct districts. The **Botanical Atrium** and **Deco Observatory** add two more office complexes. A Gothic cathedral quarter, shops, cafés, galleries, and a subway connect the wider metropolis.
+
+![The palace office and surrounding forest, with the observation deck and gateway](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/pixel-world/palace-and-forest.png)
+
+*The palace remains the home office, with connected workspaces and an observation deck leading into the forest.*
+
+| Inside the office | Along the waterfront |
+|---|---|
+| ![Characters inside the palace’s colourful offices and hallways](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/pixel-world/office-life.png) | ![Waterfront buildings, promenade, beach, and ocean](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/pixel-world/waterfront.png) |
+| Connected rooms, desks, galleries, and characters moving through the workplace. | A harbour district with cafés, landmarks, and a long oceanfront. |
+
+| Grand offices and cathedral | River Valley Farmland |
+|---|---|
+| ![The Botanical Atrium, Deco Observatory, and Gothic cathedral quarter](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/pixel-world/grand-offices-and-cathedral.png) | ![Farmland, barns, crops, river, and bridge](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/pixel-world/river-valley-farmland.png) |
+| Two additional office complexes beside the cathedral and city destinations. | Countryside and river crossings extend the world beyond the city. |
+
+The included living-metropolis preset spans **352 × 312 tiles**, with **145 decorative residents**, **four subway stations**, and **two trains**.
+
+### See the work behind the characters
+
+- **Select an agent** to inspect its role, source, and associated Mission.
+- **Switch Missions** in the inspector and follow available task chains and review records.
+- **Recognize current activity** through the working-agent glow and visible freshness information.
+- **Explore the world** with the map, district navigation, and camera controls.
+- **Return to the office** and reconstruct the current recorded Mission observations.
+
+Real agents come from DI’s Mission catalog. Ambient residents give the world its everyday life and are identified separately. The office is a read-only view of recorded work; Mission commands and approvals remain in the operating interfaces.
+
+The screenshots above show the running local world. The living metropolis is an optional preset that can be imported into the office.
+
+[Office setup](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md) · [World presets](https://github.com/TheMickeyDodger/dodging-infinity/tree/main/integrations/pixel-agents/packaging/di/worlds) · [Pixel Agents provenance](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/integrations/pixel-agents/UPSTREAM.md)
+
+## Components and integrations
+
+DI keeps the Mission’s records and operating rules separate from the tools that carry out the work.
+
+| Component | Role |
+|---|---|
+| **Dodging Infinity** | Mission identity, approvals, state, Runtime progression, evidence, verification, and delivery records. |
+| **Grok Bot** | The verified remote conversation interface for Mission deployment, monitoring, updates, and approved delivery. |
+| **Codex** | The default Outer Operator for interpreting requests, preparing scoped work, and reasoning about results. |
+| **Herdr** | Engineering execution through Supervisor, Lead, Executor, and Reviewer roles. |
+| **Pixel Agents office** | Visual observation of recorded Missions, agents, task chains, and review information. |
+| **Pi** | An optional Operator session implementation, selected explicitly and using the configured model and provider. |
+| **Telegram** | An additional remote transport with its own setup and operating commands. |
+| **Dots** | Optional access through a local Codex task; a dedicated integration is part of the broader interface direction. |
+| **GitHub** | A source repository, collaboration surface, and delivery destination for engineering work. |
+
+Herdr roles can use the model CLIs supported by their configured presets. The Operator boundary also allows an explicit choice of runtime. Automatic selection of the best model for each task is part of the project’s future direction.
+
+[Grok Bot](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/grok-bot.md) · [Operator sessions](https://github.com/TheMickeyDodger/dodging-infinity/tree/main/operator_session) · [Telegram](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/operations.md#9-telegram-remote-control)
+
+## Get started
+
+### Requirements
+
+The established host for the full remote workflow is **macOS**. Linux is also covered by core development and CI. Keep the host and the relevant services available while Missions run.
+
+| Requirement | Used for |
+|---|---|
+| **Python 3.9+** | DI’s core Runtime and command-line tools. The core uses the Python standard library. |
+| **Git** | Repository workspaces and delivery. |
+| **[Herdr](https://github.com/herdrdev/herdr#install)** | Engineering execution. Install it and make the `herdr` command available on your path. |
+| **[Codex CLI](https://github.com/openai/codex)** | The default Outer Operator and Codex-backed roles. Authenticate it before use. |
+| **[Claude Code](https://code.claude.com/docs/en/overview)** | Claude-backed engineering roles. Authenticate it for presets that use Claude. |
+| **Node.js 20+ and npm** | The optional Pixel Agents office. |
+| **Grok Bot connector access** | The featured remote interface. |
+| **Repository credentials** | Access to private repositories and authorized pushes. |
+
+[Detailed requirements](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/operations.md#1-requirements)
+
+### 1. Install the DI commands
+
+After installing and authenticating the required tools:
 
 ```bash
 git clone https://github.com/TheMickeyDodger/dodging-infinity.git
 cd dodging-infinity
 bash scripts/install.sh
-```
-
-The installer adds:
-
-```text
-herdctl
-codexgw
-tgop
-dirun
-```
-
-to:
-
-```text
-~/.local/bin
-```
-
-If needed:
-
-```bash
 export PATH="$HOME/.local/bin:$PATH"
-```
-
-Install the local Git safety guard:
-
-```bash
 herdctl safety-install
 ```
 
-## Set up a repository
+The installer adds **`herdctl`**, **`codexgw`**, **`tgop`**, **`dirun`**, and **`grokbot`** to `~/.local/bin`. Add that directory to your shell profile to keep the commands available in new terminals.
+
+Model tools, credentials, remote configuration, and the office build are configured separately in the current setup.
+
+### 2. Prepare a repository for local engineering
+
+From the repository you want to work on:
 
 ```bash
-cd /path/to/your/repository
+cd /absolute/path/to/your-repository
 
 herdctl init \
   --alias my-repo \
-  --test-command 'python3 -m pytest'
-```
+  --test-command 'npm test && npm run build'
 
-Check the machine and repository:
-
-```bash
 herdctl doctor --repo my-repo
+herdctl bootstrap --repo my-repo
 herdctl health --repo my-repo
 ```
 
-Start Herdr:
+Replace the path and verification command with those appropriate to your project. The example uses a JavaScript project’s test and build commands.
 
-```bash
-herdctl bootstrap --repo my-repo
-```
-
-Start a Mission:
+To dispatch a local Herdr engineering task:
 
 ```bash
 herdctl task \
-  'Find the failing test, explain what is wrong, fix it, and verify the result. Do not commit.' \
+  'Investigate the failing test, explain the cause, fix it, and verify the result. Do not commit.' \
   --repo my-repo
-```
 
-Watch it:
-
-```bash
 herdctl status --repo my-repo
-```
-
-or:
-
-```bash
 herdctl observe --repo my-repo --json
 ```
 
-## Remote setup
+This local path is useful for preparing a repository and working directly with its engineering team. Grok Missions use the DI Runtime workflow described next.
 
-Create:
+### 3. Connect Grok Bot
 
-```text
-~/Library/Application Support/DodgingInfinity/telegram/config.json
-```
+The remote setup connects three parts: the **Grok connector**, the **local DI endpoint**, and the **DI Runtime**.
+
+Create the protected state directories and credentials described in the [Grok setup guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/grok-bot.md#running-the-endpoint-locally). Put the Runtime configuration inside the workflow-store directory it names:
 
 ```json
 {
-  "bot_token": "YOUR_BOT_TOKEN",
-  "allowed_user_ids": [123456789],
-  "repository": "/path/to/your/repository"
+  "schema": "dodging-infinity.runtime-config.v1",
+  "control_repository": "/absolute/path/to/dodging-infinity",
+  "workflow_store": "/absolute/path/to/workflow-store"
 }
 ```
 
-Run the Telegram adapter and Mission runtime:
+Use canonical absolute paths. The workflow store belongs outside the DI checkout, with directory permissions `700` and configuration-file permissions `600`.
+
+Start the Runtime in one terminal:
 
 ```bash
-tgop run
-dirun run
+dirun \
+  --runtime-config /absolute/path/to/workflow-store/runtime-config.json \
+  run
 ```
 
-Or install them as macOS background services:
+Create the `mission-workspaces` directory outside your repositories before starting the endpoint. Then start the endpoint in another terminal, using the same workflow-store directory:
 
 ```bash
-tgop install-agent
-scripts/dirun-agent.sh install
+grokbot \
+  --state-dir /absolute/path/to/grok-state \
+  --repository /absolute/path/to/dodging-infinity \
+  --control-repo /absolute/path/to/dodging-infinity \
+  --workflow-store /absolute/path/to/workflow-store \
+  --workspace-repository /absolute/path/to/your-repository \
+  --workspaces-root /absolute/path/to/mission-workspaces \
+  serve \
+  --port 8765 \
+  --auth-token-file /absolute/path/to/bearer-token
 ```
 
-Then from Telegram:
+Expose the loopback endpoint through the configured HTTPS forwarder, register its `/mcp` URL and bearer credential in Grok’s custom connector, and enable the documented local-command capability for approval steps. Keep the Runtime and endpoint running.
 
-```text
-/mission <intent>
-/status
-/help
+You can then propose, approve, monitor, and update Missions through Grok, review the results, and authorize delivery. Grok-only operation uses the Runtime’s own configuration and does not require Telegram credentials.
+
+[Complete Grok configuration](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/grok-bot.md) · [Runtime configuration](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/operations.md#running-a-runtime-without-telegram) · [HTTPS tunnel](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/tunnel.md)
+
+### 4. Open the visual office
+
+The office has its own installation and build inside the DI checkout:
+
+```bash
+cd /absolute/path/to/dodging-infinity
+cd integrations/pixel-agents
+
+git config --get core.hooksPath
+
+HUSKY=0 SCARF_ANALYTICS=false DO_NOT_TRACK=1 \
+  npm ci --foreground-scripts --no-audit --no-fund --no-update-notifier
+
+git config --get core.hooksPath
+npm run build
 ```
 
-For the full operating surface, see [Operational Reference](docs/operations.md).
+The two Git hook-path readings should match. An unset value prints nothing and returns status 1. The environment flags skip Husky setup and opt out of Scarf analytics.
 
----
+From the DI checkout root, register the stores used by your running setup in a dedicated office catalog:
 
-# 4. Pixel Agents DI office
+```bash
+cd /absolute/path/to/dodging-infinity
 
-### Bringing the harness to life
+python3 dicatalog.py register \
+  --registry /absolute/path/to/office-catalog \
+  --source-id mission_core \
+  --kind mission_core \
+  --store-dir /absolute/path/to/mission-core-store \
+  --producer dodging-infinity
 
-The [Pixel Agents integration](integrations/pixel-agents/) turns DI's observed engineering teams into individually selectable characters inside a living pixel-art world. A Mission that starts through an existing Grok Bot or Codex route can appear here through the registered DI catalog, together with the agents canonically bound to it. The viewer can be closed when the Mission starts: reopening reconstructs the current observations. GPT/Codex and Claude agents are represented from the same observed roster; the integration does not require every worker to use the same provider.
+python3 dicatalog.py register \
+  --registry /absolute/path/to/office-catalog \
+  --source-id workflows \
+  --kind workflow_store \
+  --store-dir /absolute/path/to/workflow-store \
+  --producer dodging-infinity
 
-This gives the harness a visual home. Instead of hunting through terminal panes just to see who belongs to which Mission, you can select a character, inspect its role and provenance, switch Missions in the right-hand panel, and follow the available task-chain and review records. A soft pale-gold **body glow** makes a freshly observed working agent easy to spot. Unknown values stay unknown, stale data is visible, and terminal activity stays distinct from engineering completion, review, independent verification, and delivery.
+python3 dicatalog.py sources \
+  --registry /absolute/path/to/office-catalog
+```
 
-The world is also a place worth exploring. The palace office opens into vast forests, autumn woodland, mountain lakes, farms, a harbour and oceanfront, an aquarium quarter, and a city with distinct skyscrapers. Two additional grand offices—the **Botanical Atrium** and **Deco Observatory**—sit beside a Gothic cathedral, shops, cafés, fountains and a four-station subway. Decorative residents keep it lively even when there are no active Mission agents.
+The Mission Core store contains `missions.json`; the WorkflowStore contains `workflows.json`. Use the real stores from your setup. The [source-registration guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md#register-the-sources) explains how to identify them.
 
-DI remains the source of Mission identity, authority and evidence; Herdr owns engineering execution. The office is a **read-only presentation surface**: it cannot dispatch, message or stop agents, approve work, invoke models, write canonical lifecycle state, or perform Git/delivery actions. Existing Grok Bot and Codex action routes remain in charge. This increment is a local Node.js/browser package with bundled renderer and assets; it is not a native macOS application. Future controls, Dots integration and unrelated R1 work remain separate.
+Start the catalog bridge from the DI checkout root:
 
-### A tour of the world
+```bash
+python3 dicatalog_http.py \
+  --registry /absolute/path/to/office-catalog \
+  --discovery-file /absolute/path/to/office-bridge/backend-discovery.json \
+  --discover-roots \
+  --contract-version 2
+```
 
-![The original palace office surrounded by forest, with its observation deck and gateway](assets/pixel-world/palace-and-forest.png)
+In another terminal, also from the checkout root, start the office:
 
-*The palace remains the home office, with colourful computer rooms, quiet spaces, galleries and an observation deck leading into the forest.*
+```bash
+node integrations/pixel-agents/dist/di-cli.js \
+  --state-dir /absolute/path/to/office-state \
+  --backend-discovery /absolute/path/to/office-bridge/backend-discovery.json \
+  --contract-version 2
+```
 
-| Inside the office | Beyond the office |
-|---|---|
-| ![Characters moving through the palace's colourful offices and hallways](assets/pixel-world/office-life.png) | ![The waterfront promenade, buildings, beach and ocean artwork](assets/pixel-world/waterfront.png) |
-| Connected rooms, readable desks, paintings, patterned floors and wandering residents. | A waterfront with cafés, landmarks, beach details and harbour scenery. |
-| ![The Botanical Atrium and Deco Observatory offices beside the Gothic cathedral quarter](assets/pixel-world/grand-offices-and-cathedral.png) | ![River Valley Farmland with crops, barns, animal artwork, a river and a bridge](assets/pixel-world/river-valley-farmland.png) |
-| Two more fully built office complexes, an inhabited cathedral quarter and nearby subway stations. | Farms and river crossings connect the metropolis to its countryside. |
+Both processes use the same discovery file and contract version. Version 2 includes task-chain and review information.
 
-These are screenshots of the running local world, not concept art or fixture renders. They show its appearance and the observations available at capture time; the pictures are not evidence that a Mission completed. Vehicles and legacy animal props are static artwork. Residents, trains and the original pets animate while the viewer is open.
+Install the **`pixel`** launcher once, from the DI checkout root:
 
-### Explore it locally
+```bash
+cd /absolute/path/to/dodging-infinity
 
-With the office already running and [the launcher installed](docs/pixel-agents-office.md#the-pixel-launcher), open it with:
+mkdir -p "$HOME/.local/bin"
+ln -s "$PWD/integrations/pixel-agents/packaging/di/pixel" \
+  "$HOME/.local/bin/pixel"
 
-```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Keep `~/.local/bin` on your shell’s path as described in step 1. If the launcher is already installed, reuse that installation.
+
+Save the office location so the launcher remembers it across terminal sessions:
+
+```bash
+PIXEL_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pixel-agents-di"
+mkdir -p "$PIXEL_CONFIG_DIR"
+
+cat > "$PIXEL_CONFIG_DIR/pixel.json" <<'JSON'
+{
+  "state_dir": "/absolute/path/to/office-state"
+}
+JSON
+```
+
+Use the same absolute `state_dir` passed to the office process. An existing `PIXEL_AGENTS_DI_STATE_DIR` environment setting takes precedence over this file.
+
+**From then on, with the catalog and office running, just type:**
+
+```bash
 pixel
 ```
 
-The command opens the running office; it does not start DI, dispatch work or launch the backend. For a fresh setup, follow [installation and build](docs/pixel-agents-office.md#install-and-build), [source registration](docs/pixel-agents-office.md#register-the-sources) and [launch](docs/pixel-agents-office.md#launch). Import the optional [living metropolis preset](integrations/pixel-agents/packaging/di/worlds/living-metropolis.json) using **Settings → Import Layout (paste JSON)**, then reload. Export your current layout first if you want to keep it. Use **Map** for the whole world, **Districts** for named destinations, and the right-hand inspector for Missions and agents.
+The launcher opens your office in the default browser. The roadmap extends this everyday command with automatic presentation startup or reconnection and clearer connection diagnostics.
 
-The current living preset has **145 decorative residents**, **four subway stations**, **two trains**, **23 distinct skyline designs** and **16 distinct gallery exhibits** across **352 × 312 tiles**. Bellhops, baristas, shop clerks, gardeners and other job sprites follow local routines; five original show-inspired Easter eggs reward a closer look. Residents and train journeys persist between sessions. Simulation pauses when the viewer is closed, and reduced motion is supported.
+To load the world shown above, export any layout you want to keep, choose **Settings → Import Layout (paste JSON)**, paste the contents of [**`living-metropolis.json`**](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/integrations/pixel-agents/packaging/di/worlds/living-metropolis.json), and reload the page.
 
-### Setup and reference
+[Office installation and launch](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md) · [Launcher instructions](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md#the-pixel-launcher)
 
-The catalog's version 2 contract adds task chains, report facts and a review preamble; version 1 remains the backend default. Select version 2 explicitly when setting up both sides.
+## How DI keeps the work accountable
 
-| Topic | Where |
+- **The Mission defines the scope.** Objectives, constraints, acceptance criteria, and approvals belong to a specific version of the work.
+- **Evidence has a source.** Test results, review decisions, research findings, and artifacts remain connected to the claims they support.
+- **Review is independent.** The engineering Reviewer can reject a change and require another implementation pass.
+- **Uncertainty stays visible.** Missing evidence, stale observations, and blockers remain explicit until they are resolved.
+- **Delivery is deliberate.** Commit and push decisions are recorded for the work being delivered.
+
+These principles apply across the technical work DI supports, from a repository fix to a sustained research project.
+
+[Architecture](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/architecture.md) · [Security](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/SECURITY.md) · [Operator rules](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/AGENTS.md)
+
+## Where DI is going
+
+The goal is a system you can direct in ordinary language, leave working through supported interruptions, and return to with a clear account of what happened. You should be able to move between your phone, the Operator, and the office while following the same Missions, teams, decisions, and evidence.
+
+This direction follows **roadmap v320, dated October 17, 2026**. The diagrams below show the **intended architecture as that roadmap is completed**. Development builds on the verified Grok workflow and existing DI, Herdr, and Pixel capabilities, with each addition demonstrated through its own acceptance scenarios.
+
+### The six main stages
+
+| Stage | What it brings to DI |
 |---|---|
-| Installation | [Install and build](docs/pixel-agents-office.md#install-and-build) |
-| Source registration | [Register the sources](docs/pixel-agents-office.md#register-the-sources) |
-| Launch | [Launch](docs/pixel-agents-office.md#launch) |
-| World preset | [World preset](docs/pixel-agents-office.md#world-preset) |
-| Opening a running office | [The `pixel` launcher](docs/pixel-agents-office.md#the-pixel-launcher) |
-| Architecture and trust boundary | [Architecture and trust boundary](docs/pixel-agents-office.md#architecture-and-trust-boundary) |
-| Licensing | [Licensing](integrations/pixel-agents/UPSTREAM.md#licensing) |
-| Upstream updates | [Updating from upstream](integrations/pixel-agents/UPSTREAM.md#updating-from-upstream) |
+| **R1 · Dependable integrated operation** | Reliable unattended work, recovery, shared attention, evidence, reusable Mission memory, and a repeatable research workflow. Complete demonstrated gaps across the combined system. |
+| **R2 · Adaptive teams** | Select qualified models for individual assignments, compare frontier and local execution, and escalate through a recorded handoff that preserves the work. |
+| **R3 · Dots alongside Grok** | Use either interface to interact with the same Missions, decisions, progress, results, and delivery process. |
+| **R4 · An everyday visual Mission world** | Dependable `pixel` launch, an operational overview, a reception inbox, distinct team headquarters, evidence browsing, and richer atmosphere. Validate the office integration in CI. |
+| **R5 · Guided installation and product packaging** | One installation command, guided account and repository setup, a first verified Mission, useful diagnostics, and repeatable updates and recovery on another supported Mac. |
+| **R6 · A measured durability decision** | Evaluate whether DBOS would improve recovery and operations. Adopt, defer, or retain the current design based on evidence. This is the last main decision. |
 
-The office has its own Node.js dependency and build boundary inside that subtree. The rest of Dodging Infinity still uses only the Python standard library.
+R1 also covers the selected document, operations, browser, media, and communication workflows; reusable context and verification recipes; capacity and priority controls; and specific security, Git, migration, and operational improvements. Existing tools and working behavior remain the starting point.
 
-## The visual world
+### Target architecture: one Mission system
 
-By default the office shows the bundled Pixel Agents office. Four world presets in this repository expand it. The expanded office keeps the original rooms and adds six computer rooms with 24 room computers, connected to a lobby whose reception desk has one more computer. The forest preset places the palace inside a 176 by 112 woodland. The connected world, [`metropolis.json`](integrations/pixel-agents/packaging/di/worlds/metropolis.json), is 352 by 224: the forest world sits unchanged in one corner, and eight districts surround it. The living metropolis, [`living-metropolis.json`](integrations/pixel-agents/packaging/di/worlds/living-metropolis.json), is 352 by 312 (109,824 tiles): the connected world extended south with two further office complexes, a Gothic cathedral quarter, retail and dining destinations, and a subway.
+Grok and Dots converge on the same Codex Operator and DI contracts. The visual world reads those records and, as desktop controls are added, routes actions through DI’s established authorization APIs.
 
-- **Actual agents, and decorative residents.** The characters that the Dodging Infinity catalog actually reports for a Mission are the real agents. Click one to select it, and the side panel shows that agent and the Mission it belongs to; a real agent carries the working glow while it is freshly observed working. Ambient residents are decorative: labelled Ambient, never reported by the catalog, never glowing, and never representing Mission work.
-- **Honest statuses.** "unknown" is not zero, and "stale" is not live. An activity of "done" is terminal activity, not task, Mission, verification or delivery completion. Seeing an agent in the office is not evidence that its task, its Mission or any demo succeeded.
-- **Fit and zoom.** The office fits the world to the window automatically, with whole-number zoom. Zooming by hand overrides the fit.
-- **The world presets are opt-in.** Each is a layout authored for Dodging Infinity. In the office's Settings, export your current layout as a backup and import the preset, then reload the page: until the reload, a session that started on the bundled default can still reflow back to that default world. A preset does not install itself, does not replace a saved layout and raises no bundled layout revision. This is about the presets only: the general upgrade behaviour of the office's layout loader is described in [World preset](docs/pixel-agents-office.md#world-preset).
-- **Getting around the connected world.** The camera views (Office, Deck, Woods), the Districts list and the Map move the camera only. Districts is the readable list alternative to the Map: Tab to it and press Enter, then Tab to a district and press Enter. The Map shows the whole world with district labels; click a spot to go there, and Esc closes it. See [the forest and connected-world presets](docs/pixel-agents-office.md#the-forest-and-connected-world-presets).
-- **Static art, and where animation comes from.** The legacy art baseline is static: every sprite extracted for the connected world, every woodland variant and the lounge seating is one frame, and in that art set the only animated original companions are the office's two pets. That describes the artwork, not what moves at runtime. In the DI office, ambient residents animate on whatever layout is loaded, the legacy presets included, and trains run where the loaded world contains a subway line (of the bundled presets, only the living metropolis). The inherited decorative animal and vehicle artwork stays static. Decorative animals, vehicles and residents never create agents and never imply Mission work.
-- **The living metropolis is opt-in.** Import it like the other presets (Settings, then Import Layout (paste JSON), then reload). In current use:
-  - **Ambient residents and jobs.** A decorative local population walks routines across the world while the office is open, even with no real agents: in the living metropolis, 145 residents (140 ordinary, with jobs such as bellhop, police officer, firefighter, store clerk and barista, plus five Easter-egg families). They are labelled Ambient and decorative. They are never agents and never take a seat, and a real agent always wins selection and seating.
-  - **Subway.** Four stations and two trains; residents board at one station and alight at another. The Stations list moves the camera only: a jump is instant camera travel, not a ride.
-  - **Saving and moving the simulation.** While the office is open it saves the residents' and trains' state (identities, routines and journeys in progress) under its own state folder. Settings, then Export Ambient Snapshot, downloads it; Import Ambient Snapshot (paste JSON) restores it. A snapshot from a different world or resident set, or over 65,536 bytes, is refused whole and nothing changes.
-  - **While the viewer is closed, nothing runs.** No simulation time passes while the office page is closed. A hidden tab is caught up by at most 20 seconds when it is shown again.
-  - **The glow.** An agent glows, with a soft pale-gold aura around its body, only while the catalog reports it working at its terminal with fresh data. Idle, unknown, stale, expired and disconnected agents never glow, and residents never glow. With reduced motion set, the glow is steady. A glow is not evidence of task, Mission or delivery completion.
-  - **Passive.** All of this is observation only: no dispatch, no model invocation and no change to the canonical catalog.
-- **Bounds.** Up to 384 tiles on each axis and 110,400 tiles in all (the living metropolis is 352 by 312 = 109,824); 16,384 furniture items, 64 pets and 64 areas; 4,096 carpeted tiles; 1,024 tile, 256 carpet and 1,024 furniture colour variants. A saved layout file over 104 MiB and a save message over 64 MiB are refused.
-- **The `pixel` launcher.** Type `pixel`, in lowercase, to open the address that a running office recorded, in your browser, without printing its token. It starts nothing and installs nothing. It checks the access file's shape and that a loopback port answers, but it cannot tell whether the listener is the office or whether the token is still valid. See [The `pixel` launcher](docs/pixel-agents-office.md#the-pixel-launcher).
-- **Checkout and package.** The preset and the launcher are in a Dodging Infinity checkout and in the standalone office package.
-- **Read-only.** All of this is the same read-only increment described above. The office stays the home of the agents the catalog actually reports, and the DI, Grok and Codex action routes are unchanged. The worlds and the launcher add no controls, and no orchestration, dispatch, messaging, shell or execution route.
-
----
-
-# 5. Closing note
-
-I built Dodging Infinity because I wanted to hand AI a real problem, walk away, and come back to something I could inspect without treating a chat transcript as the source of truth.
-
-A Mission might start from Telegram, move through an Operator, hand engineering to Herdr, use several models, survive a restart, pick up evidence from another Mission, run on a different worker, and eventually come back ready for a delivery decision.
-
-It should still be the same Mission when it gets there.
-
-That is what this project is trying to make normal.
-
-```text
-                  .        .        .
-             .       0 1 0 1 0       .
-          .      1 0         0 1       .
-        .      0       .---.      0       .
-       .      1       | • • |      1       .
-      .      0        |  ^  |       0       .
-       .      1        '---'       1       .
-        .      0         |        0       .
-          .      1 0     |    0 1       .
-             .       0 1 | 1 0       .
-                  .      |      .
-                         |
-                     .---+---.
-                    /    |    \
-                  01     |     10
-                 /       |       \
-               10        |        01
-                         / \
-                        /   \
-                      01     10
-
-                 o────o────o
-                      \
-                       o────o
-
-                DODGING INFINITY
+```mermaid
+flowchart TD
+    U["You"] --> G["Grok Bot"]
+    U --> B["Dots"]
+    U --> P["Visual Mission World"]
+    G <--> C["Codex Outer Operator"]
+    B <--> C
+    C <-->|Proposals, decisions and results| D["DI Mission state and authority"]
+    D --> R["Runtime, readiness and recovery"]
+    R --> H["Herdr engineering teams"]
+    R --> T["Approved tools and research recipes"]
+    H -->|Results and evidence| D
+    T -->|Artifacts and sources| D
+    D <-->|Relevant sourced lessons| M["Mission memory"]
+    D --> O["Observation bridge and shared inbox"]
+    O --> P
+    P -.->|Future controls through DI APIs| D
 ```
 
-[Architecture](docs/architecture.md) · [Current vs End State](docs/architecture.md#16-current-implementation-notes) · [Roadmap](docs/roadmap.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+**DI remains responsible for Mission identity, scope, authority, state, and delivery records.** Codex remains the Outer Operator. Herdr owns bounded engineering execution. Research and other selected capabilities use suitable existing tools and reviewed recipes, with results tied back to the Mission.
 
-## License
+The shared inbox carries questions, blockers, approval requests, failed verification, results ready for review, and delivery decisions. Grok, Codex, and the office reception desk should explain the same pending item and its route for action. Dots joins those shared contracts as its integration is completed.
 
-Apache 2.0. See [LICENSE](LICENSE).
+Work stays on supported local execution environments unless a selected workload needs another host or specialized capability. Expansion to additional machines must preserve identity, ownership, authority, evidence, and recovery. The visual presentation continues to use a thin DI bridge as its renderer and packaging evolve.
 
-The vendored Pixel Agents office in [`integrations/pixel-agents/`](integrations/pixel-agents/) keeps its own licences (MIT code, CC0-derived character art, an SIL OFL 1.1 font). See [its licensing table](integrations/pixel-agents/UPSTREAM.md#licensing).
+### Target engineering: a team chosen for the assignment
+
+A Mission may contain very different kinds of work. A small interface change, a numerical algorithm, and an authorization change can require different models, tools, and levels of review.
+
+The Supervisor defines the work and role requirements. A versioned selection policy chooses among approved, qualified configurations. Herdr launches and coordinates the resulting team.
+
+```mermaid
+flowchart TD
+    S["Supervisor"] -->|Assignment requirements| P["Versioned selection policy"]
+    Q["Approved models and qualifications"] --> P
+    P -->|Choose coordination| L["Lead"]
+    P -->|Choose and pin execution| E["Executor"]
+    P -->|Choose independent review| R["Reviewer"]
+    L -->|Scoped work| E
+    E -->|Implementation and tests| R
+    R -->|Corrections| E
+    R -->|Review decision| L
+    E -->|Permitted escalation| H["Checkpoint and release ownership"]
+    H -->|Select next qualified Executor| P
+    L -->|Reviewed result and evidence| V["DI verification"]
+```
+
+Selection considers the assignment’s required tools, context, correctness risks, permitted providers, available resources, and demonstrated results. The selected model stays fixed for its assignment. A change of model becomes an explicit reassignment with a recorded reason. If no qualified option is available, the assignment waits or surfaces a specific decision.
+
+Escalation carries the exact workspace, objective, findings, attempted fixes, failed checks, logs, remaining budget, and applicable authority. The source relinquishes ownership before the destination continues, preserving one writer and the same Mission identity.
+
+The rollout starts with a controlled **frontier-versus-local Executor comparison**, holding the Supervisor, Lead, Reviewer, interface, and checks fixed. Executor selection follows; a hybrid local-to-frontier path follows verified handoffs. Adaptive Lead and Reviewer selection then receive their own measured trials. Defaults are chosen by verified quality, missed defects, correction rounds, elapsed time, human interruptions, and total cost.
+
+Model selection and handoff events become visible in Mission observations and the office. Available records should explain which model was requested, which identity was confirmed, why it was chosen, and whether work was transferred.
+
+### Target workflow: continuity, evidence, and delivery
+
+Reliable operation carries the Mission through interruptions, decisions, review, and delivery while retaining the information needed to continue correctly.
+
+```mermaid
+flowchart TD
+    A["Authorized Mission"] --> W["Runtime execution"]
+    W --> C["Canonical review"]
+    C -->|Corrections| W
+    C --> V["Independent verification"]
+    V -->|Further work needed| W
+    V -->|Verified candidate| E["Exact delivery proposal"]
+    E -->|Separate approval| D["Authorized delivery"]
+    D -->|Outcome confirmed| P["Delivery receipts"]
+    W -->|Interrupted| K["Checkpoint and reconciliation"]
+    K -->|Resume authorized work| W
+    K -->|Needs your decision| I["Shared Mission inbox"]
+    I -->|Decision through DI| K
+    D -->|Outcome uncertain| Q["Reconcile remote effects"]
+    Q -->|Already completed| P
+    Q -->|Safe authorized retry| D
+```
+
+The runtime should explain why work stopped, what remains authorized, which checkpoints exist, and what can happen next. Recovery reconciles uncertain effects before retrying so a reconnect does not create a second dispatch or duplicate delivery.
+
+Mission memory preserves useful repository knowledge, engineering decisions, and recovery lessons with sources and their applicable context. A later team can assess a lesson’s freshness and use it to avoid repeating a solved problem. Historical approvals remain records of earlier decisions; new work follows its applicable authorization.
+
+The delivery lane prepares the candidate, documentation, and evidence for an exact decision tied to the repository, branch, operations, and destination. Valid approval can be reused within its binding, avoiding unnecessary repeated decisions. Commit, push, and PR receipts remain inspectable. Selected merge, release, deployment, publishing, or communication workflows retain their own supported routes and applicable approvals.
+
+Research builds on the work DI already supports. The next milestone formalizes a repeatable research Mission with permitted sources, a useful report, supported claims, and an explicit verification rubric.
+
+### The office becomes an everyday operating view
+
+The world should help you answer three practical questions: **What is happening? What needs me? What did the team produce?**
+
+| Planned experience | What you will be able to do |
+|---|---|
+| **Dependable `pixel` launch** | Open or reconnect to the presentation with one command. Get a specific remedy when the catalog or runtime is unavailable. Reopening the viewer preserves the running work. |
+| **Reception desk and shared inbox** | Find questions, blockers, approval requests, failed checks, and results awaiting review in one consistent attention view. |
+| **Daily operational overview** | Distinguish running, waiting, blocked, disconnected, and unknown states. Inspect runtime health, observation freshness, checkpoints, and actionable failure explanations, with a practical list alongside the world. |
+| **Distinct Mission headquarters** | Give concurrent teams identifiable homes, readable labels, simple Mission switching, and a “find this team” camera action. Follow observed team membership and activity. |
+| **Evidence library and Mission inspector** | Open artifacts and inspect assignments, dependencies, review findings, independent verification, and delivery receipts. See the source and freshness of the records. |
+| **Visible model choices and handoffs** | Inspect recorded role selections, confirmed model identities where available, and the reasons for an escalation. |
+| **Richer atmosphere** | Add day/night lighting, weather, and moving traffic while preserving responsive navigation, readable labels, reduced-motion support, and persistent preferences. |
+
+The office remains a view over DI’s records. Future Mission controls use the same action and approval contracts as the other interfaces. Decorative residents and atmospheric effects retain their presentation role.
+
+Office validation expands to lockfile installation, type checking, lint, server and UI tests, a production build, and browser checks through the actual catalog connection and Mission/agent rendering. These checks should catch an integration break during PR validation, alongside the existing core checks.
+
+### Installation becomes one guided experience
+
+The intended first-run experience starts with **one installation command from this README**. It detects the supported Mac environment, coordinates the required components, offers a recommended configuration, and guides the user through repository selection and account connections.
+
+The installer then prepares DI and the selected office, checks their communication, explains what is running, and guides a small first Mission through approval, execution, and a verified result. Required account sign-in and operating-system prompts remain part of that guided experience. Advanced configuration and large local-model downloads remain optional.
+
+Everyday operation adds coherent setup/resume, start, status, diagnosis, and update commands. A failed dependency, unavailable service, or configuration problem should come with a specific remedy. Supported upgrades and recovery preserve configuration, evidence, and authority on a second installation as well as the original host.
+
+### The next reliability milestone
+
+The daily-use track starts with execution reliability, dependable office launch, and the shared inbox. The operational overview, team headquarters, and evidence browsing build on those foundations. Delivery, reusable lessons, and the repeatable research workflow follow, with atmospheric upgrades after daily operation is dependable.
+
+Its integrated acceptance exercise follows one bounded Mission through:
+
+1. A request through Grok, with the same Mission and its bound team visible in Pixel.
+2. A permitted interruption and supported recovery that preserve identity, work, and evidence.
+3. A shared human decision where needed, followed by canonical review and independent verification.
+4. Result and artifact inspection, then exact delivery approval and a PR with receipts.
+5. Retries, reconnections, and viewer reopening that leave one execution and one intended delivery.
+
+Adaptive team trials and Dots integration retain their own acceptance gates. Office, CI, and installer work can progress against stable shared contracts.
+
+### Further capabilities, evaluated through real workloads
+
+The roadmap also preserves a set of focused investigations. Each should earn its place through a useful result and measured improvement.
+
+| Evaluation | Potential contribution |
+|---|---|
+| **Specialist advisor consultations** | Bounded advice on difficult designs while preserving the team’s canonical review and verification. |
+| **External Herdr / Connecting the Machines** | Execution on another host when a real workload needs its tools or resources, with ownership and disconnect recovery demonstrated. |
+| **OpenEvolve** | Algorithm improvement against a fixed correctness evaluator, held-out cases, and an explicit compute budget. |
+| **TLA+/TLC or Lean** | Formal analysis of a bounded lifecycle behavior or mathematical property, with explicit assumptions and checkable artifacts. |
+| **OR-Tools** | Constraint-based planning for work with resource limits, dependencies, and scheduling requirements. |
+| **angr** | Authorized binary or firmware analysis, with findings reproduced in actual execution. |
+| **LAMMPS or an appropriate scientific toolchain** | Reproducible simulation against reference cases before extending to new scientific candidates. |
+| **TypeSafe AI / Jev** | A measured evaluation where a specific decision or verification bottleneck remains. |
+
+Pi may support selected execution configurations where its adapters fit the required models and tools. LiteLLM can be evaluated if multiple compatible local or API endpoints justify an inference gateway. Reviewed pstack-derived recipes can support recall, explanation, and verification. These choices remain separate from adopting another orchestration system.
+
+The final durability review asks whether DBOS improves demonstrated recovery or operating needs enough to justify a migration. Keeping the existing execution substrate remains a valid outcome.
+
+[Project roadmap documentation](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/roadmap.md)
+
+## Documentation
+
+| Guide | What it covers |
+|---|---|
+| [Architecture](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/architecture.md) | Mission structure, system responsibilities, evidence, and execution boundaries. |
+| [Operations](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/operations.md) | Requirements, repository setup, commands, Runtime configuration, and remote operation. |
+| [Grok Bot](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/grok-bot.md) | Connector setup, endpoint configuration, Mission interaction, and delivery approvals. |
+| [HTTPS tunnel](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/tunnel.md) | Making the local endpoint available to the remote connector. |
+| [Pixel Agents office](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md) | Build, source registration, launch, world presets, and the browser interface. |
+| [Operator protocol](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/OPERATOR_PROTOCOL.md) | Preparing work, coordinating with Herdr, inspecting results, and delivery. |
+| [Roadmap](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/roadmap.md) | Planned capabilities and acceptance criteria. |
+| [Contributing](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/CONTRIBUTING.md) | Development setup, testing, and contribution expectations. |
+| [Security](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/SECURITY.md) | Security boundaries and reporting guidance. |
+| [Changelog](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/CHANGELOG.md) | Release history. |
+
+## Contributing
+
+Contributions are welcome across the orchestration core, integrations, documentation, tests, and visual office. Start with [CONTRIBUTING.md](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/CONTRIBUTING.md), and read the repository’s [operator rules](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/AGENTS.md) before initiating automated work.
+
+For a proposed change, make the problem, scope, expected behavior, and verification clear. The core and office have separate dependency and validation requirements, described in their respective guides.
+
+## License and acknowledgments
+
+Dodging Infinity is licensed under **Apache 2.0**. See [LICENSE](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/LICENSE).
+
+The vendored Pixel Agents office retains its own notices: MIT-licensed code, character art derived from CC0 sources, and a font under the SIL Open Font License 1.1. See the [Pixel Agents provenance and licensing guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/integrations/pixel-agents/UPSTREAM.md#licensing).
+
+The linked research and upstream software projects retain their own licenses and attribution requirements.
