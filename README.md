@@ -46,7 +46,7 @@ A Mission carries the work through six steps:
 5. **Review the result.** Herdr returns its work and review evidence; DI checks the result against the Mission’s requirements.
 6. **Authorize delivery.** Commit and push the approved change through the delivery workflow, with the decision and outcome recorded.
 
-### Current verified engineering workflow
+### Current engineering workflow
 
 ```mermaid
 flowchart TD
