@@ -357,6 +357,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000000-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "abrt00",
@@ -674,6 +714,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000001-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "abrt01"
@@ -987,6 +1067,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000002-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -1304,6 +1424,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000003-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "abrt03"
@@ -1617,6 +1777,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000004-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -1934,6 +2134,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000005-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "abrt05"
@@ -2247,6 +2487,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000006-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -2564,6 +2844,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000007-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "abrt07"
@@ -2879,6 +3199,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "20260801-000008-ffffff"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "abrt08"
@@ -3192,6 +3552,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000000-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -3510,6 +3910,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000001-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done01"
@@ -3823,6 +4263,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000002-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -4140,6 +4620,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000003-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done03"
@@ -4453,6 +4973,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000004-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -4770,6 +5330,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000005-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done05"
@@ -5083,6 +5683,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000006-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -5400,6 +6040,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000007-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done07"
@@ -5713,6 +6393,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000008-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -6030,6 +6750,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000009-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done09"
@@ -6343,6 +7103,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000010-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -6660,6 +7460,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000011-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done11"
@@ -6973,6 +7813,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000012-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -7290,6 +8170,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000013-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done13"
@@ -7603,6 +8523,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000014-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -7920,6 +8880,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000015-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done15"
@@ -8233,6 +9233,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000016-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -8550,6 +9590,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000017-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done17"
@@ -8863,6 +9943,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000018-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -9180,6 +10300,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000019-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done19"
@@ -9493,6 +10653,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000020-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -9810,6 +11010,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000021-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done21"
@@ -10123,6 +11363,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000022-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -10440,6 +11720,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000023-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done23"
@@ -10753,6 +12073,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000024-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -11070,6 +12430,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000025-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done25"
@@ -11383,6 +12783,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000026-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -11700,6 +13140,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000027-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "done27"
@@ -12013,6 +13493,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "20260901-000028-eeeeee"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -12330,6 +13850,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000000-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "act00"
@@ -12643,6 +14203,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000001-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -12960,6 +14560,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000002-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "act02"
@@ -13273,6 +14913,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000003-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -13590,6 +15270,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000004-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "act04"
@@ -13903,6 +15623,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000005-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -14220,6 +15980,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000006-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "act06"
@@ -14533,6 +16333,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000007-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -14850,6 +16690,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000008-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "act08"
@@ -15163,6 +17043,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000009-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -15480,6 +17400,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000010-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "act10"
@@ -15793,6 +17753,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000011-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -16110,6 +18110,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261001-000012-dddddd"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "act12"
@@ -16423,6 +18463,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261017-133442-bbbbbb"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -16993,6 +19073,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "active_binding",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "20261017-150121-aaaaaa"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "w5n"
@@ -17306,6 +19426,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -17623,6 +19783,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "boot02"
@@ -17936,6 +20136,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -18254,6 +20494,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "boot03"
@@ -18567,6 +20847,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -18884,6 +21204,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "boot04"
@@ -19197,6 +21557,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -19514,6 +21914,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "boot09"
@@ -19829,6 +22269,46 @@
               "protocolToken": null
             }
           },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            }
+          },
           "herdrTask": {
             "rootAliases": [
               "boot01"
@@ -20142,6 +22622,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "IDLE",
+              "taskId": null
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "source_kind_has_no_artifact_content"
+            },
+            "artifacts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_canonical_review",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_applicable",
+              "reason": "source_kind_has_no_mission_core_evidence",
+              "total": null,
+              "items": []
             }
           },
           "herdrTask": {
@@ -20873,6 +23393,46 @@
               "reviewerLogical": null,
               "reviewerAgent": null,
               "protocolToken": null
+            }
+          },
+          "evidence": {
+            "cursor": "7d5b5c6979d2158114551435c50ca6a591542be63ac8041ef503168920f089f6",
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "active_binding",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "RUNNING",
+              "taskId": "20261017-133442-bbbbbb"
+            },
+            "contentReads": {
+              "state": "available",
+              "reason": null
+            },
+            "artifacts": {
+              "state": "known_empty",
+              "reason": null,
+              "total": 0,
+              "items": []
+            },
+            "verification": {
+              "state": "known_empty",
+              "reason": null,
+              "total": 0,
+              "items": []
+            },
+            "reviews": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "known_empty",
+              "reason": null,
+              "total": 0,
+              "items": []
             }
           }
         }

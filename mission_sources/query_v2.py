@@ -80,7 +80,7 @@ def _state_block(state, problem, detail=None):
 def _review_block(state, problem, task_status=None):
     return {"state": state, "problem": problem, "record": None, "gate": None,
             "verdict": None, "currency": None, "task_status": task_status,
-            "integrity": None,
+            "integrity": None, contract_v2.REVIEW_FINDINGS_KEY: None,
             "candidate_applicability":
                 contract_v2.CANDIDATE_APPLICABILITY_UNPROVEN}
 

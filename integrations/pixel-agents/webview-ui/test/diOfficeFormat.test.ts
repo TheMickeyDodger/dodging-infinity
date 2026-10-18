@@ -750,3 +750,50 @@ test('CANVAS TITLE (DI): compact logical · provider, never the raw Mission ref;
     'done (agent activity, not completion)',
   );
 });
+
+test('round 15 F2: client invalidation also makes each evidence library STALE with reads closed', async () => {
+  const { invalidateEvidence, withClientInvalidation } =
+    await import('../src/components/diOfficeFormat.ts');
+  const evidence = {
+    cursor: 'c'.repeat(64),
+    currency: 'current',
+    currencyReason: null,
+    contentReads: { state: 'available', reason: null },
+    artifacts: { state: 'observed', reason: null, total: 1, items: [{ artifactId: 'mf-1' }] },
+  };
+  const state = {
+    live: true,
+    notLiveReason: null,
+    envelope: { fresh: true, reason: null, served: 'refreshed' },
+    runtime: { fresh: true, reason: null },
+    times: { validUntil: 160 },
+    missions: {
+      state: 'observed',
+      reason: null,
+      missions: [
+        {
+          missionRef: 'a:1',
+          live: true,
+          notLiveReason: null,
+          evidence,
+          members: { state: 'observed', reason: null, members: [] },
+        },
+      ],
+    },
+  } as unknown as DiOfficeState;
+  const out = withClientInvalidation(state, 'transport_disconnected');
+  const library = out.missions.missions[0].evidence!;
+  assert.equal(library.currency, 'stale');
+  assert.equal(library.currencyReason, 'transport_disconnected');
+  assert.deepEqual(library.contentReads, {
+    state: 'unavailable',
+    reason: 'transport_disconnected',
+  });
+  assert.equal(library.cursor, evidence.cursor); // the listing stays as last received
+  assert.deepEqual(library.artifacts, evidence.artifacts);
+  assert.equal(evidence.currency, 'current'); // the received state is not mutated
+  assert.deepEqual(invalidateEvidence(evidence as never, 'client_expired:x').contentReads, {
+    state: 'unavailable',
+    reason: 'client_expired:x',
+  });
+});

@@ -17,6 +17,13 @@ const ROOT = path.join(__dirname, '..', '..');
 const SOURCE = 'packaging/di/fixtures/herdr-task-session-mismatch-v2.FIXTURE.json';
 const TARGET = 'webview-ui/test/fixtures/di-office-state-session-mismatch-v2.FIXTURE.json';
 const TRANSITIONS = 'webview-ui/test/fixtures/di-office-state-transitions-v2.FIXTURE.json';
+/** item 2: the REAL backend answers (tests/test_artifact_content.py), already normalized (D1). */
+const EVIDENCE_SOURCE = 'server/__tests__/fixtures/di-backend/v2/artifact-content-v1.FIXTURE.json';
+const EVIDENCE_TARGET = 'webview-ui/test/fixtures/di-office-state-evidence-v2.FIXTURE.json';
+const HISTORICAL_SOURCE =
+  'server/__tests__/fixtures/di-backend/v2/artifact-content-historical-v1.FIXTURE.json';
+const HISTORICAL_TARGET =
+  'webview-ui/test/fixtures/di-office-state-evidence-historical-v2.FIXTURE.json';
 
 describe('C1: the webview regression renders the real projection of a labelled fixture', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -89,7 +96,9 @@ describe('C1: the webview regression renders the real projection of a labelled f
     const t0 = live.response.generated_at * 1000;
     const removed = JSON.parse(JSON.stringify(live)) as {
       response: {
-        runtime_agents: { agents: Array<{ agent: string; agent_ref: string; identity: { state: string } }> };
+        runtime_agents: {
+          agents: Array<{ agent: string; agent_ref: string; identity: { state: string } }>;
+        };
         missions: Array<{ members: Array<{ member_ref: string }> }>;
       };
     };
@@ -164,6 +173,243 @@ describe('C1: the webview regression renders the real projection of a labelled f
     };
     const text = JSON.stringify(doc, null, 2) + '\n';
     const target = path.join(ROOT, TRANSITIONS);
+    if (process.env.DI_EXPORT_OFFICE_STATE === '1') fs.writeFileSync(target, text);
+    expect(fs.readFileSync(target, 'utf-8')).toBe(text);
+  });
+
+  /**
+   * item 2: the evidence library the webview's browser regression renders — ONE real DiOffice
+   * over the backend's exported catalog answer, and the diEvidenceContent messages that SAME
+   * office relays for each exported backend content answer (re-checked by the bridge, exactly as
+   * live). Plus the same body polled after it expired (STALE).
+   */
+  it('the committed evidence states equal one DiOffice reading every exported answer', async () => {
+    const raw = fs.readFileSync(path.join(ROOT, EVIDENCE_SOURCE));
+    const fixture = JSON.parse(raw.toString('utf-8')) as {
+      catalog_answer: { response: { generated_at: number } };
+      content_answers: Record<string, { artifact_id: string; mission_ref: string; cursor: string }>;
+    };
+    const body = fixture.catalog_answer;
+    const t0 = body.response.generated_at * 1000;
+    let clockMs = t0;
+    let answer: unknown = null;
+    const office = new DiOffice({
+      store: new AgentStateStore(),
+      discoveryPath: '/sandbox/backend-discovery.json',
+      contractVersion: 2,
+      deps: {
+        readDiscovery: () => ({ ok: true, endpoint: { port: 1, token: 't' } }),
+        request: async (): Promise<BackendResult> => ({
+          kind: 'http',
+          status: 200,
+          headers: { 'x-di-freshness-health': 'fresh' },
+          body,
+          bodyProblem: null,
+        }),
+        requestArtifact: async (): Promise<BackendResult> => ({
+          kind: 'http',
+          status: 200,
+          headers: {},
+          body: answer,
+          bodyProblem: null,
+        }),
+        nowMs: () => clockMs,
+        log: () => undefined,
+      },
+    });
+    await office.poll();
+    const live = office.officeStateMessage();
+    const replies: Record<string, unknown> = {};
+    for (const name of Object.keys(fixture.content_answers).sort()) {
+      const a = fixture.content_answers[name];
+      answer = a;
+      clockMs += 1_000; // one read per interval, as the office allows
+      const sent: unknown[] = [];
+      await office.readEvidence(
+        {
+          type: 'diEvidenceRead',
+          missionRef: a.mission_ref,
+          artifactId: a.artifact_id,
+          cursor: a.cursor,
+        },
+        (m) => sent.push(m),
+      );
+      expect(sent).toHaveLength(1);
+      replies[name] = sent[0];
+    }
+    clockMs = t0 + 3_600_000;
+    await office.poll();
+    const stale = office.officeStateMessage();
+    office.stop();
+    // Round 15 F4: the SAME body with its one recorded verification record linking 64 artifacts
+    // (Mission Core's per-record bound) and 70 (beyond it), each polled by a fresh real DiOffice.
+    const withLinks = async (count: number) => {
+      const edited = JSON.parse(JSON.stringify(body)) as {
+        response: {
+          missions: Array<{
+            mission_state: { report: { evidence: { value: Array<{ artifact_ids: string[] }> } } };
+          }>;
+        };
+      };
+      const record = edited.response.missions[0].mission_state.report.evidence.value[0];
+      const real = record.artifact_ids;
+      record.artifact_ids = [
+        ...real,
+        ...Array.from(
+          { length: count - real.length },
+          (_, i) => `mf-${(i + 1).toString(16).padStart(32, '0')}`,
+        ),
+      ];
+      const linked = new DiOffice({
+        store: new AgentStateStore(),
+        discoveryPath: '/sandbox/backend-discovery.json',
+        contractVersion: 2,
+        deps: {
+          readDiscovery: () => ({ ok: true, endpoint: { port: 1, token: 't' } }),
+          request: async (): Promise<BackendResult> => ({
+            kind: 'http',
+            status: 200,
+            headers: { 'x-di-freshness-health': 'fresh' },
+            body: edited,
+            bodyProblem: null,
+          }),
+          nowMs: () => t0,
+          log: () => undefined,
+        },
+      });
+      await linked.poll();
+      const message = linked.officeStateMessage();
+      linked.stop();
+      return message;
+    };
+    const links64 = await withLinks(64);
+    const links70 = await withLinks(70);
+    expect(live.live).toBe(true);
+    expect(stale.live).toBe(false);
+    const doc = {
+      fixture: true,
+      label:
+        'FIXTURE — the evidence library of artifact-content-v1 as ONE real DiOffice projects it ' +
+        'and relays every exported backend content answer; then the same body polled after it ' +
+        'expired; links64/links70: the same body with its ONE verification record linking 64 / 70 ' +
+        'artifacts (synthetic extra ids), each polled by a fresh DiOffice — SYNTHETIC ' +
+        'VISUAL/KEYBOARD/SECURITY TEST; evidences nothing about any live Mission',
+      derived_from: {
+        path: EVIDENCE_SOURCE,
+        sha256: crypto.createHash('sha256').update(raw).digest('hex'),
+      },
+      generator: 'server/__tests__/diOfficeStateExport.test.ts',
+      states: { live, stale, links64, links70 },
+      replies,
+    };
+    const text = JSON.stringify(doc, null, 2) + '\n';
+    const target = path.join(ROOT, EVIDENCE_TARGET);
+    if (process.env.DI_EXPORT_OFFICE_STATE === '1') fs.writeFileSync(target, text);
+    expect(fs.readFileSync(target, 'utf-8')).toBe(text);
+  });
+
+  /**
+   * item 2 (completed-Mission artifacts): the evidence library of the HISTORICAL backend export —
+   * a COMPLETED Mission observed through the task-native producer — as ONE real DiOffice projects
+   * it and relays every exported content answer; then the same body after it expired (STALE), and
+   * the same body with the completed Mission's execution identity MOVED (a synthetic second
+   * identity and cursor), as a listing that moved after a read.
+   */
+  it('the committed historical states equal one DiOffice reading the historical export', async () => {
+    const raw = fs.readFileSync(path.join(ROOT, HISTORICAL_SOURCE));
+    const fixture = JSON.parse(raw.toString('utf-8')) as {
+      catalog_answer: { response: { generated_at: number; missions: Array<Record<string, any>> } };
+      content_answers: Record<string, { artifact_id: string; mission_ref: string; cursor: string }>;
+    };
+    const t0 = fixture.catalog_answer.response.generated_at * 1000;
+    let clockMs = t0;
+    let body: unknown = fixture.catalog_answer;
+    let answer: unknown = null;
+    const office = new DiOffice({
+      store: new AgentStateStore(),
+      discoveryPath: '/sandbox/backend-discovery.json',
+      contractVersion: 2,
+      deps: {
+        readDiscovery: () => ({ ok: true, endpoint: { port: 1, token: 't' } }),
+        request: async (): Promise<BackendResult> => ({
+          kind: 'http',
+          status: 200,
+          headers: { 'x-di-freshness-health': 'fresh' },
+          body,
+          bodyProblem: null,
+        }),
+        requestArtifact: async (): Promise<BackendResult> => ({
+          kind: 'http',
+          status: 200,
+          headers: {},
+          body: answer,
+          bodyProblem: null,
+        }),
+        nowMs: () => clockMs,
+        log: () => undefined,
+      },
+    });
+    await office.poll();
+    const live = office.officeStateMessage();
+    const replies: Record<string, unknown> = {};
+    for (const name of Object.keys(fixture.content_answers).sort()) {
+      const a = fixture.content_answers[name];
+      answer = a;
+      clockMs += 1_000;
+      const sent: unknown[] = [];
+      await office.readEvidence(
+        {
+          type: 'diEvidenceRead',
+          missionRef: a.mission_ref,
+          artifactId: a.artifact_id,
+          cursor: a.cursor,
+        },
+        (m) => sent.push(m),
+      );
+      expect(sent).toHaveLength(1);
+      replies[name] = sent[0];
+    }
+    const moved = JSON.parse(
+      JSON.stringify(fixture.catalog_answer),
+    ) as typeof fixture.catalog_answer;
+    for (const m of moved.response.missions) {
+      const identity = m.mission_state?.execution_identity;
+      if (identity && identity.state === 'established') {
+        identity.identity_sha256 = 'a'.repeat(64);
+        identity.cursor_sha256 = 'b'.repeat(64);
+      }
+    }
+    body = moved;
+    clockMs += 1_000;
+    await office.poll();
+    const movedState = office.officeStateMessage();
+    body = fixture.catalog_answer;
+    clockMs = t0 + 3_600_000;
+    await office.poll();
+    const stale = office.officeStateMessage();
+    office.stop();
+    expect(live.live).toBe(true);
+    expect(stale.live).toBe(false);
+    const doc = {
+      fixture: true,
+      label:
+        'FIXTURE — the evidence library of artifact-content-historical-v1 (a COMPLETED Mission, ' +
+        'observed through the task-native producer) as ONE real DiOffice projects it and relays ' +
+        'every exported backend content answer; moved: the same body with a SYNTHETIC second ' +
+        'execution identity and cursor; then the same body polled after it expired — SYNTHETIC ' +
+        'VISUAL/KEYBOARD/SECURITY TEST; seeded lifecycle facts, isolated principals and supplied ' +
+        'inputs are TEST DATA: no real dispatch, execution success, verification or human ' +
+        'authorization; evidences nothing about any live Mission',
+      derived_from: {
+        path: HISTORICAL_SOURCE,
+        sha256: crypto.createHash('sha256').update(raw).digest('hex'),
+      },
+      generator: 'server/__tests__/diOfficeStateExport.test.ts',
+      states: { live, moved: movedState, stale },
+      replies,
+    };
+    const text = JSON.stringify(doc, null, 2) + '\n';
+    const target = path.join(ROOT, HISTORICAL_TARGET);
     if (process.env.DI_EXPORT_OFFICE_STATE === '1') fs.writeFileSync(target, text);
     expect(fs.readFileSync(target, 'utf-8')).toBe(text);
   });

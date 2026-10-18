@@ -67,10 +67,19 @@ recorded digest anywhere, so its bytes are NOT digest-anchored; the
 canonical linkage and the corroboration above are all there is, and this
 module never invents a digest or a binding. Nothing here writes, repairs or
 reinterprets a task record, and no other file, frozen capture or
-transcript is ever consulted.
+transcript is ever consulted — with ONE exception, item 2 E2's
+reviewer-declared findings SIBLING record (``<task>-round-NN.findings.json``,
+``review_findings`` below): named by the task's ``last_review_findings``
+reference, opened by the SAME descent under the EXPECTED name only, read one
+byte at a time within its bound, digest-checked against the reference and
+bound to this round's reviewer and exact preamble bytes. It is written by the
+local review gate from the routed reviewer's explicit findings envelope; this
+module never reads a transcript byte to obtain it.
 """
 
 import errno
+import hashlib
+import json
 import os
 import re
 import stat
@@ -96,13 +105,14 @@ class _Refused(Exception):
 
 
 def block(state, problem=None, record=None, gate=None, verdict=None,
-          currency=None, task_status=None):
-    """One review block (``contract_v2.REVIEW_KEYS``)."""
+          currency=None, task_status=None, findings=None):
+    """One review block (``contract_v2.REVIEW_KEYS`` plus ``findings``)."""
     return {"state": state, "problem": problem, "record": record,
             "gate": gate, "verdict": verdict, "currency": currency,
             "task_status": task_status,
             "integrity": (v2.INTEGRITY_LINKAGE_CORROBORATED
-                          if state == v2.REVIEW_ADMITTED else None)}
+                          if state == v2.REVIEW_ADMITTED else None),
+            v2.REVIEW_FINDINGS_KEY: findings}
 
 
 def expected_name(task_id, rounds):
@@ -159,7 +169,8 @@ def canonical_review(root, task, expected_task_id):
             raise _Refused(v2.PROBLEM_REVIEW_FILE_OUTSIDE)
         if os.path.basename(recorded) != name:
             raise _Refused(v2.PROBLEM_REVIEW_FILE_NAME)
-        record = parse_preamble(read_preamble(root, name))
+        lines = read_preamble(root, name)
+        record = parse_preamble(lines)
         if record["round"] != rounds:
             raise _Refused(v2.PROBLEM_REVIEW_ROUND_DISAGREES)
         token = record["protocol_token"]
@@ -168,10 +179,156 @@ def canonical_review(root, task, expected_task_id):
     except _Refused as exc:
         return block(v2.REVIEW_REFUSED, exc.problem, task_status=status)
     parsed = token in v2.VERDICTS
+    # The verdict above is complete BEFORE findings are looked at; nothing
+    # about findings can change it.
     return block(v2.REVIEW_ADMITTED, record=record,
                  gate=v2.GATE_PARSED if parsed else v2.GATE_UNPARSED,
                  verdict=token if parsed else None, currency=currency,
-                 task_status=status)
+                 task_status=status,
+                 findings=review_findings(root, task, task_id, record, lines))
+
+
+# -- reviewer-declared PUBLIC findings (item 2 E2) ----------------------------
+#
+# Read ONLY from the sibling record the local review gate persisted
+# (``herdctl review-decision``): the task's ``last_review_findings`` reference
+# names it and its sha256; the file is opened by the SAME descent as the
+# preamble, under the EXPECTED name only (the reference is compared, never
+# opened), read within ``MAX_RECORD_BYTES``, and must be EXACTLY the
+# contract's record (``target_runtime.review_findings.validate_record``) for this task,
+# this round, this reviewer and this preamble's exact bytes. The transcript is
+# never read: the preamble digest is over the bytes the marker-bounded
+# preamble read already holds.
+
+FINDINGS_REFERENCE_KEY = "last_review_findings"
+_REFERENCE_KEYS = ("state", "problem", "file", "sha256", "count", "round")
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+#: The descent's refusals, as the findings record's own.
+_DESCENT_TO_FINDINGS = {
+    v2.PROBLEM_REVIEW_NOT_CONTAINED: v2.PROBLEM_FINDINGS_NOT_CONTAINED,
+    v2.PROBLEM_REVIEW_ROOT_CHANGED: v2.PROBLEM_FINDINGS_ROOT_CHANGED,
+    v2.PROBLEM_REVIEW_ABSENT: v2.PROBLEM_FINDINGS_ABSENT,
+    v2.PROBLEM_REVIEW_UNREADABLE: v2.PROBLEM_FINDINGS_UNREADABLE,
+    v2.PROBLEM_REVIEW_NOT_REGULAR: v2.PROBLEM_FINDINGS_NOT_REGULAR,
+    v2.PROBLEM_REVIEW_HARDLINK: v2.PROBLEM_FINDINGS_HARDLINK,
+    v2.PROBLEM_REVIEW_WRITABLE: v2.PROBLEM_FINDINGS_WRITABLE,
+}
+
+
+def findings_block(state, problem=None, record=None):
+    """One findings block (``contract_v2.FINDINGS_KEYS``)."""
+    if record is None:
+        return {"state": state, "problem": problem, "count": None,
+                "items": [], "candidate_sha256": None, "routed_at": None,
+                "linkage": None, "provenance": None}
+    return {"state": state, "problem": None, "count": record["count"],
+            "items": [dict(f) for f in record["findings"]],
+            "candidate_sha256": record["candidate_sha256"],
+            "routed_at": record["routed_at"], "linkage": record["linkage"],
+            "provenance": record["provenance"]}
+
+
+def findings_name(task_id, rounds):
+    """The canonical sibling name the gate writes for a round's findings."""
+    return "%s-round-%02d.findings.json" % (task_id, rounds)
+
+
+def _reference_ok(reference):
+    if type(reference) is not dict or set(reference) != set(_REFERENCE_KEYS):
+        return False
+    rounds, state = reference["round"], reference["state"]
+    if type(rounds) is not int or not 1 <= rounds <= v2.MAX_REVIEW_ROUND:
+        return False
+    # Closed TYPES before any lookup: a state or problem that arrived as a
+    # list or an object is malformed, never a dict key (round 15 F3: an
+    # unhashable state raised and dropped the whole chain observation).
+    if type(state) is not str:
+        return False
+    if reference["problem"] is not None and type(
+            reference["problem"]) is not str:
+        return False
+    if state == v2.FINDINGS_REFERENCE_RECORDED:
+        return (reference["problem"] is None
+                and type(reference["file"]) is str
+                and type(reference["sha256"]) is str
+                and _DIGEST.fullmatch(reference["sha256"]) is not None
+                and type(reference["count"]) is int
+                and 0 <= reference["count"] <= v2.MAX_FINDINGS)
+    allowed = {v2.FINDINGS_NOT_RECORDED: v2.FINDINGS_NOT_RECORDED_PROBLEMS,
+               v2.FINDINGS_REFUSED: v2.FINDINGS_WRITER_PROBLEMS}.get(state)
+    return (allowed is not None and reference["problem"] in allowed
+            and reference["file"] is None and reference["sha256"] is None
+            and reference["count"] is None)
+
+
+def _read_record(descriptor):
+    """At most ``MAX_FINDINGS_RECORD_BYTES`` of the record, ONE byte at a
+    time like every read in this module; one byte more refuses."""
+    data = bytearray()
+    while True:
+        try:
+            byte = os.read(descriptor, 1)
+        except OSError:
+            raise _Refused(v2.PROBLEM_FINDINGS_UNREADABLE)
+        if not byte:
+            return bytes(data)
+        data += byte
+        if len(data) > v2.MAX_FINDINGS_RECORD_BYTES:
+            raise _Refused(v2.PROBLEM_FINDINGS_OVER_BOUND)
+
+
+def review_findings(root, task, task_id, record, lines):
+    """The findings block of an ADMITTED review whose preamble ``record``
+    was parsed from ``lines``; never raises."""
+    if FINDINGS_REFERENCE_KEY not in task:
+        return findings_block(v2.FINDINGS_NOT_RECORDED,
+                              v2.PROBLEM_FINDINGS_LEGACY)
+    reference = task[FINDINGS_REFERENCE_KEY]
+    if not _reference_ok(reference):
+        return findings_block(v2.FINDINGS_REFUSED,
+                              v2.PROBLEM_FINDINGS_REFERENCE)
+    if reference["round"] != record["round"]:
+        return findings_block(v2.FINDINGS_REFUSED, v2.PROBLEM_FINDINGS_ROUND)
+    if reference["state"] == v2.FINDINGS_NOT_RECORDED:
+        return findings_block(v2.FINDINGS_NOT_RECORDED, reference["problem"])
+    if reference["state"] == v2.FINDINGS_REFUSED:
+        return findings_block(v2.FINDINGS_REFUSED, reference["problem"])
+    name = findings_name(task_id, record["round"])
+    if reference["file"] != name:      # compared, never opened
+        return findings_block(v2.FINDINGS_REFUSED,
+                              v2.PROBLEM_FINDINGS_REFERENCE)
+    try:
+        data = _descend(root, name, _read_record)
+    except _Refused as exc:
+        return findings_block(v2.FINDINGS_REFUSED, _DESCENT_TO_FINDINGS.get(
+            exc.problem, exc.problem))
+    if hashlib.sha256(data).hexdigest() != reference["sha256"]:
+        return findings_block(v2.FINDINGS_REFUSED,
+                              v2.PROBLEM_FINDINGS_DIGEST_MISMATCH)
+    try:
+        parsed = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return findings_block(v2.FINDINGS_REFUSED,
+                              v2.PROBLEM_FINDINGS_NOT_JSON)
+    try:
+        persisted = v2.validate_findings_record(parsed)
+    except v2.contract.ContractError:
+        return findings_block(v2.FINDINGS_REFUSED, v2.PROBLEM_FINDINGS_SHAPE)
+    for problem, agrees in (
+            (v2.PROBLEM_FINDINGS_TASK, persisted["task_id"] == task_id),
+            (v2.PROBLEM_FINDINGS_ROUND, persisted["round"] == record["round"]),
+            (v2.PROBLEM_FINDINGS_REVIEWER,
+             (persisted["reviewer_logical"], persisted["reviewer_agent"])
+             == (record["reviewer_logical"], record["reviewer_agent"])),
+            (v2.PROBLEM_FINDINGS_PREAMBLE,
+             persisted["preamble_sha256"] == hashlib.sha256(
+                 b"\n".join(lines) + b"\n").hexdigest()),
+            (v2.PROBLEM_FINDINGS_COUNT,
+             persisted["count"] == reference["count"])):
+        if not agrees:
+            return findings_block(v2.FINDINGS_REFUSED, problem)
+    return findings_block(v2.FINDINGS_PRESENT if persisted["count"]
+                          else v2.FINDINGS_EMPTY, record=persisted)
 
 
 def _identity(info):
@@ -183,6 +340,15 @@ def read_preamble(root, name):
     review file ``name``, by descriptor-relative descent through the
     expected components; raises ``_Refused``. No byte after the marker
     line is ever read."""
+    return _descend(root, name, _read_until_marker)
+
+
+def _descend(root, name, read_leaf):
+    """``read_leaf(leaf_descriptor)`` of ``root``'s ``.herd/state/reviews/name``,
+    reached by descriptor-relative descent through the expected components
+    (no link followed, a regular file with one link, not group/other
+    writable), with every identity re-checked after the read; raises
+    ``_Refused`` with the review codes."""
     try:
         pinned = os.lstat(root)
     except OSError:
@@ -227,7 +393,7 @@ def read_preamble(root, name):
             raise _Refused(v2.PROBLEM_REVIEW_HARDLINK)
         if stat.S_IMODE(info.st_mode) & WRITABLE_BY_OTHERS:
             raise _Refused(v2.PROBLEM_REVIEW_WRITABLE)
-        lines = _read_until_marker(leaf)
+        lines = read_leaf(leaf)
         # Re-check, AFTER the read, that the root and every component are
         # still the ones descended through (a replaced one refuses).
         try:

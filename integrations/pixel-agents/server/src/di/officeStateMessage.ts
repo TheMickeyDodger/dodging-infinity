@@ -7,6 +7,7 @@
 
 import type {
   DiChainObservation,
+  DiEvidenceLibrary,
   DiMember,
   DiMission,
   DiMissionV2,
@@ -196,6 +197,35 @@ function missionV2(m: MissionPresentation): DiMissionV2 {
   };
 }
 
+/** item 2: the evidence library on the wire, exactly as presented (copied, never shared). */
+function evidenceLibrary(m: MissionPresentation): DiEvidenceLibrary | null {
+  const e = m.evidence;
+  if (e === null) return null;
+  return {
+    cursor: e.cursor,
+    currency: e.currency,
+    currencyReason: e.currencyReason,
+    execution: { ...e.execution },
+    contentReads: { ...e.contentReads },
+    artifacts: {
+      ...e.artifacts,
+      items: e.artifacts.items.map((a) => ({ ...a, content: { ...a.content } })),
+    },
+    verification: {
+      ...e.verification,
+      items: e.verification.items.map((r) => ({ ...r, artifactIds: [...r.artifactIds] })),
+    },
+    reviews: {
+      ...e.reviews,
+      items: e.reviews.items.map((r) => ({
+        ...r,
+        findings: { ...r.findings, items: r.findings.items.map((f) => ({ ...f })) },
+      })),
+    },
+    receipts: { ...e.receipts, items: e.receipts.items.map((r) => ({ ...r })) },
+  };
+}
+
 function chainObservation(view: OfficeView): DiChainObservation {
   const c = view.chainObservation;
   return c === null
@@ -235,6 +265,7 @@ function mission(m: MissionPresentation, characterIdFor: CharacterIdFor): DiMiss
     ambiguity: observed(m.ambiguity),
     members: { state: members.state, reason: members.reason, members: members.items },
     v2: missionV2(m),
+    ...(m.evidence === null ? {} : { evidence: evidenceLibrary(m)! }),
     ...(m.herdrTask === null
       ? {}
       : { herdrTask: { ...m.herdrTask, rootAliases: [...m.herdrTask.rootAliases] } }),

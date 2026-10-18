@@ -283,7 +283,13 @@ async function main(): Promise<void> {
     // reconnected): the client knows it is a DI office before any agentCreated can arrive.
     onConnected: (send) => office.sendOfficeState(send),
     onClientMessage: (msg, send) => {
-      const disposition = handleDiClientMessage(msg, send, { store, cache, extensionVersion, ambientSprites });
+      const disposition = handleDiClientMessage(msg, send, {
+        store,
+        cache,
+        extensionVersion,
+        ambientSprites,
+        readEvidence: (m, reply) => void office.readEvidence(m, reply),
+      });
       if (typeof disposition === 'object') {
         // The type and the reason only — never the payload.
         console.warn(`[Pixel Agents DI] refused ${String(msg.type)}: ${disposition.refused}`);

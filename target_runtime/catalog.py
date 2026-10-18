@@ -288,6 +288,9 @@ class CatalogService(object):
         self._uncertain = False
         self._last_refresh = None
         self._cached = None
+        # The evidence library's content reads (``artifact_content``): ONE
+        # at a time per owner; a second is refused, never queued.
+        self._content_slot = threading.Lock()
 
     def _held(self):
         return self._uncertain or (self._worker is not None
@@ -319,6 +322,45 @@ class CatalogService(object):
         (``contract.response_freshness`` for 1,
         ``contract_v2.response_freshness_v2`` for 2)."""
         return self._freshness(response, now)
+
+    def artifact_content(self, mission_ref, artifact_id, cursor):
+        """The evidence library's ONE content read
+        (``target_runtime.artifact_content``): a recorded Mission Core
+        result artifact, by reference, corroborated by this owner's last
+        refreshed answer. Version 2 owners only; refused after shutdown;
+        one read at a time (a second is refused, never queued). Always an
+        answer; never starts a refresh."""
+        # Imported here: a version 1 process stays within its accepted
+        # import boundary until a content read is asked of it.
+        from target_runtime import artifact_content as content_module
+        if self._contract_version == 1:
+            return content_module.refusal(
+                content_module.PROBLEM_CONTRACT_VERSION, "this owner serves"
+                " query contract version 1, which admits no artifact"
+                " content", mission_ref, artifact_id, cursor, self._now())
+        with self._mutex:
+            accepting = self._accepting
+        if not accepting:
+            return content_module.refusal(
+                content_module.PROBLEM_SHUT_DOWN, "this owner was shut down"
+                " and takes no new work", mission_ref, artifact_id, cursor,
+                self._now())
+        if not self._content_slot.acquire(False):
+            return content_module.refusal(
+                content_module.PROBLEM_BUSY, "another content read is in"
+                " progress; nothing was read", mission_ref, artifact_id,
+                cursor, self._now())
+        try:
+            return content_module.read(
+                self._registry, self._corroborating_answer, self._freshness,
+                self._now, mission_ref, artifact_id, cursor)
+        finally:
+            self._content_slot.release()
+
+    def _corroborating_answer(self):
+        """The last refreshed answer, as held (judged by the caller)."""
+        with self._mutex:
+            return self._cached
 
     def shutdown(self):
         """Refuse all new work; keep responsibility for existing work."""

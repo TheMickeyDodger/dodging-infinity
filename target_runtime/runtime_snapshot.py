@@ -970,7 +970,41 @@ def _project_chains(payload):
     out = {"snapshot": snapshot, "chain_observation": value}
     if "stable_names" in payload:
         out["native_cwd"] = _native_cwd(payload, live)
+    _fit_findings(out)
     return out
+
+
+#: Item 2 E2: the most bytes this child's ONE printed value may take so the
+#: service's read cap (``herdr.runtime.DIAGNOSTIC_READ_MAX_BYTES``) never cuts
+#: it; the margin covers the newline and the read's own accounting.
+MAX_FINDINGS_OUTPUT_BYTES = engine_runtime.DIAGNOSTIC_READ_MAX_BYTES - 256
+
+
+def _printed_size(out):
+    return len(json.dumps({"ok": True, "value": out}, sort_keys=True,
+                          separators=(",", ":")))
+
+
+def _fit_findings(out):
+    """Item 2 E2: reviewer-declared findings never push the capture over its
+    read cap. While the value would not fit, the LAST root still carrying
+    PRESENT findings has them replaced by an honest refusal
+    (``findings_capture_over_budget``); a kept block is never cut, and no
+    other fact changes. If nothing is left to degrade, the cap decides as it
+    always did."""
+    roots = out["chain_observation"]["roots"]
+    while _printed_size(out) > MAX_FINDINGS_OUTPUT_BYTES:
+        for entry in reversed(roots):
+            findings = entry["review"].get(chain_contract.REVIEW_FINDINGS_KEY)
+            if findings is not None and findings["state"] == (
+                    chain_contract.FINDINGS_PRESENT):
+                entry["review"][chain_contract.REVIEW_FINDINGS_KEY] = (
+                    review_record.findings_block(
+                        chain_contract.FINDINGS_REFUSED,
+                        chain_contract.PROBLEM_FINDINGS_CAPTURE_BUDGET))
+                break
+        else:
+            return
 
 
 def boundary_main(argv):

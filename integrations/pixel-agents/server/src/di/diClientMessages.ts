@@ -22,6 +22,7 @@ import { PALETTE_COUNT } from '../constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../layoutPersistence.js';
 import { readAmbientState, writeAmbientState } from './ambientStatePersistence.js';
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
+import { parseEvidenceRead } from './evidenceContent.js';
 
 export type DiSend = (message: Record<string, unknown>) => void;
 
@@ -31,6 +32,11 @@ export interface DiMessageContext {
   extensionVersion: string;
   /** The bounded ambient character sheets (ambientSprites.ts), loaded once at startup. */
   ambientSprites?: AmbientSpriteSheet[];
+  /**
+   * item 2: the office's evidence content read (DiOffice.readEvidence). It answers the asking
+   * connection only, by an admitted reference; absent, the message is refused.
+   */
+  readEvidence?: (msg: Record<string, unknown>, send: DiSend) => void;
 }
 
 /** What the handler did with one message (returned for tests and diagnostics). */
@@ -47,6 +53,7 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'setGhostHeadlessAgents',
   'setShowAreas',
   'saveAmbientState',
+  'diEvidenceRead',
 ] as const;
 
 /**
@@ -161,6 +168,17 @@ export function handleDiClientMessage(
       const reason = validateDiVersion(msg.version);
       if (reason !== null) return { refused: reason };
       adapter?.setSetting(KEY_LAST_SEEN_VERSION, msg.version as string);
+      return 'handled';
+    }
+
+    // item 2 (evidence library): a READ, by an admitted reference only — never a path. Nothing
+    // is written; the office answers this connection with exactly one diEvidenceContent.
+    case 'diEvidenceRead': {
+      if (parseEvidenceRead(msg) === null) {
+        return { refused: 'diEvidenceRead is not exactly an admitted reference' };
+      }
+      if (!ctx.readEvidence) return { refused: 'no evidence reader in this office' };
+      ctx.readEvidence(msg, send);
       return 'handled';
     }
 

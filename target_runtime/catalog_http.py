@@ -47,6 +47,13 @@ Routes, ALL ``GET``; nothing else exists:
   key is always present; a null value is JSON ``null``, never an absent key.
 - ``/diagnostics``: the same diagnostics answer ``serve`` gives.
 - ``/healthz``: liveness only; it starts nothing and reads no source.
+- ``/artifact`` with EXACTLY ``mission_ref``, ``artifact_id`` and ``cursor``
+  (each once, each of a fixed grammar: a reference, never a path, root or
+  URL): the evidence library's one content read
+  (``CatalogService.artifact_content``, ``target_runtime.artifact_content``),
+  ``200`` for every answer, admitted or refused by its own code; any other
+  query is ``400``. It never starts a refresh: it is corroborated by the
+  owner's last refreshed answer, or refused.
 
 SERVE-TIME FRESHNESS (``serve_time_answer``). Immediately before a
 ``/catalog`` body is written, on the owner's own clock, the response is
@@ -176,7 +183,9 @@ _LOOPBACK_ADDRESS = ipaddress.IPv4Address(LOOPBACK_HOST)
 ROUTE_CATALOG = "/catalog"
 ROUTE_DIAGNOSTICS = "/diagnostics"
 ROUTE_HEALTHZ = "/healthz"
-ROUTES = (ROUTE_CATALOG, ROUTE_DIAGNOSTICS, ROUTE_HEALTHZ)
+#: The evidence library's content route (``target_runtime.artifact_content``).
+ROUTE_ARTIFACT = "/artifact"
+ROUTES = (ROUTE_CATALOG, ROUTE_DIAGNOSTICS, ROUTE_HEALTHZ, ROUTE_ARTIFACT)
 CONTENT_TYPE = "application/json; charset=utf-8"
 HEADER_FRESHNESS_HEALTH = "X-DI-Freshness-Health"
 HEADER_FRESHNESS_PROBLEM = "X-DI-Freshness-Problem"
@@ -189,6 +198,14 @@ DISCOVERY_UNREADABLE = "discovery_file_unreadable"
 DISCOVERY_MALFORMED = "discovery_file_malformed"
 _WAIT_FIELD = "wait_seconds"
 _WAIT_TEXT = re.compile(r"[0-9]{1,3}(\.[0-9]{1,3})?")
+#: ``/artifact``'s three fields and their grammar: a RE-DECLARATION of
+#: ``artifact_content``'s (this module may not import it; parity pinned by
+#: test). A reference, never a path, root or URL.
+_ARTIFACT_FIELDS = (
+    ("mission_ref", re.compile(r"[a-z0-9][a-z0-9._-]{0,63}:mn-[0-9a-f]{32}")),
+    ("artifact_id", re.compile(r"mf-[0-9a-f]{32}")),
+    ("cursor", re.compile(r"[0-9a-f]{64}")),
+)
 _REFUSED_METHODS = ("HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
                     "TRACE", "CONNECT")
 # The standard library's own refusals, mapped onto this surface's statuses:
@@ -263,6 +280,28 @@ def _wait_seconds(query):
     if not 0 < wait <= catalog_module.MAX_WAIT_SECONDS:
         return None
     return wait
+
+
+def _artifact_query(query):
+    """``(mission_ref, artifact_id, cursor)`` of an ``/artifact`` query
+    string: exactly those three fields, each once, each of its fixed
+    grammar; None when refused."""
+    try:
+        fields = parse_qsl(query, keep_blank_values=True,
+                           strict_parsing=True,
+                           max_num_fields=len(_ARTIFACT_FIELDS))
+    except ValueError:
+        return None
+    values = dict(fields)
+    if len(fields) != len(_ARTIFACT_FIELDS) or len(values) != len(fields):
+        return None
+    found = []
+    for name, grammar in _ARTIFACT_FIELDS:
+        value = values.get(name)
+        if value is None or grammar.fullmatch(value) is None:
+            return None
+        found.append(value)
+    return tuple(found)
 
 
 # -- the discovery file ----------------------------------------------------
@@ -385,7 +424,7 @@ def read_discovery_file(path):
 # -- the HTTP surface ------------------------------------------------------
 
 class CatalogRequestHandler(http.server.BaseHTTPRequestHandler):
-    """Answers the three read routes; refuses everything else."""
+    """Answers the four read routes; refuses everything else."""
 
     timeout = REQUEST_TIMEOUT_SECONDS
 
@@ -480,6 +519,13 @@ class CatalogRequestHandler(http.server.BaseHTTPRequestHandler):
                     " (0, %d]" % catalog_module.MAX_WAIT_SECONDS, None))
                 return
             self._catalog(200, owner.request(wait))
+            return
+        if target.path == ROUTE_ARTIFACT:
+            request = _artifact_query(target.query)
+            if request is None:
+                self.send_error(400)
+                return
+            self._reply(200, encode_answer(owner.artifact_content(*request)))
             return
         if target.query:
             self.send_error(400)

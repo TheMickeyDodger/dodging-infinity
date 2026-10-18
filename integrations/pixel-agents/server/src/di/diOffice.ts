@@ -29,7 +29,7 @@ import {
   DI_CONSUMER_POLL_INTERVAL_SECONDS,
 } from '../constants.js';
 import type { AgentState } from '../types.js';
-import type { BackendResult } from './backendClient.js';
+import type { ArtifactReference, BackendResult } from './backendClient.js';
 import { requestBackend } from './backendClient.js';
 import type { BackendEndpoint, DiscoveryResult } from './backendDiscovery.js';
 import { readBackendDiscovery } from './backendDiscovery.js';
@@ -39,6 +39,16 @@ import {
   DEFAULT_QUERY_CONTRACT_VERSION,
 } from './catalogContract.js';
 import { parseEnvelope } from './catalogProjection.js';
+import {
+  admitAgainstView,
+  backendMessage,
+  EVIDENCE_MIN_INTERVAL_MS,
+  EVIDENCE_REQUEST_TIMEOUT_MS,
+  executionBasisListed,
+  officeRefusal,
+  parseArtifactContentAnswer,
+  parseEvidenceRead,
+} from './evidenceContent.js';
 import type { CharacterIdentity } from './identityMap.js';
 import { DiIdentityMap } from './identityMap.js';
 import { buildDiOfficeStateMessage } from './officeStateMessage.js';
@@ -55,6 +65,11 @@ export interface DiOfficeDeps {
   request: (endpoint: BackendEndpoint) => Promise<BackendResult>;
   nowMs: () => number;
   log: (line: string) => void;
+  /**
+   * item 2: the backend's /artifact read. Defaults to the real client ONLY with the real catalog
+   * client; a substituted backend (fixture preview, tests) without it has no content reads.
+   */
+  requestArtifact?: (endpoint: BackendEndpoint, ref: ArtifactReference) => Promise<BackendResult>;
 }
 
 export interface DiOfficeOptions {
@@ -86,6 +101,9 @@ export class DiOffice {
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private reevaluateTimer: ReturnType<typeof setInterval> | null = null;
   private inFlight = false;
+  /** item 2: one content read at a time, at most one per EVIDENCE_MIN_INTERVAL_MS. */
+  private evidenceInFlight = false;
+  private lastEvidenceReadMs: number | null = null;
   private stopped = true;
   private lastLogged = '';
 
@@ -105,6 +123,15 @@ export class DiOffice {
           })),
       nowMs: options.deps?.nowMs ?? Date.now,
       log: options.deps?.log ?? ((line) => console.log(line)),
+      requestArtifact:
+        options.deps?.requestArtifact ??
+        (options.deps?.request === undefined
+          ? (endpoint, ref) =>
+              requestBackend(endpoint, 'artifact', {
+                artifact: ref,
+                timeoutMs: EVIDENCE_REQUEST_TIMEOUT_MS,
+              })
+          : undefined),
     };
     this.view = unavailableView('not_started', this.nowSeconds(), this.contractVersion);
   }
@@ -164,6 +191,101 @@ export class DiOffice {
   private runtimeCharacterIdFor(agent: RuntimeAgentPresentation): number | null {
     const id = this.identities.numberFor(runtimeIdentity(agent));
     return this.characters.has(id) ? id : null;
+  }
+
+  /**
+   * item 2: ONE evidence content read for the client that asked (`send` is that connection
+   * only). Admitted against the CURRENT listing before the backend is asked, and again after it
+   * answers; every outcome is exactly one diEvidenceContent. A malformed message is ignored here
+   * (the message dispatcher refuses it before this is reached). Logs carry codes only.
+   */
+  async readEvidence(
+    msg: Record<string, unknown>,
+    send: (message: Record<string, unknown>) => void,
+  ): Promise<void> {
+    const ref = parseEvidenceRead(msg);
+    if (ref === null) return;
+    const reply = (m: ReturnType<typeof officeRefusal>): void =>
+      send(m as unknown as Record<string, unknown>);
+    if (this.evidenceInFlight) {
+      reply(officeRefusal(ref, 'read_in_progress', 'another content read is in progress'));
+      return;
+    }
+    const now = this.deps.nowMs();
+    if (
+      this.lastEvidenceReadMs !== null &&
+      now - this.lastEvidenceReadMs < EVIDENCE_MIN_INTERVAL_MS
+    ) {
+      reply(officeRefusal(ref, 'read_rate_limited', 'at most one content read per second'));
+      return;
+    }
+    const admitted = admitAgainstView(this.view, ref);
+    if (!admitted.ok) {
+      reply(officeRefusal(ref, admitted.problem, admitted.detail));
+      return;
+    }
+    const requestArtifact = this.deps.requestArtifact;
+    if (requestArtifact === undefined) {
+      reply(
+        officeRefusal(
+          ref,
+          'content_reads_not_supported_by_this_backend',
+          'this office reads a substituted backend with no content route',
+        ),
+      );
+      return;
+    }
+    const discovery = this.deps.readDiscovery(this.discoveryPath);
+    if (!discovery.ok) {
+      reply(officeRefusal(ref, 'backend_discovery_unavailable', discovery.problem));
+      return;
+    }
+    this.evidenceInFlight = true;
+    this.lastEvidenceReadMs = now;
+    try {
+      let result: BackendResult;
+      try {
+        result = await requestArtifact(discovery.endpoint, ref);
+      } catch {
+        result = { kind: 'transport_error', problem: 'backend_network_error' };
+      }
+      let answer: ReturnType<typeof officeRefusal>;
+      if (result.kind === 'transport_error') {
+        answer = officeRefusal(ref, 'backend_unavailable', result.problem);
+      } else if (result.status !== 200) {
+        answer = officeRefusal(ref, 'backend_refused_request', `HTTP ${result.status}`);
+      } else {
+        const parsed = parseArtifactContentAnswer(result.body, ref);
+        answer = parsed.ok
+          ? backendMessage(ref, parsed.answer)
+          : officeRefusal(ref, parsed.problem, parsed.detail);
+      }
+      if (answer.state === 'admitted') {
+        // The listing may have moved while the backend read: never relay against a new one.
+        const again = admitAgainstView(this.view, ref);
+        if (!again.ok) {
+          answer = officeRefusal(ref, 'listing_moved_during_read', again.detail);
+        } else {
+          // Item 2: the backend must have read under the EXECUTION the office lists for this
+          // Mission now (bound vs historical completed execution); anything else is not relayed.
+          const listed = executionBasisListed(this.view, ref);
+          if (answer.artifact?.executionBasis !== listed) {
+            answer = officeRefusal(
+              ref,
+              'execution_basis_mismatch',
+              `the backend read under ${answer.artifact?.executionBasis ?? 'none'}; the office lists ${listed}`,
+            );
+          }
+        }
+      }
+      // Codes only: never the reference's content, locator or text.
+      this.deps.log(
+        `[Pixel Agents DI] evidence read: ${answer.decidedBy} ${answer.problem ?? 'admitted'}`,
+      );
+      reply(answer);
+    } finally {
+      this.evidenceInFlight = false;
+    }
   }
 
   /** One poll cycle. Public for tests; the loop schedules it itself. */

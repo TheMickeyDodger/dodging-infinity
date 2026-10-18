@@ -2019,6 +2019,11 @@ MISSION_ALLOWED_CONSUMERS = frozenset({
     # composer runs Mission Core's OWN observe over a read-only store shim
     # whose lock and save refuse; what it may call is pinned in (12h).
     'target_runtime/mission_state.py',
+    # Item 2 (evidence library): the ONE admitted content read re-reads the
+    # Mission Core record through the composer's load boundary and uses only
+    # PURE read helpers (journal.head_cursor, state lookups, record constants,
+    # store.activation_contract); what it may call is pinned in (12j).
+    'target_runtime/artifact_content.py',
 })
 MISSION_READ_ONLY_OPEN_FILE = 'mission/store.py'
 
@@ -2680,6 +2685,10 @@ MISSION_SOURCES_ALLOWED_CONSUMERS = frozenset({
     # Item 07: the read-only task-native reader (contract, fileread,
     # sources only); its exact imports are pinned in (12i).
     'target_runtime/herdr_task_source.py',
+    # Item 2: the ONE admitted content read (contract, contract_v2,
+    # query_v2's reviewed read ledger, registry, sources); its exact imports
+    # are pinned in (12j).
+    'target_runtime/artifact_content.py',
 })
 # Within the package, only the reader may import mission; every other module
 # stays mission-free.
@@ -3062,9 +3071,11 @@ for _node in ast.walk(_catalog_tree):
             # (pinned in 12h); the catalog itself still imports no control,
             # delivery or Mission package.
             # Item 07 adds the read-only task-native reader (pinned in 12i).
+            # Item 2 adds the one admitted content read, imported lazily by
+            # the version 2 owner's artifact_content method (pinned in 12j).
             assert {a.name for a in _node.names} <= {
-                'herdr_task_source', 'mission_state', 'runtime_snapshot'}, (
-                CATALOG_FILE, _node.lineno)
+                'artifact_content', 'herdr_task_source', 'mission_state',
+                'runtime_snapshot'}, (CATALOG_FILE, _node.lineno)
     if isinstance(_node, ast.Import):
         for _alias in _node.names:
             assert _alias.name.split('.')[0] not in (
@@ -3136,14 +3147,20 @@ assert not _catalog_http_calls & {
     _catalog_http_calls)
 assert ast.literal_eval(_catalog_http_literals['LOOPBACK_HOST']) == (
     '127.0.0.1'), 'the adapter binds the loopback literal only'
+# Item 2 (evidence library) adds ONE read route, /artifact: GET only, the
+# same access boundary, a reference (never a path); see
+# tests/test_artifact_content.py.
 assert [ast.literal_eval(_catalog_http_literals[_name.id])
         for _name in _catalog_http_literals['ROUTES'].elts] == [
-    '/catalog', '/diagnostics', '/healthz'], 'exactly the three read routes'
+    '/catalog', '/diagnostics', '/healthz', '/artifact'], (
+    'exactly the four read routes')
 
 # (12h) Query contract v2's two new target_runtime modules, pinned
 #       STRUCTURALLY so a later, broader import or call fails here:
 #       (a) target_runtime/review_record.py, NARROW canonical review record
-#           inspection: imports exactly errno/os/re/stat and
+#           inspection (and, item 2 E2, the reviewer-declared findings
+#           SIBLING record, read by the same descent): imports exactly
+#           errno/hashlib/json/os/re/stat and
 #           mission_sources.contract_v2; every os.open is read-only and
 #           no-follow and names only the pinned root, an EXPECTED component
 #           or the expected leaf (the recorded path is only compared, by
@@ -3163,9 +3180,13 @@ _rr_imports = sorted(
      for a in n.names]
     + [(n.module, a.name) for n in ast.walk(_rr_tree)
        if isinstance(n, ast.ImportFrom) for a in n.names], key=repr)
+# Item 2 E2 adds hashlib (the findings record's digest and the preamble
+# digest) and json (the bounded findings record's parse); the reader still
+# imports nothing of herdr and nothing else of mission_sources.
 assert _rr_imports == sorted([
-    (None, 'errno'), (None, 'os'), (None, 're'), (None, 'stat'),
-    ('mission_sources', 'contract_v2')], key=repr), _rr_imports
+    (None, 'errno'), (None, 'hashlib'), (None, 'json'), (None, 'os'),
+    (None, 're'), (None, 'stat'), ('mission_sources', 'contract_v2')],
+    key=repr), _rr_imports
 _rr_flags = {}
 for _node in _rr_tree.body:
     if isinstance(_node, ast.Assign) and isinstance(
@@ -3363,5 +3384,43 @@ assert mission_sources_probe.returncode == 0, (
     mission_sources_probe.returncode, mission_sources_probe.stdout,
     mission_sources_probe.stderr,
 )
+
+# (12j) Item 2 (evidence library): target_runtime/artifact_content.py, the ONE
+#       admitted content read, pinned STRUCTURALLY: exactly these imports
+#       (target_runtime.mission_state is imported LAZILY inside read(), so a
+#       version 1 process keeps its import boundary); it opens nothing
+#       itself (every byte comes through the hardened state_artifact reader,
+#       the registry's and the composer's own bounded loads); and it calls no
+#       write, replace, rename, unlink, mkdir, chmod, link, spawn, kill,
+#       Popen, save or lock, and no record_* / mint_* / apply_* / attest* /
+#       reserve* name.
+ARTIFACT_CONTENT_FILE = 'target_runtime/artifact_content.py'
+_ac_tree = ast.parse((R / ARTIFACT_CONTENT_FILE).read_text())
+_ac_imports = sorted(
+    [(None, a.name) for n in ast.walk(_ac_tree) if isinstance(n, ast.Import)
+     for a in n.names]
+    + [(n.module, a.name) for n in ast.walk(_ac_tree)
+       if isinstance(n, ast.ImportFrom) for a in n.names], key=repr)
+assert _ac_imports == sorted([
+    (None, 'os'),
+    ('mission', 'journal'), ('mission', 'record'), ('mission', 'state'),
+    ('mission', 'store'),
+    ('mission_sources', 'contract'), ('mission_sources', 'contract_v2'),
+    ('mission_sources', 'query_v2'), ('mission_sources', 'registry'),
+    ('mission_sources', 'sources'),
+    ('target_runtime', 'mission_state'), ('target_runtime', 'prepare'),
+    ('target_runtime', 'state_artifact')], key=repr), _ac_imports
+_ac_lazy = [n for n in ast.walk(_ac_tree) if isinstance(n, ast.ImportFrom)
+            and any(a.name == 'mission_state' for a in n.names)]
+assert len(_ac_lazy) == 1 and _ac_lazy[0] not in _ac_tree.body, (
+    'mission_state is imported lazily, never at module scope')
+for _node in ast.walk(_ac_tree):
+    if isinstance(_node, ast.Call):
+        _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+        assert _name not in RUNTIME_SNAPSHOT_FORBIDDEN_CALLS | {'lock'}, (
+            ARTIFACT_CONTENT_FILE, _node.lineno, _name)
+        assert not (_name or '').startswith(
+            ('record_', 'mint_', 'apply_', 'attest', 'reserve')), (
+            ARTIFACT_CONTENT_FILE, _node.lineno, _name)
 
 print('static tests: OK')

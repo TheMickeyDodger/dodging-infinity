@@ -8,6 +8,8 @@ import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
+import type { EvidenceSelection } from './components/diEvidenceFormat.js';
+import type { DiEvidenceAccess } from './components/DiEvidenceLibrary.js';
 import {
   DI_FIXTURE_BANNER,
   diCharacterLabel,
@@ -41,7 +43,11 @@ import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
 import { prepareAmbientText } from './office/ambient/ambientIntake.js';
-import { snapshotAgents, snapshotAmbient, snapshotTrainsRaw } from './office/ambient/ambientProbe.js';
+import {
+  snapshotAgents,
+  snapshotAmbient,
+  snapshotTrainsRaw,
+} from './office/ambient/ambientProbe.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -115,6 +121,8 @@ function App() {
 
   const {
     diOfficeState,
+    diEvidenceContent,
+    diClientReason,
     agents,
     selectedAgent,
     agentTools,
@@ -255,6 +263,23 @@ function App() {
   // DI office: identifiable in a browser tab (title + an original code-native favicon).
   // DI mode only — the ordinary surfaces keep their page title and icon.
   const isDiMode = diOfficeState !== null;
+
+  // item 2: the evidence library's content seam. A read names an ADMITTED reference only (never
+  // a path); the office answers this connection with one diEvidenceContent.
+  const [diEvidencePending, setDiEvidencePending] = useState<EvidenceSelection | null>(null);
+  const requestDiEvidence = useCallback((selection: EvidenceSelection) => {
+    setDiEvidencePending(selection);
+    transport.send({ type: 'diEvidenceRead', ...selection });
+  }, []);
+  const diEvidence = useMemo<DiEvidenceAccess>(
+    () => ({ content: diEvidenceContent, pending: diEvidencePending, request: requestDiEvidence }),
+    [diEvidenceContent, diEvidencePending, requestDiEvidence],
+  );
+  // Round 15 F2: a read pending when the client stops vouching for the office state is
+  // forgotten with it (its answer, if any, is dropped by the message handler).
+  useEffect(() => {
+    if (diClientReason !== null) setDiEvidencePending(null);
+  }, [diClientReason]);
   useEffect(() => {
     if (!isDiMode) return;
     document.title = DI_DOCUMENT_TITLE;
@@ -299,7 +324,11 @@ function App() {
     if (!isDiMode) return;
     const save = () => {
       const state = getOfficeState().serializeAmbient(Date.now());
-      if (state) transport.send({ type: 'saveAmbientState', state: state as unknown as Record<string, unknown> });
+      if (state)
+        transport.send({
+          type: 'saveAmbientState',
+          state: state as unknown as Record<string, unknown>,
+        });
     };
     let hiddenAt: number | null = null;
     let clockAtHide = 0;
@@ -723,7 +752,11 @@ function App() {
     const result = os.importAmbientSnapshot(intake.snapshot);
     if (result.outcome !== 'applied') return { ok: false, reason: result.reason ?? result.outcome };
     const state = os.serializeAmbient(Date.now());
-    if (state) transport.send({ type: 'saveAmbientState', state: state as unknown as Record<string, unknown> });
+    if (state)
+      transport.send({
+        type: 'saveAmbientState',
+        state: state as unknown as Record<string, unknown>,
+      });
     return {
       ok: true,
       message: `${result.residentsRestored} residents restored (${result.aboardRestored} aboard a train, ${result.waitingRestored} waiting), ${result.trainsRestored} trains; save sent (queued if disconnected), not confirmed written`,
@@ -757,7 +790,10 @@ function App() {
       const done = applied as OfficeLayout | null;
       // applied LOCALLY; the save is sent (queued while disconnected) and no write is acknowledged
       return done
-        ? { ok: true, message: `layout ${done.cols} x ${done.rows} applied; save sent (queued if disconnected), not confirmed written` }
+        ? {
+            ok: true,
+            message: `layout ${done.cols} x ${done.rows} applied; save sent (queued if disconnected), not confirmed written`,
+          }
         : { ok: false, reason: refused ?? 'refused' };
     },
     [editor],
@@ -768,7 +804,10 @@ function App() {
   const handlePasteImport = useCallback(
     (kind: 'layout' | 'ambient', text: string): PasteImportResult => {
       if (kind === 'ambient') return importAmbientText(text);
-      if (isEditDirty() && !window.confirm('Replace the current layout? Unsaved edits will be lost.'))
+      if (
+        isEditDirty() &&
+        !window.confirm('Replace the current layout? Unsaved edits will be lost.')
+      )
         return { ok: false, reason: 'cancelled: unsaved edits kept' };
       return importLayoutText(text);
     },
@@ -1014,6 +1053,7 @@ function App() {
               collapsed={diPanelCollapsed}
               onCollapsedChange={setDiPanelCollapsed}
               announced={diAnnounced}
+              evidence={diEvidence}
             />
           )}
         </>

@@ -421,6 +421,83 @@ export interface MissionReportView {
   budget: ReportFact<{ attemptsRemaining: number | null; checkpointsRemaining: number | null }>;
   evidence: ReportFact<BoundedList>;
   artifacts: ReportFact<BoundedList>;
+  /**
+   * item 2 (evidence library): the SAME two recorded collections, TYPED, so nothing is ever
+   * parsed back out of display text. STRICT: one malformed item makes the whole fact
+   * `unexpected` (rendered unavailable, never guessed). The display cap applies; `total` is the
+   * real length.
+   */
+  artifactItems: ReportFact<TypedList<ArtifactItemView>>;
+  evidenceItems: ReportFact<TypedList<EvidenceItemView>>;
+}
+
+/** A list read item by item; `items` is the shown prefix, `total` the real length. */
+export interface TypedList<T> {
+  total: number;
+  items: T[];
+}
+
+/**
+ * One RECORDED Mission Core artifact as the report states it. Metadata only: the report carries
+ * no locator, and nothing here dereferences anything. `receipt` is the delivery layer's attested
+ * marker, present only on an attested receipt artifact.
+ */
+export interface ArtifactItemView {
+  artifactId: string;
+  key: string | null;
+  role: string;
+  locatorKind: string;
+  contentDigest: string | null;
+  availableReported: boolean | null;
+  observedDigest: string | null;
+  matchesObserved: boolean | null;
+  recordedAt: number | null;
+  attested: boolean;
+  receipt: {
+    deliveryId: string | null;
+    step: string | null;
+    receiptState: string | null;
+    stepState: string | null;
+    authorizationId: string | null;
+    effectCompleted: boolean | null;
+  } | null;
+}
+
+/** One recorded evidence record (submitted; ACCEPTED only when the record says so). */
+export interface EvidenceItemView {
+  evidenceId: string;
+  requirementKey: string | null;
+  kind: string | null;
+  standing: string | null;
+  freshness: string | null;
+  accepted: boolean | null;
+  invalidated: boolean | null;
+  verifyingKind: boolean | null;
+  drifted: boolean | null;
+  unconfirmed: boolean | null;
+  bearsOnClaim: boolean | null;
+  /**
+   * The artifacts the record ITSELF references (a recorded link, never inferred), in recorded
+   * order, at most EVIDENCE_LINKS_MAX of them.
+   */
+  artifactIds: string[];
+  /** How many links the record carries: more than `artifactIds.length` only when capped. */
+  artifactIdsTotal: number;
+}
+
+/**
+ * contract v2 (item 2, completed-Mission artifacts) — the HISTORICAL execution identity the
+ * backend derived for an observed Mission Core record (`mission_state.execution_identity`):
+ * `established` ONLY for a COMPLETED record whose verified run, intent, receipt and PREPARED
+ * digest-bound workspace agree; `cursorSha256` then binds the journal head AND that identity and
+ * is what a completed Mission's content read must present. `not_reported`: the producer sends
+ * no block (nothing inferred); `unexpected`: a malformed block (never guessed).
+ */
+export interface ExecutionIdentityView {
+  state: 'not_reported' | 'established' | 'not_established' | 'not_applicable' | 'unexpected';
+  problem: string | null;
+  identitySha256: string | null;
+  cursorSha256: string | null;
 }
 
 /** contract v2 — Mission State: per-kind inputs and the allowlisted canonical report facts. */
@@ -429,6 +506,7 @@ export interface MissionStateView {
   problem: string | null;
   detail: string | null;
   report: MissionReportView | null;
+  executionIdentity: ExecutionIdentityView;
   inputs: {
     cursor: string | null;
     baseline: string | null;
@@ -456,6 +534,31 @@ export interface CanonicalReviewView {
     reviewerAgent: string;
     protocolToken: string;
   } | null;
+  /** item 2 E2: the reviewer-declared PUBLIC findings the local gate recorded (never transcript). */
+  findings: ReviewFindingsView;
+}
+
+/**
+ * item 2 E2 — the findings block of an admitted review, read STRICTLY from what the backend
+ * emitted: `not_reported` (an older producer emitted no `findings` key), the four backend states
+ * (`not_recorded` / `empty` / `present` / `refused`, with its code), or `unexpected` (any
+ * deviation from the closed shape: shown as unavailable, never guessed). Items are the
+ * reviewer's DECLARED public text; nothing here is a verdict or an approval.
+ */
+export interface ReviewFindingsView {
+  state: 'not_reported' | 'not_recorded' | 'empty' | 'present' | 'refused' | 'unexpected';
+  problem: string | null;
+  count: number | null;
+  items: Array<{
+    index: number;
+    severity: 'blocker' | 'non_blocking';
+    area: string | null;
+    line: number | null;
+    summary: string;
+  }>;
+  candidateSha256: string | null;
+  routedAt: number | null;
+  provenance: string | null;
 }
 
 /**
@@ -829,10 +932,158 @@ function projectTaskChain(raw: unknown, where: string): TaskChainView {
 const REF_TEXT_MAX = 160;
 /** Display cap for listed entries; the real total and the omitted count are always carried. */
 const REF_LIST_MAX = 32;
+/**
+ * Links kept per evidence record: Mission Core's own per-record bound (`mission/state.py`
+ * MAX_ARTIFACT_LINKS = 64), so a canonical record is never cut. A longer list (not canonical)
+ * keeps its first EVIDENCE_LINKS_MAX and its TRUE total — never a silent cut (round 15 F4).
+ */
+export const EVIDENCE_LINKS_MAX = 64;
 function refText(item: unknown): string {
   const json = JSON.stringify(item) as string | undefined;
   const text = typeof item === 'string' ? item : (json ?? String(item));
   return text.length > REF_TEXT_MAX ? `${text.slice(0, REF_TEXT_MAX - 1)}…` : text;
+}
+
+const FINDINGS_KEYS = [
+  'candidate_sha256',
+  'count',
+  'items',
+  'linkage',
+  'problem',
+  'provenance',
+  'routed_at',
+  'state',
+];
+const FINDING_KEYS = ['area', 'index', 'line', 'severity', 'summary'];
+const FINDINGS_MAX = 32;
+const FINDING_SUMMARY_MAX = 280;
+const FINDING_AREA_MAX = 200;
+const FINDINGS_PROBLEM = /^findings_[a-z_]{1,60}$/;
+const sameKeys = (o: Json, keys: string[]): boolean =>
+  Object.keys(o).sort().join('\u0000') === keys.join('\u0000');
+
+const EXECUTION_IDENTITY_KEYS = ['cursor_sha256', 'identity_sha256', 'problem', 'state'];
+const EXECUTION_PROBLEM = /^execution_[a-z_]{1,60}$/;
+
+/** The execution identity block, strictly; any deviation is `unexpected` (never guessed). */
+function projectExecutionIdentity(ms: Json): ExecutionIdentityView {
+  const none = (
+    state: ExecutionIdentityView['state'],
+    problem: string | null = null,
+  ): ExecutionIdentityView => ({ state, problem, identitySha256: null, cursorSha256: null });
+  if (!('execution_identity' in ms)) return none('not_reported');
+  const v = ms.execution_identity;
+  if (!isObject(v) || !sameKeys(v, EXECUTION_IDENTITY_KEYS)) return none('unexpected');
+  if (v.state === 'established') {
+    if (
+      v.problem !== null ||
+      typeof v.identity_sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(v.identity_sha256) ||
+      typeof v.cursor_sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(v.cursor_sha256)
+    ) {
+      return none('unexpected');
+    }
+    return {
+      state: 'established',
+      problem: null,
+      identitySha256: v.identity_sha256,
+      cursorSha256: v.cursor_sha256,
+    };
+  }
+  if (
+    (v.state === 'not_established' || v.state === 'not_applicable') &&
+    v.identity_sha256 === null &&
+    v.cursor_sha256 === null &&
+    typeof v.problem === 'string' &&
+    EXECUTION_PROBLEM.test(v.problem)
+  ) {
+    return none(v.state, v.problem);
+  }
+  return none('unexpected');
+}
+
+/** The findings block, strictly; any deviation is `unexpected` (never guessed). */
+function projectFindings(review: Json): ReviewFindingsView {
+  const none = (state: ReviewFindingsView['state'], problem: string | null = null) => ({
+    state,
+    problem,
+    count: null,
+    items: [],
+    candidateSha256: null,
+    routedAt: null,
+    provenance: null,
+  });
+  if (!('findings' in review)) return none('not_reported');
+  const f = review.findings;
+  if (f === null) return none('unexpected');
+  if (!isObject(f) || !sameKeys(f, FINDINGS_KEYS)) return none('unexpected');
+  const state = f.state;
+  if (state === 'not_recorded' || state === 'refused') {
+    const nulls = ['count', 'candidate_sha256', 'routed_at', 'linkage', 'provenance'];
+    if (
+      typeof f.problem !== 'string' ||
+      !FINDINGS_PROBLEM.test(f.problem) ||
+      !Array.isArray(f.items) ||
+      f.items.length !== 0 ||
+      nulls.some((k) => f[k] !== null)
+    ) {
+      return none('unexpected');
+    }
+    return none(state, f.problem);
+  }
+  if (state !== 'empty' && state !== 'present') return none('unexpected');
+  if (f.problem !== null || !Array.isArray(f.items) || f.items.length > FINDINGS_MAX) {
+    return none('unexpected');
+  }
+  const count = ri(f.count);
+  if (count === null || count !== f.items.length || (state === 'empty') !== (count === 0)) {
+    return none('unexpected');
+  }
+  if (
+    typeof f.candidate_sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(f.candidate_sha256) ||
+    ri(f.routed_at) === null ||
+    typeof f.linkage !== 'string' ||
+    typeof f.provenance !== 'string'
+  ) {
+    return none('unexpected');
+  }
+  const items: ReviewFindingsView['items'] = [];
+  for (const [i, raw] of (f.items as unknown[]).entries()) {
+    if (!isObject(raw) || !sameKeys(raw, FINDING_KEYS)) return none('unexpected');
+    const severity = raw.severity;
+    const area = raw.area;
+    const line = raw.line;
+    const summary = raw.summary;
+    if (
+      raw.index !== i + 1 ||
+      (severity !== 'blocker' && severity !== 'non_blocking') ||
+      (area !== null && (typeof area !== 'string' || area.length > FINDING_AREA_MAX)) ||
+      (line !== null && (ri(line) === null || (line as number) < 1 || area === null)) ||
+      typeof summary !== 'string' ||
+      summary.length === 0 ||
+      summary.length > FINDING_SUMMARY_MAX
+    ) {
+      return none('unexpected');
+    }
+    items.push({
+      index: i + 1,
+      severity,
+      area: area as string | null,
+      line: line as number | null,
+      summary,
+    });
+  }
+  return {
+    state,
+    problem: null,
+    count,
+    items,
+    candidateSha256: f.candidate_sha256,
+    routedAt: ri(f.routed_at),
+    provenance: f.provenance,
+  };
 }
 
 /** Permissive readers for the verbatim report: a wrong type reads as null, never throws. */
@@ -844,6 +1095,88 @@ const ri = (v: unknown): number | null => (typeof v === 'number' && Number.isInt
 const isNil = (v: unknown): v is null | undefined => v === null || v === undefined;
 
 const UNKNOWN_LIST: BoundedList = { known: false, total: null, items: [] };
+
+/** Mission Core's own id grammar for the two record kinds the library lists. */
+const ARTIFACT_ID = /^mf-[0-9a-f]{32}$/;
+const EVIDENCE_ID = /^mv-[0-9a-f]{32}$/;
+const DIGEST = /^[0-9a-f]{64}$/;
+
+/** A list read STRICTLY: every item must read, or the whole list is null (unexpected). */
+function typedList<T>(v: unknown, read: (item: unknown) => T | null): TypedList<T> | null {
+  if (!Array.isArray(v)) return null;
+  const items: T[] = [];
+  for (const item of v) {
+    const r = read(item);
+    if (r === null) return null;
+    if (items.length < REF_LIST_MAX) items.push(r);
+  }
+  return { total: v.length, items };
+}
+
+const digestOrNull = (v: unknown): string | null | undefined =>
+  v === null ? null : typeof v === 'string' && DIGEST.test(v) ? v : undefined;
+
+function readArtifactItem(v: unknown): ArtifactItemView | null {
+  if (!isObject(v)) return null;
+  const id = v.artifact_id;
+  const role = v.role;
+  const kind = v.locator_kind;
+  if (typeof id !== 'string' || !ARTIFACT_ID.test(id)) return null;
+  if (typeof role !== 'string' || typeof kind !== 'string') return null;
+  if (typeof v.attested !== 'boolean') return null;
+  const content = digestOrNull(v.content_digest_sha256);
+  const observed = digestOrNull(v.observed_digest_sha256 ?? null);
+  if (content === undefined || observed === undefined) return null;
+  const marker = v.receipt_attestation;
+  if (!isNil(marker) && !isObject(marker)) return null;
+  if (v.attested !== isObject(marker)) return null;
+  return {
+    artifactId: id,
+    key: rs(v.key),
+    role: refText(role),
+    locatorKind: refText(kind),
+    contentDigest: content,
+    availableReported: rb(v.available_reported),
+    observedDigest: observed,
+    matchesObserved: rb(v.matches_observed),
+    recordedAt: ri(v.recorded_at),
+    attested: v.attested,
+    receipt: isObject(marker)
+      ? {
+          deliveryId: isNil(marker.delivery_id) ? null : refText(marker.delivery_id),
+          step: isNil(marker.step) ? null : refText(marker.step),
+          receiptState: isNil(marker.receipt_state) ? null : refText(marker.receipt_state),
+          stepState: isNil(marker.step_state) ? null : refText(marker.step_state),
+          authorizationId: isNil(marker.authorization_id) ? null : refText(marker.authorization_id),
+          effectCompleted: rb(marker.effect_completed),
+        }
+      : null,
+  };
+}
+
+function readEvidenceItem(v: unknown): EvidenceItemView | null {
+  if (!isObject(v)) return null;
+  const id = v.evidence_id;
+  if (typeof id !== 'string' || !EVIDENCE_ID.test(id)) return null;
+  const links = v.artifact_ids;
+  if (!Array.isArray(links)) return null;
+  if (!links.every((a) => typeof a === 'string' && ARTIFACT_ID.test(a))) return null;
+  return {
+    evidenceId: id,
+    requirementKey: isNil(v.requirement_key) ? null : refText(v.requirement_key),
+    kind: isNil(v.kind) ? null : refText(v.kind),
+    standing: rs(v.standing),
+    freshness: rs(v.freshness),
+    accepted: rb(v.accepted),
+    invalidated: rb(v.invalidated),
+    verifyingKind: rb(v.verifying_kind),
+    drifted: rb(v.drifted),
+    unconfirmed: rb(v.unconfirmed),
+    bearsOnClaim: rb(v.bears_on_claim),
+    artifactIds: (links as string[]).slice(0, EVIDENCE_LINKS_MAX),
+    artifactIdsTotal: links.length,
+  };
+}
 
 /** A list as a BoundedList: a non-list is UNKNOWN (never empty); a capped list keeps its total. */
 function boundedList(v: unknown): BoundedList {
@@ -1018,6 +1351,8 @@ function projectReport(raw: unknown): MissionReportView | null {
     ),
     evidence: reportFact(raw.evidence, (v) => (Array.isArray(v) ? boundedList(v) : null)),
     artifacts: reportFact(raw.artifacts, (v) => (Array.isArray(v) ? boundedList(v) : null)),
+    artifactItems: reportFact(raw.artifacts, (v) => typedList(v, readArtifactItem)),
+    evidenceItems: reportFact(raw.evidence, (v) => typedList(v, readEvidenceItem)),
   };
 }
 
@@ -1143,6 +1478,7 @@ function projectMissionV2(
         `${where}.mission_state.detail`,
       ),
       report: projectReport(key(ms, 'report', `${where}.mission_state`)),
+      executionIdentity: projectExecutionIdentity(ms),
       inputs,
     },
     canonicalReview: {
@@ -1158,6 +1494,7 @@ function projectMissionV2(
         `${rw}.candidate_applicability`,
       ),
       record,
+      findings: projectFindings(review),
     },
     workflowPhase: projectWorkflowPhase(m, where, model),
   };

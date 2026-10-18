@@ -4,7 +4,8 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test-dom.tsbuildinfo",
     /* tests that drive the real renderer (canvas types; the DOM itself is stubbed in the test),
        the reception desk test, which renders the real React component to static markup, and the
-       C1 browser keyboard regression with its harness page (real DOM, in Chrome) */
+       C1 browser keyboard regression with its harness page (real DOM, in Chrome), and the item 2
+       evidence library browser regression with its harness page */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     /* the C1 keyboard harness imports its projected office-state fixture */
@@ -16,6 +17,7 @@
     "test/diRuntimeAgents.test.ts",
     "test/diPanelKeyboard.test.ts",
     "test/diAppReconcile.test.ts",
+    "test/diEvidenceLibrary.test.ts",
     "test/harness/**/*.tsx",
     "test/harness/diAppProbe.ts"
   ],
