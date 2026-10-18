@@ -125,6 +125,27 @@ class ServerFixture(Fixture):
         finally:
             connection.close()
 
+    def http_refused_mid_body(self, body, headers):
+        """POST ``body`` to a server that may refuse on the DECLARED length
+        and close while the body is still being written. A reset or broken
+        pipe DURING THE WRITE is tolerated; the server's reply is still read
+        from the same connection, so a reset alone never passes."""
+        sent = {"Authorization": "Bearer " + SYNTHETIC_TOKEN}
+        sent.update(headers)
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.port, timeout=CLIENT_TIMEOUT_SECONDS)
+        try:
+            connection.connect()
+            try:
+                connection.request("POST", server_module.MCP_PATH,
+                                   body=body, headers=sent)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # the reply is already in flight: read it below
+            response = connection.getresponse()
+            return response.status, response, response.read()
+        finally:
+            connection.close()
+
     def post(self, message, headers=None, raw=None):
         sent = {"Content-Type": "application/json", "Accept": ACCEPT_BOTH}
         sent.update(headers or {})
@@ -365,8 +386,6 @@ class TransportTests(ServerFixture):
             (415, {"Content-Type": "text/plain", "Accept": ACCEPT_BOTH}, message),
             (406, {"Content-Type": "application/json", "Accept": "text/html"},
              message),
-            (413, {"Content-Type": "application/json", "Accept": ACCEPT_BOTH},
-             b" " * (server_module.MAX_REQUEST_BODY_BYTES + 1)),
             (400, {"Content-Type": "application/json", "Accept": ACCEPT_BOTH},
              b"{not json"),
             (400, {"Content-Type": "application/json", "Accept": ACCEPT_BOTH},
@@ -377,6 +396,21 @@ class TransportTests(ServerFixture):
         for status, headers, body in cases:
             with self.subTest(status=status, body=body[:20]):
                 self.assertEqual(self.http("POST", body, headers)[0], status)
+        # Oversized: refused on the declared Content-Length before the body
+        # is read, so the server may answer and close mid-write. Only its
+        # actual refusal passes; a server that reads the body (400 for the
+        # spaces, or 200) fails here.
+        limit = server_module.MAX_REQUEST_BODY_BYTES
+        oversized = b" " * (limit + 1)
+        with self.subTest(status=413, body=oversized[:20]):
+            status, _, body = self.http_refused_mid_body(
+                oversized,
+                {"Content-Type": "application/json", "Accept": ACCEPT_BOTH})
+            self.assertEqual(status, 413, body)
+            error = json.loads(body)["error"]
+            self.assertEqual(error["code"], mcp.INVALID_REQUEST)
+            self.assertEqual(error["message"],
+                             "the body exceeds %d bytes" % limit)
 
     def test_a_missing_content_length_is_411(self):
         connection = http.client.HTTPConnection(
