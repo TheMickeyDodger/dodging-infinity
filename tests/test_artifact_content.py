@@ -67,7 +67,7 @@ HTML_PAGE = (b"<html><body><h1>Report</h1><script>alert('x')</script>"
              b"<img src=\"https://example.invalid/p.png\" onerror=\"steal()\">"
              b"<a href=\"javascript:run()\">run</a></body></html>\n")
 PRIVATE_LOG = b"session: the agent pasted a token here\n"
-SECRET = b"outside the workspace: never readable\n"
+OUTSIDE_BYTES = b"outside the workspace: never readable\n"
 NOT_LISTED = "0" * 64
 
 
@@ -148,9 +148,9 @@ class ArtifactFixture(v2_tests.V2Fixture):
             mission_store.MissionStore(self.state_dir), self.clock)
         self.outside = os.path.join(self.root, "outside")
         os.makedirs(self.outside)
-        self.secret = os.path.join(self.outside, "secret.txt")
-        with open(self.secret, "wb") as handle:
-            handle.write(SECRET)
+        self.outside_file = os.path.join(self.outside, "secret.txt")
+        with open(self.outside_file, "wb") as handle:
+            handle.write(OUTSIDE_BYTES)
 
     def put(self, relative, data):
         path = os.path.join(self.workspace, *relative.split("/"))
@@ -205,7 +205,7 @@ class ArtifactFixture(v2_tests.V2Fixture):
         self.assertIsInstance(answer["detail"], str)
         self.assertLessEqual(len(answer["detail"]),
                              artifact_content.MAX_DETAIL_CHARS)
-        self.assertNotIn(SECRET.decode().strip(), json.dumps(answer))
+        self.assertNotIn(OUTSIDE_BYTES.decode().strip(), json.dumps(answer))
 
     def intercept_reads(self):
         """Both the item 2 read step and the hardened primitive under it,
@@ -426,7 +426,7 @@ class ReferenceTests(ArtifactFixture):
 
     def test_every_unsafe_locator_spelling_is_refused_unread(self):
         spellings = ("../outside/secret.txt", "/etc/passwd",
-                     self.secret, "reports/../../outside/secret.txt",
+                     self.outside_file, "reports/../../outside/secret.txt",
                      "reports/./result.txt", "reports//result.txt",
                      "reports\\result.txt", "", "reports/",
                      "/".join(["d"] * 17))
@@ -545,7 +545,7 @@ class DisclosurePolicyTests(ArtifactFixture):
 
     def test_the_policy_never_widens_containment(self):
         """Traversal stays its OWN refusal, distinct from disclosure."""
-        artifact_id = self.record("../outside/secret.txt", SECRET)
+        artifact_id = self.record("../outside/secret.txt", OUTSIDE_BYTES)
         owner = self.owner(version=2)
         self.assert_refused(self.read(owner, artifact_id, self.listed(owner)),
                             artifact_content.PROBLEM_LOCATOR_UNSAFE)
@@ -672,26 +672,26 @@ class ContainmentTests(ArtifactFixture):
 
     def test_a_symlinked_leaf_is_never_followed(self):
         os.makedirs(os.path.join(self.workspace, "reports"))
-        os.symlink(self.secret,
+        os.symlink(self.outside_file,
                    os.path.join(self.workspace, "reports", "link.txt"))
         self.refused("reports/link.txt", artifact_content.PROBLEM_NOT_REGULAR,
-                     SECRET)
+                     OUTSIDE_BYTES)
 
     def test_a_symlinked_directory_component_never_carries_a_read_out(self):
         # A name in a supported class, so the HARDENED READER is what
         # refuses (the disclosure policy would refuse "secret" first).
         with open(os.path.join(self.outside, "report.txt"), "wb") as handle:
-            handle.write(SECRET)
+            handle.write(OUTSIDE_BYTES)
         os.symlink(self.outside, os.path.join(self.workspace, "linked"))
         self.refused("linked/report.txt", artifact_content.PROBLEM_ESCAPES,
-                     SECRET)
+                     OUTSIDE_BYTES)
 
     def test_a_hardlink_is_refused(self):
         os.makedirs(os.path.join(self.workspace, "reports"))
-        os.link(self.secret, os.path.join(self.workspace, "reports",
-                                          "hard.txt"))
+        os.link(self.outside_file, os.path.join(self.workspace, "reports",
+                                               "hard.txt"))
         self.refused("reports/hard.txt", artifact_content.PROBLEM_HARDLINK,
-                     SECRET)
+                     OUTSIDE_BYTES)
 
     def test_a_missing_file_is_missing_never_empty(self):
         answer = self.refused("reports/never-written.txt",
@@ -1074,7 +1074,7 @@ class ExportFixture(ArtifactFixture):
         self.put("test-results/junit.xml", TEST_LOG)
         self.put("reports/changed.txt", TEXT)
         self.put("reports/private-log.txt", PRIVATE_LOG)
-        os.symlink(self.secret,
+        os.symlink(self.outside_file,
                    os.path.join(self.workspace, "reports", "link.txt"))
         ids = {
             "admitted_text": self.record("reports/result.txt"),
@@ -1088,7 +1088,7 @@ class ExportFixture(ArtifactFixture):
                 role="ORIGINAL_INPUT", key="specification"),
             "refused_digest_mismatch": self.record("reports/changed.txt"),
             "refused_locator_unsafe": self.record(
-                "../outside/secret.txt", SECRET, key="escaping_report"),
+                "../outside/secret.txt", OUTSIDE_BYTES, key="escaping_report"),
             "refused_not_regular": self.record("reports/link.txt", TEXT),
             "refused_class_not_declared": self.record(
                 "reports/private-log.txt", PRIVATE_LOG, key="session_notes"),
@@ -1162,7 +1162,7 @@ class NormalizedExportIsCoherent(ExportFixture):
         text = json.dumps(fixture)
         payload = json.dumps(dict((k, fixture[k]) for k in (
             "catalog_answer", "content_answers")))
-        for leak in (temp_root, CANARY, SECRET.decode().strip(),
+        for leak in (temp_root, CANARY, OUTSIDE_BYTES.decode().strip(),
                      PRIVATE_LOG.decode().strip()):
             self.assertNotIn(leak, text)
         self.assertIsNone(REAL_TEMP_ROOT.search(text))
@@ -1335,9 +1335,9 @@ class CompletedFixture(ArtifactFixture):
             mission_store.MissionStore(self.state_dir), self.clock)
         self.outside = os.path.join(self.root, "outside")
         os.makedirs(self.outside)
-        self.secret = os.path.join(self.outside, "secret.txt")
-        with open(self.secret, "wb") as handle:
-            handle.write(SECRET)
+        self.outside_file = os.path.join(self.outside, "secret.txt")
+        with open(self.outside_file, "wb") as handle:
+            handle.write(OUTSIDE_BYTES)
         self.put("reports/result.txt", TEXT)
         self.put("reports/page.html", HTML_PAGE)
         self.deliverables = {
@@ -1747,8 +1747,8 @@ class CompletedAdmissionRefusalTests(CompletedFixture):
         self.put("reports/changed.txt", TEXT)
         changed = self.record("reports/changed.txt", key="changed")
         missing = self.record("reports/never-written.txt", key="missing")
-        os.symlink(self.secret, os.path.join(self.workspace, "reports",
-                                             "link.txt"))
+        os.symlink(self.outside_file, os.path.join(self.workspace, "reports",
+                                                  "link.txt"))
         link = self.record("reports/link.txt", TEXT, key="link")
         declared = [private, credential, binary, changed, missing, link]
         self.complete(also_named=declared)
@@ -1775,7 +1775,7 @@ class CompletedAdmissionRefusalTests(CompletedFixture):
         answer = self.read(owner, link, cursor)
         self.assertEqual(answer["state"], artifact_content.STATE_REFUSED)
         self.assertIsNone(answer["content"])
-        self.assertNotIn(SECRET.decode(), json.dumps(answer))
+        self.assertNotIn(OUTSIDE_BYTES.decode(), json.dumps(answer))
 
 
 class SameExecutionObservationTests(CompletedFixture):
@@ -2684,7 +2684,7 @@ class NormalizedHistoricalExportIsCoherent(HistoricalExportFixture):
         self.assertEqual(json.dumps(again, sort_keys=True),
                          json.dumps(fixture, sort_keys=True))
         text = json.dumps(fixture)
-        for leak in (temp_root, SECRET.decode().strip(),
+        for leak in (temp_root, OUTSIDE_BYTES.decode().strip(),
                      PRIVATE_LOG.decode().strip()):
             self.assertNotIn(leak, text)
         self.assertIsNone(REAL_TEMP_ROOT.search(text))
