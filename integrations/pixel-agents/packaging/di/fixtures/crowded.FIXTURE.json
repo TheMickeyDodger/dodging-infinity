@@ -1458,7 +1458,7 @@
             }
           ],
           "registry": {
-            "directory": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/registry",
+            "directory": "/__synthetic__/di-fixture-root/registry",
             "health": "fresh",
             "max_serialized_bytes": 262144,
             "max_sources": 128,
@@ -1485,7 +1485,7 @@
               "producer": "synthetic-producer-core",
               "record_count": 8,
               "source_id": "synthetic-core",
-              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-core"
+              "store_dir": "/__synthetic__/di-fixture-root/stores/synthetic-core"
             },
             {
               "health": "fresh",
@@ -1496,7 +1496,7 @@
               "producer": "synthetic-producer-legacy",
               "record_count": 0,
               "source_id": "synthetic-legacy",
-              "store_dir": "/private/var/folders/m3/m9x2zqw114q_wjg9t2vnkh3r0000gn/T/tmpuigzfwty/stores/synthetic-legacy"
+              "store_dir": "/__synthetic__/di-fixture-root/stores/synthetic-legacy"
             }
           ],
           "unmatched_runtime_agent_count": 0,
@@ -1577,5 +1577,11 @@
     "path": "server/__tests__/fixtures/di-backend/v3-canonical-fixture.FIXTURE.json",
     "sha256": "c7dcd7284ee5566f0dee9d20084074e8aa96aeb274b2bc93d159cbe7d815b823"
   },
-  "generator": "scripts/build-di-fixtures.mjs"
+  "generator": "scripts/build-di-fixtures.mjs",
+  "normalization": {
+    "transformation": "machine-specific temporary roots (/var/folders/<a>/<b>/T/<dir>, also as its /private realpath) replaced by /__synthetic__/di-fixture-root (one per distinct root, numbered in order of first appearance); no other byte of the derived emission changed; derived_from keeps the input's exact sha256",
+    "synthetic_root": "/__synthetic__/di-fixture-root",
+    "temporary_roots": 1,
+    "occurrences": 3
+  }
 }

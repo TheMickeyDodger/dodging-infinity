@@ -42,10 +42,14 @@ import type {
   MissionStateView,
   MissionView,
   ReportFact,
+  RuntimeAgentsView,
+  RuntimeAgentView,
   RuntimeCaptureDiagnostics,
   ShapeVerdict,
+  SourceView,
   TaskChainView,
   UnreportedFact,
+  WorkflowPhaseView,
 } from './catalogProjection.js';
 import { projectResponse } from './catalogProjection.js';
 import type { Coverage } from './identityMap.js';
@@ -192,6 +196,44 @@ export interface ProvenancePresentation {
   }>;
 }
 
+/**
+ * TYPED values of the two allowlisted facts the reception desk decides on, so nothing is ever
+ * parsed back out of display text. `state`/`reason` are the SAME decision the displayed fact
+ * carries (presentFact); the values are null unless that state is `observed`.
+ */
+export interface AttentionFactsPresentation {
+  blockers: {
+    state: Observation<never>['state'];
+    reason: string | null;
+    standing: string | null;
+    freshness: string | null;
+    hardActive: boolean | null;
+    /** The real length of `active` (null = UNKNOWN, not a list); `active` is the shown prefix. */
+    activeTotal: number | null;
+    active: string[];
+  };
+  pendingDecisions: {
+    state: Observation<never>['state'];
+    reason: string | null;
+    standing: string | null;
+    freshness: string | null;
+    awaitingDecision: boolean | null;
+    liveAuthorization: boolean | null;
+    nextPermittedStep: string | null;
+    revision: number | null;
+  };
+}
+
+/** One registered source as the catalog reports it (verbatim; health never defaulted). */
+export interface SourcePresentation {
+  sourceId: string;
+  kind: string;
+  producerDeclared: string;
+  health: string;
+  problem: string | null;
+  recordCount: number | null;
+}
+
 /** contract v2 blocks of one Mission, display-ready and verbatim. */
 export interface MissionV2Presentation {
   taskChains: Array<{
@@ -245,13 +287,34 @@ export interface MissionV2Presentation {
     reviewerAgent: string | null;
     protocolToken: string | null;
   };
+  /** Typed blockers / pending_decisions values for the reception desk (not sent as-is). */
+  attention: AttentionFactsPresentation;
+  /** The producer's DECLARED workflow phase (`missions[].workflow_phase`), as projected. */
+  workflowPhase: WorkflowPhaseView;
+}
+
+/**
+ * item 07 — a plain Herdr task (`herdr.task/1`), read from the engine's own task record: its
+ * provenance only. It is never a Mission Core record; Mission Core facts are unsupported for it.
+ */
+export interface HerdrTaskPresentation {
+  /** Every registry alias of its ONE physical root (several aliases never make several teams). */
+  rootAliases: string[];
+  /** How membership is known: DERIVED from the root's current task record, never per session. */
+  membership: string | null;
+  schema: string | null;
+  schemaVersion: number | null;
+  taskRecordVersion: number | null;
+  startedAt: number | null;
 }
 
 export interface MissionPresentation {
   missionRef: string;
   sourceId: string;
   nativeId: string;
-  sourceKind: 'mission_core' | 'workflow_store' | 'unrecognized';
+  sourceKind: 'mission_core' | 'workflow_store' | 'herdr_task' | 'unrecognized';
+  /** item 07: provenance of a plain Herdr task; null for every other kind. */
+  herdrTask: HerdrTaskPresentation | null;
   lifecycleModel: string;
   /** Verbatim native literal; display only, never switched on. */
   lifecycleState: string;
@@ -270,6 +333,76 @@ export interface MissionPresentation {
   members: Observation<MemberPresentation[]>;
   /** contract v2 blocks; null for a v1 office. */
   v2: MissionV2Presentation | null;
+}
+
+/**
+ * item 07 — one live agent identified by a task-native role record, presented with its TWO
+ * separate answers: runtime IDENTITY (verified / unverified / ambiguous / unavailable) and task
+ * ASSIGNMENT (unassigned, or an unverified recorded reference). It is never a team member and
+ * never animates as working on anything; only a verified identity in a live office is drawn.
+ */
+export interface RuntimeAgentPresentation {
+  agentRef: string;
+  sourceId: string;
+  rootRef: string;
+  rootAliases: string[];
+  logical: string;
+  role: string | null;
+  agent: string;
+  provider: string | null;
+  session: string | null;
+  paneId: string | null;
+  workspaceId: string | null;
+  activity: string | null;
+  identityState: string;
+  identityReason: string;
+  identityVerified: boolean;
+  assignmentState: string;
+  assignmentReason: string;
+  taskRef: string | null;
+  taskId: string | null;
+  taskStatus: string | null;
+  /** Drawn only while the office is live AND the identity is verified. */
+  presence: Presence;
+  /** The plain outcome, first: what is verified and what is not. */
+  plainText: string;
+}
+
+/** item 07 — every task-native source's locator account, summed (counts with reasons). */
+export interface LocatorSummary {
+  registeredAliases: number;
+  physicalRoots: number;
+  sharedRootGroups: number;
+  rootsWithCurrentTask: number;
+  rootsWithoutCurrentTask: number;
+  aliasesWithoutHerdState: number;
+  excludedTotal: number;
+  excludedByReason: Array<{ reason: string; count: number }>;
+}
+
+export interface RuntimeAgentsPresentation {
+  /** False: the producer predates the field (UNKNOWN, never "none"). */
+  reported: boolean;
+  state: string | null;
+  problem: string | null;
+  caveat: string | null;
+  observedAt: number | null;
+  firstPassAt: number | null;
+  secondPassAt: number | null;
+  counts: Record<string, number> | null;
+  agents: RuntimeAgentPresentation[];
+  agentsOverBound: number;
+  /** The runtime capture's own root account (over capacity is reported, never truncated). */
+  capture: {
+    discovered: number | null;
+    captured: number | null;
+    unavailable: number | null;
+    overCapacity: number | null;
+    listingAnchor: boolean | null;
+  };
+  locators: LocatorSummary | null;
+  /** The plain outcome, first. */
+  plainStatement: string;
 }
 
 export interface OfficeView {
@@ -300,6 +433,8 @@ export interface OfficeView {
   freshness: { envelope: FreshnessLevel; runtime: FreshnessLevel } | null;
   coverage: CoverageStatement;
   missions: Observation<MissionPresentation[]>;
+  /** The catalog's registered sources (empty when no response was projected). */
+  sources: SourcePresentation[];
   /** The ONE contract version this office process reads (selected at launch). */
   contractVersion: QueryContractVersion;
   /** contract v2 chain observation; null for v1 (or with no response). */
@@ -312,10 +447,13 @@ export interface OfficeView {
     unavailableCount: number | null;
     overCapacityCount: number | null;
   } | null;
+  /** item 07: runtime agents not represented by any team (both contract versions). */
+  runtimeAgents: RuntimeAgentsPresentation;
 }
 
 const MISSION_CORE_MODEL = 'mission_core.mission_state/1';
 const WORKFLOW_STORE_MODEL = 'workflow_authority.workflow_phase/2';
+const HERDR_TASK_MODEL = 'herdr.task/1';
 
 function raw<T extends string>(c: Classified<T>): string {
   return c.known ? c.value : `unrecognized:${String(c.raw)}`;
@@ -367,8 +505,10 @@ export function unavailableView(
     freshness: null,
     coverage: coverageFor(version),
     missions: { state: 'unavailable', reason },
+    sources: [],
     contractVersion: version,
     chainObservation: null,
+    runtimeAgents: runtimeAgentsNotReported(reason),
   };
 }
 
@@ -380,7 +520,184 @@ function sourceKindOf(mission: MissionView): MissionPresentation['sourceKind'] {
   const { model } = mission.lifecycle;
   if (model.known && model.value === MISSION_CORE_MODEL) return 'mission_core';
   if (model.known && model.value === WORKFLOW_STORE_MODEL) return 'workflow_store';
+  if (model.known && model.value === HERDR_TASK_MODEL) return 'herdr_task';
   return 'unrecognized';
+}
+
+// ── item 07: runtime agents ──────────────────────────────────────
+
+const NO_CAPTURE = {
+  discovered: null,
+  captured: null,
+  unavailable: null,
+  overCapacity: null,
+  listingAnchor: null,
+};
+
+function runtimeAgentsNotReported(reason: string): RuntimeAgentsPresentation {
+  return {
+    reported: false,
+    state: null,
+    problem: reason,
+    caveat: null,
+    observedAt: null,
+    firstPassAt: null,
+    secondPassAt: null,
+    counts: null,
+    agents: [],
+    agentsOverBound: 0,
+    capture: { ...NO_CAPTURE },
+    locators: null,
+    plainStatement: `Runtime agents: not reported (${reason}).`,
+  };
+}
+
+/** Plain words for an unverified assignment reference's reason (codes stay in provenance). */
+const ASSIGNMENT_REASON_TEXT: Readonly<Record<string, string>> = {
+  root_not_captured_over_capacity: 'root not captured / capacity',
+  workspace_not_observed: 'root not observed',
+  canonical_source_not_fresh: 'its canonical record source could not be read',
+  covered_by_canonical_record: "its Mission record's team was not verified",
+  covered_by_parent_chain: "its parent task's chain was not verified",
+  task_status_unrecognized: "the task record's status is not recognized",
+  runtime_snapshot_not_fresh: 'no fresh runtime observation',
+  role_not_in_the_bound_team_roster: "not in its task's team roster",
+};
+
+const IDENTITY_STATE_TEXT: Readonly<Record<string, string>> = {
+  unverified: 'Runtime identity not verified; not drawn',
+  ambiguous: 'Runtime identity ambiguous; not drawn',
+  unavailable: 'Runtime identity could not be checked; not drawn',
+};
+
+/**
+ * Plain text for one runtime agent: identity first, then assignment, never membership. Plain
+ * words only — every reason code stays in the provenance behind the labelled disclosure.
+ */
+export function runtimeAgentPlainText(a: RuntimeAgentView): string {
+  const identity = a.identity.state;
+  if (!identity.known) return 'Runtime identity in an unrecognized state; not drawn';
+  if (identity.value !== 'verified') return IDENTITY_STATE_TEXT[identity.value];
+  const assignment = a.assignment.state;
+  if (!assignment.known) return 'Runtime identity verified; assignment in an unrecognized state';
+  if (assignment.value === 'unassigned') {
+    return a.assignment.taskStatus === null
+      ? 'Runtime identity verified · unassigned DI runtime (no task record)'
+      : `Runtime identity verified · unassigned DI runtime (no current task; last task record ${a.assignment.taskStatus})`;
+  }
+  const why = ASSIGNMENT_REASON_TEXT[a.assignment.reason] ?? 'reason in provenance';
+  return `Runtime identity verified; task membership not verified (${why})`;
+}
+
+function presentRuntimeAgent(
+  a: RuntimeAgentView,
+  officeLive: boolean,
+  why: string | null,
+): RuntimeAgentPresentation {
+  const verified = a.identity.state.known && a.identity.state.value === 'verified';
+  let presence: Presence;
+  if (!officeLive) presence = { live: false, reason: why ?? 'office_not_live' };
+  else if (!verified)
+    presence = {
+      live: false,
+      reason: `runtime_identity_${raw(a.identity.state)}:${a.identity.reason}`,
+    };
+  else presence = { live: true, reason: null };
+  return {
+    agentRef: a.agentRef,
+    sourceId: a.sourceId,
+    rootRef: a.rootRef,
+    rootAliases: [...a.rootAliases],
+    logical: a.logical,
+    role: a.role,
+    agent: a.agent,
+    provider: a.provider,
+    session: a.session,
+    paneId: a.paneId,
+    workspaceId: a.workspaceId,
+    activity: a.activity === null ? null : raw(a.activity),
+    identityState: raw(a.identity.state),
+    identityReason: a.identity.reason,
+    identityVerified: verified,
+    assignmentState: raw(a.assignment.state),
+    assignmentReason: a.assignment.reason,
+    taskRef: a.assignment.taskRef,
+    taskId: a.assignment.taskId,
+    taskStatus: a.assignment.taskStatus,
+    presence,
+    plainText: runtimeAgentPlainText(a),
+  };
+}
+
+function locatorSummary(sources: SourceView[]): LocatorSummary | null {
+  const accounts = sources.map((s) => s.locators).filter((l) => l !== null);
+  if (accounts.length === 0) return null;
+  const byReason = new Map<string, number>();
+  for (const l of accounts)
+    for (const e of l.excluded) byReason.set(e.reason, (byReason.get(e.reason) ?? 0) + 1);
+  const sum = (f: (l: (typeof accounts)[number]) => number): number =>
+    accounts.reduce((n, l) => n + f(l), 0);
+  return {
+    registeredAliases: sum((l) => l.registeredAliases),
+    physicalRoots: sum((l) => l.physicalRoots),
+    sharedRootGroups: sum((l) => l.sharedRootGroups),
+    rootsWithCurrentTask: sum((l) => l.rootsWithCurrentTask),
+    rootsWithoutCurrentTask: sum((l) => l.rootsWithoutCurrentTask),
+    aliasesWithoutHerdState: sum((l) => l.aliasesWithoutHerdState),
+    excludedTotal: sum((l) => l.excluded.length),
+    excludedByReason: [...byReason].sort().map(([reason, count]) => ({ reason, count })),
+  };
+}
+
+function presentRuntimeAgents(
+  view: RuntimeAgentsView,
+  sources: SourceView[],
+  capture: RuntimeCaptureDiagnostics,
+  officeLive: boolean,
+  why: string | null,
+): RuntimeAgentsPresentation {
+  const captureFacts = {
+    discovered: capture.roots?.discovered ?? null,
+    captured: capture.roots?.captured ?? null,
+    unavailable: capture.roots?.unavailable ?? null,
+    overCapacity: capture.roots?.overCapacity ?? null,
+    listingAnchor: capture.listingAnchor,
+  };
+  if (!view.reported) {
+    return {
+      ...runtimeAgentsNotReported('not_reported_by_this_producer'),
+      capture: captureFacts,
+      locators: locatorSummary(sources),
+    };
+  }
+  const agents = view.agents.map((a) => presentRuntimeAgent(a, officeLive, why));
+  const verified = agents.filter((a) => a.identityVerified).length;
+  const state = view.state === null ? null : raw(view.state);
+  const over = captureFacts.overCapacity;
+  const plainStatement =
+    state !== 'observed'
+      ? `Runtime agents: ${state ?? 'unknown'} (${view.problem ?? 'no reason given'}).`
+      : `${verified} runtime agent(s) with a verified identity, not team members` +
+        `; ${agents.length - verified} listed without a verified identity` +
+        (over !== null && over > 0
+          ? `; ${over} root(s) over the runtime capture's capacity were not observed`
+          : '') +
+        '.';
+  return {
+    reported: true,
+    state,
+    problem: view.problem,
+    caveat: view.caveat,
+    observedAt: view.observedAt,
+    firstPassAt: view.firstPassAt,
+    secondPassAt: view.secondPassAt,
+    counts: view.counts === null ? null : { ...view.counts },
+    agents,
+    agentsOverBound: view.agentsOverBound,
+    capture: captureFacts,
+    locators: locatorSummary(sources),
+    plainStatement,
+  };
 }
 
 function missionPresence(
@@ -741,10 +1058,44 @@ function presentReport(ms: MissionStateView): {
   return { facts, completion, provenance };
 }
 
+/** The typed attention values, decided exactly as the displayed facts are (presentFact). */
+function presentAttention(
+  ms: MissionStateView,
+  facts: ReportFactPresentation[],
+): AttentionFactsPresentation {
+  const shown = (name: string) => facts.find((f) => f.name === name);
+  const b = shown('blockers');
+  const p = shown('pending_decisions');
+  const bv = b?.state === 'observed' ? (ms.report?.blockers.value ?? null) : null;
+  const pv = p?.state === 'observed' ? (ms.report?.pendingDecisions.value ?? null) : null;
+  return {
+    blockers: {
+      state: b?.state ?? 'unavailable',
+      reason: b ? b.reason : 'blockers_not_presented',
+      standing: b?.standing ?? null,
+      freshness: b?.freshness ?? null,
+      hardActive: bv?.hardActive ?? null,
+      activeTotal: bv && bv.active.known ? bv.active.total : null,
+      active: bv?.active.items ?? [],
+    },
+    pendingDecisions: {
+      state: p?.state ?? 'unavailable',
+      reason: p ? p.reason : 'pending_decisions_not_presented',
+      standing: p?.standing ?? null,
+      freshness: p?.freshness ?? null,
+      awaitingDecision: pv?.awaitingDecision ?? null,
+      liveAuthorization: pv?.liveAuthorization ?? null,
+      nextPermittedStep: pv?.nextPermittedStep ?? null,
+      revision: pv?.revision ?? null,
+    },
+  };
+}
+
 function presentMissionV2(mission: MissionView): MissionV2Presentation | null {
   const v2 = mission.v2;
   if (v2 === null) return null;
   const review = v2.canonicalReview;
+  const report = presentReport(v2.missionState);
   return {
     taskChains: v2.taskChains.map((c) => ({
       chain: raw(c.chain),
@@ -772,8 +1123,10 @@ function presentMissionV2(mission: MissionView): MissionV2Presentation | null {
       baseline: v2.missionState.inputs?.baseline ?? null,
       candidateApplicability: v2.missionState.inputs?.candidateApplicability ?? null,
       kinds: v2.missionState.inputs?.kinds ?? [],
-      ...presentReport(v2.missionState),
+      ...report,
     },
+    attention: presentAttention(v2.missionState, report.facts),
+    workflowPhase: v2.workflowPhase,
     canonicalReview: {
       state: review.state,
       problem: review.problem,
@@ -801,11 +1154,23 @@ function presentMission(
   const members = mission.members.map((m) => presentMember(m, mission, presence));
   const kind = sourceKindOf(mission);
   const native = mission.native;
+  const recorded = mission.producerRecorded;
   return {
     missionRef: mission.missionRef,
     sourceId: mission.sourceId,
     nativeId: mission.nativeId,
     sourceKind: kind,
+    herdrTask:
+      native.kind === 'herdr_task' && recorded.kind === 'herdr_task'
+        ? {
+            rootAliases: [...recorded.rootAliases],
+            membership: recorded.membership,
+            schema: recorded.schema,
+            schemaVersion: recorded.schemaVersion,
+            taskRecordVersion: native.taskRecordVersion,
+            startedAt: native.startedAt,
+          }
+        : null,
     lifecycleModel: raw(mission.lifecycle.model),
     lifecycleState: mission.lifecycle.state,
     standing: raw(mission.lifecycle.standing),
@@ -814,9 +1179,11 @@ function presentMission(
     bindingReason: raw(mission.binding.reason),
     producerDeclared: mission.producerDeclared,
     objective: nullable(mission.objective),
-    // The workflow_store reader never records these: they do not apply to that kind.
+    // The workflow_store and herdr_task readers never record this: it does not apply to them.
     updatedAt:
-      kind === 'workflow_store' ? notApplicable('updated_at', kind) : nullable(mission.updatedAt),
+      kind === 'workflow_store' || kind === 'herdr_task'
+        ? notApplicable('updated_at', kind)
+        : nullable(mission.updatedAt),
     identitySource:
       kind === 'workflow_store'
         ? notApplicable('identity_source', kind)
@@ -918,8 +1285,10 @@ export function buildOfficeView(
     freshness: null,
     coverage: coverageFor(version),
     missions: { state: 'unavailable', reason: 'no_response' },
+    sources: [],
     contractVersion: version,
     chainObservation: null,
+    runtimeAgents: runtimeAgentsNotReported('no_response'),
   };
 
   if (envelope.response === null) {
@@ -959,6 +1328,14 @@ export function buildOfficeView(
     snapshotHealth: raw(view.runtimeSnapshot.health),
     snapshotProblem: view.runtimeSnapshot.problem,
     minPollIntervalSeconds: view.minPollIntervalSeconds,
+    sources: view.sources.map((s) => ({
+      sourceId: s.sourceId,
+      kind: s.kind,
+      producerDeclared: s.producerDeclared,
+      health: raw(s.health),
+      problem: s.problem,
+      recordCount: s.recordCount,
+    })),
     chainObservation:
       view.chainObservation === null
         ? null
@@ -973,6 +1350,13 @@ export function buildOfficeView(
           },
     missions: list(
       view.missions.map((m) => presentMission(m, live, notLiveReason, snapshotUnavailable)),
+    ),
+    runtimeAgents: presentRuntimeAgents(
+      view.runtimeAgents,
+      view.sources,
+      envelope.runtimeCapture,
+      live,
+      notLiveReason,
     ),
   };
 }

@@ -101,6 +101,19 @@ REASON_TASK_NOT_OBSERVED = "task_not_in_snapshot"
 REASON_TASK_DUPLICATED = "task_duplicated_in_snapshot"
 REASON_TASK_WORKSPACE_MISMATCH = "task_workspace_mismatch"
 REASON_BOUND = "canonical_chain_complete"
+# A task-native record DEFERS (``deferrals``): to a canonical record naming
+# exactly its task and root (an alias), to one naming only one of them (a
+# conflict), to a recorded parent chain, or to canonical sources that could
+# not be read.
+REASON_COVERED_BY_CANONICAL = "covered_by_canonical_record"
+REASON_CANONICAL_CONFLICT = "canonical_claim_conflict"
+REASON_CANONICAL_SOURCE_NOT_FRESH = "canonical_source_not_fresh"
+REASON_COVERED_BY_PARENT_CHAIN = "covered_by_parent_chain"
+# A task-native record's membership is DERIVED from its root's current task
+# record, so its team binds only when at least one recorded role is held by
+# a live agent on EXACTLY the recorded session (``_corroborated``); without
+# that, a historical record names no team.
+REASON_NOT_CORROBORATED = "task_record_not_corroborated_by_a_live_session"
 
 MEMBER_REASON_MATCH = "session_confirmed"
 MEMBER_REASON_SESSION_CHANGED = "session_changed"
@@ -220,6 +233,16 @@ def _member_classification(recorded, logical_count, claims):
     return contract.MEMBER_PRESENT, MEMBER_REASON_MATCH, agent
 
 
+def _corroborated(task, agents):
+    """Whether at least one recorded role of ``task`` is held by a live
+    agent of the same name on EXACTLY the recorded session. One such role
+    gates the TEAM only: every member is still classified on its own."""
+    live = set((agent.agent, agent.session) for agent in agents
+               if agent.session is not None)
+    return any((recorded.agent, recorded.session) in live
+               for recorded in task.bindings if recorded.session is not None)
+
+
 def classify_members(view, task, claims, observed_at):
     """Classify every recorded binding of one bound task."""
     logical_counts = {}
@@ -236,10 +259,92 @@ def classify_members(view, task, claims, observed_at):
     return members
 
 
-def _claims(views):
-    """How many ACTIVE missions claim each task id and each workspace."""
+def task_native(view):
+    """Whether a view is a task-native record: any model that is not one of
+    the canonical kinds' own (``contract.CANONICAL_LIFECYCLE_MODELS``)."""
+    return view["lifecycle"]["model"] not in (
+        contract.CANONICAL_LIFECYCLE_MODELS)
+
+
+# A canonical record claims its task and root unless its own model says it
+# is inactive or terminal (an unrecognized literal may still be live).
+_CANONICAL_CLAIMING = (contract.STANDING_ACTIVE,
+                       contract.STANDING_UNKNOWN_FUTURE)
+
+
+def deferrals(views, canonical_complete=True, parent_links=None):
+    """``{mission_ref: binding}`` of every ACTIVE task-native view that
+    DEFERS, so the task-native fallback can never bypass, ambiguate or
+    duplicate a canonical binding. In this fixed order:
+
+    - a canonical record (Mission Core or WorkflowStore, any binding state,
+      standing active or unrecognized) naming EXACTLY its task id and root:
+      an alias, ``not_applicable`` (``covered_by_canonical_record``);
+    - one naming only its task id or only its root: a CONFLICT, never
+      resolved by priority, ``ambiguous`` (``canonical_claim_conflict``);
+    - a recorded parent chain (``parent_links``, contract v2) naming exactly
+      its task and root: ``not_applicable`` (``covered_by_parent_chain``);
+      naming only one of them: ``ambiguous`` (``canonical_claim_conflict``);
+    - when ``canonical_complete`` is false (a canonical source could not be
+      read, so a covering record may be unseen): ``unverified``
+      (``canonical_source_not_fresh``).
+
+    A deferring view claims nothing, binds nothing and has no members; the
+    canonical record's own binding is decided exactly as without it."""
+    canonical = [view for view in views if not task_native(view)
+                 and view["lifecycle"]["standing"] in _CANONICAL_CLAIMING]
+    pairs = set((v["execution"]["task_id"], v["execution"]["workspace_realpath"])
+                for v in canonical)
+    tasks = set(v["execution"]["task_id"] for v in canonical) - {None}
+    workspaces = set(v["execution"]["workspace_realpath"]
+                     for v in canonical) - {None}
+    links = set(parent_links or ())
+    link_tasks = set(task for task, _ in links) - {None}
+    link_workspaces = set(workspace for _, workspace in links) - {None}
+    out = {}
+    for view in views:
+        if not task_native(view) or (
+                view["lifecycle"]["standing"] != contract.STANDING_ACTIVE):
+            continue
+        task_id = view["execution"]["task_id"]
+        workspace = view["execution"]["workspace_realpath"]
+        if (task_id, workspace) in pairs:
+            binding = _binding(contract.BINDING_NOT_APPLICABLE,
+                               REASON_COVERED_BY_CANONICAL, task_id)
+        elif task_id in tasks or workspace in workspaces:
+            binding = _binding(contract.BINDING_AMBIGUOUS,
+                               REASON_CANONICAL_CONFLICT, task_id)
+        elif (task_id, workspace) in links:
+            binding = _binding(contract.BINDING_NOT_APPLICABLE,
+                               REASON_COVERED_BY_PARENT_CHAIN, task_id)
+        elif task_id in link_tasks or workspace in link_workspaces:
+            binding = _binding(contract.BINDING_AMBIGUOUS,
+                               REASON_CANONICAL_CONFLICT, task_id)
+        elif not canonical_complete:
+            binding = _binding(contract.BINDING_UNVERIFIED,
+                               REASON_CANONICAL_SOURCE_NOT_FRESH, task_id)
+        else:
+            continue
+        out[view["mission_ref"]] = binding
+    return out
+
+
+def canonical_sources_complete(source_blocks):
+    """Whether every registered CANONICAL source was read fresh (a source
+    block per registered source, as a query response lists them)."""
+    return all(block["health"] == contract.HEALTH_FRESH
+               for block in source_blocks
+               if block["kind"] in contract.CANONICAL_KINDS)
+
+
+def _claims(views, deferred=None):
+    """How many ACTIVE missions claim each task id and each workspace; a
+    deferring task-native view (``deferrals``) claims nothing."""
+    deferred = deferred or {}
     by_task, by_workspace = {}, {}
     for view in views:
+        if view["mission_ref"] in deferred:
+            continue
         if view["lifecycle"]["standing"] == contract.STANDING_ACTIVE:
             execution = view["execution"]
             if execution["task_id"] is not None:
@@ -295,18 +400,29 @@ def binding_identity(view):
             "identity_source": execution["identity_source"]}
 
 
-def discovery(views):
+def discovery(views, canonical_complete=True):
     """The workspace roots canonical bindings name (see the module
     docstring): ``{"roots": sorted roots, "missions_by_root": {root:
     mission_ref}, "bindings": {mission_ref: binding_identity}, "conflicts":
     [{"workspace_realpath", "mission_refs"}]}``. ``bindings`` are the
     eligible bindings of THIS pass, to be confirmed by a later one.
     Pure; reads only the views (mission views, or a query response's
-    missions); a root is a place to LOOK, never a membership."""
-    claims_by_task, workspace_claims = _claims(views)
+    missions); a root is a place to LOOK, never a membership. A deferring
+    task-native view (``deferrals``) names no root and claims nothing.
+
+    ``roots`` is in SCHEDULING order, never identity or membership
+    evidence: the canonical roots sorted, then the task-native roots in
+    the order their source listed its views (``target_runtime``'s reader
+    lists the most recently started task first). The runtime capture
+    observes at most its fixed capacity of roots in this order and REPORTS
+    the rest as over capacity."""
+    deferred = deferrals(views, canonical_complete)
+    claims_by_task, workspace_claims = _claims(views, deferred)
     missions_by_root, claimed, bindings = {}, {}, {}
     for view in views:
         if view["lifecycle"]["standing"] != contract.STANDING_ACTIVE:
+            continue
+        if view["mission_ref"] in deferred:
             continue
         workspace = view["execution"]["workspace_realpath"]
         if workspace is not None:
@@ -314,8 +430,15 @@ def discovery(views):
         if _execution_binding(view, claims_by_task, workspace_claims) is None:
             missions_by_root[workspace] = view["mission_ref"]
             bindings[view["mission_ref"]] = binding_identity(view)
+    by_ref = dict((view["mission_ref"], view) for view in views)
+    canonical_roots = sorted(root for root, ref in missions_by_root.items()
+                             if not task_native(by_ref[ref]))
+    native_roots = [view["execution"]["workspace_realpath"] for view in views
+                    if task_native(view) and missions_by_root.get(
+                        view["execution"]["workspace_realpath"])
+                    == view["mission_ref"]]
     return {
-        "roots": sorted(missions_by_root),
+        "roots": canonical_roots + native_roots,
         "missions_by_root": missions_by_root,
         "bindings": bindings,
         "conflicts": [{"workspace_realpath": workspace,
@@ -325,7 +448,8 @@ def discovery(views):
     }
 
 
-def classify(views, reading, observed_roots=None, confirmed_bindings=None):
+def classify(views, reading, observed_roots=None, confirmed_bindings=None,
+             canonical_complete=True, deferred=None):
     """Return ``(missions, unmatched_runtime_agent_count)``.
 
     ``views`` are mission views from fresh sources; ``reading`` is a
@@ -341,8 +465,13 @@ def classify(views, reading, observed_roots=None, confirmed_bindings=None):
     ``confirmed_bindings``: ``{mission_ref: binding_identity}`` from an
     earlier source pass; a mission whose identity differs, or that the
     earlier pass did not confirm, is ``unverified``
-    (``binding_not_confirmed_by_both_passes``). ``None``: no such check."""
-    claims_by_task, workspace_claims = _claims(views)
+    (``binding_not_confirmed_by_both_passes``). ``None``: no such check.
+    ``canonical_complete`` / ``deferred``: see ``deferrals`` (``deferred``,
+    when given, replaces the views-only computation, e.g. with parent
+    links)."""
+    if deferred is None:
+        deferred = deferrals(views, canonical_complete)
+    claims_by_task, workspace_claims = _claims(views, deferred)
     tasks_by_id = {}
     for task in reading.tasks:
         tasks_by_id.setdefault(task.task_id, []).append(task)
@@ -354,6 +483,8 @@ def classify(views, reading, observed_roots=None, confirmed_bindings=None):
         if view["lifecycle"]["standing"] != contract.STANDING_ACTIVE:
             binding = _binding(contract.BINDING_NOT_APPLICABLE,
                                REASON_NOT_ACTIVE)
+        elif view["mission_ref"] in deferred:
+            binding = dict(deferred[view["mission_ref"]])
         elif not live:
             binding = _binding(contract.BINDING_UNVERIFIED,
                                REASON_SNAPSHOT_NOT_FRESH,
@@ -388,6 +519,16 @@ def classify(views, reading, observed_roots=None, confirmed_bindings=None):
                     task = matches[0]
                     bound.append((view, task))
         decided.append((view, binding, task))
+    # A task-native team binds only when a live session corroborates it,
+    # decided BEFORE any claim is counted: an uncorroborated historical
+    # record must never make a live team's agents ambiguous.
+    for index, (view, binding, task) in enumerate(decided):
+        if task is not None and task_native(view) and not _corroborated(
+                task, reading.agents):
+            decided[index] = (view, _binding(
+                contract.BINDING_UNVERIFIED, REASON_NOT_CORROBORATED,
+                task.task_id), None)
+    bound = [(view, task) for view, _, task in decided if task is not None]
     claims = _Claims(bound, reading.agents)
     out = []
     for view, binding, task in decided:

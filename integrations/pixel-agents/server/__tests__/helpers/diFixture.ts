@@ -26,3 +26,23 @@ export function loadFixture(): Record<string, unknown> {
 export function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
+
+/**
+ * Add `missions[].workflow_phase` to a contract-v2 response EXACTLY as the current producer emits it
+ * (mission_sources/contract_v2.py `workflow_phase`): a workflow_authority.workflow_phase/2 record
+ * declares its own phase; every other model is not_applicable. For EDITED CLONES of a historical
+ * emission that predates the declared field — the result is synthetic, never a new emission.
+ */
+export function declareWorkflowPhases(response: Record<string, unknown>): void {
+  for (const m of response.missions as Array<Record<string, unknown>>) {
+    const lifecycle = m.lifecycle as { model: string; state: string };
+    m.workflow_phase =
+      lifecycle.model === 'workflow_authority.workflow_phase/2'
+        ? { state: 'observed', problem: null, phase: lifecycle.state }
+        : {
+            state: 'not_applicable',
+            problem: 'lifecycle_model_has_no_workflow_phase',
+            phase: null,
+          };
+  }
+}

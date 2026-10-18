@@ -40,6 +40,7 @@ from mission_sources import contract_v2
 from mission_sources import fileread
 from mission_sources import query as query_module
 from mission_sources import registry as registry_module
+from mission_sources import roster
 from mission_sources import sources as sources_module
 
 
@@ -340,32 +341,41 @@ def _pass_budget(budget):
             .pass_budget() if budget is None else budget)
 
 
-def source_views(source_registry, now, budget=None):
-    """The mission views of every FRESH registered source (the version 2
-    discovery pass: the same views the version 1 query classifies), read
-    under ``budget`` (a ``PassBudget``; a standalone one when None); ``[]``
-    when the registry cannot be loaded. ``roster.discovery`` takes these
-    views directly."""
+def discovery_input(source_registry, now, budget=None, readers=None):
+    """``(views, canonical_complete)`` for the version 2 discovery pass: the
+    mission views of every FRESH registered source (the same views the
+    version 1 query classifies), read under ``budget`` (a ``PassBudget``; a
+    standalone one when None) with ``readers`` (``sources.read_source``),
+    and whether every CANONICAL source was read fresh
+    (``roster.canonical_sources_complete``). ``([], False)`` when the
+    registry cannot be loaded. ``roster.discovery`` takes both directly."""
     try:
         document, _ = source_registry.load_measured(absent_is_empty=False)
     except registry_module.RegistryError:
-        return []
+        return [], False
     budget = _pass_budget(budget)
-    views = []
+    views, blocks = [], []
     for source in sorted(document["sources"], key=lambda s: s["source_id"]):
-        result = budget.read_source(source, now)
+        result = budget.read_source(source, now, readers)
         if result["health"] == contract.HEALTH_FRESH:
             views.extend(result["missions"])
-    return views
+        blocks.append(result)
+    return views, roster.canonical_sources_complete(blocks)
+
+
+def source_views(source_registry, now, budget=None, readers=None):
+    """The views of ``discovery_input`` alone (``[]`` when the registry
+    cannot be loaded)."""
+    return discovery_input(source_registry, now, budget, readers)[0]
 
 
 def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
                 max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
                 registry_directory=None, registry_bytes=None,
                 observed_roots=None, confirmed_bindings=None, compose=None,
-                budget=None):
+                budget=None, runtime_agents=None):
     """One version 2 response over an already loaded (and validated)
-    registry. ``observed_roots`` and ``confirmed_bindings``: see
+    registry. ``runtime_agents``: as ``query.assemble``. ``observed_roots`` and ``confirmed_bindings``: see
     ``roster.classify``; ``compose``: see the module; ``budget``: this
     pass's ``PassBudget`` (the owner's, of its SHARED refresh budget; a
     standalone one when None)."""
@@ -390,7 +400,8 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         del block["missions"]
         source_blocks.append(block)
     missions, unmatched = chains_module.classify_v2(
-        views, reading, chain_reading, observed_roots, confirmed_bindings)
+        views, reading, chain_reading, observed_roots, confirmed_bindings,
+        canonical_complete=roster.canonical_sources_complete(source_blocks))
     states = _mission_states(missions, kinds, sources_by_id, chain_reading,
                              compose)
     for mission in missions:
@@ -398,6 +409,7 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         mission["admitted_artifacts"] = {
             "canonical_review": canonical_review(
                 mission, kinds[mission["source_id"]], chain_reading)}
+        mission["workflow_phase"] = contract_v2.workflow_phase(mission)
     registry = query_module._registry_block(
         contract.HEALTH_FRESH, None, len(registry_document["sources"]),
         registry_directory, registry_bytes)
@@ -406,14 +418,16 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         valid_until_v2(now, max_age_seconds, reading, chain_reading,
                        source_blocks), limits_v2(),
         registry, source_blocks, reading.describe(), chain_reading.describe(),
-        missions, unmatched)
+        missions, unmatched,
+        None if runtime_agents is None
+        else runtime_agents(missions, reading, now, source_blocks))
     return contract_v2.validate_response_v2(response)
 
 
 def query_v2(source_registry, runtime_snapshot, chain_observation, now,
              max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
              observed_roots=None, confirmed_bindings=None, compose=None,
-             budget=None):
+             budget=None, runtime_agents=None):
     """``query.query`` for version 2: a registry that cannot be loaded
     degrades explicitly (its own health and problem, no sources, no
     missions) instead of raising or reading as empty."""
@@ -432,9 +446,10 @@ def query_v2(source_registry, runtime_snapshot, chain_observation, now,
             now, max_age_seconds,
             valid_until_v2(now, max_age_seconds, reading, chain_reading, []),
             limits_v2(), registry, [], reading.describe(),
-            chain_reading.describe(), [], None)
+            chain_reading.describe(), [], None,
+            query_module.registry_failed_agents(runtime_agents))
         return contract_v2.validate_response_v2(response)
     return assemble_v2(document, runtime_snapshot, chain_observation, now,
                        max_age_seconds, readers, source_registry.directory,
                        size, observed_roots, confirmed_bindings, compose,
-                       budget)
+                       budget, runtime_agents)

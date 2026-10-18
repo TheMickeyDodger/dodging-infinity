@@ -2677,6 +2677,9 @@ MISSION_SOURCES_ALLOWED_CONSUMERS = frozenset({
     # only) and the Mission State composer (contract_v2, fileread, sources
     # only); their exact imported names are pinned in (12h).
     'target_runtime/review_record.py', 'target_runtime/mission_state.py',
+    # Item 07: the read-only task-native reader (contract, fileread,
+    # sources only); its exact imports are pinned in (12i).
+    'target_runtime/herdr_task_source.py',
 })
 # Within the package, only the reader may import mission; every other module
 # stays mission-free.
@@ -3058,8 +3061,9 @@ for _node in ast.walk(_catalog_tree):
             # Query contract v2 adds the read-only Mission State composer
             # (pinned in 12h); the catalog itself still imports no control,
             # delivery or Mission package.
+            # Item 07 adds the read-only task-native reader (pinned in 12i).
             assert {a.name for a in _node.names} <= {
-                'mission_state', 'runtime_snapshot'}, (
+                'herdr_task_source', 'mission_state', 'runtime_snapshot'}, (
                 CATALOG_FILE, _node.lineno)
     if isinstance(_node, ast.Import):
         for _alias in _node.names:
@@ -3259,6 +3263,57 @@ for _node in ast.walk(_ms_tree):
             'record_', 'mint_', 'apply_', 'reserve', 'attest', 'submit',
             'propose', 'decide', 'reconcile')), (
             MISSION_STATE_FILE, _node.lineno, _name)
+
+# (12i) Item 07: target_runtime/herdr_task_source.py, the READ-ONLY
+#       task-native reader, pinned STRUCTURALLY: exactly these imports (from
+#       the engine ONLY its pure identity and vintage modules: never its
+#       registry module, whose load migrates by writing); every file read
+#       goes through the hardened fixed-artifact reader (no open of its
+#       own); it calls no write, process, control or save name and names no
+#       mutating registry helper.
+HERDR_TASK_SOURCE_FILE = 'target_runtime/herdr_task_source.py'
+_hts_tree = ast.parse((R / HERDR_TASK_SOURCE_FILE).read_text())
+_hts_import_rows = sorted(
+    [(None, tuple(a.name for a in n.names)) for n in ast.walk(_hts_tree)
+     if isinstance(n, ast.Import)]
+    + [(n.module, tuple(a.name for a in n.names)) for n in ast.walk(_hts_tree)
+       if isinstance(n, ast.ImportFrom)], key=repr)
+assert _hts_import_rows == sorted([
+    (None, ('hashlib',)), (None, ('json',)), (None, ('os',)),
+    (None, ('stat',)), ('herdr', ('identity',)), ('herdr', ('vintage',)),
+    ('mission_sources', ('contract',)), ('mission_sources', ('fileread',)),
+    # Round 9: query_v2 ONLY to recognise the production v2 PassBudget, whose
+    # ReadHold already reserves the source's allowance (the reader holds the
+    # v1 QueryBudget itself).
+    ('mission_sources', ('query_v2',)),
+    ('mission_sources', ('sources',)), ('target_runtime', ('prepare',)),
+    ('target_runtime', ('runtime_snapshot',)),
+    ('target_runtime', ('state_artifact',)),
+], key=repr), _hts_import_rows
+_hts_attributes = {}
+for _node in ast.walk(_hts_tree):
+    if isinstance(_node, ast.Attribute) and isinstance(_node.value, ast.Name):
+        _hts_attributes.setdefault(_node.value.id, set()).add(_node.attr)
+assert _hts_attributes.get('engine_identity', set()) <= {
+    'classify', 'VERDICT_PRESENT', 'VERDICT_REPLACED', 'VERDICT_UNBOUND'}, (
+    _hts_attributes.get('engine_identity'))
+assert _hts_attributes.get('vintage') == {'is_terminal_status'}, (
+    _hts_attributes.get('vintage'))
+assert _hts_attributes.get('state_artifact') == {'read_state_artifact'}, (
+    _hts_attributes.get('state_artifact'))
+assert _hts_attributes.get('query_v2_module') == {'PassBudget'}, (
+    _hts_attributes.get('query_v2_module'))
+for _node in ast.walk(_hts_tree):
+    if isinstance(_node, (ast.Name, ast.Attribute)):
+        _word = getattr(_node, 'id', getattr(_node, 'attr', ''))
+        assert _word not in ('registry_load', 'registry_save',
+                             'register_repo', 'load_bindings',
+                             'save_bindings', 'rediscover'), (
+            HERDR_TASK_SOURCE_FILE, _node.lineno, _word)
+    if isinstance(_node, ast.Call):
+        _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+        assert _name not in RUNTIME_SNAPSHOT_FORBIDDEN_CALLS, (
+            HERDR_TASK_SOURCE_FILE, _node.lineno, _name)
 # The read-only shim's own lock and save are DEFINITIONS that refuse.
 _ms_shim = [n for n in _ms_tree.body if isinstance(n, ast.ClassDef)
             and n.name == 'ReadOnlyMissionStore']

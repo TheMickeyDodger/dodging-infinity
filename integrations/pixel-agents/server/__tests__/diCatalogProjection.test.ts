@@ -39,7 +39,16 @@ describe('FIXTURE: CONTRACT-v3 canonical fixture is the pinned bytes', () => {
 
 describe('closed enumerations bound verbatim from CONTRACT-v3', () => {
   it('carries every value v3 counts, and nothing else', () => {
-    expect(BINDING_REASONS).toHaveLength(16);
+    // CONTRACT-v3's 16 binding reasons, then EXACTLY item 07's five (mission_sources/roster.py:
+    // a task-native record defers, or its team is not corroborated by a live session).
+    expect(BINDING_REASONS).toHaveLength(21);
+    expect(BINDING_REASONS.slice(16)).toEqual([
+      'covered_by_canonical_record',
+      'canonical_claim_conflict',
+      'canonical_source_not_fresh',
+      'covered_by_parent_chain',
+      'task_record_not_corroborated_by_a_live_session',
+    ]);
     expect(MEMBER_REASONS).toHaveLength(12);
     expect([...BINDING_STATES]).toEqual([
       'bound',
@@ -118,6 +127,9 @@ describe('FIXTURE: envelope', () => {
       problem: null,
       detail: null,
       observedAt: null,
+      // item 07: the capture's root account and listing anchor, null when not reported.
+      roots: null,
+      listingAnchor: null,
     });
     expect(readRuntimeCapture(null).configured).toBeNull();
     expect(

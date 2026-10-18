@@ -77,12 +77,29 @@ QUERY_CONTRACT_VERSION = 1
 
 KIND_MISSION_CORE = "mission_core"
 KIND_WORKFLOW_STORE = "workflow_store"
-SOURCE_KINDS = (KIND_MISSION_CORE, KIND_WORKFLOW_STORE)
+#: The READ-ONLY task-native source (item 07): records native to the
+#: engineering runtime's own CURRENT TASK of each DI-registered root, with
+#: no Mission identity. Its reader, model, schema and standing table live
+#: at the catalog producer boundary (``target_runtime``), never here: this
+#: package stays engine-neutral. A registry presence is a LOCATOR only.
+KIND_TASK_NATIVE = "task_native"
+SOURCE_KINDS = (KIND_MISSION_CORE, KIND_WORKFLOW_STORE, KIND_TASK_NATIVE)
+#: ``runtime_agents`` when no task-native reading supplied role records.
+PROBLEM_NO_TASK_NATIVE_SOURCE = "no_task_native_role_records"
+#: Kinds whose records are CANONICAL Mission / workflow records: a
+#: task-native record defers to any of them that names the same task or
+#: root (``roster.deferrals``), and never stands in for one that could not
+#: be read.
+CANONICAL_KINDS = (KIND_MISSION_CORE, KIND_WORKFLOW_STORE)
 
 # -- lifecycle models: identifiers only; literals stay native -----------
 
 LIFECYCLE_MODEL_MISSION_CORE = "mission_core.mission_state/1"
 LIFECYCLE_MODEL_WORKFLOW_STORE = "workflow_authority.workflow_phase/2"
+#: The lifecycle models of the canonical kinds' readers; a view under any
+#: other model is task-native (``roster.deferrals``).
+CANONICAL_LIFECYCLE_MODELS = (LIFECYCLE_MODEL_MISSION_CORE,
+                              LIFECYCLE_MODEL_WORKFLOW_STORE)
 
 # -- membership standing: a gate derived per model, NOT a lifecycle -----
 
@@ -434,17 +451,158 @@ def read_runtime_snapshot(value, now, max_age_seconds=DEFAULT_MAX_AGE_SECONDS):
                            producer, tasks, agents)
 
 
+# -- runtime agents (item 07): live agents identified by task-native records
+
+# Every live agent that a task-native source's ROLE records identify and
+# that no bound team represents: verified individually by the producer at
+# the catalog boundary (engine-specific checks live there, never here),
+# then disclosed here with TWO separate answers that never substitute for
+# each other: ``identity`` (is this live row exactly the recorded role?) and
+# ``assignment`` (what does the root's own task record say, and was its
+# team verified?). Only an ``identity`` of ``verified`` may be drawn; no
+# entry is ever a team member. ``counts`` are what was actually requested,
+# read and decided; entries beyond ``MAX_RUNTIME_AGENTS`` are counted in
+# ``agents_over_bound``, never dropped silently. ``roots_requested`` sums
+# only registries that were READ; ``registries_unread`` counts the sources
+# whose request is UNKNOWN, so zero never stands in for unknown.
+RUNTIME_AGENTS_KEYS = ("state", "problem", "observed_at", "first_pass_at",
+                       "second_pass_at", "caveat", "counts", "agents",
+                       "agents_over_bound")
+RUNTIME_AGENTS_OBSERVED = "observed"
+RUNTIME_AGENTS_UNAVAILABLE = "unavailable"
+RUNTIME_AGENTS_NOT_APPLICABLE = "not_applicable"
+RUNTIME_AGENTS_STATES = (RUNTIME_AGENTS_OBSERVED, RUNTIME_AGENTS_UNAVAILABLE,
+                         RUNTIME_AGENTS_NOT_APPLICABLE)
+#: Two source passes bracket the runtime observation: their agreement is
+#: NOT atomic, and a change and change-back between them (ABA) is NOT
+#: detected. Every observed block says so.
+RUNTIME_AGENTS_CAVEAT = "two_pass_agreement_not_atomic_aba_not_detected"
+RUNTIME_AGENTS_COUNT_KEYS = (
+    "roots_requested", "roots_read", "roles_recorded", "roles_live",
+    "verified", "unverified", "ambiguous", "unavailable",
+    "represented_by_teams", "roots_over_capacity", "names_over_bound",
+    "roots_role_records_unreadable", "registries_unread")
+RUNTIME_AGENT_KEYS = ("agent_ref", "source_id", "root_ref", "root_aliases",
+                      "workspace_realpath", "logical", "role", "agent",
+                      "session", "pane_id", "workspace_id", "provider",
+                      "activity", "identity", "assignment")
+IDENTITY_VERIFIED = "verified"
+IDENTITY_UNVERIFIED = "unverified"
+IDENTITY_AMBIGUOUS = "ambiguous"
+IDENTITY_UNAVAILABLE = "unavailable"
+IDENTITY_STATES = (IDENTITY_VERIFIED, IDENTITY_UNVERIFIED, IDENTITY_AMBIGUOUS,
+                   IDENTITY_UNAVAILABLE)
+IDENTITY_KEYS = ("state", "reason")
+#: ``unassigned``: the root's own task record shows NO CURRENT task (none at
+#: all, or one that is not current: its status is disclosed).
+#: ``unverified_reference``: the record names a task that may be current,
+#: and its team was NOT verified (the reason says why, e.g. the root was not
+#: captured within capacity): a RECORDED reference, never membership, and
+#: never an assertion that the task does not exist.
+ASSIGNMENT_UNASSIGNED = "unassigned"
+ASSIGNMENT_UNVERIFIED_REFERENCE = "unverified_reference"
+ASSIGNMENT_STATES = (ASSIGNMENT_UNASSIGNED, ASSIGNMENT_UNVERIFIED_REFERENCE)
+ASSIGNMENT_KEYS = ("state", "reason", "task_ref", "task_id", "task_status")
+MAX_RUNTIME_AGENTS = MAX_SNAPSHOT_AGENTS
+MAX_ROOT_ALIASES = 256
+
+
+def runtime_agents_block(state, problem=None, observed_at=None,
+                         first_pass_at=None, second_pass_at=None,
+                         counts=None, agents=(), agents_over_bound=0):
+    """One ``runtime_agents`` block (validated)."""
+    block = {
+        "state": state, "problem": problem, "observed_at": observed_at,
+        "first_pass_at": first_pass_at, "second_pass_at": second_pass_at,
+        "caveat": (RUNTIME_AGENTS_CAVEAT if state == RUNTIME_AGENTS_OBSERVED
+                   else None),
+        "counts": dict((key, (counts or {}).get(key, 0))
+                       for key in RUNTIME_AGENTS_COUNT_KEYS),
+        "agents": list(agents),
+        "agents_over_bound": agents_over_bound,
+    }
+    return validate_runtime_agents(block)
+
+
+def validate_runtime_agents(block, location="runtime_agents"):
+    """Refuse (``ContractError``) any block outside the closed shape."""
+    require_closed_mapping(block, RUNTIME_AGENTS_KEYS, location)
+    if block["state"] not in RUNTIME_AGENTS_STATES:
+        raise ContractError(PROBLEM_RESPONSE_SHAPE,
+                            "%s.state is not declared" % location)
+    observed = block["state"] == RUNTIME_AGENTS_OBSERVED
+    require_text(block["problem"], location + ".problem", True)
+    if observed != (block["problem"] is None):
+        raise ContractError(PROBLEM_RESPONSE_SHAPE,
+                            "%s.problem is set exactly when not observed"
+                            % location)
+    for key in ("observed_at", "first_pass_at", "second_pass_at"):
+        if block[key] is not None or observed:
+            require_int(block[key], "%s.%s" % (location, key))
+    if block["caveat"] != (RUNTIME_AGENTS_CAVEAT if observed else None):
+        raise ContractError(PROBLEM_RESPONSE_SHAPE,
+                            "%s.caveat must state the two-pass limit"
+                            % location)
+    require_closed_mapping(block["counts"], RUNTIME_AGENTS_COUNT_KEYS,
+                           location + ".counts")
+    for key in RUNTIME_AGENTS_COUNT_KEYS:
+        require_int(block["counts"][key], "%s.counts.%s" % (location, key))
+    require_int(block["agents_over_bound"], location + ".agents_over_bound")
+    agents = require_list(block["agents"], location + ".agents",
+                          MAX_RUNTIME_AGENTS)
+    if agents and not observed:
+        raise ContractError(PROBLEM_RESPONSE_SHAPE,
+                            "%s lists agents while not observed" % location)
+    for index, entry in enumerate(agents):
+        _runtime_agent(entry, "%s.agents[%d]" % (location, index))
+    return block
+
+
+def _runtime_agent(entry, location):
+    require_closed_mapping(entry, RUNTIME_AGENT_KEYS, location)
+    for key in ("agent_ref", "source_id", "root_ref", "workspace_realpath",
+                "logical", "agent"):
+        require_text(entry[key], "%s.%s" % (location, key))
+    for key in ("role", "session", "pane_id", "workspace_id", "provider",
+                "activity"):
+        require_text(entry[key], "%s.%s" % (location, key), True)
+    for alias in require_list(entry["root_aliases"], location + ".root_aliases",
+                              MAX_ROOT_ALIASES):
+        require_text(alias, location + ".root_aliases[]")
+    identity = entry["identity"]
+    require_closed_mapping(identity, IDENTITY_KEYS, location + ".identity")
+    if identity["state"] not in IDENTITY_STATES:
+        raise ContractError(PROBLEM_RESPONSE_SHAPE,
+                            "%s.identity.state is not declared" % location)
+    require_text(identity["reason"], location + ".identity.reason")
+    assignment = entry["assignment"]
+    require_closed_mapping(assignment, ASSIGNMENT_KEYS,
+                           location + ".assignment")
+    if assignment["state"] not in ASSIGNMENT_STATES:
+        raise ContractError(PROBLEM_RESPONSE_SHAPE,
+                            "%s.assignment.state is not declared" % location)
+    require_text(assignment["reason"], location + ".assignment.reason")
+    for key in ("task_ref", "task_id", "task_status"):
+        require_text(assignment[key], "%s.assignment.%s" % (location, key),
+                     True)
+    if assignment["state"] == ASSIGNMENT_UNVERIFIED_REFERENCE and (
+            assignment["task_id"] is None):
+        raise ContractError(PROBLEM_RESPONSE_SHAPE,
+                            "%s: an unverified reference names its task"
+                            % location)
+
+
 # -- response envelope and consumer-side freshness ----------------------
 
 RESPONSE_KEYS = ("contract", "contract_version", "generated_at",
                  "max_age_seconds", "valid_until", "limits", "registry",
                  "sources", "runtime_snapshot", "missions",
-                 "unmatched_runtime_agent_count")
+                 "unmatched_runtime_agent_count", "runtime_agents")
 
 
 def envelope(generated_at, max_age_seconds, valid_until, limits, registry,
              sources, runtime_snapshot, missions,
-             unmatched_runtime_agent_count):
+             unmatched_runtime_agent_count, runtime_agents=None):
     """Assemble one query response; the contract identity is always set.
 
     ``valid_until`` is the instant after which NOTHING in the response may
@@ -469,6 +627,10 @@ def envelope(generated_at, max_age_seconds, valid_until, limits, registry,
         "runtime_snapshot": runtime_snapshot,
         "missions": missions,
         "unmatched_runtime_agent_count": unmatched_runtime_agent_count,
+        "runtime_agents": validate_runtime_agents(
+            runtime_agents if runtime_agents is not None
+            else runtime_agents_block(RUNTIME_AGENTS_NOT_APPLICABLE,
+                                      PROBLEM_NO_TASK_NATIVE_SOURCE)),
     }
 
 

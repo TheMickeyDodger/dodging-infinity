@@ -148,6 +148,7 @@ from mission_sources import query as query_module
 from mission_sources import query_v2 as query_v2_module
 from mission_sources import registry as registry_module
 from mission_sources import roster as roster_module
+from target_runtime import herdr_task_source
 from target_runtime import runtime_snapshot as snapshot_module
 
 ENDPOINT = "di.mission_catalog"
@@ -214,6 +215,28 @@ def catalog_answer(requested_at, response, problem, detail, runtime_capture,
             "problem": problem, "detail": detail,
             "runtime_capture": runtime_capture, "served": served,
             "retry_after_seconds": retry_after_seconds}
+
+
+def _native(capture, names, over_bound):
+    """The capture facts ``herdr_task_source.runtime_agents`` needs, held
+    in memory only: the requested names, those left out, the native stable
+    field the projection returned for them (None when not observed), and
+    the roots the capture reported over its capacity."""
+    roots = (capture.roots or {}) if capture is not None else {}
+    return {
+        "requested": list(names or ()),
+        "names_over_bound": over_bound,
+        "native_cwd": None if capture is None or not capture.is_available()
+        else capture.native_cwd,
+        "over_capacity": list(roots.get("over_capacity") or ()),
+    }
+
+
+def _runtime_agents_hook(observation, native):
+    def hook(missions, reading, now, sources):
+        return herdr_task_source.runtime_agents(observation, missions,
+                                                reading, now, native, sources)
+    return hook
 
 
 class CatalogService(object):
@@ -384,13 +407,18 @@ class CatalogService(object):
             raise TypeError("clock must return a non-negative int")
         return now
 
-    def _capture_runtime(self, wait_seconds, discovery):
-        """``(snapshot, runtime_capture, observed_roots)``. With discovery,
-        ``observed_roots`` is the set the capture actually observed (the
-        roster then reads any other workspace as not observed); without it,
-        None (the manual-root semantics, unchanged)."""
+    def _capture_runtime(self, wait_seconds, discovery, observation=None):
+        """``(snapshot, runtime_capture, observed_roots, native)``. With
+        discovery, ``observed_roots`` is the set the capture actually
+        observed (the roster then reads any other workspace as not
+        observed); without it, None (the manual-root semantics, unchanged).
+        ``native``: the in-memory facts ``herdr_task_source.runtime_agents``
+        needs (``_native``), never part of an answer."""
+        names, over_bound = (observation.stable_names() if observation
+                             else (None, 0))
         if self._runtime is None:
-            return None, {"configured": False}, None
+            return None, {"configured": False}, None, _native(
+                None, names, over_bound)
         discovered = list(discovery["roots"]) if discovery else []
         runtime = {"configured": True, "discovery": discovery,
                    "registered_roots": list(self._manual_roots)}
@@ -399,9 +427,10 @@ class CatalogService(object):
                            detail="no registered root, and no canonical"
                            " binding names a root to observe; nothing was"
                            " started", observed_at=None, roots=None)
-            return None, runtime, (set() if self._discover else None)
+            return None, runtime, (set() if self._discover else None), \
+                _native(None, names, over_bound)
         capture = self._runtime.request(wait_seconds * RUNTIME_SHARE,
-                                        discovered)
+                                        discovered, stable_names=names)
         runtime.update(available=capture.is_available(),
                        problem=capture.problem, detail=capture.detail,
                        observed_at=capture.observed_at, roots=capture.roots)
@@ -411,32 +440,40 @@ class CatalogService(object):
             observed = set(captured if captured is not None
                            else self._manual_roots) \
                 if capture.is_available() else set()
-        return capture.snapshot, runtime, observed
+        return capture.snapshot, runtime, observed, _native(
+            capture, names, over_bound)
 
     def _request(self, requested_at, deadline, wait_seconds):
         if self._contract_version != 1:
             return self._request_v2(requested_at, deadline, wait_seconds)
         discovery = None
+        observation = herdr_task_source.Observation()
         if self._discover:
             # ONE bounded read whose only use is choosing the roots to
             # observe; the answer is built from a SECOND read after the
             # capture (sequential reads, not one atomic generation).
             started = time.monotonic()
             pre = self._run_query(None, self._now(), started
-                                  + wait_seconds * DISCOVERY_SHARE, None)
+                                  + wait_seconds * DISCOVERY_SHARE, None,
+                                  readers=observation.pass_readers())
             if "response" not in pre:
                 return catalog_answer(requested_at, None, pre["problem"],
                                       pre["detail"], None)
-            discovery = roster_module.discovery(pre["response"]["missions"])
-        snapshot, runtime, observed = self._capture_runtime(wait_seconds,
-                                                            discovery)
+            discovery = self._anchored(roster_module.discovery(
+                pre["response"]["missions"],
+                roster_module.canonical_sources_complete(
+                    pre["response"]["sources"])), observation)
+        snapshot, runtime, observed, native = self._capture_runtime(
+            wait_seconds, discovery, observation if self._discover else None)
         # ``now`` for the query: after the snapshot's own observation and
         # before any read of the registry or a store.
         # The answering pass must AGREE with the discovery pass: a binding
         # seen in only one pass, or changed between them, is unverified.
         confirmed = discovery["bindings"] if discovery else None
-        outcome = self._run_query(snapshot, self._now(), deadline, observed,
-                                  confirmed)
+        outcome = self._run_query(
+            snapshot, self._now(), deadline, observed, confirmed,
+            readers=observation.pass_readers(),
+            runtime_agents=_runtime_agents_hook(observation, native))
         if "response" not in outcome:
             return catalog_answer(requested_at, None, outcome["problem"],
                                   outcome["detail"], runtime)
@@ -445,15 +482,30 @@ class CatalogService(object):
         return catalog_answer(requested_at, outcome["response"], None, None,
                               runtime, served=SERVED_REFRESHED)
 
+    def _anchored(self, discovery, observation):
+        """``discovery`` plus ``listing_anchor``: when NO root is to be
+        observed (no registered root, no root discovered), the ONE
+        task-native root (``Observation.anchor_root``) the capture observes
+        so that a listing exists to verify runtime roles against; never a
+        membership, and disclosed in the answer's runtime capture."""
+        anchor = None
+        if not self._manual_roots and not discovery["roots"]:
+            anchor = observation.anchor_root()
+        if anchor is not None:
+            discovery = dict(discovery, roots=[anchor])
+        return dict(discovery, listing_anchor=anchor)
+
     def _run_query(self, snapshot, now, join_until, observed_roots,
-                   confirmed_bindings=None):
+                   confirmed_bindings=None, readers=None,
+                   runtime_agents=None):
         """One source query on the query thread (the slot), joined until
         ``join_until`` at the latest: ``{"response"}`` or ``{"problem",
         "detail"}``."""
         outcome = {}
         worker = threading.Thread(target=self._query,
                                   args=(snapshot, now, outcome,
-                                        observed_roots, confirmed_bindings),
+                                        observed_roots, confirmed_bindings,
+                                        readers, runtime_agents),
                                   name="mission-catalog-query", daemon=True)
         with self._mutex:
             self._worker = worker
@@ -477,11 +529,14 @@ class CatalogService(object):
         return {"response": outcome["response"]}
 
     def _query(self, snapshot, now, outcome, observed_roots=None,
-               confirmed_bindings=None):
+               confirmed_bindings=None, readers=None, runtime_agents=None):
         try:
             outcome["response"] = query_module.query(
-                self._registry, snapshot, now, observed_roots=observed_roots,
-                confirmed_bindings=confirmed_bindings)
+                self._registry, snapshot, now,
+                readers=readers or herdr_task_source.READERS,
+                observed_roots=observed_roots,
+                confirmed_bindings=confirmed_bindings,
+                runtime_agents=runtime_agents)
         except Exception as exc:                          # noqa: BLE001
             # Could not look: reported, never shown as a response.
             outcome["failed"] = "the query raised %s" % type(exc).__name__
@@ -538,14 +593,17 @@ class CatalogService(object):
                     "detail": outcome["failed"]}
         return {"response": outcome["response"]}
 
-    def _pre_v2(self, budget):
+    def _pre_v2(self, budget, observation):
         """``(discovery, samples)``: the discovery pass (or None) and the
         composer's load 1 of every registered Mission Core store, BOTH held
         against the refresh's shared read ``budget``."""
         discovery = None
         if self._discover:
-            discovery = roster_module.discovery(query_v2_module.source_views(
-                self._registry, self._now(), budget.pass_budget()))
+            views, complete = query_v2_module.discovery_input(
+                self._registry, self._now(), budget.pass_budget(),
+                observation.pass_readers())
+            discovery = self._anchored(
+                roster_module.discovery(views, complete), observation)
         try:
             document, _ = self._registry.load_measured(absent_is_empty=False)
             registered = document["sources"]
@@ -567,11 +625,15 @@ class CatalogService(object):
         return dict((root, expected[root])
                     for root in kept[:snapshot_module.MAX_HERD_ROOTS])
 
-    def _capture_chains(self, wait_seconds, discovery, samples):
+    def _capture_chains(self, wait_seconds, discovery, samples,
+                        observation=None):
         """``_capture_runtime`` for a CHAIN request: ``(snapshot,
-        chain_observation, runtime_capture, observed_roots)``."""
+        chain_observation, runtime_capture, observed_roots, native)``."""
+        names, over_bound = (observation.stable_names() if observation
+                             else (None, 0))
         if self._runtime is None:
-            return None, None, {"configured": False}, None
+            return None, None, {"configured": False}, None, _native(
+                None, names, over_bound)
         discovered = list(discovery["roots"]) if discovery else []
         runtime = {"configured": True, "discovery": discovery,
                    "registered_roots": list(self._manual_roots)}
@@ -580,11 +642,14 @@ class CatalogService(object):
                            detail="no registered root, and no canonical"
                            " binding names a root to observe; nothing was"
                            " started", observed_at=None, roots=None)
-            return None, None, runtime, (set() if self._discover else None)
+            return None, None, runtime, (set() if self._discover
+                                         else None), _native(
+                None, names, over_bound)
         capture = self._runtime.request(
             wait_seconds * RUNTIME_SHARE, discovered,
             chains={"expected_reviews": self._expected_reviews(discovery,
-                                                               samples)})
+                                                               samples)},
+            stable_names=names)
         runtime.update(available=capture.is_available(),
                        problem=capture.problem, detail=capture.detail,
                        observed_at=capture.observed_at, roots=capture.roots)
@@ -595,7 +660,7 @@ class CatalogService(object):
                            else self._manual_roots) \
                 if capture.is_available() else set()
         return (capture.snapshot, capture.chain_observation, runtime,
-                observed)
+                observed, _native(capture, names, over_bound))
 
     def _request_v2(self, requested_at, deadline, wait_seconds):
         started = time.monotonic()
@@ -605,14 +670,16 @@ class CatalogService(object):
         stated = refresh_budget(4 if self._discover else 3)
         budget = query_v2_module.RefreshReadBudget(
             stated["sum_max_query_input_bytes"])
-        pre = self._run_job(lambda: self._pre_v2(budget),
+        observation = herdr_task_source.Observation()
+        pre = self._run_job(lambda: self._pre_v2(budget, observation),
                             started + wait_seconds * DISCOVERY_SHARE)
         if "response" not in pre:
             return catalog_answer(requested_at, None, pre["problem"],
                                   pre["detail"], None)
         discovery, samples = pre["response"]
-        snapshot, chains, runtime, observed = self._capture_chains(
-            wait_seconds, discovery, samples)
+        snapshot, chains, runtime, observed, native = self._capture_chains(
+            wait_seconds, discovery, samples,
+            observation if self._discover else None)
         confirmed = discovery["bindings"] if discovery else None
         now = self._now()
         collection = budget.stage()
@@ -622,9 +689,12 @@ class CatalogService(object):
                                           chain_reading, collection)
 
         outcome = self._run_job(lambda: query_v2_module.query_v2(
-            self._registry, snapshot, chains, now, observed_roots=observed,
+            self._registry, snapshot, chains, now,
+            readers=observation.pass_readers(), observed_roots=observed,
             confirmed_bindings=confirmed, compose=compose,
-            budget=budget.pass_budget()), deadline)
+            budget=budget.pass_budget(),
+            runtime_agents=_runtime_agents_hook(observation, native)),
+            deadline)
         if "response" not in outcome:
             return catalog_answer(requested_at, None, outcome["problem"],
                                   outcome["detail"], runtime)

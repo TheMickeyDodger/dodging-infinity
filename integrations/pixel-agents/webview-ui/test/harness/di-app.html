@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DI app reconciliation harness (FIXTURE)</title>
+    <!-- FIXTURE / TEST ONLY: the REAL app entry (App, useExtensionMessages, OfficeState, canvas
+         reconciliation, selection polling), unmodified; the test serves /ws. The probe only
+         records the App's own OfficeState instance so the test can observe its selection. -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./diAppProbe.ts"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

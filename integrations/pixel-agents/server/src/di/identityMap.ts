@@ -3,8 +3,11 @@
  *
  * The renderer keys characters by NUMBER. A member's canonical identity is an
  * EXPLICIT TUPLE of fields the backend projected — never a parsed ref:
- *   coverage   'direct' (the Mission's own task) or 'child' (contract v2: a linked child
- *              task's chain) — an explicit field, set by the projection, never inferred
+ *   coverage   'direct' (the Mission's own task), 'child' (contract v2: a linked child
+ *              task's chain) or 'runtime' (item 07: a live agent with a verified runtime
+ *              identity that NO team represents; missionRef is then the root's record ref,
+ *              taskId null and memberRef the runtime agent ref) — an explicit field, set by
+ *              the projection, never inferred
  *   sourceId   the registered source
  *   missionRef the backend's mission identity (opaque)
  *   taskId     the task the member belongs to (task-qualified; null when not recorded)
@@ -19,9 +22,12 @@
  * someone else.
  */
 
-/** `direct`: the Mission's own task; `child` (contract v2): a linked child task's chain. */
-export type Coverage = 'direct' | 'child';
-const COVERAGES: readonly string[] = ['direct', 'child'];
+/**
+ * `direct`: the Mission's own task; `child` (contract v2): a linked child task's chain;
+ * `runtime` (item 07): a verified runtime identity that is not a team member.
+ */
+export type Coverage = 'direct' | 'child' | 'runtime';
+const COVERAGES: readonly string[] = ['direct', 'child', 'runtime'];
 
 export interface CharacterIdentity {
   coverage: Coverage;
@@ -35,7 +41,8 @@ export class IdentityMapError extends Error {}
 
 function canonicalKey(identity: CharacterIdentity): string {
   const { coverage, sourceId, missionRef, taskId, memberRef } = identity;
-  // A closed set: v2's linked-child members are characters too; anything else is refused.
+  // A closed set: v2's linked-child members and item 07's runtime agents are characters too;
+  // anything else is refused.
   if (!COVERAGES.includes(coverage)) throw new IdentityMapError('unsupported coverage');
   for (const value of [sourceId, missionRef, memberRef]) {
     if (typeof value !== 'string' || value.length === 0) {

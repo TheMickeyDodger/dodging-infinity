@@ -274,13 +274,16 @@ def _direct_chain(mission, chain_reading, tasks_by_id):
     return chain, task
 
 
-def _claims(views, children_of):
+def _claims(views, children_of, deferred=None):
     """How many active missions' direct OR child chains claim each task id
     and each workspace (roster's own direct counts, plus every recorded
-    child of an active mission)."""
-    by_task, by_workspace = roster._claims(views)
+    child of an active mission); a deferring view claims nothing."""
+    deferred = deferred or {}
+    by_task, by_workspace = roster._claims(views, deferred)
     for view in views:
         if view["lifecycle"]["standing"] != contract.STANDING_ACTIVE:
+            continue
+        if view["mission_ref"] in deferred:
             continue
         for record in children_of[view["mission_ref"]]:
             if record["child_task_id"] is not None:
@@ -317,25 +320,49 @@ def _qualified(member, chain, chain_task_id, mission_ref):
     return member
 
 
+def _deferred(views, children_of, canonical_complete):
+    """``roster.deferrals`` with the recorded parent chains of every active,
+    non-deferring mission as ``parent_links``: a task-native root recorded as
+    a child is followed by its parent's chain, never twice."""
+    first = roster.deferrals(views, canonical_complete)
+    links = set()
+    for view in views:
+        if view["lifecycle"]["standing"] != contract.STANDING_ACTIVE or (
+                view["mission_ref"] in first):
+            continue
+        for record in children_of[view["mission_ref"]]:
+            links.add((record["child_task_id"], record["repo"]))
+    return roster.deferrals(views, canonical_complete, links)
+
+
 def classify_v2(views, reading, chain_reading, observed_roots=None,
-                confirmed_bindings=None):
+                confirmed_bindings=None, canonical_complete=True):
     """Return ``(missions, unmatched_runtime_agent_count)``: every mission a
     copy of its view plus ``binding`` (version 1, unchanged), ``members``
     (every bound chain, task-qualified), ``task_chains`` and
-    ``children_record``. The input is not mutated."""
-    missions, _ = roster.classify(views, reading, observed_roots,
-                                  confirmed_bindings)
-    live = reading.is_live() and chain_reading.is_live()
-    tasks_by_id = {}
-    for task in reading.tasks:
-        tasks_by_id.setdefault(task.task_id, []).append(task)
+    ``children_record``. The input is not mutated. A deferring task-native
+    view (``_deferred``) has no child chains: its root's children belong to
+    the record it defers to."""
     children_of, blocks = {}, {}
     for view in views:
         block, records = _parent_children(view, chain_reading)
         blocks[view["mission_ref"]] = block
         children_of[view["mission_ref"]] = records
-    task_claims, workspace_claims = _claims(views, children_of)
-    direct_task_claims, direct_workspace_claims = roster._claims(views)
+    deferred = _deferred(views, children_of, canonical_complete)
+    for ref in deferred:
+        children_of[ref] = []
+        blocks[ref] = _children_block(
+            contract_v2.CHILDREN_NOT_APPLICABLE,
+            contract_v2.PROBLEM_CHILDREN_FOLLOWED_ELSEWHERE)
+    missions, _ = roster.classify(views, reading, observed_roots,
+                                  confirmed_bindings, deferred=deferred)
+    live = reading.is_live() and chain_reading.is_live()
+    tasks_by_id = {}
+    for task in reading.tasks:
+        tasks_by_id.setdefault(task.task_id, []).append(task)
+    task_claims, workspace_claims = _claims(views, children_of, deferred)
+    direct_task_claims, direct_workspace_claims = roster._claims(views,
+                                                                 deferred)
     decided = []
     bound = []
     for mission in missions:

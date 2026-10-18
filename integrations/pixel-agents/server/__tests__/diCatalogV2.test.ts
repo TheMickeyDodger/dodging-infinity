@@ -14,7 +14,7 @@ import { parseEnvelope, projectResponse } from '../src/di/catalogProjection.js';
 import type { MissionPresentation, OfficeView } from '../src/di/officeView.js';
 import { buildOfficeView, DI_COVERAGE, DI_COVERAGE_V2 } from '../src/di/officeView.js';
 import type { ServeTimeVerdict } from '../src/di/serveTimeVerdict.js';
-import { clone, loadFixture } from './helpers/diFixture.js';
+import { clone, declareWorkflowPhases, loadFixture } from './helpers/diFixture.js';
 
 const V2_PATH = path.join(
   __dirname,
@@ -349,5 +349,95 @@ describe('r3b emitted answer: the vocabulary is complete for what the backend ac
       known: true,
       value: 'parent_binding_not_confirmed',
     });
+  });
+});
+
+describe('the DECLARED workflow phase, missions[].workflow_phase (contract v2; never lifecycle.state)', () => {
+  const WF_INDEX = 2; // synthetic_workflow_store:wf-0005, emitted phase DISPATCHED
+  const responseOf = (edit?: (raw: Raw) => void): Raw => {
+    const raw = clone(loadV2());
+    edit?.(raw);
+    return raw.response as Raw;
+  };
+  const projected = (response: Raw) => {
+    const r = projectResponse(response, 2);
+    if (!r.ok) throw new Error(`refused: ${r.verdict.detail}`);
+    return r.view.missions.map((m) => [m.missionRef, m.v2!.workflowPhase] as const);
+  };
+  const refusal = (response: Raw) => {
+    const r = projectResponse(response, 2);
+    return r.ok ? null : r.verdict.problem;
+  };
+  const declare = (raw: Raw) => declareWorkflowPhases(raw.response as Raw);
+
+  it('the historical emission predates the field: every Mission is not_reported, never "none"', () => {
+    for (const [, w] of projected(responseOf())) expect(w).toEqual({ state: 'not_reported' });
+  });
+
+  it('declared as the producer emits it: the workflow record observed, Mission Core not_applicable', () => {
+    expect(Object.fromEntries(projected(responseOf(declare)))).toEqual({
+      [M2]: { state: 'not_applicable', problem: 'lifecycle_model_has_no_workflow_phase' },
+      [M9]: { state: 'not_applicable', problem: 'lifecycle_model_has_no_workflow_phase' },
+      'synthetic_workflow_store:wf-0005': {
+        state: 'observed',
+        phase: { known: true, value: 'DISPATCHED' },
+      },
+    });
+  });
+
+  it('an out-of-vocabulary declared phase stays visible as unrecognized, never a default', () => {
+    const response = responseOf((raw) => {
+      declare(raw);
+      (missionRaw(raw, WF_INDEX).workflow_phase as Raw).phase = 'SOMEDAY';
+    });
+    expect(projected(response)[WF_INDEX][1]).toEqual({
+      state: 'observed',
+      phase: { known: false, raw: 'SOMEDAY' },
+    });
+  });
+
+  it.each([
+    ['an extra key', (raw: Raw) => ((missionRaw(raw, WF_INDEX).workflow_phase as Raw).extra = 1)],
+    [
+      'a phase given to Mission Core',
+      (raw: Raw) =>
+        (missionRaw(raw, 0).workflow_phase = {
+          state: 'observed',
+          problem: null,
+          phase: 'PLANNED',
+        }),
+    ],
+    [
+      'not_applicable on a workflow_authority record',
+      (raw: Raw) =>
+        (missionRaw(raw, WF_INDEX).workflow_phase = {
+          state: 'not_applicable',
+          problem: 'lifecycle_model_has_no_workflow_phase',
+          phase: null,
+        }),
+    ],
+    [
+      'a problem beside an observed phase',
+      (raw: Raw) => ((missionRaw(raw, WF_INDEX).workflow_phase as Raw).problem = 'x'),
+    ],
+    [
+      'an undeclared state',
+      (raw: Raw) => ((missionRaw(raw, WF_INDEX).workflow_phase as Raw).state = 'guessed'),
+    ],
+  ])('the declared field is STRICT: %s is malformed, never repaired', (_name, breakIt) => {
+    expect(
+      refusal(
+        responseOf((raw) => {
+          declare(raw);
+          breakIt(raw);
+        }),
+      ),
+    ).toBe('response_shape_invalid');
+  });
+
+  it('the response key set is unchanged: workflow_phase is a mission key, not a response key', () => {
+    const response = responseOf(declare);
+    response.workflow_phase = {};
+    expect(refusal(response)).toBe('response_shape_invalid');
   });
 });

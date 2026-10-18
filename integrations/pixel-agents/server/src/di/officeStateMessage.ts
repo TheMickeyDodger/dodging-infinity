@@ -13,16 +13,22 @@ import type {
   DiObservationState,
   DiObservedValue,
   DiOfficeState,
+  DiRuntimeAgent,
+  DiRuntimeAgents,
 } from '../../../core/src/messages.js';
+import { DI_RUNTIME_AGENTS_MAX_UNVERIFIED } from '../constants.js';
 import type { UnreportedFact } from './catalogProjection.js';
 import type {
   MemberPresentation,
   MissionPresentation,
   Observation,
   OfficeView,
+  RuntimeAgentPresentation,
 } from './officeView.js';
+import { deriveReception } from './receptionDesk.js';
 
 export type CharacterIdFor = (member: MemberPresentation) => number | null;
+export type RuntimeCharacterIdFor = (agent: RuntimeAgentPresentation) => number | null;
 
 function observed<T>(o: Observation<T>): DiObservedValue {
   switch (o.state) {
@@ -229,12 +235,86 @@ function mission(m: MissionPresentation, characterIdFor: CharacterIdFor): DiMiss
     ambiguity: observed(m.ambiguity),
     members: { state: members.state, reason: members.reason, members: members.items },
     v2: missionV2(m),
+    ...(m.herdrTask === null
+      ? {}
+      : { herdrTask: { ...m.herdrTask, rootAliases: [...m.herdrTask.rootAliases] } }),
+  };
+}
+
+function runtimeAgent(
+  a: RuntimeAgentPresentation,
+  characterIdFor: RuntimeCharacterIdFor,
+): DiRuntimeAgent {
+  return {
+    agentRef: a.agentRef,
+    characterId: a.presence.live ? characterIdFor(a) : null,
+    sourceId: a.sourceId,
+    rootRef: a.rootRef,
+    rootAliases: [...a.rootAliases],
+    logical: a.logical,
+    role: a.role,
+    agent: a.agent,
+    provider: a.provider,
+    session: a.session,
+    paneId: a.paneId,
+    workspaceId: a.workspaceId,
+    activity: a.activity,
+    identityState: a.identityState,
+    identityReason: a.identityReason,
+    identityVerified: a.identityVerified,
+    assignmentState: a.assignmentState,
+    assignmentReason: a.assignmentReason,
+    taskRef: a.taskRef,
+    taskId: a.taskId,
+    taskStatus: a.taskStatus,
+    live: a.presence.live,
+    notLiveReason: a.presence.reason,
+    plainText: a.plainText,
+  };
+}
+
+/**
+ * item 07: every VERIFIED runtime agent (each may be a drawn character), then the others up to the
+ * cap; `agentsTotal` is the real count, so a capped list never reads as complete.
+ */
+function runtimeAgents(view: OfficeView, characterIdFor: RuntimeCharacterIdFor): DiRuntimeAgents {
+  const r = view.runtimeAgents;
+  const verified = r.agents.filter((a) => a.identityVerified);
+  const others = r.agents.filter((a) => !a.identityVerified);
+  const shown = [...verified, ...others.slice(0, DI_RUNTIME_AGENTS_MAX_UNVERIFIED)];
+  return {
+    reported: r.reported,
+    state: r.state,
+    problem: r.problem,
+    plainStatement: r.plainStatement,
+    caveat: r.caveat,
+    observedAt: r.observedAt,
+    firstPassAt: r.firstPassAt,
+    secondPassAt: r.secondPassAt,
+    counts:
+      r.counts === null ? [] : Object.entries(r.counts).map(([name, value]) => ({ name, value })),
+    agents: shown.map((a) => runtimeAgent(a, characterIdFor)),
+    agentsTotal: r.agents.length,
+    agentsCap: verified.length + DI_RUNTIME_AGENTS_MAX_UNVERIFIED,
+    agentsOverBound: r.agentsOverBound,
+    capture: { ...r.capture },
+    locators:
+      r.locators === null
+        ? null
+        : {
+            ...r.locators,
+            excludedByReason: r.locators.excludedByReason.map((e) => ({
+              name: e.reason,
+              value: e.count,
+            })),
+          },
   };
 }
 
 export function buildDiOfficeStateMessage(
   view: OfficeView,
   characterIdFor: CharacterIdFor,
+  runtimeCharacterIdFor: RuntimeCharacterIdFor = () => null,
 ): DiOfficeState {
   const missions = listOf(view.missions, (m) => mission(m, characterIdFor));
   return {
@@ -270,5 +350,7 @@ export function buildDiOfficeStateMessage(
     missions: { state: missions.state, reason: missions.reason, missions: missions.items },
     contractVersion: view.contractVersion,
     chainObservation: chainObservation(view),
+    reception: deriveReception(view),
+    runtimeAgents: runtimeAgents(view, runtimeCharacterIdFor),
   };
 }

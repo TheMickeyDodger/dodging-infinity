@@ -53,6 +53,12 @@ What version 2 adds, and nothing else:
   Without an activation contract the report's ``proof``, ``readiness``,
   ``dependencies`` and ``budget`` values are None: NOT APPLICABLE, never
   "none recorded".
+- ``missions[].workflow_phase``: the workflow phase DECLARED as its own typed
+  field (``state`` observed / not_applicable, ``problem``, ``phase`` of the
+  closed ``WORKFLOW_PHASES``), so a consumer never branches on the
+  display-only ``lifecycle.state``. Only a ``workflow_authority.workflow_phase/2``
+  record has one (its record's own phase); Mission Core is ``not_applicable``
+  (``lifecycle_model_has_no_workflow_phase``) and is never given one.
 - ``missions[].admitted_artifacts.canonical_review``: NARROW CANONICAL REVIEW
   RECORD CONTENT INSPECTION, the ONLY admitted content class. It is reached
   from the task record's own canonical reference (``review_rounds``,
@@ -117,7 +123,8 @@ DEFAULT_CONTRACT_VERSION = contract.QUERY_CONTRACT_VERSION
 RESPONSE_KEYS_V2 = ("contract", "contract_version", "generated_at",
                     "max_age_seconds", "valid_until", "limits", "registry",
                     "sources", "runtime_snapshot", "chain_observation",
-                    "missions", "unmatched_runtime_agent_count")
+                    "missions", "unmatched_runtime_agent_count",
+                    "runtime_agents")
 
 # -- hard bounds (never derived from input) -----------------------------
 
@@ -194,10 +201,14 @@ PROBLEM_PARENT_ROOT_NOT_OBSERVED = "parent_root_not_observed"
 PROBLEM_PARENT_TASK_MISMATCH = "parent_task_mismatch"
 PROBLEM_MISSION_NOT_BOUND_TO_ROOT = "mission_execution_unresolved"
 PROBLEM_MISSION_NOT_ACTIVE = "mission_not_active"
+#: A task-native record that DEFERS to another record (``roster.deferrals``):
+#: its root's children are followed by that record, never twice.
+PROBLEM_CHILDREN_FOLLOWED_ELSEWHERE = (
+    "children_followed_by_the_record_it_defers_to")
 MISSION_CHILDREN_PROBLEMS = CHILDREN_PROBLEMS + (
     PROBLEM_CHAIN_OBSERVATION_NOT_FRESH, PROBLEM_PARENT_ROOT_NOT_OBSERVED,
     PROBLEM_PARENT_TASK_MISMATCH, PROBLEM_MISSION_NOT_BOUND_TO_ROOT,
-    PROBLEM_MISSION_NOT_ACTIVE)
+    PROBLEM_MISSION_NOT_ACTIVE, PROBLEM_CHILDREN_FOLLOWED_ELSEWHERE)
 
 # The canonical review record (the ONE admitted content class).
 REVIEW_KEYS = ("state", "problem", "record", "gate", "verdict", "currency",
@@ -330,7 +341,29 @@ MISSION_VIEW_KEYS = ("mission_ref", "source_id", "native_id", "lifecycle",
                      "execution", "native")
 MISSION_KEYS_V2 = MISSION_VIEW_KEYS + (
     "binding", "members", "task_chains", "children_record", "mission_state",
-    "admitted_artifacts")
+    "admitted_artifacts", "workflow_phase")
+
+# -- the declared workflow phase (version 2) ----------------------------------
+
+#: ``missions[].workflow_phase``: the workflow phase DECLARED as its own typed
+#: field, so no consumer ever branches on the display-only
+#: ``lifecycle.state``. Only a ``workflow_authority.workflow_phase/2`` record
+#: has one (``observed``: its record's own phase); every other model — Mission
+#: Core included — has none and is ``not_applicable``, never given one.
+WORKFLOW_PHASE_KEYS = ("state", "problem", "phase")
+WORKFLOW_PHASE_OBSERVED = "observed"
+WORKFLOW_PHASE_NOT_APPLICABLE = "not_applicable"
+WORKFLOW_PHASE_STATES = (WORKFLOW_PHASE_OBSERVED,
+                         WORKFLOW_PHASE_NOT_APPLICABLE)
+PROBLEM_WORKFLOW_PHASE_MODEL = "lifecycle_model_has_no_workflow_phase"
+#: The closed phase vocabulary of ``workflow_authority.workflow_phase/2``
+#: (``workflow_authority.record.PHASES``; parity pinned by test, since this
+#: package does not import ``workflow_authority``).
+WORKFLOW_PHASES = (
+    "PLANNED", "AUTHORIZED", "WORKSPACE_READY", "PREPARED", "VALIDATED",
+    "DISPATCHED", "VERIFIED", "COMPLETED", "BLOCKED",
+    "NEEDS_REAUTHORIZATION",
+)
 LIFECYCLE_KEYS = ("model", "state", "standing")
 EXECUTION_KEYS = ("task_id", "identity_source", "workspace_realpath",
                   "run_started", "receipt_recorded", "consistent",
@@ -703,9 +736,9 @@ def read_chain_observation(value, now,
 
 def envelope_v2(generated_at, max_age_seconds, valid_until, limits, registry,
                 sources, runtime_snapshot, chain_observation, missions,
-                unmatched_runtime_agent_count):
+                unmatched_runtime_agent_count, runtime_agents=None):
     """Assemble one version 2 response (``contract.envelope``'s rules, plus
-    the chain observation block)."""
+    the chain observation block; ``runtime_agents`` as in version 1)."""
     contract.require_int(generated_at, "generated_at")
     contract.require_max_age(max_age_seconds, "max_age_seconds")
     contract.require_int(valid_until, "valid_until")
@@ -726,6 +759,11 @@ def envelope_v2(generated_at, max_age_seconds, valid_until, limits, registry,
         "chain_observation": chain_observation,
         "missions": missions,
         "unmatched_runtime_agent_count": unmatched_runtime_agent_count,
+        "runtime_agents": contract.validate_runtime_agents(
+            runtime_agents if runtime_agents is not None
+            else contract.runtime_agents_block(
+                contract.RUNTIME_AGENTS_NOT_APPLICABLE,
+                contract.PROBLEM_NO_TASK_NATIVE_SOURCE)),
     }
 
 
@@ -876,12 +914,52 @@ def _validate_mission_state(value, location):
                      % (location, state))
 
 
+def workflow_phase(mission):
+    """The DECLARED ``workflow_phase`` block of one mission view (version 2).
+    A ``workflow_authority.workflow_phase/2`` view carries its record's own
+    ``phase`` (the workflow reader places it in ``lifecycle.state``,
+    ``sources._workflow_view``); it is declared here as a typed field of the
+    closed ``WORKFLOW_PHASES``. Every other model has no workflow phase:
+    ``not_applicable``, never one. A phase outside the vocabulary refuses."""
+    lifecycle = mission["lifecycle"]
+    if lifecycle["model"] != contract.LIFECYCLE_MODEL_WORKFLOW_STORE:
+        return {"state": WORKFLOW_PHASE_NOT_APPLICABLE,
+                "problem": PROBLEM_WORKFLOW_PHASE_MODEL, "phase": None}
+    if lifecycle["state"] not in WORKFLOW_PHASES:
+        raise _shape("%s: workflow phase outside the declared vocabulary"
+                     % mission["mission_ref"])
+    return {"state": WORKFLOW_PHASE_OBSERVED, "problem": None,
+            "phase": lifecycle["state"]}
+
+
+def _validate_workflow_phase(value, lifecycle, location):
+    _closed(value, WORKFLOW_PHASE_KEYS, location)
+    _member(value["state"], WORKFLOW_PHASE_STATES, location + ".state")
+    workflow = lifecycle["model"] == contract.LIFECYCLE_MODEL_WORKFLOW_STORE
+    if value["state"] == WORKFLOW_PHASE_OBSERVED:
+        if not workflow:
+            raise _shape("%s: only a workflow_authority.workflow_phase/2 "
+                         "record has a workflow phase" % location)
+        _member(value["phase"], WORKFLOW_PHASES, location + ".phase")
+        if value["phase"] != lifecycle["state"] or value["problem"] is not None:
+            raise _shape("%s: the declared phase is the record's own phase, "
+                         "with no problem" % location)
+        return
+    if (workflow or value["phase"] is not None
+            or value["problem"] != PROBLEM_WORKFLOW_PHASE_MODEL):
+        raise _shape("%s: only a model without a workflow phase is "
+                     "not_applicable, with its problem and no phase"
+                     % location)
+
+
 def validate_mission_v2(value, location):
     _closed(value, MISSION_KEYS_V2, location)
     mission_ref = _text(value["mission_ref"], location + ".mission_ref")
     _closed(value["lifecycle"], LIFECYCLE_KEYS, location + ".lifecycle")
     _member(value["lifecycle"]["standing"], contract.STANDINGS,
             location + ".lifecycle.standing")
+    _validate_workflow_phase(value["workflow_phase"], value["lifecycle"],
+                             location + ".workflow_phase")
     _closed(value["execution"], EXECUTION_KEYS, location + ".execution")
     _validate_binding(value["binding"], location + ".binding")
     for index, member in enumerate(_list(
@@ -954,4 +1032,5 @@ def validate_response_v2(response):
         raise _shape("missions repeat a mission_ref")
     _int(response["unmatched_runtime_agent_count"],
          "unmatched_runtime_agent_count", True)
+    contract.validate_runtime_agents(response["runtime_agents"])
     return response

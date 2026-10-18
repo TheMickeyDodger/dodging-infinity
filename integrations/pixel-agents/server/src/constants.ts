@@ -152,6 +152,19 @@ export const DI_CONSUMER_POLL_INTERVAL_SECONDS = 6;
 export const DI_SHUTDOWN_DRAIN_TIMEOUT_MS = 5_000;
 
 /**
+ * Mission reception desk (item 06): the most attention entries one diOfficeState carries and the
+ * panel renders. The true total is always carried beside it, so a truncated list says so.
+ */
+export const DI_RECEPTION_MAX_ENTRIES = 24;
+
+/**
+ * Runtime agents (item 07): the most NOT-verified runtime entries one diOfficeState carries. Every
+ * VERIFIED entry is always carried (each is a drawn character, already bounded by the producer and
+ * the live listing); `agentsTotal` is the real count, so a capped list says so.
+ */
+export const DI_RUNTIME_AGENTS_MAX_UNVERIFIED = 24;
+
+/**
  * FIXTURE SOURCE bounds (--fixture-source, visual testing only). A fixture script is read ONCE at
  * launch, size-checked before parsing, and served in-process: it replaces the backend discovery
  * read and the backend HTTP request, so a fixture office makes no backend connection at all.
