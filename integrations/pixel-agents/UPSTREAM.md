@@ -13,12 +13,13 @@ bytes came from, what was left out, which licences apply, and how to take upstre
 | Upstream repository | `https://github.com/pixel-agents-hq/pixel-agents` |
 | Upstream baseline commit | `d1e007a9fdf3003c252d2973abe1999ae59aec33` (package version 1.4.1) |
 | Imported from | the reviewed source-input archive of that baseline plus the DI office changes (432 files) |
-| Imported here | 414 files, byte-identical to that archive except the three publication edits below |
+| Imported here | 414 files, byte-identical to that archive except the three publication edits made on import below; further [post-import edits](#post-import-edits) (one publication edit and security-driven dependency updates) are recorded after them |
 
 ### Files the DI office changes relative to the upstream baseline
 
 These 74 paths differ from upstream `d1e007a`. Apart from the
-[publication edits](#publication-edits-made-on-import) below, every other imported file is
+[publication edits](#publication-edits-made-on-import) and the
+[post-import edits](#post-import-edits) below, every other imported file is
 unchanged upstream source.
 
 - `core/asyncapi.yaml`
@@ -99,7 +100,9 @@ unchanged upstream source.
 ### Publication edits made on import
 
 Three imported files were edited when they were imported here, for publication only. No
-behaviour changed. These are the only imported files that differ from the source-input archive.
+behaviour changed. These are the only imported files that differed from the source-input
+archive at import; later edits are recorded under
+[Post-import edits](#post-import-edits).
 
 - `packaging/di/README.txt` (a DI-changed file): the backend sections now launch the DI
   catalog bridge from a DI source tree, where `dicatalog.py` and `dicatalog_http.py` sit at
@@ -119,6 +122,53 @@ Three imported files carry upstream whitespace that this repository's CI whitesp
 `scripts/generate-messages.ts`. They stay byte-identical. Instead,
 [`../.gitattributes`](../.gitattributes) unsets the `whitespace` attribute for exactly those
 three paths. Re-check that list after every upstream update.
+
+### Post-import edits
+
+Two kinds of edit were made after the import, in the public-sharing security change of
+2026-10-17 (made against `main` at `2ce291f`). Before them, every file named here was
+unchanged from the source-input archive.
+
+**1. Publication edit (no behaviour changed).**
+
+- `docs/research/claude-harness-spawn-formats.md` (upstream, otherwise unchanged): the
+  "CLI under test" line named the investigated binary by an absolute path under an upstream
+  contributor's personal home directory, which is a username-bearing machine path. That path
+  is replaced by the `$HOME`-relative form `$HOME/.local/share/claude/versions/2.1.220`. The
+  CLI version, the investigation date and every other statement in the note are as upstream
+  wrote them.
+
+**2. Dependency security remediation (behaviour validated).** Dependency advisories were
+resolved with patched releases inside each package's declared semver range. No major version
+was changed, no advisory was suppressed, and no test was edited. These files differ from the
+archive:
+
+- `package.json`: the `fastify` dependency `^5.8.5` became `^5.12.5`, and the `brace-expansion`
+  override `^5.0.9` became `^5.0.12` (the old floor was itself below the first patched release).
+- `server/package.json`: `fastify` `^5.8.5` became `^5.12.5`, and `vitest` `^4.1.10` became
+  `^4.1.11`.
+- `webview-ui/package.json`: `vitest` `^4.1.10` became `^4.1.11`.
+- `package-lock.json`, regenerated with npm. Twenty installed versions rose within their
+  declared ranges: `fastify` 5.10.0 to 5.12.7; `fast-uri` 3.1.5 to 3.1.8, and (nested under
+  `fast-json-stringify`) 4.1.2 to 4.2.2; `brace-expansion` 5.0.9 to 5.0.12; `shell-quote`
+  1.10.0 to 1.12.0; `js-yaml` 4.3.0 to 4.3.2, and (under `ramldt2jsonschema`) 3.15.0 to 3.15.2;
+  `nanoid` 3.3.16 to 3.3.20; `smol-toml` 1.7.0 to 1.9.1; `source-map-js` 1.2.1 to 1.2.2; and
+  `vitest` with its `@vitest/*` packages 4.1.10 to 4.1.12. Two in-range minor updates came
+  with them: `chai` 6.2.2 to 6.3.0 and `process-warning` 5.0.0 to 5.1.1. One stale entry was
+  also removed: a nested `webview-ui/node_modules/eslint-plugin-simple-import-sort@12.1.1`
+  that the original lockfile already carried, which nothing depended on and which did not
+  satisfy the declared `^14.0.0`.
+
+The result was validated with type checking, lint, the server and webview test suites, the
+package-contract checks, the production build, and the existing DI browser specs run against
+the production bundle. The DI office package built from this tree differs from one built before
+these edits: five packages of its shipped runtime closure are newer (`fastify`, both `fast-uri`
+copies, `brace-expansion` and `process-warning`; their licences are unchanged and no package was
+added or removed), and `THIRD-PARTY-NOTICES.txt` is unchanged because none of the packages it
+bundles changed. Rebuild the package and record its new sha256 as a new package.
+
+Re-apply these edits (or confirm the upstream versions are equal or newer) after any upstream
+update that touches these files.
 
 ## Not imported
 

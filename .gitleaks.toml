@@ -1,0 +1,30 @@
+# Secret-scanning configuration (Gitleaks). Extends the maintained default rule set; adds NO path allowlist,
+# NO baseline and NO automatically generated exception. See .github/workflows/secret-scan.yml.
+#
+# Every [[allowlists]] block below is ONE individually reviewed synthetic test fixture. Each is CONJUNCTIVE
+# (condition = "AND"): it applies only to the named rule, in the named file, to that exact value. A different
+# value at the same location, or the same value in any other file, is still reported. Inline
+# "gitleaks:allow" comments are ignored by the workflow (--ignore-gitleaks-allow). No private-key rule is
+# excepted anywhere. Do not add path-wide, directory-wide or runtime-path allowlists here: the all-refs history
+# scan must stay able to find a credential in an accidentally committed runtime file.
+
+title = "Dodging Infinity secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """Reviewed synthetic fixture: an AWS access-key-ID-shaped literal used by tests/test_startup_diagnostic.py. Individually reviewed by the Operator (initial-secret-scan-review.json) and the exact literal confirmed by the Executor at the reviewed lines. An access key ID alone is an identifier, not a usable credential, and this unit test makes no AWS call. Exception requires this rule AND this path AND this exact value."""
+condition = "AND"
+targetRules = ["aws-access-token"]
+paths = ['''^tests/test_startup_diagnostic\.py$''']
+regexTarget = "secret"
+regexes = ['''^AKIAABCDEFGHIJKLMNOP$''']
+
+[[allowlists]]
+description = """Reviewed synthetic fixture: a token literal in the office browser-access unit test (integrations/pixel-agents/server/__tests__/diBrowserAccess.test.ts). Individually reviewed by the Operator (initial-secret-scan-review.json) and the exact literal confirmed by the Executor at the reviewed line. It is a test-created value for an in-test access file. Exception requires this rule AND this path AND this exact value."""
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^integrations/pixel-agents/server/__tests__/diBrowserAccess\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^0b5c1f9e-7a44-4d0e-9f1a-1c2d3e4f5a6b$''']
