@@ -31,6 +31,7 @@ case discriminates against its near neighbour:
    store refuses ``lock`` and ``save``.
 """
 
+import copy
 import json
 import os
 import sys
@@ -583,6 +584,85 @@ class RefreshReadBudgetTests(V2Fixture):
                             (block["state"], block["problem"]),
                             (v2.MISSION_STATE_UNAVAILABLE,
                              v2.PROBLEM_MISSION_STATE_BUDGET))
+
+
+class WorkflowPhaseTests(V2Fixture):
+    """``missions[].workflow_phase`` (version 2): the workflow phase DECLARED
+    by the producer as its own typed field, for a
+    ``workflow_authority.workflow_phase/2`` record only. Mission Core has no
+    workflow phase and is never given one; version 1 is unchanged."""
+
+    WF = "wf-0007"
+
+    def emitted(self, version=2):
+        self.running()                                     # a Mission Core
+        legacy = self.store_dir("legacy")
+        self.workflow(legacy, workflow_id=self.WF, task_id=None,
+                      phase="NEEDS_REAUTHORIZATION")
+        self.register(source_id="legacy", kind=contract.KIND_WORKFLOW_STORE,
+                      store=legacy)
+        answer = self.owner(version=version).request(catalog.MAX_WAIT_SECONDS)
+        self.assertIsNotNone(answer["response"], answer)
+        return answer["response"]
+
+    def by_model(self, response):
+        return {m["lifecycle"]["model"]: m for m in response["missions"]}
+
+    def test_the_phase_is_declared_for_a_workflow_record_only(self):
+        response = self.emitted()
+        missions = self.by_model(response)
+        workflow = missions[contract.LIFECYCLE_MODEL_WORKFLOW_STORE]
+        core = missions[contract.LIFECYCLE_MODEL_MISSION_CORE]
+        self.assertEqual(workflow["workflow_phase"], {
+            "state": "observed", "problem": None,
+            "phase": "NEEDS_REAUTHORIZATION"})
+        self.assertEqual(core["workflow_phase"], {
+            "state": "not_applicable",
+            "problem": "lifecycle_model_has_no_workflow_phase",
+            "phase": None})
+        v2.validate_response_v2(response)
+
+    def test_version_1_is_unchanged(self):
+        response = self.emitted(version=1)
+        self.assertEqual(response["contract_version"], 1)
+        for mission in response["missions"]:
+            self.assertNotIn("workflow_phase", mission)
+
+    def test_the_declared_vocabulary_is_the_workflow_authority_phases(self):
+        from workflow_authority import record as workflow_record
+        self.assertEqual(v2.WORKFLOW_PHASES, workflow_record.PHASES)
+
+    def test_the_validator_refuses_an_undeclared_or_inconsistent_phase(self):
+        response = self.emitted()
+        index = {m["lifecycle"]["model"]: i
+                 for i, m in enumerate(response["missions"])}
+        wf = index[contract.LIFECYCLE_MODEL_WORKFLOW_STORE]
+        core = index[contract.LIFECYCLE_MODEL_MISSION_CORE]
+        observed = response["missions"][wf]["workflow_phase"]
+        cases = {
+            "a phase given to Mission Core": (core, dict(observed)),
+            "a phase that is not the record's": (
+                wf, dict(observed, phase="VERIFIED")),
+            "a phase outside the vocabulary": (
+                wf, dict(observed, phase="SOMEDAY")),
+            "a problem beside an observed phase": (
+                wf, dict(observed, problem="anything")),
+            "an extra key": (wf, dict(observed, extra=1)),
+            "not_applicable on a workflow record": (wf, {
+                "state": "not_applicable",
+                "problem": "lifecycle_model_has_no_workflow_phase",
+                "phase": None}),
+        }
+        for name, (i, block) in cases.items():
+            with self.subTest(name=name):
+                broken = copy.deepcopy(response)
+                broken["missions"][i]["workflow_phase"] = block
+                with self.assertRaises(contract.ContractError):
+                    v2.validate_response_v2(broken)
+        missing = copy.deepcopy(response)
+        del missing["missions"][wf]["workflow_phase"]
+        with self.assertRaises(contract.ContractError):
+            v2.validate_response_v2(missing)
 
 
 if __name__ == "__main__":

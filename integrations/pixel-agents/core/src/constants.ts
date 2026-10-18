@@ -25,3 +25,11 @@ export const TRANSPORT_STATE_CONNECTING = 'connecting';
 export const TRANSPORT_STATE_CONNECTED = 'connected';
 export const TRANSPORT_STATE_RECONNECTING = 'reconnecting';
 export const TRANSPORT_STATE_DISCONNECTED = 'disconnected';
+
+// ── DI office (item 07) ──────────────────────────────────────
+// The canvas zone for runtime agents: a character with a VERIFIED runtime identity that is NOT a
+// team member sits here, apart from every Mission zone. A fixed key shared by the server (which
+// assigns it as the character's folder) and the webview (which builds the zone); never a Mission.
+
+export const DI_RUNTIME_ZONE_REF = 'di:runtime-agents';
+export const DI_RUNTIME_ZONE_LABEL = 'Runtime agents (not team members)';

@@ -1,0 +1,1398 @@
+{
+  "fixture": true,
+  "fixture_id": "reception-v2",
+  "label": "FIXTURE — reception-v2: synthetic attention records at contract v2 — SYNTHETIC VISUAL TEST",
+  "description": "The emitted v2 answer, edited so every implemented reception-desk category is present: Mission Core 0002 carries a HARD blocker, a contradiction with an evidence_contradicted hold and a COMPLETE task report; 0009 awaits a decision (as emitted); workflow wf-0005 DECLARES the phase NEEDS_REAUTHORIZATION (missions[].workflow_phase, added as the current producer emits it). Run it with --contract-version 2. It evidences rendering, layout, keyboard behaviour and the contract-version difference only; it is SYNTHETIC and evidences nothing about live Mission data.",
+  "contract_version": 2,
+  "derived_from": {
+    "path": "server/__tests__/fixtures/di-backend/v2/catalog-answer-v2.fc409bbc.FIXTURE.json",
+    "sha256": "fc409bbc41a6ee3a17253acebe85092a4d118511954fadf2c457ecc11b891556"
+  },
+  "after_last": "hold",
+  "frames": [
+    {
+      "kind": "catalog",
+      "timing": "fresh",
+      "envelope": {
+        "detail": null,
+        "endpoint": "di.mission_catalog",
+        "endpoint_version": 1,
+        "problem": null,
+        "requested_at": 1000000,
+        "response": {
+          "chain_observation": {
+            "health": "fresh",
+            "max_age_seconds": 60,
+            "observed_at": 1000000,
+            "over_capacity_count": 0,
+            "problem": null,
+            "producer": "target_runtime.runtime_snapshot",
+            "root_count": 3,
+            "unavailable_count": 1
+          },
+          "contract": "di.mission_sources.query",
+          "contract_version": 2,
+          "generated_at": 1000000,
+          "limits": {
+            "max_chain_depth": 1,
+            "max_child_records": 32,
+            "max_herd_roots": 16,
+            "max_json_depth": 64,
+            "max_observed_missions": 16,
+            "max_query_input_bytes": 67108864,
+            "max_query_missions": 2048,
+            "max_registry_bytes": 262144,
+            "max_review_preamble_bytes": 4096,
+            "max_review_preamble_lines": 16,
+            "max_snapshot_agents": 512,
+            "max_snapshot_tasks": 256,
+            "max_sources": 128,
+            "max_store_read_bytes": 16777216,
+            "max_task_bindings": 32,
+            "min_poll_interval_seconds": 5,
+            "reported_freshness_bound_seconds": 600
+          },
+          "max_age_seconds": 60,
+          "missions": [
+            {
+              "admitted_artifacts": {
+                "canonical_review": {
+                  "candidate_applicability": "unproven",
+                  "currency": "current",
+                  "gate": "parsed",
+                  "integrity": "linkage_corroborated",
+                  "problem": null,
+                  "record": {
+                    "protocol_token": "APPROVE",
+                    "reviewer_agent": "synthetic-direct-reviewer1",
+                    "reviewer_logical": "reviewer1",
+                    "round": 1
+                  },
+                  "state": "admitted",
+                  "task_status": "ACTIVE",
+                  "verdict": "APPROVE"
+                }
+              },
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "SYNTHETIC-task-direct"
+              },
+              "children_record": {
+                "caveat": null,
+                "other_parent_count": 1,
+                "problem": null,
+                "record_count": 3,
+                "state": "observed"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "SYNTHETIC-task-direct",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-00000000000000000000000000000002"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "synthetic-direct-executor1",
+                  "chain": "direct",
+                  "chain_task_id": "SYNTHETIC-task-direct",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic_mission_core:mn-00000000000000000000000000000002#SYNTHETIC-task-direct#executor1",
+                  "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000002",
+                  "model": "unknown",
+                  "observed_at": 1000000,
+                  "pane_id": "synthetic-pane-0b",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "synthetic-session-0b",
+                    "recorded": "synthetic-session-0b"
+                  },
+                  "task_id": "SYNTHETIC-task-direct",
+                  "tokens": "unknown",
+                  "workspace_id": "synthetic-workspace-0"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "synthetic-direct-lead1",
+                  "chain": "direct",
+                  "chain_task_id": "SYNTHETIC-task-direct",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic_mission_core:mn-00000000000000000000000000000002#SYNTHETIC-task-direct#lead1",
+                  "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000002",
+                  "model": "unknown",
+                  "observed_at": 1000000,
+                  "pane_id": "synthetic-pane-0a",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "synthetic-session-0a",
+                    "recorded": "synthetic-session-0a"
+                  },
+                  "task_id": "SYNTHETIC-task-direct",
+                  "tokens": "unknown",
+                  "workspace_id": "synthetic-workspace-0"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "synthetic-direct-reviewer1",
+                  "chain": "direct",
+                  "chain_task_id": "SYNTHETIC-task-direct",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "synthetic_mission_core:mn-00000000000000000000000000000002#SYNTHETIC-task-direct#reviewer1",
+                  "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000002",
+                  "model": "unknown",
+                  "observed_at": 1000000,
+                  "pane_id": "synthetic-pane-0c",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "synthetic-session-0c",
+                    "recorded": "synthetic-session-0c"
+                  },
+                  "task_id": "SYNTHETIC-task-direct",
+                  "tokens": "unknown",
+                  "workspace_id": "synthetic-workspace-0"
+                },
+                {
+                  "activity": "idle",
+                  "agent": "synthetic-child-executor1",
+                  "chain": "child",
+                  "chain_task_id": "SYNTHETIC-task-child-live",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "synthetic_mission_core:mn-00000000000000000000000000000002#SYNTHETIC-task-child-live#executor1",
+                  "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000002",
+                  "model": "unknown",
+                  "observed_at": 1000000,
+                  "pane_id": "synthetic-pane-1b",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "synthetic-session-1b",
+                    "recorded": "synthetic-session-1b"
+                  },
+                  "task_id": "SYNTHETIC-task-child-live",
+                  "tokens": "unknown",
+                  "workspace_id": "synthetic-workspace-1"
+                },
+                {
+                  "activity": "idle",
+                  "agent": "synthetic-child-lead1",
+                  "chain": "child",
+                  "chain_task_id": "SYNTHETIC-task-child-live",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "synthetic_mission_core:mn-00000000000000000000000000000002#SYNTHETIC-task-child-live#lead1",
+                  "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000002",
+                  "model": "unknown",
+                  "observed_at": 1000000,
+                  "pane_id": "synthetic-pane-1a",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "synthetic-session-1a",
+                    "recorded": "synthetic-session-1a"
+                  },
+                  "task_id": "SYNTHETIC-task-child-live",
+                  "tokens": "unknown",
+                  "workspace_id": "synthetic-workspace-1"
+                }
+              ],
+              "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000002",
+              "mission_state": {
+                "detail": null,
+                "inputs": {
+                  "baseline": "unobserved",
+                  "candidate_applicability": "unproven",
+                  "cursor": "sampled_before_collection",
+                  "kinds": {
+                    "candidate": {
+                      "reason": null,
+                      "supplied": "reported"
+                    },
+                    "delivery": {
+                      "reason": "no attested delivery receipt links this mission to a delivery record",
+                      "supplied": "unavailable"
+                    },
+                    "review": {
+                      "reason": null,
+                      "supplied": "reported"
+                    },
+                    "task": {
+                      "reason": null,
+                      "supplied": "reported"
+                    }
+                  }
+                },
+                "problem": null,
+                "report": {
+                  "artifacts": {
+                    "detail": "available flags and locators are recorded assertions; nothing is dereferenced",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": []
+                  },
+                  "blockers": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "active": [
+                        {
+                          "blocker_id": "bk-fixture-0001",
+                          "key": "synthetic-fixture-blocker",
+                          "severity": "HARD",
+                          "opened_at": 999990
+                        }
+                      ],
+                      "hard_active": true
+                    }
+                  },
+                  "budget": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "attempts_consumed": 0,
+                      "attempts_remaining": 1,
+                      "checkpoints_consumed": 0,
+                      "checkpoints_remaining": 2
+                    }
+                  },
+                  "candidate": {
+                    "detail": null,
+                    "freshness": "fresh",
+                    "observed_at": 1000000,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "adapter:candidate",
+                    "standing": "reported",
+                    "value": {
+                      "artifact_digests": {},
+                      "baseline_digest_sha256": null
+                    }
+                  },
+                  "completion": {
+                    "closure": null,
+                    "closure_verified": false,
+                    "contradicted": true,
+                    "holds": [
+                      "evidence_contradicted",
+                      "hard_blocker_active",
+                      "no_canonical_closure",
+                      "proof_not_satisfied"
+                    ],
+                    "limits": {
+                      "identity": "transport_credential_only",
+                      "non_verifying_evidence_kinds": [
+                        "NARRATIVE_CLAIM",
+                        "PROCESS_EXIT"
+                      ],
+                      "separation_of_duties": "not_enforced"
+                    },
+                    "reported_complete": true,
+                    "reported_success": false,
+                    "verified_success": false
+                  },
+                  "continuation": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "attempts": 0,
+                      "checkpoints": 0,
+                      "latest_checkpoint": null
+                    }
+                  },
+                  "contract": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "activation_id": "mt-00000000000000000000000000000007",
+                      "active": true,
+                      "authority_live": true,
+                      "current": true,
+                      "problem": null,
+                      "revision": 1
+                    }
+                  },
+                  "cursor": {
+                    "event_id": "mo-00000000000000000000000000000006",
+                    "journal_digest_sha256": "be2f6e49d38fd38b558c60df9016d0991085b712feed4b627ee59ff14d32864d",
+                    "mission_id": "mn-00000000000000000000000000000002",
+                    "position": 1,
+                    "revision": 1,
+                    "schema_version": 1
+                  },
+                  "delivery": {
+                    "detail": "no attested delivery receipt links this mission to a delivery record",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "adapter:delivery",
+                    "standing": "unavailable",
+                    "value": null
+                  },
+                  "delivery_receipts": {
+                    "detail": "recorded receipt references; only an ATTESTED reference (recorded through the delivery layer's validating path and re-proved on load) establishes receipt validity, and only the one succeeded receipt state is a completed effect; an unattested reference and a delivery source's report are unverified claims, the report reflected only when bound to a recorded receipt and fresh",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "attested": [],
+                      "effects_completed": [],
+                      "recorded": [],
+                      "report_bound_attested": null,
+                      "report_bound_to": null,
+                      "report_fresh": null,
+                      "unattested": []
+                    }
+                  },
+                  "dependencies": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "registry",
+                    "standing": "verified",
+                    "value": {
+                      "prerequisite_problems": [],
+                      "satisfied": true,
+                      "slots": {}
+                    }
+                  },
+                  "evidence": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": []
+                  },
+                  "mission_id": "mn-00000000000000000000000000000002",
+                  "observed_at": 1000000,
+                  "pending_decisions": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "awaiting_decision": false,
+                      "live_authorization": false,
+                      "next_permitted_step": null,
+                      "revision": 1
+                    }
+                  },
+                  "phase": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "current_revision": 1,
+                      "revisions": 1,
+                      "state": "RUNNING"
+                    }
+                  },
+                  "progress": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "closure_reason": null,
+                      "progress": "IN_PROGRESS"
+                    }
+                  },
+                  "proof": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "requirements": {
+                        "tests_pass": "MISSING"
+                      },
+                      "satisfied": false
+                    }
+                  },
+                  "provenance": {
+                    "collection": {
+                      "collected_at": {
+                        "event_id": "mo-00000000000000000000000000000006",
+                        "journal_digest_sha256": "be2f6e49d38fd38b558c60df9016d0991085b712feed4b627ee59ff14d32864d",
+                        "mission_id": "mn-00000000000000000000000000000002",
+                        "position": 1,
+                        "revision": 1,
+                        "schema_version": 1
+                      },
+                      "head": {
+                        "event_id": "mo-00000000000000000000000000000006",
+                        "journal_digest_sha256": "be2f6e49d38fd38b558c60df9016d0991085b712feed4b627ee59ff14d32864d",
+                        "mission_id": "mn-00000000000000000000000000000002",
+                        "position": 1,
+                        "revision": 1,
+                        "schema_version": 1
+                      },
+                      "status": "current"
+                    },
+                    "cursor": {
+                      "event_id": "mo-00000000000000000000000000000006",
+                      "journal_digest_sha256": "be2f6e49d38fd38b558c60df9016d0991085b712feed4b627ee59ff14d32864d",
+                      "mission_id": "mn-00000000000000000000000000000002",
+                      "position": 1,
+                      "revision": 1,
+                      "schema_version": 1
+                    },
+                    "drift": [],
+                    "freshness_bound_seconds": 600,
+                    "journal_digest_sha256": "be2f6e49d38fd38b558c60df9016d0991085b712feed4b627ee59ff14d32864d",
+                    "moved_during_collection": null,
+                    "position": 1,
+                    "record_source": "record",
+                    "revision": 1,
+                    "sources": {
+                      "candidate": {
+                        "detail": null,
+                        "observed_at": 1000000,
+                        "source": "adapter:candidate",
+                        "standing": "reported"
+                      },
+                      "delivery": {
+                        "detail": "no attested delivery receipt links this mission to a delivery record",
+                        "observed_at": null,
+                        "source": "adapter:delivery",
+                        "standing": "unavailable"
+                      },
+                      "review": {
+                        "detail": null,
+                        "observed_at": 1000000,
+                        "source": "adapter:review",
+                        "standing": "reported"
+                      },
+                      "task": {
+                        "detail": null,
+                        "observed_at": 1000000,
+                        "source": "adapter:task",
+                        "standing": "reported"
+                      }
+                    }
+                  },
+                  "readiness": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "resources": {},
+                      "satisfied": true
+                    }
+                  },
+                  "reconciliation": null,
+                  "review": {
+                    "detail": null,
+                    "freshness": "fresh",
+                    "observed_at": 1000000,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "adapter:review",
+                    "standing": "reported",
+                    "value": "APPROVE"
+                  },
+                  "revision": 1,
+                  "sequence": 1,
+                  "task": {
+                    "detail": null,
+                    "freshness": "fresh",
+                    "observed_at": 1000000,
+                    "position": 1,
+                    "revision": 1,
+                    "source": "adapter:task",
+                    "standing": "reported",
+                    "value": "ACTIVE"
+                  },
+                  "time": {
+                    "now": 1000000,
+                    "record_updated_at": 1000000,
+                    "source": "clock"
+                  }
+                },
+                "state": "observed"
+              },
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-00000000000000000000000000000002",
+              "objective": "SYNTHETIC v2 fixture mission: direct and recorded child chains",
+              "producer": {
+                "declared": "synthetic-mission-producer",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic_mission_core",
+              "task_chains": [
+                {
+                  "binding": {
+                    "reason": "canonical_chain_complete",
+                    "state": "bound",
+                    "task_id": "SYNTHETIC-task-direct"
+                  },
+                  "chain": "direct",
+                  "chain_task_id": "SYNTHETIC-task-direct",
+                  "dependency": null,
+                  "descendants_not_followed": null,
+                  "membership_end": {
+                    "ended": false,
+                    "rule": "herdr.vintage.is_terminal_status",
+                    "status": "ACTIVE"
+                  },
+                  "parent_task_id": null,
+                  "record": null,
+                  "root": {
+                    "observation": "observed",
+                    "path": "/__synthetic__/di-fixture-root/ws-mn-00000000000000000000000000000002",
+                    "problem": null
+                  }
+                },
+                {
+                  "binding": {
+                    "reason": "canonical_chain_complete",
+                    "state": "bound",
+                    "task_id": "SYNTHETIC-task-child-live"
+                  },
+                  "chain": "child",
+                  "chain_task_id": "SYNTHETIC-task-child-live",
+                  "dependency": {
+                    "recorded": true,
+                    "resolution": "unsatisfied",
+                    "rule": "herdr.dependencies: satisfied only by status COMPLETE"
+                  },
+                  "descendants_not_followed": null,
+                  "membership_end": {
+                    "ended": false,
+                    "rule": "herdr.vintage.is_terminal_status",
+                    "status": "ACTIVE"
+                  },
+                  "parent_task_id": "SYNTHETIC-task-direct",
+                  "record": {
+                    "child_task_id": "SYNTHETIC-task-child-live",
+                    "declared_agents": [
+                      {
+                        "agent": "synthetic-child-executor1",
+                        "logical": "executor1"
+                      },
+                      {
+                        "agent": "synthetic-child-lead1",
+                        "logical": "lead1"
+                      }
+                    ],
+                    "repo": "/__synthetic__/di-fixture-root/herd-child-live",
+                    "workspace_id": "synthetic-workspace-1"
+                  },
+                  "root": {
+                    "observation": "observed",
+                    "path": "/__synthetic__/di-fixture-root/herd-child-live",
+                    "problem": null
+                  }
+                },
+                {
+                  "binding": {
+                    "reason": "chain_membership_ended",
+                    "state": "not_applicable",
+                    "task_id": "SYNTHETIC-task-child-failed"
+                  },
+                  "chain": "child",
+                  "chain_task_id": "SYNTHETIC-task-child-failed",
+                  "dependency": {
+                    "recorded": true,
+                    "resolution": "unsatisfied",
+                    "rule": "herdr.dependencies: satisfied only by status COMPLETE"
+                  },
+                  "descendants_not_followed": 0,
+                  "membership_end": {
+                    "ended": true,
+                    "rule": "herdr.vintage.is_terminal_status",
+                    "status": "FAILED"
+                  },
+                  "parent_task_id": "SYNTHETIC-task-direct",
+                  "record": {
+                    "child_task_id": "SYNTHETIC-task-child-failed",
+                    "declared_agents": [
+                      {
+                        "agent": "synthetic-failed-lead1",
+                        "logical": "lead1"
+                      }
+                    ],
+                    "repo": "/__synthetic__/di-fixture-root/herd-child-failed",
+                    "workspace_id": "synthetic-workspace-2"
+                  },
+                  "root": {
+                    "observation": "observed",
+                    "path": "/__synthetic__/di-fixture-root/herd-child-failed",
+                    "problem": null
+                  }
+                },
+                {
+                  "binding": {
+                    "reason": "workspace_not_observed",
+                    "state": "unverified",
+                    "task_id": "SYNTHETIC-task-child-root-missing"
+                  },
+                  "chain": "child",
+                  "chain_task_id": "SYNTHETIC-task-child-root-missing",
+                  "dependency": {
+                    "recorded": true,
+                    "resolution": "unknown",
+                    "rule": "herdr.dependencies: satisfied only by status COMPLETE"
+                  },
+                  "descendants_not_followed": null,
+                  "membership_end": {
+                    "ended": null,
+                    "rule": "herdr.vintage.is_terminal_status",
+                    "status": null
+                  },
+                  "parent_task_id": "SYNTHETIC-task-direct",
+                  "record": {
+                    "child_task_id": "SYNTHETIC-task-child-root-missing",
+                    "declared_agents": [],
+                    "repo": "/__synthetic__/di-fixture-root/herd-child-root-missing",
+                    "workspace_id": "synthetic-workspace-3"
+                  },
+                  "root": {
+                    "observation": "unavailable",
+                    "path": "/__synthetic__/di-fixture-root/herd-child-root-missing",
+                    "problem": "herd_roots_invalid"
+                  }
+                }
+              ],
+              "updated_at": 1000000,
+              "workflow_phase": {
+                "state": "not_applicable",
+                "problem": "lifecycle_model_has_no_workflow_phase",
+                "phase": null
+              }
+            },
+            {
+              "admitted_artifacts": {
+                "canonical_review": {
+                  "candidate_applicability": "unproven",
+                  "currency": null,
+                  "gate": null,
+                  "integrity": null,
+                  "problem": "mission_execution_unresolved",
+                  "record": null,
+                  "state": "not_applicable",
+                  "task_status": null,
+                  "verdict": null
+                }
+              },
+              "binding": {
+                "reason": "mission_not_active",
+                "state": "not_applicable",
+                "task_id": null
+              },
+              "children_record": {
+                "caveat": null,
+                "other_parent_count": null,
+                "problem": "mission_not_active",
+                "record_count": null,
+                "state": "not_applicable"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": null,
+                "receipt_recorded": false,
+                "record_ambiguous": false,
+                "run_started": false,
+                "task_id": null,
+                "workspace_realpath": null
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "inactive",
+                "state": "AWAITING_DECISION"
+              },
+              "members": [],
+              "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000009",
+              "mission_state": {
+                "detail": null,
+                "inputs": {
+                  "baseline": "unobserved",
+                  "candidate_applicability": "unproven",
+                  "cursor": "sampled_before_collection",
+                  "kinds": {
+                    "candidate": {
+                      "reason": "the mission's workspace is not one resolved root",
+                      "supplied": "unavailable"
+                    },
+                    "delivery": {
+                      "reason": "no attested delivery receipt links this mission to a delivery record",
+                      "supplied": "unavailable"
+                    },
+                    "review": {
+                      "reason": "the mission's task and workspace are not resolved consistently",
+                      "supplied": "unavailable"
+                    },
+                    "task": {
+                      "reason": "the mission's task and workspace are not resolved consistently",
+                      "supplied": "unavailable"
+                    }
+                  }
+                },
+                "problem": null,
+                "report": {
+                  "artifacts": {
+                    "detail": "available flags and locators are recorded assertions; nothing is dereferenced",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": []
+                  },
+                  "blockers": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "active": [],
+                      "hard_active": false
+                    }
+                  },
+                  "budget": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": null
+                  },
+                  "candidate": {
+                    "detail": "the mission's workspace is not one resolved root",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "adapter:candidate",
+                    "standing": "unavailable",
+                    "value": null
+                  },
+                  "completion": {
+                    "closure": null,
+                    "closure_verified": false,
+                    "contradicted": false,
+                    "holds": [
+                      "no_canonical_closure",
+                      "proof_not_satisfied",
+                      "review_unavailable"
+                    ],
+                    "limits": {
+                      "identity": "transport_credential_only",
+                      "non_verifying_evidence_kinds": [
+                        "NARRATIVE_CLAIM",
+                        "PROCESS_EXIT"
+                      ],
+                      "separation_of_duties": "not_enforced"
+                    },
+                    "reported_complete": false,
+                    "reported_success": false,
+                    "verified_success": false
+                  },
+                  "continuation": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "attempts": 0,
+                      "checkpoints": 0,
+                      "latest_checkpoint": null
+                    }
+                  },
+                  "contract": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "activation_id": null,
+                      "active": false,
+                      "authority_live": false,
+                      "current": false,
+                      "problem": null,
+                      "revision": null
+                    }
+                  },
+                  "cursor": {
+                    "event_id": null,
+                    "journal_digest_sha256": "df4dbe615a99c51120e94b300be77f2e96564cfc2ef55bca64eddb539b4106ba",
+                    "mission_id": "mn-00000000000000000000000000000009",
+                    "position": 0,
+                    "revision": 1,
+                    "schema_version": 1
+                  },
+                  "delivery": {
+                    "detail": "no attested delivery receipt links this mission to a delivery record",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "adapter:delivery",
+                    "standing": "unavailable",
+                    "value": null
+                  },
+                  "delivery_receipts": {
+                    "detail": "recorded receipt references; only an ATTESTED reference (recorded through the delivery layer's validating path and re-proved on load) establishes receipt validity, and only the one succeeded receipt state is a completed effect; an unattested reference and a delivery source's report are unverified claims, the report reflected only when bound to a recorded receipt and fresh",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "attested": [],
+                      "effects_completed": [],
+                      "recorded": [],
+                      "report_bound_attested": null,
+                      "report_bound_to": null,
+                      "report_fresh": null,
+                      "unattested": []
+                    }
+                  },
+                  "dependencies": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "registry",
+                    "standing": "verified",
+                    "value": null
+                  },
+                  "evidence": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": []
+                  },
+                  "mission_id": "mn-00000000000000000000000000000009",
+                  "observed_at": 1000000,
+                  "pending_decisions": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "awaiting_decision": true,
+                      "live_authorization": false,
+                      "next_permitted_step": null,
+                      "revision": 1
+                    }
+                  },
+                  "phase": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "current_revision": 1,
+                      "revisions": 1,
+                      "state": "AWAITING_DECISION"
+                    }
+                  },
+                  "progress": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": {
+                      "closure_reason": null,
+                      "progress": "NOT_STARTED"
+                    }
+                  },
+                  "proof": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": null
+                  },
+                  "provenance": {
+                    "collection": {
+                      "collected_at": {
+                        "event_id": null,
+                        "journal_digest_sha256": "df4dbe615a99c51120e94b300be77f2e96564cfc2ef55bca64eddb539b4106ba",
+                        "mission_id": "mn-00000000000000000000000000000009",
+                        "position": 0,
+                        "revision": 1,
+                        "schema_version": 1
+                      },
+                      "head": {
+                        "event_id": null,
+                        "journal_digest_sha256": "df4dbe615a99c51120e94b300be77f2e96564cfc2ef55bca64eddb539b4106ba",
+                        "mission_id": "mn-00000000000000000000000000000009",
+                        "position": 0,
+                        "revision": 1,
+                        "schema_version": 1
+                      },
+                      "status": "current"
+                    },
+                    "cursor": {
+                      "event_id": null,
+                      "journal_digest_sha256": "df4dbe615a99c51120e94b300be77f2e96564cfc2ef55bca64eddb539b4106ba",
+                      "mission_id": "mn-00000000000000000000000000000009",
+                      "position": 0,
+                      "revision": 1,
+                      "schema_version": 1
+                    },
+                    "drift": [],
+                    "freshness_bound_seconds": 600,
+                    "journal_digest_sha256": "df4dbe615a99c51120e94b300be77f2e96564cfc2ef55bca64eddb539b4106ba",
+                    "moved_during_collection": null,
+                    "position": 0,
+                    "record_source": "record",
+                    "revision": 1,
+                    "sources": {
+                      "candidate": {
+                        "detail": "the mission's workspace is not one resolved root",
+                        "observed_at": null,
+                        "source": "adapter:candidate",
+                        "standing": "unavailable"
+                      },
+                      "delivery": {
+                        "detail": "no attested delivery receipt links this mission to a delivery record",
+                        "observed_at": null,
+                        "source": "adapter:delivery",
+                        "standing": "unavailable"
+                      },
+                      "review": {
+                        "detail": "the mission's task and workspace are not resolved consistently",
+                        "observed_at": null,
+                        "source": "adapter:review",
+                        "standing": "unavailable"
+                      },
+                      "task": {
+                        "detail": "the mission's task and workspace are not resolved consistently",
+                        "observed_at": null,
+                        "source": "adapter:task",
+                        "standing": "unavailable"
+                      }
+                    }
+                  },
+                  "readiness": {
+                    "detail": null,
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "record",
+                    "standing": "verified",
+                    "value": null
+                  },
+                  "reconciliation": null,
+                  "review": {
+                    "detail": "the mission's task and workspace are not resolved consistently",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "adapter:review",
+                    "standing": "unavailable",
+                    "value": null
+                  },
+                  "revision": 1,
+                  "sequence": 0,
+                  "task": {
+                    "detail": "the mission's task and workspace are not resolved consistently",
+                    "freshness": null,
+                    "observed_at": null,
+                    "position": 0,
+                    "revision": 1,
+                    "source": "adapter:task",
+                    "standing": "unavailable",
+                    "value": null
+                  },
+                  "time": {
+                    "now": 1000000,
+                    "record_updated_at": null,
+                    "source": "clock"
+                  }
+                },
+                "state": "observed"
+              },
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-00000000000000000000000000000009",
+              "objective": "SYNTHETIC v2 fixture mission without an activation contract",
+              "producer": {
+                "declared": "synthetic-mission-producer",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic_mission_core",
+              "task_chains": [
+                {
+                  "binding": {
+                    "reason": "mission_not_active",
+                    "state": "not_applicable",
+                    "task_id": null
+                  },
+                  "chain": "direct",
+                  "chain_task_id": null,
+                  "dependency": null,
+                  "descendants_not_followed": null,
+                  "membership_end": {
+                    "ended": null,
+                    "rule": "herdr.vintage.is_terminal_status",
+                    "status": null
+                  },
+                  "parent_task_id": null,
+                  "record": null,
+                  "root": {
+                    "observation": "unknown",
+                    "path": null,
+                    "problem": null
+                  }
+                }
+              ],
+              "updated_at": 1000000,
+              "workflow_phase": {
+                "state": "not_applicable",
+                "problem": "lifecycle_model_has_no_workflow_phase",
+                "phase": null
+              }
+            },
+            {
+              "admitted_artifacts": {
+                "canonical_review": {
+                  "candidate_applicability": "unproven",
+                  "currency": null,
+                  "gate": null,
+                  "integrity": null,
+                  "problem": "source_kind_has_no_canonical_review",
+                  "record": null,
+                  "state": "not_applicable",
+                  "task_status": null,
+                  "verdict": null
+                }
+              },
+              "binding": {
+                "reason": "run_not_started",
+                "state": "unbound",
+                "task_id": null
+              },
+              "children_record": {
+                "caveat": null,
+                "other_parent_count": null,
+                "problem": "mission_execution_unresolved",
+                "record_count": null,
+                "state": "not_applicable"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": null,
+                "receipt_recorded": false,
+                "record_ambiguous": false,
+                "run_started": false,
+                "task_id": null,
+                "workspace_realpath": null
+              },
+              "lifecycle": {
+                "model": "workflow_authority.workflow_phase/2",
+                "standing": "active",
+                "state": "NEEDS_REAUTHORIZATION"
+              },
+              "members": [],
+              "mission_ref": "synthetic_workflow_store:wf-0005",
+              "mission_state": {
+                "detail": null,
+                "inputs": null,
+                "problem": "source_kind_has_no_mission_state",
+                "report": null,
+                "state": "not_applicable"
+              },
+              "native": {
+                "ambiguity": "none"
+              },
+              "native_id": "wf-0005",
+              "objective": "Resolve the defect",
+              "producer": {
+                "declared": "synthetic-workflow-producer",
+                "recorded": {
+                  "origin_transport": "grok_bot",
+                  "telegram_bound": false
+                }
+              },
+              "revision": 1,
+              "source_id": "synthetic_workflow_store",
+              "task_chains": [
+                {
+                  "binding": {
+                    "reason": "run_not_started",
+                    "state": "unbound",
+                    "task_id": null
+                  },
+                  "chain": "direct",
+                  "chain_task_id": null,
+                  "dependency": null,
+                  "descendants_not_followed": null,
+                  "membership_end": {
+                    "ended": null,
+                    "rule": "herdr.vintage.is_terminal_status",
+                    "status": null
+                  },
+                  "parent_task_id": null,
+                  "record": null,
+                  "root": {
+                    "observation": "unknown",
+                    "path": null,
+                    "problem": null
+                  }
+                }
+              ],
+              "updated_at": null,
+              "workflow_phase": {
+                "state": "observed",
+                "problem": null,
+                "phase": "NEEDS_REAUTHORIZATION"
+              }
+            }
+          ],
+          "registry": {
+            "directory": "/__synthetic__/di-fixture-root/registry",
+            "health": "fresh",
+            "max_serialized_bytes": 262144,
+            "max_sources": 128,
+            "problem": null,
+            "serialized_bytes": 647,
+            "source_count": 2
+          },
+          "runtime_snapshot": {
+            "agent_count": 6,
+            "health": "fresh",
+            "max_age_seconds": 60,
+            "observed_at": 1000000,
+            "problem": null,
+            "producer": "target_runtime.runtime_snapshot",
+            "task_count": 2
+          },
+          "sources": [
+            {
+              "health": "fresh",
+              "kind": "mission_core",
+              "max_age_seconds": 60,
+              "observed_at": 1000000,
+              "problem": null,
+              "producer": "synthetic-mission-producer",
+              "record_count": 2,
+              "source_id": "synthetic_mission_core",
+              "store_dir": "/__synthetic__/di-fixture-root/stores/synthetic_mc"
+            },
+            {
+              "health": "fresh",
+              "kind": "workflow_store",
+              "max_age_seconds": 60,
+              "observed_at": 1000000,
+              "problem": null,
+              "producer": "synthetic-workflow-producer",
+              "record_count": 1,
+              "source_id": "synthetic_workflow_store",
+              "store_dir": "/__synthetic__/di-fixture-root/stores/synthetic_wf"
+            }
+          ],
+          "unmatched_runtime_agent_count": 1,
+          "valid_until": 1000060
+        },
+        "retry_after_seconds": null,
+        "runtime_capture": {
+          "available": true,
+          "configured": true,
+          "detail": null,
+          "discovery": {
+            "bindings": {
+              "synthetic_mission_core:mn-00000000000000000000000000000002": {
+                "declared": "synthetic-mission-producer",
+                "identity_source": "start_result",
+                "mission_ref": "synthetic_mission_core:mn-00000000000000000000000000000002",
+                "model": "mission_core.mission_state/1",
+                "source_id": "synthetic_mission_core",
+                "task_id": "SYNTHETIC-task-direct",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-00000000000000000000000000000002"
+              }
+            },
+            "conflicts": [],
+            "missions_by_root": {
+              "/__synthetic__/di-fixture-root/ws-mn-00000000000000000000000000000002": "synthetic_mission_core:mn-00000000000000000000000000000002"
+            },
+            "roots": [
+              "/__synthetic__/di-fixture-root/ws-mn-00000000000000000000000000000002"
+            ]
+          },
+          "observed_at": 1000000,
+          "problem": null,
+          "refresh_budget": {
+            "per_pass_max_query_input_bytes": 67108864,
+            "per_pass_max_query_missions": 2048,
+            "per_pass_max_registry_bytes": 262144,
+            "source_passes": 4,
+            "sum_max_query_input_bytes": 268435456,
+            "sum_max_query_missions": 8192,
+            "sum_max_registry_bytes": 1048576
+          },
+          "registered_roots": [],
+          "roots": {
+            "captured": [
+              "/__synthetic__/di-fixture-root/ws-mn-00000000000000000000000000000002",
+              "/__synthetic__/di-fixture-root/herd-child-failed",
+              "/__synthetic__/di-fixture-root/herd-child-live"
+            ],
+            "children": {
+              "captured": [
+                "/__synthetic__/di-fixture-root/herd-child-failed",
+                "/__synthetic__/di-fixture-root/herd-child-live"
+              ],
+              "over_capacity": [],
+              "recorded": [
+                "/__synthetic__/di-fixture-root/herd-child-failed",
+                "/__synthetic__/di-fixture-root/herd-child-live",
+                "/__synthetic__/di-fixture-root/herd-child-root-missing"
+              ],
+              "unavailable": [
+                "/__synthetic__/di-fixture-root/herd-child-root-missing"
+              ]
+            },
+            "discovered": [
+              "/__synthetic__/di-fixture-root/ws-mn-00000000000000000000000000000002"
+            ],
+            "over_capacity": [],
+            "registered": [],
+            "unavailable": [
+              {
+                "detail": "root 0 is not an absolute, resolved directory",
+                "problem": "herd_roots_invalid",
+                "root": "/__synthetic__/di-fixture-root/herd-child-root-missing"
+              }
+            ]
+          }
+        },
+        "served": "refreshed"
+      }
+    }
+  ],
+  "generator": "scripts/build-di-fixtures.mjs",
+  "normalization": {
+    "transformation": "machine-specific temporary roots (/var/folders/<a>/<b>/T/<dir>, also as its /private realpath) replaced by /__synthetic__/di-fixture-root (one per distinct root, numbered in order of first appearance); no other byte of the derived emission changed; derived_from keeps the input's exact sha256",
+    "synthetic_root": "/__synthetic__/di-fixture-root",
+    "temporary_roots": 1,
+    "occurrences": 25
+  }
+}

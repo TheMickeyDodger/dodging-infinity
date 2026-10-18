@@ -97,6 +97,9 @@ export const STANDINGS = ['active', 'inactive', 'terminal', 'unknown_future'] as
 export const LIFECYCLE_MODELS = [
   'mission_core.mission_state/1',
   'workflow_authority.workflow_phase/2',
+  // item 07: a plain Herdr task read from the engine's own task record (task-native source,
+  // target_runtime/herdr_task_source.py). Never a Mission Core record.
+  'herdr.task/1',
 ] as const;
 export const BINDING_STATES = [
   'bound',
@@ -123,6 +126,13 @@ export const BINDING_REASONS = [
   'workspace_claimed_by_multiple_missions',
   'workspace_not_observed',
   'workspace_unrecorded',
+  // item 07 (mission_sources/roster.py): a task-native record DEFERS to a canonical record or a
+  // recorded parent chain, or its team is not corroborated by any live session.
+  'covered_by_canonical_record',
+  'canonical_claim_conflict',
+  'canonical_source_not_fresh',
+  'covered_by_parent_chain',
+  'task_record_not_corroborated_by_a_live_session',
 ] as const;
 /**
  * contract v2 — `task_chains[].binding.reason` ONLY: the v1 values plus the child-chain decision
@@ -156,6 +166,100 @@ export const MEMBER_REASONS = [
 ] as const;
 export const ACTIVITIES = ['busy', 'idle', 'blocked', 'done', 'unknown', 'unknown_future'] as const;
 
+/**
+ * contract v2 — `missions[].workflow_phase`, the workflow phase the PRODUCER DECLARES as its own typed
+ * field (mission_sources/contract_v2.py WORKFLOW_PHASE_KEYS / WORKFLOW_PHASES, the latter pinned by
+ * the producer's tests to workflow_authority/record.py PHASES). The consumer reads that declared
+ * field only; it never derives a phase from the display-only `lifecycle.state`.
+ */
+export const WORKFLOW_PHASE_KEYS = ['state', 'problem', 'phase'] as const;
+export const WORKFLOW_PHASES = [
+  'PLANNED',
+  'AUTHORIZED',
+  'WORKSPACE_READY',
+  'PREPARED',
+  'VALIDATED',
+  'DISPATCHED',
+  'VERIFIED',
+  'COMPLETED',
+  'BLOCKED',
+  'NEEDS_REAUTHORIZATION',
+] as const;
+
+/**
+ * item 07 — `response.runtime_agents` (mission_sources/contract.py, both contract versions): live
+ * agents a task-native source's role records identify that no bound team represents. Two answers
+ * are kept apart and never substitute for each other: `identity` (is this live row exactly the
+ * recorded role?) and `assignment` (what the root's own task record says; never membership).
+ * STRICT when present (closed keys); absent from an older producer = not reported.
+ */
+export const RUNTIME_AGENTS_KEYS = [
+  'state',
+  'problem',
+  'observed_at',
+  'first_pass_at',
+  'second_pass_at',
+  'caveat',
+  'counts',
+  'agents',
+  'agents_over_bound',
+] as const;
+export const RUNTIME_AGENTS_STATES = ['observed', 'unavailable', 'not_applicable'] as const;
+export const RUNTIME_AGENTS_COUNT_KEYS = [
+  'roots_requested',
+  'roots_read',
+  'roles_recorded',
+  'roles_live',
+  'verified',
+  'unverified',
+  'ambiguous',
+  'unavailable',
+  'represented_by_teams',
+  'roots_over_capacity',
+  'names_over_bound',
+  'roots_role_records_unreadable',
+  // round 9: sources whose request is UNKNOWN (registry unread) — never folded into a zero
+  'registries_unread',
+] as const;
+export const RUNTIME_AGENT_KEYS = [
+  'agent_ref',
+  'source_id',
+  'root_ref',
+  'root_aliases',
+  'workspace_realpath',
+  'logical',
+  'role',
+  'agent',
+  'session',
+  'pane_id',
+  'workspace_id',
+  'provider',
+  'activity',
+  'identity',
+  'assignment',
+] as const;
+export const RUNTIME_IDENTITY_STATES = [
+  'verified',
+  'unverified',
+  'ambiguous',
+  'unavailable',
+] as const;
+export const RUNTIME_ASSIGNMENT_STATES = ['unassigned', 'unverified_reference'] as const;
+export const RUNTIME_AGENTS_CAVEAT = 'two_pass_agreement_not_atomic_aba_not_detected';
+/** item 07 — the task-native source's `locators` account (target_runtime/herdr_task_source.py). */
+export const LOCATOR_ACCOUNT_KEYS = [
+  'schema',
+  'version',
+  'registered_aliases',
+  'physical_roots',
+  'shared_root_groups',
+  'roots_with_current_task',
+  'roots_without_current_task',
+  'aliases_without_herd_state',
+  'excluded',
+] as const;
+export const HERDR_TASK_MODEL = 'herdr.task/1';
+
 /** Facts the backend never reports: always the LITERAL string "unknown" in a member. */
 export const UNREPORTED_FACTS = ['model', 'cost', 'tokens', 'progress'] as const;
 export const UNKNOWN_LITERAL = 'unknown';
@@ -183,4 +287,8 @@ export type MemberClassification = (typeof MEMBER_CLASSIFICATIONS)[number];
 export type MemberReason = (typeof MEMBER_REASONS)[number];
 export type Activity = (typeof ACTIVITIES)[number];
 export type Served = (typeof SERVED_VALUES)[number];
+export type WorkflowPhase = (typeof WORKFLOW_PHASES)[number];
 export type ChainKind = (typeof CHAIN_KINDS)[number];
+export type RuntimeAgentsState = (typeof RUNTIME_AGENTS_STATES)[number];
+export type RuntimeIdentityState = (typeof RUNTIME_IDENTITY_STATES)[number];
+export type RuntimeAssignmentState = (typeof RUNTIME_ASSIGNMENT_STATES)[number];

@@ -31,8 +31,12 @@ import type {
   MemberClassification,
   MemberReason,
   QueryContractVersion,
+  RuntimeAgentsState,
+  RuntimeAssignmentState,
+  RuntimeIdentityState,
   Served,
   Standing,
+  WorkflowPhase,
 } from './catalogContract.js';
 import {
   ACTIVITIES,
@@ -45,18 +49,29 @@ import {
   ENDPOINT,
   ENVELOPE_KEYS,
   HEALTH_STATES,
+  HERDR_TASK_MODEL,
   LIFECYCLE_MODELS,
+  LOCATOR_ACCOUNT_KEYS,
   MEMBER_CLASSIFICATIONS,
   MEMBER_REASONS,
   QUERY_CONTRACT,
   RESPONSE_KEYS,
   RESPONSE_KEYS_V2,
+  RUNTIME_AGENT_KEYS,
+  RUNTIME_AGENTS_CAVEAT,
+  RUNTIME_AGENTS_COUNT_KEYS,
+  RUNTIME_AGENTS_KEYS,
+  RUNTIME_AGENTS_STATES,
+  RUNTIME_ASSIGNMENT_STATES,
+  RUNTIME_IDENTITY_STATES,
   SERVED_VALUES,
   STANDINGS,
   SUPPORTED_ENDPOINT_VERSIONS,
   SUPPORTED_QUERY_CONTRACT_VERSIONS,
   UNKNOWN_LITERAL,
   UNREPORTED_FACTS,
+  WORKFLOW_PHASE_KEYS,
+  WORKFLOW_PHASES,
 } from './catalogContract.js';
 
 /** A not-live reason expressed in the backend's own health vocabulary. */
@@ -135,6 +150,18 @@ export interface RuntimeCaptureDiagnostics {
   problem: string | null;
   detail: string | null;
   observedAt: number | null;
+  /**
+   * item 07: the capture's ROOT ACCOUNT as counts (requested, captured, unavailable, over its
+   * fixed capacity — reported, never silently truncated); null when the capture reported none.
+   */
+  roots: {
+    discovered: number | null;
+    captured: number | null;
+    unavailable: number | null;
+    overCapacity: number | null;
+  } | null;
+  /** item 07: a task-native root observed ONLY so a listing exists (never a membership). */
+  listingAnchor: boolean | null;
 }
 
 export function readRuntimeCapture(value: unknown): RuntimeCaptureDiagnostics {
@@ -143,12 +170,28 @@ export function readRuntimeCapture(value: unknown): RuntimeCaptureDiagnostics {
   const s = (v: unknown): string | null => (typeof v === 'string' ? v : null);
   const n = (v: unknown): number | null =>
     typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null;
+  const len = (v: unknown): number | null => (Array.isArray(v) ? v.length : null);
+  const roots = isObject(o.roots) ? o.roots : null;
+  const discovery = isObject(o.discovery) ? o.discovery : null;
   return {
     configured: b(o.configured),
     available: b(o.available),
     problem: s(o.problem),
     detail: s(o.detail),
     observedAt: n(o.observed_at),
+    roots:
+      roots === null
+        ? null
+        : {
+            discovered: len(roots.discovered),
+            captured: len(roots.captured),
+            unavailable: len(roots.unavailable),
+            overCapacity: len(roots.over_capacity),
+          },
+    listingAnchor:
+      discovery === null || !('listing_anchor' in discovery)
+        ? null
+        : typeof discovery.listing_anchor === 'string',
   };
 }
 
@@ -415,21 +458,44 @@ export interface CanonicalReviewView {
   } | null;
 }
 
+/**
+ * contract v2 — the workflow phase the PRODUCER DECLARES as its own typed field
+ * (`missions[].workflow_phase`, mission_sources.contract_v2). It is read only from that field, never
+ * derived from the display-only `lifecycle.state`:
+ * - observed:       a workflow_authority.workflow_phase/2 record's own phase (closed vocabulary);
+ * - not_applicable: a model with no workflow phase (Mission Core), with the producer's problem;
+ * - not_reported:   a v2 answer from a producer that predates the declared field — unknown, never
+ *                   "none" (the backend's rule: an additive change keeps the contract version).
+ */
+export type WorkflowPhaseView =
+  | { state: 'observed'; phase: Classified<WorkflowPhase> }
+  | { state: 'not_applicable'; problem: string }
+  | { state: 'not_reported' };
+
 export interface MissionV2View {
   taskChains: TaskChainView[];
   childrenRecord: ChildrenRecordView;
   missionState: MissionStateView;
   canonicalReview: CanonicalReviewView;
+  workflowPhase: WorkflowPhaseView;
 }
 
 export type MissionNative =
   | { kind: 'mission_core'; cancelRequested: boolean | null; paused: boolean | null }
   | { kind: 'workflow_store'; ambiguity: string | null }
+  | { kind: 'herdr_task'; taskRecordVersion: number | null; startedAt: number | null }
   | { kind: 'unrecognized'; raw: unknown };
 
 export type RecordedProvenance =
   | { kind: 'mission_core'; principalKind: string | null; transport: string | null }
   | { kind: 'workflow_store'; originTransport: string | null; telegramBound: boolean | null }
+  | {
+      kind: 'herdr_task';
+      schema: string | null;
+      schemaVersion: number | null;
+      rootAliases: string[];
+      membership: string | null;
+    }
   | { kind: 'unrecognized'; raw: unknown };
 
 export interface MissionView {
@@ -477,6 +543,60 @@ export interface SourceView {
   observedAt: number | null;
   recordCount: number | null;
   maxAgeSeconds: number | null;
+  /** item 07: a task-native source's per-alias locator account; null when it carries none. */
+  locators: LocatorAccountView | null;
+}
+
+/** item 07 — every registered alias accounted for once; exclusions with their reasons. */
+export interface LocatorAccountView {
+  registeredAliases: number;
+  physicalRoots: number;
+  sharedRootGroups: number;
+  rootsWithCurrentTask: number;
+  rootsWithoutCurrentTask: number;
+  aliasesWithoutHerdState: number;
+  excluded: Array<{ alias: string; reason: string }>;
+}
+
+/** item 07 — one live agent a task-native role record identifies (never a team member). */
+export interface RuntimeAgentView {
+  agentRef: string;
+  sourceId: string;
+  rootRef: string;
+  rootAliases: string[];
+  logical: string;
+  role: string | null;
+  agent: string;
+  session: string | null;
+  paneId: string | null;
+  workspaceId: string | null;
+  provider: string | null;
+  activity: Classified<Activity> | null;
+  identity: { state: Classified<RuntimeIdentityState>; reason: string };
+  assignment: {
+    state: Classified<RuntimeAssignmentState>;
+    reason: string;
+    taskRef: string | null;
+    taskId: string | null;
+    taskStatus: string | null;
+  };
+}
+
+/**
+ * item 07 — `response.runtime_agents`. `reported: false` = an older producer that predates the
+ * field: UNKNOWN, never "none". When reported it is projected STRICTLY (closed keys).
+ */
+export interface RuntimeAgentsView {
+  reported: boolean;
+  state: Classified<RuntimeAgentsState> | null;
+  problem: string | null;
+  observedAt: number | null;
+  firstPassAt: number | null;
+  secondPassAt: number | null;
+  caveat: string | null;
+  counts: Record<(typeof RUNTIME_AGENTS_COUNT_KEYS)[number], number> | null;
+  agents: RuntimeAgentView[];
+  agentsOverBound: number;
 }
 
 export interface CatalogResponseView {
@@ -498,6 +618,8 @@ export interface CatalogResponseView {
   };
   missions: MissionView[];
   unmatchedRuntimeAgentCount: number | null;
+  /** item 07: runtime agents (both contract versions; absent from older producers). */
+  runtimeAgents: RuntimeAgentsView;
   /** The contract version this response was projected as. */
   contractVersion: QueryContractVersion;
   /** contract v2 chain observation health; null for v1. */
@@ -535,6 +657,15 @@ function projectNative(
       ambiguity: typeof o.ambiguity === 'string' ? o.ambiguity : null,
     };
   }
+  if (model.known && model.value === HERDR_TASK_MODEL) {
+    const n = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isInteger(v) ? v : null;
+    return {
+      kind: 'herdr_task',
+      taskRecordVersion: n(o.task_record_version),
+      startedAt: n(o.started_at),
+    };
+  }
   return { kind: 'unrecognized', raw };
 }
 
@@ -553,6 +684,21 @@ function projectRecorded(
       kind: 'workflow_store',
       originTransport: s(o.origin_transport),
       telegramBound: typeof o.telegram_bound === 'boolean' ? o.telegram_bound : null,
+    };
+  }
+  if (model.known && model.value === HERDR_TASK_MODEL) {
+    const aliases = Array.isArray(o.root_aliases)
+      ? o.root_aliases.filter((a): a is string => typeof a === 'string')
+      : [];
+    return {
+      kind: 'herdr_task',
+      schema: s(o.schema),
+      schemaVersion:
+        typeof o.schema_version === 'number' && Number.isInteger(o.schema_version)
+          ? o.schema_version
+          : null,
+      rootAliases: aliases,
+      membership: s(o.membership),
     };
   }
   return { kind: 'unrecognized', raw };
@@ -875,7 +1021,40 @@ function projectReport(raw: unknown): MissionReportView | null {
   };
 }
 
-function projectMissionV2(m: Json, where: string): MissionV2View {
+/**
+ * The declared `missions[].workflow_phase` (contract v2): STRICT when present — closed keys, and
+ * only a workflow_authority.workflow_phase/2 record may be `observed` (the producer's own rule);
+ * absent → `not_reported`. An out-of-vocabulary phase stays visible as unrecognized.
+ */
+function projectWorkflowPhase(
+  m: Json,
+  where: string,
+  model: Classified<LifecycleModel>,
+): WorkflowPhaseView {
+  if (!('workflow_phase' in m)) return { state: 'not_reported' };
+  const at = `${where}.workflow_phase`;
+  const w = obj(m.workflow_phase, at);
+  exactKeys(w, WORKFLOW_PHASE_KEYS, at);
+  const state = str(w.state, `${at}.state`);
+  const workflow = model.known && model.value === 'workflow_authority.workflow_phase/2';
+  if (state === 'observed') {
+    if (!workflow) malformed(`${at} is observed on a record whose model has no workflow phase`);
+    if (w.problem !== null) malformed(`${at}.problem must be null when observed`);
+    return { state: 'observed', phase: classify(WORKFLOW_PHASES, w.phase) };
+  }
+  if (state === 'not_applicable') {
+    if (workflow) malformed(`${at} is not_applicable on a workflow_authority record`);
+    if (w.phase !== null) malformed(`${at}.phase must be null when not_applicable`);
+    return { state: 'not_applicable', problem: str(w.problem, `${at}.problem`) };
+  }
+  return malformed(`${at}.state is not a declared state`);
+}
+
+function projectMissionV2(
+  m: Json,
+  where: string,
+  model: Classified<LifecycleModel>,
+): MissionV2View {
   const chainsRaw = key(m, 'task_chains', where);
   if (!Array.isArray(chainsRaw)) malformed(`${where}.task_chains is not a list`);
   const cr = obj(key(m, 'children_record', where), `${where}.children_record`);
@@ -980,6 +1159,7 @@ function projectMissionV2(m: Json, where: string): MissionV2View {
       ),
       record,
     },
+    workflowPhase: projectWorkflowPhase(m, where, model),
   };
 }
 
@@ -1055,7 +1235,7 @@ function projectMission(raw: unknown, where: string, version: QueryContractVersi
     members: membersRaw.map((member, i) =>
       projectMember(member, missionRef, `${where}.members[${i}]`, version),
     ),
-    v2: version === 2 ? projectMissionV2(m, where) : null,
+    v2: version === 2 ? projectMissionV2(m, where, model) : null,
   };
 }
 
@@ -1099,7 +1279,10 @@ export function projectResponse(
 }
 
 function projectResponseCommon(raw: Json, version: QueryContractVersion): CatalogResponseView {
-  exactKeys(raw, version === 2 ? RESPONSE_KEYS_V2 : RESPONSE_KEYS, 'response');
+  // item 07: `runtime_agents` is ADDITIVE in both versions — the exact v1/v2 key set, or that set
+  // plus exactly `runtime_agents` (projected strictly when present).
+  const baseKeys: readonly string[] = version === 2 ? RESPONSE_KEYS_V2 : RESPONSE_KEYS;
+  exactKeys(raw, 'runtime_agents' in raw ? [...baseKeys, 'runtime_agents'] : baseKeys, 'response');
   const generatedAt = int(raw.generated_at, 'response.generated_at');
   const validUntil = int(raw.valid_until, 'response.valid_until');
   const maxAgeSeconds = int(raw.max_age_seconds, 'response.max_age_seconds');
@@ -1141,6 +1324,7 @@ function projectResponseCommon(raw: Json, version: QueryContractVersion): Catalo
         observedAt: intOrNull(key(o, 'observed_at', where), `${where}.observed_at`),
         recordCount: intOrNull(key(o, 'record_count', where), `${where}.record_count`),
         maxAgeSeconds: intOrNull(key(o, 'max_age_seconds', where), `${where}.max_age_seconds`),
+        locators: 'locators' in o ? projectLocators(o.locators, `${where}.locators`) : null,
       };
     }),
     runtimeSnapshot: {
@@ -1177,8 +1361,128 @@ function projectResponseCommon(raw: Json, version: QueryContractVersion): Catalo
       raw.unmatched_runtime_agent_count,
       'response.unmatched_runtime_agent_count',
     ),
+    runtimeAgents: projectRuntimeAgents(raw),
     contractVersion: version,
     chainObservation: version === 2 ? projectChainObservation(raw.chain_observation) : null,
+  };
+}
+
+function projectLocators(raw: unknown, where: string): LocatorAccountView {
+  const o = obj(raw, where);
+  exactKeys(o, LOCATOR_ACCOUNT_KEYS, where);
+  const excluded = key(o, 'excluded', where);
+  if (!Array.isArray(excluded)) malformed(`${where}.excluded is not a list`);
+  return {
+    registeredAliases: int(o.registered_aliases, `${where}.registered_aliases`),
+    physicalRoots: int(o.physical_roots, `${where}.physical_roots`),
+    sharedRootGroups: int(o.shared_root_groups, `${where}.shared_root_groups`),
+    rootsWithCurrentTask: int(o.roots_with_current_task, `${where}.roots_with_current_task`),
+    rootsWithoutCurrentTask: int(
+      o.roots_without_current_task,
+      `${where}.roots_without_current_task`,
+    ),
+    aliasesWithoutHerdState: int(
+      o.aliases_without_herd_state,
+      `${where}.aliases_without_herd_state`,
+    ),
+    excluded: excluded.map((e, i) => {
+      const w = `${where}.excluded[${i}]`;
+      const x = obj(e, w);
+      exactKeys(x, ['alias', 'reason'], w);
+      return { alias: str(x.alias, `${w}.alias`), reason: str(x.reason, `${w}.reason`) };
+    }),
+  };
+}
+
+const RUNTIME_AGENTS_NOT_REPORTED: RuntimeAgentsView = {
+  reported: false,
+  state: null,
+  problem: null,
+  observedAt: null,
+  firstPassAt: null,
+  secondPassAt: null,
+  caveat: null,
+  counts: null,
+  agents: [],
+  agentsOverBound: 0,
+};
+
+/** item 07 — `response.runtime_agents`, STRICT when present (mission_sources/contract.py). */
+function projectRuntimeAgents(raw: Json): RuntimeAgentsView {
+  if (!('runtime_agents' in raw)) return RUNTIME_AGENTS_NOT_REPORTED;
+  const where = 'response.runtime_agents';
+  const o = obj(raw.runtime_agents, where);
+  exactKeys(o, RUNTIME_AGENTS_KEYS, where);
+  const state = classify(RUNTIME_AGENTS_STATES, o.state);
+  if (!state.known) malformed(`${where}.state is not a declared state`);
+  const observed = state.value === 'observed';
+  const problem = strOrNull(o.problem, `${where}.problem`);
+  if (observed !== (problem === null))
+    malformed(`${where}.problem must be set exactly when not observed`);
+  const caveat = strOrNull(o.caveat, `${where}.caveat`);
+  if (caveat !== (observed ? RUNTIME_AGENTS_CAVEAT : null))
+    malformed(`${where}.caveat must state the two-pass limit when observed`);
+  const countsRaw = obj(o.counts, `${where}.counts`);
+  exactKeys(countsRaw, RUNTIME_AGENTS_COUNT_KEYS, `${where}.counts`);
+  const counts = {} as Record<(typeof RUNTIME_AGENTS_COUNT_KEYS)[number], number>;
+  for (const k of RUNTIME_AGENTS_COUNT_KEYS) counts[k] = int(countsRaw[k], `${where}.counts.${k}`);
+  if (!Array.isArray(o.agents)) malformed(`${where}.agents is not a list`);
+  const agents = (o.agents as unknown[]).map((a, i) =>
+    projectRuntimeAgent(a, `${where}.agents[${i}]`),
+  );
+  if (agents.length > 0 && !observed) malformed(`${where} lists agents while not observed`);
+  return {
+    reported: true,
+    state,
+    problem,
+    observedAt: intOrNull(o.observed_at, `${where}.observed_at`),
+    firstPassAt: intOrNull(o.first_pass_at, `${where}.first_pass_at`),
+    secondPassAt: intOrNull(o.second_pass_at, `${where}.second_pass_at`),
+    caveat,
+    counts,
+    agents,
+    agentsOverBound: int(o.agents_over_bound, `${where}.agents_over_bound`),
+  };
+}
+
+function projectRuntimeAgent(raw: unknown, where: string): RuntimeAgentView {
+  const a = obj(raw, where);
+  exactKeys(a, RUNTIME_AGENT_KEYS, where);
+  const identity = obj(a.identity, `${where}.identity`);
+  exactKeys(identity, ['state', 'reason'], `${where}.identity`);
+  const assignment = obj(a.assignment, `${where}.assignment`);
+  exactKeys(
+    assignment,
+    ['state', 'reason', 'task_ref', 'task_id', 'task_status'],
+    `${where}.assignment`,
+  );
+  if (!Array.isArray(a.root_aliases)) malformed(`${where}.root_aliases is not a list`);
+  str(a.workspace_realpath, `${where}.workspace_realpath`); // checked, never relayed
+  const activity = strOrNull(a.activity, `${where}.activity`);
+  return {
+    agentRef: str(a.agent_ref, `${where}.agent_ref`),
+    sourceId: str(a.source_id, `${where}.source_id`),
+    rootRef: str(a.root_ref, `${where}.root_ref`),
+    rootAliases: (a.root_aliases as unknown[]).map((x, i) => str(x, `${where}.root_aliases[${i}]`)),
+    logical: str(a.logical, `${where}.logical`),
+    role: strOrNull(a.role, `${where}.role`),
+    agent: str(a.agent, `${where}.agent`),
+    session: strOrNull(a.session, `${where}.session`),
+    paneId: strOrNull(a.pane_id, `${where}.pane_id`),
+    workspaceId: strOrNull(a.workspace_id, `${where}.workspace_id`),
+    provider: strOrNull(a.provider, `${where}.provider`),
+    activity: activity === null ? null : classify(ACTIVITIES, activity),
+    identity: {
+      state: classify(RUNTIME_IDENTITY_STATES, identity.state),
+      reason: str(identity.reason, `${where}.identity.reason`),
+    },
+    assignment: {
+      state: classify(RUNTIME_ASSIGNMENT_STATES, assignment.state),
+      reason: str(assignment.reason, `${where}.assignment.reason`),
+      taskRef: strOrNull(assignment.task_ref, `${where}.assignment.task_ref`),
+      taskId: strOrNull(assignment.task_id, `${where}.assignment.task_id`),
+      taskStatus: strOrNull(assignment.task_status, `${where}.assignment.task_status`),
+    },
   };
 }
 

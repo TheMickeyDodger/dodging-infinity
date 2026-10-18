@@ -331,6 +331,8 @@ export interface DiOfficeState {
   missions: DiMissionList;
   contractVersion: number;
   chainObservation: DiChainObservation;
+  reception?: DiReception;
+  runtimeAgents?: DiRuntimeAgents;
   fixtureMode?: boolean;
 }
 
@@ -412,6 +414,7 @@ export interface DiMission {
   ambiguity: DiObservedValue;
   members: DiMemberList;
   v2: DiMissionV2;
+  herdrTask?: DiHerdrTask;
 }
 
 export interface DiMemberList {
@@ -583,6 +586,15 @@ export interface DiCanonicalReview {
   protocolToken: string | null;
 }
 
+export interface DiHerdrTask {
+  rootAliases: string[];
+  membership: string | null;
+  schema: string | null;
+  schemaVersion: number | null;
+  taskRecordVersion: number | null;
+  startedAt: number | null;
+}
+
 export interface DiChainObservation {
   projected: boolean;
   health: string | null;
@@ -592,6 +604,161 @@ export interface DiChainObservation {
   rootCount: number | null;
   unavailableCount: number | null;
   overCapacityCount: number | null;
+}
+
+export interface DiReception {
+  contractVersion: number;
+  categories: DiReceptionCategory[];
+  entries: DiReceptionEntry[];
+  entriesTotal: number;
+  entriesCap: number;
+  notices: DiReceptionNotice[];
+  minPollIntervalSeconds: number | null;
+  refreshStatement: string;
+  dismissalStatement: string;
+}
+
+export interface DiReceptionCategory {
+  category: DiReceptionCategoryId;
+  label: string;
+  statement: string;
+  backing: string;
+  outcome: DiReceptionOutcome;
+  reason: string | null;
+  counts: DiReceptionCounts;
+  gaps: DiReceptionGap[];
+  entriesTotal: number;
+}
+
+export type DiReceptionCategoryId =
+  | 'blockers'
+  | 'clarification'
+  | 'authorization'
+  | 'failed_verification'
+  | 'ready_for_review'
+  | 'delivery_decision';
+
+export type DiReceptionOutcome =
+  'present' | 'known_empty' | 'unsupported' | 'unavailable' | 'partial';
+
+export interface DiReceptionCounts {
+  present: number;
+  knownEmpty: number;
+  unsupported: number;
+  unavailable: number;
+}
+
+export interface DiReceptionGap {
+  outcome: DiReceptionOutcome;
+  reason: string;
+  missions: number;
+}
+
+export interface DiReceptionEntry {
+  key: string;
+  signature: string;
+  category: DiReceptionCategoryId;
+  missionRef: string;
+  sourceId: string;
+  nativeId: string;
+  sourceKind: string;
+  producerDeclared: string;
+  objective: DiObservedValue;
+  lifecycleModel: string;
+  lifecycleState: string;
+  standing: string;
+  bindingState: string;
+  bindingReason: string;
+  live: boolean;
+  notLiveReason: string | null;
+  occurrences: number;
+  identityConflict: boolean;
+  causes: DiReceptionCause[];
+  alsoUnknown: string[];
+  current: boolean;
+  route: string;
+  routeIdentifiers: DiReportEntry[];
+}
+
+export interface DiReceptionCause {
+  cause: string;
+  label: string;
+  details: DiReportEntry[];
+  staleReasons: string[];
+}
+
+export interface DiReceptionNotice {
+  reason: string;
+  statement: string;
+}
+
+export interface DiRuntimeAgents {
+  reported: boolean;
+  state: string | null;
+  problem: string | null;
+  plainStatement: string;
+  caveat: string | null;
+  observedAt: number | null;
+  firstPassAt: number | null;
+  secondPassAt: number | null;
+  counts: DiCount[];
+  agents: DiRuntimeAgent[];
+  agentsTotal: number;
+  agentsCap: number;
+  agentsOverBound: number;
+  capture: DiRuntimeCapture;
+  locators: DiLocatorSummary | null;
+}
+
+export interface DiCount {
+  name: string;
+  value: number;
+}
+
+export interface DiRuntimeAgent {
+  agentRef: string;
+  characterId: number | null;
+  sourceId: string;
+  rootRef: string;
+  rootAliases: string[];
+  logical: string;
+  role: string | null;
+  agent: string;
+  provider: string | null;
+  session: string | null;
+  paneId: string | null;
+  workspaceId: string | null;
+  activity: string | null;
+  identityState: string;
+  identityReason: string;
+  identityVerified: boolean;
+  assignmentState: string;
+  assignmentReason: string;
+  taskRef: string | null;
+  taskId: string | null;
+  taskStatus: string | null;
+  live: boolean;
+  notLiveReason: string | null;
+  plainText: string;
+}
+
+export interface DiRuntimeCapture {
+  discovered: number | null;
+  captured: number | null;
+  unavailable: number | null;
+  overCapacity: number | null;
+  listingAnchor: boolean | null;
+}
+
+export interface DiLocatorSummary {
+  registeredAliases: number;
+  physicalRoots: number;
+  sharedRootGroups: number;
+  rootsWithCurrentTask: number;
+  rootsWithoutCurrentTask: number;
+  aliasesWithoutHerdState: number;
+  excludedTotal: number;
+  excludedByReason: DiCount[];
 }
 
 export interface AmbientStateLoaded {

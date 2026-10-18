@@ -28,6 +28,13 @@
     "noUncheckedSideEffectImports": true
   },
   "include": ["vite.config.ts", "../core/src/assets/**/*.ts", "test/**/*.ts"],
-  /* type-checked by tsconfig.test-dom.json, which adds the DOM lib for the renderer */
-  "exclude": ["test/haloAura.test.ts"]
+  /* type-checked by tsconfig.test-dom.json, which adds the DOM lib (and JSX) for the renderers */
+  "exclude": [
+    "test/haloAura.test.ts",
+    "test/diReceptionDesk.test.ts",
+    "test/diRuntimeAgents.test.ts",
+    "test/diPanelKeyboard.test.ts",
+    "test/diAppReconcile.test.ts",
+    "test/harness/diAppProbe.ts"
+  ]
 }

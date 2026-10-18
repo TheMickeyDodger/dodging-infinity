@@ -7,6 +7,7 @@
  * liveness away, never grant it.
  */
 
+import { DI_RUNTIME_ZONE_REF } from '../../../core/src/constants.js';
 import type {
   DiCanonicalReview,
   DiCoverage,
@@ -15,9 +16,12 @@ import type {
   DiObservedValue,
   DiOfficeState,
   DiReportFact,
+  DiRuntimeAgent,
+  DiRuntimeAgents,
   DiTaskChain,
 } from '../../../core/src/messages.js';
 import type { TransportState } from '../../../core/src/transport.js';
+import { invalidateReception } from './diReceptionFormat.js';
 
 /** One observation as text. Each state is distinct and never empty. */
 export function formatObserved(v: DiObservedValue): string {
@@ -52,6 +56,15 @@ export function formatLive(live: boolean, reason: string | null, fixture = false
   return live ? 'LIVE' : `NOT LIVE: ${reason ?? 'reason not given'}`;
 }
 
+/**
+ * item 07: LIVE / NOT LIVE in plain words only (still qualified over fixture data): on the new
+ * runtime surfaces the reason code stays behind the labelled disclosure.
+ */
+export function formatLivePlain(live: boolean, fixture = false): string {
+  if (fixture) return live ? 'LIVE - FIXTURE DATA' : 'NOT LIVE (FIXTURE DATA)';
+  return live ? 'LIVE' : 'NOT LIVE';
+}
+
 /** The persistent label of an EXPLICIT fixture preview (diOfficeState.fixtureMode). */
 export const DI_FIXTURE_BANNER =
   'FIXTURE / VISUAL TEST - synthetic hash-pinned fixture data, not live Missions';
@@ -72,6 +85,49 @@ export function memberForCharacter(
     }
   }
   return null;
+}
+
+/**
+ * item 07: the runtime agent a drawn character is, or null. A runtime agent is NEVER a team
+ * member: it is looked up only after every Mission roster, and found only by its own characterId.
+ */
+export function runtimeAgentForCharacter(
+  state: DiOfficeState,
+  characterId: number | null,
+): DiRuntimeAgent | null {
+  if (characterId === null) return null;
+  return state.runtimeAgents?.agents.find((a) => a.characterId === characterId) ?? null;
+}
+
+/** item 07: the canonical identity of a drawn runtime agent (never its character number). */
+export function diRuntimeIdentityKey(
+  agent: Pick<DiRuntimeAgent, 'sourceId' | 'rootRef' | 'agentRef'>,
+): string {
+  return JSON.stringify(['runtime', agent.sourceId, agent.rootRef, null, agent.agentRef]);
+}
+
+/**
+ * item 07: the canvas label of a runtime agent — what is verified and what is not, and NEVER an
+ * activity: an unassigned agent, or one whose membership is unverified, is never shown as working.
+ */
+export function runtimeCharacterLabel(
+  agent: Pick<DiRuntimeAgent, 'live' | 'assignmentState'>,
+): string {
+  const what =
+    agent.assignmentState === 'unassigned'
+      ? 'runtime · unassigned (no current task)'
+      : 'runtime · task membership not verified';
+  return agent.live ? what : `not live · ${what}`;
+}
+
+/** item 07: the plain outcome line of the runtime agents block (never "none" when unknown). */
+export function formatRuntimeAgentsStatement(runtime: DiRuntimeAgents | undefined): string {
+  if (!runtime) return 'Runtime agents: not provided by this office.';
+  if (!runtime.reported) return runtime.plainStatement;
+  const omitted = runtime.agentsTotal - runtime.agents.length;
+  return omitted > 0
+    ? `${runtime.plainStatement} (showing ${runtime.agents.length} of ${runtime.agentsTotal}; ${omitted} omitted by the display cap)`
+    : runtime.plainStatement;
 }
 
 /** A list header: observed lists show their count; other states say why there is no list. */
@@ -193,6 +249,20 @@ export function withClientInvalidation(state: DiOfficeState, reason: string): Di
         },
       })),
     },
+    // An office state from a server without the desk carries none; there is nothing to invalidate.
+    ...(state.reception ? { reception: invalidateReception(state.reception, reason) } : {}),
+    ...(state.runtimeAgents
+      ? {
+          runtimeAgents: {
+            ...state.runtimeAgents,
+            agents: state.runtimeAgents.agents.map((a) => ({
+              ...a,
+              live: false,
+              notLiveReason: reason,
+            })),
+          },
+        }
+      : {}),
   };
 }
 
@@ -306,7 +376,9 @@ export const DI_UNCONFIRMED_LABEL = 'NOT LIVE · unconfirmed: no office state li
  */
 export function diCharacterLabel(state: DiOfficeState, characterId: number): string {
   const found = memberForCharacter(state, characterId);
-  return found ? characterLabel(found.member) : DI_UNCONFIRMED_LABEL;
+  if (found) return characterLabel(found.member);
+  const runtime = runtimeAgentForCharacter(state, characterId);
+  return runtime ? runtimeCharacterLabel(runtime) : DI_UNCONFIRMED_LABEL;
 }
 
 /**
@@ -321,7 +393,9 @@ export function characterTitle(member: Pick<DiMember, 'logical' | 'provider'>): 
 /** The compact title for a drawn character, or null when no snapshot confirms it. */
 export function diCharacterTitle(state: DiOfficeState, characterId: number): string | null {
   const found = memberForCharacter(state, characterId);
-  return found ? characterTitle(found.member) : null;
+  if (found) return characterTitle(found.member);
+  const runtime = runtimeAgentForCharacter(state, characterId);
+  return runtime ? `${runtime.logical} · ${runtime.provider ?? 'provider not recorded'}` : null;
 }
 
 /**
@@ -374,6 +448,15 @@ export function reconcileDiCharacters(
         folderName: mission.missionRef,
       });
     }
+  }
+  // item 07: verified runtime agents are characters too, seated in their own zone (never a
+  // Mission's), keyed by their own canonical identity.
+  for (const agent of state.runtimeAgents?.agents ?? []) {
+    if (agent.characterId === null || wanted.has(agent.characterId)) continue;
+    wanted.set(agent.characterId, {
+      key: diRuntimeIdentityKey(agent),
+      folderName: DI_RUNTIME_ZONE_REF,
+    });
   }
   const onCanvas = new Set(canvasIds);
   const remove: number[] = [];
@@ -600,6 +683,9 @@ export function navigationOrder(state: DiOfficeState): number[] {
   for (const mission of state.missions.missions)
     for (const member of mission.members.members)
       if (member.characterId !== null) ids.push(member.characterId);
+  // item 07: drawn runtime agents after every Mission roster (never inside one).
+  for (const agent of state.runtimeAgents?.agents ?? [])
+    if (agent.characterId !== null && !ids.includes(agent.characterId)) ids.push(agent.characterId);
   return ids;
 }
 

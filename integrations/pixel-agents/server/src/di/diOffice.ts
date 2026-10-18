@@ -20,6 +20,7 @@
  * - Log lines carry problem codes and counts only — never the token, never content.
  */
 
+import { DI_RUNTIME_ZONE_REF } from '../../../core/src/constants.js';
 import type { DiOfficeState } from '../../../core/src/messages.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import {
@@ -38,9 +39,10 @@ import {
   DEFAULT_QUERY_CONTRACT_VERSION,
 } from './catalogContract.js';
 import { parseEnvelope } from './catalogProjection.js';
+import type { CharacterIdentity } from './identityMap.js';
 import { DiIdentityMap } from './identityMap.js';
 import { buildDiOfficeStateMessage } from './officeStateMessage.js';
-import type { MemberPresentation, MissionPresentation, OfficeView } from './officeView.js';
+import type { MemberPresentation, OfficeView, RuntimeAgentPresentation } from './officeView.js';
 import { buildOfficeView, unavailableView } from './officeView.js';
 import type { ServeTimeVerdict } from './serveTimeVerdict.js';
 import { readServeTimeVerdict } from './serveTimeVerdict.js';
@@ -138,7 +140,11 @@ export class DiOffice {
 
   /** The additive `diOfficeState` message for the current view. */
   officeStateMessage(): DiOfficeState {
-    const message = buildDiOfficeStateMessage(this.view, (member) => this.characterIdFor(member));
+    const message = buildDiOfficeStateMessage(
+      this.view,
+      (member) => this.characterIdFor(member),
+      (agent) => this.runtimeCharacterIdFor(agent),
+    );
     return this.fixturePreview ? { ...message, fixtureMode: true } : message;
   }
 
@@ -152,6 +158,11 @@ export class DiOffice {
       taskId: member.taskId,
       memberRef: member.memberRef,
     });
+    return this.characters.has(id) ? id : null;
+  }
+
+  private runtimeCharacterIdFor(agent: RuntimeAgentPresentation): number | null {
+    const id = this.identities.numberFor(runtimeIdentity(agent));
     return this.characters.has(id) ? id : null;
   }
 
@@ -276,9 +287,15 @@ export class DiOffice {
     }
   }
 
-  /** Characters exist exactly for LIVE members; everything else is removed. */
+  /**
+   * Characters exist exactly for LIVE members and for VERIFIED runtime agents (item 07: not team
+   * members, seated in their own zone); everything else is removed. One physical agent renders
+   * once: the producer already excludes a runtime agent a team represents, and a runtime agent
+   * whose exact (agent, session) is a live member's is skipped here too.
+   */
   private projectCharacters(view: OfficeView): void {
-    const wanted = new Map<number, { mission: MissionPresentation; member: MemberPresentation }>();
+    const wanted = new Map<number, { ref: string; folderName: string }>();
+    const memberIdentities = new Set<string>();
     if (view.live && view.missions.state === 'observed') {
       for (const mission of view.missions.value) {
         if (!mission.presence.live || mission.members.state !== 'observed') continue;
@@ -291,8 +308,18 @@ export class DiOffice {
             taskId: member.taskId,
             memberRef: member.memberRef,
           });
-          wanted.set(id, { mission, member });
+          wanted.set(id, { ref: member.memberRef, folderName: mission.missionRef });
+          if (member.sessionRecorded.state === 'observed')
+            memberIdentities.add(JSON.stringify([member.agent, member.sessionRecorded.value]));
         }
+      }
+      for (const agent of view.runtimeAgents.agents) {
+        if (!agent.presence.live) continue;
+        if (memberIdentities.has(JSON.stringify([agent.agent, agent.session]))) continue;
+        wanted.set(this.identities.numberFor(runtimeIdentity(agent)), {
+          ref: agent.agentRef,
+          folderName: DI_RUNTIME_ZONE_REF,
+        });
       }
     }
     for (const id of [...this.characters.keys()]) {
@@ -301,23 +328,30 @@ export class DiOffice {
         this.store.delete(id);
       }
     }
-    for (const [id, { mission, member }] of wanted) {
+    for (const [id, { ref, folderName }] of wanted) {
       if (this.characters.has(id)) continue;
-      this.characters.set(id, member.memberRef);
-      this.store.set(id, makeCharacterState(id, mission, member));
+      this.characters.set(id, ref);
+      this.store.set(id, makeCharacterState(id, ref, folderName));
     }
   }
 }
 
-/** A store entry for one live member. It carries identity only — no transcript, no tools. */
-function makeCharacterState(
-  id: number,
-  mission: MissionPresentation,
-  member: MemberPresentation,
-): AgentState {
+/** item 07: the canonical identity tuple of a runtime agent's character. */
+function runtimeIdentity(agent: RuntimeAgentPresentation): CharacterIdentity {
+  return {
+    coverage: 'runtime',
+    sourceId: agent.sourceId,
+    missionRef: agent.rootRef,
+    taskId: null,
+    memberRef: agent.agentRef,
+  };
+}
+
+/** A store entry for one live character. It carries identity only — no transcript, no tools. */
+function makeCharacterState(id: number, ref: string, folderName: string): AgentState {
   return {
     id,
-    sessionId: member.memberRef,
+    sessionId: ref,
     isExternal: true,
     projectDir: '',
     jsonlFile: '',
@@ -332,7 +366,7 @@ function makeCharacterState(
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
-    folderName: mission.missionRef,
+    folderName,
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),

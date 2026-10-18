@@ -1,0 +1,758 @@
+{
+  "fixture": true,
+  "fixture_id": "herdr-task-ordinary-v1",
+  "label": "FIXTURE — herdr-task-ordinary-v1: two bound teams only (8 members) at contract v1 — SYNTHETIC VISUAL TEST",
+  "description": "The v1 producer emission of the mixed registry, EDITED: every mission except the two bound teams (the Mission Core record and the plain Herdr task) and the Mission Core root's deferring alias is removed, and runtime_agents lists no agent (its counts are left as emitted). Run it with --contract-version 1. Its pinned input is the producer emission normalized at export for publication (temporary root -> /__synthetic__/di-fixture-root; path-derived root keys recomputed by the product). It evidences rendering of plain Herdr tasks and of runtime agents (a verified runtime identity that is not a team member, in its own zone) only; it is SYNTHETIC and evidences nothing about any live registry, team or agent.",
+  "contract_version": 1,
+  "derived_from": {
+    "path": "server/__tests__/fixtures/di-backend/herdr-task/herdr-task-answer-v1.FIXTURE.json",
+    "sha256": "608b1feb802b538712635721b7802a9b616f3486c5eb46e23515b79465e76eab"
+  },
+  "after_last": "hold",
+  "frames": [
+    {
+      "kind": "catalog",
+      "timing": "fresh",
+      "envelope": {
+        "detail": null,
+        "endpoint": "di.mission_catalog",
+        "endpoint_version": 1,
+        "problem": null,
+        "requested_at": 1800000000,
+        "response": {
+          "contract": "di.mission_sources.query",
+          "contract_version": 1,
+          "generated_at": 1800000000,
+          "limits": {
+            "max_json_depth": 64,
+            "max_query_input_bytes": 67108864,
+            "max_query_missions": 2048,
+            "max_registry_bytes": 262144,
+            "max_snapshot_agents": 512,
+            "max_snapshot_tasks": 256,
+            "max_sources": 128,
+            "max_store_read_bytes": 16777216,
+            "max_task_bindings": 32,
+            "min_poll_interval_seconds": 5
+          },
+          "max_age_seconds": 60,
+          "missions": [
+            {
+              "binding": {
+                "reason": "covered_by_canonical_record",
+                "state": "not_applicable",
+                "task_id": "20261017-133442-bbbbbb"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "herdr.task_json",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "20261017-133442-bbbbbb",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-1aa604085c36ca55d01b57634ee13f41"
+              },
+              "lifecycle": {
+                "model": "herdr.task/1",
+                "standing": "active",
+                "state": "ACTIVE"
+              },
+              "members": [],
+              "mission_ref": "herd:20261017-133442-bbbbbb@62c1eb52bd74",
+              "native": {
+                "started_at": 1800000000,
+                "task_record_version": 1
+              },
+              "native_id": "20261017-133442-bbbbbb@62c1eb52bd74",
+              "objective": "SYNTHETIC task",
+              "producer": {
+                "declared": "herdctl",
+                "recorded": {
+                  "membership": "derived_from_current_task_record",
+                  "root_aliases": [
+                    "w5k"
+                  ],
+                  "schema": "di.catalog.herdr_task",
+                  "schema_version": 1
+                }
+              },
+              "revision": null,
+              "source_id": "herd",
+              "updated_at": null
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "20261017-150121-aaaaaa"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "herdr.task_json",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "20261017-150121-aaaaaa",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/repo-w5n"
+              },
+              "lifecycle": {
+                "model": "herdr.task/1",
+                "standing": "active",
+                "state": "ACTIVE"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "w5n-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "herd:20261017-150121-aaaaaa@5a4574665441#executor1",
+                  "mission_ref": "herd:20261017-150121-aaaaaa@5a4574665441",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p7",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-w5n-executor1",
+                    "recorded": "sess-w5n-executor1"
+                  },
+                  "task_id": "20261017-150121-aaaaaa",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "w5n-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "herd:20261017-150121-aaaaaa@5a4574665441#lead1",
+                  "mission_ref": "herd:20261017-150121-aaaaaa@5a4574665441",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p8",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-w5n-lead1",
+                    "recorded": "sess-w5n-lead1"
+                  },
+                  "task_id": "20261017-150121-aaaaaa",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "w5n-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "herd:20261017-150121-aaaaaa@5a4574665441#reviewer1",
+                  "mission_ref": "herd:20261017-150121-aaaaaa@5a4574665441",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p9",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-w5n-reviewer1",
+                    "recorded": "sess-w5n-reviewer1"
+                  },
+                  "task_id": "20261017-150121-aaaaaa",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "w5n-supervisor",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "supervisor",
+                  "member_ref": "herd:20261017-150121-aaaaaa@5a4574665441#supervisor",
+                  "mission_ref": "herd:20261017-150121-aaaaaa@5a4574665441",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p10",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "supervisor",
+                  "session": {
+                    "live": "sess-w5n-supervisor",
+                    "recorded": "sess-w5n-supervisor"
+                  },
+                  "task_id": "20261017-150121-aaaaaa",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "herd:20261017-150121-aaaaaa@5a4574665441",
+              "native": {
+                "started_at": 1799999995,
+                "task_record_version": 1
+              },
+              "native_id": "20261017-150121-aaaaaa@5a4574665441",
+              "objective": "SYNTHETIC task",
+              "producer": {
+                "declared": "herdctl",
+                "recorded": {
+                  "membership": "derived_from_current_task_record",
+                  "root_aliases": [
+                    "w5n"
+                  ],
+                  "schema": "di.catalog.herdr_task",
+                  "schema_version": 1
+                }
+              },
+              "revision": null,
+              "source_id": "herd",
+              "updated_at": null
+            },
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "20261017-133442-bbbbbb"
+              },
+              "execution": {
+                "consistent": true,
+                "identity_source": "start_result",
+                "receipt_recorded": true,
+                "record_ambiguous": false,
+                "run_started": true,
+                "task_id": "20261017-133442-bbbbbb",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-1aa604085c36ca55d01b57634ee13f41"
+              },
+              "lifecycle": {
+                "model": "mission_core.mission_state/1",
+                "standing": "active",
+                "state": "RUNNING"
+              },
+              "members": [
+                {
+                  "activity": "busy",
+                  "agent": "w5k-executor1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "executor1",
+                  "member_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41#executor1",
+                  "mission_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p3",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "executor",
+                  "session": {
+                    "live": "sess-w5k-executor1",
+                    "recorded": "sess-w5k-executor1"
+                  },
+                  "task_id": "20261017-133442-bbbbbb",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "w5k-lead1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "lead1",
+                  "member_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41#lead1",
+                  "mission_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p4",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "lead",
+                  "session": {
+                    "live": "sess-w5k-lead1",
+                    "recorded": "sess-w5k-lead1"
+                  },
+                  "task_id": "20261017-133442-bbbbbb",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "w5k-reviewer1",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "reviewer1",
+                  "member_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41#reviewer1",
+                  "mission_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p5",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "reviewer",
+                  "session": {
+                    "live": "sess-w5k-reviewer1",
+                    "recorded": "sess-w5k-reviewer1"
+                  },
+                  "task_id": "20261017-133442-bbbbbb",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                },
+                {
+                  "activity": "busy",
+                  "agent": "w5k-supervisor",
+                  "classification": "present",
+                  "cost": "unknown",
+                  "logical": "supervisor",
+                  "member_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41#supervisor",
+                  "mission_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41",
+                  "model": "unknown",
+                  "observed_at": 1800000000,
+                  "pane_id": "w1:p6",
+                  "progress": "unknown",
+                  "provider": "claude",
+                  "reason": "session_confirmed",
+                  "role": "supervisor",
+                  "session": {
+                    "live": "sess-w5k-supervisor",
+                    "recorded": "sess-w5k-supervisor"
+                  },
+                  "task_id": "20261017-133442-bbbbbb",
+                  "tokens": "unknown",
+                  "workspace_id": "w1"
+                }
+              ],
+              "mission_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41",
+              "native": {
+                "cancel_requested": false,
+                "paused": false
+              },
+              "native_id": "mn-1aa604085c36ca55d01b57634ee13f41",
+              "objective": "Fixture mission",
+              "producer": {
+                "declared": "local_request",
+                "recorded": {
+                  "principal_kind": "unauthenticated_local_caller",
+                  "transport": "local_request"
+                }
+              },
+              "revision": 1,
+              "source_id": "mc",
+              "updated_at": 1800000000
+            }
+          ],
+          "registry": {
+            "directory": "/__synthetic__/di-fixture-root/registry",
+            "health": "fresh",
+            "max_serialized_bytes": 262144,
+            "max_sources": 128,
+            "problem": null,
+            "serialized_bytes": 553,
+            "source_count": 2
+          },
+          "runtime_agents": {
+            "agents": [],
+            "agents_over_bound": 0,
+            "caveat": "two_pass_agreement_not_atomic_aba_not_detected",
+            "counts": {
+              "ambiguous": 0,
+              "names_over_bound": 0,
+              "registries_unread": 0,
+              "represented_by_teams": 8,
+              "roles_live": 24,
+              "roles_recorded": 252,
+              "roots_over_capacity": 0,
+              "roots_read": 63,
+              "roots_requested": 98,
+              "roots_role_records_unreadable": 0,
+              "unavailable": 0,
+              "unverified": 8,
+              "verified": 8
+            },
+            "first_pass_at": 1800000000,
+            "observed_at": 1800000000,
+            "problem": null,
+            "second_pass_at": 1800000000,
+            "state": "observed"
+          },
+          "runtime_snapshot": {
+            "agent_count": 22,
+            "health": "fresh",
+            "max_age_seconds": 60,
+            "observed_at": 1800000000,
+            "problem": null,
+            "producer": "target_runtime.runtime_snapshot",
+            "task_count": 15
+          },
+          "sources": [
+            {
+              "health": "fresh",
+              "kind": "task_native",
+              "locators": {
+                "aliases_without_herd_state": 12,
+                "excluded": [
+                  {
+                    "alias": "gone00",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone01",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone02",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone03",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone04",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone05",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone06",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone07",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone08",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone09",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone10",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone11",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone12",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone13",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone14",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone15",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone16",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone17",
+                    "reason": "registered_root_absent"
+                  },
+                  {
+                    "alias": "gone18",
+                    "reason": "registered_root_absent"
+                  }
+                ],
+                "physical_roots": 73,
+                "registered_aliases": 98,
+                "roots_with_current_task": 53,
+                "roots_without_current_task": 10,
+                "schema": "di.catalog.herdr_task.locators",
+                "shared_root_groups": 4,
+                "version": 1
+              },
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "herdctl",
+              "read_account": {
+                "allowance": 16777216,
+                "conservative_bytes": 0,
+                "measured_bytes": 103063,
+                "reads_refused_for_room": 0,
+                "reads_started": 220,
+                "reserve_per_read": 65537,
+                "schema": "di.catalog.herdr_task.read_account",
+                "settled_bytes": 103063,
+                "version": 1
+              },
+              "record_count": 63,
+              "source_id": "herd",
+              "store_dir": "/__synthetic__/di-fixture-root/di-registry"
+            },
+            {
+              "health": "fresh",
+              "kind": "mission_core",
+              "max_age_seconds": 60,
+              "observed_at": 1800000000,
+              "problem": null,
+              "producer": "local_request",
+              "record_count": 1,
+              "source_id": "mc",
+              "store_dir": "/__synthetic__/di-fixture-root/stores/mc"
+            }
+          ],
+          "unmatched_runtime_agent_count": 14,
+          "valid_until": 1800000060
+        },
+        "retry_after_seconds": null,
+        "runtime_capture": {
+          "available": true,
+          "configured": true,
+          "detail": null,
+          "discovery": {
+            "bindings": {
+              "herd:20261001-000000-dddddd@a3c3c1aaa1ff": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000000-dddddd@a3c3c1aaa1ff",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000000-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-00"
+              },
+              "herd:20261001-000001-dddddd@0f06cb08c601": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000001-dddddd@0f06cb08c601",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000001-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-01"
+              },
+              "herd:20261001-000002-dddddd@d2117c1c4dbb": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000002-dddddd@d2117c1c4dbb",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000002-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-02"
+              },
+              "herd:20261001-000003-dddddd@fa42dee15d2b": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000003-dddddd@fa42dee15d2b",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000003-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-03"
+              },
+              "herd:20261001-000004-dddddd@32aef472bcff": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000004-dddddd@32aef472bcff",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000004-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-04"
+              },
+              "herd:20261001-000005-dddddd@a73c9886adbd": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000005-dddddd@a73c9886adbd",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000005-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-05"
+              },
+              "herd:20261001-000006-dddddd@0665ef6ad7f7": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000006-dddddd@0665ef6ad7f7",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000006-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-06"
+              },
+              "herd:20261001-000007-dddddd@d2798606651b": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000007-dddddd@d2798606651b",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000007-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-07"
+              },
+              "herd:20261001-000008-dddddd@20cef2e4be33": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000008-dddddd@20cef2e4be33",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000008-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-08"
+              },
+              "herd:20261001-000009-dddddd@4db1c74de645": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000009-dddddd@4db1c74de645",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000009-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-09"
+              },
+              "herd:20261001-000010-dddddd@2405dcca0d17": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000010-dddddd@2405dcca0d17",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000010-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-10"
+              },
+              "herd:20261001-000011-dddddd@9e07eae3016d": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000011-dddddd@9e07eae3016d",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000011-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-11"
+              },
+              "herd:20261001-000012-dddddd@a576fef15768": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261001-000012-dddddd@a576fef15768",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261001-000012-dddddd",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/act-12"
+              },
+              "herd:20261017-150121-aaaaaa@5a4574665441": {
+                "declared": "herdctl",
+                "identity_source": "herdr.task_json",
+                "mission_ref": "herd:20261017-150121-aaaaaa@5a4574665441",
+                "model": "herdr.task/1",
+                "source_id": "herd",
+                "task_id": "20261017-150121-aaaaaa",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/repo-w5n"
+              },
+              "mc:mn-1aa604085c36ca55d01b57634ee13f41": {
+                "declared": "local_request",
+                "identity_source": "start_result",
+                "mission_ref": "mc:mn-1aa604085c36ca55d01b57634ee13f41",
+                "model": "mission_core.mission_state/1",
+                "source_id": "mc",
+                "task_id": "20261017-133442-bbbbbb",
+                "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-1aa604085c36ca55d01b57634ee13f41"
+              }
+            },
+            "conflicts": [],
+            "listing_anchor": null,
+            "missions_by_root": {
+              "/__synthetic__/di-fixture-root/act-00": "herd:20261001-000000-dddddd@a3c3c1aaa1ff",
+              "/__synthetic__/di-fixture-root/act-01": "herd:20261001-000001-dddddd@0f06cb08c601",
+              "/__synthetic__/di-fixture-root/act-02": "herd:20261001-000002-dddddd@d2117c1c4dbb",
+              "/__synthetic__/di-fixture-root/act-03": "herd:20261001-000003-dddddd@fa42dee15d2b",
+              "/__synthetic__/di-fixture-root/act-04": "herd:20261001-000004-dddddd@32aef472bcff",
+              "/__synthetic__/di-fixture-root/act-05": "herd:20261001-000005-dddddd@a73c9886adbd",
+              "/__synthetic__/di-fixture-root/act-06": "herd:20261001-000006-dddddd@0665ef6ad7f7",
+              "/__synthetic__/di-fixture-root/act-07": "herd:20261001-000007-dddddd@d2798606651b",
+              "/__synthetic__/di-fixture-root/act-08": "herd:20261001-000008-dddddd@20cef2e4be33",
+              "/__synthetic__/di-fixture-root/act-09": "herd:20261001-000009-dddddd@4db1c74de645",
+              "/__synthetic__/di-fixture-root/act-10": "herd:20261001-000010-dddddd@2405dcca0d17",
+              "/__synthetic__/di-fixture-root/act-11": "herd:20261001-000011-dddddd@9e07eae3016d",
+              "/__synthetic__/di-fixture-root/act-12": "herd:20261001-000012-dddddd@a576fef15768",
+              "/__synthetic__/di-fixture-root/repo-w5n": "herd:20261017-150121-aaaaaa@5a4574665441",
+              "/__synthetic__/di-fixture-root/ws-mn-1aa604085c36ca55d01b57634ee13f41": "mc:mn-1aa604085c36ca55d01b57634ee13f41"
+            },
+            "roots": [
+              "/__synthetic__/di-fixture-root/ws-mn-1aa604085c36ca55d01b57634ee13f41",
+              "/__synthetic__/di-fixture-root/act-00",
+              "/__synthetic__/di-fixture-root/act-01",
+              "/__synthetic__/di-fixture-root/act-02",
+              "/__synthetic__/di-fixture-root/act-03",
+              "/__synthetic__/di-fixture-root/act-04",
+              "/__synthetic__/di-fixture-root/act-05",
+              "/__synthetic__/di-fixture-root/act-06",
+              "/__synthetic__/di-fixture-root/act-07",
+              "/__synthetic__/di-fixture-root/act-08",
+              "/__synthetic__/di-fixture-root/act-09",
+              "/__synthetic__/di-fixture-root/act-10",
+              "/__synthetic__/di-fixture-root/act-11",
+              "/__synthetic__/di-fixture-root/act-12",
+              "/__synthetic__/di-fixture-root/repo-w5n"
+            ]
+          },
+          "observed_at": 1800000000,
+          "problem": null,
+          "refresh_budget": {
+            "per_pass_max_query_input_bytes": 67108864,
+            "per_pass_max_query_missions": 2048,
+            "per_pass_max_registry_bytes": 262144,
+            "source_passes": 2,
+            "sum_max_query_input_bytes": 134217728,
+            "sum_max_query_missions": 4096,
+            "sum_max_registry_bytes": 524288
+          },
+          "registered_roots": [],
+          "roots": {
+            "captured": [
+              "/__synthetic__/di-fixture-root/ws-mn-1aa604085c36ca55d01b57634ee13f41",
+              "/__synthetic__/di-fixture-root/act-00",
+              "/__synthetic__/di-fixture-root/act-01",
+              "/__synthetic__/di-fixture-root/act-02",
+              "/__synthetic__/di-fixture-root/act-03",
+              "/__synthetic__/di-fixture-root/act-04",
+              "/__synthetic__/di-fixture-root/act-05",
+              "/__synthetic__/di-fixture-root/act-06",
+              "/__synthetic__/di-fixture-root/act-07",
+              "/__synthetic__/di-fixture-root/act-08",
+              "/__synthetic__/di-fixture-root/act-09",
+              "/__synthetic__/di-fixture-root/act-10",
+              "/__synthetic__/di-fixture-root/act-11",
+              "/__synthetic__/di-fixture-root/act-12",
+              "/__synthetic__/di-fixture-root/repo-w5n"
+            ],
+            "discovered": [
+              "/__synthetic__/di-fixture-root/ws-mn-1aa604085c36ca55d01b57634ee13f41",
+              "/__synthetic__/di-fixture-root/act-00",
+              "/__synthetic__/di-fixture-root/act-01",
+              "/__synthetic__/di-fixture-root/act-02",
+              "/__synthetic__/di-fixture-root/act-03",
+              "/__synthetic__/di-fixture-root/act-04",
+              "/__synthetic__/di-fixture-root/act-05",
+              "/__synthetic__/di-fixture-root/act-06",
+              "/__synthetic__/di-fixture-root/act-07",
+              "/__synthetic__/di-fixture-root/act-08",
+              "/__synthetic__/di-fixture-root/act-09",
+              "/__synthetic__/di-fixture-root/act-10",
+              "/__synthetic__/di-fixture-root/act-11",
+              "/__synthetic__/di-fixture-root/act-12",
+              "/__synthetic__/di-fixture-root/repo-w5n"
+            ],
+            "over_capacity": [],
+            "registered": [],
+            "unavailable": []
+          }
+        },
+        "served": "refreshed"
+      }
+    }
+  ],
+  "generator": "scripts/build-di-fixtures.mjs"
+}

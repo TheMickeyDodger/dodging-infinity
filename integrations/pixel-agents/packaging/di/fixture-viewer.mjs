@@ -5,18 +5,24 @@
  *
  *   node fixture-viewer.mjs --profile <absolute dir> [--fixture <id|absolute file>]
  *                           [--port <n>] [--world <living-metropolis|metropolis|vast-forest|expanded-office|none>]
+ *                           [--contract-version <1|2>]
  *
  *   --profile   An absolute directory for this viewer ONLY. Created fresh (0700) when absent and
  *               marked with FIXTURE-PROFILE.json; an existing directory is used only if it carries
  *               that marker, so this can never adopt another office's profile.
- *   --fixture   zero-agent (default), crowded, stale, malformed, replacement, reconnect, or an
+ *   --fixture   zero-agent (default), crowded, stale, malformed, replacement, reconnect,
+ *               reception-v2, reception-v2-unavailable, reception-v1, herdr-task-ordinary-v1,
+ *               herdr-task-crowded-v1, herdr-task-crowded-v2, herdr-task-session-mismatch-v2, or an
  *               absolute path to a fixture script.
  *   --port      Loopback port (default 63420). 62892 is refused: it is the live office's port.
  *   --world     The world seeded into a FRESH profile's layout (default living-metropolis); "none" keeps
  *               the bundled default. An existing profile keeps its own layout.
+ *   --contract-version  The ONE catalog contract version the office process reads (1 or 2). Default:
+ *               the fixture script's declared `contract_version`, else 1. A v2 fixture under a v1
+ *               office reads INCOMPATIBLE, as a real backend answer would.
  *
  * What it runs: `node dist/di-cli.js --state-dir <profile>/di-state --fixture-source <fixture>
- * --port <n>`. --fixture-source is the setting that disables canonical discovery: the office is
+ * --port <n> --contract-version <v>`. --fixture-source is the setting that disables canonical discovery: the office is
  * composed with an in-process fixture instead of the discovery reader and the backend client.
  *
  * Stop: Ctrl-C, or `kill -TERM $(cat <profile>/fixture-viewer.pid)`. The office drains and removes
@@ -32,7 +38,22 @@ const LIVE_OFFICE_PORT = 62892;
 const DEFAULT_PORT = 63420;
 const MARKER = 'FIXTURE-PROFILE.json';
 const MARKER_KIND = 'pixel-agents-di-fixture-viewer-profile';
-const FIXTURE_IDS = ['zero-agent', 'crowded', 'stale', 'malformed', 'replacement', 'reconnect'];
+const FIXTURE_IDS = [
+  'zero-agent',
+  'crowded',
+  'stale',
+  'malformed',
+  'replacement',
+  'reconnect',
+  'reception-v2',
+  'reception-v2-unavailable',
+  'reception-v1',
+  'herdr-task-ordinary-v1',
+  'herdr-task-crowded-v1',
+  'herdr-task-crowded-v2',
+  'herdr-task-session-mismatch-v2',
+];
+const CONTRACT_VERSIONS = ['1', '2'];
 const WORLDS = ['living-metropolis', 'metropolis', 'vast-forest', 'expanded-office'];
 
 function fail(message, code = 2) {
@@ -62,13 +83,14 @@ function parseArgs(argv) {
       console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf-8').split('*/')[0]);
       process.exit(0);
     }
-    if (!['--profile', '--fixture', '--port', '--world'].includes(flag))
+    if (!['--profile', '--fixture', '--port', '--world', '--contract-version'].includes(flag))
       fail(`unknown argument "${flag}"`);
     if (value === undefined) fail(`missing value for ${flag}`);
     i++;
     if (flag === '--profile') out.profile = value;
     else if (flag === '--fixture') out.fixture = value;
     else if (flag === '--world') out.world = value;
+    else if (flag === '--contract-version') out.contractVersion = value;
     else out.port = Number(value);
   }
   if (!out.profile || !path.isAbsolute(out.profile)) fail('--profile <absolute dir> is required');
@@ -78,6 +100,8 @@ function parseArgs(argv) {
     fail(`port ${LIVE_OFFICE_PORT} belongs to the live office and is refused`);
   if (out.world !== 'none' && !WORLDS.includes(out.world))
     fail(`--world must be one of ${WORLDS.join(', ')} or none`);
+  if (out.contractVersion !== undefined && !CONTRACT_VERSIONS.includes(out.contractVersion))
+    fail('--contract-version must be 1 or 2');
   return out;
 }
 
@@ -90,6 +114,16 @@ const fixtureFile = path.isAbsolute(args.fixture)
     ? path.join(data, 'fixtures', `${args.fixture}.FIXTURE.json`)
     : fail(`--fixture must be one of ${FIXTURE_IDS.join(', ')} or an absolute file`);
 if (!fs.existsSync(fixtureFile)) fail(`fixture not found: ${fixtureFile}`);
+/** The fixture's declared contract version (reception fixtures declare it), else 1. */
+function declaredContractVersion(file) {
+  try {
+    const declared = JSON.parse(fs.readFileSync(file, 'utf-8')).contract_version;
+    return declared === 2 ? '2' : '1';
+  } catch {
+    return '1'; // the office itself refuses an unreadable script before launch
+  }
+}
+const contractVersion = args.contractVersion ?? declaredContractVersion(fixtureFile);
 
 const profile = path.normalize(args.profile);
 const stateDir = path.join(profile, 'di-state');
@@ -140,11 +174,14 @@ const childArgs = [
   fixtureFile,
   '--port',
   String(args.port),
+  '--contract-version',
+  contractVersion,
 ];
 console.log('[fixture-viewer] FIXTURE / VISUAL TEST ONLY — synthetic data, no backend contact');
 console.log(`[fixture-viewer] profile:   ${profile}`);
 console.log(`[fixture-viewer] state dir: ${stateDir}`);
 console.log(`[fixture-viewer] fixture:   ${fixtureFile}`);
+console.log(`[fixture-viewer] contract:  v${contractVersion} (one per process)`);
 console.log(`[fixture-viewer] office:    ${path.join(root, 'dist/di-cli.js')}`);
 console.log(`[fixture-viewer] preview:   http://127.0.0.1:${args.port}/  (open with: pixel --state-dir ${stateDir})`);
 console.log(`[fixture-viewer] stop:      kill -TERM ${process.pid}   (pid file ${pidFile})`);

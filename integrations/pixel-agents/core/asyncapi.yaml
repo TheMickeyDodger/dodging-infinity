@@ -856,6 +856,11 @@ components:
         the two independent freshness levels and the distinct times.
         Fully projected — the webview renders it and derives nothing (no store reads,
         no lifecycle derivation, no ref parsing).
+        `reception` (the Mission reception desk) is OPTIONAL, an addition like `fixtureMode`:
+        an office that does not project it omits the key, and the webview then says the desk
+        is not provided. `runtimeAgents` (item 07) is OPTIONAL the same way: an office that
+        does not project it omits the key, and the webview then says runtime agents are not
+        reported (never "none").
       type: object
       additionalProperties: false
       required:
@@ -897,6 +902,10 @@ components:
           description: The catalog contract version this office process was launched to read (one per process).
         chainObservation:
           $ref: '#/components/schemas/DiChainObservation'
+        reception:
+          $ref: '#/components/schemas/DiReception'
+        runtimeAgents:
+          $ref: '#/components/schemas/DiRuntimeAgents'
         fixtureMode:
           type: boolean
           description: |
@@ -904,6 +913,252 @@ components:
             --fixture-preview flag: its backend is a hash-pinned SYNTHETIC FIXTURE stand-in
             (visual testing), never live Missions. The webview then shows a persistent
             FIXTURE / VISUAL TEST label and qualifies every LIVE. Absent in normal operation.
+
+    DiReception:
+      description: |
+        The Mission reception desk (item 06): ONE attention view, derived SERVER-SIDE as a pure
+        function of the office view. It projects existing canonical records only; it is
+        read-only and carries NO control: the route to act is truthful text plus the exact
+        canonical identifiers. Every category resolves per Mission to present, known_empty,
+        unsupported or unavailable, and they are never collapsed into one another.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          contractVersion,
+          categories,
+          entries,
+          entriesTotal,
+          entriesCap,
+          notices,
+          minPollIntervalSeconds,
+          refreshStatement,
+          dismissalStatement,
+        ]
+      properties:
+        contractVersion:
+          type: integer
+          description: The ONE catalog contract version this office process reads.
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReceptionCategory'
+        entries:
+          type: array
+          description: Present attention entries, ordered, capped at entriesCap.
+          items:
+            $ref: '#/components/schemas/DiReceptionEntry'
+        entriesTotal:
+          type: integer
+          description: Every present entry before the cap; entriesTotal > entries.length means truncated.
+        entriesCap:
+          type: integer
+        notices:
+          type: array
+          description: Why "none" cannot be claimed (absent or unhealthy sources, a stale answer).
+          items:
+            $ref: '#/components/schemas/DiReceptionNotice'
+        minPollIntervalSeconds:
+          type: [number, 'null']
+        refreshStatement:
+          type: string
+        dismissalStatement:
+          type: string
+
+    DiReceptionCategoryId:
+      type: string
+      enum:
+        [
+          blockers,
+          clarification,
+          authorization,
+          failed_verification,
+          ready_for_review,
+          delivery_decision,
+        ]
+
+    DiReceptionOutcome:
+      description: |
+        present = canonical records report it; known_empty = readable and report none;
+        unsupported = not reported at this contract version or by this source kind;
+        unavailable = could not be read now; partial = a category mixes those (never "none").
+      type: string
+      enum: [present, known_empty, unsupported, unavailable, partial]
+
+    DiReceptionCategory:
+      type: object
+      additionalProperties: false
+      required: [category, label, statement, backing, outcome, reason, counts, gaps, entriesTotal]
+      properties:
+        category:
+          $ref: '#/components/schemas/DiReceptionCategoryId'
+        label:
+          type: string
+        statement:
+          type: string
+        backing:
+          type: string
+          description: The canonical field(s) and contract version(s) behind the category.
+        outcome:
+          $ref: '#/components/schemas/DiReceptionOutcome'
+        reason:
+          type: [string, 'null']
+        counts:
+          $ref: '#/components/schemas/DiReceptionCounts'
+        gaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReceptionGap'
+        entriesTotal:
+          type: integer
+
+    DiReceptionCounts:
+      description: Missions per outcome for one category.
+      type: object
+      additionalProperties: false
+      required: [present, knownEmpty, unsupported, unavailable]
+      properties:
+        present:
+          type: integer
+        knownEmpty:
+          type: integer
+        unsupported:
+          type: integer
+        unavailable:
+          type: integer
+
+    DiReceptionGap:
+      type: object
+      additionalProperties: false
+      required: [outcome, reason, missions]
+      properties:
+        outcome:
+          $ref: '#/components/schemas/DiReceptionOutcome'
+        reason:
+          type: string
+        missions:
+          type: integer
+
+    DiReceptionNotice:
+      type: object
+      additionalProperties: false
+      required: [reason, statement]
+      properties:
+        reason:
+          type: string
+        statement:
+          type: string
+
+    DiReceptionCause:
+      description: One canonical cause, kept distinguishable from every other cause.
+      type: object
+      additionalProperties: false
+      required: [cause, label, details, staleReasons]
+      properties:
+        cause:
+          type: string
+        label:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReportEntry'
+        staleReasons:
+          type: array
+          items:
+            type: string
+
+    DiReceptionEntry:
+      description: |
+        One attention entry, keyed on canonical identity (category, sourceId, nativeId) — never a
+        name, an objective or a time. Strings are verbatim from the projection.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          key,
+          signature,
+          category,
+          missionRef,
+          sourceId,
+          nativeId,
+          sourceKind,
+          producerDeclared,
+          objective,
+          lifecycleModel,
+          lifecycleState,
+          standing,
+          bindingState,
+          bindingReason,
+          live,
+          notLiveReason,
+          occurrences,
+          identityConflict,
+          causes,
+          alsoUnknown,
+          current,
+          route,
+          routeIdentifiers,
+        ]
+      properties:
+        key:
+          type: string
+        signature:
+          type: string
+          description: The canonical content; a locally hidden entry returns when it changes.
+        category:
+          $ref: '#/components/schemas/DiReceptionCategoryId'
+        missionRef:
+          type: string
+        sourceId:
+          type: string
+        nativeId:
+          type: string
+        sourceKind:
+          type: string
+        producerDeclared:
+          type: string
+        objective:
+          $ref: '#/components/schemas/DiObservedValue'
+        lifecycleModel:
+          type: string
+        lifecycleState:
+          type: string
+          description: Native literal, display only; never decided on.
+        standing:
+          type: string
+        bindingState:
+          type: string
+        bindingReason:
+          type: string
+        live:
+          type: boolean
+        notLiveReason:
+          type: [string, 'null']
+        occurrences:
+          type: integer
+          description: Canonically identical records collapsed into this entry (duplicates stay visible).
+        identityConflict:
+          type: boolean
+          description: Another record shares this canonical identity with DIFFERENT content.
+        causes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReceptionCause'
+        alsoUnknown:
+          type: array
+          items:
+            type: string
+        current:
+          type: boolean
+          description: False when any cause is stale (never shown as current).
+        route:
+          type: string
+          description: The established route to act, as text. Never a control.
+        routeIdentifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReportEntry'
 
     DiObservationState:
       description: |
@@ -1103,6 +1358,252 @@ components:
           $ref: '#/components/schemas/DiMemberList'
         v2:
           $ref: '#/components/schemas/DiMissionV2'
+        herdrTask:
+          $ref: '#/components/schemas/DiHerdrTask'
+
+    DiHerdrTask:
+      description: |
+        item 07 — present ONLY on a plain Herdr task (`sourceKind` herdr_task, lifecycle model
+        herdr.task/1), read from the engine's own task record by the read-only task-native source.
+        It is never a Mission Core record: Mission Core facts are unsupported for it. Provenance
+        only; shown behind a labelled disclosure.
+      type: object
+      additionalProperties: false
+      required:
+        [rootAliases, membership, schema, schemaVersion, taskRecordVersion, startedAt]
+      properties:
+        rootAliases:
+          type: array
+          description: Every registry alias of its ONE physical root.
+          items:
+            type: string
+        membership:
+          type: [string, 'null']
+          description: How membership is known (derived from the root's current task record).
+        schema:
+          type: [string, 'null']
+        schemaVersion:
+          type: [integer, 'null']
+        taskRecordVersion:
+          type: [integer, 'null']
+        startedAt:
+          type: [integer, 'null']
+
+    DiRuntimeAgents:
+      description: |
+        item 07 — live agents identified by a task-native role record that no team represents.
+        Two answers are kept apart everywhere: runtime IDENTITY (is this live row exactly the
+        recorded role?) and task ASSIGNMENT (what the root's own task record says — unassigned,
+        or an UNVERIFIED recorded reference; never membership). Only a verified identity in a
+        live office carries a characterId, and no runtime agent ever animates as working. Every
+        verified agent is listed; other entries are capped at agentsCap, with agentsTotal the
+        real count. Read-only: no control, no route to act.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          reported,
+          state,
+          problem,
+          plainStatement,
+          caveat,
+          observedAt,
+          firstPassAt,
+          secondPassAt,
+          counts,
+          agents,
+          agentsTotal,
+          agentsCap,
+          agentsOverBound,
+          capture,
+          locators,
+        ]
+      properties:
+        reported:
+          type: boolean
+          description: False when the backend predates the field (unknown, never "none").
+        state:
+          type: [string, 'null']
+        problem:
+          type: [string, 'null']
+        plainStatement:
+          type: string
+        caveat:
+          type: [string, 'null']
+          description: The two-pass limit (agreement is not atomic; a change and change-back is not detected).
+        observedAt:
+          type: [integer, 'null']
+        firstPassAt:
+          type: [integer, 'null']
+        secondPassAt:
+          type: [integer, 'null']
+        counts:
+          type: array
+          description: The producer's counts, verbatim (name, value), in its order.
+          items:
+            $ref: '#/components/schemas/DiCount'
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiRuntimeAgent'
+        agentsTotal:
+          type: integer
+        agentsCap:
+          type: integer
+        agentsOverBound:
+          type: integer
+          description: Entries the PRODUCER did not list beyond its own bound.
+        capture:
+          $ref: '#/components/schemas/DiRuntimeCapture'
+        locators:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiLocatorSummary'
+
+    DiCount:
+      type: object
+      additionalProperties: false
+      required: [name, value]
+      properties:
+        name:
+          type: string
+        value:
+          type: integer
+
+    DiRuntimeAgent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          agentRef,
+          characterId,
+          sourceId,
+          rootRef,
+          rootAliases,
+          logical,
+          role,
+          agent,
+          provider,
+          session,
+          paneId,
+          workspaceId,
+          activity,
+          identityState,
+          identityReason,
+          identityVerified,
+          assignmentState,
+          assignmentReason,
+          taskRef,
+          taskId,
+          taskStatus,
+          live,
+          notLiveReason,
+          plainText,
+        ]
+      properties:
+        agentRef:
+          type: string
+        characterId:
+          type: [integer, 'null']
+        sourceId:
+          type: string
+        rootRef:
+          type: string
+        rootAliases:
+          type: array
+          items:
+            type: string
+        logical:
+          type: string
+        role:
+          type: [string, 'null']
+        agent:
+          type: string
+        provider:
+          type: [string, 'null']
+        session:
+          type: [string, 'null']
+        paneId:
+          type: [string, 'null']
+        workspaceId:
+          type: [string, 'null']
+        activity:
+          type: [string, 'null']
+          description: The agent's own reported activity; never task progress or completion.
+        identityState:
+          type: string
+        identityReason:
+          type: string
+        identityVerified:
+          type: boolean
+        assignmentState:
+          type: string
+        assignmentReason:
+          type: string
+        taskRef:
+          type: [string, 'null']
+        taskId:
+          type: [string, 'null']
+        taskStatus:
+          type: [string, 'null']
+        live:
+          type: boolean
+        notLiveReason:
+          type: [string, 'null']
+        plainText:
+          type: string
+
+    DiRuntimeCapture:
+      description: The runtime capture's own root account (over capacity reported, never truncated).
+      type: object
+      additionalProperties: false
+      required: [discovered, captured, unavailable, overCapacity, listingAnchor]
+      properties:
+        discovered:
+          type: [integer, 'null']
+        captured:
+          type: [integer, 'null']
+        unavailable:
+          type: [integer, 'null']
+        overCapacity:
+          type: [integer, 'null']
+        listingAnchor:
+          type: [boolean, 'null']
+
+    DiLocatorSummary:
+      description: Every registered alias accounted for once; exclusions counted by reason.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          registeredAliases,
+          physicalRoots,
+          sharedRootGroups,
+          rootsWithCurrentTask,
+          rootsWithoutCurrentTask,
+          aliasesWithoutHerdState,
+          excludedTotal,
+          excludedByReason,
+        ]
+      properties:
+        registeredAliases:
+          type: integer
+        physicalRoots:
+          type: integer
+        sharedRootGroups:
+          type: integer
+        rootsWithCurrentTask:
+          type: integer
+        rootsWithoutCurrentTask:
+          type: integer
+        aliasesWithoutHerdState:
+          type: integer
+        excludedTotal:
+          type: integer
+        excludedByReason:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiCount'
 
     DiMemberList:
       type: object

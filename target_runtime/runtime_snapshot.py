@@ -279,6 +279,15 @@ MAX_ROOT_PATH_CHARS = 4096
 #: element): roots plus, for the projection, digests and the listing (which
 #: the runner already caps at 64 KiB).
 MAX_PAYLOAD_BYTES = 126976
+#: ``request(stable_names=...)``: the agent names whose listing rows' ONE
+#: stable field the snapshot does not carry (``cwd``, part of the engine's
+#: stable identity, ``herdr.identity.STABLE_FIELDS``) the projection also
+#: returns, in memory only (``Capture.native_cwd``; never in a snapshot or
+#: an answer). Bounded in count and in serialized bytes, so the payload
+#: stays inside ``MAX_PAYLOAD_BYTES`` beside a full listing; the caller
+#: chooses within the bound and discloses what it did not request.
+MAX_STABLE_NAMES = 512
+MAX_STABLE_NAMES_BYTES = 16384
 #: The longest a caller may ask ``request`` to wait (half the consumer's
 #: 60 s readiness window).
 MAX_WAIT_SECONDS = 30
@@ -362,6 +371,11 @@ class Capture(object):
     #: A CHAIN request only (query contract version 2): the validated chain
     #: observation taken by the same capture as ``snapshot``; None otherwise.
     chain_observation: Optional[dict] = None
+    #: With ``request(stable_names=...)``: ``{name: [cwd or None, one per
+    #: listing row of that name, in listing order]}`` for every requested
+    #: name the SAME listing carried (the snapshot's own rows for it); None
+    #: otherwise. In memory only: the snapshot contract does not carry it.
+    native_cwd: Optional[dict] = None
 
     def is_available(self):
         return self.snapshot is not None
@@ -651,10 +665,22 @@ def _first_pass(payload):
     return {"digests": strict, "discovered": accounts}
 
 
+def _native_cwd(payload, live):
+    """``{name: [cwd or None per row]}`` for the requested names the listing
+    carries (``live``: the raw rows by name, inside the boundary only)."""
+    out = {}
+    for name in payload["stable_names"]:
+        if name in live:
+            out[name] = [_text(row.get("cwd"), "listing %s.cwd" % name, True)
+                         for row in live[name]]
+    return out
+
+
 def _project(payload):
     """The second pass, the coherence comparison and the projection. Runs in
     the second boundary child; internal and directly testable, NOT the
-    bounded service."""
+    bounded service. With ``stable_names`` in the payload the value is
+    ``{"snapshot", "native_cwd"}`` (``_native_cwd``); else the snapshot."""
     if payload.get("chains") is not None:
         return _project_chains(payload)
     roots = _require_roots(payload["roots"])
@@ -684,6 +710,9 @@ def _project(payload):
     reading = snapshot_contract.read_runtime_snapshot(snapshot, observed_at)
     if reading.health != snapshot_contract.HEALTH_FRESH:
         raise _Refused(PROBLEM_SELF_CHECK, reading.problem)
+    if "stable_names" in payload:
+        return {"snapshot": snapshot,
+                "native_cwd": _native_cwd(payload, live)}
     return snapshot
 
 
@@ -938,7 +967,10 @@ def _project_chains(payload):
     chain_reading = chain_contract.read_chain_observation(value, observed_at)
     if chain_reading.health != snapshot_contract.HEALTH_FRESH:
         raise _Refused(PROBLEM_SELF_CHECK, chain_reading.problem)
-    return {"snapshot": snapshot, "chain_observation": value}
+    out = {"snapshot": snapshot, "chain_observation": value}
+    if "stable_names" in payload:
+        out["native_cwd"] = _native_cwd(payload, live)
+    return out
 
 
 def boundary_main(argv):
@@ -1249,8 +1281,48 @@ def _chain_plan(value, roots, over_capacity, account, expected_reviews):
                                "over_capacity": over}
 
 
+def _stable_names_accepted(value, stable_names):
+    """The owner's own check of a child's ``native_cwd``: only requested
+    names, each a list of bounded optional texts, at most one per listed
+    agent."""
+    if type(value) is not dict or not set(value) <= set(stable_names):
+        return False
+    for rows in value.values():
+        if type(rows) is not list or not 1 <= len(rows) <= (
+                snapshot_contract.MAX_SNAPSHOT_AGENTS):
+            return False
+        for cwd in rows:
+            try:
+                snapshot_contract.require_text(cwd, "native_cwd", True)
+            except snapshot_contract.ContractError:
+                return False
+    return True
+
+
+def require_stable_names(stable_names):
+    """``request``'s check of ``stable_names``: None, or a list of distinct
+    bounded agent names within ``MAX_STABLE_NAMES`` and
+    ``MAX_STABLE_NAMES_BYTES``. Raises ``ValueError``."""
+    if stable_names is None:
+        return None
+    if type(stable_names) is not list or len(stable_names) > (
+            MAX_STABLE_NAMES) or len(set(stable_names)) != len(stable_names):
+        raise ValueError("stable_names must be a list of at most %d distinct"
+                         " names" % MAX_STABLE_NAMES)
+    for name in stable_names:
+        try:
+            snapshot_contract.require_text(name, "stable_names")
+        except snapshot_contract.ContractError:
+            raise ValueError("stable_names holds a name that is not a"
+                             " bounded text")
+    if len(json.dumps(stable_names).encode("utf-8")) > MAX_STABLE_NAMES_BYTES:
+        raise ValueError("stable_names exceeds %d serialized bytes"
+                         % MAX_STABLE_NAMES_BYTES)
+    return list(stable_names)
+
+
 def _capture_work(roots, argv, observed_at, phase, discovered=(),
-                  over_capacity=(), chains=None):
+                  over_capacity=(), chains=None, stable_names=None):
     """The owner's worker: the fixed sequence of owned runs, each confirmed
     quiescent before the next starts. Returns a ``Capture``; raises
     ``_CleanupUnestablished`` when a group cannot be shown empty. With
@@ -1324,9 +1396,26 @@ def _capture_work(roots, argv, observed_at, phase, discovered=(),
                    "observed_at": observed_at}
         if projection_chains is not None:
             payload["chains"] = projection_chains
+        if stable_names is not None:
+            payload["stable_names"] = list(stable_names)
         snapshot = _boundary(MODE_PROJECT, payload)
     except _Refused as exc:
         return Capture(None, exc.problem, exc.detail, observed_at, account)
+    native_cwd = None
+    if stable_names is not None:
+        # The owner's own acceptance of the requested stable field.
+        if type(snapshot) is not dict or not _stable_names_accepted(
+                snapshot.get("native_cwd"), stable_names):
+            return Capture(None, PROBLEM_SELF_CHECK,
+                           "the boundary value is not this observation",
+                           observed_at, account)
+        native_cwd = snapshot.pop("native_cwd")
+        if chains is None:
+            if set(snapshot) != {"snapshot"}:
+                return Capture(None, PROBLEM_SELF_CHECK,
+                               "the boundary value is not this observation",
+                               observed_at, account)
+            snapshot = snapshot["snapshot"]
     chain_observation = None
     if chains is not None:
         # The owner's own acceptance of the chain value: the same rules.
@@ -1356,7 +1445,7 @@ def _capture_work(roots, argv, observed_at, phase, discovered=(),
                        "the boundary value is not this observation",
                        observed_at, account)
     return Capture(snapshot, None, None, observed_at, account,
-                   chain_observation)
+                   chain_observation, native_cwd)
 
 
 #: ``diagnostics()["work"]``: the owner's honest account of owned work.
@@ -1474,7 +1563,8 @@ class SnapshotService(object):
             self._observe_open_question()
         return self.diagnostics()
 
-    def request(self, wait_seconds, discovered_roots=(), chains=None):
+    def request(self, wait_seconds, discovered_roots=(), chains=None,
+                stable_names=None):
         """One request; ``discovered_roots`` (canonical discovery, e.g.
         ``mission_sources.roster.discovery``) are captured with this owner's
         registered roots, TOLERANTLY and within ``MAX_HERD_ROOTS``, by the
@@ -1482,12 +1572,15 @@ class SnapshotService(object):
         (query contract version 2 only; None otherwise) makes it a CHAIN
         request: ``{"expected_reviews": {root: task_id}}``, the task each
         root's canonical review record must belong to (``review_record``).
-        Same slot, same three owned runs."""
+        Same slot, same three owned runs. ``stable_names``
+        (``require_stable_names``; None: none) asks the SAME projection for
+        those names' native ``cwd`` (``Capture.native_cwd``)."""
         if type(wait_seconds) not in (int, float) or not (
                 0 < wait_seconds <= MAX_WAIT_SECONDS):
             raise ValueError("wait_seconds must be in (0, %d]"
                              % MAX_WAIT_SECONDS)
         _require_chains(chains)
+        stable_names = require_stable_names(stable_names)
         observed_at = self._clock()
         if type(observed_at) is not int or observed_at < 0:
             raise TypeError("clock must return a non-negative int")
@@ -1517,7 +1610,7 @@ class SnapshotService(object):
             worker = threading.Thread(
                 target=self._work,
                 args=(ended, roots, argv, observed_at, outcome, discovered,
-                      over, chains),
+                      over, chains, stable_names),
                 name="runtime-snapshot-owner", daemon=False)
             self._worker, self._ended = worker, ended
             try:
@@ -1551,13 +1644,14 @@ class SnapshotService(object):
                 and not self._ended.is_set())
 
     def _work(self, ended, roots, argv, observed_at, outcome, discovered=(),
-              over_capacity=(), chains=None):
+              over_capacity=(), chains=None, stable_names=None):
         release, held_because = False, "a capture is in progress"
         settles = None
         try:
             outcome["capture"] = _capture_work(roots, argv, observed_at,
                                                self._phase, discovered,
-                                               over_capacity, chains)
+                                               over_capacity, chains,
+                                               stable_names)
             release = True
         except _CleanupUnestablished as exc:
             held_because = "cleanup unestablished: %s" % exc.detail

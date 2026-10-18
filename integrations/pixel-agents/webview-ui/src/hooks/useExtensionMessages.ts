@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { DI_RUNTIME_ZONE_LABEL, DI_RUNTIME_ZONE_REF } from '../../../core/src/constants.js';
 import type { DiOfficeState, HooksConsentRequest } from '../../../core/src/messages.js';
 import {
   clientInvalidationReason,
@@ -299,6 +300,12 @@ export function useExtensionMessages(
         missionRef: m.missionRef,
         count: m.members.members.filter((x) => x.characterId !== null).length,
       }));
+      // item 07: verified runtime agents (not team members) get their OWN zone, after every
+      // Mission's; it is never a Mission and never shares one's seats.
+      missions.push({
+        missionRef: DI_RUNTIME_ZONE_REF,
+        count: (state.runtimeAgents?.agents ?? []).filter((a) => a.characterId !== null).length,
+      });
       const assignment = assignDiZones(
         world.assignment,
         missions,
@@ -317,6 +324,7 @@ export function useExtensionMessages(
       if (!force && key === world.key) return null;
       world.key = key;
       const labelOf = (ref: string): string => {
+        if (ref === DI_RUNTIME_ZONE_REF) return DI_RUNTIME_ZONE_LABEL;
         const mission = state.missions.missions.find((m) => m.missionRef === ref);
         return mission ? diZoneLabel(mission) : ref;
       };

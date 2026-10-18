@@ -38,6 +38,9 @@ from mission_sources import registry as registry_module
 from mission_sources import roster
 from mission_sources import sources as sources_module
 
+#: ``runtime_agents`` when the source registry could not be loaded.
+PROBLEM_REGISTRY_NOT_LOADED = "source_registry_not_loaded"
+
 _REGISTRY_PROBLEM_HEALTH = {
     registry_module.PROBLEM_REGISTRY_ABSENT: contract.HEALTH_UNAVAILABLE,
     registry_module.PROBLEM_REGISTRY_UNREADABLE: contract.HEALTH_UNAVAILABLE,
@@ -95,9 +98,15 @@ def valid_until(now, max_age_seconds, reading, source_blocks):
 def assemble(registry_document, runtime_snapshot, now,
              max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
              registry_directory=None, registry_bytes=None,
-             observed_roots=None, confirmed_bindings=None):
+             observed_roots=None, confirmed_bindings=None,
+             runtime_agents=None):
     """One response over an already loaded (and validated) registry.
-    ``observed_roots``, ``confirmed_bindings``: see ``roster.classify``."""
+    ``observed_roots``, ``confirmed_bindings``: see ``roster.classify``.
+    ``runtime_agents``: an injected callable ``(missions, reading, now,
+    sources)`` returning the ``runtime_agents`` block (``contract``), called
+    once after classification so it sees every bound team, with this
+    pass's source blocks (so a source refused before its reader ran is
+    still known); None: the block is ``not_applicable``."""
     registry_module.validate_document(registry_document)
     reading = contract.read_runtime_snapshot(runtime_snapshot, now,
                                              max_age_seconds)
@@ -112,20 +121,25 @@ def assemble(registry_document, runtime_snapshot, now,
         block = dict(result)
         del block["missions"]
         source_blocks.append(block)
-    missions, unmatched = roster.classify(views, reading, observed_roots,
-                                          confirmed_bindings)
+    missions, unmatched = roster.classify(
+        views, reading, observed_roots, confirmed_bindings,
+        canonical_complete=roster.canonical_sources_complete(source_blocks))
     registry = _registry_block(contract.HEALTH_FRESH, None,
                                len(registry_document["sources"]),
                                registry_directory, registry_bytes)
+    agents_block = (None if runtime_agents is None
+                    else runtime_agents(missions, reading, now,
+                                        source_blocks))
     return contract.envelope(
         now, max_age_seconds,
         valid_until(now, max_age_seconds, reading, source_blocks), limits(),
-        registry, source_blocks, reading.describe(), missions, unmatched)
+        registry, source_blocks, reading.describe(), missions, unmatched,
+        agents_block)
 
 
 def query(source_registry, runtime_snapshot, now,
           max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
-          observed_roots=None, confirmed_bindings=None):
+          observed_roots=None, confirmed_bindings=None, runtime_agents=None):
     """Load ``source_registry`` (a ``SourceRegistry``) read-only and
     assemble one response; a registry that cannot be loaded degrades
     explicitly instead of raising or reading as empty."""
@@ -141,7 +155,17 @@ def query(source_registry, runtime_snapshot, now,
         return contract.envelope(
             now, max_age_seconds,
             valid_until(now, max_age_seconds, reading, []), limits(),
-            registry, [], reading.describe(), [], None)
+            registry, [], reading.describe(), [], None,
+            registry_failed_agents(runtime_agents))
     return assemble(document, runtime_snapshot, now, max_age_seconds,
                     readers, source_registry.directory, size, observed_roots,
-                    confirmed_bindings)
+                    confirmed_bindings, runtime_agents)
+
+
+def registry_failed_agents(runtime_agents):
+    """The ``runtime_agents`` block when the source registry itself could
+    not be loaded: nothing was read, so nothing is listed."""
+    if runtime_agents is None:
+        return None
+    return contract.runtime_agents_block(
+        contract.RUNTIME_AGENTS_UNAVAILABLE, PROBLEM_REGISTRY_NOT_LOADED)
