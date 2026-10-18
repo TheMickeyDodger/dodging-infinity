@@ -14,7 +14,6 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Readable } from 'stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WebSocket } from 'ws';
 
 import { DI_SHUTDOWN_DRAIN_TIMEOUT_MS } from '../src/constants.js';
 import {
@@ -27,6 +26,8 @@ import {
 const DI_BUNDLE = path.join(__dirname, '../../dist/di-cli.js');
 const TOKEN = '0b5c1f9e-7a44-4d0e-9f1a-1c2d3e4f5a6b';
 const START_TIMEOUT_MS = 15_000;
+/** How long a test deliberately holds the shutdown drain open: a small fraction of its bound. */
+const DRAIN_HOLD_MS = DI_SHUTDOWN_DRAIN_TIMEOUT_MS / 10;
 
 let sandbox: string;
 type OfficeProcess = ChildProcessByStdio<null, Readable, Readable>;
@@ -176,6 +177,64 @@ function httpStatus(port: number): Promise<number> {
   });
 }
 
+/**
+ * Reads a server's WebSocket frame stream (RFC 6455 §5.2) frame by frame: buffered across TCP
+ * reads, honouring 7-, 16- and 64-bit payload lengths, so a byte inside a payload is never
+ * taken for a frame header. Fragmented data messages are reassembled; control frames are never
+ * fragmented (§5.5), so only a FINAL close frame is reported as one.
+ */
+function wsFrameReader(on: {
+  message: (data: Buffer) => void;
+  close: () => void;
+}): (chunk: Buffer) => void {
+  let pending = Buffer.alloc(0);
+  let fragments: Buffer[] = [];
+  return (chunk) => {
+    pending = Buffer.concat([pending, chunk]);
+    for (;;) {
+      if (pending.length < 2) return;
+      const fin = (pending[0] & 0x80) !== 0;
+      const opcode = pending[0] & 0x0f;
+      const masked = (pending[1] & 0x80) !== 0;
+      let length = pending[1] & 0x7f;
+      let offset = 2;
+      if (length === 126) {
+        if (pending.length < 4) return;
+        length = pending.readUInt16BE(2);
+        offset = 4;
+      } else if (length === 127) {
+        if (pending.length < 10) return;
+        length = Number(pending.readBigUInt64BE(2));
+        offset = 10;
+      }
+      const start = offset + (masked ? 4 : 0); // servers never mask (§5.1); stay in step if one did
+      if (pending.length < start + length) return;
+      const payload = Buffer.from(pending.subarray(start, start + length));
+      if (masked) for (let i = 0; i < length; i++) payload[i] ^= pending[offset + (i % 4)];
+      pending = pending.subarray(start + length);
+      if (opcode >= 0x8) {
+        if (fin && opcode === 0x8) on.close(); // ping and pong are not needed here
+        continue;
+      }
+      if (opcode !== 0x0) fragments = []; // a new data message; 0x0 continues the current one
+      fragments.push(payload);
+      if (fin) {
+        on.message(Buffer.concat(fragments));
+        fragments = [];
+      }
+    }
+  };
+}
+
+/** A CLIENT close frame (RFC 6455 §5.5.1): masked, as every client frame must be (§5.3), 1000. */
+function maskedClientClose(): Buffer {
+  const key = crypto.randomBytes(4);
+  const body = Buffer.alloc(2);
+  body.writeUInt16BE(1000); // normal closure
+  for (let i = 0; i < body.length; i++) body[i] ^= key[i % 4];
+  return Buffer.concat([Buffer.from([0x88, 0x80 | body.length]), key, body]);
+}
+
 describe('browser access file (BUILT office lifecycle)', () => {
   it('exists while the office runs, never reaches stdout, and is removed on shutdown in drain-first order', async () => {
     const stateDir = path.join(sandbox, 'di-state');
@@ -297,34 +356,91 @@ describe('browser access file (BUILT office lifecycle)', () => {
     expect(count('shutdown: browser access file removed')).toBe(1);
   });
 
-  it('an open authenticated socket is closed by the drain while the access file still exists', async () => {
-    const stateDir = path.join(sandbox, 'di-state');
-    const office = await startOffice(stateDir);
-    const { token } = JSON.parse(fs.readFileSync(office.file, 'utf-8')) as { token: string };
-    const socket = new WebSocket(`ws://127.0.0.1:${office.port}/ws?token=${token}`);
-    const firstState = new Promise<Record<string, unknown>>((resolve) => {
-      socket.on('message', (d) => {
-        const m = JSON.parse(d.toString()) as Record<string, unknown>;
-        if (m.type === 'diOfficeState') resolve(m);
+  it(
+    'an open authenticated socket is closed by the drain while the access file still exists',
+    async () => {
+      // The hold must stay INSIDE the bounded drain: at or past the bound the office takes the
+      // forced path, and this test would silently invert its own meaning.
+      expect(DRAIN_HOLD_MS).toBeGreaterThan(0);
+      expect(DRAIN_HOLD_MS).toBeLessThan(DI_SHUTDOWN_DRAIN_TIMEOUT_MS);
+      const stateDir = path.join(sandbox, 'di-state');
+      const office = await startOffice(stateDir);
+      const { token } = JSON.parse(fs.readFileSync(office.file, 'utf-8')) as { token: string };
+      // A raw authenticated peer, so the TEST decides when the server's close frame is answered.
+      // Until then this connection stays open and app.close() cannot resolve (the
+      // FORCE-TERMINATED test above pins that), so the office cannot have reached unpublish,
+      // which runs strictly after it: every sample taken in that window is causally ordered,
+      // whenever this process happens to run it.
+      const peer = net.connect(office.port, '127.0.0.1');
+      let peerError: Error | undefined;
+      let peerEnded = false;
+      peer.on('error', (err) => (peerError = err));
+      peer.on('end', () => (peerEnded = true));
+      const peerClosed = new Promise<boolean>((resolve) => peer.once('close', resolve));
+      const messages: Record<string, unknown>[] = [];
+      let atCloseFrame: { fileExists: boolean; output: string } | undefined;
+      const read = wsFrameReader({
+        message: (data) => messages.push(JSON.parse(data.toString()) as Record<string, unknown>),
+        // The positive signal that the drain has begun and now waits on this peer: sample here.
+        close: () => {
+          atCloseFrame ??= { fileExists: fs.existsSync(office.file), output: office.output() };
+        },
       });
-    });
-    // The handshake's LAST message: wait for it, so the drain's close is not queued behind a
-    // still-flushing handshake (the client would then observe the close only after unpublish).
-    const handshakeDone = new Promise<void>((resolve) => {
-      socket.on('message', (d) => {
-        if ((JSON.parse(d.toString()) as { type?: string }).type === 'layoutLoaded') resolve();
+      let head: Buffer | undefined = Buffer.alloc(0); // the HTTP response head, until upgraded
+      let upgradeStatus = '';
+      peer.on('data', (chunk: Buffer) => {
+        if (head === undefined) return read(chunk);
+        head = Buffer.concat([head, chunk]);
+        const end = head.indexOf('\r\n\r\n');
+        if (end < 0) return;
+        upgradeStatus = head.subarray(0, head.indexOf('\r\n')).toString('latin1');
+        const frames = head.subarray(end + 4);
+        head = undefined;
+        read(frames);
       });
-    });
-    socket.on('open', () => socket.send(JSON.stringify({ type: 'webviewReady' })));
-    const answered = await firstState; // answered by a LIVE office
-    await handshakeDone;
-    expect(answered.notLiveReason).toBe('discovery:discovery_absent');
-    const fileAtClose = new Promise<boolean>((resolve) =>
-      socket.on('close', () => resolve(fs.existsSync(office.file))),
-    );
-    office.child.kill('SIGTERM');
-    expect(await fileAtClose).toBe(true); // drained BEFORE unpublish: the file outlived the socket
-    expect(await office.exited).toBe(0);
-    expect(fs.existsSync(office.file)).toBe(false);
-  });
+      await new Promise<void>((resolve) => peer.once('connect', () => resolve()));
+      peer.write(
+        [
+          `GET /ws?token=${token} HTTP/1.1`,
+          `Host: 127.0.0.1:${office.port}`,
+          'Upgrade: websocket',
+          'Connection: Upgrade',
+          `Sec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}`,
+          'Sec-WebSocket-Version: 13',
+          '',
+          '',
+        ].join('\r\n'),
+      );
+      await waitUntil(() => messages.length > 0, 'the office state on the held socket', office);
+      expect(upgradeStatus).toMatch(/^HTTP\/1\.1 101 /);
+      // The office state is the first message on every AUTHENTICATED connection, from a LIVE office.
+      expect(messages[0].type).toBe('diOfficeState');
+      expect(messages[0].notLiveReason).toBe('discovery:discovery_absent');
+
+      office.child.kill('SIGTERM');
+      await waitUntil(() => atCloseFrame !== undefined, "the server's close frame", office);
+      // Inside the held drain, from the moment the drain reached this socket: the file exists.
+      expect(atCloseFrame?.fileExists).toBe(true);
+      expect(atCloseFrame?.output).not.toContain('shutdown:'); // corroboration: nothing logged yet
+      await new Promise((resolve) => setTimeout(resolve, DRAIN_HOLD_MS));
+      // Still held at the last instant before release: the socket open, the file on disk.
+      expect(peer.readyState).toBe('open');
+      expect(fs.existsSync(office.file)).toBe(true);
+      expect(office.output()).not.toContain('shutdown:');
+
+      peer.write(maskedClientClose()); // answer the close frame: the drain may now complete
+      expect(await peerClosed).toBe(false); // no transport error...
+      expect(peerEnded).toBe(true); // ...the office ended the connection in order
+      expect(peerError).toBeUndefined();
+      expect(await office.exited).toBe(0);
+      expect(fs.existsSync(office.file)).toBe(false); // gone only after the graceful drain
+      const out = office.output();
+      expect(out).not.toContain('FORCE-TERMINATED');
+      const drained = out.indexOf('shutdown: server closed, in-flight requests drained');
+      expect(drained).toBeGreaterThan(-1);
+      // Corroboration only: the filesystem samples above carry the ordering claim.
+      expect(out.indexOf('shutdown: browser access file removed')).toBeGreaterThan(drained);
+    },
+    DI_SHUTDOWN_DRAIN_TIMEOUT_MS + 15_000,
+  );
 });
