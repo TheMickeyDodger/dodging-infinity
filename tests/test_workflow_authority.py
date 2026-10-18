@@ -2518,6 +2518,18 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_SNAPSHOT_TEXT_CHARS": 1024,
             # Declared polling contract exposed to consumers.
             "MIN_POLL_INTERVAL_SECONDS": 5,
+            # The runtime_agents block: agents listed per block (equal to
+            # MAX_SNAPSHOT_AGENTS) and root aliases per listed agent.
+            "MAX_RUNTIME_AGENTS": 512,
+            "MAX_ROOT_ALIASES": 256,
+            # Not bounds: the canonical record kinds, and their readers'
+            # lifecycle models, that a task-native record defers to.
+            # Pinned because the names match the convention.
+            "CANONICAL_KINDS": ("mission_core", "workflow_store"),
+            "CANONICAL_LIFECYCLE_MODELS": (
+                "mission_core.mission_state/1",
+                "workflow_authority.workflow_phase/2",
+            ),
         },
         "mission_sources/registry.py": {
             # Usable bound with headroom over observed use; reaching it is
@@ -2554,6 +2566,10 @@ class BoundConstantPinTests(unittest.TestCase):
             # ends the window, its end is UNKNOWN (capacity held).
             "ABSENCE_WINDOW_SECONDS": 1.0,
             "ABSENCE_POLL_SECONDS": 0.02,
+            # request(stable_names=...): how many names, and their
+            # JSON-serialized size in UTF-8 bytes.
+            "MAX_STABLE_NAMES": 512,
+            "MAX_STABLE_NAMES_BYTES": 16384,
         },
         "target_runtime/catalog.py": {
             "MAX_WAIT_SECONDS": 30,
@@ -2586,6 +2602,16 @@ class BoundConstantPinTests(unittest.TestCase):
         "target_runtime/mission_state.py": {
             "MAX_DELIVERY_STORE_BYTES": 4194304,
             "MAX_LOCATOR_PARTS": 16,
+        },
+        # The read-only task-native source over the DI-registered roots.
+        "target_runtime/herdr_task_source.py": {
+            # The registry document: aliases (more makes the source
+            # unavailable, never truncated), alias length, root path length.
+            "MAX_REGISTERED_ROOTS": 256,
+            "MAX_ALIAS_CHARS": 128,
+            "MAX_ROOT_PATH_CHARS": 4096,
+            # Display only: the objective line's length, never identity.
+            "MAX_OBJECTIVE_CHARS": 160,
         },
     }
 
