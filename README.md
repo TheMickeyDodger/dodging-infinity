@@ -639,3 +639,7 @@ Dodging Infinity is licensed under **Apache 2.0**. See [LICENSE](https://github.
 The vendored Pixel Agents office retains its own notices: MIT-licensed code, character art derived from CC0 sources, and a font under the SIL Open Font License 1.1. See the [Pixel Agents provenance and licensing guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/integrations/pixel-agents/UPSTREAM.md#licensing).
 
 The linked research and upstream software projects retain their own licenses and attribution requirements.
+
+<img width="2172" height="724" alt="Dodging infinity on a stone platform" src="https://github.com/user-attachments/assets/7dbd4fc6-c9d2-42c7-84ba-9ad979c1e893" />
+
+*The next Mission is yours. It’s hero time!*
