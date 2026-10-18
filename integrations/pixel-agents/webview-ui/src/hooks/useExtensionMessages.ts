@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DI_RUNTIME_ZONE_LABEL, DI_RUNTIME_ZONE_REF } from '../../../core/src/constants.js';
-import type { DiOfficeState, HooksConsentRequest } from '../../../core/src/messages.js';
+import type {
+  DiEvidenceContent,
+  DiOfficeState,
+  HooksConsentRequest,
+} from '../../../core/src/messages.js';
 import {
   clientInvalidationReason,
   DI_READY_TRACKER_AT_MOUNT,
@@ -104,6 +108,16 @@ export interface WorkspaceFolder {
 interface ExtensionMessageState {
   /** DI office only: the server-projected office state (null on every other surface). */
   diOfficeState: DiOfficeState | null;
+  /**
+   * DI office only (item 2): the LATEST evidence content answer this connection received — one
+   * entry, replaced by the next, never a cache. Untrusted data: shown only as text.
+   */
+  diEvidenceContent: DiEvidenceContent | null;
+  /**
+   * DI office only: why the client cannot vouch for the last office state (disconnected,
+   * reconnected without a new state, or expired), or null while it can.
+   */
+  diClientReason: string | null;
   agents: number[];
   selectedAgent: number | null;
   agentTools: Record<number, ToolActivity[]>;
@@ -171,12 +185,15 @@ export function useExtensionMessages(
   const [agents, setAgents] = useState<number[]>([]);
   /** DI only: the last office state as RECEIVED from the server. */
   const [diServerState, setDiServerState] = useState<DiOfficeState | null>(null);
+  const [diEvidenceContent, setDiEvidenceContent] = useState<DiEvidenceContent | null>(null);
   /** DI only: transport state + whether a NEW office message arrived since it connected. */
   const [diConnection, setDiConnection] = useState<DiConnection>({
     transport: transport.state,
     freshSinceConnect: false,
   });
   const [diClientReason, setDiClientReason] = useState<string | null>(null);
+  /** The same reason, for the message handler (round 15 F2). */
+  const diClientReasonRef = useRef<string | null>(null);
   /** DI only: characterId -> canonical identity of every DI character drawn (FINDING 2). */
   const diDrawnRef = useRef(new Map<number, string>());
   /** DI only: set by the FIRST office message (the DI server sends one first on every connection). */
@@ -1018,6 +1035,20 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
+      } else if (msg.type === 'diEvidenceContent') {
+        // item 2: the office's answer to this connection's own diEvidenceRead. Kept as data only;
+        // a message without the reference triple is ignored, never guessed.
+        if (
+          typeof msg.missionRef === 'string' &&
+          typeof msg.artifactId === 'string' &&
+          typeof msg.cursor === 'string' &&
+          (msg.state === 'admitted' || msg.state === 'refused') &&
+          // Round 15 F2: an answer arriving while the client cannot vouch for the office state
+          // (e.g. a read queued across a reconnect) is dropped, never shown.
+          diClientReasonRef.current === null
+        ) {
+          setDiEvidenceContent(msg as unknown as DiEvidenceContent);
+        }
       } else if (msg.type === 'diOfficeState') {
         // DI office: fully projected by the server. Store it; the presentation (and
         // animateActive) is applied below, after the client's own invalidation.
@@ -1100,6 +1131,14 @@ export function useExtensionMessages(
     [diServerState, diClientReason],
   );
 
+  // Round 15 F2: once the client cannot vouch for the office state, read evidence content is
+  // CLEARED, not merely hidden — a reconnect or a new office state never brings it back; only
+  // a new read does.
+  useEffect(() => {
+    diClientReasonRef.current = diClientReason;
+    if (diClientReason !== null) setDiEvidenceContent(null);
+  }, [diClientReason]);
+
   // The PRESENTED state (false everywhere whenever the client cannot vouch) drives animation
   // for EVERY canvas character, including any not listed in it. Never removes or relabels.
   // It is ALSO the working halo's only input (office/halo.ts, read by the canvas and the Map):
@@ -1134,6 +1173,8 @@ export function useExtensionMessages(
     diWorldTick,
     diAnnounced,
     diOfficeState,
+    diEvidenceContent,
+    diClientReason,
     agents,
     selectedAgent,
     agentTools,

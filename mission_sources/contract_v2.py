@@ -86,7 +86,12 @@ What version 2 adds, and nothing else:
   review files are written world-readable (0644), so the private-file rule
   would refuse every real one; the threat here is a forged verdict, which
   needs WRITE access, not disclosure. Evidence and result artifact CONTENT
-  is not admitted and stays unsupported.
+  is not admitted here (the evidence library reads it through its own route,
+  ``target_runtime.artifact_content``). Item 2 E2 adds an OPTIONAL
+  ``findings`` block to an admitted review: the reviewer-DECLARED public
+  findings the local review gate validated and persisted beside the round
+  file, re-validated by the reader (``FINDINGS_KEYS``, ``validate_findings``,
+  ``validate_findings_record``); never transcript text.
 
 The chain observation is an injected VALUE, like the runtime snapshot; its
 producer (the capture) lives outside this package. Shape, version 1::
@@ -107,6 +112,7 @@ Every key is required (closed sets); validation refuses and never repairs.
 Nothing here reads a clock, a file or the network.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -281,6 +287,102 @@ REVIEW_PROBLEMS = (
     PROBLEM_REVIEW_ROUND_DISAGREES, PROBLEM_REVIEW_TOKEN_OUT_OF_ENUM,
     PROBLEM_REVIEW_DISAGREES, PROBLEM_REVIEW_ROOT_CHANGED,
 )
+# -- reviewer-declared PUBLIC findings (item 2 E2) ----------------------------
+#
+# An ADMITTED review block MAY carry ``findings`` (absent: a producer that
+# predates the field; an additive key). It is read ONLY from the validated
+# sibling record the local review gate persists
+# (``<task>-round-NN.findings.json``), bound by digest to the task record and
+# by round, reviewer and preamble digest to the admitted preamble; no
+# transcript byte is ever read. Four states, never collapsed: NOT RECORDED
+# (``findings_legacy_record_predates_field`` for a task record written before
+# the field existed, else the writer's own not-recorded code), EMPTY (a valid
+# declaration of no findings), PRESENT, and REFUSED (the writer's or the
+# reader's code). The vocabulary below RE-DECLARES ``target_runtime.review_findings``
+# (this package does not import ``herdr``); parity is pinned by test.
+REVIEW_FINDINGS_KEY = "findings"
+FINDINGS_KEYS = ("state", "problem", "count", "items", "candidate_sha256",
+                 "routed_at", "linkage", "provenance")
+FINDING_ITEM_KEYS = ("index", "severity", "area", "line", "summary")
+#: The task reference state of a persisted record (the writer's outcome).
+FINDINGS_REFERENCE_RECORDED = "recorded"
+FINDINGS_NOT_RECORDED = "not_recorded"
+FINDINGS_EMPTY = "empty"
+FINDINGS_PRESENT = "present"
+FINDINGS_REFUSED = "refused"
+FINDINGS_STATES = (FINDINGS_NOT_RECORDED, FINDINGS_EMPTY, FINDINGS_PRESENT,
+                   FINDINGS_REFUSED)
+FINDINGS_SEVERITIES = ("blocker", "non_blocking")
+MAX_FINDINGS = 32
+MAX_FINDING_SUMMARY_CHARS = 280
+MAX_FINDING_AREA_CHARS = 200
+FINDINGS_LINKAGE = "route_nonce_echoed_in_routed_reviewer_output"
+FINDINGS_PROVENANCE = (
+    "Reviewer-declared public findings: model-authored text the routed"
+    " reviewer's own output declared in the findings envelope, captured by the"
+    " local review gate and bound to this task, round, reviewer and routed"
+    " candidate by the route's single-use nonce it echoed. This is not a"
+    " cryptographic proof of reviewer identity, not a verdict and not approval"
+    " authority, and it does not prove that the reviewed bytes are the"
+    " candidate's; the verdict is the round's protocol token alone.")
+FINDINGS_NOT_RECORDED_PROBLEMS = ("findings_declaration_not_routed",
+                                  "findings_declaration_missing",
+                                  "findings_declaration_only_in_example")
+FINDINGS_WRITER_PROBLEMS = (
+    "findings_declaration_ambiguous", "findings_declaration_incomplete",
+    "findings_declaration_malformed", "findings_declaration_over_bound",
+    "findings_declaration_count_mismatch", "findings_declaration_wrong_task",
+    "findings_declaration_wrong_round",
+    "findings_declaration_wrong_reviewer",
+    "findings_declaration_wrong_candidate", "findings_route_malformed",
+    "findings_route_not_for_this_task", "findings_route_not_for_this_round",
+    "findings_route_not_for_this_reviewer", "findings_capture_over_bound",
+    "findings_capture_unavailable", "findings_writer_error")
+PROBLEM_FINDINGS_LEGACY = "findings_legacy_record_predates_field"
+PROBLEM_FINDINGS_REFERENCE = "findings_reference_malformed"
+PROBLEM_FINDINGS_ROUND = "findings_round_mismatch"
+PROBLEM_FINDINGS_REVIEWER = "findings_reviewer_mismatch"
+PROBLEM_FINDINGS_TASK = "findings_task_mismatch"
+PROBLEM_FINDINGS_PREAMBLE = "findings_preamble_mismatch"
+PROBLEM_FINDINGS_COUNT = "findings_count_mismatch"
+PROBLEM_FINDINGS_DIGEST_MISMATCH = "findings_record_digest_mismatch"
+PROBLEM_FINDINGS_OVER_BOUND = "findings_record_over_bound"
+PROBLEM_FINDINGS_SHAPE = "findings_record_shape_invalid"
+PROBLEM_FINDINGS_NOT_JSON = "findings_record_not_json"
+PROBLEM_FINDINGS_ABSENT = "findings_record_absent"
+PROBLEM_FINDINGS_NOT_CONTAINED = "findings_record_not_contained"
+PROBLEM_FINDINGS_NOT_REGULAR = "findings_record_not_regular"
+PROBLEM_FINDINGS_HARDLINK = "findings_record_hardlinked"
+PROBLEM_FINDINGS_WRITABLE = "findings_record_writable_by_group_or_other"
+PROBLEM_FINDINGS_UNREADABLE = "findings_record_unreadable"
+PROBLEM_FINDINGS_ROOT_CHANGED = "findings_root_identity_changed"
+#: The capture's ONE printed value would exceed its read cap with these
+#: findings in it: they are withheld whole (never cut) so the capture stands.
+PROBLEM_FINDINGS_CAPTURE_BUDGET = "findings_capture_over_budget"
+FINDINGS_READER_PROBLEMS = (
+    PROBLEM_FINDINGS_REFERENCE, PROBLEM_FINDINGS_ROUND,
+    PROBLEM_FINDINGS_REVIEWER, PROBLEM_FINDINGS_TASK,
+    PROBLEM_FINDINGS_PREAMBLE, PROBLEM_FINDINGS_COUNT,
+    PROBLEM_FINDINGS_DIGEST_MISMATCH, PROBLEM_FINDINGS_OVER_BOUND,
+    PROBLEM_FINDINGS_SHAPE, PROBLEM_FINDINGS_NOT_JSON,
+    PROBLEM_FINDINGS_ABSENT, PROBLEM_FINDINGS_NOT_CONTAINED,
+    PROBLEM_FINDINGS_NOT_REGULAR, PROBLEM_FINDINGS_HARDLINK,
+    PROBLEM_FINDINGS_WRITABLE, PROBLEM_FINDINGS_UNREADABLE,
+    PROBLEM_FINDINGS_ROOT_CHANGED, PROBLEM_FINDINGS_CAPTURE_BUDGET)
+FINDINGS_REFUSED_PROBLEMS = FINDINGS_WRITER_PROBLEMS + FINDINGS_READER_PROBLEMS
+#: The persisted record (re-declared from ``target_runtime.review_findings``; parity
+#: pinned by test, including accept/refuse agreement on the same inputs).
+FINDINGS_RECORD_SCHEMA = "di.review.findings_record"
+FINDINGS_RECORD_VERSION = 1
+FINDINGS_RECORD_KEYS = ("schema", "version", "task_id", "round",
+                        "reviewer_logical", "reviewer_agent",
+                        "candidate_sha256", "route_nonce", "routed_at",
+                        "preamble_sha256", "linkage", "provenance", "count",
+                        "findings")
+MAX_FINDING_LINE_NUMBER = 9999999
+MAX_FINDINGS_AGGREGATE_BYTES = 8192
+MAX_FINDINGS_RECORD_BYTES = 32768
+
 # Mission-level reasons the canonical review does not project.
 PROBLEM_REVIEW_ROOT_NOT_OBSERVED = "review_root_not_observed"
 PROBLEM_REVIEW_KIND_NOT_APPLICABLE = "source_kind_has_no_canonical_review"
@@ -415,6 +517,40 @@ MISSION_STATE_PROBLEMS = (
     PROBLEM_MISSION_STATE_REFUSED, PROBLEM_MISSION_STATE_RETURN,
     PROBLEM_MISSION_STATE_BUDGET)
 
+#: Item 2 (completed-Mission artifacts): an OPTIONAL key of an OBSERVED
+#: Mission Core ``mission_state`` block, the HISTORICAL execution identity
+#: the composer derived from the same record (``target_runtime.mission_state.
+#: execution_identity``). ``established`` only for a COMPLETED record with a
+#: verified run, intent, receipt task and a PREPARED digest-bound workspace
+#: agreeing exactly; ``cursor_sha256`` then binds the journal head AND that
+#: identity, and is what a completed Mission's content read must present.
+#: Absent: a producer that does not report it (nothing is inferred).
+EXECUTION_IDENTITY_KEY = "execution_identity"
+EXECUTION_IDENTITY_KEYS = ("state", "problem", "identity_sha256",
+                           "cursor_sha256")
+EXECUTION_IDENTITY_ESTABLISHED = "established"
+EXECUTION_IDENTITY_NOT_ESTABLISHED = "not_established"
+EXECUTION_IDENTITY_NOT_APPLICABLE = "not_applicable"
+EXECUTION_IDENTITY_STATES = (EXECUTION_IDENTITY_ESTABLISHED,
+                             EXECUTION_IDENTITY_NOT_ESTABLISHED,
+                             EXECUTION_IDENTITY_NOT_APPLICABLE)
+PROBLEM_EXECUTION_NOT_COMPLETED = "execution_mission_not_completed"
+PROBLEM_EXECUTION_RUN_ABSENT = "execution_run_absent"
+PROBLEM_EXECUTION_NOT_VERIFIED = "execution_run_not_verified"
+PROBLEM_EXECUTION_INTENT_ABSENT = "execution_intent_absent"
+PROBLEM_EXECUTION_RECEIPT_TASK_ABSENT = "execution_receipt_task_absent"
+#: A record (e.g. legacy) with no prepared workspace binding: never upgraded.
+PROBLEM_EXECUTION_BINDING_ABSENT = "execution_prepared_binding_absent"
+PROBLEM_EXECUTION_BINDING_NOT_PREPARED = "execution_binding_not_prepared"
+PROBLEM_EXECUTION_BINDING_DISAGREES = "execution_binding_disagrees"
+PROBLEM_EXECUTION_RECORD_SHAPE = "execution_record_shape_invalid"
+EXECUTION_IDENTITY_PROBLEMS = (
+    PROBLEM_EXECUTION_RUN_ABSENT, PROBLEM_EXECUTION_NOT_VERIFIED,
+    PROBLEM_EXECUTION_INTENT_ABSENT, PROBLEM_EXECUTION_RECEIPT_TASK_ABSENT,
+    PROBLEM_EXECUTION_BINDING_ABSENT, PROBLEM_EXECUTION_BINDING_NOT_PREPARED,
+    PROBLEM_EXECUTION_BINDING_DISAGREES, PROBLEM_EXECUTION_RECORD_SHAPE)
+_DIGEST_PATTERN = r"[0-9a-f]{64}"
+
 ADMITTED_ARTIFACTS_KEYS = ("canonical_review",)
 MISSION_REVIEW_KEYS = REVIEW_KEYS + ("candidate_applicability",)
 
@@ -543,9 +679,20 @@ def validate_review(value, location, states=REVIEW_STATES,
     """One canonical review block: only an ADMITTED block carries a record,
     a gate, a currency and the integrity label, and its verdict is present
     exactly when the gate parsed; the gate fact and the verdict are never
-    collapsed."""
-    _closed(value, keys, location)
+    collapsed. ``findings`` is an OPTIONAL additive key (absent: an older
+    producer): null unless the review is admitted, then a closed findings
+    block (``validate_findings``)."""
+    has_findings = REVIEW_FINDINGS_KEY in value
+    _closed(value, keys + ((REVIEW_FINDINGS_KEY,) if has_findings else ()),
+            location)
     state = _member(value["state"], states, location + ".state")
+    if has_findings:
+        if state == REVIEW_ADMITTED:
+            validate_findings(value[REVIEW_FINDINGS_KEY],
+                              location + ".findings")
+        elif value[REVIEW_FINDINGS_KEY] is not None:
+            raise _shape("%s.findings must be null when %s"
+                         % (location, state))
     if state == REVIEW_ADMITTED:
         if value["problem"] is not None:
             raise _shape("%s.problem must be null when admitted" % location)
@@ -588,6 +735,132 @@ def validate_review(value, location, states=REVIEW_STATES,
                              % (location, state))
             _text(value["task_status"], location + ".task_status", True)
     return value
+
+
+def validate_findings(value, location):
+    """One findings block of an ADMITTED review (see FINDINGS_KEYS): the four
+    states kept apart; only EMPTY and PRESENT carry a candidate, linkage and
+    provenance, and only PRESENT carries items."""
+    _closed(value, FINDINGS_KEYS, location)
+    state = _member(value["state"], FINDINGS_STATES, location + ".state")
+    if state in (FINDINGS_NOT_RECORDED, FINDINGS_REFUSED):
+        allowed = ((PROBLEM_FINDINGS_LEGACY,) + FINDINGS_NOT_RECORDED_PROBLEMS
+                   if state == FINDINGS_NOT_RECORDED
+                   else FINDINGS_REFUSED_PROBLEMS)
+        _member(value["problem"], allowed, location + ".problem")
+        for field in ("count", "candidate_sha256", "routed_at", "linkage",
+                      "provenance"):
+            if value[field] is not None:
+                raise _shape("%s.%s must be null when %s"
+                             % (location, field, state))
+        if value["items"] != []:
+            raise _shape("%s.items must be empty when %s" % (location, state))
+        return value
+    if value["problem"] is not None:
+        raise _shape("%s.problem must be null when %s" % (location, state))
+    items = _list(value["items"], location + ".items", MAX_FINDINGS)
+    count = _int(value["count"], location + ".count")
+    if count != len(items) or (state == FINDINGS_EMPTY) != (count == 0):
+        raise _shape("%s.count disagrees with its items and state" % location)
+    candidate = _text(value["candidate_sha256"],
+                      location + ".candidate_sha256")
+    if len(candidate) != 64 or any(c not in "0123456789abcdef"
+                                   for c in candidate):
+        raise _shape("%s.candidate_sha256 must be 64 hex" % location)
+    if _int(value["routed_at"], location + ".routed_at") < 0:
+        raise _shape("%s.routed_at must be >= 0" % location)
+    if value["linkage"] != FINDINGS_LINKAGE or (
+            value["provenance"] != FINDINGS_PROVENANCE):
+        raise _shape("%s: linkage and provenance are fixed texts" % location)
+    for index, item in enumerate(items, 1):
+        where = "%s.items[%d]" % (location, index - 1)
+        _closed(item, FINDING_ITEM_KEYS, where)
+        if _int(item["index"], where + ".index") != index:
+            raise _shape("%s.index must be %d" % (where, index))
+        _member(item["severity"], FINDINGS_SEVERITIES, where + ".severity")
+        area = _text(item["area"], where + ".area", True)
+        if area is not None and len(area) > MAX_FINDING_AREA_CHARS:
+            raise _shape("%s.area is too long" % where)
+        line = _int(item["line"], where + ".line", True)
+        if line is not None and (line < 1 or area is None):
+            raise _shape("%s.line needs an area and must be >= 1" % where)
+        summary = _text(item["summary"], where + ".summary")
+        if len(summary) > MAX_FINDING_SUMMARY_CHARS:
+            raise _shape("%s.summary is too long" % where)
+    return value
+
+
+_HEX16 = r"[0-9a-f]{16}"
+_HEX64 = r"[0-9a-f]{64}"
+_FINDINGS_NAME = r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"
+_FINDINGS_TASK = r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+_FINDINGS_AREA = r"[A-Za-z0-9_][A-Za-z0-9._/-]*"
+_FINDINGS_REFUSED_CHARACTERS = frozenset(
+    [chr(c) for c in range(0x00, 0x20)] + [chr(0x7F)]
+    + [chr(c) for c in range(0x80, 0xA0)]
+    + [chr(c) for c in range(0x202A, 0x202F)]
+    + [chr(c) for c in range(0x2066, 0x206A)])
+
+
+def _finding_record_ok(finding, index):
+    if type(finding) is not dict or set(finding) != set(FINDING_ITEM_KEYS):
+        return False
+    area, line, summary = finding["area"], finding["line"], finding["summary"]
+    return (type(finding["index"]) is int and finding["index"] == index
+            and finding["severity"] in FINDINGS_SEVERITIES
+            and (area is None or (type(area) is str
+                                  and len(area) <= MAX_FINDING_AREA_CHARS
+                                  and re.fullmatch(_FINDINGS_AREA, area)
+                                  is not None
+                                  and ".." not in area.split("/")
+                                  and "" not in area.split("/")))
+            and (line is None or (type(line) is int and area is not None
+                                  and 1 <= line <= MAX_FINDING_LINE_NUMBER))
+            and type(summary) is str and summary
+            and len(summary) <= MAX_FINDING_SUMMARY_CHARS
+            and summary == summary.strip()
+            and not any(c in _FINDINGS_REFUSED_CHARACTERS for c in summary))
+
+
+def validate_findings_record(record):
+    """``record`` when it is EXACTLY the persisted findings record; raises
+    ``ContractError`` otherwise (never repairs)."""
+    def refuse(why):
+        raise _shape("findings record: %s" % why)
+    if type(record) is not dict or set(record) != set(FINDINGS_RECORD_KEYS):
+        refuse("keys")
+    if record["schema"] != FINDINGS_RECORD_SCHEMA or (
+            record["version"] != FINDINGS_RECORD_VERSION):
+        refuse("schema")
+    for name, pattern in (("task_id", _FINDINGS_TASK),
+                          ("reviewer_logical", _FINDINGS_NAME),
+                          ("reviewer_agent", _FINDINGS_NAME),
+                          ("candidate_sha256", _HEX64),
+                          ("route_nonce", _HEX16),
+                          ("preamble_sha256", _HEX64)):
+        if type(record[name]) is not str or re.fullmatch(
+                pattern, record[name]) is None:
+            refuse(name)
+    if type(record["round"]) is not int or record["round"] < 1:
+        refuse("round")
+    if type(record["routed_at"]) is not int or record["routed_at"] < 0:
+        refuse("routed_at")
+    if record["linkage"] != FINDINGS_LINKAGE or (
+            record["provenance"] != FINDINGS_PROVENANCE):
+        refuse("linkage or provenance")
+    findings = record["findings"]
+    if type(findings) is not list or len(findings) > MAX_FINDINGS or (
+            type(record["count"]) is not int) or record["count"] != len(
+                findings):
+        refuse("count")
+    for index, finding in enumerate(findings, 1):
+        if not _finding_record_ok(finding, index):
+            refuse("finding %d" % index)
+    if sum(len(f["summary"].encode("utf-8"))
+           + len((f["area"] or "").encode("utf-8"))
+           for f in findings) > MAX_FINDINGS_AGGREGATE_BYTES:
+        refuse("aggregate")
+    return record
 
 
 def _root_task(value, location):
@@ -882,9 +1155,41 @@ def _validate_chain(value, location):
     _text(record["workspace_id"], location + ".record.workspace_id", True)
 
 
+def _validate_execution_identity(value, location):
+    _closed(value, EXECUTION_IDENTITY_KEYS, location)
+    state = _member(value["state"], EXECUTION_IDENTITY_STATES,
+                    location + ".state")
+    if state == EXECUTION_IDENTITY_ESTABLISHED:
+        if value["problem"] is not None or not all(
+                type(value[key]) is str
+                and re.fullmatch(_DIGEST_PATTERN, value[key]) is not None
+                for key in ("identity_sha256", "cursor_sha256")):
+            raise _shape("%s: an established identity has two digests and"
+                         " no problem" % location)
+        return
+    if value["identity_sha256"] is not None or (
+            value["cursor_sha256"] is not None):
+        raise _shape("%s: only an established identity has digests"
+                     % location)
+    if state == EXECUTION_IDENTITY_NOT_APPLICABLE:
+        if value["problem"] != PROBLEM_EXECUTION_NOT_COMPLETED:
+            raise _shape("%s.problem" % location)
+        return
+    _member(value["problem"], EXECUTION_IDENTITY_PROBLEMS,
+            location + ".problem")
+
+
 def _validate_mission_state(value, location):
-    _closed(value, MISSION_STATE_KEYS, location)
+    optional = (EXECUTION_IDENTITY_KEY,) if (
+        type(value) is dict and EXECUTION_IDENTITY_KEY in value) else ()
+    _closed(value, MISSION_STATE_KEYS + optional, location)
     state = _member(value["state"], MISSION_STATE_STATES, location + ".state")
+    if optional and state != MISSION_STATE_OBSERVED:
+        raise _shape("%s carries an execution identity only when observed"
+                     % location)
+    if optional:
+        _validate_execution_identity(value[EXECUTION_IDENTITY_KEY],
+                                     location + "." + EXECUTION_IDENTITY_KEY)
     if state == MISSION_STATE_OBSERVED:
         if value["problem"] is not None:
             raise _shape("%s.problem must be null when observed" % location)

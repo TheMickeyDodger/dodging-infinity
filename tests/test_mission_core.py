@@ -1702,8 +1702,15 @@ class ETrustSeparationTests(unittest.TestCase):
         # Query contract v2 (deliberate, exact): the read-only Mission State
         # composer runs Mission Core's OWN observe over a store shim whose
         # lock and save refuse; its calls are pinned in test_static (12h).
+        # Item 2 (evidence library, deliberate, exact): the ONE admitted
+        # content read re-reads the Mission Core record through the
+        # composer's load boundary and uses only PURE read helpers
+        # (journal.head_cursor, state lookups, record constants,
+        # store.activation_contract); it writes nothing and calls no
+        # Mission operation, pinned in test_static (12j).
         allowed_runtime_consumers = ("target_runtime/mission_bridge.py",
-                                     "target_runtime/mission_state.py")
+                                     "target_runtime/mission_state.py",
+                                     "target_runtime/artifact_content.py")
         for relpath in importers:
             root = relpath.split("/")[0]
             if relpath not in allowed_runtime_consumers:
@@ -1723,13 +1730,16 @@ class ETrustSeparationTests(unittest.TestCase):
         # Its readiness module is not landed in this read-only subset.
         # Query contract v2 (deliberate, exact): the read-only Mission State
         # composer (observe only; pinned in test_static 12h).
+        # Item 2 (deliberate, exact): the evidence library's one admitted
+        # content read (pure read helpers only; pinned in test_static 12j).
         self.assertEqual(
             {r for r in importers if not r.startswith("mission/")},
             {"pr_delivery/mission_parent.py", "local_request/cli.py",
              "local_request/store.py", "local_request/surface.py",
              "target_runtime/mission_bridge.py",
              "mission_sources/sources.py",
-             "target_runtime/mission_state.py"},
+             "target_runtime/mission_state.py",
+             "target_runtime/artifact_content.py"},
         )
 
     def test_E4_mission_never_names_pr_delivery_or_a_provider(self):

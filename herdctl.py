@@ -26,6 +26,7 @@ from herdr.registry import REGISTRY
 from herdr import guards
 from herdr.guards import install_git_guard as install_git_guard_runtime
 from herdr import tasks
+from target_runtime import review_findings
 from herdr.instance import HerdrInstance
 from herdr.observe import observe as observe_projection, render_observation
 from herdr.runtime import agent_info, jrun, prompt, run, split, start_agent
@@ -1873,6 +1874,80 @@ def parse_review_decision(text, tail_lines=80):
     return (raw if raw in {"APPROVE", "REJECT"} else None), raw
 
 
+# Item 2: reviewer-declared PUBLIC findings (target_runtime.review_findings). The task
+# record keys this LOCAL writer adds; a task that never routes a declaration
+# never gains either, so its records are unchanged.
+FINDINGS_ROUTE_KEY = "review_findings_route"
+FINDINGS_REFERENCE_KEY = "last_review_findings"
+
+
+def review_findings_route_cmd(args):
+    """ROUTE a review's public findings declaration: record, in the ACTIVE
+    task, the context a later declaration must match (the next round, the
+    reviewer whose output will be read, the routed candidate) and a
+    single-use nonce the reviewer must echo. Sends nothing to anyone; the
+    routing party includes the printed nonce in its review request."""
+    r = resolve_repo_ref(args.repo)
+    reviewer = resolve_role(r, args.reviewer)
+    task_state = load_task(r)
+    if task_state.get("status") != "ACTIVE" or not task_state.get("id"):
+        raise SystemExit("review findings are routed only for an ACTIVE task")
+    import secrets
+    rounds = int(task_state.get("review_rounds", 0)) + 1
+    try:
+        route = review_findings.new_route(
+            secrets.token_hex(8), task_state["id"], rounds, args.reviewer,
+            reviewer, args.candidate_sha256, int(time.time()))
+    except ValueError:
+        raise SystemExit("the candidate must be a 64-hex sha256 and the"
+                         " task, reviewer and round well formed")
+    task_state[FINDINGS_ROUTE_KEY] = route
+    save_task(r, task_state)
+    print(json.dumps(route, indent=2))
+
+
+def _record_findings(outdir, task_state, task_id, rounds, logical, agent,
+                     preamble, text):
+    """The task reference for this round's declaration (and the persisted
+    record when one is RECORDED), or None when the task neither routed a
+    declaration nor carries an earlier reference. Consumes the route. Never
+    raises: an unexpected failure is a recorded metadata failure."""
+    route = task_state.pop(FINDINGS_ROUTE_KEY, None)
+    if route is None:
+        if FINDINGS_REFERENCE_KEY not in task_state:
+            return None             # never routed: nothing written, ever
+        return review_findings.task_reference(
+            review_findings.OUTCOME_NOT_RECORDED,
+            review_findings.PROBLEM_NO_ROUTE, rounds)
+    try:
+        outcome = review_findings.extract_declaration(
+            text, route, task_id, rounds, logical, agent)
+        if outcome["state"] != review_findings.OUTCOME_RECORDED:
+            return review_findings.task_reference(
+                outcome["state"], outcome["problem"], rounds)
+        data = review_findings.encode_record(review_findings.build_record(
+            route, task_id, rounds, logical, agent, preamble,
+            outcome["findings"]))
+        name = f"{task_id}-round-{rounds:02d}.findings.json"
+        path = outdir / name
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                     | os.O_NOFOLLOW, 0o644)
+        try:
+            os.fchmod(fd, 0o644)
+            remaining = data
+            while remaining:
+                remaining = remaining[os.write(fd, remaining):]
+        finally:
+            os.close(fd)
+        return review_findings.task_reference(
+            review_findings.OUTCOME_RECORDED, None, rounds, name,
+            hashlib.sha256(data).hexdigest(), len(outcome["findings"]))
+    except Exception:
+        return review_findings.task_reference(
+            review_findings.OUTCOME_REFUSED,
+            review_findings.PROBLEM_WRITER_ERROR, rounds)
+
+
 def review_decision_cmd(args):
     r = resolve_repo_ref(args.repo)
     reviewer = resolve_role(r, args.reviewer)
@@ -1884,16 +1959,24 @@ def review_decision_cmd(args):
     outdir = hroot(r) / "state" / "reviews"
     outdir.mkdir(parents=True, exist_ok=True)
     outfile = outdir / f"{task_id}-round-{rounds:02d}.md"
-    outfile.write_text(
+    preamble = (
         f"# Reviewer round {rounds}\n\n"
         f"Reviewer: `{args.reviewer}` / `{reviewer}`\n\n"
         f"Protocol token: `{raw or 'MISSING'}`\n\n"
-        "## Transcript\n\n" + text
     )
+    outfile.write_text(preamble + "## Transcript\n\n" + text)
+    findings = None
     if task_state.get("status") == "ACTIVE":
         task_state["review_rounds"] = rounds
         task_state["last_review_decision"] = decision or "MALFORMED"
         task_state["last_review_file"] = str(outfile)
+        # Item 2: decided AFTER, and independently of, the verdict above;
+        # it reads only the designated envelope and never changes it.
+        findings = _record_findings(outdir, task_state, task_id, rounds,
+                                    args.reviewer, reviewer,
+                                    preamble.encode("utf-8"), text)
+        if findings is not None:
+            task_state[FINDINGS_REFERENCE_KEY] = findings
         save_task(r, task_state)
     result = {
         "valid": bool(decision),
@@ -1902,6 +1985,10 @@ def review_decision_cmd(args):
         "round": rounds,
         "review_file": str(outfile),
     }
+    if findings is not None:
+        result["findings"] = {"state": findings["state"],
+                              "problem": findings["problem"],
+                              "count": findings["count"]}
     print(json.dumps(result, indent=2))
 
 
@@ -2226,6 +2313,12 @@ def main():
     q.add_argument("--reviewer", default="reviewer1")
     q.add_argument("--lines", type=int, default=500)
     q.set_defaults(fn=review_decision_cmd)
+
+    q = sp.add_parser("review-findings-route")
+    q.add_argument("--repo")
+    q.add_argument("--reviewer", default="reviewer1")
+    q.add_argument("--candidate-sha256", required=True)
+    q.set_defaults(fn=review_findings_route_cmd)
 
     q = sp.add_parser("delivery-evidence")
     q.add_argument("--repo")

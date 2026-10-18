@@ -41,7 +41,8 @@ export type ServerMessage =
   | AgentDiagnostics
   | DiOfficeState
   | AmbientStateLoaded
-  | AmbientSpritesLoaded;
+  | AmbientSpritesLoaded
+  | DiEvidenceContent;
 
 export type ClientMessage =
   | WebviewReady
@@ -66,7 +67,8 @@ export type ClientMessage =
   | SaveAreaMappings
   | SetShowAreas
   | RequestDiagnostics
-  | SaveAmbientState;
+  | SaveAmbientState
+  | DiEvidenceRead;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -415,6 +417,7 @@ export interface DiMission {
   members: DiMemberList;
   v2: DiMissionV2;
   herdrTask?: DiHerdrTask;
+  evidence?: DiEvidenceLibrary;
 }
 
 export interface DiMemberList {
@@ -593,6 +596,163 @@ export interface DiHerdrTask {
   schemaVersion: number | null;
   taskRecordVersion: number | null;
   startedAt: number | null;
+}
+
+export interface DiEvidenceLibrary {
+  cursor: string | null;
+  execution: DiEvidenceExecution;
+  currency: DiEvidenceCurrency;
+  currencyReason: string | null;
+  contentReads: DiEvidenceContentReads;
+  artifacts: DiEvidenceArtifactSection;
+  verification: DiEvidenceRecordSection;
+  reviews: DiEvidenceReviewSection;
+  receipts: DiEvidenceReceiptSection;
+}
+
+export interface DiEvidenceExecution {
+  basis: DiEvidenceExecutionBasisListed;
+  identityState: DiEvidenceExecutionIdentityState;
+  identityProblem: string | null;
+  lifecycleState: string | null;
+  taskId: string | null;
+}
+
+export type DiEvidenceExecutionBasisListed =
+  'active_binding' | 'historical_completed_execution' | 'none';
+
+export type DiEvidenceExecutionIdentityState =
+  'not_reported' | 'established' | 'not_established' | 'not_applicable' | 'unexpected';
+
+export type DiEvidenceCurrency = 'current' | 'stale';
+
+export interface DiEvidenceContentReads {
+  state: DiEvidenceContentReadsState;
+  reason: string | null;
+}
+
+export type DiEvidenceContentReadsState = 'available' | 'unavailable';
+
+export interface DiEvidenceArtifactSection {
+  state: DiEvidenceSectionState;
+  reason: string | null;
+  total: number | null;
+  items: DiEvidenceArtifact[];
+}
+
+export type DiEvidenceSectionState =
+  | 'observed'
+  | 'known_empty'
+  | 'not_recorded'
+  | 'projected_reason'
+  | 'not_applicable'
+  | 'unavailable'
+  | 'refused';
+
+export interface DiEvidenceArtifact {
+  artifactId: string;
+  key: string | null;
+  role: string;
+  locatorKind: string;
+  contentDigest: string | null;
+  availableReported: boolean | null;
+  recordedAt: number | null;
+  candidate: DiEvidenceCandidate;
+  content: DiEvidenceContentRequest;
+}
+
+export type DiEvidenceCandidate = 'matches_observed' | 'differs_from_observed' | 'not_observed';
+
+export interface DiEvidenceContentRequest {
+  state: DiEvidenceContentRequestState;
+  reason: string | null;
+}
+
+export type DiEvidenceContentRequestState = 'requestable' | 'not_requestable';
+
+export interface DiEvidenceRecordSection {
+  state: DiEvidenceSectionState;
+  reason: string | null;
+  total: number | null;
+  items: DiEvidenceRecord[];
+}
+
+export interface DiEvidenceRecord {
+  evidenceId: string;
+  requirementKey: string | null;
+  kind: string | null;
+  standing: string | null;
+  freshness: string | null;
+  accepted: boolean | null;
+  invalidated: boolean | null;
+  verifyingKind: boolean | null;
+  bearsOnClaim: boolean | null;
+  drifted: boolean | null;
+  unconfirmed: boolean | null;
+  artifactIds: string[];
+  artifactIdsTotal: number;
+}
+
+export interface DiEvidenceReviewSection {
+  state: DiEvidenceSectionState;
+  reason: string | null;
+  total: number | null;
+  items: DiEvidenceReview[];
+}
+
+export interface DiEvidenceReview {
+  findings: DiEvidenceFindings;
+  round: number | null;
+  reviewerLogical: string | null;
+  reviewerAgent: string | null;
+  protocolToken: string | null;
+  gate: string | null;
+  verdict: string | null;
+  currency: string | null;
+  integrity: string | null;
+  candidateApplicability: string | null;
+}
+
+export interface DiEvidenceFindings {
+  state: DiEvidenceFindingsState;
+  problem: string | null;
+  count: number | null;
+  items: DiEvidenceFinding[];
+  candidateSha256: string | null;
+  routedAt: number | null;
+  provenance: string | null;
+}
+
+export type DiEvidenceFindingsState =
+  'not_reported' | 'not_recorded' | 'empty' | 'present' | 'refused' | 'unexpected';
+
+export interface DiEvidenceFinding {
+  index: number;
+  severity: DiEvidenceFindingSeverity;
+  area: string | null;
+  line: number | null;
+  summary: string;
+}
+
+export type DiEvidenceFindingSeverity = 'blocker' | 'non_blocking';
+
+export interface DiEvidenceReceiptSection {
+  state: DiEvidenceSectionState;
+  reason: string | null;
+  total: number | null;
+  items: DiEvidenceReceipt[];
+}
+
+export interface DiEvidenceReceipt {
+  artifactId: string;
+  attested: boolean;
+  deliveryId: string | null;
+  step: string | null;
+  receiptState: string | null;
+  stepState: string | null;
+  effectCompleted: boolean | null;
+  contentDigest: string | null;
+  recordedAt: number | null;
 }
 
 export interface DiChainObservation {
@@ -783,6 +943,48 @@ export interface AmbientSpriteSheet {
   frames: string[][][][];
 }
 
+export interface DiEvidenceContent {
+  type: 'diEvidenceContent';
+  missionRef: string;
+  artifactId: string;
+  cursor: string;
+  state: DiEvidenceAnswerState;
+  decidedBy: DiEvidenceDecidedBy;
+  problem: string | null;
+  detail: string | null;
+  artifact: DiEvidenceArtifactRecord | null;
+  content: DiEvidenceText | null;
+  observedAt: number | null;
+}
+
+export type DiEvidenceAnswerState = 'admitted' | 'refused';
+
+export type DiEvidenceDecidedBy = 'office' | 'backend';
+
+export interface DiEvidenceArtifactRecord {
+  key: string | null;
+  role: string;
+  locatorKind: string;
+  locator: string;
+  contentDigest: string;
+  recordedAt: number | null;
+  admissionBasis: DiEvidenceAdmissionBasis[];
+  executionBasis: DiEvidenceExecutionBasis;
+}
+
+export type DiEvidenceAdmissionBasis = 'accepted_evidence_artifact' | 'contract_required_artifact';
+
+export type DiEvidenceExecutionBasis = 'active_binding' | 'historical_completed_execution';
+
+export interface DiEvidenceText {
+  text: string;
+  byteCount: number;
+  digest: string;
+  media: DiEvidenceMedia;
+}
+
+export type DiEvidenceMedia = 'text/plain' | 'text/html';
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -901,4 +1103,11 @@ export interface RequestDiagnostics {
 export interface SaveAmbientState {
   type: 'saveAmbientState';
   state: Record<string, any>;
+}
+
+export interface DiEvidenceRead {
+  type: 'diEvidenceRead';
+  missionRef: string;
+  artifactId: string;
+  cursor: string;
 }

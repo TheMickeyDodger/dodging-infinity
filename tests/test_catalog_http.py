@@ -753,8 +753,11 @@ class AccessBoundaryTests(HttpFixture):
             ("GET",) + catalog_http._REFUSED_METHODS)})
         for name in methods - {"do_GET"}:
             self.assertIs(getattr(handler, name), handler._method_refused)
+        # Item 2 (evidence library) adds ONE read route, /artifact
+        # (tests/test_artifact_content.py); still GET only.
         self.assertEqual(catalog_http.ROUTES,
-                         ("/catalog", "/diagnostics", "/healthz"))
+                         ("/catalog", "/diagnostics", "/healthz",
+                          "/artifact"))
 
     def test_no_control_route_is_reachable_and_nothing_is_written(self):
         """Every plausible control/registration request, by every method,

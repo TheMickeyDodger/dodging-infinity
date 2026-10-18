@@ -234,6 +234,122 @@ def _locator_parts(locator):
     return parts
 
 
+# -- item 2: the HISTORICAL execution identity of a COMPLETED Mission --------
+#
+# The evidence library reads a COMPLETED Mission's artifacts under the
+# execution its canonical record still proves, never under a live team (a
+# completed Mission has none: the roster keeps it ``not_applicable``). That
+# identity is ESTABLISHED only when the record is COMPLETED with a VERIFIED
+# run, a recorded intent, a receipt naming the task and a PREPARED,
+# digest-bound workspace binding that agrees exactly with the intent
+# (``mission.manifest`` validates the same chain on load; it is re-checked
+# here, never assumed). A legacy record without a prepared binding is NOT
+# established and is never upgraded.
+#
+# The identity digest covers the source REGISTRATION and the WHOLE run and
+# lifecycle chain, the revision, state and update time: the journal cursor
+# (``journal.head_cursor``) covers the state sequence, revision and evidence
+# journal only, so a run or source change that leaves it unchanged still
+# changes this digest. The HISTORICAL CURSOR binds both; it is what a
+# completed Mission's listing names and what a content read must present.
+# Digests are Mission Core's own canonical JSON digest (``record.json_digest``,
+# the one ``record.workspace_binding_digest`` uses).
+EXECUTION_IDENTITY_SCHEMA = "di.evidence.execution_identity/1"
+HISTORICAL_CURSOR_SCHEMA = "di.evidence.historical_cursor/1"
+
+
+def _identity(state_name, problem, identity=None):
+    return {"state": state_name, "problem": problem,
+            "identity_sha256": identity}
+
+
+def execution_identity(source, mission):
+    """``{state, problem, identity_sha256}`` for ONE Mission Core record
+    (``mission``, as the native load returned it) of the registered
+    ``source``. Pure; never raises."""
+    if type(mission) is not dict or mission.get("state") != (
+            record.STATE_COMPLETED):
+        return _identity(contract_v2.EXECUTION_IDENTITY_NOT_APPLICABLE,
+                         contract_v2.PROBLEM_EXECUTION_NOT_COMPLETED)
+
+    def refused(problem):
+        return _identity(contract_v2.EXECUTION_IDENTITY_NOT_ESTABLISHED,
+                         problem)
+    try:
+        run = mission.get("run")
+        if type(run) is not dict:
+            return refused(contract_v2.PROBLEM_EXECUTION_RUN_ABSENT)
+        verification = run.get("verification")
+        if type(verification) is not dict or verification.get(
+                "verified") is not True:
+            return refused(contract_v2.PROBLEM_EXECUTION_NOT_VERIFIED)
+        intent = run.get("intent")
+        if type(intent) is not dict:
+            return refused(contract_v2.PROBLEM_EXECUTION_INTENT_ABSENT)
+        receipt = run.get("receipt")
+        if type(receipt) is not dict or type(receipt.get(
+                "task_id")) is not str or not receipt["task_id"]:
+            return refused(contract_v2.PROBLEM_EXECUTION_RECEIPT_TASK_ABSENT)
+        binding = run.get("workspace")
+        if binding is None:
+            return refused(contract_v2.PROBLEM_EXECUTION_BINDING_ABSENT)
+        if type(binding) is not dict or binding.get("state") != (
+                record.WORKSPACE_STATE_PREPARED) or binding.get(
+                    "prepared_at") is None:
+            return refused(contract_v2.PROBLEM_EXECUTION_BINDING_NOT_PREPARED)
+        expected = record.workspace_binding_digest(
+            mission["mission_id"], binding["path_realpath"],
+            binding["repository_realpath"], binding["target_repository_url"],
+            binding["revision"], binding["proposal_digest_sha256"],
+            binding["baseline_commit_sha"])
+        if (binding["binding_digest_sha256"] != expected
+                or binding["revision"] != mission["current_revision"]
+                or intent["revision"] != binding["revision"]
+                or intent["proposal_digest_sha256"] != binding[
+                    "proposal_digest_sha256"]
+                or intent["target_repository_url"] != binding[
+                    "target_repository_url"]
+                or intent["workspace_realpath"] != binding["path_realpath"]
+                or intent["observed_baseline_commit_sha"] != binding[
+                    "baseline_commit_sha"]):
+            return refused(contract_v2.PROBLEM_EXECUTION_BINDING_DISAGREES)
+        identity = record.json_digest({
+            "schema": EXECUTION_IDENTITY_SCHEMA,
+            "source": dict(source),
+            "mission_id": mission["mission_id"],
+            "revision": mission["current_revision"],
+            "state": mission["state"],
+            "updated_at": mission["updated_at"],
+            "lifecycle": mission.get("lifecycle"),
+            "run": run,
+        })
+    except Exception:       # noqa: BLE001 - any shape failure is not proof
+        return refused(contract_v2.PROBLEM_EXECUTION_RECORD_SHAPE)
+    return _identity(contract_v2.EXECUTION_IDENTITY_ESTABLISHED, None,
+                     identity)
+
+
+def historical_cursor(journal_digest_sha256, identity_sha256):
+    """The cursor a COMPLETED Mission's evidence listing names: the journal
+    head AND the execution identity, so either moving changes it."""
+    return record.json_digest({
+        "schema": HISTORICAL_CURSOR_SCHEMA,
+        "journal_digest_sha256": journal_digest_sha256,
+        "identity_sha256": identity_sha256,
+    })
+
+
+def listed_execution_identity(source, mission, journal_digest_sha256):
+    """The ``execution_identity`` block of one observed Mission State: the
+    identity, with the historical cursor when it is established."""
+    found = execution_identity(source, mission)
+    found["cursor_sha256"] = (
+        historical_cursor(journal_digest_sha256, found["identity_sha256"])
+        if found["state"] == contract_v2.EXECUTION_IDENTITY_ESTABLISHED
+        else None)
+    return found
+
+
 class MissionStateComposer(object):
     """See the module. ``delivery_store`` is the explicitly registered
     delivery store directory, or None (delivery is then unavailable)."""
@@ -529,6 +645,7 @@ class MissionStateComposer(object):
                 contract_v2.PROBLEM_MISSION_STATE_SOURCE, exc.reason))
                 for view, _, _, _ in collected)
         missions = service.MissionService(reader, self._clock)
+        loaded = reader.load()
         blocks = {}
         for view, cursor, reports, kinds in collected:
             inputs = {"cursor": copy.deepcopy(cursor), "reports": reports}
@@ -551,7 +668,12 @@ class MissionStateComposer(object):
                     "kinds": kinds,
                     "candidate_applicability":
                         contract_v2.CANDIDATE_APPLICABILITY_UNPROVEN,
-                    "baseline": contract_v2.BASELINE_UNOBSERVED}}
+                    "baseline": contract_v2.BASELINE_UNOBSERVED},
+                # Item 2: the historical execution identity, from the SAME
+                # load-2 record the report was observed over.
+                contract_v2.EXECUTION_IDENTITY_KEY: listed_execution_identity(
+                    source, loaded["missions"].get(view["native_id"]),
+                    report["provenance"]["journal_digest_sha256"])}
         return blocks
 
 

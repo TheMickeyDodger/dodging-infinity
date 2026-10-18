@@ -122,6 +122,7 @@ components:
         - $ref: '#/components/schemas/DiOfficeState'
         - $ref: '#/components/schemas/AmbientStateLoaded'
         - $ref: '#/components/schemas/AmbientSpritesLoaded'
+        - $ref: '#/components/schemas/DiEvidenceContent'
       discriminator: type
 
     ClientMessage:
@@ -150,6 +151,7 @@ components:
         - $ref: '#/components/schemas/RequestDiagnostics'
         # DI office (additive; handled only by the DI office surface)
         - $ref: '#/components/schemas/SaveAmbientState'
+        - $ref: '#/components/schemas/DiEvidenceRead'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -847,6 +849,495 @@ components:
           type: object
           description: Opaque bounded snapshot; format owned by the webview (ambientSave.ts).
 
+    DiEvidenceRead:
+      description: |
+        DI office only (item 2, evidence library): ask for ONE recorded artifact's content by
+        an ADMITTED REFERENCE — the Mission ref, the artifact id and the journal digest of the
+        listing the viewer saw. Never a path, root or URL. The office admits it only against
+        its CURRENT listing, then asks the backend, which re-checks the binding, containment,
+        disclosure class and digest. Answered with exactly one diEvidenceContent to the asking
+        connection only. Reads nothing and changes nothing on refusal.
+      type: object
+      additionalProperties: false
+      required: [type, missionRef, artifactId, cursor]
+      properties:
+        type:
+          const: diEvidenceRead
+        missionRef:
+          type: string
+          maxLength: 104
+        artifactId:
+          type: string
+          maxLength: 35
+        cursor:
+          type: string
+          maxLength: 64
+
+    DiEvidenceContent:
+      description: |
+        DI office only: the answer to one diEvidenceRead. `state` admitted carries the recorded
+        artifact's metadata and its content as TEXT (at most 64 KiB) with a media label;
+        refused carries the code of whichever side refused (`decidedBy`: office or backend).
+        The content is UNTRUSTED data: a client shows it as inert text and never renders,
+        executes, follows or fetches from it, whatever its media label.
+      type: object
+      additionalProperties: false
+      required:
+        [type, missionRef, artifactId, cursor, state, decidedBy, problem, detail, artifact,
+         content, observedAt]
+      properties:
+        type:
+          const: diEvidenceContent
+        missionRef:
+          type: string
+        artifactId:
+          type: string
+        cursor:
+          type: string
+        state:
+          $ref: '#/components/schemas/DiEvidenceAnswerState'
+        decidedBy:
+          $ref: '#/components/schemas/DiEvidenceDecidedBy'
+        problem:
+          type: [string, 'null']
+        detail:
+          type: [string, 'null']
+        artifact:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiEvidenceArtifactRecord'
+        content:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiEvidenceText'
+        observedAt:
+          type: [integer, 'null']
+
+    DiEvidenceArtifactRecord:
+      description: The recorded artifact a content answer is about (from the Mission record).
+      type: object
+      additionalProperties: false
+      required:
+        [key, role, locatorKind, locator, contentDigest, recordedAt, admissionBasis,
+         executionBasis]
+      properties:
+        key:
+          type: [string, 'null']
+        role:
+          type: string
+        locatorKind:
+          type: string
+        locator:
+          type: string
+          description: The recorded repository-relative locator, as display text only.
+        contentDigest:
+          type: string
+        recordedAt:
+          type: [integer, 'null']
+        admissionBasis:
+          description: |
+            What the canonical record DECLARED the artifact to be (never its path or
+            extension): a required artifact the approved proof contract pins, and/or an
+            artifact an accepted verifying evidence record names.
+          type: array
+          items:
+            $ref: '#/components/schemas/DiEvidenceAdmissionBasis'
+        executionBasis:
+          description: |
+            The EXECUTION the backend read under (kept apart from the declared class): a
+            currently bound Mission, or a COMPLETED Mission's historical recorded execution.
+          $ref: '#/components/schemas/DiEvidenceExecutionBasis'
+
+    DiEvidenceAdmissionBasis:
+      type: string
+      enum: [accepted_evidence_artifact, contract_required_artifact]
+
+    DiEvidenceText:
+      description: Admitted content, as text. `media` is a presentation label only.
+      type: object
+      additionalProperties: false
+      required: [text, byteCount, digest, media]
+      properties:
+        text:
+          type: string
+        byteCount:
+          type: integer
+        digest:
+          type: string
+        media:
+          $ref: '#/components/schemas/DiEvidenceMedia'
+
+    DiEvidenceAnswerState:
+      type: string
+      enum: [admitted, refused]
+
+    DiEvidenceDecidedBy:
+      type: string
+      enum: [office, backend]
+
+    DiEvidenceMedia:
+      type: string
+      enum: [text/plain, text/html]
+
+    DiEvidenceCurrency:
+      type: string
+      enum: [current, stale]
+
+    DiEvidenceContentReadsState:
+      type: string
+      enum: [available, unavailable]
+
+    DiEvidenceContentRequestState:
+      type: string
+      enum: [requestable, not_requestable]
+
+    DiEvidenceCandidate:
+      type: string
+      enum: [matches_observed, differs_from_observed, not_observed]
+
+    DiEvidenceSectionState:
+      description: |
+        One evidence type's state for one Mission. The observation states (DiObservationState)
+        plus `refused`: the producer refused the record (with its problem). Stale is the
+        library's `currency`, kept apart.
+      type: string
+      enum:
+        [observed, known_empty, not_recorded, projected_reason, not_applicable, unavailable,
+         refused]
+
+    DiEvidenceLibrary:
+      description: |
+        DI office only (item 2, evidence library): the Mission's evidence as FOUR DISTINCT types
+        (artifacts, verification, reviews, receipts), each with its own state; nothing is
+        merged, inferred or manufactured. `cursor` is the journal digest the listing was
+        observed at; `contentReads` is the Mission-level gate on asking for content (the backend
+        re-checks everything at read time). Optional on DiMission: absent = not projected
+        (a contract v1 office).
+      type: object
+      additionalProperties: false
+      required:
+        [cursor, execution, currency, currencyReason, contentReads, artifacts, verification,
+         reviews, receipts]
+      properties:
+        cursor:
+          type: [string, 'null']
+        execution:
+          $ref: '#/components/schemas/DiEvidenceExecution'
+        currency:
+          $ref: '#/components/schemas/DiEvidenceCurrency'
+        currencyReason:
+          type: [string, 'null']
+        contentReads:
+          $ref: '#/components/schemas/DiEvidenceContentReads'
+        artifacts:
+          $ref: '#/components/schemas/DiEvidenceArtifactSection'
+        verification:
+          $ref: '#/components/schemas/DiEvidenceRecordSection'
+        reviews:
+          $ref: '#/components/schemas/DiEvidenceReviewSection'
+        receipts:
+          $ref: '#/components/schemas/DiEvidenceReceiptSection'
+
+    DiEvidenceExecution:
+      description: |
+        Item 2 (completed-Mission artifacts): the EXECUTION a content read would stand on, kept
+        apart from the listing's freshness (`currency`). `active_binding`: a currently bound
+        Mission. `historical_completed_execution`: a COMPLETED Mission whose execution identity
+        the backend ESTABLISHED from its canonical record (verified run, intent, receipt and a
+        PREPARED digest-bound workspace) — its historical RECORDED execution, never a live team
+        and never whole-candidate applicability; the listing's `cursor` then binds the journal
+        head AND that identity. `none`: neither. `lifecycleState` and `taskId` are display only.
+      type: object
+      additionalProperties: false
+      required: [basis, identityState, identityProblem, lifecycleState, taskId]
+      properties:
+        basis:
+          $ref: '#/components/schemas/DiEvidenceExecutionBasisListed'
+        identityState:
+          $ref: '#/components/schemas/DiEvidenceExecutionIdentityState'
+        identityProblem:
+          type: [string, 'null']
+        lifecycleState:
+          type: [string, 'null']
+        taskId:
+          type: [string, 'null']
+
+    DiEvidenceExecutionBasisListed:
+      type: string
+      enum: [active_binding, historical_completed_execution, none]
+
+    DiEvidenceExecutionIdentityState:
+      type: string
+      enum: [not_reported, established, not_established, not_applicable, unexpected]
+
+    DiEvidenceExecutionBasis:
+      type: string
+      enum: [active_binding, historical_completed_execution]
+
+    DiEvidenceContentReads:
+      type: object
+      additionalProperties: false
+      required: [state, reason]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiEvidenceContentReadsState'
+        reason:
+          type: [string, 'null']
+
+    DiEvidenceContentRequest:
+      description: |
+        Whether the office may ASK for this artifact's content. Never a claim that the content
+        is safe or will be shown: the backend decides at read time and may refuse.
+      type: object
+      additionalProperties: false
+      required: [state, reason]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiEvidenceContentRequestState'
+        reason:
+          type: [string, 'null']
+
+    DiEvidenceArtifactSection:
+      type: object
+      additionalProperties: false
+      required: [state, reason, total, items]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiEvidenceSectionState'
+        reason:
+          type: [string, 'null']
+        total:
+          type: [integer, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiEvidenceArtifact'
+
+    DiEvidenceArtifact:
+      type: object
+      additionalProperties: false
+      required:
+        [artifactId, key, role, locatorKind, contentDigest, availableReported, recordedAt,
+         candidate, content]
+      properties:
+        artifactId:
+          type: string
+        key:
+          type: [string, 'null']
+        role:
+          type: string
+        locatorKind:
+          type: string
+        contentDigest:
+          type: [string, 'null']
+        availableReported:
+          type: [boolean, 'null']
+        recordedAt:
+          type: [integer, 'null']
+        candidate:
+          $ref: '#/components/schemas/DiEvidenceCandidate'
+        content:
+          $ref: '#/components/schemas/DiEvidenceContentRequest'
+
+    DiEvidenceRecordSection:
+      type: object
+      additionalProperties: false
+      required: [state, reason, total, items]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiEvidenceSectionState'
+        reason:
+          type: [string, 'null']
+        total:
+          type: [integer, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiEvidenceRecord'
+
+    DiEvidenceRecord:
+      type: object
+      additionalProperties: false
+      required:
+        [evidenceId, requirementKey, kind, standing, freshness, accepted, invalidated,
+         verifyingKind, bearsOnClaim, drifted, unconfirmed, artifactIds, artifactIdsTotal]
+      properties:
+        evidenceId:
+          type: string
+        requirementKey:
+          type: [string, 'null']
+        kind:
+          type: [string, 'null']
+        standing:
+          type: [string, 'null']
+        freshness:
+          type: [string, 'null']
+        accepted:
+          type: [boolean, 'null']
+        invalidated:
+          type: [boolean, 'null']
+        verifyingKind:
+          type: [boolean, 'null']
+        bearsOnClaim:
+          type: [boolean, 'null']
+        drifted:
+          type: [boolean, 'null']
+        unconfirmed:
+          type: [boolean, 'null']
+        artifactIds:
+          description: >
+            The record's own artifact links in recorded order, at most 64 (Mission Core's
+            per-record bound); see artifactIdsTotal.
+          type: array
+          items:
+            type: string
+        artifactIdsTotal:
+          description: >
+            The record's TRUE number of links. Greater than the length of artifactIds exactly
+            when the display cap applied; never omitted, so a cut is never silent.
+          type: integer
+          minimum: 0
+
+    DiEvidenceReviewSection:
+      type: object
+      additionalProperties: false
+      required: [state, reason, total, items]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiEvidenceSectionState'
+        reason:
+          type: [string, 'null']
+        total:
+          type: [integer, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiEvidenceReview'
+
+    DiEvidenceReview:
+      description: The admitted canonical review preamble only; no transcript or finding text.
+      type: object
+      additionalProperties: false
+      required:
+        [round, reviewerLogical, reviewerAgent, protocolToken, gate, verdict, currency,
+         integrity, candidateApplicability, findings]
+      properties:
+        findings:
+          $ref: '#/components/schemas/DiEvidenceFindings'
+        round:
+          type: [integer, 'null']
+        reviewerLogical:
+          type: [string, 'null']
+        reviewerAgent:
+          type: [string, 'null']
+        protocolToken:
+          type: [string, 'null']
+        gate:
+          type: [string, 'null']
+        verdict:
+          type: [string, 'null']
+        currency:
+          type: [string, 'null']
+        integrity:
+          type: [string, 'null']
+        candidateApplicability:
+          type: [string, 'null']
+
+    DiEvidenceFindingsState:
+      type: string
+      enum: [not_reported, not_recorded, empty, present, refused, unexpected]
+
+    DiEvidenceFindingSeverity:
+      type: string
+      enum: [blocker, non_blocking]
+
+    DiEvidenceFindings:
+      description: |
+        The reviewer-DECLARED public findings of one review round (item 2 E2), read only from the
+        record the local review gate validated and persisted from the routed reviewer's explicit
+        findings envelope — never from the transcript. not_reported = the producer predates the
+        field; not_recorded / refused carry their code; empty and present carry the routed
+        candidate and the provenance ceiling text. Model-authored text: never a verdict, never an
+        approval, not a cryptographic proof of reviewer identity.
+      type: object
+      additionalProperties: false
+      required: [state, problem, count, items, candidateSha256, routedAt, provenance]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiEvidenceFindingsState'
+        problem:
+          type: [string, 'null']
+        count:
+          type: [integer, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiEvidenceFinding'
+        candidateSha256:
+          type: [string, 'null']
+        routedAt:
+          type: [integer, 'null']
+        provenance:
+          type: [string, 'null']
+
+    DiEvidenceFinding:
+      type: object
+      additionalProperties: false
+      required: [index, severity, area, line, summary]
+      properties:
+        index:
+          type: integer
+        severity:
+          $ref: '#/components/schemas/DiEvidenceFindingSeverity'
+        area:
+          type: [string, 'null']
+        line:
+          type: [integer, 'null']
+        summary:
+          type: string
+
+    DiEvidenceReceiptSection:
+      type: object
+      additionalProperties: false
+      required: [state, reason, total, items]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiEvidenceSectionState'
+        reason:
+          type: [string, 'null']
+        total:
+          type: [integer, 'null']
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiEvidenceReceipt'
+
+    DiEvidenceReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        [artifactId, attested, deliveryId, step, receiptState, stepState, effectCompleted,
+         contentDigest, recordedAt]
+      properties:
+        artifactId:
+          type: string
+        attested:
+          type: boolean
+        deliveryId:
+          type: [string, 'null']
+        step:
+          type: [string, 'null']
+        receiptState:
+          type: [string, 'null']
+        stepState:
+          type: [string, 'null']
+        effectCompleted:
+          type: [boolean, 'null']
+        contentDigest:
+          type: [string, 'null']
+        recordedAt:
+          type: [integer, 'null']
+
     DiOfficeState:
       description: |
         DI office only (additive; the standalone and VS Code surfaces never send it).
@@ -1360,6 +1851,8 @@ components:
           $ref: '#/components/schemas/DiMissionV2'
         herdrTask:
           $ref: '#/components/schemas/DiHerdrTask'
+        evidence:
+          $ref: '#/components/schemas/DiEvidenceLibrary'
 
     DiHerdrTask:
       description: |

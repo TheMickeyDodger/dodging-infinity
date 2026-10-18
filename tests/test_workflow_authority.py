@@ -2560,6 +2560,9 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_ROOT_PATH_CHARS": 4096,
             # Below the per-argument limit some kernels impose.
             "MAX_PAYLOAD_BYTES": 126976,
+            # Item 2 E2: the most bytes the boundary child's one printed value
+            # may take so the engine's 64 KiB read cap never cuts it.
+            "MAX_FINDINGS_OUTPUT_BYTES": 65280,
             "MAX_WAIT_SECONDS": 30,
             "ONE_SHOT_WAIT_SECONDS": 30,
             # Existence-only observations after a reap; the first absence
@@ -2585,6 +2588,35 @@ class BoundConstantPinTests(unittest.TestCase):
             "REQUEST_TIMEOUT_SECONDS": 10,
             "MAX_DISCOVERY_FILE_BYTES": 4096,
         },
+        # Item 2 (evidence library): the one admitted content read's own
+        # bounds — the file bound (64 KiB, the hardened reader's, never
+        # raised) and the length of a refusal's diagnostic text.
+        # Item 2 E2: the reviewer-declared findings writer contract. It
+        # lives in target_runtime so this gate derives its bounds; every
+        # value is an independent literal.
+        "target_runtime/review_findings.py": {
+            "MAX_FINDINGS": 32,
+            "MAX_SUMMARY_CHARS": 280,
+            "MAX_AREA_CHARS": 200,
+            "MAX_LINE_NUMBER": 9999999,
+            "MAX_FINDINGS_AGGREGATE_BYTES": 8192,
+            "MAX_ENVELOPE_LINE_CHARS": 400,
+            "MAX_CAPTURE_CHARS": 1048576,
+            "MAX_RECORD_BYTES": 32768,
+            # Round 15: the COMPACT declaration's per-line bound (characters;
+            # measured supported capture ~93 incl. decoration) and the
+            # numbered parts one finding may span.
+            "MAX_COMPACT_LINE_CHARS": 88,
+            "MAX_FINDING_PARTS": 8,
+        },
+        "target_runtime/artifact_content.py": {
+            "MAX_CONTENT_BYTES": 65536,
+            "MAX_DETAIL_CHARS": 240,
+            # E2: the per-request read budget (registry + two store loads +
+            # the file, each with its overrun byte), renamed into the
+            # bound-naming convention so this gate sees it.
+            "MAX_REQUEST_READ_BYTES": 33882116,
+        },
         # Query contract v2: the contract's own bounds and the read-only
         # Mission State composer's, pinned by exact value.
         "mission_sources/contract_v2.py": {
@@ -2598,6 +2630,14 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_HERD_ROOTS_V2": 16,
             "MAX_RESPONSE_MISSIONS": 2048,
             "REPORTED_FRESHNESS_BOUND_SECONDS": 600,
+            # Item 2 E2: the reviewer-declared findings block and the
+            # persisted findings record the reader re-validates.
+            "MAX_FINDINGS": 32,
+            "MAX_FINDING_SUMMARY_CHARS": 280,
+            "MAX_FINDING_AREA_CHARS": 200,
+            "MAX_FINDING_LINE_NUMBER": 9999999,
+            "MAX_FINDINGS_AGGREGATE_BYTES": 8192,
+            "MAX_FINDINGS_RECORD_BYTES": 32768,
         },
         "target_runtime/mission_state.py": {
             "MAX_DELIVERY_STORE_BYTES": 4194304,

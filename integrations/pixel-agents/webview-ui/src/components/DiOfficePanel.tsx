@@ -13,6 +13,8 @@ import type {
 } from '../../../core/src/messages.js';
 import { DI_PANEL_WIDTH_PX, DI_SELECTION_POLL_MS } from '../constants.js';
 import type { OfficeState } from '../office/engine/officeState.js';
+import type { DiEvidenceAccess } from './DiEvidenceLibrary.js';
+import { DiEvidenceLibrary } from './DiEvidenceLibrary.js';
 import type { DiFreshness, DiRecord, DiRecordTarget, DiSelectionMemory } from './diNavigation.js';
 import {
   DI_FOCUS_RING,
@@ -73,6 +75,8 @@ interface DiOfficePanelProps {
   onCollapsedChange: (collapsed: boolean) => void;
   /** Server-announced characters no office snapshot has confirmed: reported, never drawn. */
   announced?: ReadonlyArray<{ id: number; missionRef: string | null }>;
+  /** item 2: the evidence library's content seam (absent: the library lists, never reads). */
+  evidence?: DiEvidenceAccess | null;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -687,11 +691,13 @@ function MissionCard({
   zone,
   selectedKey,
   onSelect,
+  evidence,
 }: {
   mission: DiMission;
   zone: { label: string; color: string } | null;
   selectedKey: string | null;
   onSelect: (key: string) => void;
+  evidence: DiEvidenceAccess | null;
 }) {
   const holdsSelection = mission.members.members.some(
     (m) => selectedKey === `member:${m.memberRef}`,
@@ -816,6 +822,7 @@ function MissionCard({
         </div>
       ))}
       {mission.v2.projected && <MissionV2Blocks v2={mission.v2} />}
+      {mission.evidence && <DiEvidenceLibrary mission={mission} access={evidence} />}
     </div>
   );
 }
@@ -1115,6 +1122,7 @@ function DiOfficePanelBody({
   collapsed,
   onCollapsedChange,
   announced = [],
+  evidence = null,
 }: DiOfficePanelProps) {
   const [selectedId, setSelectedId] = useState<number | null>(officeState.selectedAgentId);
   useEffect(() => {
@@ -1477,6 +1485,7 @@ function DiOfficePanelBody({
             mission={mission}
             selectedKey={selectedKey}
             onSelect={selectKey}
+            evidence={evidence ?? null}
             zone={missionZone(
               mission.missionRef,
               officeState.areaMappings,

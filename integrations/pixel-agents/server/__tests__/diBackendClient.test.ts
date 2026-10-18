@@ -3,11 +3,14 @@
  * for the backend adapter — NOT the backend, NOT live evidence). Nothing here spawns or
  * starts a backend.
  */
+import * as fs from 'fs';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
+import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { requestBackend, routePath } from '../src/di/backendClient.js';
+import { MAX_ARTIFACT_RESPONSE_BYTES, requestBackend, routePath } from '../src/di/backendClient.js';
+import { parseArtifactContentAnswer } from '../src/di/evidenceContent.js';
 
 const TOKEN = 'fixture-token-abc';
 
@@ -125,5 +128,61 @@ describe('requestBackend (FIXTURE server)', () => {
     });
     expect(result).toEqual({ kind: 'transport_error', problem: 'backend_request_invalid' });
     expect(seen).toHaveLength(0);
+  });
+});
+
+describe('item 2: the /artifact route over real HTTP (FIXTURE server serving exported bytes)', () => {
+  const exported = JSON.parse(
+    fs.readFileSync(
+      path.join(__dirname, 'fixtures/di-backend/v2/artifact-content-v1.FIXTURE.json'),
+      'utf-8',
+    ),
+  ) as { content_answers: Record<string, Record<string, unknown>> };
+  const answer = exported.content_answers.admitted_text;
+  const ref = {
+    missionRef: String(answer.mission_ref),
+    artifactId: String(answer.artifact_id),
+    cursor: String(answer.cursor),
+  };
+
+  it('sends exactly the admitted reference as the fixed query, bearer-authenticated', async () => {
+    const body = JSON.stringify(answer);
+    respond = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(body);
+    };
+    const result = await requestBackend({ port, token: TOKEN }, 'artifact', {
+      artifact: ref,
+      timeoutMs: 5000,
+    });
+    expect(result).toMatchObject({ kind: 'http', status: 200, bodyProblem: null });
+    const req = seen[0];
+    expect(req.method).toBe('GET');
+    expect(req.url).toBe(
+      `/artifact?mission_ref=${encodeURIComponent(ref.missionRef)}&artifact_id=${ref.artifactId}&cursor=${ref.cursor}`,
+    );
+    expect(req.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(req.headers.origin).toBeUndefined();
+    if (result.kind !== 'http') throw new Error('transport');
+    const parsed = parseArtifactContentAnswer(result.body, ref);
+    expect(parsed.ok).toBe(true);
+  });
+
+  it('a malformed reference is never sent; an over-cap answer is refused unread past it', async () => {
+    const bad = await requestBackend({ port, token: TOKEN }, 'artifact', {
+      artifact: { ...ref, artifactId: '../../etc/passwd' },
+      timeoutMs: 5000,
+    });
+    expect(bad).toEqual({ kind: 'transport_error', problem: 'backend_request_invalid' });
+    expect(seen).toHaveLength(0);
+    respond = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('"' + 'x'.repeat(MAX_ARTIFACT_RESPONSE_BYTES + 16) + '"');
+    };
+    const big = await requestBackend({ port, token: TOKEN }, 'artifact', {
+      artifact: ref,
+      timeoutMs: 5000,
+    });
+    expect(big).toEqual({ kind: 'transport_error', problem: 'backend_response_too_large' });
   });
 });

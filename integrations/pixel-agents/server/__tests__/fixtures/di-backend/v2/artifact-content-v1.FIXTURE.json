@@ -1,0 +1,1054 @@
+{
+  "catalog_answer": {
+    "detail": null,
+    "endpoint": "di.mission_catalog",
+    "endpoint_version": 1,
+    "problem": null,
+    "requested_at": 1800000001,
+    "response": {
+      "chain_observation": {
+        "health": "fresh",
+        "max_age_seconds": 60,
+        "observed_at": 1800000001,
+        "over_capacity_count": 0,
+        "problem": null,
+        "producer": "target_runtime.runtime_snapshot",
+        "root_count": 1,
+        "unavailable_count": 0
+      },
+      "contract": "di.mission_sources.query",
+      "contract_version": 2,
+      "generated_at": 1800000001,
+      "limits": {
+        "max_chain_depth": 1,
+        "max_child_records": 32,
+        "max_herd_roots": 16,
+        "max_json_depth": 64,
+        "max_observed_missions": 16,
+        "max_query_input_bytes": 67108864,
+        "max_query_missions": 2048,
+        "max_registry_bytes": 262144,
+        "max_review_preamble_bytes": 4096,
+        "max_review_preamble_lines": 16,
+        "max_snapshot_agents": 512,
+        "max_snapshot_tasks": 256,
+        "max_sources": 128,
+        "max_store_read_bytes": 16777216,
+        "max_task_bindings": 32,
+        "min_poll_interval_seconds": 5,
+        "reported_freshness_bound_seconds": 600
+      },
+      "max_age_seconds": 60,
+      "missions": [
+        {
+          "admitted_artifacts": {
+            "canonical_review": {
+              "candidate_applicability": "unproven",
+              "currency": "current",
+              "findings": {
+                "candidate_sha256": "0d198c36a6b92d782f8ebfde49450582985e1173ab228a86e7e2ab435f545d73",
+                "count": 2,
+                "items": [
+                  {
+                    "area": "target_runtime/artifact_content.py",
+                    "index": 1,
+                    "line": 381,
+                    "severity": "blocker",
+                    "summary": "a recorded locator is admitted on containment alone; decide the declared class before the read"
+                  },
+                  {
+                    "area": null,
+                    "index": 2,
+                    "line": null,
+                    "severity": "non_blocking",
+                    "summary": "findings render as text: <b>bold</b> <script>alert(1)</script>"
+                  }
+                ],
+                "linkage": "route_nonce_echoed_in_routed_reviewer_output",
+                "problem": null,
+                "provenance": "Reviewer-declared public findings: model-authored text the routed reviewer's own output declared in the findings envelope, captured by the local review gate and bound to this task, round, reviewer and routed candidate by the route's single-use nonce it echoed. This is not a cryptographic proof of reviewer identity, not a verdict and not approval authority, and it does not prove that the reviewed bytes are the candidate's; the verdict is the round's protocol token alone.",
+                "routed_at": 1792356067,
+                "state": "present"
+              },
+              "gate": "parsed",
+              "integrity": "linkage_corroborated",
+              "problem": null,
+              "record": {
+                "protocol_token": "APPROVE",
+                "reviewer_agent": "pod-reviewer1",
+                "reviewer_logical": "reviewer1",
+                "round": 1
+              },
+              "state": "admitted",
+              "task_status": "ACTIVE",
+              "verdict": "APPROVE"
+            }
+          },
+          "binding": {
+            "reason": "canonical_chain_complete",
+            "state": "bound",
+            "task_id": "20261014-000000-aaaaaa"
+          },
+          "children_record": {
+            "caveat": null,
+            "other_parent_count": null,
+            "problem": "children_record_absent",
+            "record_count": null,
+            "state": "unavailable"
+          },
+          "execution": {
+            "consistent": true,
+            "identity_source": "start_result",
+            "receipt_recorded": true,
+            "record_ambiguous": false,
+            "run_started": true,
+            "task_id": "20261014-000000-aaaaaa",
+            "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-589a2181de974f8b0fee47cb43e475f7"
+          },
+          "lifecycle": {
+            "model": "mission_core.mission_state/1",
+            "standing": "active",
+            "state": "RUNNING"
+          },
+          "members": [
+            {
+              "activity": "busy",
+              "agent": "pod-exec1",
+              "chain": "direct",
+              "chain_task_id": "20261014-000000-aaaaaa",
+              "classification": "present",
+              "cost": "unknown",
+              "logical": "executor1",
+              "member_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7#20261014-000000-aaaaaa#executor1",
+              "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+              "model": "unknown",
+              "observed_at": 1800000001,
+              "pane_id": "w1:p3",
+              "progress": "unknown",
+              "provider": "claude",
+              "reason": "session_confirmed",
+              "role": "executor",
+              "session": {
+                "live": "sess-executor1",
+                "recorded": "sess-executor1"
+              },
+              "task_id": "20261014-000000-aaaaaa",
+              "tokens": "unknown",
+              "workspace_id": "w1"
+            }
+          ],
+          "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+          "mission_state": {
+            "detail": null,
+            "execution_identity": {
+              "cursor_sha256": null,
+              "identity_sha256": null,
+              "problem": "execution_mission_not_completed",
+              "state": "not_applicable"
+            },
+            "inputs": {
+              "baseline": "unobserved",
+              "candidate_applicability": "unproven",
+              "cursor": "sampled_before_collection",
+              "kinds": {
+                "candidate": {
+                  "reason": "a recorded locator is not a contained relative path",
+                  "supplied": "unavailable"
+                },
+                "delivery": {
+                  "reason": "no attested delivery receipt links this mission to a delivery record",
+                  "supplied": "unavailable"
+                },
+                "review": {
+                  "reason": null,
+                  "supplied": "reported"
+                },
+                "task": {
+                  "reason": null,
+                  "supplied": "reported"
+                }
+              }
+            },
+            "problem": null,
+            "report": {
+              "artifacts": {
+                "detail": "available flags and locators are recorded assertions; nothing is dereferenced",
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": [
+                  {
+                    "artifact_id": "mf-2df0d1ee0ddeec7ec3851e6c0d408866",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "83355af2f9ffc8d8d304d25ccf236882815329b96cfe4658002e1ab5e573b80c",
+                    "key": "result_report",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "PRODUCED"
+                  },
+                  {
+                    "artifact_id": "mf-9e1cd1b0c1c791a2d6ea5adea005837e",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "1c15070b44961559ccd6f9e7516fb4e212f6f508bc49053a8eeafe7516f66f20",
+                    "key": "report_page",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "PRODUCED"
+                  },
+                  {
+                    "artifact_id": "mf-ffaa460a9b88419eb3fb4f7c37f5f4eb",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "dc1ab2f0edc9c8138cb10b413f3ca1745b9924a74de6da3eea729002c052d45e",
+                    "key": "test_log",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "VERIFICATION"
+                  },
+                  {
+                    "artifact_id": "mf-ed251aab38ca0a632e20059733e2edfa",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "83355af2f9ffc8d8d304d25ccf236882815329b96cfe4658002e1ab5e573b80c",
+                    "key": "specification",
+                    "locator_kind": "OPAQUE_REFERENCE",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "ORIGINAL_INPUT"
+                  },
+                  {
+                    "artifact_id": "mf-f4a8cb33c3aef29ab75aa104198a40a3",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "83355af2f9ffc8d8d304d25ccf236882815329b96cfe4658002e1ab5e573b80c",
+                    "key": "result_report",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "PRODUCED"
+                  },
+                  {
+                    "artifact_id": "mf-c842e959e53c37d5c41d7ae36f307d60",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "dc6de82f3c30ae6236a30e2f7dea5e94fbb0525a8dc47d8049cd26621697293a",
+                    "key": "escaping_report",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "PRODUCED"
+                  },
+                  {
+                    "artifact_id": "mf-4ddfb22d71ffc0b2d243d0dd923ad00b",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "83355af2f9ffc8d8d304d25ccf236882815329b96cfe4658002e1ab5e573b80c",
+                    "key": "result_report",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "PRODUCED"
+                  },
+                  {
+                    "artifact_id": "mf-f737c3ff77c1f764e1278b0dfbd1ca99",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "c1211586ae6c776ffce5ea259bf62144df79471254714b41cc4fcced8814b2a3",
+                    "key": "session_notes",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "PRODUCED"
+                  },
+                  {
+                    "artifact_id": "mf-79f45e8a83666b0fd805daf4e913bcc7",
+                    "attested": false,
+                    "available_reported": true,
+                    "content_digest_sha256": "3f4f54d4370d2c3c2101cd34bfc550d848aa410a915c33eabb837bc355179054",
+                    "key": "test_output",
+                    "locator_kind": "REPOSITORY_PATH",
+                    "matches_observed": null,
+                    "observed_digest_sha256": null,
+                    "receipt_attestation": null,
+                    "recorded_at": 1800000000,
+                    "role": "PRODUCED"
+                  }
+                ]
+              },
+              "blockers": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "active": [],
+                  "hard_active": false
+                }
+              },
+              "budget": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "attempts_consumed": 0,
+                  "attempts_remaining": 1,
+                  "checkpoints_consumed": 0,
+                  "checkpoints_remaining": 2
+                }
+              },
+              "candidate": {
+                "detail": "a recorded locator is not a contained relative path",
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "adapter:candidate",
+                "standing": "unavailable",
+                "value": null
+              },
+              "completion": {
+                "closure": null,
+                "closure_verified": false,
+                "contradicted": false,
+                "holds": [
+                  "evidence_contradicted",
+                  "no_canonical_closure",
+                  "proof_not_satisfied"
+                ],
+                "limits": {
+                  "identity": "transport_credential_only",
+                  "non_verifying_evidence_kinds": [
+                    "NARRATIVE_CLAIM",
+                    "PROCESS_EXIT"
+                  ],
+                  "separation_of_duties": "not_enforced"
+                },
+                "reported_complete": false,
+                "reported_success": false,
+                "verified_success": false
+              },
+              "continuation": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "attempts": 0,
+                  "checkpoints": 0,
+                  "latest_checkpoint": null
+                }
+              },
+              "contract": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "activation_id": "mt-2f895e4e56ff5781d3732b0e44c21cc7",
+                  "active": true,
+                  "authority_live": true,
+                  "current": true,
+                  "problem": null,
+                  "revision": 1
+                }
+              },
+              "cursor": {
+                "event_id": "mo-e4ccad782d1233f49a6e0a22debc36b2",
+                "journal_digest_sha256": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+                "mission_id": "mn-589a2181de974f8b0fee47cb43e475f7",
+                "position": 12,
+                "revision": 1,
+                "schema_version": 1
+              },
+              "delivery": {
+                "detail": "no attested delivery receipt links this mission to a delivery record",
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "adapter:delivery",
+                "standing": "unavailable",
+                "value": null
+              },
+              "delivery_receipts": {
+                "detail": "recorded receipt references; only an ATTESTED reference (recorded through the delivery layer's validating path and re-proved on load) establishes receipt validity, and only the one succeeded receipt state is a completed effect; an unattested reference and a delivery source's report are unverified claims, the report reflected only when bound to a recorded receipt and fresh",
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "attested": [],
+                  "effects_completed": [],
+                  "recorded": [],
+                  "report_bound_attested": null,
+                  "report_bound_to": null,
+                  "report_fresh": null,
+                  "unattested": []
+                }
+              },
+              "dependencies": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "registry",
+                "standing": "verified",
+                "value": {
+                  "prerequisite_problems": [],
+                  "satisfied": true,
+                  "slots": {}
+                }
+              },
+              "evidence": {
+                "detail": null,
+                "freshness": "fresh",
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": [
+                  {
+                    "accepted": true,
+                    "artifact_ids": [
+                      "mf-79f45e8a83666b0fd805daf4e913bcc7",
+                      "mf-ffaa460a9b88419eb3fb4f7c37f5f4eb"
+                    ],
+                    "bears_on_claim": true,
+                    "drifted": false,
+                    "evidence_id": "mv-511e8e10bebecf6af234555109637558",
+                    "freshness": "fresh",
+                    "invalidated": false,
+                    "kind": "VERIFICATION_RECORD",
+                    "requirement_key": "tests_pass",
+                    "standing": "verified",
+                    "unconfirmed": false,
+                    "verifying_kind": true
+                  }
+                ]
+              },
+              "mission_id": "mn-589a2181de974f8b0fee47cb43e475f7",
+              "observed_at": 1800000001,
+              "pending_decisions": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "awaiting_decision": false,
+                  "live_authorization": false,
+                  "next_permitted_step": null,
+                  "revision": 1
+                }
+              },
+              "phase": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "current_revision": 1,
+                  "revisions": 1,
+                  "state": "RUNNING"
+                }
+              },
+              "progress": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "closure_reason": null,
+                  "progress": "IN_PROGRESS"
+                }
+              },
+              "proof": {
+                "detail": null,
+                "freshness": "fresh",
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "requirements": {
+                    "tests_pass": "MISMATCHED"
+                  },
+                  "satisfied": false
+                }
+              },
+              "provenance": {
+                "collection": {
+                  "collected_at": {
+                    "event_id": "mo-e4ccad782d1233f49a6e0a22debc36b2",
+                    "journal_digest_sha256": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+                    "mission_id": "mn-589a2181de974f8b0fee47cb43e475f7",
+                    "position": 12,
+                    "revision": 1,
+                    "schema_version": 1
+                  },
+                  "head": {
+                    "event_id": "mo-e4ccad782d1233f49a6e0a22debc36b2",
+                    "journal_digest_sha256": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+                    "mission_id": "mn-589a2181de974f8b0fee47cb43e475f7",
+                    "position": 12,
+                    "revision": 1,
+                    "schema_version": 1
+                  },
+                  "status": "current"
+                },
+                "cursor": {
+                  "event_id": "mo-e4ccad782d1233f49a6e0a22debc36b2",
+                  "journal_digest_sha256": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+                  "mission_id": "mn-589a2181de974f8b0fee47cb43e475f7",
+                  "position": 12,
+                  "revision": 1,
+                  "schema_version": 1
+                },
+                "drift": [],
+                "freshness_bound_seconds": 600,
+                "journal_digest_sha256": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+                "moved_during_collection": null,
+                "position": 12,
+                "record_source": "record",
+                "revision": 1,
+                "sources": {
+                  "candidate": {
+                    "detail": "a recorded locator is not a contained relative path",
+                    "observed_at": null,
+                    "source": "adapter:candidate",
+                    "standing": "unavailable"
+                  },
+                  "delivery": {
+                    "detail": "no attested delivery receipt links this mission to a delivery record",
+                    "observed_at": null,
+                    "source": "adapter:delivery",
+                    "standing": "unavailable"
+                  },
+                  "review": {
+                    "detail": null,
+                    "observed_at": 1800000001,
+                    "source": "adapter:review",
+                    "standing": "reported"
+                  },
+                  "task": {
+                    "detail": null,
+                    "observed_at": 1800000001,
+                    "source": "adapter:task",
+                    "standing": "reported"
+                  }
+                }
+              },
+              "readiness": {
+                "detail": null,
+                "freshness": null,
+                "observed_at": null,
+                "position": 12,
+                "revision": 1,
+                "source": "record",
+                "standing": "verified",
+                "value": {
+                  "resources": {},
+                  "satisfied": true
+                }
+              },
+              "reconciliation": null,
+              "review": {
+                "detail": null,
+                "freshness": "fresh",
+                "observed_at": 1800000001,
+                "position": 12,
+                "revision": 1,
+                "source": "adapter:review",
+                "standing": "reported",
+                "value": "APPROVE"
+              },
+              "revision": 1,
+              "sequence": 12,
+              "task": {
+                "detail": null,
+                "freshness": "fresh",
+                "observed_at": 1800000001,
+                "position": 12,
+                "revision": 1,
+                "source": "adapter:task",
+                "standing": "reported",
+                "value": "ACTIVE"
+              },
+              "time": {
+                "now": 1800000001,
+                "record_updated_at": 1800000001,
+                "source": "clock"
+              }
+            },
+            "state": "observed"
+          },
+          "native": {
+            "cancel_requested": false,
+            "paused": false
+          },
+          "native_id": "mn-589a2181de974f8b0fee47cb43e475f7",
+          "objective": "Fixture mission",
+          "producer": {
+            "declared": "local_request",
+            "recorded": {
+              "principal_kind": "unauthenticated_local_caller",
+              "transport": "local_request"
+            }
+          },
+          "revision": 1,
+          "source_id": "mc1",
+          "task_chains": [
+            {
+              "binding": {
+                "reason": "canonical_chain_complete",
+                "state": "bound",
+                "task_id": "20261014-000000-aaaaaa"
+              },
+              "chain": "direct",
+              "chain_task_id": "20261014-000000-aaaaaa",
+              "dependency": null,
+              "descendants_not_followed": null,
+              "membership_end": {
+                "ended": false,
+                "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "status": "ACTIVE"
+              },
+              "parent_task_id": null,
+              "record": null,
+              "root": {
+                "observation": "observed",
+                "path": "/__synthetic__/di-fixture-root/ws-mn-589a2181de974f8b0fee47cb43e475f7",
+                "problem": null
+              }
+            }
+          ],
+          "updated_at": 1800000000,
+          "workflow_phase": {
+            "phase": null,
+            "problem": "lifecycle_model_has_no_workflow_phase",
+            "state": "not_applicable"
+          }
+        }
+      ],
+      "registry": {
+        "directory": "/__synthetic__/di-fixture-root/registry-1",
+        "health": "fresh",
+        "max_serialized_bytes": 262144,
+        "max_sources": 128,
+        "problem": null,
+        "serialized_bytes": 313,
+        "source_count": 1
+      },
+      "runtime_agents": {
+        "agents": [],
+        "agents_over_bound": 0,
+        "caveat": null,
+        "counts": {
+          "ambiguous": 0,
+          "names_over_bound": 0,
+          "registries_unread": 0,
+          "represented_by_teams": 0,
+          "roles_live": 0,
+          "roles_recorded": 0,
+          "roots_over_capacity": 0,
+          "roots_read": 0,
+          "roots_requested": 0,
+          "roots_role_records_unreadable": 0,
+          "unavailable": 0,
+          "unverified": 0,
+          "verified": 0
+        },
+        "first_pass_at": null,
+        "observed_at": null,
+        "problem": "no_task_native_role_records",
+        "second_pass_at": null,
+        "state": "not_applicable"
+      },
+      "runtime_snapshot": {
+        "agent_count": 1,
+        "health": "fresh",
+        "max_age_seconds": 60,
+        "observed_at": 1800000001,
+        "problem": null,
+        "producer": "target_runtime.runtime_snapshot",
+        "task_count": 1
+      },
+      "sources": [
+        {
+          "health": "fresh",
+          "kind": "mission_core",
+          "max_age_seconds": 60,
+          "observed_at": 1800000001,
+          "problem": null,
+          "producer": "local_request",
+          "record_count": 1,
+          "source_id": "mc1",
+          "store_dir": "/__synthetic__/di-fixture-root/stores/mc1"
+        }
+      ],
+      "unmatched_runtime_agent_count": 0,
+      "valid_until": 1800000061
+    },
+    "retry_after_seconds": null,
+    "runtime_capture": {
+      "available": true,
+      "configured": true,
+      "detail": null,
+      "discovery": {
+        "bindings": {
+          "mc1:mn-589a2181de974f8b0fee47cb43e475f7": {
+            "declared": "local_request",
+            "identity_source": "start_result",
+            "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+            "model": "mission_core.mission_state/1",
+            "source_id": "mc1",
+            "task_id": "20261014-000000-aaaaaa",
+            "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-589a2181de974f8b0fee47cb43e475f7"
+          }
+        },
+        "conflicts": [],
+        "listing_anchor": null,
+        "missions_by_root": {
+          "/__synthetic__/di-fixture-root/ws-mn-589a2181de974f8b0fee47cb43e475f7": "mc1:mn-589a2181de974f8b0fee47cb43e475f7"
+        },
+        "roots": [
+          "/__synthetic__/di-fixture-root/ws-mn-589a2181de974f8b0fee47cb43e475f7"
+        ]
+      },
+      "observed_at": 1800000001,
+      "problem": null,
+      "refresh_budget": {
+        "per_pass_max_query_input_bytes": 67108864,
+        "per_pass_max_query_missions": 2048,
+        "per_pass_max_registry_bytes": 262144,
+        "shared_input": {
+          "charged_bytes": 154076,
+          "exhausted": false,
+          "max_bytes": 268435456,
+          "reads_refused": 0
+        },
+        "source_passes": 4,
+        "sum_max_query_input_bytes": 268435456,
+        "sum_max_query_missions": 8192,
+        "sum_max_registry_bytes": 1048576
+      },
+      "registered_roots": [],
+      "roots": {
+        "captured": [
+          "/__synthetic__/di-fixture-root/ws-mn-589a2181de974f8b0fee47cb43e475f7"
+        ],
+        "children": {
+          "captured": [],
+          "over_capacity": [],
+          "recorded": [],
+          "unavailable": []
+        },
+        "discovered": [
+          "/__synthetic__/di-fixture-root/ws-mn-589a2181de974f8b0fee47cb43e475f7"
+        ],
+        "over_capacity": [],
+        "registered": [],
+        "unavailable": []
+      }
+    },
+    "served": "refreshed"
+  },
+  "content_answers": {
+    "admitted_html": {
+      "accounting": {
+        "charged_bytes": 77826,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": {
+        "admission_basis": [
+          "contract_required_artifact"
+        ],
+        "content_digest_sha256": "1c15070b44961559ccd6f9e7516fb4e212f6f508bc49053a8eeafe7516f66f20",
+        "execution_basis": "active_binding",
+        "key": "report_page",
+        "locator": "reports/page.html",
+        "locator_kind": "REPOSITORY_PATH",
+        "recorded_at": 1800000000,
+        "role": "PRODUCED"
+      },
+      "artifact_id": "mf-9e1cd1b0c1c791a2d6ea5adea005837e",
+      "content": {
+        "byte_count": 162,
+        "digest_sha256": "1c15070b44961559ccd6f9e7516fb4e212f6f508bc49053a8eeafe7516f66f20",
+        "media": "text/html",
+        "text": "<html><body><h1>Report</h1><script>alert('x')</script><img src=\"https://example.invalid/p.png\" onerror=\"steal()\"><a href=\"javascript:run()\">run</a></body></html>\n"
+      },
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": null,
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": null,
+      "schema": "di.evidence.artifact_content",
+      "state": "admitted",
+      "version": 1
+    },
+    "admitted_text": {
+      "accounting": {
+        "charged_bytes": 77712,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": {
+        "admission_basis": [
+          "contract_required_artifact"
+        ],
+        "content_digest_sha256": "83355af2f9ffc8d8d304d25ccf236882815329b96cfe4658002e1ab5e573b80c",
+        "execution_basis": "active_binding",
+        "key": "result_report",
+        "locator": "reports/result.txt",
+        "locator_kind": "REPOSITORY_PATH",
+        "recorded_at": 1800000000,
+        "role": "PRODUCED"
+      },
+      "artifact_id": "mf-2df0d1ee0ddeec7ec3851e6c0d408866",
+      "content": {
+        "byte_count": 48,
+        "digest_sha256": "83355af2f9ffc8d8d304d25ccf236882815329b96cfe4658002e1ab5e573b80c",
+        "media": "text/plain",
+        "text": "Result: 12 passed, 0 failed\nsee reports/summary\n"
+      },
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": null,
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": null,
+      "schema": "di.evidence.artifact_content",
+      "state": "admitted",
+      "version": 1
+    },
+    "admitted_verification_log": {
+      "accounting": {
+        "charged_bytes": 77713,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": {
+        "admission_basis": [
+          "accepted_evidence_artifact"
+        ],
+        "content_digest_sha256": "dc1ab2f0edc9c8138cb10b413f3ca1745b9924a74de6da3eea729002c052d45e",
+        "execution_basis": "active_binding",
+        "key": "test_log",
+        "locator": "test-results/junit.xml",
+        "locator_kind": "REPOSITORY_PATH",
+        "recorded_at": 1800000000,
+        "role": "VERIFICATION"
+      },
+      "artifact_id": "mf-ffaa460a9b88419eb3fb4f7c37f5f4eb",
+      "content": {
+        "byte_count": 49,
+        "digest_sha256": "dc1ab2f0edc9c8138cb10b413f3ca1745b9924a74de6da3eea729002c052d45e",
+        "media": "text/plain",
+        "text": "<testsuite name=\"unit\" tests=\"42\" failures=\"0\"/>\n"
+      },
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": null,
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": null,
+      "schema": "di.evidence.artifact_content",
+      "state": "admitted",
+      "version": 1
+    },
+    "refused_class_not_declared": {
+      "accounting": {
+        "charged_bytes": 38832,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": null,
+      "artifact_id": "mf-f737c3ff77c1f764e1278b0dfbd1ca99",
+      "content": null,
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": "the record does not declare this artifact a supported evidence class: it is neither a required artifact the approved contract pins nor named by an accepted verifying evidence record",
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": "artifact_class_not_declared",
+      "schema": "di.evidence.artifact_content",
+      "state": "refused",
+      "version": 1
+    },
+    "refused_cursor_moved": {
+      "accounting": {
+        "charged_bytes": 41108,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": null,
+      "artifact_id": "mf-2df0d1ee0ddeec7ec3851e6c0d408866",
+      "content": null,
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": "the Mission's journal moved since it was listed; refresh and select it again",
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": "mission_moved_since_listing",
+      "schema": "di.evidence.artifact_content",
+      "state": "refused",
+      "version": 1
+    },
+    "refused_digest_mismatch": {
+      "accounting": {
+        "charged_bytes": 38903,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": null,
+      "artifact_id": "mf-f4a8cb33c3aef29ab75aa104198a40a3",
+      "content": null,
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": "the file's sha256 is not the recorded digest; it is not the recorded artifact",
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": "content_changed_since_recorded",
+      "schema": "di.evidence.artifact_content",
+      "state": "refused",
+      "version": 1
+    },
+    "refused_locator_kind": {
+      "accounting": {
+        "charged_bytes": 38832,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": null,
+      "artifact_id": "mf-ed251aab38ca0a632e20059733e2edfa",
+      "content": null,
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": "a OPAQUE_REFERENCE locator names no file in the workspace; it has no content here",
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": "locator_kind_has_no_content",
+      "schema": "di.evidence.artifact_content",
+      "state": "refused",
+      "version": 1
+    },
+    "refused_locator_unsafe": {
+      "accounting": {
+        "charged_bytes": 38832,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": null,
+      "artifact_id": "mf-c842e959e53c37d5c41d7ae36f307d60",
+      "content": null,
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": "the recorded locator is not a contained relative path; it is never opened",
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": "locator_not_a_contained_relative_path",
+      "schema": "di.evidence.artifact_content",
+      "state": "refused",
+      "version": 1
+    },
+    "refused_not_regular": {
+      "accounting": {
+        "charged_bytes": 104369,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": null,
+      "artifact_id": "mf-4ddfb22d71ffc0b2d243d0dd923ad00b",
+      "content": null,
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": "the hardened reader refused the file (refused_not_a_regular_file)",
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": "file_not_regular",
+      "schema": "di.evidence.artifact_content",
+      "state": "refused",
+      "version": 1
+    },
+    "refused_private_location": {
+      "accounting": {
+        "charged_bytes": 38832,
+        "exhausted": false,
+        "max_bytes": 33882116,
+        "reads_refused": 0
+      },
+      "artifact": null,
+      "artifact_id": "mf-79f45e8a83666b0fd805daf4e913bcc7",
+      "content": null,
+      "cursor": "cbf3a21871efaf0c1e8a269dcd8b6c23620972eb0d55dc6bfbee8811a539432d",
+      "detail": "the locator passes through '.herd', a hidden location (Herdr's private state, reviews and evidence); its content is never shown",
+      "mission_ref": "mc1:mn-589a2181de974f8b0fee47cb43e475f7",
+      "observed_at": 1800000001,
+      "problem": "locator_in_private_location",
+      "schema": "di.evidence.artifact_content",
+      "state": "refused",
+      "version": 1
+    }
+  },
+  "fixture": "artifact-content-v1",
+  "normalization": {
+    "journal_digests_recomputed": 1,
+    "occurrences": 9,
+    "synthetic_root": "/__synthetic__/di-fixture-root",
+    "temporary_roots": 1,
+    "transformation": "machine-specific temporary root (/var/folders/<a>/<b>/T/<dir>, as its /private realpath) replaced by /__synthetic__/di-fixture-root; Mission Core journal digests recomputed by the product over the same records with the root mapped; no other byte of the emission changed. Byte counts (accounting.charged_bytes) are as emitted over the real paths. Fresh exports are not byte-reproducible (random Mission Core ids)."
+  }
+}

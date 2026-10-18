@@ -408,12 +408,16 @@ herdr agent list ───┘     dicatalog_http.py                             
   expected path `.herd/state/reviews/<task_id>-round-<NN>.md`. It reads at most 4096 bytes
   and 16 lines, one byte at a time, and stops before the `## Transcript` line, so no
   transcript byte is read. Exactly four fields project: `round`, `reviewer_logical`,
-  `reviewer_agent`, `protocol_token`.
+  `reviewer_agent`, `protocol_token`. The one other review read is the round's
+  reviewer-declared findings record, a sibling file written by the local review gate; see
+  [Reviewer-declared findings](#reviewer-declared-findings). It is not the transcript either.
 - **What it writes.** Registration writes only its registry. The adapter writes only its own
   discovery file. Neither ever writes a store.
-- **Routes.** `GET /catalog`, `GET /diagnostics` and `GET /healthz`, and nothing else. They
-  are loopback-only (`127.0.0.1`), behind one bearer token compared in constant time, with
-  exact `Host` and `Origin` checks. There is no CORS header, no cookie and no 5xx.
+- **Routes.** `GET /catalog`, `GET /diagnostics`, `GET /healthz` and `GET /artifact`, and
+  nothing else. `GET /artifact` returns one recorded artifact's text for the evidence library.
+  It takes an admitted reference (Mission, artifact id, listing cursor), never a path. All
+  routes are loopback-only (`127.0.0.1`), behind one bearer token compared in constant time,
+  with exact `Host` and `Origin` checks. There is no CORS header, no cookie and no 5xx.
 - **No route to action.** It imports, proxies and invokes none of the consequential entry
   points (`direquest.py`, `dirun.py`, `grokbot.py`, `codexgw.py`, Git delivery).
 
@@ -437,6 +441,258 @@ herdr agent list ───┘     dicatalog_http.py                             
   Liveness is decided per response.
 - **Activity is not completion.** A role's activity, such as "done", is terminal activity,
   not task, Mission, verification or delivery completion.
+
+### Reviewer-declared findings
+
+A Reviewer's verdict is the round's protocol token, `HERD_DECISION: APPROVE` or
+`HERD_DECISION: REJECT`. The Reviewer may also DECLARE public findings in its own output. The
+local review gate validates that declaration against the routing context it recorded, and
+stores it beside the round. The evidence library shows it.
+
+**Three different things.** Never treat one as another.
+
+- **The canonical gate.** The supported `herdctl review-decision`. It records the round and the
+  verdict. The verdict always comes from the protocol token.
+- **The isolated candidate proof.** This checkout's writer, run by
+  `tests/review_findings_proof.py` against a saved route and capture, inside an empty scratch
+  directory. It is a local test. It writes nothing anywhere else.
+- **Installed-producer compatibility.** Whether the `herdctl` your Pod runs carries this
+  writer. Until it does, the canonical gate records the verdict only, and the library shows that
+  round's findings as **not recorded** (`findings_legacy_record_predates_field`).
+
+**The process.** Route, then declare, then capture, then validate and persist.
+
+1. **Route, before the request.** On an ACTIVE task, run the route command (below) with the
+   SHA-256 of the candidate under review. It records the routing context in the task: a
+   single-use 16-hex nonce, the task, the NEXT round, the reviewer's logical name and agent, and
+   the candidate. It prints that context and sends nothing.
+
+   <!-- findings-route-command:begin -->
+   ```text
+   herdctl review-findings-route --repo <repo> --reviewer reviewer1 --candidate-sha256 <64-hex>
+   ```
+   <!-- findings-route-command:end -->
+
+2. **Declare.** Give the Reviewer the nonce, task id, round and its logical name, and describe
+   the format below in words. Never paste marker lines or a filled envelope into the request.
+   A BEGIN or END line echoed from the prompt is captured too. It is stray envelope text, and it
+   makes the round refuse. That has been observed: an orphaned END line from a pasted template
+   refused a real declaration. Writing output is the Reviewer's only act. It stays
+   read-only/never.
+
+   The compact form (version 2) has whole lines of at most 88 characters. The candidate is NOT
+   on the wire: the stored route pins it, and the echoed nonce binds the declaration to that
+   route. A finding is one or more numbered parts, `[F<finding> <part>/<parts>]`, joined by
+   exactly one space into `severity | path[:line] or - | summary`:
+
+   <!-- findings-example:begin -->
+   ```text
+   HERD_FINDINGS_BEGIN v2
+   nonce 5f0c2a9e41b7d3c8
+   task 20261017-133442-1bfec8
+   round 16
+   reviewer reviewer1
+   count 2
+   [F1 1/2] blocker | target_runtime/review_findings.py:235 |
+   [F1 2/2] a fenced example envelope is promoted as a real declaration
+   [F2 1/1] non_blocking | - | the request must not echo envelope marker lines
+   HERD_FINDINGS_END v2 nonce=5f0c2a9e41b7d3c8 count=2 parts=3
+   ```
+   <!-- findings-example:end -->
+
+   - **Severity** is `blocker` or `non_blocking`.
+   - **Limits:** at most 32 findings and 8 parts per finding. A summary is at most 280
+     characters, a path at most 200, and every line of the compact form at most 88. A path
+     must sit whole within one part.
+   - **Empty:** `count 0` with no part lines declares NO findings.
+   - **Long form:** the version 1 form (one `[F<n>] … [/F<n>]` line per finding, with a
+     `candidate` line) is also accepted. One route takes one declaration.
+
+3. **Capture at full native idle, through supported controls only.**
+   1. Read the Reviewer only once its status is idle or done.
+   2. Record the original view first, with `herdr pane layout --pane <pane>` and
+      `herdr pane get`.
+   3. Zoom the Reviewer's pane with `herdr pane zoom <pane> --on`, then read with
+      `herdr agent read <agent> --source recent-unwrapped --lines 500`.
+   4. Unzoom with `herdr pane zoom <pane> --off`. **`zoom --off` alone does NOT restore focus**:
+      zooming moved focus to the Reviewer's pane, and unzooming left it there. Restore focus
+      with herdr's supported directional focus moves, one step at a time. Then confirm with
+      `herdr pane layout --pane <pane>` that `zoomed` is false, `focused_pane_id` is the
+      original, and every pane's rectangle equals the recorded original.
+   5. Do this restoration and check after a failed attempt too.
+
+   **Observed capture shape.** On this Pod's Reviewer pane, at full native idle, zoomed:
+   - 44 lines;
+   - at most 95 Unicode characters per line;
+   - a finding line wrapping at about 93 characters, counting the TUI's 2-character
+     continuation indent.
+
+   Unzoomed, the same pane is 24 columns wide and keeps 21 lines. These are observations under
+   those conditions, NOT a universal capacity. Measure in characters, not bytes. `wc -l` counts
+   newlines, so it is one short when there is no trailing newline. `awk length` counts bytes,
+   and the TUI's decoration (`·`, `—`, `•`, `…`, `›`) is 2 or 3 bytes per character. Those two
+   mistakes once read 43 lines at 100 for this capture.
+
+4. **Validate and persist.**
+   - **Canonical gate:** `herdctl review-decision --repo <repo> --reviewer reviewer1`, once the
+     installed producer carries this writer.
+   - **Isolated candidate proof:**
+
+     <!-- findings-proof-command:begin -->
+     ```text
+     python3 tests/review_findings_proof.py --route route.json --capture capture.txt --out <empty dir>
+     ```
+     <!-- findings-proof-command:end -->
+
+   The writer consumes the route, then reads ONLY an envelope that echoes its nonce. It ignores:
+   - anything inside a fenced code block, which is an example, never a declaration;
+   - quoted lines;
+   - prose;
+   - envelopes echoing another nonce.
+
+   It then checks the declaration's task, round and reviewer against the stored route. When
+   valid, it writes `<task>-round-<NN>.findings.json` beside the round file, plus the task's
+   `last_review_findings` reference (state, file, SHA-256, count). The reader opens that one
+   file by its expected name, checks the digest, re-validates it with a closed schema, and binds
+   it to the round's reviewer and preamble.
+
+**What a round's findings say.**
+
+| State | Meaning |
+|---|---|
+| **not recorded**, legacy | The round predates the field, or the producer has no writer. Nothing is reconstructed. |
+| **not recorded** | The round was not routed, no envelope echoed the route, or the only one was inside a code example. |
+| **refused** | A declaration or its record did not hold: wrapped, truncated, incomplete, duplicated, reordered, miscounted, over a bound, wrong task, round or reviewer, or a damaged reference or record. The code says which. Nothing is ever partly kept. |
+| **empty** | A complete, valid declaration of `count 0`: the Reviewer declared NO findings. It never means that capture lost them. A capture that lost a declaration reads as refused or not recorded, never as empty. |
+| **present** | A complete, valid declaration, persisted and re-validated, shown exactly as declared. |
+
+**Provenance ceiling.** Findings are model-authored text that the routed Reviewer's own output
+declared. They are bound to the task, round, reviewer and candidate by the single-use nonce the
+gate issued BEFORE the Reviewer saw the request. That is not a cryptographic proof of reviewer
+identity. Findings are metadata, NOT approval authority. They never change the verdict, which
+governs.
+
+**Never done.**
+- Guessed rejoining of wrapped or truncated lines.
+- Mining transcripts or historical logs.
+- Permission, model, pane-configuration or installed-producer changes.
+- A blanket production cutover.
+- A route to action from the world.
+- A new approval loop.
+
+### Completed Missions: historical reads
+
+A COMPLETED Mission has no live team, so the roster lists it as `not_applicable /
+mission_not_active`, and no team is ever invented for it. Its recorded artifacts can still be
+read, under the execution its canonical record proves. This is a separate, explicitly
+**historical** basis. It never replaces the active-binding rule for a running Mission.
+
+**When a completed Mission's recorded execution counts as established.** The bridge establishes
+an execution identity ONLY for a Mission Core record that is `COMPLETED` and has all of these:
+- a verified run;
+- a recorded intent;
+- a receipt naming the task;
+- a PREPARED workspace binding whose digest re-derives and agrees exactly with the intent.
+
+Anything missing gets its own code. An older record with no prepared binding is
+`execution_prepared_binding_absent`: it is never upgraded, and nothing is backfilled.
+
+**What the identity covers.** The source registration, the revision, the state, the whole run and
+the whole lifecycle chain. The listing names a historical cursor that binds the journal head AND
+that identity. So a run, lifecycle or registration change refuses the read even when the evidence
+journal did not move, and a read is never answered under a newer identity.
+
+**Checked twice: the registry AND the record.** Before admission and again after the file read,
+before anything is released, the bridge re-reads the CURRENT source registry. It also re-reads the
+record through Mission Core's own load validation. Each time it requires:
+- the Mission's source and every observing source registered exactly as the listing named them;
+- no source universe other than the listed one;
+- the identity unchanged.
+
+A source added, removed or changed since the listing is one that uniqueness was never shown over,
+so the read is `historical_uniqueness_unverifiable` until a refresh lists it. A removal, repoint or
+observer change during the read discards the content. The owner does not have to refresh for any of
+this to be seen.
+
+A bound Mission's read also re-reads the registry before release: its own source must still be
+registered exactly as it was when the read was admitted.
+
+**Within the same budget.** The second registry read fits inside the unchanged per-request cap.
+Before the file is read, the remaining budget must cover the file and both re-reads at their bounds,
+or the request is refused there (`request_read_budget_exhausted`), before any content byte. That
+holds whenever the first registry and store reads together are at most one store bound plus one
+byte.
+
+**The panel keeps two things apart.** It shows the recorded execution ("Read under: HISTORICAL
+recorded execution … No live team") separately from the listing's freshness. A disconnect, an
+expiry or a moved identity hides read content, exactly as for an active Mission.
+
+**One execution, two source kinds.** A registered `task_native` source may observe the completed
+Mission's own herd root. Its row is NOT a competing claim only when all of these hold:
+- its model is `herdr.task/1`;
+- its recorded schema is `di.catalog.herdr_task` version 1;
+- its identity source is `herdr.task_json`;
+- its task AND exact workspace both agree with the canonical row;
+- `task.json` names that root;
+- its status is `COMPLETE` or `COMPLETED`.
+
+It supplies no read authority, and it can never repair a missing canonical fact.
+
+These still refuse, as `historical_identity_conflict`:
+- the same task in another workspace;
+- the same workspace with another task;
+- an inconsistent or ambiguous observation;
+- other provenance;
+- a contradictory status;
+- any second Mission Core or Workflow claim, even with an identical task and path.
+
+A partial or unavailable source refuses as `historical_uniqueness_unverifiable`.
+
+**The legacy capability limit (stated exactly).** Root's read-only locator inventory of the four
+existing completed Missions found every recorded artifact beneath `.herd/evidence` or
+`.herd/state`:
+
+| Mission | Recorded artifacts |
+|---|---|
+| `living_world` | 9 |
+| `massive_world` | 8 |
+| `pixel_live_office` | 9 |
+| `vast_forest` | 6 |
+
+What this means for those Missions:
+- They are browsable for references and metadata.
+- Zero production-artifact-body admission is demonstrated or promised for them. Every recorded
+  locator is private, so no body of theirs can be admitted.
+- A body that reaches the disclosure check is refused as `locator_in_private_location` before
+  any byte is read. That check is pure: it looks only at the locator, never at the filesystem.
+- A body that fails an EARLIER check keeps that check's own code. It is never folded into the
+  private-location refusal. The checks run in this order:
+  1. the listing's freshness, then the Mission's identity, cursor and uniqueness;
+  2. the source registration;
+  3. the store and its journal;
+  4. the artifact and its locator;
+  5. the declared class;
+  6. disclosure.
+
+  For example, an artifact that no contract pin or accepted verifying evidence declares is
+  `artifact_class_not_declared`. A record that does not establish the execution identity is
+  `historical_identity_not_established`.
+- Root reports that the canonical identity facts of these Missions exist. The private-location
+  refusal is the disclosure policy working, not missing history.
+- A recorded link is necessary, but it is never disclosure authority. Completion is not a
+  disclosure grant.
+
+**How a completed Mission's artifact becomes readable.** It must already be a declared, public,
+text-format `REPOSITORY_PATH` artifact with its digest. It must be recorded BEFORE completion,
+because Mission Core refuses result writes on a terminal Mission. It must be declared by the
+approved contract or by accepted verifying evidence. Nothing relocates legacy artifacts, and no
+digest is ever reused for a new locator.
+
+**Proof labelling.** The isolated tests build a completed Mission through Mission Core's normal
+APIs. Their seeded lifecycle facts, isolated principals and supplied inputs are TEST DATA: no real
+dispatch, no real execution success, no independent production verification and no human
+authorization. They are never production artifact admission. The browser proof on real Missions
+is Root's.
 
 **Why the subtree is `integrations/pixel-agents/`.**
 

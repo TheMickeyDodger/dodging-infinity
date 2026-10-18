@@ -52,6 +52,8 @@ import type {
   WorkflowPhaseView,
 } from './catalogProjection.js';
 import { projectResponse } from './catalogProjection.js';
+import type { EvidenceLibraryPresentation } from './evidenceLibrary.js';
+import { presentEvidenceLibrary } from './evidenceLibrary.js';
 import type { Coverage } from './identityMap.js';
 import type { ServeTimeVerdict } from './serveTimeVerdict.js';
 import { verdictIsFresh } from './serveTimeVerdict.js';
@@ -333,6 +335,8 @@ export interface MissionPresentation {
   members: Observation<MemberPresentation[]>;
   /** contract v2 blocks; null for a v1 office. */
   v2: MissionV2Presentation | null;
+  /** item 2: the Mission's evidence library (four distinct types); null for a v1 office. */
+  evidence: EvidenceLibraryPresentation | null;
 }
 
 /**
@@ -1201,6 +1205,16 @@ function presentMission(
     presence,
     members: membersObservation(mission, members, snapshotUnavailable),
     v2: presentMissionV2(mission),
+    evidence: presentEvidenceLibrary({
+      sourceKind: kind,
+      bindingState: raw(mission.binding.state),
+      bindingReason: raw(mission.binding.reason),
+      lifecycleState: mission.lifecycle.state,
+      taskId: mission.execution.taskId,
+      officeLive: responseLive,
+      officeReason: responseReason,
+      v2: mission.v2,
+    }),
   };
 }
 

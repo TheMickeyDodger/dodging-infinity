@@ -116,9 +116,10 @@ describe('DI handler: inert types do nothing at all', () => {
       .split('|')
       .map((v) => v.trim())
       .filter(Boolean);
-    expect(variants).toHaveLength(23); // + saveAmbientState (M3 S4, DI only)
+    // + saveAmbientState (M3 S4, DI only) + diEvidenceRead (item 2, DI only, a READ)
+    expect(variants).toHaveLength(24);
     const declared = new Set<string>([...DI_HANDLED_MESSAGE_TYPES, ...DI_INERT_MESSAGE_TYPES]);
-    expect(declared.size).toBe(23);
+    expect(declared.size).toBe(24);
     for (const type of Object.keys(INERT_PAYLOADS)) expect(DI_INERT_MESSAGE_TYPES).toContain(type);
   });
 

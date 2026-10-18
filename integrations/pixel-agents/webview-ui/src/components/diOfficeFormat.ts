@@ -11,6 +11,7 @@ import { DI_RUNTIME_ZONE_REF } from '../../../core/src/constants.js';
 import type {
   DiCanonicalReview,
   DiCoverage,
+  DiEvidenceLibrary,
   DiMember,
   DiMission,
   DiObservedValue,
@@ -220,10 +221,26 @@ export function clientInvalidationReason(input: {
 }
 
 /**
+ * A Mission's evidence library once the client cannot vouch for it (round 15 F2): the listing
+ * is STALE with the client's reason and content reads are CLOSED, so read content is hidden
+ * (the panel shows content only against a current listing) and no new read can leave. The
+ * listing itself stays exactly as last received.
+ */
+export function invalidateEvidence(evidence: DiEvidenceLibrary, reason: string): DiEvidenceLibrary {
+  return {
+    ...evidence,
+    currency: 'stale',
+    currencyReason: reason,
+    contentReads: { state: 'unavailable', reason },
+  };
+}
+
+/**
  * The last office state as the client may honestly show it once it can no longer vouch
  * for it: nothing is live, nothing animates, and every freshness verdict carries the
- * client's reason. Nothing else changes — characters, identities, classifications and
- * every backend value stay exactly as last received. The agents are UNKNOWN, not gone.
+ * client's reason — the evidence library's currency and content reads included. Nothing
+ * else changes — characters, identities, classifications and every backend value stay
+ * exactly as last received. The agents are UNKNOWN, not gone.
  */
 export function withClientInvalidation(state: DiOfficeState, reason: string): DiOfficeState {
   return {
@@ -238,6 +255,7 @@ export function withClientInvalidation(state: DiOfficeState, reason: string): Di
         ...mission,
         live: false,
         notLiveReason: reason,
+        ...(mission.evidence ? { evidence: invalidateEvidence(mission.evidence, reason) } : {}),
         members: {
           ...mission.members,
           members: mission.members.members.map((member) => ({
@@ -272,7 +290,10 @@ export function withClientInvalidation(state: DiOfficeState, reason: string): Di
  * state feeds labels, animation AND the working halo (useExtensionMessages assigns it to
  * OfficeState.diOffice, the halo's only input), so the surfaces cannot disagree.
  */
-export function presentDiOffice(server: DiOfficeState | null, clientReason: string | null): DiOfficeState | null {
+export function presentDiOffice(
+  server: DiOfficeState | null,
+  clientReason: string | null,
+): DiOfficeState | null {
   return server && clientReason ? withClientInvalidation(server, clientReason) : server;
 }
 
