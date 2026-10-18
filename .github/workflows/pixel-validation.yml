@@ -1,0 +1,73 @@
+name: Pixel validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pixel-validation:
+    name: Pixel validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: integrations/pixel-agents
+    env:
+      HUSKY: "0"
+      SCARF_ANALYTICS: "false"
+      DO_NOT_TRACK: "1"
+      CI: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "26.5.0"
+          cache: npm
+          cache-dependency-path: integrations/pixel-agents/package-lock.json
+
+      - name: Install locked dependencies and preserve Git hooks
+        shell: bash
+        run: |
+          git config --get core.hooksPath > "$RUNNER_TEMP/pixel-hooks-before" || test "$?" -eq 1
+          npm ci --foreground-scripts --no-audit --no-fund --no-update-notifier
+          git config --get core.hooksPath > "$RUNNER_TEMP/pixel-hooks-after" || test "$?" -eq 1
+          diff -u "$RUNNER_TEMP/pixel-hooks-before" "$RUNNER_TEMP/pixel-hooks-after"
+          git diff --exit-code -- package-lock.json
+
+      - name: Generate and validate AsyncAPI messages
+        run: |
+          npm run asyncapi:generate
+          npm run asyncapi:validate
+
+      - name: Check types
+        run: npm run check-types
+
+      - name: Lint server and UI
+        run: npm run lint
+
+      - name: Build production bundles
+        run: |
+          npm run build:extension
+          npm run build:webview
+
+      - name: Run server tests
+        run: npm run test:server
+
+      - name: Run UI tests
+        run: npm run test:webview
+
+      - name: Check package contracts and asset budgets
+        run: npm run test:package-contract
+
+      - name: Assemble the standalone DI package
+        run: node scripts/build-di-package.mjs --out "$RUNNER_TEMP/pixel-agents-di-package"
