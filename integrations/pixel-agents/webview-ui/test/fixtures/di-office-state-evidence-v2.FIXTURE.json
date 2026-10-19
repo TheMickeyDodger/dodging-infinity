@@ -161,7 +161,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261014-000000-aaaaaa"
+                  "chainTaskId": "20261014-000000-aaaaaa",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261014-000000-aaaaaa",
+                    "listing": "f65950276a9e59219be59939764f730601ae17e16925ae2850d72a5502f9051e"
+                  }
                 }
               ]
             },
@@ -1341,7 +1347,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261014-000000-aaaaaa"
+                  "chainTaskId": "20261014-000000-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "member_not_live",
+                    "taskId": "20261014-000000-aaaaaa",
+                    "listing": null
+                  }
                 }
               ]
             },
@@ -2530,7 +2542,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261014-000000-aaaaaa"
+                  "chainTaskId": "20261014-000000-aaaaaa",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261014-000000-aaaaaa",
+                    "listing": "f65950276a9e59219be59939764f730601ae17e16925ae2850d72a5502f9051e"
+                  }
                 }
               ]
             },
@@ -3772,7 +3790,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261014-000000-aaaaaa"
+                  "chainTaskId": "20261014-000000-aaaaaa",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261014-000000-aaaaaa",
+                    "listing": "f65950276a9e59219be59939764f730601ae17e16925ae2850d72a5502f9051e"
+                  }
                 }
               ]
             },

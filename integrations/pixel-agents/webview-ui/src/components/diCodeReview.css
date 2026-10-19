@@ -1,0 +1,1018 @@
+/*
+ * Item 3 — the live code review modal.
+ *
+ * A reading surface first: a large dialog (full screen on request) with a file tree and a diff, in
+ * a plain reading typeface, high contrast, a focus ring that cannot be missed, and no horizontal
+ * overflow of the page — every scroll is INSIDE the dialog. The product's pixel look is kept where
+ * it costs no readability: hard 2px borders, square corners, a hard offset shadow.
+ *
+ * Colours are SOLID tokens on .di-rv (no alpha), so test/diCodeReviewContrast.test.ts can compute
+ * the contrast of every text/background pairing from this very file. Change a token and that test
+ * checks it.
+ */
+
+.di-rv-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(6px, 1.6vw, 22px);
+  background: #05050ab8;
+  overscroll-behavior: contain;
+}
+
+.di-rv {
+  /* surfaces */
+  --rv-bg: #12121c;
+  --rv-surface: #1a1a29;
+  --rv-surface-2: #23233a;
+  --rv-border: #7373a6;
+  --rv-border-soft: #34344f;
+  /* text */
+  --rv-text: #eef0f8;
+  --rv-muted: #b6b9d0;
+  --rv-link: #a9b4ff;
+  /* focus: unmistakable on every surface above */
+  --rv-focus: #ffd84d;
+  /* diff */
+  --rv-add-bg: #123524;
+  --rv-add-gutter: #19482f;
+  --rv-add-mark: #8ff0b0;
+  --rv-del-bg: #3e1b25;
+  --rv-del-gutter: #572433;
+  --rv-del-mark: #ffb0bd;
+  --rv-ctx-bg: #12121c;
+  --rv-ctx-gutter: #1a1a29;
+  --rv-hunk-bg: #262650;
+  --rv-hunk-text: #d6d8ff;
+  --rv-empty-bg: #181826;
+  /* status */
+  --rv-st-added: #8ff0b0;
+  --rv-st-removed: #ffb0bd;
+  --rv-st-changed: #ffe08a;
+  --rv-st-renamed: #9ccfff;
+  --rv-st-new: #cdb8ff;
+  --rv-st-conflict: #ff9494;
+  /* notices */
+  --rv-info-bg: #1d2a44;
+  --rv-warn-bg: #3d3216;
+  --rv-block-bg: #3e1b25;
+  --rv-ok-bg: #123524;
+  /* syntax (each readable on --rv-ctx-bg, --rv-add-bg and --rv-del-bg) */
+  --rv-tok-keyword: #ff9bd1;
+  --rv-tok-string: #ffe08a;
+  --rv-tok-comment: #aab0d4;
+  --rv-tok-number: #8fe6ff;
+  --rv-tok-type: #9ff0c0;
+  --rv-tok-function: #b9c8ff;
+  --rv-tok-punct: #d3d6ea;
+  --rv-tok-property: #9ccfff;
+  --rv-tok-tag: #ffa7a7;
+  --rv-tok-attr: #ffd0a0;
+  --rv-ctl-bg: #ffd84d;
+  --rv-ctl-text: #12121c;
+  /* the scrollbars of the reading panes are always drawn (never an overlay that hides until used):
+     a long line is navigated with them, so they are a control and need contrast against the track */
+  --rv-scroll-thumb: #9a9ad0;
+  --rv-scroll-track: #23233a;
+
+  --rv-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --rv-font-code: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono',
+    monospace;
+  --rv-code-size: 14px;
+  --rv-row: 22px;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 1560px);
+  height: min(100%, 960px);
+  min-width: 0;
+  min-height: 0;
+  color: var(--rv-text);
+  background: var(--rv-bg);
+  border: 2px solid var(--rv-border);
+  box-shadow: 4px 4px 0 #05050a;
+  font-family: var(--rv-font-ui);
+  font-size: 15px;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+.di-rv[data-fullscreen='true'] {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
+.di-rv *,
+.di-rv *::before,
+.di-rv *::after {
+  box-sizing: border-box;
+  /* The app's base layer sets its pixel font on EVERY element (`* { font-pixel }`), which would
+     reach each child directly and beat the family set on the dialog. A reading surface uses the
+     reading faces: children inherit from .di-rv, and code is monospace (below). */
+  font-family: inherit;
+}
+.di-rv-code-scroll,
+.di-rv-code-scroll *,
+.di-rv-path,
+.di-rv code,
+.di-rv kbd,
+.di-rv-stat,
+.di-rv-glyph,
+.di-rv-hunk-button {
+  font-family: var(--rv-font-code);
+}
+.di-rv-clip,
+.di-rv-ctl {
+  font-family: var(--rv-font-ui);
+}
+.di-rv-backdrop[data-fullscreen='true'] {
+  padding: 0;
+}
+
+/* ---------- focus: the same strong ring on every control ---------- */
+
+.di-rv :focus {
+  outline: none;
+}
+.di-rv :focus-visible {
+  outline: 3px solid var(--rv-focus);
+  outline-offset: 1px;
+}
+.di-rv-code-scroll:focus-visible {
+  outline-offset: -3px;
+}
+
+/* ---------- buttons and fields ---------- */
+
+.di-rv button {
+  font: inherit;
+  color: var(--rv-text);
+  background: var(--rv-surface-2);
+  border: 2px solid var(--rv-border);
+  padding: 4px 10px;
+  min-height: 32px;
+  cursor: pointer;
+  border-radius: 0;
+}
+.di-rv button:hover:not(:disabled) {
+  background: #30304f;
+  border-color: var(--rv-link);
+}
+.di-rv button:disabled {
+  color: var(--rv-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.di-rv button[aria-pressed='true'],
+.di-rv button[aria-expanded='true'].di-rv-toggle {
+  background: #34346a;
+  border-color: var(--rv-link);
+}
+.di-rv input[type='search'] {
+  font: inherit;
+  color: var(--rv-text);
+  background: var(--rv-bg);
+  border: 2px solid var(--rv-border);
+  padding: 5px 8px;
+  min-height: 34px;
+  width: 100%;
+  border-radius: 0;
+}
+.di-rv input[type='search']::placeholder {
+  color: var(--rv-muted);
+}
+
+.di-rv kbd {
+  font-family: var(--rv-font-code);
+  font-size: 12px;
+  padding: 0 5px;
+  color: var(--rv-text);
+  background: var(--rv-surface-2);
+  border: 1px solid var(--rv-border);
+  border-bottom-width: 2px;
+}
+
+/* ---------- top bar ---------- */
+
+.di-rv-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--rv-surface);
+  border-bottom: 2px solid var(--rv-border);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.di-rv-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.di-rv-title small {
+  display: block;
+  margin-top: 1px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--rv-muted);
+}
+.di-rv-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ---------- overview band ---------- */
+
+.di-rv-overview {
+  flex: 0 0 auto;
+  border-bottom: 2px solid var(--rv-border-soft);
+  background: var(--rv-surface);
+}
+.di-rv-overview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  flex-wrap: wrap;
+}
+.di-rv-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  flex: 1 1 320px;
+  min-width: 0;
+  margin: 0;
+}
+.di-rv-fact {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+.di-rv-fact dt {
+  color: var(--rv-muted);
+  font-size: 13px;
+}
+.di-rv-fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.di-rv-fact code {
+  font-family: var(--rv-font-code);
+  font-size: 13px;
+}
+.di-rv-overview-body {
+  padding: 4px 12px 10px;
+  max-height: 34vh;
+  overflow: auto;
+  color: var(--rv-text);
+}
+.di-rv-overview-body p {
+  margin: 4px 0;
+}
+.di-rv-attribution {
+  margin: 0 12px 8px;
+  padding: 4px 8px;
+  background: var(--rv-info-bg);
+  border-left: 4px solid var(--rv-st-renamed);
+}
+.di-rv-hints {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: var(--rv-text);
+  background: var(--rv-info-bg);
+  border-top: 2px solid var(--rv-border-soft);
+}
+
+/* ---------- body: tree + diff ---------- */
+
+.di-rv-body {
+  display: grid;
+  grid-template-columns: minmax(250px, 24%) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.di-rv-body[data-narrow='true'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.di-rv-tree-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--rv-surface);
+  border-right: 2px solid var(--rv-border-soft);
+}
+.di-rv-body[data-narrow='true'] .di-rv-tree-pane {
+  border-right: 0;
+}
+.di-rv-tree-tools {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 2px solid var(--rv-border-soft);
+}
+.di-rv-tree-count {
+  color: var(--rv-muted);
+  font-size: 13px;
+}
+.di-rv-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0 8px;
+  margin: 0;
+  list-style: none;
+}
+.di-rv-tree li {
+  list-style: none;
+}
+.di-rv-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 8px 2px calc(8px + var(--rv-depth, 0) * 14px);
+  text-align: left;
+  color: var(--rv-text);
+  background: transparent;
+  border: 0;
+  border-left: 4px solid transparent;
+  cursor: pointer;
+}
+.di-rv .di-rv-row {
+  background: transparent;
+  border: 0;
+  border-left: 4px solid transparent;
+  min-height: 30px;
+  padding: 2px 8px 2px calc(8px + var(--rv-depth, 0) * 14px);
+}
+.di-rv .di-rv-row:hover:not(:disabled) {
+  background: var(--rv-surface-2);
+  border-color: transparent;
+  border-left-color: var(--rv-border);
+}
+.di-rv .di-rv-row[aria-selected='true'] {
+  background: #2c2c55;
+  border-left-color: var(--rv-focus);
+}
+.di-rv-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.di-rv-folder-name {
+  font-weight: 600;
+}
+.di-rv-stat {
+  flex: 0 0 auto;
+  font-family: var(--rv-font-code);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.di-rv-stat .add {
+  color: var(--rv-add-mark);
+}
+.di-rv-stat .del {
+  color: var(--rv-del-mark);
+  margin-left: 5px;
+}
+.di-rv-glyph {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--rv-font-code);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--rv-bg);
+  background: var(--rv-text);
+}
+.di-rv-glyph[data-tone='added'] {
+  background: var(--rv-st-added);
+}
+.di-rv-glyph[data-tone='removed'] {
+  background: var(--rv-st-removed);
+}
+.di-rv-glyph[data-tone='changed'] {
+  background: var(--rv-st-changed);
+}
+.di-rv-glyph[data-tone='renamed'] {
+  background: var(--rv-st-renamed);
+}
+.di-rv-glyph[data-tone='new'] {
+  background: var(--rv-st-new);
+}
+.di-rv-glyph[data-tone='conflict'] {
+  background: var(--rv-st-conflict);
+}
+.di-rv-chip {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--rv-text);
+  border: 1px solid var(--rv-border);
+  background: var(--rv-bg);
+  white-space: nowrap;
+}
+.di-rv-chip[data-tone='warn'] {
+  background: var(--rv-warn-bg);
+}
+.di-rv-chip[data-tone='blocked'] {
+  background: var(--rv-block-bg);
+}
+.di-rv-chip[data-tone='info'] {
+  background: var(--rv-info-bg);
+}
+.di-rv-twisty {
+  flex: 0 0 auto;
+  width: 16px;
+  text-align: center;
+  color: var(--rv-muted);
+}
+
+/* ---------- diff pane ---------- */
+
+.di-rv-diff-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--rv-bg);
+}
+.di-rv-diff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 12px;
+  background: var(--rv-surface);
+  border-bottom: 2px solid var(--rv-border-soft);
+}
+.di-rv-path {
+  flex: 1 1 280px;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--rv-font-code);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.di-rv-path small {
+  display: block;
+  font-weight: 400;
+  color: var(--rv-muted);
+}
+.di-rv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+/* the reason a window shows one column: real text on the toolbar's own row, as readable as the rest */
+.di-rv-layout-note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--rv-muted);
+  font-size: 13px;
+}
+.di-rv-seg {
+  display: inline-flex;
+}
+.di-rv-seg button + button {
+  margin-left: -2px;
+}
+.di-rv-size {
+  min-width: 46px;
+  text-align: center;
+  color: var(--rv-muted);
+  font-size: 13px;
+}
+.di-rv-code-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--rv-ctx-bg);
+  font-family: var(--rv-font-code);
+  font-size: var(--rv-code-size);
+  line-height: var(--rv-row);
+  overscroll-behavior: contain;
+}
+/* The reading panes' scrollbars are DRAWN, not an overlay that appears when the pointer moves: a long
+   line is navigated with them, and a control that is hidden until used is not found. (Setting the
+   standard scrollbar-color here would make Chromium go back to overlay bars, so it is only the
+   fallback for engines without the pseudo-elements.) */
+.di-rv-code-scroll::-webkit-scrollbar,
+.di-rv-tree::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+  background: var(--rv-scroll-track);
+}
+.di-rv-code-scroll::-webkit-scrollbar-thumb,
+.di-rv-tree::-webkit-scrollbar-thumb {
+  background: var(--rv-scroll-thumb);
+  border: 3px solid var(--rv-scroll-track);
+}
+.di-rv-code-scroll::-webkit-scrollbar-corner,
+.di-rv-tree::-webkit-scrollbar-corner {
+  background: var(--rv-scroll-track);
+}
+@supports not selector(::-webkit-scrollbar) {
+  .di-rv-code-scroll,
+  .di-rv-tree {
+    scrollbar-width: auto;
+    scrollbar-color: var(--rv-scroll-thumb) var(--rv-scroll-track);
+  }
+}
+.di-rv-code-window {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+}
+.di-rv-code-window > div {
+  width: max-content;
+  min-width: 100%;
+}
+.di-rv-line {
+  display: flex;
+  height: var(--rv-row);
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
+}
+.di-rv-line[data-kind='add'] {
+  background: var(--rv-add-bg);
+}
+.di-rv-line[data-kind='del'] {
+  background: var(--rv-del-bg);
+}
+.di-rv-gutter {
+  flex: 0 0 auto;
+  width: calc(var(--rv-digits, 4) * 1ch + 14px);
+  padding: 0 6px;
+  text-align: right;
+  color: var(--rv-muted);
+  background: var(--rv-ctx-gutter);
+  user-select: none;
+}
+.di-rv-line[data-kind='add'] .di-rv-gutter {
+  background: var(--rv-add-gutter);
+  color: var(--rv-text);
+}
+.di-rv-line[data-kind='del'] .di-rv-gutter {
+  background: var(--rv-del-gutter);
+  color: var(--rv-text);
+}
+.di-rv-mark {
+  flex: 0 0 auto;
+  width: 2ch;
+  text-align: center;
+  user-select: none;
+  font-weight: 700;
+  background: var(--rv-ctx-bg);
+}
+.di-rv-line[data-kind='add'] .di-rv-mark,
+.di-rv-half[data-kind='add'] .di-rv-mark {
+  background: var(--rv-add-bg);
+}
+.di-rv-line[data-kind='del'] .di-rv-mark,
+.di-rv-half[data-kind='del'] .di-rv-mark {
+  background: var(--rv-del-bg);
+}
+.di-rv-half[data-kind='none'] .di-rv-mark {
+  background: var(--rv-empty-bg);
+}
+.di-rv-half[data-kind='add'] .di-rv-mark {
+  color: var(--rv-add-mark);
+}
+.di-rv-half[data-kind='del'] .di-rv-mark {
+  color: var(--rv-del-mark);
+}
+/* The line number(s) and the +/- mark stay at the pane's left edge while a long line is scrolled
+   sideways, so the reader always knows WHICH line this is and whether it was added or removed. Each
+   has an opaque background, so the text passes beneath it. */
+.di-rv-gutter,
+.di-rv-mark {
+  position: sticky;
+  z-index: 2;
+}
+.di-rv-gutter {
+  left: 0;
+}
+.di-rv-line .di-rv-gutter + .di-rv-gutter {
+  left: calc(var(--rv-digits, 4) * 1ch + 14px);
+}
+.di-rv-line .di-rv-mark {
+  left: calc(2 * (var(--rv-digits, 4) * 1ch + 14px));
+}
+.di-rv-half .di-rv-mark {
+  left: calc(var(--rv-digits, 4) * 1ch + 14px);
+}
+.di-rv-line[data-kind='add'] .di-rv-mark {
+  color: var(--rv-add-mark);
+}
+.di-rv-line[data-kind='del'] .di-rv-mark {
+  color: var(--rv-del-mark);
+}
+.di-rv-text {
+  flex: 1 0 auto;
+  padding-right: 24px;
+}
+.di-rv-note-row {
+  height: var(--rv-row);
+  padding: 0 14px;
+  color: var(--rv-muted);
+  font-style: italic;
+  white-space: pre;
+}
+/* a section bar is as wide as what is VISIBLE of the pane and stays at its left edge while the pane
+   scrolls sideways, so its counts are never off-screen behind a long line */
+.di-rv-hunk {
+  display: flex;
+  align-items: center;
+  height: var(--rv-row);
+  width: var(--rv-view-w, 100%);
+  min-width: 0;
+  position: sticky;
+  left: 0;
+}
+.di-rv .di-rv-hunk-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--rv-row);
+  height: var(--rv-row);
+  padding: 0 10px;
+  text-align: left;
+  color: var(--rv-hunk-text);
+  background: var(--rv-hunk-bg);
+  border: 0;
+  border-top: 1px solid var(--rv-border-soft);
+  border-bottom: 1px solid var(--rv-border-soft);
+  font-family: var(--rv-font-code);
+  font-size: inherit;
+  white-space: pre;
+  position: sticky;
+  left: 0;
+}
+.di-rv .di-rv-hunk-button:hover:not(:disabled) {
+  background: #30306a;
+  border-color: var(--rv-border-soft);
+}
+.di-rv-hunk-section {
+  color: var(--rv-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.di-rv-hunk-counts {
+  margin-left: auto;
+  font-size: 12.5px;
+}
+.di-rv-clip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  font-family: var(--rv-font-ui);
+  font-size: 12px;
+  line-height: calc(var(--rv-row) - 4px);
+  color: var(--rv-text);
+  background: var(--rv-warn-bg);
+  border: 1px solid var(--rv-st-changed);
+}
+.di-rv-ctl {
+  display: inline-block;
+  padding: 0 2px;
+  margin: 0 1px;
+  color: var(--rv-ctl-text);
+  background: var(--rv-ctl-bg);
+  font-size: 0.82em;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+/* split view: TWO panes, each its own scroll region. The panes are exactly as wide as each other
+   (minmax(0, 1fr) lets a grid track shrink below its content, which a plain 1fr does not), so a
+   long line makes ITS pane scroll sideways; it never widens the row or pushes the other pane off
+   the screen. */
+.di-rv-split-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.di-rv-pane-heads,
+.di-rv-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 2px;
+  background: var(--rv-border);
+}
+.di-rv-pane-heads {
+  flex: 0 0 auto;
+  border-bottom: 2px solid var(--rv-border-soft);
+}
+.di-rv-panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.di-rv-panes > .di-rv-code-scroll {
+  min-width: 0;
+  min-height: 0;
+}
+.di-rv-pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+  padding: 5px 12px;
+  background: var(--rv-surface);
+  font-family: var(--rv-font-ui);
+  font-size: 13.5px;
+}
+.di-rv-pane-title {
+  font-weight: 700;
+  color: var(--rv-text);
+}
+.di-rv-pane-detail {
+  font-family: var(--rv-font-code);
+  color: var(--rv-muted);
+  overflow-wrap: anywhere;
+}
+.di-rv-pane-hint {
+  margin-left: auto;
+  color: var(--rv-st-changed);
+  font-size: 12.5px;
+}
+.di-rv-half {
+  display: flex;
+  height: var(--rv-row);
+  width: max-content;
+  min-width: 100%;
+  white-space: pre;
+}
+.di-rv-hunk-echo {
+  background: var(--rv-hunk-bg);
+  border-top: 1px solid var(--rv-border-soft);
+  border-bottom: 1px solid var(--rv-border-soft);
+}
+.di-rv-half[data-kind='add'] {
+  background: var(--rv-add-bg);
+}
+.di-rv-half[data-kind='del'] {
+  background: var(--rv-del-bg);
+}
+.di-rv-half[data-kind='context'] {
+  background: var(--rv-ctx-bg);
+}
+.di-rv-half[data-kind='none'] {
+  background: var(--rv-empty-bg);
+}
+.di-rv-half[data-kind='add'] .di-rv-gutter {
+  background: var(--rv-add-gutter);
+  color: var(--rv-text);
+}
+.di-rv-half[data-kind='del'] .di-rv-gutter {
+  background: var(--rv-del-gutter);
+  color: var(--rv-text);
+}
+.di-rv-half[data-kind='none'] .di-rv-gutter {
+  background: var(--rv-empty-bg);
+}
+
+/* syntax */
+.di-rv .tok-keyword {
+  color: var(--rv-tok-keyword);
+}
+.di-rv .tok-string {
+  color: var(--rv-tok-string);
+}
+.di-rv .tok-comment {
+  color: var(--rv-tok-comment);
+  font-style: italic;
+}
+.di-rv .tok-number {
+  color: var(--rv-tok-number);
+}
+.di-rv .tok-type {
+  color: var(--rv-tok-type);
+}
+.di-rv .tok-function {
+  color: var(--rv-tok-function);
+}
+.di-rv .tok-punct {
+  color: var(--rv-tok-punct);
+}
+.di-rv .tok-property {
+  color: var(--rv-tok-property);
+}
+.di-rv .tok-tag {
+  color: var(--rv-tok-tag);
+}
+.di-rv .tok-attr {
+  color: var(--rv-tok-attr);
+}
+
+/* ---------- notices ---------- */
+
+.di-rv-notice {
+  margin: 12px;
+  padding: 10px 14px;
+  border: 2px solid var(--rv-border);
+  background: var(--rv-info-bg);
+  max-width: 78ch;
+}
+.di-rv-notice[data-tone='warn'] {
+  background: var(--rv-warn-bg);
+  border-color: var(--rv-st-changed);
+}
+.di-rv-notice[data-tone='blocked'] {
+  background: var(--rv-block-bg);
+  border-color: var(--rv-st-removed);
+}
+.di-rv-notice[data-tone='ok'] {
+  background: var(--rv-ok-bg);
+  border-color: var(--rv-st-added);
+}
+.di-rv-notice h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.di-rv-notice p {
+  margin: 4px 0;
+}
+.di-rv-notice .code {
+  font-family: var(--rv-font-code);
+  font-size: 12.5px;
+  color: var(--rv-muted);
+}
+.di-rv-notice-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.di-rv-banner {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 6px 12px;
+  background: var(--rv-warn-bg);
+  border-bottom: 2px solid var(--rv-st-changed);
+}
+.di-rv-banner[data-tone='blocked'] {
+  background: var(--rv-block-bg);
+  border-bottom-color: var(--rv-st-removed);
+}
+.di-rv-banner[data-tone='info'] {
+  background: var(--rv-info-bg);
+  border-bottom-color: var(--rv-st-renamed);
+}
+.di-rv-banner span {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.di-rv-progress {
+  height: 4px;
+  margin: 8px 12px;
+  max-width: 320px;
+  background: var(--rv-border-soft);
+  overflow: hidden;
+}
+.di-rv-progress::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 35%;
+  background: var(--rv-link);
+  animation: di-rv-slide 1.2s ease-in-out infinite;
+}
+@keyframes di-rv-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .di-rv-progress::after {
+    animation: none;
+    width: 100%;
+  }
+}
+
+/* stale content is visibly not current */
+.di-rv-diff-pane[data-stale='true'] .di-rv-code-scroll,
+.di-rv-diff-pane[data-stale='true'] .di-rv-pane-heads,
+.di-rv-tree-pane[data-stale='true'] .di-rv-tree {
+  filter: grayscale(0.85);
+  opacity: 0.78;
+}
+
+.di-rv-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- narrow viewports: one view at a time, nothing clipped ---------- */
+
+.di-rv-tabs {
+  display: none;
+}
+.di-rv[data-narrow='true'] .di-rv-tabs {
+  display: flex;
+  padding: 6px 8px;
+  gap: 6px;
+  background: var(--rv-surface);
+  border-bottom: 2px solid var(--rv-border-soft);
+}
+.di-rv[data-narrow='true'] .di-rv-tabs button {
+  flex: 1 1 0;
+}
+.di-rv[data-narrow='true'] .di-rv-title {
+  font-size: 15px;
+}
+.di-rv[data-narrow='true'] .di-rv-sub {
+  display: none;
+}
+.di-rv[data-narrow='true'] .di-rv-top {
+  padding: 6px 8px;
+}
+.di-rv[data-narrow='true'] .di-rv-overview-head {
+  padding: 4px 8px;
+  gap: 6px;
+}
+.di-rv[data-narrow='true'] .di-rv-facts {
+  gap: 0 10px;
+  font-size: 13px;
+}
+.di-rv[data-narrow='true'] .di-rv-attribution {
+  margin: 0 8px 6px;
+  font-size: 13px;
+}
+.di-rv[data-narrow='true'] .di-rv-overview-body {
+  max-height: 26vh;
+}
+.di-rv[data-narrow='true'] .di-rv-diff-head {
+  padding: 6px 8px;
+  gap: 4px 8px;
+}
+.di-rv[data-narrow='true'] .di-rv-path {
+  flex-basis: 100%;
+  font-size: 13px;
+}
+.di-rv[data-narrow='true'] button {
+  min-height: 30px;
+  padding: 2px 8px;
+  font-size: 13px;
+}
+.di-rv[data-narrow='true'] .di-rv-banner {
+  padding: 4px 8px;
+}
+.di-rv[data-narrow='true'] .di-rv-notice {
+  margin: 8px;
+}
+
+@media (max-width: 820px) {
+  .di-rv-backdrop {
+    padding: 0;
+  }
+  .di-rv {
+    width: 100%;
+    height: 100%;
+    border-width: 0;
+    box-shadow: none;
+  }
+}

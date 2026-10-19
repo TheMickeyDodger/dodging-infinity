@@ -36,6 +36,7 @@
     "test/diPanelKeyboard.test.ts",
     "test/diAppReconcile.test.ts",
     "test/diEvidenceLibrary.test.ts",
+    "test/diCodeReview.test.ts",
     "test/harness/diAppProbe.ts"
   ]
 }

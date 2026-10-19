@@ -19,6 +19,8 @@ import type {
 } from '../../../core/src/messages.js';
 import { DI_RUNTIME_AGENTS_MAX_UNVERIFIED } from '../constants.js';
 import type { UnreportedFact } from './catalogProjection.js';
+import type { ReviewOffer } from './codeReview.js';
+import { reviewOfferFor } from './codeReview.js';
 import type {
   MemberPresentation,
   MissionPresentation,
@@ -66,7 +68,11 @@ function unreported(fact: UnreportedFact | undefined): DiObservedValue {
   return { state: 'observed', value: String(fact.value), reason: null };
 }
 
-function member(m: MemberPresentation, characterIdFor: CharacterIdFor): DiMember {
+function member(
+  m: MemberPresentation,
+  characterIdFor: CharacterIdFor,
+  offer: ReviewOffer,
+): DiMember {
   return {
     characterId: m.presence.live ? characterIdFor(m) : null,
     coverage: m.coverage,
@@ -94,6 +100,14 @@ function member(m: MemberPresentation, characterIdFor: CharacterIdFor): DiMember
     progress: unreported(m.unreported.progress),
     chain: m.chain,
     chainTaskId: m.chainTaskId,
+    // item 3: whether a live code review is offered for this agent's assignment (decided from
+    // the typed facts of the listing; the listing token is what every later read is admitted by).
+    codeReview: {
+      state: offer.state,
+      reason: offer.reason,
+      taskId: offer.taskId,
+      listing: offer.listing,
+    },
   };
 }
 
@@ -243,7 +257,9 @@ function chainObservation(view: OfficeView): DiChainObservation {
 }
 
 function mission(m: MissionPresentation, characterIdFor: CharacterIdFor): DiMission {
-  const members = listOf(m.members, (x) => member(x, characterIdFor));
+  const members = listOf(m.members, (x) =>
+    member(x, characterIdFor, reviewOfferFor(m, x)),
+  );
   return {
     missionRef: m.missionRef,
     sourceId: m.sourceId,

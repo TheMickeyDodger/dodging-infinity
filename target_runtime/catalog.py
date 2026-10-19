@@ -247,7 +247,7 @@ class CatalogService(object):
     def __init__(self, registry_directory, clock, herd_roots=None,
                  listing_argv=None, monotonic=None, discover=False,
                  contract_version=contract_v2_module.DEFAULT_CONTRACT_VERSION,
-                 delivery_store=None):
+                 delivery_store=None, git_transport=None):
         if contract_version not in contract_v2_module.CONTRACT_VERSIONS or (
                 type(contract_version) is not int):
             raise ValueError("contract_version must be one of %s"
@@ -291,6 +291,11 @@ class CatalogService(object):
         # The evidence library's content reads (``artifact_content``): ONE
         # at a time per owner; a second is refused, never queued.
         self._content_slot = threading.Lock()
+        # The live code review's reads (``code_review``): the same rule. The
+        # git boundary is constructor-injected; None means the real one,
+        # built only when a review is first asked of a version 2 owner.
+        self._review_slot = threading.Lock()
+        self._git_transport = git_transport
 
     def _held(self):
         return self._uncertain or (self._worker is not None
@@ -356,6 +361,48 @@ class CatalogService(object):
                 self._now, mission_ref, artifact_id, cursor)
         finally:
             self._content_slot.release()
+
+    def code_review(self, mission_ref, task_id, snapshot=None, file_id=None):
+        """The live code review's ONE read (``target_runtime.code_review``):
+        what is changed in the workspace of a currently ACTIVE assignment,
+        corroborated by this owner's last refreshed answer and the registry
+        read now. With no ``file_id`` the overview; with one (and the
+        ``snapshot`` it was listed in) that file's diff. Version 2 owners
+        only; refused after shutdown; one read at a time (a second is
+        refused, never queued). Always an answer; never starts a refresh;
+        never writes to the workspace it reads."""
+        # Imported here: a version 1 process stays within its accepted
+        # import boundary until a review is asked of it.
+        from target_runtime import code_review as review_module
+        view = (review_module.VIEW_OVERVIEW if file_id is None
+                else review_module.VIEW_FILE)
+        if self._contract_version == 1:
+            return review_module.refusal(
+                review_module.PROBLEM_CONTRACT_VERSION, "this owner serves"
+                " query contract version 1, which corroborates no assignment"
+                " workspace", view, mission_ref, task_id, snapshot, file_id,
+                self._now())
+        with self._mutex:
+            accepting = self._accepting
+        if not accepting:
+            return review_module.refusal(
+                review_module.PROBLEM_SHUT_DOWN, "this owner was shut down"
+                " and takes no new work", view, mission_ref, task_id,
+                snapshot, file_id, self._now())
+        if not self._review_slot.acquire(False):
+            return review_module.refusal(
+                review_module.PROBLEM_BUSY, "another review read is in"
+                " progress; nothing was read", view, mission_ref, task_id,
+                snapshot, file_id, self._now())
+        try:
+            if self._git_transport is None:
+                self._git_transport = review_module.default_transport()
+            return review_module.read(
+                self._registry, self._corroborating_answer, self._freshness,
+                self._now, self._git_transport, mission_ref, task_id,
+                snapshot, file_id)
+        finally:
+            self._review_slot.release()
 
     def _corroborating_answer(self):
         """The last refreshed answer, as held (judged by the caller)."""

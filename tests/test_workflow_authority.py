@@ -2191,6 +2191,26 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_DIFF_RETAINED_BYTES": 65536,
             "MAX_DIFF_TOTAL_BYTES": 33554432,
             "MAX_PORCELAIN_CAPTURE_BYTES": 1048576,
+            # Item 3 (live code review): the reads of a LIVE workspace. One
+            # wall-clock deadline, the inventory and per-file diff ceilings,
+            # how many repository-configured content-filter drivers a read
+            # will list (for disclosure; none is ever run), and how much of
+            # the target's index and info files a read will copy into the
+            # private git directory it reads through.
+            "MAX_REVIEW_GIT_SECONDS": 20,
+            "MAX_REVIEW_INVENTORY_BYTES": 1048576,
+            "MAX_REVIEW_FILE_DIFF_BYTES": 4194304,
+            "MAX_REVIEW_FILTER_DRIVERS": 16,
+            "MAX_REVIEW_INDEX_BYTES": 67108864,
+            "MAX_REVIEW_ATTRIBUTE_FILE_BYTES": 1048576,
+            # Round 20 (F2): the private locations are decided from the
+            # tracked NAMES, read before any read that could hash a file;
+            # the names' output ceiling, and how many locations (and bytes of
+            # them) one read may be told to leave out in its pathspec.
+            "MAX_REVIEW_NAMES_BYTES": 16777216,
+            "MAX_REVIEW_INDEX_RECORD_BYTES": 16777216,
+            "MAX_REVIEW_EXCLUSIONS": 2048,
+            "MAX_REVIEW_EXCLUSION_BYTES": 262144,
         },
         "target_runtime/evidence.py": {
             "MAX_CHANGED_PATHS_LISTED": 200,
@@ -2616,6 +2636,31 @@ class BoundConstantPinTests(unittest.TestCase):
             # the file, each with its overrun byte), renamed into the
             # bound-naming convention so this gate sees it.
             "MAX_REQUEST_READ_BYTES": 33882116,
+        },
+        # Item 3 (live code review): target_runtime/code_review.py. The files
+        # one overview lists (past it the overview REFUSES), a path and a
+        # branch name, the untracked reader's own bound and one overview's
+        # total, what ONE file's view retains (lines, characters, a line
+        # clipped with its count kept, a hunk's heading), and how many
+        # disagreeing observations a read tries before it refuses.
+        "target_runtime/code_review.py": {
+            "MAX_REVIEW_FILES": 500,
+            "MAX_REVIEW_PATH_CHARS": 1024,
+            "MAX_BRANCH_CHARS": 255,
+            "MAX_UNTRACKED_FILE_BYTES": 65536,
+            # Round 20 (F3): what one untracked read can cost in real I/O,
+            # the bound plus the byte past it that proves a file is over it.
+            "MAX_UNTRACKED_READ_COST_BYTES": 65537,
+            "MAX_UNTRACKED_TOTAL_BYTES": 16777216,
+            "MAX_REVIEW_FILE_LINES": 6000,
+            "MAX_REVIEW_FILE_CHARS": 1048576,
+            "MAX_REVIEW_LINE_CHARS": 1200,
+            "MAX_SECTION_CHARS": 200,
+            "MAX_OBSERVATION_ATTEMPTS": 3,
+            "MAX_DETAIL_CHARS": 240,
+            # Round 23: a listed filter-driver name, bounded in the office's
+            # unit (UTF-16 code units).
+            "MAX_FILTER_NAME_CHARS": 64,
         },
         # Query contract v2: the contract's own bounds and the read-only
         # Mission State composer's, pinned by exact value.
