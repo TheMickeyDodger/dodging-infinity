@@ -1694,9 +1694,19 @@ class GitTransportArgvPinTests(unittest.TestCase):
     # Task 8 final, deliberately: the four LOCAL worktree verbs of
     # automatic Mission workspaces (add_worktree, common_dir, toplevel,
     # worktree_list), each argv-pinned below.
+    # Item 3 (live code review), deliberately: the ten NON-MUTATING reads of
+    # a live workspace (live_*), each argv-pinned below and each measured to
+    # leave the target's whole .git byte-identical
+    # (tests/test_code_review_git.py). Round 20 adds live_view (the one
+    # private git directory of an observation), live_names and
+    # live_index_stat (the reads that open no working file) and gives the four
+    # that can hash a file the locations to leave out.
     PINNED_METHODS = (
         "add_worktree", "checkout_detached", "clone", "common_dir",
-        "diff_head", "head_commit", "remote_url", "status_porcelain",
+        "diff_head", "head_commit", "live_counts", "live_file_diff",
+        "live_filter_drivers", "live_head", "live_index_stat",
+        "live_inventory", "live_modes", "live_names", "live_toplevel",
+        "live_view", "remote_url", "status_porcelain",
         "status_porcelain_readonly", "toplevel", "worktree_list",
     )
 
@@ -1728,14 +1738,25 @@ class GitTransportArgvPinTests(unittest.TestCase):
         # The streamed verbs route through the _stream seam, not
         # _run; record their argv the same way (bounds untouched —
         # only the argv is under test here).
-        transport._stream = (
-            lambda argv, retain, ceiling:
-            recorded.append(list(argv)) or {
+        live_envs = []
+
+        def stream(argv, retain, ceiling, live=False, accept=(0,), env=None):
+            recorded.append(list(argv))
+            if live:
+                live_envs.append(env)
+            # a live read first asks git where its directories are; answer as
+            # git would, so the content-reading verbs can be reached
+            data = b""
+            if "--show-object-format" in argv:
+                data = b"/g\n/g\nsha1\n"
+            elif "--verify" in argv:
+                data = b"a" * 40 + b"\n"
+            return {
                 "status": "captured", "total_bytes": 0,
-                "digest": "0" * 64, "retained": b"",
+                "digest": "0" * 64, "retained": data,
                 "truncated": False,
             }
-        )
+        transport._stream = stream
         transport.clone("URL", "PATH")
         transport.remote_url("P")
         transport.head_commit("P")
@@ -1747,6 +1768,24 @@ class GitTransportArgvPinTests(unittest.TestCase):
         transport.common_dir("P")
         transport.worktree_list("R")
         transport.add_worktree("R", "PATH", "SHA", "REASON")
+        live_start = len(recorded)
+        transport.live_toplevel("P")
+        transport.live_head("P")
+        transport.live_filter_drivers("P")
+        transport.live_inventory("P", ())
+        transport.live_counts("P", ())
+        transport.live_modes("P", ())
+        transport.live_file_diff("P", ["a.py", "b.py"], ())
+        # round 20: a location left out, the two reads that open no file, and
+        # the view itself (one private git directory for several reads)
+        transport.live_inventory("P", ("secrets",))
+        with transport.live_view("P") as view:
+            transport.live_names("P", view)
+            transport.live_index_stat("P", ["secrets"], view)
+        # round 21: a file selected AS A FILE (nothing under it), through a view
+        transport.live_file_diff("P", ["a.py"], (), None, True)
+        live = recorded[live_start:]
+        del recorded[live_start:]
         self.assertEqual(recorded, [
             ["git", "clone", "--quiet", "--", "URL", "PATH"],
             ["git", "-C", "P", "remote", "get-url", "origin"],
@@ -1773,9 +1812,111 @@ class GitTransportArgvPinTests(unittest.TestCase):
              "add", "--quiet", "--detach", "--lock", "--reason", "REASON",
              "--", "PATH", "SHA"],
         ])
-        # Cross-check: every pinned method was exercised above, so
-        # the method-set pin and the argv pin can never drift apart.
-        self.assertEqual(len(recorded), len(self.PINNED_METHODS))
+        # Item 3: the live reads. Every one carries the SAME pins before its
+        # verb (no optional lock, literal pathspecs, no fsmonitor, quoting,
+        # colour and prefix fixed), then -C and the workspace. Only plumbing
+        # verbs: rev-parse, config (a read), status with optional locks off,
+        # diff-index; never diff, which rewrites the index. A read that can
+        # hash a working file (status, diff-index) is preceded by the THREE
+        # reads that prepare its private git directory, and runs in it.
+        pins = ["git", "--no-optional-locks", "--literal-pathspecs",
+                "-c", "core.fsmonitor=false", "-c", "core.quotePath=true",
+                "-c", "color.ui=false", "-c", "diff.noprefix=false",
+                "-c", "diff.mnemonicPrefix=false"]
+        magic_pins = [pin for pin in pins if pin != "--literal-pathspecs"]
+        view = [
+            pins + ["-C", "P", "rev-parse", "--verify", "HEAD^{commit}"],
+            pins + ["-C", "P", "rev-parse", "--path-format=absolute",
+                    "--absolute-git-dir", "--git-common-dir",
+                    "--show-object-format"],
+            pins + ["-C", "P", "config", "-z", "--get-regexp",
+                    "^core[.](autocrlf|bigfilethreshold|checkstat|eol|"
+                    "filemode|ignorecase|precomposeunicode|sparsecheckout|"
+                    "symlinks|trustctime)$"],
+        ]
+        self.assertEqual(live, [
+            pins + ["-C", "P", "rev-parse", "--show-toplevel"],
+            pins + ["-C", "P", "rev-parse", "--verify", "HEAD^{commit}"],
+            pins + ["-C", "P", "rev-parse", "--symbolic-full-name", "HEAD"],
+            pins + ["-C", "P", "config", "--name-only", "-z",
+                    "--get-regexp", "^filter[.]"],
+        ] + view + [
+            pins + ["-C", "P", "status", "--porcelain=v1", "-z",
+                    "--no-renames", "--untracked-files=all",
+                    "--ignore-submodules=dirty"],
+        ] + view + [
+            pins + ["-C", "P", "diff-index", "--numstat", "-z", "-M",
+                    "--ignore-submodules=dirty", "HEAD"],
+        ] + view + [
+            pins + ["-C", "P", "diff-index", "--raw", "-z", "-M",
+                    "--ignore-submodules=dirty", "HEAD"],
+        ] + view + [
+            pins + ["-C", "P", "diff-index", "-p", "-M", "--unified=3",
+                    "--no-color", "--no-ext-diff", "--no-textconv",
+                    "--ignore-submodules=dirty", "HEAD", "--", "a.py", "b.py"],
+        ] + view + [
+            # a location left out: pathspec MAGIC is needed, so the
+            # literal-pathspecs pin is off for this verb and every pathspec
+            # it carries spells its own magic out
+            magic_pins + ["-C", "P", "status", "--porcelain=v1", "-z",
+                          "--no-renames", "--untracked-files=all",
+                          "--ignore-submodules=dirty", "--", ".",
+                          ":(top,literal,exclude)secrets"],
+        ] + view + [
+            # ONE view, two reads that open no file: the names, then what is
+            # staged
+            pins + ["-C", "P", "ls-files", "-z"],
+            pins + ["-C", "P", "diff-index", "--cached", "--raw", "-z",
+                    "HEAD"],
+            # and, on the same view, the INDEX'S OWN RECORD of the private
+            # ones: git reads the index and no working file for it
+            magic_pins + ["-C", "P", "ls-files", "-z", "-s", "--debug", "--",
+                          ":(top,literal)secrets"],
+        ] + view + [
+            # a file is selected as a FILE: that exact path, and nothing under it
+            magic_pins + ["-C", "P", "diff-index", "-p", "-M", "--unified=3",
+                          "--no-color", "--no-ext-diff", "--no-textconv",
+                          "--ignore-submodules=dirty", "HEAD", "--",
+                          ":(top,literal)a.py",
+                          ":(top,literal,exclude)a.py/"],
+        ])
+        # The environment pin: a read that can hash a working file runs in
+        # its OWN git directory (GIT_DIR/GIT_WORK_TREE added to the explicit
+        # live environment, nothing else), and the reads that only ask where
+        # things are pass none (they run under the explicit live environment).
+        from target_runtime import git_transport as gt
+        plain, private = [], []
+        for argv, env in zip(live, live_envs):
+            verb = argv[argv.index("-C") + 2]
+            if verb in ("status", "diff-index", "ls-files"):
+                private.append(env)
+            else:
+                plain.append(env)
+        self.assertEqual(len(private), 9)
+        # no read of a view asks git to compare a working file with the index
+        self.assertNotIn("diff-files", [a[a.index("-C") + 2] for a in live])
+        for env in plain:
+            self.assertIsNone(env)      # the stream's default: _LIVE_READ_ENV
+        for env in private:
+            self.assertEqual(set(env) - set(gt._LIVE_READ_ENV),
+                             {"GIT_DIR", "GIT_WORK_TREE"})
+            self.assertEqual(env["GIT_WORK_TREE"], "P")
+            self.assertNotEqual(env["GIT_DIR"], "/g")
+        # and none of them names a second index: ONE private index per view
+        for env in private:
+            self.assertNotIn("GIT_INDEX_FILE", env)
+        # Cross-check: every pinned method was exercised above, so the
+        # method-set pin and the argv pin can never drift apart.
+        exercised = {"live_toplevel", "live_head", "live_filter_drivers",
+                     "live_inventory", "live_counts", "live_modes",
+                     "live_file_diff", "live_names", "live_index_stat",
+                     "live_view"}
+        self.assertEqual(exercised,
+                         {m for m in self.PINNED_METHODS
+                          if m.startswith("live_")})
+        self.assertEqual(
+            len(recorded),
+            len([m for m in self.PINNED_METHODS if not m.startswith("live_")]))
 
 
 class TransportVerificationTests(RuntimeCase):

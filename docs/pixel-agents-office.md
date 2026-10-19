@@ -413,9 +413,12 @@ herdr agent list ───┘     dicatalog_http.py                             
   [Reviewer-declared findings](#reviewer-declared-findings). It is not the transcript either.
 - **What it writes.** Registration writes only its registry. The adapter writes only its own
   discovery file. Neither ever writes a store.
-- **Routes.** `GET /catalog`, `GET /diagnostics`, `GET /healthz` and `GET /artifact`, and
-  nothing else. `GET /artifact` returns one recorded artifact's text for the evidence library.
-  It takes an admitted reference (Mission, artifact id, listing cursor), never a path. All
+- **Routes.** `GET /catalog`, `GET /diagnostics`, `GET /healthz`, `GET /artifact` and
+  `GET /code_review`, and nothing else. `GET /artifact` returns one recorded artifact's text for
+  the evidence library. It takes an admitted reference (Mission, artifact id, listing cursor),
+  never a path. `GET /code_review` returns the read-only view of an active assignment's workspace
+  (see [Live code review](#live-code-review)); it takes a Mission and a task id, and for one
+  file the snapshot and file id the overview listed. Never a path, a ref or a git option. All
   routes are loopback-only (`127.0.0.1`), behind one bearer token compared in constant time,
   with exact `Host` and `Origin` checks. There is no CORS header, no cookie and no 5xx.
 - **No route to action.** It imports, proxies and invokes none of the consequential entry
@@ -693,6 +696,185 @@ APIs. Their seeded lifecycle facts, isolated principals and supplied inputs are 
 dispatch, no real execution success, no independent production verification and no human
 authorization. They are never production artifact admission. The browser proof on real Missions
 is Root's.
+
+### Live code review
+
+Selecting a live agent whose assignment is **active** offers **Open code review**. The side panel
+is only the entry: the reading happens in a large dialog (full screen on request) with an
+overview, a searchable tree of the changed files and a unified or side-by-side diff. It is view
+only. It never edits, stages, applies, reverts, commits, dispatches, approves, opens a shell or
+sends anything but a read.
+
+**Who is offered it.** A live member of the DIRECT task of a Mission Core Mission whose standing
+is `active` and whose binding is `bound`. This is a different question from the evidence
+library's: a COMPLETED Mission is never offered a live review, a plain Herdr task is not a Mission
+Core record, a child-task member does not work in the Mission's workspace, and a v1 office
+corroborates no workspace. Where it is not offered, the inspector says why in words. The target
+comes from the canonical record: the renderer never supplies a root, a ref, a pathspec or a git
+option, and similar names or paths are not identity.
+
+**What is compared, exactly.** The working tree of the assignment's own worktree against the
+commit its `HEAD` names (branch or detached HEAD, the commit's object id shown), as observed at a
+stated time.
+- **Covered:** staged changes, changes not yet staged (together, as the net difference from
+  `HEAD`; a file changed both ways is one entry marked "staged, then changed again"), new
+  files git does not track yet within the reader's bound, and **the commit a submodule points
+  to**: a submodule whose recorded commit changed is one entry marked `submodule`, shown as its old
+  and new commit. Git is told not to look inside a submodule (`--ignore-submodules=dirty`), so
+  nothing in a submodule's own configuration can run, and work there that is not committed does not
+  appear. An untracked directory that is itself a repository is one `not shown` entry that says so
+  (its files are not part of this repository's changes).
+- **An end-of-file marker is not a line, and belongs to the line before it.** "No newline at end of file" never
+  counts as a line and never truncates a file by itself, so exactly 6,000 lines with no final newline is a
+  complete diff, not a truncated one. Its characters count against the character bound, and it is kept or cut
+  TOGETHER with its line: a line is kept only if it and its marker fit, so at the bound the marker is never
+  dropped while its line stays. A line cut with its marker is a truncation like any other and is said ("Showing
+  the first N of M lines").
+- **An empty listing is a finding, not a verdict.** When nothing is listed the dialog says "No changes found",
+  that no staged, unstaged or new files differ from the commit **as far as this view can tell**, and that this
+  is **not proof the working tree matches it**: a private file is never opened, so whether one changed is judged
+  from recorded metadata and an edit of the same size within the recorded second may not be seen. The header's
+  count reads "no changes found" for the same reason, not "0 files changed".
+- **Focus and keys stay inside the dialog, across a read as well as between presses.** The page behind is inert
+  and Tab wraps inside the dialog; Escape closes it; `[` and `]` move between files; none of those keys reaches the
+  office. A control can stop being focusable while it holds focus (Refresh is disabled for as long as a read is in
+  flight, "Smaller text" at its smallest size), and the browser then drops focus to the page body, where the next key
+  would be dispatched OUTSIDE the dialog and reach the office. So focus that falls out of the dialog is brought back
+  to it, and a key that is dispatched outside it anyway is taken before anything behind can see it and handled
+  as if it had arrived inside. The browser regressions watch focus on every animation frame and every key across the
+  transition, because a check made once after a key cannot see a gap between two keys.
+- **Renames** are shown when git pairs a removed and an added file; otherwise they are a removal
+  and an addition. A new file takes part in no pairing. Git pairs by reading both bodies, and a
+  private body is never read, so a file moved from a private name to a public one is paired from
+  its blob id alone: moved unchanged, it stays withheld; moved and also changed, it is a withheld
+  removal and an ordinary addition.
+- **Not covered, and said so in the dialog:** ignored files, what is inside a submodule, the
+  content of binary or non-UTF-8 files, files over a bound, and private locations (listed by name
+  only).
+- **A shared worktree shows the team's changes.** Nothing says who made a change; the agent a
+  review was opened from is never credited with it.
+- **Content filters** (git-lfs, a clean/smudge pair) a repository configures are NEVER run: not
+  those listed when the review is opened, and not one that appears in the repository's
+  configuration afterwards. The dialog names the ones it found, and a file one manages is compared
+  as stored, so it can look changed.
+
+**Nothing is written to the workspace, measured.** `git diff` rewrites `.git/index` (even with
+`--no-optional-locks`) and `git status` does too unless optional locks are off, so neither
+`git diff` nor a default `git status` is ever pointed at a live workspace. The reads are
+plumbing (`rev-parse`, `diff-index`, `status --no-optional-locks`, a config read) under a fixed
+environment, a literal-pathspec pin, a wall-clock deadline and no external-diff, textconv or
+filesystem-monitor program. `tests/test_code_review_git.py` digests the target's whole git state
+(the worktree's git directory and the common directory) before and after every verb, on a plain
+repository and a linked worktree with a stat-dirty index, beside controls that DO rewrite it.
+
+**Nothing the repository configures is run, measured.** Git runs a content filter's clean program
+whenever it re-hashes a file whose stat no longer matches the index, and it can only be switched
+off per filter *name*, so a driver added to the repository's configuration after the names were
+listed would not be covered (an earlier build of this view did exactly that, and a marker program
+showed the race). A read that can hash a working file (the listing, the counts, one file's diff)
+therefore never reads the repository's configuration: it runs in a git directory of its own
+making, holding a configuration the read wrote (only file-mode, line-ending and stat settings are
+carried over, each in its exact shape), a detached HEAD, a COPY of the index with its modification
+time (git's racily-clean rule depends on it), and the target's object store borrowed through
+`objects/info/alternates`. There is no driver in it to find, and nothing git writes can land in the
+target. The few reads that still use the repository's own configuration (`rev-parse`, a config
+listing) were measured with a marker program behind every key that names a program, and ran none.
+A repository that uses a split index, another object format, or has an index over 64 MiB is
+refused rather than read. The measurements are kept with the item-3 evidence
+(`filter-race-probe.txt`); `git --attr-source` would be another route but needs git 2.40, and this
+machine has 2.39.5.
+
+**Side by side is two panes.** The old side (headed `Base (old)` with the base commit) and the new
+side (headed `Working tree (new)` with the time it was observed) are two equal-width reading
+regions, each with its own sideways scrollbar (drawn, not an overlay that appears on use) and
+held at one vertical position so a removed line stays opposite the line that replaced it. A long
+line scrolls on the side it is on, up to the clipped length shown (1,200 characters), and says so
+in that side's heading; the line number and the `+`/`−` mark stay at the pane's left edge while it
+does. Neither side is ever pushed past the dialog's edge, and the page itself never scrolls
+sideways. Two columns are offered from 1,040 px of dialog width. Below that the toggle is disabled and
+the reason is TEXT on the diff's toolbar row (`Side by side needs a dialog at least 1,040 px wide: widen
+the window or use full screen.`), not only the toggle's tooltip, so a keyboard or touch reader is told too;
+a phone-width window, which has no layout choice and no full-screen button, says `One column at this
+width: side by side needs a wider window.` Either way the unified view is shown, and the reader's choice
+is kept for when the window is widened.
+
+**Withheld, never read.** A path under git's own directory, Herdr's private state, agent state or
+credential directories, a hidden name this view does not list, a credential-like name or key
+material is listed by name with no counts and no content. And no git read that could hash or diff a
+file is ever pointed at one: before any such read the tracked NAMES are read (from the index and the
+tree, which open no working file), every private location among them is decided by the one policy,
+and the status listing, the counts, the modes and a file's diff are told to leave those locations
+out in git's own pathspec (each spelled as literal text, never a pattern), so git does not visit,
+stat or hash anything under one. All of an observation's reads go through the same private copy of
+the index, so what was decided private is what they leave out, and it is checked to be unchanged at
+the end; a file's diff is read through that same copy, names its path as a FILE (nothing under it
+is selected, so a file that has become a directory is not expanded), and is refused before git is
+asked if the path is no longer the kind of thing it was listed as. The name and kind of change of a
+withheld tracked file come from reads that open no file: what is staged, from the index against
+`HEAD`; what differs in the working tree, from the index's own RECORD of the file (its mode, its
+size and the second it was recorded) compared by this program with the file's stat. Git is never
+asked to compare a working file for it, so no recorded time, however far ahead of the index's own,
+can make a file be read (git's fallback of hashing a "racily clean" file is not reached). **That is
+a metadata-only inference, and the dialog says so** (in a withheld file's words and in "What is
+compared?"): a withheld file that was only touched is listed as changed; an edit of the SAME SIZE
+within the recorded second is not seen, so a private file that did change can be shown as unchanged
+(it under-reports; it never reveals). The record also carries the modification time's nanoseconds;
+they are available in git's output and are NOT used, because this build of git compares an entry at
+the second as well (measured: a same-size rewrite 60 ms later is not seen by git's own comparison of
+a non-racy entry either), so a stricter comparison would list as changed what git itself lists as
+unchanged. Whether the precision should be tightened is a decision for review, not foreclosed here.
+A destination that took its privacy from its source (an unchanged file moved from a private name to
+a public one) is left out of every read from the start, like the source. Other stated consequences:
+a private location that holds a tracked file is
+left out whole, so untracked files inside it are not listed; and a private file moved to a public
+name AND changed is not recognised as a move (see Renames). Git's own walk of untracked directories
+still reads any `.gitignore` it meets, including inside a private location that holds nothing
+tracked; nothing else under a private location is opened. A FIFO planted where git keeps its
+index, `info/exclude` or `info/attributes` is never waited for: a non-regular index refuses the
+read, a non-regular info file is skipped.
+
+**Movement is the normal case.** The overview is observed twice and must agree with itself. It
+carries a snapshot; a file read is refused (`snapshot_moved`) when the workspace is no longer that
+snapshot, and the dialog then labels the earlier overview **Out of date** and dims it. Before any
+answer is returned the registry, the catalog's answer and the workspace are read again; one that
+moved is discarded. When the connection, the office state, the assignment or the agent can no
+longer be vouched for, the dialog **clears** the review and says why; it does not come back by
+itself.
+
+**Bounds (never raised).** 500 changed files per overview (more refuses, it never lists a part),
+6,000 diff lines and 1 MiB of line text retained per file (the FIRST lines up to either bound,
+a contiguous prefix, never a selection) with the exact totals and the whole diff's digest kept, 1,200 characters per line with the clipped count shown, 4 MiB of diff read per
+file, 64 KiB for a new file (a read costs that and the one byte that shows a file is over it,
+65,537 bytes), 16 MiB of new-file reads per overview, counted as the bytes actually read, 16 MiB of
+tracked names listed per read, 16 MiB of the index's record of the private locations' entries,
+2,048 private locations (262,144 bytes of them) left out per read
+(more refuses), 64 MiB of index copied per read
+(more refuses with its exact size), 1 MiB for each of the repository's `info/exclude` and
+`info/attributes`, 20 seconds per git read, one review read at a time. Patch text is untrusted: it is shown as text only, and a character that
+could reorder or hide text is shown as a visible `U+` placeholder.
+
+**The unit of every character bound is the UTF-16 code unit.** The 1 MiB of line text, the 1,200
+characters per line, a path (1,024), a branch name (255), a hunk's section heading (200), a
+detail sentence (240) and a listed content-filter driver name (64) are all counted in the unit the office checks them in, JavaScript's
+`.length`, which is also the unit the answer's byte budget is built on (JSON escapes one unit to at
+most six bytes, so a file at the total bound is at most about 6 MiB on the wire, inside the 8 MiB
+the office reads). It is not Python's `len`, which counts code points: a character outside the Basic
+Multilingual Plane, an emoji for one, is one code point and **two units**, so a line of 601 emoji is
+1,202 units and a bound of 1,200 shows 600 of them. The backend measures and cuts in that unit,
+never inside a character (a character that does not fit whole is left out whole; half of one is
+not text), and keeps or cuts a line and its end-of-file marker together by the same measure. The
+`N more characters not shown` tag after a clipped line counts CHARACTERS as a reader counts them, so
+it says `1 more character not shown` for the one emoji left out. A path, a branch name or a detail sentence is cut
+the same way, and a filter-driver name the repository gives that is longer than 64 units is listed cut
+to its first 64 (it is listed for disclosure only; before this it made the office refuse the whole
+overview); a path longer than 1,024 units is refused like any other over-long path. The office
+cuts its own refusal text at a character too. The dialog applies neither bound (it shows what it is
+sent); the width estimate it keeps for side by side counts units, which can only overestimate.
+
+**Proof labelling.** The tests drive a real catalog owner over a real running Mission and real git
+repositories in temporary directories, and the real App in a real browser over a fixture
+WebSocket. That is isolated, fixture proof, not acceptance on a live team: the browser proof on a
+real agent's workspace is Root's.
 
 **Why the subtree is `integrations/pixel-agents/`.**
 

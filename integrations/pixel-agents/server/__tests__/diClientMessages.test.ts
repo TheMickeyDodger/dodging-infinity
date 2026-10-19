@@ -117,9 +117,18 @@ describe('DI handler: inert types do nothing at all', () => {
       .map((v) => v.trim())
       .filter(Boolean);
     // + saveAmbientState (M3 S4, DI only) + diEvidenceRead (item 2, DI only, a READ)
-    expect(variants).toHaveLength(24);
+    // + diCodeReviewRead (item 3, DI only, a READ)
+    expect(variants).toHaveLength(25);
     const declared = new Set<string>([...DI_HANDLED_MESSAGE_TYPES, ...DI_INERT_MESSAGE_TYPES]);
-    expect(declared.size).toBe(24);
+    expect(declared.size).toBe(25);
+    // every protocol variant is declared exactly one way: handled or inert, never both, never neither
+    for (const variant of variants) {
+      const camel = variant.replace(/^./, (c) => c.toLowerCase());
+      expect(declared.has(camel), camel).toBe(true);
+    }
+    expect(
+      DI_HANDLED_MESSAGE_TYPES.filter((t) => (DI_INERT_MESSAGE_TYPES as readonly string[]).includes(t)),
+    ).toEqual([]);
     for (const type of Object.keys(INERT_PAYLOADS)) expect(DI_INERT_MESSAGE_TYPES).toContain(type);
   });
 

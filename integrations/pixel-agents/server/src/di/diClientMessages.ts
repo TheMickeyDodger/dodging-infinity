@@ -21,6 +21,7 @@ import type { AssetCache } from '../clientMessageHandler.js';
 import { PALETTE_COUNT } from '../constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../layoutPersistence.js';
 import { readAmbientState, writeAmbientState } from './ambientStatePersistence.js';
+import { parseCodeReviewRead } from './codeReview.js';
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
 import { parseEvidenceRead } from './evidenceContent.js';
 
@@ -37,6 +38,11 @@ export interface DiMessageContext {
    * connection only, by an admitted reference; absent, the message is refused.
    */
   readEvidence?: (msg: Record<string, unknown>, send: DiSend) => void;
+  /**
+   * item 3: the office's live code review read (DiOffice.readCodeReview). It answers the asking
+   * connection only, by an admitted reference; absent, the message is refused.
+   */
+  readCodeReview?: (msg: Record<string, unknown>, send: DiSend) => void;
 }
 
 /** What the handler did with one message (returned for tests and diagnostics). */
@@ -54,6 +60,7 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'setShowAreas',
   'saveAmbientState',
   'diEvidenceRead',
+  'diCodeReviewRead',
 ] as const;
 
 /**
@@ -179,6 +186,18 @@ export function handleDiClientMessage(
       }
       if (!ctx.readEvidence) return { refused: 'no evidence reader in this office' };
       ctx.readEvidence(msg, send);
+      return 'handled';
+    }
+
+    // item 3 (live code review): a READ, by an admitted reference only — never a path, root, ref
+    // or git option. Nothing is written; the office answers this connection with exactly one
+    // diCodeReview.
+    case 'diCodeReviewRead': {
+      if (parseCodeReviewRead(msg) === null) {
+        return { refused: 'diCodeReviewRead is not exactly an admitted reference' };
+      }
+      if (!ctx.readCodeReview) return { refused: 'no code review reader in this office' };
+      ctx.readCodeReview(msg, send);
       return 'handled';
     }
 

@@ -13,6 +13,8 @@ import type {
 } from '../../../core/src/messages.js';
 import { DI_PANEL_WIDTH_PX, DI_SELECTION_POLL_MS } from '../constants.js';
 import type { OfficeState } from '../office/engine/officeState.js';
+import type { DiCodeReviewAccess } from './DiCodeReviewEntry.js';
+import { DiCodeReviewEntry } from './DiCodeReviewEntry.js';
 import type { DiEvidenceAccess } from './DiEvidenceLibrary.js';
 import { DiEvidenceLibrary } from './DiEvidenceLibrary.js';
 import type { DiFreshness, DiRecord, DiRecordTarget, DiSelectionMemory } from './diNavigation.js';
@@ -77,6 +79,8 @@ interface DiOfficePanelProps {
   announced?: ReadonlyArray<{ id: number; missionRef: string | null }>;
   /** item 2: the evidence library's content seam (absent: the library lists, never reads). */
   evidence?: DiEvidenceAccess | null;
+  /** item 3: the live code review seam (absent: the offer is stated, nothing can be opened). */
+  review?: DiCodeReviewAccess | null;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -543,12 +547,14 @@ function SelectedMember({
   freshness,
   onShow,
   onShowMission,
+  review,
 }: {
   member: DiMember;
   mission: DiMission;
   freshness: DiFreshness;
   onShow: (id: number) => void;
   onShowMission: (missionRef: string) => void;
+  review: DiCodeReviewAccess | null;
 }) {
   const outcomes = plainMissionOutcomes(mission);
   return (
@@ -570,6 +576,7 @@ function SelectedMember({
           Show this Mission in the list
         </button>
       </div>
+      <DiCodeReviewEntry member={member} missionRef={mission.missionRef} access={review} />
       <Row label="identity">{plainMemberIdentity(member.classification)}</Row>
       <OnTheMap
         characterId={member.characterId}
@@ -1123,6 +1130,7 @@ function DiOfficePanelBody({
   onCollapsedChange,
   announced = [],
   evidence = null,
+  review = null,
 }: DiOfficePanelProps) {
   const [selectedId, setSelectedId] = useState<number | null>(officeState.selectedAgentId);
   useEffect(() => {
@@ -1264,6 +1272,17 @@ function DiOfficePanelBody({
         </button>
       </div>
 
+      {/* item 3: the entry to the live code review stays pinned while an agent is selected — the
+          panel scrolls the selected agent's Mission into view, which would otherwise carry it away. */}
+      {keyed?.target.kind === 'member' && (
+        <DiCodeReviewEntry
+          member={keyed.target.member}
+          missionRef={keyed.target.mission.missionRef}
+          access={review}
+          variant="bar"
+        />
+      )}
+
       <section className="flex flex-col gap-1 shrink-0" data-testid="di-freshness-summary">
         <Row label="envelope">
           {!envelope.fresh && waiting ? (
@@ -1380,6 +1399,7 @@ function DiOfficePanelBody({
             freshness={snapshotFreshness}
             onShow={navigateTo}
             onShowMission={showMission}
+            review={review}
           />
         ) : keyed?.target.kind === 'runtime' ? (
           <SelectedRuntimeAgent

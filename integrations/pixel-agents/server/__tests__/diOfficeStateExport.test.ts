@@ -24,6 +24,9 @@ const HISTORICAL_SOURCE =
   'server/__tests__/fixtures/di-backend/v2/artifact-content-historical-v1.FIXTURE.json';
 const HISTORICAL_TARGET =
   'webview-ui/test/fixtures/di-office-state-evidence-historical-v2.FIXTURE.json';
+/** item 3: the REAL backend answers of the live code review (tests/test_code_review_owner.py). */
+const REVIEW_SOURCE = 'server/__tests__/fixtures/di-backend/v2/code-review-v1.FIXTURE.json';
+const REVIEW_TARGET = 'webview-ui/test/fixtures/di-office-state-code-review-v2.FIXTURE.json';
 
 describe('C1: the webview regression renders the real projection of a labelled fixture', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -410,6 +413,150 @@ describe('C1: the webview regression renders the real projection of a labelled f
     };
     const text = JSON.stringify(doc, null, 2) + '\n';
     const target = path.join(ROOT, HISTORICAL_TARGET);
+    if (process.env.DI_EXPORT_OFFICE_STATE === '1') fs.writeFileSync(target, text);
+    expect(fs.readFileSync(target, 'utf-8')).toBe(text);
+  });
+
+  /**
+   * item 3: the live code review the webview's browser regression drives — ONE real DiOffice over
+   * the backend's exported catalog answer, and the diCodeReview messages that SAME office relays
+   * for the overview and for every openable file (each re-checked by the bridge, exactly as live).
+   * Plus the office states a review must be cleared by: the same body after it expired (STALE), with
+   * the assignment no longer active (INACTIVE), with the agent's task replaced (MOVED), with the
+   * agent gone (AGENT GONE), and a poll the backend cannot answer (UNAVAILABLE).
+   */
+  it('the committed code review states equal one DiOffice reading every exported answer', async () => {
+    const raw = fs.readFileSync(path.join(ROOT, REVIEW_SOURCE));
+    const fixture = JSON.parse(raw.toString('utf-8')) as {
+      catalog_answer: { response: Record<string, any> & { generated_at: number } };
+      overview: Record<string, any>;
+      files: Record<string, Record<string, any>>;
+    };
+    const body = fixture.catalog_answer;
+    const t0 = body.response.generated_at * 1000;
+    let clockMs = t0;
+    let current: unknown = body;
+    let reviewAnswer: unknown = null;
+    const office = new DiOffice({
+      store: new AgentStateStore(),
+      discoveryPath: '/sandbox/backend-discovery.json',
+      contractVersion: 2,
+      deps: {
+        readDiscovery: () => ({ ok: true, endpoint: { port: 1, token: 't' } }),
+        request: async (): Promise<BackendResult> =>
+          (current as BackendResult | { kind?: undefined }).kind === 'transport_error'
+            ? (current as BackendResult)
+            : {
+                kind: 'http',
+                status: 200,
+                headers: { 'x-di-freshness-health': 'fresh' },
+                body: current,
+                bodyProblem: null,
+              },
+        requestReview: async (): Promise<BackendResult> => ({
+          kind: 'http',
+          status: 200,
+          headers: {},
+          body: reviewAnswer,
+          bodyProblem: null,
+        }),
+        nowMs: () => clockMs,
+        log: () => undefined,
+      },
+    });
+    await office.poll();
+    const live = office.officeStateMessage();
+    const mission = live.missions.missions[0];
+    const member = mission.members.members[0];
+    expect(member.codeReview?.state).toBe('offered');
+    const ref = {
+      missionRef: mission.missionRef,
+      memberRef: member.memberRef,
+      taskId: member.codeReview!.taskId!,
+      listing: member.codeReview!.listing!,
+    };
+    const read = async (extra: Record<string, unknown>, backendAnswer: unknown) => {
+      reviewAnswer = backendAnswer;
+      clockMs += 1_000; // one read per interval, as the office allows
+      const sent: unknown[] = [];
+      await office.readCodeReview({ type: 'diCodeReviewRead', ...ref, ...extra }, (m) =>
+        sent.push(m),
+      );
+      expect(sent).toHaveLength(1);
+      return sent[0];
+    };
+    const overview = await read({}, fixture.overview);
+    const files: Record<string, unknown> = {};
+    for (const entry of fixture.overview.overview.files as Array<{ path: string; state: string }>) {
+      if (!['text', 'submodule', 'no_content_diff'].includes(entry.state)) continue; // the openable states
+      const backend = fixture.files[entry.path];
+      files[entry.path] = await read(
+        { snapshot: backend.snapshot, fileId: backend.file_id },
+        backend,
+      );
+    }
+    // The other states are polled by the SAME office from edited copies of the same body.
+    const edited = (edit: (b: any) => void) => {
+      const copy = JSON.parse(JSON.stringify(body));
+      edit(copy);
+      return copy;
+    };
+    const poll = async (next: unknown, at: number) => {
+      current = next;
+      clockMs = at;
+      await office.poll();
+      return office.officeStateMessage();
+    };
+    const stale = await poll(body, t0 + 3_600_000);
+    const inactive = await poll(
+      edited((b) => (b.response.missions[0].lifecycle.standing = 'inactive')),
+      t0,
+    );
+    const moved = await poll(
+      edited((b) => {
+        const m = b.response.missions[0];
+        m.execution.task_id = '20261014-000000-bbbbbb';
+        m.binding.task_id = '20261014-000000-bbbbbb';
+        m.members[0].task_id = '20261014-000000-bbbbbb';
+      }),
+      t0,
+    );
+    const agentGone = await poll(
+      edited((b) => (b.response.missions[0].members = [])),
+      t0,
+    );
+    const unavailable = await poll({ kind: 'transport_error', problem: 'backend_unreachable' }, t0);
+    office.stop();
+    expect(live.live).toBe(true);
+    expect(stale.live).toBe(false);
+    expect(inactive.missions.missions[0].members.members[0].codeReview?.reason).toBe(
+      'assignment_not_active',
+    );
+    expect(moved.missions.missions[0].members.members[0].codeReview?.listing).not.toBe(
+      ref.listing,
+    );
+    expect(agentGone.missions.missions[0].members.members).toHaveLength(0);
+    expect(unavailable.live).toBe(false);
+    const doc = {
+      fixture: true,
+      label:
+        'FIXTURE — the live code review of code-review-v1 as ONE real DiOffice projects it and ' +
+        'relays the exported backend answers for the overview and every openable file; then the ' +
+        'same body after it expired (stale), with the assignment inactive, with the task ' +
+        'replaced (moved), with the agent gone, and a poll the backend cannot answer — SYNTHETIC ' +
+        'VISUAL/KEYBOARD/SECURITY TEST over a fixture git workspace; evidences nothing about any ' +
+        'live Mission or team',
+      derived_from: {
+        path: REVIEW_SOURCE,
+        sha256: crypto.createHash('sha256').update(raw).digest('hex'),
+      },
+      generator: 'server/__tests__/diOfficeStateExport.test.ts',
+      reference: ref,
+      states: { live, stale, inactive, moved, agentGone, unavailable },
+      replies: { overview, files },
+    };
+    const text = JSON.stringify(doc, null, 2) + '\n';
+    const target = path.join(ROOT, REVIEW_TARGET);
     if (process.env.DI_EXPORT_OFFICE_STATE === '1') fs.writeFileSync(target, text);
     expect(fs.readFileSync(target, 'utf-8')).toBe(text);
   });

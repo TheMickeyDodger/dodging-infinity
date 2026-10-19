@@ -54,6 +54,14 @@ Routes, ALL ``GET``; nothing else exists:
   ``200`` for every answer, admitted or refused by its own code; any other
   query is ``400``. It never starts a refresh: it is corroborated by the
   owner's last refreshed answer, or refused.
+- ``/code_review`` with ``mission_ref`` and ``task_id`` (each once, each of a
+  fixed grammar: a reference, never a path, root, ref or git option), and,
+  for ONE file's diff, also the ``snapshot`` the overview carried and the
+  ``file_id`` it listed: the live code review's read-only view of an ACTIVE
+  assignment's workspace (``CatalogService.code_review``,
+  ``target_runtime.code_review``), ``200`` for every answer, observed or
+  refused by its own code; any other query is ``400``. It never starts a
+  refresh and never writes to the workspace it reads.
 
 SERVE-TIME FRESHNESS (``serve_time_answer``). Immediately before a
 ``/catalog`` body is written, on the owner's own clock, the response is
@@ -185,7 +193,10 @@ ROUTE_DIAGNOSTICS = "/diagnostics"
 ROUTE_HEALTHZ = "/healthz"
 #: The evidence library's content route (``target_runtime.artifact_content``).
 ROUTE_ARTIFACT = "/artifact"
-ROUTES = (ROUTE_CATALOG, ROUTE_DIAGNOSTICS, ROUTE_HEALTHZ, ROUTE_ARTIFACT)
+#: The live code review's read route (``target_runtime.code_review``).
+ROUTE_CODE_REVIEW = "/code_review"
+ROUTES = (ROUTE_CATALOG, ROUTE_DIAGNOSTICS, ROUTE_HEALTHZ, ROUTE_ARTIFACT,
+          ROUTE_CODE_REVIEW)
 CONTENT_TYPE = "application/json; charset=utf-8"
 HEADER_FRESHNESS_HEALTH = "X-DI-Freshness-Health"
 HEADER_FRESHNESS_PROBLEM = "X-DI-Freshness-Problem"
@@ -205,6 +216,16 @@ _ARTIFACT_FIELDS = (
     ("mission_ref", re.compile(r"[a-z0-9][a-z0-9._-]{0,63}:mn-[0-9a-f]{32}")),
     ("artifact_id", re.compile(r"mf-[0-9a-f]{32}")),
     ("cursor", re.compile(r"[0-9a-f]{64}")),
+)
+#: ``/code_review``'s fields and their grammar: a RE-DECLARATION of
+#: ``code_review``'s (parity pinned by test). The overview takes the first
+#: two; one file's diff takes all four. A reference, never a path, root,
+#: ref, pathspec or git option.
+_CODE_REVIEW_FIELDS = (
+    ("mission_ref", re.compile(r"[a-z0-9][a-z0-9._-]{0,63}:mn-[0-9a-f]{32}")),
+    ("task_id", re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")),
+    ("snapshot", re.compile(r"[0-9a-f]{64}")),
+    ("file_id", re.compile(r"rf-[0-9a-f]{32}")),
 )
 _REFUSED_METHODS = ("HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
                     "TRACE", "CONNECT")
@@ -302,6 +323,30 @@ def _artifact_query(query):
             return None
         found.append(value)
     return tuple(found)
+
+
+def _code_review_query(query):
+    """``(mission_ref, task_id, snapshot, file_id)`` of a ``/code_review``
+    query string, each once and of its fixed grammar: the overview is
+    exactly ``mission_ref`` and ``task_id`` (``snapshot`` and ``file_id``
+    None); one file is all four. None when refused (any other field, a
+    repeat, or ``snapshot`` without ``file_id`` or the reverse)."""
+    names = [name for name, _grammar in _CODE_REVIEW_FIELDS]
+    try:
+        fields = parse_qsl(query, keep_blank_values=True,
+                           strict_parsing=True, max_num_fields=len(names))
+    except ValueError:
+        return None
+    values = dict(fields)
+    if len(values) != len(fields) or not set(values) <= set(names) or (
+            "mission_ref" not in values or "task_id" not in values):
+        return None
+    if ("snapshot" in values) != ("file_id" in values):
+        return None
+    for name, grammar in _CODE_REVIEW_FIELDS:
+        if name in values and grammar.fullmatch(values[name]) is None:
+            return None
+    return tuple(values.get(name) for name in names)
 
 
 # -- the discovery file ----------------------------------------------------
@@ -526,6 +571,13 @@ class CatalogRequestHandler(http.server.BaseHTTPRequestHandler):
                 self.send_error(400)
                 return
             self._reply(200, encode_answer(owner.artifact_content(*request)))
+            return
+        if target.path == ROUTE_CODE_REVIEW:
+            request = _code_review_query(target.query)
+            if request is None:
+                self.send_error(400)
+                return
+            self._reply(200, encode_answer(owner.code_review(*request)))
             return
         if target.query:
             self.send_error(400)

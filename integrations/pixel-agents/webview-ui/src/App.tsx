@@ -8,6 +8,8 @@ import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
+import { DiCodeReview } from './components/DiCodeReview.js';
+import type { DiCodeReviewAccess } from './components/DiCodeReviewEntry.js';
 import type { EvidenceSelection } from './components/diEvidenceFormat.js';
 import type { DiEvidenceAccess } from './components/DiEvidenceLibrary.js';
 import {
@@ -38,6 +40,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from './constants.js';
+import { useDiCodeReview } from './hooks/useDiCodeReview.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
@@ -122,6 +125,7 @@ function App() {
   const {
     diOfficeState,
     diEvidenceContent,
+    diCodeReviewAnswer,
     diClientReason,
     agents,
     selectedAgent,
@@ -274,6 +278,21 @@ function App() {
   const diEvidence = useMemo<DiEvidenceAccess>(
     () => ({ content: diEvidenceContent, pending: diEvidencePending, request: requestDiEvidence }),
     [diEvidenceContent, diEvidencePending, requestDiEvidence],
+  );
+  // item 3: the live code review. The side panel is only the entry; the reading is in the modal.
+  // The session sends only reads by an admitted reference and clears itself the moment the
+  // connection, the office state, the assignment or the agent cannot be vouched for.
+  const review = useDiCodeReview(diOfficeState, diClientReason, diCodeReviewAnswer);
+  const reviewOpener = useRef<HTMLElement | null>(null);
+  const openReview = review.open;
+  const reviewAccess = useMemo<DiCodeReviewAccess>(
+    () => ({
+      open: (target, opener) => {
+        reviewOpener.current = opener;
+        openReview(target);
+      },
+    }),
+    [openReview],
   );
   // Round 15 F2: a read pending when the client stops vouching for the office state is
   // forgotten with it (its answer, if any, is dropped by the message handler).
@@ -1054,8 +1073,16 @@ function App() {
               onCollapsedChange={setDiPanelCollapsed}
               announced={diAnnounced}
               evidence={diEvidence}
+              review={reviewAccess}
             />
           )}
+          <DiCodeReview
+            session={review.session}
+            onClose={review.close}
+            onRefresh={review.refresh}
+            onSelect={review.select}
+            returnFocusTo={reviewOpener}
+          />
         </>
       ) : (
         <DebugView

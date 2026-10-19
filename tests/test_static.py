@@ -2689,6 +2689,10 @@ MISSION_SOURCES_ALLOWED_CONSUMERS = frozenset({
     # query_v2's reviewed read ledger, registry, sources); its exact imports
     # are pinned in (12j).
     'target_runtime/artifact_content.py',
+    # Item 3 (live code review): the read-only view of an ACTIVE assignment's
+    # workspace (contract, registry only, plus the git boundary and the
+    # hardened file reader); its exact imports are pinned in (12k).
+    'target_runtime/code_review.py',
 })
 # Within the package, only the reader may import mission; every other module
 # stays mission-free.
@@ -3073,9 +3077,13 @@ for _node in ast.walk(_catalog_tree):
             # Item 07 adds the read-only task-native reader (pinned in 12i).
             # Item 2 adds the one admitted content read, imported lazily by
             # the version 2 owner's artifact_content method (pinned in 12j).
+            # Item 3 adds the live code review's one read, imported lazily by
+            # the owner's code_review method (pinned in 12k); the catalog
+            # still imports no git boundary itself.
             assert {a.name for a in _node.names} <= {
-                'artifact_content', 'herdr_task_source', 'mission_state',
-                'runtime_snapshot'}, (CATALOG_FILE, _node.lineno)
+                'artifact_content', 'code_review', 'herdr_task_source',
+                'mission_state', 'runtime_snapshot'}, (
+                    CATALOG_FILE, _node.lineno)
     if isinstance(_node, ast.Import):
         for _alias in _node.names:
             assert _alias.name.split('.')[0] not in (
@@ -3149,11 +3157,13 @@ assert ast.literal_eval(_catalog_http_literals['LOOPBACK_HOST']) == (
     '127.0.0.1'), 'the adapter binds the loopback literal only'
 # Item 2 (evidence library) adds ONE read route, /artifact: GET only, the
 # same access boundary, a reference (never a path); see
-# tests/test_artifact_content.py.
+# tests/test_artifact_content.py. Item 3 (live code review) adds ONE more,
+# /code_review: GET only, the same boundary, a reference and never a path,
+# root, ref or git option; see tests/test_code_review_owner.py.
 assert [ast.literal_eval(_catalog_http_literals[_name.id])
         for _name in _catalog_http_literals['ROUTES'].elts] == [
-    '/catalog', '/diagnostics', '/healthz', '/artifact'], (
-    'exactly the four read routes')
+    '/catalog', '/diagnostics', '/healthz', '/artifact', '/code_review'], (
+    'exactly the five read routes')
 
 # (12h) Query contract v2's two new target_runtime modules, pinned
 #       STRUCTURALLY so a later, broader import or call fails here:
@@ -3422,5 +3432,42 @@ for _node in ast.walk(_ac_tree):
         assert not (_name or '').startswith(
             ('record_', 'mint_', 'apply_', 'attest', 'reserve')), (
             ARTIFACT_CONTENT_FILE, _node.lineno, _name)
+
+# (12k) Item 3 (live code review): target_runtime/code_review.py, the ONE read
+#       of an ACTIVE assignment's workspace, pinned STRUCTURALLY like 12j:
+#       exactly these imports (the git boundary arrives only through the
+#       injected transport object, never a subprocess of its own); it opens no
+#       file (every file byte comes through the hardened state_artifact
+#       reader, the registry's own bounded load, or git_transport's live
+#       reads); it reads no environment; and it calls no write, replace,
+#       rename, unlink, mkdir, chmod, link, spawn, kill, Popen, save or lock,
+#       and no record_* / mint_* / apply_* / attest* / reserve* name. Its only
+#       filesystem calls are metadata reads (lstat, isdir, realpath).
+CODE_REVIEW_FILE = 'target_runtime/code_review.py'
+_cr_tree = ast.parse((R / CODE_REVIEW_FILE).read_text())
+_cr_imports = sorted(
+    [(None, a.name) for n in ast.walk(_cr_tree) if isinstance(n, ast.Import)
+     for a in n.names]
+    + [(n.module, a.name) for n in ast.walk(_cr_tree)
+       if isinstance(n, ast.ImportFrom) for a in n.names], key=repr)
+assert _cr_imports == sorted([
+    (None, 'hashlib'), (None, 'json'), (None, 'os'), (None, 're'),
+    ('mission_sources', 'contract'), ('mission_sources', 'registry'),
+    ('target_runtime', 'git_transport'), ('target_runtime', 'prepare'),
+    ('target_runtime', 'state_artifact')], key=repr), _cr_imports
+_CR_FILESYSTEM_CALLS = {'lstat', 'isdir', 'realpath', 'isabs', 'dirname',
+                        'basename', 'join'}
+for _node in ast.walk(_cr_tree):
+    if isinstance(_node, ast.Call):
+        _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+        assert _name not in RUNTIME_SNAPSHOT_FORBIDDEN_CALLS | {'lock'}, (
+            CODE_REVIEW_FILE, _node.lineno, _name)
+        assert not (_name or '').startswith(
+            ('record_', 'mint_', 'apply_', 'attest', 'reserve')), (
+            CODE_REVIEW_FILE, _node.lineno, _name)
+    if isinstance(_node, ast.Attribute) and isinstance(
+            _node.value, ast.Name) and _node.value.id == 'os':
+        assert _node.attr in _CR_FILESYSTEM_CALLS | {'path', 'sep'}, (
+            CODE_REVIEW_FILE, _node.lineno, _node.attr)
 
 print('static tests: OK')

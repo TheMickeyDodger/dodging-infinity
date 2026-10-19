@@ -754,10 +754,12 @@ class AccessBoundaryTests(HttpFixture):
         for name in methods - {"do_GET"}:
             self.assertIs(getattr(handler, name), handler._method_refused)
         # Item 2 (evidence library) adds ONE read route, /artifact
-        # (tests/test_artifact_content.py); still GET only.
+        # (tests/test_artifact_content.py); item 3 (live code review) adds
+        # ONE more, /code_review (tests/test_code_review_owner.py); still
+        # GET only.
         self.assertEqual(catalog_http.ROUTES,
                          ("/catalog", "/diagnostics", "/healthz",
-                          "/artifact"))
+                          "/artifact", "/code_review"))
 
     def test_no_control_route_is_reachable_and_nothing_is_written(self):
         """Every plausible control/registration request, by every method,
