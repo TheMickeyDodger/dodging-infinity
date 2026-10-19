@@ -37,6 +37,11 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 from target_runtime import git_transport  # noqa: E402
 from test_mission_sources import Bounded  # noqa: E402
+from _hermetic_git import run_git_completed  # noqa: E402
+
+#: The ordinary untracked directory of the fixture workspace. Named, because the string "notes" is also a git verb and
+#: the identity guard (tests/test_hermetic_git.py) reads a literal "notes" among a call's arguments as `git notes`.
+NOTES_DIR = "notes"
 
 #: The test's own git environment (the product's is git_transport's).
 CLEAN_ENV = {
@@ -46,10 +51,21 @@ CLEAN_ENV = {
 }
 
 
+def fixture_git_env():
+    """The fixture's git environment: ``CLEAN_ENV`` exactly (the identity scrub stays: no GIT_AUTHOR_*/GIT_COMMITTER_*,
+    GIT_CONFIG_NOSYSTEM, GIT_CONFIG_GLOBAL=/dev/null), except that PATH is the INHERITED one. A hardcoded PATH hides the
+    executed sweep's logging shim (tests/test_hermetic_git.py prepends it to the inherited PATH) and the sweep would observe
+    no git call of this module. The deliberate CONTROL environments below keep ``CLEAN_ENV`` itself."""
+    env = dict(CLEAN_ENV)
+    env["PATH"] = os.environ.get("PATH", CLEAN_ENV["PATH"])
+    return env
+
+
 def run_git(cwd, *args, check=True, env=None):
-    return subprocess.run(["git", "-C", cwd] + list(args),
-                          capture_output=True, check=check,
-                          env=env or CLEAN_ENV)
+    """``git -C cwd ARGS`` through the hermetic helper (the identity rides the invocation as -c options). Returns the
+    CompletedProcess with BYTES output, as it always did: callers decode it or compare it byte for byte."""
+    return run_git_completed(["-C", cwd] + list(args), check=check,
+                             env=env or fixture_git_env(), text=False)
 
 
 def tree_state(directory):
@@ -134,7 +150,7 @@ class Repo(object):
         self.git("add", "--", *relatives)
 
     def save(self, message="fixture"):
-        self.git("-c", "commit.gpgsign=false", "commit", "-q", "-m", message)
+        run_git(self.path, "-c", "commit.gpgsign=false", "commit", "-q", "-m", message)
 
 
 def busy_workspace(repo, extras=None):
@@ -704,14 +720,14 @@ class LiveVerbsLeaveTheTargetUntouchedTests(FixtureCase):
             # round 20 F2: the same four with a location left out, and the two
             # reads that decide and list the private ones from names and stat
             ("live_inventory (a location left out)",
-             lambda: transport.live_inventory(path, ("notes", "src/util.py"))),
+             lambda: transport.live_inventory(path, (NOTES_DIR, "src/util.py"))),
             ("live_counts (a location left out)",
-             lambda: transport.live_counts(path, ("notes", "src/util.py"))),
+             lambda: transport.live_counts(path, (NOTES_DIR, "src/util.py"))),
             ("live_modes (a location left out)",
-             lambda: transport.live_modes(path, ("notes", "src/util.py"))),
+             lambda: transport.live_modes(path, (NOTES_DIR, "src/util.py"))),
             ("live_names", lambda: transport.live_names(path)),
             ("live_index_stat", lambda: transport.live_index_stat(
-                path, ["src", "notes"])),
+                path, ["src", NOTES_DIR])),
             ("live_file_diff (files only)", lambda: transport.live_file_diff(
                 path, ["src/app.py"], (), None, True)),
             ("live_file_diff", lambda: transport.live_file_diff(
@@ -890,10 +906,10 @@ class RepositoryAuthoredConfigurationTests(FixtureCase):
         # its silence in the tests below means something.
         repo = self.busy()
         self.arm_clean_filter(repo)
-        subprocess.run(
-            ["git"] + list(git_transport._LIVE_READ_PINS)
+        run_git_completed(
+            list(git_transport._LIVE_READ_PINS)
             + ["-C", repo.path, "diff-index", "--numstat", "-z", "-M", "HEAD"],
-            capture_output=True, env=CLEAN_ENV, check=True)
+            env=CLEAN_ENV, check=True, text=False)
         self.assertTrue(os.path.exists(self.marker("clean-ran")))
 
     def test_a_clean_filter_never_runs_in_a_live_read(self):
@@ -1043,10 +1059,10 @@ class PrivateViewTests(FixtureCase):
     def real(self, repo, *verb):
         """The same verb under the same pins, in the repository's OWN git
         directory (a fixture with no filter configured, so it is safe)."""
-        return subprocess.run(
-            ["git"] + list(git_transport._LIVE_READ_PINS)
-            + ["-C", repo.path] + list(verb), capture_output=True,
-            env=CLEAN_ENV, check=True).stdout
+        return run_git_completed(
+            list(git_transport._LIVE_READ_PINS)
+            + ["-C", repo.path] + list(verb),
+            env=CLEAN_ENV, check=True, text=False).stdout
 
     def assert_same_reads(self, repo):
         transport = git_transport.GitTransport()
@@ -1332,11 +1348,11 @@ class SubmoduleTests(FixtureCase):
         # CONTROL: a read that DOES enter the submodule (the setting this
         # review does not use) runs the submodule's filter, so the fixture
         # is hostile and the silence below means something
-        subprocess.run(
-            ["git"] + list(git_transport._LIVE_READ_PINS)
+        run_git_completed(
+            list(git_transport._LIVE_READ_PINS)
             + ["-C", main.path, "status", "--porcelain=v1",
                "--ignore-submodules=none"],
-            capture_output=True, env=CLEAN_ENV, check=True)
+            env=CLEAN_ENV, check=True, text=False)
         self.assertTrue(os.path.exists(os.path.join(self.root, "sub-ran")),
                         "the control read ran the submodule's filter")
         os.rename(os.path.join(self.root, "sub-ran"),

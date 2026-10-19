@@ -66,11 +66,13 @@ def run_git(*argv, cwd=None, env=None):
     return completed.stdout.strip()
 
 
-def run_git_completed(argv, cwd=None, check=True, env=None):
+def run_git_completed(argv, cwd=None, check=True, env=None, text=True):
     """Run a hermetic Git command and return the CompletedProcess.
     ``check`` follows subprocess.run semantics for callers that assert
-    on return codes themselves."""
+    on return codes themselves.  ``text=False`` is the opt-in BYTES mode
+    for callers that compare or decode raw output (NUL-delimited ``-z``
+    listings, byte-exact assertions); the default is unchanged."""
     return subprocess.run(
         hermetic_git_argv(argv), cwd=cwd, env=env,
-        capture_output=True, text=True, check=check,
+        capture_output=True, text=text, check=check,
     )

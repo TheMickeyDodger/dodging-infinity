@@ -32,11 +32,19 @@ from target_runtime import git_transport  # noqa: E402
 from target_runtime import prepare as prepare_module  # noqa: E402
 from target_runtime import state_artifact  # noqa: E402
 import test_code_review_git as gitfx  # noqa: E402
+from _hermetic_git import run_git_completed  # noqa: E402
 from test_code_review import (  # noqa: E402
     BUSY_PATHS, MISSION_REF, NOW, OTHER_TASK, SOURCE_ID, TASK, Answer,
     ReviewCase)
 import test_code_review as review_tests  # noqa: E402
 from test_mission_sources import Bounded  # noqa: E402
+
+
+def fixture_git(repo, *args, check=True):
+    """``repo.git(...)`` for the commands that need an identity (commit, stash, merge): through the hermetic helper, with the
+    fixture's environment and BYTES output, exactly what ``repo.git`` returned."""
+    return run_git_completed(["-C", repo.path] + list(args), check=check,
+                             env=gitfx.fixture_git_env(), text=False)
 
 
 class Hooked(object):
@@ -374,12 +382,12 @@ class FileTests(ReviewCase):
     def test_conflicted_entries_have_no_diff(self):
         self.repo_.git("checkout", "-q", "-b", "other")
         self.repo_.write("src/util.py", "A = 1\nB = 2\nC = 30\n")
-        self.repo_.git("commit", "-aq", "-m", "other")
+        fixture_git(self.repo_, "commit", "-aq", "-m", "other")
         self.repo_.git("checkout", "-q", "main")
-        self.repo_.git("stash", "-q", "-u")
+        fixture_git(self.repo_, "stash", "-q", "-u")
         self.repo_.write("src/util.py", "A = 1\nB = 2\nC = 31\n")
-        self.repo_.git("commit", "-aq", "-m", "main change")
-        self.repo_.git("merge", "other", check=False)
+        fixture_git(self.repo_, "commit", "-aq", "-m", "main change")
+        fixture_git(self.repo_, "merge", "other", check=False)
         listing = self.overview()
         entry = self.files(listing)["src/util.py"]
         self.assertEqual((entry["change"], entry["staging"], entry["state"]),
@@ -704,7 +712,7 @@ class MovementTests(ReviewCase):
     def test_an_untracked_file_that_vanishes_is_movement(self):
         listing = self.overview()
         entry = self.files(listing)["notes/new.txt"]
-        path = os.path.join(self.workspace, "notes", "new.txt")
+        path = os.path.join(self.workspace, "notes/new.txt")
         hooked = Hooked(self.transport, "live_filter_drivers",
                         lambda: os.replace(path, path + ".gone"))
         reply = self.read(snapshot=listing["snapshot"],

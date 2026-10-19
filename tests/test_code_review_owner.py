@@ -26,6 +26,7 @@ from target_runtime import code_review  # noqa: E402
 from target_runtime import git_transport  # noqa: E402
 import test_catalog_v2 as v2_tests  # noqa: E402
 import test_code_review_git as gitfx  # noqa: E402
+from _hermetic_git import run_git_completed  # noqa: E402
 from test_runtime_snapshot import TASK  # noqa: E402
 
 
@@ -46,7 +47,8 @@ class RealMissionFixture(v2_tests.V2Fixture):
         self.put("src/app.py", "def main():\n    return 1\n")
         self.put(".gitignore", ".herd/\n")
         git("add", "src", ".gitignore")
-        git("-c", "commit.gpgsign=false", "commit", "-q", "-m", "base")
+        run_git_completed(["-C", self.workspace, "commit", "-q", "-m", "base"],
+                          env=gitfx.fixture_git_env(), text=False)
         self.put("src/app.py", "def main():\n    return 2\n")
         self.put("notes/todo.txt", "write more tests\n")
 
