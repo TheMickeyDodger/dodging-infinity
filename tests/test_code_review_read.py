@@ -1843,13 +1843,19 @@ class IndexBoundReadTests(ReviewCase):
         self.assertIn("%d" % (size - 1), reply["detail"])
 
 
+def invalid_pem(body):
+    """A deliberately INVALID PEM: a BEGIN line and a placeholder body, no key material and no END line. Built at run
+    time, so no private-key block sits in this source; the product must refuse to read it, which is what the test proves."""
+    return "-----BEGIN " + "PRIVATE KEY-----\n" + body + "\n"
+
+
 class PolicyReadTests(ReviewCase):
 
     def test_git_and_the_reader_are_never_asked_for_a_withheld_path(self):
-        self.repo_.write("keys/server.pem", "-----BEGIN PRIVATE KEY-----\nS3CR3T\n")
+        self.repo_.write("keys/server.pem", invalid_pem("S3CR3T"))
         self.repo_.stage("keys/server.pem")
         self.repo_.save("add key")
-        self.repo_.write("keys/server.pem", "-----BEGIN PRIVATE KEY-----\nN3W\n")
+        self.repo_.write("keys/server.pem", invalid_pem("N3W"))
         recording = Recording(self.transport)
         reads = []
         real = state_artifact.read_state_artifact

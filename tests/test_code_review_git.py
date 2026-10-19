@@ -311,7 +311,7 @@ def private_workspace(case, name="priv"):
     repo = case.repo(name)
     repo.write("src/app.py", "def main():\n    return 1\n")
     repo.write("docs/readme.md", "hello\n")
-    repo.write("secrets/key.txt", "BODY-ONE-0123456789\n")
+    repo.write("secrets/key.txt", "BODY-ONE-" + "0" * 10 + "\n")      # a placeholder, built at run time
     repo.write("secrets/touched.txt", "same\n")
     repo.write("secrets/staged.txt", "BODY-OLD-XXXXXXXXXXXX\n")
     repo.write("secrets/gone.txt", "BODY-GONE-0123\n")

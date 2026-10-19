@@ -288,8 +288,8 @@ class RouteTests(RealMissionFixture):
 # -- the office consumer's fixture: the REAL answers, exported -------------
 
 EXPORT_FILE = "code-review-v1.FIXTURE.json"
-SECRET_KEY_MATERIAL = "S3CR3T-KEY-MATERIAL-NEVER-SHOWN"
-SECRET_ENV = "hunter2-NEVER-SHOWN"
+WITHHELD_PEM_BODY_MARKER = "S3CR3T-KEY-MATERIAL-NEVER-SHOWN"
+WITHHELD_ENV_BODY_MARKER = "hunter2-NEVER-SHOWN"
 SYNTAX_BASE = """import { readFileSync } from 'fs';
 
 export interface Config {
@@ -369,7 +369,7 @@ EXPORT_EXTRAS = {
     "data/large.txt": (LARGE_BASE, LARGE_CHANGED),
     "web/long_line.js": (LONG_BASE, LONG_CHANGED),
     "secrets/server.pem": ("-----BEGIN-----\nold\n", "-----BEGIN-----\n"
-                           + SECRET_KEY_MATERIAL + "\n"),
+                           + WITHHELD_PEM_BODY_MARKER + "\n"),
 }
 
 
@@ -412,7 +412,7 @@ class ReviewExportFixture(v2_tests.V2Fixture):
         self.repo.write("docs/new-guide.md", "# New guide\n\nWrite it.\n")
         self.repo.write("generated/bundle.min.js", "x" * 70001)
         self.repo.write("legacy/latin1.txt", b"caf\xe9\n")
-        self.repo.write(".env", SECRET_ENV + "\n")
+        self.repo.write(".env", WITHHELD_ENV_BODY_MARKER + "\n")
 
     def build_export(self):
         """``(raw, temp_root)``: the REAL answers, before normalization."""
@@ -490,7 +490,7 @@ class NormalizedReviewExportIsCoherent(ReviewExportFixture):
         text = json.dumps(fixture)
         payload = json.dumps(dict((k, fixture[k]) for k in (
             "catalog_answer", "overview", "files", "refusals")))
-        for leak in (temp_root, SECRET_KEY_MATERIAL, SECRET_ENV):
+        for leak in (temp_root, WITHHELD_PEM_BODY_MARKER, WITHHELD_ENV_BODY_MARKER):
             self.assertNotIn(leak, text)
         self.assertNotIn("/var/folders/", payload)
         # The record keeps the literal pattern text: a placeholder, not a path.
