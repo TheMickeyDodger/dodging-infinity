@@ -83,6 +83,7 @@ MAX_BODY_BYTES = 65536
 MAX_JSON_DEPTH = 8
 EXIT_OK = 0
 EXIT_USAGE = 2
+EXIT_INTERRUPTED = 3                  # a stop arrived during startup: it never became ready
 PROBLEM_INTERNAL = "mission_panel_internal"
 
 _REF = r"(lr-[0-9a-f]{32})"
@@ -428,7 +429,11 @@ class PanelServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
     def server_bind(self):
         require_loopback(self.server_address[0])
-        http.server.HTTPServer.server_bind(self)
+        # TCPServer's bind, not HTTPServer's: HTTPServer.server_bind also resolves a name
+        # (socket.getfqdn), an unbounded reverse lookup on the path to the startup line whose
+        # result nothing here reads (the URL and the Host check use the loopback literal).
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
         require_loopback(self.socket.getsockname()[0])
 
     def server_activate(self):
@@ -570,6 +575,13 @@ def main(argv=None):
         threading.Thread(target=server.serve_forever, name="mission-panel-http",
                          daemon=True).start()
         serving = True
+        # A stop that was ALREADY set during startup is a failed start, so readiness is not
+        # announced for it. This catches a stop set before this check; it is not atomic with
+        # the signal (a stop arriving after the check and before the line is not caught). A
+        # stop after readiness is the ordinary clean shutdown below, exit 0.
+        if stop.is_set():
+            print("dimission_panel: stopped during startup; not ready", file=sys.stderr)
+            return EXIT_INTERRUPTED
         sys.stdout.write(json.dumps({
             "endpoint": ENDPOINT, "endpoint_version": ENDPOINT_VERSION,
             "url": server.url(), "routes": list(ROUTE_NAMES),

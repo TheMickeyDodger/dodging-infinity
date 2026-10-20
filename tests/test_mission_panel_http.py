@@ -10,6 +10,7 @@ provider or Herdr.
 """
 
 import atexit
+import contextlib
 import http.client
 import json
 import os
@@ -76,6 +77,40 @@ def _interrupt(signum, frame):
     raise KeyboardInterrupt("signal %d" % signum)
 
 
+# Every socket name-resolution entry point raises an audit event BEFORE it runs, and
+# ``socket.getfqdn`` reaches one (``gethostbyaddr``). A hook that raises there stops a lookup
+# before it can block, so a regression fails at once even on a machine whose resolver stalls.
+# Audit hooks cannot be removed: this one is installed on first use and inert unless armed,
+# and it only acts on the thread that armed it.
+RESOLVER_EVENTS = frozenset((
+    "socket.getaddrinfo", "socket.getnameinfo", "socket.gethostbyname",
+    "socket.gethostbyaddr", "socket.gethostname"))
+_armed_thread = []                    # [thread id] while armed, else []
+_hook_installed = []
+
+
+class ResolverConsulted(AssertionError):
+    pass
+
+
+def _resolver_tripwire(event, args):
+    if event in RESOLVER_EVENTS and _armed_thread == [threading.get_ident()]:
+        raise ResolverConsulted("a name resolver was consulted: %s%r" % (event, args))
+
+
+@contextlib.contextmanager
+def no_resolver():
+    """While active, a name-resolution call on THIS thread raises ``ResolverConsulted``."""
+    if not _hook_installed:
+        sys.addaudithook(_resolver_tripwire)
+        _hook_installed.append(True)
+    _armed_thread.append(threading.get_ident())
+    try:
+        yield
+    finally:
+        _armed_thread.pop()
+
+
 def startup_line(case, process, wait=STARTUP_WAIT_SECONDS):
     """The launched process's one startup line, parsed.
 
@@ -89,16 +124,21 @@ def startup_line(case, process, wait=STARTUP_WAIT_SECONDS):
     ready, _, _ = select.select([process.stdout], [], [], wait)
     line = process.stdout.readline() if ready else b""
     if not line:
+        how = "it had already exited on its own"
         if process.poll() is None:
+            how = ("it was still running, so this test sent it SIGTERM; the exit status after"
+                   " that is the test's doing and says nothing about whether it would have started")
             process.terminate()                 # this test's own exact child
             try:
                 process.wait(10)
             except subprocess.TimeoutExpired:
+                how = ("it was still running, so this test sent it SIGTERM and, when it did"
+                       " not exit, killed it")
                 process.kill()
                 process.wait(10)
         evidence = process.stderr.read().decode("utf-8", "replace")[:2000]
-        case.assertTrue(line, "the launcher printed no startup line (exit %r); stderr: %s"
-                        % (process.returncode, evidence))
+        case.assertTrue(line, "the launcher printed no startup line within %ss; %s (exit %r);"
+                        " stderr: %s" % (wait, how, process.returncode, evidence))
     return json.loads(line)
 
 
@@ -251,6 +291,23 @@ class AccessBoundaryTests(Server):
         finally:
             for sock in held:
                 sock.close()
+
+    def test_H11_binding_consults_no_resolver(self):
+        # The PROPERTY, not a symptom. HTTPServer.server_bind resolves the server's own name
+        # (socket.getfqdn): an unbounded reverse lookup on the way to the startup line, whose
+        # result nothing here reads. A bind that never asks a resolver cannot stall on one;
+        # timing a fast start would pass on any machine with working DNS and prove nothing.
+        with no_resolver():
+            with self.assertRaises(ResolverConsulted):      # the wire is live: the stdlib call
+                socket.getfqdn("127.0.0.1")                 # is stopped before it can run
+            server = http_adapter.PanelServer(self.service, TOKEN)
+        try:
+            host, port = server.server_address[:2]
+            self.assertEqual(host, "127.0.0.1")
+            self.assertGreater(port, 0)
+            self.assertEqual((server.server_name, server.server_port), (host, port))
+        finally:
+            server.server_close()
 
 
 class BodyTests(Server):
@@ -527,6 +584,39 @@ class LauncherTests(Bounded):
         self.started(process)
         self.assertEqual(oct(os.stat(self.state).st_mode & 0o777), "0o700")
 
+    # A stop that arrives while startup is under way, made deterministic: the real main(), with
+    # the service's start sending this process its own SIGTERM (the handler only sets the event).
+    STOP_DURING_STARTUP = (
+        "import os, signal, sys\n"
+        "sys.path.insert(0, %r)\n"
+        "from mission_panel import service\n"
+        "from mission_panel.http_adapter import main\n"
+        "real_start = service.PanelService.start\n"
+        "def start(self):\n"
+        "    os.kill(os.getpid(), signal.SIGTERM)\n"
+        "    return real_start(self)\n"
+        "service.PanelService.start = start\n"
+        "sys.exit(main(sys.argv[1:]))\n" % str(REPO_ROOT))
+
+    def test_L8_a_stop_during_startup_is_a_failure_not_a_start(self):
+        # Only a stop that was already set BEFORE readiness is a failed start; a stop after
+        # readiness is the ordinary clean shutdown (exit 0), which L1 asserts.
+        argv = [sys.executable, "-c", self.STOP_DURING_STARTUP, "--state-dir", self.state,
+                "--control-repo", self.control, "--discovery-file", self.discovery]
+        env = dict(os.environ, PYTHONPATH=str(REPO_ROOT), PYTHONDONTWRITEBYTECODE="1")
+        process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env=env, cwd=self.tmp.name)
+        _LAUNCHED.append(process)
+        self.addCleanup(reap_process, process)
+        code = process.wait(30)                 # bounded: the cleanup is bounded
+        self.assertNotEqual(code, http_adapter.EXIT_OK)
+        self.assertEqual(code, http_adapter.EXIT_INTERRUPTED)
+        self.assertEqual(process.stdout.read(), b"", "readiness was advertised")
+        said = process.stderr.read()
+        self.assertIn(b"stopped during startup", said)
+        self.assertLess(len(said), 300)
+        self.assertFalse(os.path.exists(self.discovery), "the cleanup did not run")
+
 
 class StartupHelperTests(Bounded):
     """The harness's own helper, on the two cases that matter."""
@@ -560,14 +650,36 @@ class StartupHelperTests(Bounded):
         message = str(caught.exception)
         self.assertIn("refused: the discovery file exists", message)
         self.assertIn("exit 2", message)
+        self.assertIn("had already exited on its own", message)
+        self.assertNotIn("SIGTERM", message)        # nothing here was stopped by this test
 
     def test_S3_a_launcher_that_hangs_without_a_line_is_bounded_and_reaped(self):
         process = self.spawn("import time\ntime.sleep(60)\n")
         started = time.monotonic()
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(AssertionError) as caught:
             startup_line(self, process, wait=1)
         self.assertLess(time.monotonic() - started, 30)
         self.assertIsNotNone(process.poll(), "a hung launcher must be reaped")
+        message = str(caught.exception)
+        self.assertIn("within 1s", message)
+        self.assertIn("this test sent it SIGTERM", message)
+
+    def test_S4_a_slow_launcher_stopped_by_this_test_is_not_reported_as_a_clean_exit(self):
+        # The shape that read as success in CI: a launcher still starting when the bound ends,
+        # whose SIGTERM handler lets it finish and exit 0. That exit is this test's doing.
+        process = self.spawn(
+            "import signal, sys, time\n"
+            "signal.signal(signal.SIGTERM, lambda *_: None)\n"
+            "time.sleep(2)\n"
+            "print('{\"ok\": 1}', flush=True)\n"
+            "sys.exit(0)\n")
+        with self.assertRaises(AssertionError) as caught:
+            startup_line(self, process, wait=1)
+        message = str(caught.exception)
+        self.assertEqual(process.returncode, 0, "the exit really is a clean 0 ...")
+        self.assertIn("exit 0", message)
+        self.assertIn("this test sent it SIGTERM", message)      # ... and the report says whose
+        self.assertIn("says nothing about whether it would have started", message)
 
 
 class OrdinaryInterruptionTests(Bounded):
