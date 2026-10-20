@@ -42,7 +42,8 @@ export type ServerMessage =
   | DiOfficeState
   | AmbientStateLoaded
   | AmbientSpritesLoaded
-  | DiEvidenceContent;
+  | DiEvidenceContent
+  | DiCodeReview;
 
 export type ClientMessage =
   | WebviewReady
@@ -68,7 +69,8 @@ export type ClientMessage =
   | SetShowAreas
   | RequestDiagnostics
   | SaveAmbientState
-  | DiEvidenceRead;
+  | DiEvidenceRead
+  | DiCodeReviewRead;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -452,7 +454,17 @@ export interface DiMember {
   progress: DiObservedValue;
   chain: string;
   chainTaskId: string | null;
+  codeReview?: DiCodeReviewOffer;
 }
+
+export interface DiCodeReviewOffer {
+  state: DiCodeReviewOfferState;
+  reason: string | null;
+  taskId: string | null;
+  listing: string | null;
+}
+
+export type DiCodeReviewOfferState = 'offered' | 'unavailable';
 
 export interface DiMissionV2 {
   projected: boolean;
@@ -985,6 +997,116 @@ export interface DiEvidenceText {
 
 export type DiEvidenceMedia = 'text/plain' | 'text/html';
 
+export interface DiCodeReview {
+  type: 'diCodeReview';
+  missionRef: string;
+  memberRef: string;
+  taskId: string;
+  listing: string;
+  snapshot: string | null;
+  fileId: string | null;
+  view: DiCodeReviewView;
+  state: DiCodeReviewState;
+  decidedBy: DiEvidenceDecidedBy;
+  problem: string | null;
+  detail: string | null;
+  target: DiCodeReviewTarget | null;
+  comparison: DiCodeReviewComparison | null;
+  overview: DiCodeReviewOverview | null;
+  file: DiCodeReviewFile | null;
+  observedAt: number | null;
+}
+
+export type DiCodeReviewView = 'overview' | 'file';
+
+export type DiCodeReviewState = 'observed' | 'refused';
+
+export interface DiCodeReviewTarget {
+  sourceId: string;
+  worktree: string;
+  head: string;
+  branch: string | null;
+  detached: boolean;
+  attribution: 'shared_worktree';
+}
+
+export interface DiCodeReviewComparison {
+  mode: 'head_to_worktree';
+  baseKind: 'head_commit';
+  baseOid: string;
+  candidateKind: 'working_tree';
+  covers: string[];
+  doesNotCover: string[];
+  filtersNotRun: string[];
+}
+
+export interface DiCodeReviewOverview {
+  files: DiCodeReviewEntry[];
+  totals: DiCodeReviewTotals;
+}
+
+export interface DiCodeReviewEntry {
+  fileId: string;
+  path: string;
+  oldPath: string | null;
+  change: string;
+  staging: string;
+  state: string;
+  reason: string | null;
+  additions: number | null;
+  deletions: number | null;
+}
+
+export interface DiCodeReviewTotals {
+  files: number;
+  additions: number;
+  deletions: number;
+  withheld: number;
+  unshown: number;
+}
+
+export interface DiCodeReviewFile {
+  fileId: string;
+  path: string;
+  oldPath: string | null;
+  change: string;
+  staging: string;
+  state: string;
+  reason: string | null;
+  additions: number | null;
+  deletions: number | null;
+  modeChange: DiCodeReviewModeChange | null;
+  similarity: number | null;
+  hunks: DiCodeReviewHunk[];
+  truncated: boolean;
+  linesTotal: number;
+  linesRetained: number;
+  bytesTotal: number;
+  digestSha256: string | null;
+}
+
+export interface DiCodeReviewModeChange {
+  old: string;
+  new: string;
+}
+
+export interface DiCodeReviewHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  section: string | null;
+  lines: DiCodeReviewLine[];
+}
+
+export interface DiCodeReviewLine {
+  kind: string;
+  oldNo: number | null;
+  newNo: number | null;
+  text: string;
+  clipped: number;
+}
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -1110,4 +1232,14 @@ export interface DiEvidenceRead {
   missionRef: string;
   artifactId: string;
   cursor: string;
+}
+
+export interface DiCodeReviewRead {
+  type: 'diCodeReviewRead';
+  missionRef: string;
+  memberRef: string;
+  taskId: string;
+  listing: string;
+  snapshot?: string;
+  fileId?: string;
 }

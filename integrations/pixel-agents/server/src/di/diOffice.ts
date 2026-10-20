@@ -29,7 +29,7 @@ import {
   DI_CONSUMER_POLL_INTERVAL_SECONDS,
 } from '../constants.js';
 import type { AgentState } from '../types.js';
-import type { ArtifactReference, BackendResult } from './backendClient.js';
+import type { ArtifactReference, BackendResult, CodeReviewQuery } from './backendClient.js';
 import { requestBackend } from './backendClient.js';
 import type { BackendEndpoint, DiscoveryResult } from './backendDiscovery.js';
 import { readBackendDiscovery } from './backendDiscovery.js';
@@ -39,6 +39,16 @@ import {
   DEFAULT_QUERY_CONTRACT_VERSION,
 } from './catalogContract.js';
 import { parseEnvelope } from './catalogProjection.js';
+import {
+  admitAgainstView as admitReviewAgainstView,
+  backendMessage as reviewBackendMessage,
+  backendQuery,
+  CODE_REVIEW_MIN_INTERVAL_MS,
+  CODE_REVIEW_REQUEST_TIMEOUT_MS,
+  officeRefusal as reviewOfficeRefusal,
+  parseCodeReviewAnswer,
+  parseCodeReviewRead,
+} from './codeReview.js';
 import {
   admitAgainstView,
   backendMessage,
@@ -70,6 +80,11 @@ export interface DiOfficeDeps {
    * client; a substituted backend (fixture preview, tests) without it has no content reads.
    */
   requestArtifact?: (endpoint: BackendEndpoint, ref: ArtifactReference) => Promise<BackendResult>;
+  /**
+   * item 3: the backend's /code_review read. Defaults to the real client ONLY with the real
+   * catalog client; a substituted backend (fixture preview, tests) without it has no reviews.
+   */
+  requestReview?: (endpoint: BackendEndpoint, query: CodeReviewQuery) => Promise<BackendResult>;
 }
 
 export interface DiOfficeOptions {
@@ -104,6 +119,9 @@ export class DiOffice {
   /** item 2: one content read at a time, at most one per EVIDENCE_MIN_INTERVAL_MS. */
   private evidenceInFlight = false;
   private lastEvidenceReadMs: number | null = null;
+  /** item 3: one review read at a time, at most one per CODE_REVIEW_MIN_INTERVAL_MS. */
+  private reviewInFlight = false;
+  private lastReviewReadMs: number | null = null;
   private stopped = true;
   private lastLogged = '';
 
@@ -130,6 +148,15 @@ export class DiOffice {
               requestBackend(endpoint, 'artifact', {
                 artifact: ref,
                 timeoutMs: EVIDENCE_REQUEST_TIMEOUT_MS,
+              })
+          : undefined),
+      requestReview:
+        options.deps?.requestReview ??
+        (options.deps?.request === undefined
+          ? (endpoint, query) =>
+              requestBackend(endpoint, 'code_review', {
+                review: query,
+                timeoutMs: CODE_REVIEW_REQUEST_TIMEOUT_MS,
               })
           : undefined),
     };
@@ -285,6 +312,91 @@ export class DiOffice {
       reply(answer);
     } finally {
       this.evidenceInFlight = false;
+    }
+  }
+
+  /**
+   * item 3: ONE live code review read for the client that asked (`send` is that connection only).
+   * Admitted against the CURRENT listing before the backend is asked, and again after it answers;
+   * every outcome is exactly one diCodeReview. A malformed message is ignored here (the message
+   * dispatcher refuses it before this is reached). Logs carry codes only — never a path, a
+   * branch, a file name or a line of a patch.
+   */
+  async readCodeReview(
+    msg: Record<string, unknown>,
+    send: (message: Record<string, unknown>) => void,
+  ): Promise<void> {
+    const ref = parseCodeReviewRead(msg);
+    if (ref === null) return;
+    const reply = (m: ReturnType<typeof reviewOfficeRefusal>): void =>
+      send(m as unknown as Record<string, unknown>);
+    if (this.reviewInFlight) {
+      reply(reviewOfficeRefusal(ref, 'read_in_progress', 'another review read is in progress'));
+      return;
+    }
+    const now = this.deps.nowMs();
+    if (
+      this.lastReviewReadMs !== null &&
+      now - this.lastReviewReadMs < CODE_REVIEW_MIN_INTERVAL_MS
+    ) {
+      reply(reviewOfficeRefusal(ref, 'read_rate_limited', 'reviews are read at a bounded rate'));
+      return;
+    }
+    const admitted = admitReviewAgainstView(this.view, ref);
+    if (!admitted.ok) {
+      reply(reviewOfficeRefusal(ref, admitted.problem, admitted.detail));
+      return;
+    }
+    const requestReview = this.deps.requestReview;
+    if (requestReview === undefined) {
+      reply(
+        reviewOfficeRefusal(
+          ref,
+          'reviews_not_supported_by_this_backend',
+          'this office reads a substituted backend with no review route',
+        ),
+      );
+      return;
+    }
+    const discovery = this.deps.readDiscovery(this.discoveryPath);
+    if (!discovery.ok) {
+      reply(reviewOfficeRefusal(ref, 'backend_discovery_unavailable', discovery.problem));
+      return;
+    }
+    this.reviewInFlight = true;
+    this.lastReviewReadMs = now;
+    try {
+      let result: BackendResult;
+      try {
+        result = await requestReview(discovery.endpoint, backendQuery(ref));
+      } catch {
+        result = { kind: 'transport_error', problem: 'backend_network_error' };
+      }
+      let answer: ReturnType<typeof reviewOfficeRefusal>;
+      if (result.kind === 'transport_error') {
+        answer = reviewOfficeRefusal(ref, 'backend_unavailable', result.problem);
+      } else if (result.status !== 200) {
+        answer = reviewOfficeRefusal(ref, 'backend_refused_request', `HTTP ${result.status}`);
+      } else {
+        const parsed = parseCodeReviewAnswer(result.body, ref);
+        answer = parsed.ok
+          ? reviewBackendMessage(ref, parsed.answer)
+          : reviewOfficeRefusal(ref, parsed.problem, parsed.detail);
+      }
+      if (answer.state === 'observed') {
+        // The listing may have moved while the backend read: never relay against a new one.
+        const again = admitReviewAgainstView(this.view, ref);
+        if (!again.ok) {
+          answer = reviewOfficeRefusal(ref, 'listing_moved_during_read', again.detail);
+        }
+      }
+      // Codes only: never the reference, a path, a branch or any patch text.
+      this.deps.log(
+        `[Pixel Agents DI] code review read: ${answer.decidedBy} ${answer.problem ?? 'observed'}`,
+      );
+      reply(answer);
+    } finally {
+      this.reviewInFlight = false;
     }
   }
 

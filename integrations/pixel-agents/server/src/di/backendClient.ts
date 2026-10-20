@@ -3,9 +3,11 @@
  *
  * The CONTRACT-v3 "HTTP surface" has three GET routes: /catalog, /diagnostics, /healthz. Item 2
  * (evidence library) adds ONE more read route, /artifact, which takes exactly an admitted
- * reference (mission ref, artifact id, listed journal digest), never a path. This client can only
- * issue those four GETs, only to 127.0.0.1, with the bearer token from the discovery file and a
- * Host header naming the same listener.
+ * reference (mission ref, artifact id, listed journal digest), never a path. Item 3 (live code
+ * review) adds ONE more, /code_review, which takes exactly a Mission ref and the task id the
+ * client was shown (and, for one file, the snapshot and the file id the overview listed): never a
+ * path, root, ref or git option. This client can only issue those five GETs, only to 127.0.0.1,
+ * with the bearer token from the discovery file and a Host header naming the same listener.
  * It sends no body, no Origin, no cookie. It never spawns, starts or imports the
  * backend. Every failure is a typed problem code; none carries the token.
  */
@@ -15,7 +17,7 @@ import * as http from 'http';
 
 import type { BackendEndpoint } from './backendDiscovery.js';
 
-export type BackendRoute = 'catalog' | 'diagnostics' | 'healthz' | 'artifact';
+export type BackendRoute = 'catalog' | 'diagnostics' | 'healthz' | 'artifact' | 'code_review';
 
 /** Responses larger than this are refused (the 2048-mission bound stays far below it). */
 export const MAX_BACKEND_RESPONSE_BYTES = 32 * 1024 * 1024;
@@ -24,6 +26,12 @@ export const MAX_BACKEND_RESPONSE_BYTES = 32 * 1024 * 1024;
  * bytes, plus a small envelope: an answer larger than this is refused unread past it.
  */
 export const MAX_ARTIFACT_RESPONSE_BYTES = 512 * 1024;
+/**
+ * /code_review answers carry at most 500 listed files, or one file's retained diff lines (6,000
+ * lines, 1 MiB of line text, which JSON escapes to at most six times its size), plus a small
+ * envelope: an answer larger than this is refused unread past it.
+ */
+export const MAX_CODE_REVIEW_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 /** The ONE thing /artifact may be asked: an admitted reference, by the backend's grammar. */
 export interface ArtifactReference {
@@ -36,6 +44,43 @@ export const ARTIFACT_REFERENCE_GRAMMAR = {
   artifactId: /^mf-[0-9a-f]{32}$/,
   cursor: /^[0-9a-f]{64}$/,
 } as const;
+
+/**
+ * The ONLY things /code_review may be asked (the backend's own grammar, re-declared; parity pinned
+ * by tests/test_code_review.py): the Mission and the task the client was shown, and for ONE file
+ * the snapshot the overview carried and the file id it listed. No path, root, ref or option.
+ */
+export interface CodeReviewQuery {
+  missionRef: string;
+  taskId: string;
+  snapshot?: string;
+  fileId?: string;
+}
+export const CODE_REVIEW_GRAMMAR = {
+  missionRef: ARTIFACT_REFERENCE_GRAMMAR.missionRef,
+  taskId: /^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$/,
+  snapshot: /^[0-9a-f]{64}$/,
+  fileId: /^rf-[0-9a-f]{32}$/,
+} as const;
+
+export function isCodeReviewQuery(value: Partial<CodeReviewQuery>): boolean {
+  if (
+    typeof value.missionRef !== 'string' ||
+    !CODE_REVIEW_GRAMMAR.missionRef.test(value.missionRef) ||
+    typeof value.taskId !== 'string' ||
+    !CODE_REVIEW_GRAMMAR.taskId.test(value.taskId)
+  ) {
+    return false;
+  }
+  if ((value.snapshot === undefined) !== (value.fileId === undefined)) return false;
+  if (value.snapshot === undefined) return true;
+  return (
+    typeof value.snapshot === 'string' &&
+    CODE_REVIEW_GRAMMAR.snapshot.test(value.snapshot) &&
+    typeof value.fileId === 'string' &&
+    CODE_REVIEW_GRAMMAR.fileId.test(value.fileId)
+  );
+}
 
 export function isArtifactReference(value: Partial<ArtifactReference>): boolean {
   return (
@@ -71,6 +116,8 @@ export interface BackendRequestOptions {
   waitSeconds?: number;
   /** /artifact only: the admitted reference. */
   artifact?: ArtifactReference;
+  /** /code_review only: the closed query. */
+  review?: CodeReviewQuery;
   timeoutMs: number;
 }
 
@@ -78,7 +125,17 @@ export function routePath(
   route: BackendRoute,
   waitSeconds?: number,
   artifact?: ArtifactReference,
+  review?: CodeReviewQuery,
 ): string | null {
+  if (route === 'code_review') {
+    if (review === undefined || !isCodeReviewQuery(review)) return null;
+    const base =
+      `/code_review?mission_ref=${encodeURIComponent(review.missionRef)}` +
+      `&task_id=${review.taskId}`;
+    return review.snapshot === undefined
+      ? base
+      : `${base}&snapshot=${review.snapshot}&file_id=${review.fileId}`;
+  }
   if (route === 'artifact') {
     if (artifact === undefined || !isArtifactReference(artifact)) return null;
     return (
@@ -97,8 +154,13 @@ export function requestBackend(
   route: BackendRoute,
   options: BackendRequestOptions,
 ): Promise<BackendResult> {
-  const requestPath = routePath(route, options.waitSeconds, options.artifact);
-  const limit = route === 'artifact' ? MAX_ARTIFACT_RESPONSE_BYTES : MAX_BACKEND_RESPONSE_BYTES;
+  const requestPath = routePath(route, options.waitSeconds, options.artifact, options.review);
+  const limit =
+    route === 'artifact'
+      ? MAX_ARTIFACT_RESPONSE_BYTES
+      : route === 'code_review'
+        ? MAX_CODE_REVIEW_RESPONSE_BYTES
+        : MAX_BACKEND_RESPONSE_BYTES;
   if (requestPath === null) {
     return Promise.resolve({ kind: 'transport_error', problem: 'backend_request_invalid' });
   }

@@ -25,6 +25,52 @@
     procedure are in `integrations/pixel-agents/UPSTREAM.md`.
   - Every dependency install in the subtree runs with `HUSKY=0`, and
     `core.hooksPath` is checked unchanged before and after.
+  - **Live code review.** A live agent whose Mission Core assignment is active
+    offers a read-only code review of its workspace (`GET /code_review`, the
+    fifth catalog route; one dialog with a searchable file tree and a unified
+    or side-by-side diff). The pinned git transport grows from eleven to a
+    twenty-one-verb git transport seam: ten non-mutating live reads, each
+    measured to leave the target's whole `.git` byte-identical (`git diff`
+    and a default `git status` rewrite the index, so neither is used). The
+    reads that can hash a working file run in a git directory of their own
+    making, so a content filter the repository configures — including one
+    added after the drivers were listed — is never run; a tracked submodule
+    is shown by the commit it points to and is never entered. A withheld
+    (private) file is not only never shown but never opened: the private
+    locations are decided from the tracked names first, and every read that
+    could hash or diff a file is told, in git's own literal pathspec, to leave
+    them out (bounded; a FIFO where git keeps a file is never waited for; the
+    untracked-read budget counts the byte that shows a file is over its bound;
+    a long diff keeps its first lines, never a selection, and an end-of-file
+    marker is not a line and is kept or cut together with its line; an empty
+    listing says "No changes found, as far as this view can tell" and that it
+    is not proof the working tree matches the commit). Where a withheld file came from (an unchanged move
+    out of a private name) it stays withheld and is left out of the reads too;
+    what changed in a withheld file is judged from the index's recorded metadata
+    (mode, size, recorded second), not its content, and the dialog says an edit
+    of the same size within that second may not be seen. A file's diff is read
+    through the same private index the decision was made from, and names its
+    path as a file. The dialog keeps focus and keys across asynchronous
+    updates: a control that disables itself while it holds focus (Refresh,
+    during a read) no longer drops focus to the page behind, where the next key
+    would reach the office. A live git read ends its child process on every
+    exit path, within a bound, and owns it from the moment it exists: an
+    exception propagating out of the read or of the wait after it (a caller's
+    interruption), a failure of the capture's own I/O, and a failure within
+    the cleanup itself all kill and reap it, and the exception already on its
+    way out is the one that propagates; there is no timer to fail to start or
+    to cancel. The read's I/O is bounded by its deadline, not by the end of
+    the stream: a pipe that ends before the process does, and a descendant
+    that keeps the output open after the child is killed, can no longer hold a
+    read past it (it stops, kills and reaps its child, and refuses as past its
+    deadline). Every character bound of the review (a line's
+    1,200, a file's 1 MiB, a path, a branch name, a section heading, a detail
+    sentence, a listed filter-driver name) counts UTF-16 code units, the unit the office checks them in and
+    its byte budget is built on, not Python's code points: 601 emoji were 601
+    to the backend and 1,202 to the office, which refused a line the backend had
+    emitted whole. The backend now measures and cuts in that unit, never inside
+    a character; the office cuts its own text the same way. See
+    docs/pixel-agents-office.md.
 - **Grok Bot's conforming route; Grok Bot runs nothing.** A Grok Bot
   `request` now produces one DI-REMOTE-2 workflow, the same durable authority
   object the Telegram lane produces, instead of a Mission-Core proposal. A

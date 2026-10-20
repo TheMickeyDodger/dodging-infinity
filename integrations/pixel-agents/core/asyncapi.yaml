@@ -123,6 +123,7 @@ components:
         - $ref: '#/components/schemas/AmbientStateLoaded'
         - $ref: '#/components/schemas/AmbientSpritesLoaded'
         - $ref: '#/components/schemas/DiEvidenceContent'
+        - $ref: '#/components/schemas/DiCodeReview'
       discriminator: type
 
     ClientMessage:
@@ -152,6 +153,7 @@ components:
         # DI office (additive; handled only by the DI office surface)
         - $ref: '#/components/schemas/SaveAmbientState'
         - $ref: '#/components/schemas/DiEvidenceRead'
+        - $ref: '#/components/schemas/DiCodeReviewRead'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -978,6 +980,340 @@ components:
     DiEvidenceMedia:
       type: string
       enum: [text/plain, text/html]
+
+    DiCodeReviewRead:
+      description: |
+        DI office only (item 3, live code review): ask for the read-only view of what is changed in
+        the workspace of an ACTIVE assignment, by an ADMITTED REFERENCE — the Mission ref, the
+        member (the agent the review was opened from), the task id and the listing token the
+        office gave with the offer. Never a path, root, ref, pathspec or git option. With neither
+        `snapshot` nor `fileId` this asks for the OVERVIEW; with both (the snapshot the overview
+        carried and a file id it listed) it asks for that ONE file's diff. Answered with exactly
+        one diCodeReview to the asking connection only. Changes nothing, anywhere.
+      type: object
+      additionalProperties: false
+      required: [type, missionRef, memberRef, taskId, listing]
+      properties:
+        type:
+          const: diCodeReviewRead
+        missionRef:
+          type: string
+          maxLength: 104
+        memberRef:
+          type: string
+          maxLength: 256
+        taskId:
+          type: string
+          maxLength: 22
+        listing:
+          type: string
+          maxLength: 64
+        snapshot:
+          type: string
+          maxLength: 64
+        fileId:
+          type: string
+          maxLength: 35
+
+    DiCodeReview:
+      description: |
+        DI office only: the answer to one diCodeReviewRead. `state` observed carries the target
+        (repository/worktree, branch or detached HEAD, base commit), the comparison stated in
+        words-as-data, and the overview or the one file's diff; refused carries the code of
+        whichever side refused (`decidedBy`: office or backend). A shared worktree is shown as
+        the team's changes (`target.attribution`), never attributed to an agent. Everything under
+        `overview` and `file` is UNTRUSTED data: a client shows it as inert text and never
+        renders, executes, follows or fetches from it.
+      type: object
+      additionalProperties: false
+      required:
+        [type, missionRef, memberRef, taskId, listing, snapshot, fileId, view, state, decidedBy,
+         problem, detail, target, comparison, overview, file, observedAt]
+      properties:
+        type:
+          const: diCodeReview
+        missionRef:
+          type: string
+        memberRef:
+          type: string
+        taskId:
+          type: string
+        listing:
+          type: string
+        snapshot:
+          type: [string, 'null']
+          description: |
+            The observation the answer belongs to (observed), or the snapshot the request named
+            (refused; null for an overview request).
+        fileId:
+          type: [string, 'null']
+        view:
+          $ref: '#/components/schemas/DiCodeReviewView'
+        state:
+          $ref: '#/components/schemas/DiCodeReviewState'
+        decidedBy:
+          $ref: '#/components/schemas/DiEvidenceDecidedBy'
+        problem:
+          type: [string, 'null']
+        detail:
+          type: [string, 'null']
+        target:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiCodeReviewTarget'
+        comparison:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiCodeReviewComparison'
+        overview:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiCodeReviewOverview'
+        file:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiCodeReviewFile'
+        observedAt:
+          type: [integer, 'null']
+
+    DiCodeReviewView:
+      type: string
+      enum: [overview, file]
+
+    DiCodeReviewState:
+      type: string
+      enum: [observed, refused]
+
+    DiCodeReviewTarget:
+      description: |
+        What was read. `worktree` is the workspace's folder and its parent only. `head` is the
+        base commit the comparison stands on; `branch` is null exactly when HEAD is detached.
+      type: object
+      additionalProperties: false
+      required: [sourceId, worktree, head, branch, detached, attribution]
+      properties:
+        sourceId:
+          type: string
+        worktree:
+          type: string
+        head:
+          type: string
+        branch:
+          type: [string, 'null']
+        detached:
+          type: boolean
+        attribution:
+          const: shared_worktree
+
+    DiCodeReviewComparison:
+      description: |
+        Exactly what is compared, as data the client words: HEAD against the working tree, with
+        staged, unstaged and untracked changes covered, and what is NOT covered. `filtersNotRun`
+        names content-filter drivers the repository configures that were not run.
+      type: object
+      additionalProperties: false
+      required:
+        [mode, baseKind, baseOid, candidateKind, covers, doesNotCover, filtersNotRun]
+      properties:
+        mode:
+          const: head_to_worktree
+        baseKind:
+          const: head_commit
+        baseOid:
+          type: string
+        candidateKind:
+          const: working_tree
+        covers:
+          type: array
+          items:
+            type: string
+        doesNotCover:
+          type: array
+          items:
+            type: string
+        filtersNotRun:
+          type: array
+          items:
+            type: string
+
+    DiCodeReviewOverview:
+      type: object
+      additionalProperties: false
+      required: [files, totals]
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiCodeReviewEntry'
+        totals:
+          $ref: '#/components/schemas/DiCodeReviewTotals'
+
+    DiCodeReviewTotals:
+      description: Exact over the listed files (the overview refuses rather than list a part).
+      type: object
+      additionalProperties: false
+      required: [files, additions, deletions, withheld, unshown]
+      properties:
+        files:
+          type: integer
+        additions:
+          type: integer
+        deletions:
+          type: integer
+        withheld:
+          type: integer
+        unshown:
+          type: integer
+
+    DiCodeReviewEntry:
+      description: |
+        One changed path. A WITHHELD path (a private location, a credential-like name) is listed
+        by name with no counts and no content. `state` is what the listing alone knows; the file
+        view can be more specific (a tracked file's text is only known to be UTF-8 when read).
+      type: object
+      additionalProperties: false
+      required:
+        [fileId, path, oldPath, change, staging, state, reason, additions, deletions]
+      properties:
+        fileId:
+          type: string
+        path:
+          type: string
+        oldPath:
+          type: [string, 'null']
+        change:
+          type: string
+        staging:
+          type: string
+        state:
+          type: string
+        reason:
+          type: [string, 'null']
+        additions:
+          type: [integer, 'null']
+        deletions:
+          type: [integer, 'null']
+
+    DiCodeReviewFile:
+      description: |
+        One file's view. `hunks` hold at most the retained lines; `linesTotal`, `bytesTotal` and
+        `digestSha256` are exact over the WHOLE diff, and `truncated` says whether lines were
+        left out. A line longer than the bound is clipped, with `clipped` the characters left
+        out.
+      type: object
+      additionalProperties: false
+      required:
+        [fileId, path, oldPath, change, staging, state, reason, additions, deletions, modeChange,
+         similarity, hunks, truncated, linesTotal, linesRetained, bytesTotal, digestSha256]
+      properties:
+        fileId:
+          type: string
+        path:
+          type: string
+        oldPath:
+          type: [string, 'null']
+        change:
+          type: string
+        staging:
+          type: string
+        state:
+          type: string
+        reason:
+          type: [string, 'null']
+        additions:
+          type: [integer, 'null']
+        deletions:
+          type: [integer, 'null']
+        modeChange:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiCodeReviewModeChange'
+        similarity:
+          type: [integer, 'null']
+        hunks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiCodeReviewHunk'
+        truncated:
+          type: boolean
+        linesTotal:
+          type: integer
+        linesRetained:
+          type: integer
+        bytesTotal:
+          type: integer
+        digestSha256:
+          type: [string, 'null']
+
+    DiCodeReviewModeChange:
+      type: object
+      additionalProperties: false
+      required: [old, new]
+      properties:
+        old:
+          type: string
+        new:
+          type: string
+
+    DiCodeReviewHunk:
+      type: object
+      additionalProperties: false
+      required: [oldStart, oldLines, newStart, newLines, section, lines]
+      properties:
+        oldStart:
+          type: integer
+        oldLines:
+          type: integer
+        newStart:
+          type: integer
+        newLines:
+          type: integer
+        section:
+          type: [string, 'null']
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiCodeReviewLine'
+
+    DiCodeReviewLine:
+      type: object
+      additionalProperties: false
+      required: [kind, oldNo, newNo, text, clipped]
+      properties:
+        kind:
+          type: string
+        oldNo:
+          type: [integer, 'null']
+        newNo:
+          type: [integer, 'null']
+        text:
+          type: string
+        clipped:
+          type: integer
+
+    DiCodeReviewOffer:
+      description: |
+        Whether a code review is offered for this member (item 3): decided from the typed facts
+        of the listing (a Mission Core record, active standing, bound, a live member of the direct
+        task). `listing` is the token that identifies what the viewer was shown; it moves when
+        the assignment, the agent or the binding moves, and the office recomputes it at every
+        read. `reason` names why not (a closed vocabulary), never a free label.
+      type: object
+      additionalProperties: false
+      required: [state, reason, taskId, listing]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiCodeReviewOfferState'
+        reason:
+          type: [string, 'null']
+        taskId:
+          type: [string, 'null']
+        listing:
+          type: [string, 'null']
+
+    DiCodeReviewOfferState:
+      type: string
+      enum: [offered, unavailable]
 
     DiEvidenceCurrency:
       type: string
@@ -2201,6 +2537,8 @@ components:
           description: contract v2 — the member's chain, `direct` or `child` (verbatim); v1 members are `direct`.
         chainTaskId:
           type: [string, 'null']
+        codeReview:
+          $ref: '#/components/schemas/DiCodeReviewOffer'
 
     DiChainObservation:
       description: |

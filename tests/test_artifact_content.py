@@ -922,9 +922,10 @@ class HttpRouteTests(ArtifactFixture):
                 self.assertNotIn(TEXT.decode().strip(), body.decode())
 
     def test_the_route_is_get_only_and_named(self):
+        # item 3 adds /code_review (tests/test_code_review_owner.py)
         self.assertEqual(catalog_http.ROUTES,
                          ("/catalog", "/diagnostics", "/healthz",
-                          "/artifact"))
+                          "/artifact", "/code_review"))
 
     def test_the_adapters_grammar_is_the_modules(self):
         self.assertEqual(

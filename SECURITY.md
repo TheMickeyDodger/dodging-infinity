@@ -154,12 +154,24 @@ otherwise:
   closed). An existing schema-1 `state.json` fails closed at adapter
   startup until the human runs `tgop migrate-state`.
 - **Delivery authority none, structurally.** The Runtime package
-  contains no subprocess use outside its pinned eleven-verb git
+  contains no subprocess use outside its pinned twenty-one-verb git
   transport seam (the seven Runtime verbs, plus, for automatic Mission
   workspaces, `toplevel`, `common_dir`, `worktree_list` and `add_worktree`:
   a detached, locked checkout of an existing commit into a new directory,
   which creates no revision, moves no shared ref and contacts no remote;
-  no verb removes, moves or prunes a worktree), no `shell=True`, no environment reads, and no git
+  no verb removes, moves or prunes a worktree; plus, for the live code
+  review of an agent's workspace, ten non-mutating reads, `live_toplevel`,
+  `live_head`, `live_filter_drivers`, `live_view`, `live_names`,
+  `live_index_stat`, `live_inventory`, `live_counts`, `live_modes` and
+  `live_file_diff`: plumbing only, each measured to leave the target's whole
+  `.git` byte-identical; the six that look at the index or a working file run
+  in a git directory of their own making, so no program the repository's
+  configuration names — a content filter above all — is ever run, and the
+  four that can hash or diff a working file are told which locations are
+  private and git itself leaves them out in a literal, bounded pathspec, so
+  a private file is never opened by them; the index-record read asks git for
+  the index's own record and compares nothing in the working tree, and a
+  file's diff is read through the same private index it was decided from), no `shell=True`, no environment reads, and no git
   delivery verb as a string value anywhere — enforced by AST and
   token scans over the whole package plus its entry script, and
   behaviorally by the adversarial matrix (refusals leave the control

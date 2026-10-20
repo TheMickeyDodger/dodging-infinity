@@ -289,6 +289,7 @@ async function main(): Promise<void> {
         extensionVersion,
         ambientSprites,
         readEvidence: (m, reply) => void office.readEvidence(m, reply),
+        readCodeReview: (m, reply) => void office.readCodeReview(m, reply),
       });
       if (typeof disposition === 'object') {
         // The type and the reason only — never the payload.

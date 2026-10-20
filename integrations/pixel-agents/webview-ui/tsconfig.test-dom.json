@@ -5,7 +5,8 @@
     /* tests that drive the real renderer (canvas types; the DOM itself is stubbed in the test),
        the reception desk test, which renders the real React component to static markup, and the
        C1 browser keyboard regression with its harness page (real DOM, in Chrome), and the item 2
-       evidence library browser regression with its harness page */
+       evidence library browser regression with its harness page, and the item 3 live code review
+       browser regression (the real App in Chrome) */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     /* the C1 keyboard harness imports its projected office-state fixture */
@@ -18,6 +19,7 @@
     "test/diPanelKeyboard.test.ts",
     "test/diAppReconcile.test.ts",
     "test/diEvidenceLibrary.test.ts",
+    "test/diCodeReview.test.ts",
     "test/harness/**/*.tsx",
     "test/harness/diAppProbe.ts"
   ],

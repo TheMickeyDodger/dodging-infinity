@@ -18628,7 +18628,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 2,
@@ -18691,7 +18697,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 3,
@@ -18754,7 +18766,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 4,
@@ -18817,7 +18835,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 }
               ]
             },
@@ -22787,7 +22811,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "d80434ff29a24730cefc552d8f511ce0815ab0becf9d6eaca5a4b8fd429b6daf"
+                  }
                 },
                 {
                   "characterId": 6,
@@ -22850,7 +22880,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "75d3c3b57d48486f13acafcf19b8b95ed68860b42f0d081f46266f5b30aaaedb"
+                  }
                 },
                 {
                   "characterId": 7,
@@ -22913,7 +22949,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "cbe35f2879e9c80b9f78b7fb42cc887405dc3001a01fad1c579fe32762db2662"
+                  }
                 },
                 {
                   "characterId": 8,
@@ -22976,7 +23018,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "94e5ea93bf8c3be3f75aedc58538ff0fd4f28d16f9b764128d143c07aa442dc6"
+                  }
                 }
               ]
             },
@@ -42844,7 +42892,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 3,
@@ -42907,7 +42961,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 4,
@@ -42970,7 +43030,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 }
               ]
             },
@@ -46940,7 +47006,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "d80434ff29a24730cefc552d8f511ce0815ab0becf9d6eaca5a4b8fd429b6daf"
+                  }
                 },
                 {
                   "characterId": 6,
@@ -47003,7 +47075,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "75d3c3b57d48486f13acafcf19b8b95ed68860b42f0d081f46266f5b30aaaedb"
+                  }
                 },
                 {
                   "characterId": 7,
@@ -47066,7 +47144,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "cbe35f2879e9c80b9f78b7fb42cc887405dc3001a01fad1c579fe32762db2662"
+                  }
                 },
                 {
                   "characterId": 8,
@@ -47129,7 +47213,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "94e5ea93bf8c3be3f75aedc58538ff0fd4f28d16f9b764128d143c07aa442dc6"
+                  }
                 }
               ]
             },
@@ -66968,7 +67058,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 2,
@@ -67031,7 +67127,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 3,
@@ -67094,7 +67196,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": 4,
@@ -67157,7 +67265,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 }
               ]
             },
@@ -71127,7 +71241,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "d80434ff29a24730cefc552d8f511ce0815ab0becf9d6eaca5a4b8fd429b6daf"
+                  }
                 },
                 {
                   "characterId": 6,
@@ -71190,7 +71310,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "75d3c3b57d48486f13acafcf19b8b95ed68860b42f0d081f46266f5b30aaaedb"
+                  }
                 },
                 {
                   "characterId": 7,
@@ -71253,7 +71379,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "cbe35f2879e9c80b9f78b7fb42cc887405dc3001a01fad1c579fe32762db2662"
+                  }
                 },
                 {
                   "characterId": 8,
@@ -71316,7 +71448,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "offered",
+                    "reason": null,
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": "94e5ea93bf8c3be3f75aedc58538ff0fd4f28d16f9b764128d143c07aa442dc6"
+                  }
                 }
               ]
             },
@@ -91184,7 +91322,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": null,
@@ -91247,7 +91391,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": null,
@@ -91310,7 +91460,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": null,
@@ -91373,7 +91529,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-150121-aaaaaa"
+                  "chainTaskId": "20261017-150121-aaaaaa",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "not_a_mission_core_record",
+                    "taskId": "20261017-150121-aaaaaa",
+                    "listing": null
+                  }
                 }
               ]
             },
@@ -95343,7 +95505,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "member_not_live",
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": null,
@@ -95406,7 +95574,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "member_not_live",
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": null,
@@ -95469,7 +95643,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "member_not_live",
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": null
+                  }
                 },
                 {
                   "characterId": null,
@@ -95532,7 +95712,13 @@
                     "reason": null
                   },
                   "chain": "direct",
-                  "chainTaskId": "20261017-133442-bbbbbb"
+                  "chainTaskId": "20261017-133442-bbbbbb",
+                  "codeReview": {
+                    "state": "unavailable",
+                    "reason": "member_not_live",
+                    "taskId": "20261017-133442-bbbbbb",
+                    "listing": null
+                  }
                 }
               ]
             },

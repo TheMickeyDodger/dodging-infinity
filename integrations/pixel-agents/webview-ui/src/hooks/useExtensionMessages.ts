@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DI_RUNTIME_ZONE_LABEL, DI_RUNTIME_ZONE_REF } from '../../../core/src/constants.js';
 import type {
+  DiCodeReview,
   DiEvidenceContent,
   DiOfficeState,
   HooksConsentRequest,
@@ -114,6 +115,11 @@ interface ExtensionMessageState {
    */
   diEvidenceContent: DiEvidenceContent | null;
   /**
+   * DI office only (item 3): the LATEST live code review answer this connection received — one
+   * entry, replaced by the next, never a cache. Untrusted data (patch text): shown only as text.
+   */
+  diCodeReviewAnswer: DiCodeReview | null;
+  /**
    * DI office only: why the client cannot vouch for the last office state (disconnected,
    * reconnected without a new state, or expired), or null while it can.
    */
@@ -186,6 +192,7 @@ export function useExtensionMessages(
   /** DI only: the last office state as RECEIVED from the server. */
   const [diServerState, setDiServerState] = useState<DiOfficeState | null>(null);
   const [diEvidenceContent, setDiEvidenceContent] = useState<DiEvidenceContent | null>(null);
+  const [diCodeReviewAnswer, setDiCodeReviewAnswer] = useState<DiCodeReview | null>(null);
   /** DI only: transport state + whether a NEW office message arrived since it connected. */
   const [diConnection, setDiConnection] = useState<DiConnection>({
     transport: transport.state,
@@ -1049,6 +1056,21 @@ export function useExtensionMessages(
         ) {
           setDiEvidenceContent(msg as unknown as DiEvidenceContent);
         }
+      } else if (msg.type === 'diCodeReview') {
+        // item 3: the office's answer to this connection's own diCodeReviewRead. Kept as data
+        // only; a message without its reference is ignored, never guessed, and one that arrives
+        // while the client cannot vouch for the office state is dropped, never shown.
+        if (
+          typeof msg.missionRef === 'string' &&
+          typeof msg.memberRef === 'string' &&
+          typeof msg.taskId === 'string' &&
+          typeof msg.listing === 'string' &&
+          (msg.view === 'overview' || msg.view === 'file') &&
+          (msg.state === 'observed' || msg.state === 'refused') &&
+          diClientReasonRef.current === null
+        ) {
+          setDiCodeReviewAnswer(msg as unknown as DiCodeReview);
+        }
       } else if (msg.type === 'diOfficeState') {
         // DI office: fully projected by the server. Store it; the presentation (and
         // animateActive) is applied below, after the client's own invalidation.
@@ -1136,7 +1158,10 @@ export function useExtensionMessages(
   // a new read does.
   useEffect(() => {
     diClientReasonRef.current = diClientReason;
-    if (diClientReason !== null) setDiEvidenceContent(null);
+    if (diClientReason !== null) {
+      setDiEvidenceContent(null);
+      setDiCodeReviewAnswer(null);
+    }
   }, [diClientReason]);
 
   // The PRESENTED state (false everywhere whenever the client cannot vouch) drives animation
@@ -1174,6 +1199,7 @@ export function useExtensionMessages(
     diAnnounced,
     diOfficeState,
     diEvidenceContent,
+    diCodeReviewAnswer,
     diClientReason,
     agents,
     selectedAgent,
