@@ -13,14 +13,17 @@ jobs:
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    # macOS/Python 3.9 takes about 15 minutes including the nested Git
-    # hermeticity sweep. Leave room for hosted-runner timing variance.
+    # Leave room for hosted-runner timing variance. The hermetic Git
+    # suite runs in its own job, below.
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      # Pull requests: Ubuntu with Python 3.9 and 3.13, macOS with 3.13.
+      # Pushes to main and manual runs: both OSes with both versions.
+      # The hermetic job uses this exact matrix line, and
+      # tests/test_ci_runner.py checks that the two stay identical.
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.9", "3.13"]
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
 
     steps:
       - name: Check out repository
@@ -38,24 +41,54 @@ jobs:
 
       - name: Run unit tests
         shell: bash
-        run: |
-          status=0
-          for test_file in tests/test_*.py; do
-            if [ "$test_file" = "tests/test_static.py" ]; then
-              continue
-            fi
-            echo "=== $test_file ==="
-            PYTHONPATH="$PWD" python "$test_file" || status=$?
-          done
-          test "$status" -eq 0
+        # Every tests/test_*.py file except test_static.py (next step) and
+        # test_hermetic_git.py (own job), each in its own interpreter, a
+        # few at a time. `exec` makes the runner the step's own process,
+        # so a cancellation signal reaches it and it can print what the
+        # files still running had written.
+        run: exec python tests/_ci_runner.py --exclude test_static.py --exclude test_hermetic_git.py
 
+      # The next three steps run even when the unit tests failed, so one
+      # failing file cannot hide their results. The job still fails. A
+      # cancelled run skips them.
       - name: Run static integration suite
+        if: ${{ !cancelled() }}
         run: PYTHONPATH="$PWD" python tests/test_static.py
 
       - name: Compile Python sources
+        if: ${{ !cancelled() }}
         run: python -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py target_runtime/*.py dirun.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py worker/*.py pr_delivery/*.py mission/*.py coordination/*.py mission_sources/*.py local_request/*.py direquest.py grok_bot/*.py grokbot.py tunnel_control/*.py ditunnel.py dicatalog.py dicatalog_http.py
 
       - name: Check for whitespace errors
+        if: ${{ !cancelled() }}
         # Against the empty tree, so every tracked file is checked on a
         # clean checkout (a bare `git diff --check` would be vacuous).
         run: git diff --check "$(git hash-object -t tree /dev/null)"
+
+  hermetic:
+    name: hermetic Git / ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    # Runs alongside the test job; it has no `needs:`. It has a single
+    # test step, so no step here needs a not-cancelled condition.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show environment
+        run: |
+          python --version
+          git --version
+
+      - name: Run hermetic Git suite
+        run: PYTHONPATH="$PWD" python tests/test_hermetic_git.py
