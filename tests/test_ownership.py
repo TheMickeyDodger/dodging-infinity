@@ -1502,10 +1502,31 @@ class PgidReuseCorroborationTests(unittest.TestCase):
             handle.write(str(pgid))
         return directory
 
+    #: The fixture's program. Its FIRST act is to leave a file behind,
+    #: and it can only run once `spawn_stamp` has stamped the root and
+    #: exec'd it.
+    FIXTURE_PROGRAM = (
+        "import sys, time\n"
+        "open(sys.argv[1], 'w').close()\n"
+        "time.sleep(3600)\n"
+    )
+
     def live_group(self):
-        """A real group this test owns, correctly stamped."""
+        """A real group this test owns, correctly stamped, with BOTH
+        stamp writers finished.
+
+        `spawn_owned` stamps the root twice: the parent before it
+        returns, and the child (`spawn_stamp`) before it execs the
+        program. Waiting for the pgid file returned as soon as the
+        PARENT had written it, with the child's write still to come,
+        and that late write put the real start time back over the edit
+        a test makes to simulate a reused group. The program's ready
+        file is written after that exec, so once it exists no stamp
+        writer is left.
+        """
+        ready = os.path.join(self.base, "fixture-ready")
         handle = proc_module.spawn_owned(
-            [sys.executable, "-c", "import time; time.sleep(3600)"],
+            [sys.executable, "-c", self.FIXTURE_PROGRAM, ready],
             label="corroboration-fixture",
             directory=self.base, owned_root_base_dir=self.base,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -1513,11 +1534,15 @@ class PgidReuseCorroborationTests(unittest.TestCase):
         self.addCleanup(self.release, handle)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            roots = proc_module.owned_roots(self.base)
-            if roots and roots[0][1] is not None:
+            if os.path.exists(ready):
+                roots = proc_module.owned_roots(self.base)
+                self.assertEqual(
+                    [pgid for _directory, pgid in roots], [handle.pid],
+                    "one spawn, one root, stamped with its own group",
+                )
                 return roots[0][0], roots[0][1]
             time.sleep(0.02)
-        self.fail("the fixture never stamped its root")
+        self.fail("the fixture never stamped its root and started")
 
     def release(self, handle):
         proc_module.reap_owned(
@@ -1634,6 +1659,85 @@ class PgidReuseCorroborationTests(unittest.TestCase):
             directory, proc_module.OWNED_ROOT_START_FILE
         ), "w") as handle:
             handle.write("Thu Jan  1 00:00:00 1970")
+        self.assertFalse(
+            proc_module.scope_has_live_group(self.base),
+            "a reused group id counted as a live group of ours",
+        )
+
+    #: Stands in for the stamp wrapper and HOLDS the child-side stamp
+    #: until ``release`` exists, then runs the REAL `spawn_stamp.stamp`,
+    #: leaves a marker and execs the real argv. If the release never
+    #: comes it exits 3 WITHOUT stamping or exec'ing, so a lost release
+    #: fails loudly instead of letting the stamp land on a timer.
+    HELD_STAMP = (
+        "import importlib.util, os, sys, time\n"
+        "spec = importlib.util.spec_from_file_location("
+        "'spawn_stamp', %(real)r)\n"
+        "stamp = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(stamp)\n"
+        "root = sys.argv[1]\n"
+        "rest = sys.argv[sys.argv.index('--') + 1:]\n"
+        "deadline = time.monotonic() + 60\n"
+        "while not os.path.exists(%(release)r):\n"
+        "    if time.monotonic() > deadline:\n"
+        "        sys.exit(3)\n"
+        "    time.sleep(0.005)\n"
+        "stamp.stamp(root)\n"
+        "open(%(marker)r, 'w').close()\n"
+        "os.execvp(rest[0], rest)\n"
+    )
+
+    def test_the_fixture_returns_only_after_EVERY_stamp_writer(self):
+        """`live_group` does not return while a stamp writer is still
+        to come, so the edit a test makes next is the edit the
+        predicate reads.
+
+        The order is fixed by a handshake, not a timer. The child-side
+        stamp is HELD until ``release`` exists, and ``release`` is
+        created only when the fixture SLEEPS, which it does only while
+        it is still waiting. A fixture that returns as soon as the
+        parent has stamped never sleeps, so it returns with the
+        child's stamp still held, every time, however slow the parent
+        is. A fixture that waits for the child must sleep first, which
+        lets the child stamp, so it returns with the stamp done.
+        """
+        from unittest.mock import patch
+        reused = "Thu Jan  1 00:00:00 1970"
+        marker = os.path.join(self.base, "child-stamped")
+        release = os.path.join(self.base, "release-the-stamp")
+        held = os.path.join(self.base, "held-stamp")
+        with open(held, "w") as handle:
+            handle.write(self.HELD_STAMP % {
+                "real": proc_module._STAMP_WRAPPER,
+                "release": release, "marker": marker,
+            })
+        real_sleep = time.sleep
+
+        def waiting(seconds):
+            # Only the FIXTURE's own wait releases the stamp; a sleep
+            # anywhere else (inside spawn_owned, say) must not.
+            caller = sys._getframe(1).f_code
+            if caller is type(self).live_group.__code__ and not \
+                    os.path.exists(release):
+                open(release, "w").close()
+            real_sleep(seconds)
+
+        with patch.object(proc_module, "_STAMP_WRAPPER", held), \
+                patch("time.sleep", waiting):
+            directory, pgid = self.live_group()
+        stamped_on_return = os.path.exists(marker)
+        if not os.path.exists(release):
+            open(release, "w").close()           # never leave the child held
+        self.assertTrue(
+            stamped_on_return,
+            "the fixture returned while its child-side stamp was still"
+            " pending; that late stamp can overwrite any edit made next",
+        )
+        start = os.path.join(directory, proc_module.OWNED_ROOT_START_FILE)
+        with open(start, "w") as handle:
+            handle.write(reused)
+        with open(start) as handle:
+            self.assertEqual(handle.read(), reused)
         self.assertFalse(
             proc_module.scope_has_live_group(self.base),
             "a reused group id counted as a live group of ours",
