@@ -7,9 +7,13 @@ review preamble. It lives in its own subtree,
 [`integrations/pixel-agents/`](../integrations/pixel-agents/), with its own Node.js
 dependency and build boundary.
 
-It observes; it does not control. It does not spawn Herdr, approve Missions, mark Missions
-complete, create Git authority, deploy, or rewrite durable state. It is a browser package
-only: there is no native wrapper, no signing or notarization, and no controls. Dots (future
+It observes; it does not control, with ONE deliberate, bounded exception: the **Codex
+Orchestrator** request panel (see [Requesting Missions](#requesting-missions-the-codex-orchestrator)),
+where you ask for work, decide on an exact proposal yourself, and start it. Everything else
+here is read-only. The office does not spawn Herdr (the panel's own bridge asks Herdr, after your
+explicit Start), mark Missions complete, create Git authority, deploy, or rewrite durable state.
+It is a browser package only: there is no native wrapper, no signing or notarization, and no
+controls beyond that panel. Dots (future
 and optional, not today's mobile interface) and R1 are separate and are not part of it. Today
 the mobile surface is Grok Bot ([docs/grok-bot.md](grok-bot.md)), which hands requests to the
 Codex Outer Operator. The office is not the Phase 11 Visual Mission OS of the
@@ -424,7 +428,10 @@ herdr agent list ───┘     dicatalog_http.py                             
 - **No route to action.** It imports, proxies and invokes none of the consequential entry
   points (`direquest.py`, `dirun.py`, `grokbot.py`, `codexgw.py`, Git delivery).
 
-**The office only reads the bridge.**
+**The office only reads the bridge.** (The request panel is a separate, second connection and is
+described in [Requesting Missions](#requesting-missions-the-codex-orchestrator): the office relays
+one closed message type to it, `diMissionRequest`, never holding the panel's token in the
+browser, and the catalog bridge below stays read-only.)
 
 - **What it reads.** It reads the bridge's discovery file and polls `GET /catalog`. It never
   starts, supervises or restarts the bridge; a missing discovery file is shown as
@@ -883,6 +890,304 @@ real agent's workspace is Root's.
   hyphenated `pixel-agents` directory under `integrations/` is plainly not a Python package.
 - **One build boundary.** The Node.js dependencies and build stay inside one directory.
 - **Upstream tracking.** The name matches the upstream project.
+
+## Requesting Missions: the Codex Orchestrator
+
+The one place the office does more than observe. **Codex Orchestrator** is a panel in the
+office where you ask for engineering work in ordinary words, read an exact proposal, decide on
+it yourself, press **Start**, and then watch the team's work progress and a verified result
+appear. It is built from existing parts and adds no second engine: the conversation is the
+existing Codex capability in a restricted, read-only posture; the proposal, its revisions and
+its digest are Mission Core's; the decision goes through the local request surface; the work is
+started and observed by the existing Mission bridge; and the engineering is Herdr's.
+
+What it does **not** change: it carries no delivery authority. It never commits, pushes, opens
+a pull request, merges, tags, releases or deploys, and a verified result is not a delivered one.
+
+### What you run
+
+Three processes, all on the one machine, all started by you, and none by the office:
+
+```bash
+# 1. The request panel (Python). It holds your proposals, decisions and the conversation.
+python3 -B dimission_panel.py \
+  --state-dir /abs/panel-state --control-repo /abs/control-repo \
+  --discovery-file /abs/panel-run/panel.json \
+  --workspace-repository /abs/the-repo-the-work-is-about --workspaces-root /abs/mission-workspaces
+
+# 2. The progression runtime (Python). It moves a STARTED Mission along. Same four locations.
+python3 -B dirun.py \
+  --mission-state-dir /abs/panel-state --mission-control-repo /abs/control-repo \
+  --mission-workspace-repository /abs/the-repo-the-work-is-about \
+  --mission-workspaces-root /abs/mission-workspaces run
+
+# 3. The office (Node), told where the panel's discovery file is. From integrations/pixel-agents/
+node dist/di-cli.js --state-dir /abs/office-state --backend-discovery "$DISCOVERY" \
+  --mission-panel-discovery /abs/panel-run/panel.json
+```
+
+- **Absolute paths, owned directories.** The panel and the runtime refuse relative paths. The
+  panel publishes its discovery file (`{url, port, token}`) 0600 in a 0700 directory; only the
+  office's server reads it. **The token never reaches the browser**: the page holds no token, no
+  shell, no terminal, no filesystem access and no command route. It can only send eleven closed
+  message operations, each with exactly its own fields, which the server relays to the panel on
+  `127.0.0.1`.
+- **The same four locations for the panel and the runtime.** `--state-dir`, `--control-repo`,
+  `--workspace-repository` and `--workspaces-root` of the panel are `--mission-state-dir`,
+  `--mission-control-repo`, `--mission-workspace-repository` and `--mission-workspaces-root` of
+  the runtime. The runtime publishes a status the panel compares against its own locations, so a
+  runtime started for other locations is reported as such rather than as yours.
+- **Without the workspace pair** the panel can converse, propose and record a decision, but it
+  cannot start work (and says so).
+- **Without `--mission-panel-discovery`** the office shows the panel as not set up and says what to
+  start. It never starts the panel.
+- **`dirun.py` has two modes.** The four `--mission-*` options select MissionCore mode before any
+  workflow machinery is built, and never combine with `--config` or `--runtime-config`. Without
+  them it is the existing workflow Runtime, unchanged. The two modes use different lock files and
+  share no state.
+
+### Requesting
+
+Open **Ask the Codex Orchestrator** in the office panel and describe the work in your own
+words. Codex may ask questions first. When the request is clear it drafts a proposal.
+
+- **A draft is not a request.** It is text in a conversation. Nothing is of record, approved or
+  started until you submit it, and the panel says so on the draft.
+- **What Codex can do here:** read, ask and draft. Each turn is a fresh read-only Codex
+  invocation that sees the earlier turns quoted as untrusted history, with a 300-second
+  deadline. It cannot approve, start, run commands or change files, and nothing it writes can
+  reach the decision. A reply that says "approved" changes nothing.
+- **What Codex writes into a proposal:** four fields only (the objective, where it applies, what
+  is in and out of scope, and the action scope). The panel itself sets the repository, no delivery
+  target, and the completion requirement (the team's result and its review are bound to this run
+  and can be recovered). Control characters and markup in anything Codex or the team wrote are
+  shown as visible, inert text.
+- **A turn whose outcome is unknown** (the provider timed out or the process died) is shown as
+  UNCERTAIN and is never retried for you.
+- **A long conversation is shown as its most recent turns, and the window says so.** The panel
+  sends at most 50 turns and about 3 MB of text at a time, measured in the bytes that really cross
+  to the window (not in characters: the same 8,000 characters are 8 KB of plain text but 32 KB of
+  emoji). When older turns are left out the Ask tab says how many are shown of how many, that the
+  rest are kept in the record, and which bound decided: for example "Showing the most recent 48 of
+  50 turns. 2 earlier turns are kept in the record and not shown here: the turns shown already
+  reach the about 3 MB of text this window receives at once." A bound that held for plain text and
+  failed for real text would be worse than none.
+
+Press **Submit as a proposal of record**. Mission Core then holds the proposal with a revision
+and a digest, and the panel opens it.
+
+### Reviewing
+
+The proposal of record is shown exactly as held: what you asked for, where it applies, what is in
+scope and what is not, what the team may do (for example "change files in an isolated copy of the
+repository"), the repository, delivery (none), **the proof rules** (what counts as done), and its
+identity (request, Mission, revision, digest). Read all of it before deciding. Long text opens in
+place; you can choose wider reading.
+
+**The proof rules are shown in full, in sentences, and again inside the offer you approve.** Every
+rule the proposal binds appears with its exact numbers, keys and digests: the proof the team must
+provide (with the kind of evidence, the artifacts it needs and how old evidence may be), the
+artifacts that must match a content digest, the prerequisites that must be met first, the
+resources that must be ready, the blockers that may remain, and how many attempts and checkpoints
+the team may use. The rules are part of the proposal, so a revision that changes **only** the
+rules is a different proposal with a different digest: a window that showed the old rules is
+refused as out of date and must read the new ones before anything can be approved.
+
+**Approval is refused for rules this window cannot show.** If the proposal carries anything the
+window does not know how to display (a rule this version has never met, or a list longer than the
+canonical bound), the window says exactly that, shows no Approve control, and sends no decision.
+Showing less than the contract and accepting anyway is the one outcome that must not exist.
+Withdrawing stays possible. A proposal that states no proof rules at all (an older record) is
+shown as exactly that.
+
+Before you can decide you are shown **the exact offer**: the same identity, the permitted scope,
+the repository, delivery targets, an **absolute expiry** (fifteen minutes from when the offer was
+first shown) and an **offer digest** naming all of it.
+
+- **The offer is frozen.** While it is live every window is shown the same offer with the same
+  expiry. Reading it again does not extend it. Time you spend reading inside the window is fine;
+  after the expiry it is gone.
+- **Two windows never make two approvals.** A window that holds an older display finds the
+  proposal changed and must read the current one.
+- **Two different refusals, never confused.** "The offer you were shown is no longer the offer of
+  record" means the proposal changed, was withdrawn or replaced, or the offer was not the one
+  issued. "The approval window you were shown has passed" means only time passed: nothing about
+  the proposal changed, and you can read a new offer.
+
+### When a Start is in doubt
+
+If a child's startup fails after its roles were contracted, Herdr leaves a
+bounded, private diagnostic in the child workspace, and the panel shows **why**
+under the stage when it can bind that file to this exact attempt: the stage it
+stopped at, the failure's type and each role that could not be bound (for
+example "lead1: the recorded binding carries no session"). It says which file
+holds it (the file's name only; this window cannot open it). When none binds, or
+more than one claims the attempt, it says the cause is **not known** and never
+shows the newest file as a guess. The Start stays what it was: durably recorded,
+in doubt, never replayed, and the panel does not say a retry is safe. See
+`docs/operations.md`, "When the roles start but do not bind".
+
+### Approving
+
+Type the word **`approve`** (case and surrounding spaces are ignored; anything else is not a
+decision) and press **Approve**. The control stays unavailable until the offer is displayed and
+the word is typed, and it says why.
+
+**Approval is Operator-attested. It is not verified human authorship.** Read this line on
+screen before you decide, because it is the honest ceiling of this feature:
+
+- The panel relays the word typed in this window. Dodging Infinity has no authenticated human
+  principal here, so it **cannot confirm who typed it**. A mistaken or malicious process running
+  as your account could fabricate it. The record says so: `operator_attested_not_independently_verified`.
+  Nothing here is a verified human signature.
+- Nothing else can approve. The ordinary unauthenticated "approve" of the local request surface
+  stays refused. Text from Codex or from the team can never be a decision, and a decision made in
+  another conversation is not carried over to this one.
+- The approval binds exactly the offer you were shown: its Mission, revision, digest, scope,
+  repository, delivery and expiry. It is checked against both the offer the panel retained and
+  Mission Core's current record before anything is written.
+
+**Approving starts nothing.** Starting is a separate, explicit act.
+
+### Starting, and what happens next
+
+Press **Start** (before the approval expires; an expired approval is shown as expired and is
+never quietly re-offered). Start records DI's intent to start the team **before** asking Herdr
+for it, prepares an isolated copy of the repository for this Mission, and asks Herdr to start the
+team.
+
+- **Start is durable intent, not an exactly-once guarantee.** If the outcome is unknown (the
+  request may or may not have reached Herdr) the panel shows **Start outcome unknown**. The work
+  is **never started a second time**; the unknown start is reconciled from Herdr's own records.
+
+**Progression is automatic after an explicit Start.** The progression runtime (`dirun.py` in
+MissionCore mode) passes about every five seconds over the requests this panel submitted that you
+approved and have not withdrawn. On each pass, for each one, it does at most one step, by the
+Mission's own record:
+
+- no Start recorded: **nothing**. The runtime never starts a Mission and never acts on an
+  approved-but-unstarted one;
+- Start recorded, no team identity yet: one bounded, evidence-only reconcile (at most one every
+  30 seconds, 16 attempts, then a durable stop that is never reported as success);
+- team identity known: observe it;
+- running: one fresh read, and a verification is recorded **only if every condition holds in that
+  same read** (the team stopped, it succeeded, the result and review files are the ones reported,
+  the baseline did not move, the protected surface is unchanged, the approved completion
+  requirement is met);
+- otherwise it waits. A team that **stopped without succeeding** is a **hold**: nothing is
+  recorded, it is re-read every pass, and ending the run is your explicit decision. The runtime
+  never turns waiting or a timeout into success, and never ends a run on its own.
+
+You can watch the progress in the office and in the panel. The panel keeps no page-polling
+duty for it: closing the panel does not pause the work, and reading it does not advance it.
+
+The line at the top of the panel says whether this is happening. Each state has its own word, and
+the word is never softened:
+
+| It says | Meaning | What you can do |
+|---|---|---|
+| **Automatic progress is ON** | A runtime for these locations is passing. | Press Start, then wait. |
+| **OFF** | No runtime has reported here. | Start the runtime, or advance the request by hand with the buttons it then offers. |
+| **STALLED** | A runtime reported before but has stopped passing. | Look at the runtime process. |
+| **NOT FOR THESE REQUESTS** | A runtime is running for different locations. | Start one with this panel's four locations. |
+| **UNKNOWN** | Its status cannot be read. | Treat nothing as advancing. |
+| **has FAILED** | It is running but its last pass failed as a whole. | Look at the runtime's stderr. |
+| **UNAVAILABLE** | This window cannot read the panel now. | Nothing shown is current. |
+
+Use **Details about automatic progress** (a keyboard-operable disclosure) for the pass count, the
+age of the last pass and the runtime's own status words. While the runtime is ON the manual
+Observe, Reconcile and Verify buttons are not the ordinary flow; when it is not, they are offered
+and the screen says nothing is advancing automatically.
+
+### Withdrawing, revising, and the words on screen
+
+- **Withdrawn.** Taking back a pending proposal is a **withdrawal**, permanently closed. It is
+  not a decision and is never called "denied": no one with authenticated authority is involved.
+- **Revised.** To change a proposal you describe the change; the pending one is withdrawn and a
+  **separate, new** proposal replaces it (a new Mission at revision 1). Nothing is edited in
+  place, and the old one reads "Revised". The history stays.
+- **The withdrawal key is held in the panel's memory only.** It is shown once and is lost when
+  the panel restarts; a proposal made before a restart can then still be read and decided, but
+  not withdrawn from this panel.
+- **Expired** means the approval's time passed before Start.
+- **Uncertain** is shown as uncertain: an unknown conversation turn, an unknown submission, an
+  unknown Start. None is retried automatically, and none is shown as success.
+
+### The result, and the observation and delivery boundary
+
+When the team has stopped successfully and DI's single fresh read holds every condition, the
+request reads **Verified result** and you can load it: the team's result text and the team's
+review, each bounded for display, with the digest each is bound to. If the files are gone or
+changed, the panel says the result **cannot be recovered**; a digest alone is never shown as a
+result.
+
+- **What "verified" means.** DI decided it from a fresh read of the team's own files after the
+  team stopped, against the exact digests it recorded. The team's review is **evidence the team
+  produced, not independent verification.** "Engineering complete" (the team says COMPLETE),
+  "verified" (DI's conjunction held) and "delivered" are three different things.
+- **What the panel observes.** Herdr's own records, read-only: the task record, the control-side
+  spawn records, the Mission's isolated workspace files. A recorded observation is history, not a
+  claim about this moment. The office shows the team live.
+- **What is never delivered from here.** Nothing is committed, pushed, merged, tagged,
+  released or deployed by the panel or the runtime: `delivery_authority` is `none`, the request
+  carries no delivery field, and a verified result says "it has not been pushed, merged or
+  released". Delivery stays a separate, human-controlled step behind the Git approval gates in
+  [operations](operations.md).
+
+### Limits, said plainly
+
+- **No authenticated approver.** See above: approval is an operator attestation.
+- **No exactly-once.** Durable intent is recorded before an effect, and an unknown effect is
+  reconciled, never repeated.
+- **The conversation is not the record.** What Codex said is untrusted history; only the proposal
+  of record, bound by digest, counts.
+- **Bounded.** Conversation text, turns kept, requests listed and offers kept are bounded, and a
+  full store refuses a new one rather than evicting an old one. A runtime pass examines at most
+  32 Missions and rotates through the rest across passes, and says when it was bounded.
+- **One runtime per state directory.** A second one is refused. A Start and a runtime pass never
+  act on the same Mission at once (a per-Mission guard shared by both).
+- **Only this panel's requests.** The runtime advances only what this panel's journal submitted.
+  Another surface's request, a Mission proposed some other way and a workflow record are not read.
+- **Reconnect re-reads.** A reloaded or second window re-reads the records; it never trusts its
+  last screen.
+
+### How this is tested, and what that does and does not show
+
+The panel, the runtime and the office relay have backend, relay and model tests. The browser test
+`webview-ui/test/diMissionRequest.test.ts` loads the actual App (`test/harness/di-app.html` →
+`src/main.tsx`) mounted **from source by Vite's dev server** in a real Chrome, through the real
+server relay, the real Python panel and the real `dirun` MissionCore loop. It is **real-App
+integration over source**, with these controlled and labelled substitutions: the Codex process's
+replies, the process Herdr would spawn, and the team's observed state and files. It shows, among
+other things, a Mission advancing to a retrievable verified result **while the page is held
+unable to read anything** (the adapter's call counter does not move), focus kept across every
+transition, and the honest wording. It is **not production-package browser proof**: the production
+package is a separate artifact opened separately, and no live provider or live Herdr is involved.
+`DI_REVIEW_SHOTS=<dir>` also saves labelled fixture screenshots and a manifest of the source they
+came from.
+
+### Verifying a package against its source
+
+`integrations/pixel-agents/scripts/di-candidate-manifest.mjs` links frozen source to a built
+artifact without trusting how the build was done:
+
+```bash
+node scripts/di-candidate-manifest.mjs digest                      # the name of the exact source bytes
+node scripts/di-candidate-manifest.mjs write --out M.json --artifact ../pixel-agents-di-package.tgz
+node scripts/di-candidate-manifest.mjs verify --manifest M.json --artifact ../pixel-agents-di-package.tgz
+```
+
+The digest is sha256 over every file of the checkout (path and bytes; a symlink by its target,
+never followed), except that every entry whose **name** is on the manifest's `excluded` list is
+skipped wherever it appears and **whatever it is**: a file, a directory or a symlink. The list is
+version-control metadata (including a worktree's `.git`, which is a *file* holding an absolute
+path), dependencies (including a symlinked `node_modules`), build output, caches, the local
+evidence store and `.DS_Store`. Excluding by name is what keeps the digest **portable**: the same
+source gives the same digest wherever the checkout lives, and a clean archive of the base with the
+changed paths copied onto it has the same digest as the working tree (a test checks exactly that).
+An artifact that is a directory is hashed whole, with nothing excluded. `verify` exits non-zero
+if the checkout is no longer the frozen source or an artifact is not the one recorded. It is a
+name for bytes and a tamper check, not a signature.
 
 ## Licensing
 

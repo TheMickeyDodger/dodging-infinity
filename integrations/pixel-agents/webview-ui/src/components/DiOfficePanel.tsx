@@ -17,6 +17,8 @@ import type { DiCodeReviewAccess } from './DiCodeReviewEntry.js';
 import { DiCodeReviewEntry } from './DiCodeReviewEntry.js';
 import type { DiEvidenceAccess } from './DiEvidenceLibrary.js';
 import { DiEvidenceLibrary } from './DiEvidenceLibrary.js';
+import type { DiMissionRequestAccess } from './DiMissionRequestEntry.js';
+import { DiMissionRequestEntry } from './DiMissionRequestEntry.js';
 import type { DiFreshness, DiRecord, DiRecordTarget, DiSelectionMemory } from './diNavigation.js';
 import {
   DI_FOCUS_RING,
@@ -81,6 +83,8 @@ interface DiOfficePanelProps {
   evidence?: DiEvidenceAccess | null;
   /** item 3: the live code review seam (absent: the offer is stated, nothing can be opened). */
   review?: DiCodeReviewAccess | null;
+  /** item 4: the Mission request workspace seam (absent: no entry is drawn). */
+  mission?: DiMissionRequestAccess | null;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -1131,6 +1135,7 @@ function DiOfficePanelBody({
   announced = [],
   evidence = null,
   review = null,
+  mission = null,
 }: DiOfficePanelProps) {
   const [selectedId, setSelectedId] = useState<number | null>(officeState.selectedAgentId);
   useEffect(() => {
@@ -1271,6 +1276,10 @@ function DiOfficePanelBody({
           ◂ hide
         </button>
       </div>
+
+      {/* item 4: the entry to the Mission request workspace. It opens a pane BESIDE this panel,
+          so the world stays visible and usable while a request is read, decided and followed. */}
+      <DiMissionRequestEntry access={mission} />
 
       {/* item 3: the entry to the live code review stays pinned while an agent is selected — the
           panel scrolls the selected agent's Mission into view, which would otherwise carry it away. */}

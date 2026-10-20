@@ -161,6 +161,20 @@ RESETTABLE_STATUSES = ("idle", "done")
 #: an identity question — MISSING or DEGRADED — and not a busy agent.
 PROBE_SENTINELS = ("missing", "unknown")
 
+#: Every status text a startup diagnostic may repeat: the real `agent_status`
+#: domain (`blocked`, `done`, `idle`, `working`) plus the two probe sentinels.
+#: Anything else Herdr returns is arbitrary text and is reported as
+#: ``UNKNOWN`` rather than copied.
+KNOWN_AGENT_STATUSES = ("blocked", "done", "idle", "working") + PROBE_SENTINELS
+
+#: What a diagnostic may say about a role's session id WITHOUT storing it: the
+#: record carried none (ABSENT), carried one (PRESENT), or no record could be
+#: read at all (UNKNOWN). The value itself is never recorded and none is ever
+#: inferred.
+SESSION_ABSENT = "ABSENT"
+SESSION_PRESENT = "PRESENT"
+SESSION_UNKNOWN = "UNKNOWN"
+
 
 def is_busy(status):
     """Is this a REAL Herdr status that forbids a context reset?
@@ -299,6 +313,21 @@ def session_value(record):
         return None
     value = session.get("value")
     return value if isinstance(value, str) and value else None
+
+
+def session_state(record):
+    """Whether a readable agent record carried a session id, as one of
+    ``SESSION_*``, built on `session_value` so the two cannot disagree. A
+    record that could not be read at all is UNKNOWN, not ABSENT: absence is a
+    finding about a record that was read."""
+    if not isinstance(record, dict):
+        return SESSION_UNKNOWN
+    return SESSION_PRESENT if session_value(record) else SESSION_ABSENT
+
+
+def safe_status(status):
+    """``status`` if it is a known Herdr status, otherwise ``UNKNOWN``."""
+    return status if status in KNOWN_AGENT_STATUSES else "UNKNOWN"
 
 
 def stable_identity(record):

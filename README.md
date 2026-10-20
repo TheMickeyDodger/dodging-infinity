@@ -12,7 +12,7 @@ Dodging Infinity turns complex work into **Missions**: persistent records of the
 
 Start a Mission from your phone through **Grok Bot**, monitor it, update the work, review the result, and authorize commits and pushes. That workflow has been verified end to end. Codex provides the Outer Operator, Dodging Infinity manages the Mission and Runtime, and Herdr carries out the engineering.
 
-And the team has a place you can explore. The **Pixel Agents DI office** turns observed Mission teams into selectable characters inside a living metropolis, with working offices, forests, a waterfront, a cathedral quarter, and a subway. Select an agent, inspect its Mission, and see the work in context. After setup, open the running office by typing **`pixel`** in your terminal.
+And the team has a place you can explore. The **Pixel Agents DI office** turns observed Mission teams into selectable characters inside a living metropolis, with working offices, forests, a waterfront, a cathedral quarter, and a subway. Select an agent, inspect its Mission, and see the work in context. An office you deliberately configure for it can also take an in-world request, the optional [Codex Orchestrator](#an-optional-in-world-request-the-codex-orchestrator). After setup, open the running office by typing **`pixel`** in your terminal.
 
 ![The complete Dodging Infinity living metropolis, with the Mission inspector alongside the world map](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/pixel-world/world-map.png)
 
@@ -33,7 +33,7 @@ I built Dodging Infinity to carry that whole process as a Mission, from the init
 | **Remote operation** | Use Grok Bot to initiate Missions, monitor progress, request changes, inspect results, and carry approved work through commits and pushes. |
 | **Inspectable results** | Review the implementation, test evidence, findings, and remaining questions against the Mission’s requirements. |
 | **Clear delivery decisions** | Authorization to perform engineering work and authorization to deliver it are handled explicitly. |
-| **A visual home** | Explore the office, select observed agents, switch Missions, and inspect the records behind the activity. |
+| **A visual home** | Explore the office, select observed agents, switch Missions, and inspect the records behind the activity. An office configured for it can also take an in-world request (optional). |
 
 ## From request to reviewed delivery
 
@@ -117,7 +117,7 @@ The contribution passed upstream checks and was accepted and merged by a qBraid 
 |---|---|---|
 | **Computational mechanosynthesis** | Research planning, molecular models, method definitions, numerical criteria, provenance, and independent review | [Published research repository](https://github.com/TheMickeyDodger/di-mechanosynthesis) |
 | **qBraid SDK** | Quantum-circuit conversion, reset semantics, regression tests, and upstream review | [Merged contribution](https://github.com/qBraid/qBraid/pull/1333) |
-| **Pixel Agents DI office** | Mission catalog integration, selectable agents, observed state, and a connected visual world | [Integration and operating guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md) |
+| **Pixel Agents DI office** | Mission catalog integration, selectable agents, observed state, and a connected visual world; with an optional, separately configured request panel (Codex Orchestrator) | [Integration and operating guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md) |
 
 ## Inside the engineering team
 
@@ -184,9 +184,15 @@ The included living-metropolis preset spans **352 × 312 tiles**, with **145 dec
 - **Explore the world** with the map, district navigation, and camera controls.
 - **Return to the office** and reconstruct the current recorded Mission observations.
 
-Real agents come from DI’s Mission catalog. Ambient residents give the world its everyday life and are identified separately. The office is a read-only view of recorded work; Mission commands and approvals remain in the operating interfaces.
+Real agents come from DI’s Mission catalog. Ambient residents give the world its everyday life and are identified separately. An office that is simply running is a read-only view of recorded work; Mission commands and approvals remain in the operating interfaces unless you deliberately configure the optional request panel described below.
 
 The screenshots above show the running local world. The living metropolis is an optional preset that can be imported into the office.
+
+### An optional in-world request: the Codex Orchestrator
+
+An office that is merely running and observing has **no** request or approval capability, and an existing or older setup does not gain one by upgrading. The office takes requests only when you deliberately **configure** it: you start the request panel and the progression runtime with the same state, control and workspace locations, and give the office the panel’s discovery file. Once configured, you can ask for work in ordinary words, read an exact proposal, give an exact human approval (an operator attestation, not verified human authorship), press an explicit Start, and then follow automatic, supervised progress to a retrievable verified result. Git delivery stays **separate and human-gated**: the panel does not commit, push, merge, or release.
+
+This is a **different lane from the Grok Bot workflow above**. It is built on Mission Core and the local request surface; it is not an upgrade of the Grok route and not interchangeable with it, and Grok Bot does not gain this capability. Setup, the approval model, and the limits are in the [Codex Orchestrator guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md#requesting-missions-the-codex-orchestrator).
 
 [Office setup](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md) · [World presets](https://github.com/TheMickeyDodger/dodging-infinity/tree/main/integrations/pixel-agents/packaging/di/worlds) · [Pixel Agents provenance](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/integrations/pixel-agents/UPSTREAM.md)
 

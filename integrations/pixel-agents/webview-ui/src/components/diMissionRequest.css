@@ -1,0 +1,575 @@
+/*
+ * Item 4 — the Mission request workspace.
+ *
+ * A reading surface docked beside the office panel, NOT a modal: the world stays visible and
+ * usable while a request is read, decided and run. It keeps the product's hard 2px borders and
+ * square corners where that costs no readability, and uses a plain reading typeface, high
+ * contrast and a focus ring that cannot be missed.
+ *
+ * Colours are SOLID tokens on .di-mr (no alpha), so test/diMissionRequestContrast.test.ts can
+ * compute the contrast of every text/background pairing from this very file. Change a token and
+ * that test checks it. State is never carried by colour alone: every state also has words.
+ *
+ * There is no animation in this file on purpose. Nothing here may move, pulse or celebrate: a step
+ * is shown as done only when the records say so, in words, and a waiting state is plain text.
+ */
+
+.di-mr {
+  /* surfaces */
+  --mr-bg: #12121c;
+  --mr-surface: #1a1a29;
+  --mr-surface-2: #23233a;
+  --mr-code-bg: #0e0e17;
+  --mr-border: #7373a6;
+  --mr-border-soft: #34344f;
+  /* text */
+  --mr-text: #eef0f8;
+  --mr-muted: #b6b9d0;
+  --mr-link: #a9b4ff;
+  /* focus: unmistakable on every surface above */
+  --mr-focus: #ffd84d;
+  /* controls */
+  --mr-btn-bg: #2f2f4d;
+  --mr-btn-hover: #3d3d63;
+  --mr-btn-text: #eef0f8;
+  --mr-primary-bg: #ffd84d;
+  --mr-primary-text: #12121c;
+  --mr-danger-bg: #4a1c28;
+  --mr-danger-border: #ff9494;
+  --mr-tab-on-bg: #2c2b6d;
+  /* notices */
+  --mr-info-bg: #1d2a44;
+  --mr-warn-bg: #3d3216;
+  --mr-block-bg: #3e1b25;
+  --mr-ok-bg: #123524;
+  /* the journey */
+  --mr-step-done: #8ff0b0;
+  --mr-step-now: #ffe08a;
+  --mr-step-next: #b6b9d0;
+  /* the always-drawn scrollbar of the reading pane */
+  --mr-scroll-thumb: #9a9ad0;
+  --mr-scroll-track: #23233a;
+
+  --mr-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mr-font-code:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  color: var(--mr-text);
+  background: var(--mr-bg);
+  border-left: 2px solid var(--mr-border);
+  box-shadow: -4px 0 0 #05050a;
+  font-family: var(--mr-font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+/* Where the workspace COVERS the whole window (a narrow one), it hides the office's fixture banner
+   instead of being lettered over by it; the workspace carries its own FIXTURE label at its top. */
+body:has(.di-mr[data-covering='true']) .di-fixture-banner {
+  visibility: hidden;
+}
+
+/* a window too narrow to leave room for the office: the workspace covers it, and says so */
+.di-mr[data-covering='true'] {
+  left: 0;
+  width: auto;
+  z-index: 30;
+  border-left: 0;
+}
+
+.di-mr *,
+.di-mr *::before,
+.di-mr *::after {
+  box-sizing: border-box;
+  /* The app's base layer sets its pixel font on EVERY element, which would reach each child
+     directly. A reading surface uses the reading faces. */
+  font-family: inherit;
+}
+.di-mr code,
+.di-mr .di-mr-mono,
+.di-mr .di-mr-digest-full {
+  font-family: var(--mr-font-code);
+}
+
+/* ---------- focus: the same strong ring on every control ---------- */
+
+.di-mr :focus {
+  outline: none;
+}
+.di-mr :focus-visible {
+  outline: 3px solid var(--mr-focus);
+  outline-offset: 2px;
+}
+
+/* ---------- structure ---------- */
+
+.di-mr-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--mr-surface);
+  border-bottom: 2px solid var(--mr-border);
+}
+.di-mr-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+}
+.di-mr-head-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.di-mr-covering {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--mr-text);
+  background: var(--mr-warn-bg);
+  border-bottom: 2px solid var(--mr-border);
+}
+.di-mr-status {
+  margin: 0;
+  padding: 8px 14px;
+  background: var(--mr-surface-2);
+  border-bottom: 2px solid var(--mr-border-soft);
+  color: var(--mr-muted);
+}
+.di-mr-fixture {
+  margin: 0;
+  padding: 8px 14px;
+  background: var(--mr-warn-bg);
+  border-bottom: 2px solid var(--mr-border-soft);
+  color: var(--mr-text);
+  font-weight: bold;
+}
+.di-mr-progression {
+  margin: 0;
+  padding: 10px 14px;
+  border: 2px solid var(--mr-border-soft);
+  color: var(--mr-text);
+}
+.di-mr-progression p {
+  margin: 0;
+}
+.di-mr-progression summary {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--mr-link);
+  text-decoration: underline;
+}
+.di-mr-progression ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.di-mr-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.di-mr-tagline {
+  margin: 0;
+  color: var(--mr-muted);
+  font-size: 0.9em;
+}
+.di-mr-progression[data-tone='ok'] {
+  background: var(--mr-ok-bg);
+}
+.di-mr-progression[data-tone='warn'] {
+  background: var(--mr-warn-bg);
+}
+.di-mr-status[data-tone='block'] {
+  background: var(--mr-block-bg);
+  color: var(--mr-text);
+}
+
+.di-mr-tabs {
+  display: flex;
+  background: var(--mr-surface);
+  border-bottom: 2px solid var(--mr-border);
+}
+.di-mr-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 9px 12px;
+  color: var(--mr-text);
+  background: var(--mr-surface);
+  border: 0;
+  border-bottom: 4px solid var(--mr-surface);
+  font-size: 15px;
+  cursor: pointer;
+}
+.di-mr-tab[aria-selected='true'] {
+  background: var(--mr-tab-on-bg);
+  border-bottom-color: var(--mr-focus);
+  font-weight: 700;
+}
+.di-mr-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 7px;
+  color: var(--mr-primary-text);
+  background: var(--mr-primary-bg);
+  font-weight: 700;
+}
+
+.di-mr-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.di-mr-body::-webkit-scrollbar,
+.di-mr-reading::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: var(--mr-scroll-track);
+}
+.di-mr-body::-webkit-scrollbar-thumb,
+.di-mr-reading::-webkit-scrollbar-thumb {
+  background: var(--mr-scroll-thumb);
+  border: 2px solid var(--mr-scroll-track);
+}
+@supports not selector(::-webkit-scrollbar) {
+  .di-mr-body,
+  .di-mr-reading {
+    scrollbar-color: var(--mr-scroll-thumb) var(--mr-scroll-track);
+  }
+}
+
+.di-mr h3,
+.di-mr h4 {
+  margin: 0;
+  line-height: 1.35;
+}
+.di-mr h3 {
+  font-size: 16px;
+}
+.di-mr h4 {
+  font-size: 15px;
+  color: var(--mr-text);
+}
+.di-mr p {
+  margin: 0;
+}
+.di-mr-muted {
+  color: var(--mr-muted);
+}
+.di-mr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--mr-surface);
+  border: 2px solid var(--mr-border-soft);
+}
+
+/* ---------- controls ---------- */
+
+.di-mr button {
+  padding: 7px 12px;
+  color: var(--mr-btn-text);
+  background: var(--mr-btn-bg);
+  border: 2px solid var(--mr-border);
+  font-size: 15px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+.di-mr button:hover {
+  background: var(--mr-btn-hover);
+}
+.di-mr button[data-primary='true'] {
+  color: var(--mr-primary-text);
+  background: var(--mr-primary-bg);
+  border-color: var(--mr-primary-bg);
+  font-weight: 700;
+}
+.di-mr button[data-danger='true'] {
+  background: var(--mr-danger-bg);
+  border-color: var(--mr-danger-border);
+}
+/* A control that is not available NOW keeps its place and its focus (aria-disabled, never the
+   disabled attribute: a disabled control that holds focus drops it to the page). It reads as
+   unavailable in words beside it as well as in appearance. */
+.di-mr button[aria-disabled='true'] {
+  cursor: not-allowed;
+  color: var(--mr-muted);
+  background: var(--mr-btn-bg);
+  border-style: dashed;
+  font-weight: 400;
+}
+.di-mr button[aria-disabled='true']:hover {
+  background: var(--mr-btn-bg);
+}
+.di-mr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.di-mr-hint {
+  color: var(--mr-muted);
+}
+
+.di-mr textarea,
+.di-mr input[type='text'] {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--mr-text);
+  background: var(--mr-code-bg);
+  border: 2px solid var(--mr-border);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.di-mr textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+.di-mr label {
+  display: block;
+  font-weight: 700;
+}
+
+/* ---------- notices ---------- */
+
+.di-mr-notices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.di-mr-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--mr-info-bg);
+  border: 2px solid var(--mr-border);
+}
+.di-mr-notice[data-kind='refusal'] {
+  background: var(--mr-block-bg);
+}
+.di-mr-notice[data-kind='unknown'],
+.di-mr-notice[data-kind='unavailable'] {
+  background: var(--mr-warn-bg);
+}
+.di-mr-notice-kind {
+  font-weight: 700;
+}
+.di-mr-box {
+  padding: 10px 12px;
+  border: 2px solid var(--mr-border);
+  background: var(--mr-info-bg);
+}
+.di-mr-box[data-tone='warn'] {
+  background: var(--mr-warn-bg);
+}
+.di-mr-box[data-tone='block'] {
+  background: var(--mr-block-bg);
+}
+.di-mr-box[data-tone='ok'] {
+  background: var(--mr-ok-bg);
+}
+
+/* ---------- conversation ---------- */
+
+.di-mr-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.di-mr-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.di-mr-said {
+  padding: 9px 11px;
+  background: var(--mr-surface-2);
+  border: 2px solid var(--mr-border-soft);
+}
+.di-mr-said[data-who='you'] {
+  border-color: var(--mr-border);
+}
+.di-mr-who {
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 700;
+  color: var(--mr-muted);
+}
+
+/* ---------- reading ---------- */
+
+.di-mr-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.di-mr-line {
+  display: block;
+  min-height: 1.5em;
+}
+.di-mr-ctl {
+  padding: 0 3px;
+  color: var(--mr-primary-text);
+  background: var(--mr-focus);
+  font-family: var(--mr-font-code);
+  font-size: 0.9em;
+}
+.di-mr-reading {
+  max-height: 22em;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--mr-code-bg);
+  border: 2px solid var(--mr-border-soft);
+}
+.di-mr-reading[data-open='true'] {
+  max-height: none;
+}
+.di-mr-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+.di-mr-fields dt {
+  font-weight: 700;
+  color: var(--mr-muted);
+}
+.di-mr-fields dd {
+  margin: 2px 0 0;
+}
+.di-mr-fields ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.di-mr-digest-full {
+  display: block;
+  margin-top: 4px;
+  padding: 4px 6px;
+  overflow-wrap: anywhere;
+  background: var(--mr-code-bg);
+  border: 2px solid var(--mr-border-soft);
+}
+
+/* ---------- the journey ---------- */
+
+.di-mr-journey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.di-mr-step {
+  padding: 4px 9px;
+  background: var(--mr-surface-2);
+  border: 2px solid var(--mr-border-soft);
+  color: var(--mr-step-next);
+}
+.di-mr-step[data-state='done'] {
+  color: var(--mr-step-done);
+  border-color: var(--mr-step-done);
+}
+.di-mr-step[data-state='now'] {
+  color: var(--mr-step-now);
+  border-color: var(--mr-step-now);
+  font-weight: 700;
+}
+
+/* ---------- the list of requests ---------- */
+
+.di-mr-requests {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+/* Two columns only where the pane really is wide; a pane that covers a narrow window stacks the list above the
+   detail even if wider reading was chosen earlier, so nothing is clipped or scrolls sideways. */
+.di-mr[data-wide='true']:not([data-covering='true']) .di-mr-requests {
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+}
+.di-mr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.di-mr-list button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+.di-mr-list button[aria-current='true'] {
+  background: var(--mr-tab-on-bg);
+  border-color: var(--mr-focus);
+}
+.di-mr-row-objective {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.di-mr-row-stage {
+  color: var(--mr-muted);
+}
+
+.di-mr-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .di-mr * {
+    scroll-behavior: auto;
+  }
+}
+
+/* The proof rules: every rule as a sentence, in sections; long digests and keys wrap rather than clip. */
+.di-mr-rules h5 {
+  margin: 10px 0 2px;
+  font-size: 1em;
+}
+.di-mr-rules ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.di-mr-rules li {
+  overflow-wrap: anywhere;
+}

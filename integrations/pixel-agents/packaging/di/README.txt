@@ -9,8 +9,17 @@ WHAT THIS IS
   per-launch access file, inside its own state dir (your isolated profile) — e.g. when you move
   a desk in the layout editor.
   Consequential action lives in the existing DI, Grok Bot and Codex action routes. They are
-  NAMED HERE AS DOCUMENTATION ONLY: this office never invokes them and has no route to any of
-  them.
+  NAMED HERE AS DOCUMENTATION ONLY: this office never invokes them.
+  ONE OPT-IN EXCEPTION: --mission-panel-discovery (below) connects the Codex Orchestrator
+  request panel. Without that flag the office has no such connection and everything above holds
+  exactly. With it, the office RELAYS eleven closed message operations (read, converse, submit a
+  proposal, decide, start, observe) to a separate request panel process YOU started
+  (dimission_panel.py), over 127.0.0.1 with that panel's token, which stays in the office's
+  server and never reaches the browser. The office never starts that panel, never holds a
+  decision of its own, and never has a route to commit, push, merge, release or deploy.
+  Approval there is an OPERATOR ATTESTATION, not verified human authorship, and progression
+  after an explicit Start is done by a separate runtime (dirun.py, MissionCore mode), not by the
+  office. See docs/pixel-agents-office.md, "Requesting Missions: the Codex Orchestrator".
 
 RUN (no install: extract the package and run it)
   Node >= 20. The runtime dependencies are in node_modules/.
@@ -27,6 +36,10 @@ RUN (no install: extract the package and run it)
                         supervises or restarts the backend
   --contract-version    the ONE catalog contract version this process reads (default 1); a
                         response of any other version is shown as INCOMPATIBLE
+  --mission-panel-discovery
+                        OPTIONAL, absolute path: the request panel's discovery file, READ ONLY.
+                        Absent: the Codex Orchestrator shows "not set up". The office never
+                        starts, supervises or restarts that panel
 
   The office binds 127.0.0.1 only. It prints the path of its access file, not the URL. Open the
   URL stored in <state-dir>/run/browser-access.json, or run ./pixel (see OPENING A RUNNING

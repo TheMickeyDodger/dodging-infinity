@@ -184,6 +184,7 @@ delivery authorization and receipt contract; general engineering
 authority stays unavailable once the run consumed it.
 """
 
+import contextlib
 import copy
 import hashlib
 import os
@@ -196,8 +197,10 @@ from target_runtime import broker as broker_module
 from target_runtime import dispatch as dispatch_module
 from target_runtime import evidence as evidence_module
 from target_runtime import legacy_result as legacy_result_module
+from target_runtime import mission_run_guard as run_guard_module
 from target_runtime import mission_workspace as workspace_module
 from target_runtime import process_ownership as ownership_module
+from target_runtime import start_cause as start_cause_module
 from target_runtime import workspace_trust as workspace_trust_module
 from target_runtime.worker import RuntimeWorker
 from target_runtime.git_transport import (
@@ -234,6 +237,10 @@ PROBLEM_PAUSED = "mission_bridge_paused"
 PROBLEM_WRONG_STATE = "mission_bridge_wrong_state"
 PROBLEM_MISSION_CORE = "mission_bridge_mission_core_refused"
 PROBLEM_LATE_CHILD_UNPROVEN = "mission_bridge_late_child_unproven"
+# Another process holds this Mission's run guard (a bounded wait ended), or the
+# guard itself could not be established. Nothing was done under either.
+PROBLEM_RUN_BUSY = "mission_bridge_run_busy"
+PROBLEM_RUN_GUARD = "mission_bridge_run_guard_unavailable"
 # Task 8 final: automatic Mission workspaces (``mission_workspace``).
 PROBLEM_REPOSITORY_UNAVAILABLE = workspace_module.PROBLEM_REPOSITORY_UNAVAILABLE
 PROBLEM_WORKSPACE_ROOT_UNAVAILABLE = workspace_module.PROBLEM_ROOT_UNAVAILABLE
@@ -261,6 +268,36 @@ BINDING_PROBLEMS = {
     mission_record.PROBLEM_RUN_WORKSPACE_CONFLICT: PROBLEM_WORKSPACE_CONFLICT,
 }
 # The two association-proof verdicts that are not a stop reason.
+# ``advance`` (the progression runtime's one step): the closed set of things
+# it can report doing, and the pacing of its bounded reconcile. Reconcile
+# attempts are a DURABLE counter (Mission Core stops the run at
+# ``MAX_RECONCILE_ATTEMPTS``), so a pass that ran every few seconds would use a
+# whole budget in a minute against a child that is merely slow to start. The
+# spacing is read from the record's own ``last_attempted_at``, so it survives a
+# restart and is the same for every process.
+RECONCILE_SPACING_SECONDS = 30
+ADVANCE_NONE = "none"
+ADVANCE_PAUSED = "paused"
+ADVANCE_BUSY = "busy"
+ADVANCE_RECONCILE = "reconcile"
+ADVANCE_OBSERVE = "observe"
+ADVANCE_WAIT = "wait"
+ADVANCE_HOLD = "hold"
+ADVANCE_VERIFY = "verify"
+ADVANCE_UNREADABLE = "unreadable"
+ADVANCE_ACTIONS = (ADVANCE_NONE, ADVANCE_PAUSED, ADVANCE_BUSY, ADVANCE_RECONCILE,
+                   ADVANCE_OBSERVE, ADVANCE_WAIT, ADVANCE_HOLD, ADVANCE_VERIFY,
+                   ADVANCE_UNREADABLE)
+# The Mission states nothing more is advanced from (a late resolution of a
+# BLOCKED run is an explicit act, never an automatic one). The progression pass
+# stops re-reading a Mission once it has seen it in one of these.
+TERMINAL_MISSION_STATES = (
+    mission_record.STATE_COMPLETED, mission_record.STATE_BLOCKED,
+    mission_record.STATE_CLOSED, mission_record.STATE_CANCELLED,
+    mission_record.STATE_DENIED)
+WAIT_RECONCILE_SPACING = "reconcile_spacing"
+WAIT_TARGET_NOT_OBSERVED = "target_not_observed"
+WAIT_PENDING_PROOF = "verification_pending_proof"
 VERDICT_PROVEN = "proven"
 VERDICT_UNOBSERVED = "unobserved"
 
@@ -489,14 +526,19 @@ class MissionBridge(object):
     wiring passes ``production_trust_config_path()`` and nothing here
     defaults to it, so a bridge built without one refuses durably before
     preparing anything. ``worker`` is the existing managed-workspace seam
-    (``RuntimeWorker``) over those values; hermetic tests may inject one."""
+    (``RuntimeWorker``) over those values; hermetic tests may inject one.
+    ``run_guard`` is the optional cross-process per-Mission guard
+    (``target_runtime.mission_run_guard.RunGuard``): when present, every
+    operation that acts on a run (dispatch, observe, reconcile, verify and
+    advance) holds the Mission's guard for its whole duration; absent, they
+    behave exactly as they always did."""
 
     def __init__(self, missions, control_repo, clock, spawn_fn=None,
                  observer_fn=None, spawn_records_fn=None, transport=None,
                  surface_digest_fn=None, ownership=None,
                  owner_directory=None, context=None,
                  workspace_repository=None, workspaces_root=None,
-                 trust_config_path=None, worker=None):
+                 trust_config_path=None, worker=None, run_guard=None):
         self._missions = missions
         self._control_repo = control_repo
         self._clock = clock
@@ -512,6 +554,7 @@ class MissionBridge(object):
         self._context = context or default_context()
         self._workspace_repository = workspace_repository
         self._workspaces_root = workspaces_root
+        self._run_guard = run_guard
         self._trust_configured = worker is not None or (
             trust_config_path is not None)
         self.worker = worker or RuntimeWorker(
@@ -531,6 +574,23 @@ class MissionBridge(object):
         except mission_record.MissionError as exc:
             _refuse(PROBLEM_MISSION_CORE, str(exc), mission_problem=exc.problem)
 
+    @contextlib.contextmanager
+    def _exclusive(self, mission_id, blocking=True):
+        """Hold the Mission's run guard for the body, if the bridge has one.
+        Yields whether it is held; only ``blocking=False`` can yield False. A
+        blocking hold that waits out its bound is refused as BUSY, and a guard
+        that cannot be established refuses closed: no effect without it."""
+        if self._run_guard is None:
+            yield True
+            return
+        try:
+            with self._run_guard.hold(mission_id, blocking=blocking) as held:
+                yield held
+        except run_guard_module.RunGuardBusy as exc:
+            _refuse(PROBLEM_RUN_BUSY, str(exc))
+        except run_guard_module.RunGuardRefused as exc:
+            _refuse(PROBLEM_RUN_GUARD, str(exc))
+
     def status(self, mission_id):
         """Answered from durable records alone: no caller context. The
         projection is the operator surface's ``run_status``; ``delivered``
@@ -548,6 +608,22 @@ class MissionBridge(object):
             "delivery_authority": DELIVERY_AUTHORITY,
         })
         return result
+
+    def startup_cause(self, mission_id):
+        """READ-ONLY: the startup diagnostic a failed child start retained,
+        BOUND to this Mission's run intent, or None when no run was ever
+        intended. It answers an in-doubt Start with a bounded cause when this
+        exact attempt left one, and otherwise says plainly that none binds
+        (``start_cause.project``: the intent's own workspace realpath, the
+        Mission id, a runtime that began no earlier than the intent, exactly
+        one qualifying file; never the newest file). It starts nothing,
+        records nothing and replays nothing: a hold stays a hold."""
+        run = self._view(mission_id)["record"].get("run")
+        intent = run["intent"] if run else None
+        if intent is None:
+            return None
+        return start_cause_module.project(
+            intent["workspace_realpath"], mission_id, intent["recorded_at"])
 
     # -- dispatch ---------------------------------------------------------
 
@@ -822,6 +898,11 @@ class MissionBridge(object):
                      operation, state["sequence"], self._context)
 
     def dispatch(self, mission_id, workspace_path=None, entry=None):
+        """``_dispatch`` under the Mission's run guard (see ``_exclusive``)."""
+        with self._exclusive(mission_id):
+            return self._dispatch(mission_id, workspace_path, entry)
+
+    def _dispatch(self, mission_id, workspace_path=None, entry=None):
         """Dispatch the approved Mission. DI prepares (or exactly reuses) the
         Mission's own worktree; no caller names a path. ``workspace_path``
         is the OPERATOR RECOVERY entry point only: it must name that same,
@@ -937,6 +1018,11 @@ class MissionBridge(object):
         return bindings, task_id, latest_round, captured.get("raw")
 
     def observe(self, mission_id):
+        """``_observe_run`` under the Mission's run guard (see ``_exclusive``)."""
+        with self._exclusive(mission_id):
+            return self._observe_run(mission_id)
+
+    def _observe_run(self, mission_id):
         """Read-only observation of the bound target; RUNNING only when it
         shows exactly the target the receipt names AND the workspace's own
         task record names this run's intent."""
@@ -951,6 +1037,9 @@ class MissionBridge(object):
         ) or not names_this_run(raw, mission_id, run["intent"]):
             result = self.status(mission_id)
             result["observed"] = False
+            # WHY it was not observed: an unreadable observation is not "the
+            # target is not there yet", and a caller must be able to tell.
+            result["target_binding"] = target["status"]
             return result
         self._record(self._missions.record_observed_running, mission_id,
                      receipt["task_id"], target["task_status"]
@@ -1030,6 +1119,11 @@ class MissionBridge(object):
                 status if isinstance(status, str) and status else None, None)
 
     def reconcile(self, mission_id):
+        """``_reconcile_run`` under the Mission's run guard (see ``_exclusive``)."""
+        with self._exclusive(mission_id):
+            return self._reconcile_run(mission_id)
+
+    def _reconcile_run(self, mission_id):
         """HOLD -> exactly one provable child; a bounded, evidence-only
         retry while the workspace cleanly shows no task record yet; or a durable
         BLOCKED. A run an earlier reconcile stopped because nothing was
@@ -1145,13 +1239,21 @@ class MissionBridge(object):
                                   "digest": surface.get("digest")},
         }
 
-    def verify(self, mission_id, reported_result):
-        """DI decides VERIFIED from a fresh read after the turn; the
-        reported result is necessary, never sufficient."""
-        mission, run = self._bound(mission_id, (mission_record.STATE_RUNNING,))
+    def _conjuncts(self, mission_id, run, reported_result, raw, evidence):
+        """The verification conjuncts, computed from ONE set of fresh reads
+        and a reported result: the single implementation both ``verify`` (which
+        records the decision) and ``verification_readiness`` (which records
+        nothing) use, so the read-only answer can never differ from the
+        decision. Returns ``(holds, reported)``.
+
+        FRESHNESS IS THE CALLER'S CONTRACT. This function owns no reads: it
+        judges ``raw`` and ``evidence`` exactly as handed in. They MUST come
+        from a ``_fresh_reads`` made immediately before this call, in the same
+        call of the caller, and never from a cache, an earlier call or another
+        process. Both callers (``verify`` and ``verification_readiness``) do;
+        a third caller that passed stale reads would put a stale observation
+        into the verification decision."""
         intent, receipt = run["intent"], run["receipt"]
-        workspace = intent["workspace_realpath"]
-        raw, evidence = self._fresh_reads(workspace)
         exact = evidence_module.BINDING_EXACT
         valid = all(isinstance(b, dict) and isinstance(b.get("status"), str)
                     for b in evidence.values())
@@ -1199,6 +1301,36 @@ class MissionBridge(object):
             and surface.get("digest") == intent["surface_baseline_digest_sha256"],
             "delivery_authority_none": DELIVERY_AUTHORITY == "none",
         }
+        return holds, reported
+
+    def verify(self, mission_id, reported_result):
+        """``_verify_run`` under the Mission's run guard (see ``_exclusive``)."""
+        with self._exclusive(mission_id):
+            return self._verify_run(mission_id, reported_result)
+
+    def _verify_run(self, mission_id, reported_result):
+        """DI decides VERIFIED from a fresh read after the turn; the
+        reported result is necessary, never sufficient."""
+        mission, run = self._bound(mission_id, (mission_record.STATE_RUNNING,))
+        workspace = run["intent"]["workspace_realpath"]
+        raw, evidence = self._fresh_reads(workspace)
+        holds, reported = self._conjuncts(mission_id, run, reported_result, raw,
+                                          evidence)
+        return self._decide_verification(mission_id, run, reported_result,
+                                         holds, reported, evidence)
+
+    def _decide_verification(self, mission_id, run, reported_result, holds,
+                             reported, evidence):
+        """Record the verification decision for ONE set of fresh reads.
+        ``holds``, ``reported`` and ``evidence`` must be the conjuncts computed
+        from exactly these reads (``_conjuncts``); nothing here reads again, so
+        the decision recorded is the one the reads support. Both ``verify`` (an
+        explicit decision) and ``advance`` (only when every conjunct holds)
+        come through here."""
+        receipt = run["receipt"]
+        exact = evidence_module.BINDING_EXACT
+        target = evidence["target_task"]
+        review_file, result_file = evidence["review_file"], evidence["result_file"]
         verified, _ = mission_record.verification_outcome(holds)
         evidence_id = None
         if verified:
@@ -1224,6 +1356,218 @@ class MissionBridge(object):
             "review_evidence": "target-produced, not independent verification",
         })
         return result
+
+    @staticmethod
+    def _report_from(receipt, evidence):
+        """The team's report AS DI READS IT: the target's task id and the
+        digests of its review and result files, or None when those files are
+        not both readable and exact. One definition for the read-only
+        readiness answer and for ``advance``."""
+        exact = evidence_module.BINDING_EXACT
+        review_file, result_file = evidence["review_file"], evidence["result_file"]
+        if review_file["status"] == exact and result_file["status"] == exact and (
+            _hex64(review_file["digest"]) and _hex64(result_file["digest"])
+        ):
+            return {"task_id": receipt["task_id"],
+                    "review_digest_sha256": review_file["digest"],
+                    "result_digest_sha256": result_file["digest"]}
+        return None
+
+    def verification_readiness(self, mission_id):
+        """READ-ONLY: would verifying this RUNNING run now be decided, and
+        how? It records nothing and starts nothing. ``verify`` is NOT harmless
+        to call early: when any conjunct fails it stops the Mission durably
+        and terminally, and "the team is still working" is a failing conjunct.
+        This computes the SAME conjuncts (``_conjuncts``) from the same fresh
+        reads, so a caller can offer ``verify`` only once its outcome is
+        determined: ``ready`` (every conjunct holds), or ``target_stopped``
+        with ``waiting_for`` naming the first conjunct that would fail (the
+        decision is then already determined, and recording it is DI's), or
+        neither (the team has not stopped; nothing is determined, and
+        ``waiting_for`` says so).
+
+        ``reported_result`` is the pair of digests of the team's own review
+        and result files exactly as DI reads them now, with the target's task
+        id, or None when those files are not both readable and exact. The
+        team's report IS those files: this is DI reading what the team wrote,
+        not a separate out-of-band report, and the review it binds is
+        target-produced evidence, never independent verification."""
+        mission, run = self._bound(mission_id, (mission_record.STATE_RUNNING,))
+        receipt = run["receipt"]
+        raw, evidence = self._fresh_reads(run["intent"]["workspace_realpath"])
+        report = self._report_from(receipt, evidence)
+        holds, _ = self._conjuncts(mission_id, run, report, raw, evidence)
+        ready, failed = mission_record.verification_outcome(holds)
+        stopped = holds["target_stopped"] is True
+        if not stopped:
+            # Until the team stops nothing is determined, and the reason that
+            # matters is that it has not stopped (not whichever conjunct the
+            # fixed order happens to test first, such as the not-yet-written
+            # result). Once it has stopped, this is verify's own first failure.
+            failed = dict(mission_record.VERIFY_CONJUNCTS)["target_stopped"]
+        return {"ready": ready, "target_stopped": stopped,
+                "waiting_for": failed, "reported_result": report}
+
+    # -- progression ------------------------------------------------------
+
+    def advance(self, mission_id):
+        """ONE step of progression for ONE Mission, by its ACTUAL durable
+        state, under its run guard. The progression runtime calls only this.
+
+        - Not AUTHORIZED or RUNNING, or no recorded run intent (the person has
+          not pressed Start): NOTHING. It never dispatches: an approved but
+          unstarted Mission is never started by progression.
+        - An intent with no bound target: one bounded, evidence-only
+          ``reconcile`` (never a respawn), at most one per
+          ``RECONCILE_SPACING_SECONDS``.
+        - A bound target not yet named by its workspace: ``observe``; until it
+          is, WAIT (visibly; there is no timeout and no success inferred).
+        - RUNNING: ONE set of fresh reads. A verification is recorded ONLY when
+          every conjunct holds in that same set; otherwise nothing is recorded.
+          A target that has not stopped is WAITING. A target that stopped and
+          would not verify (it failed, or its report is not yet complete) is a
+          HOLD: nothing is recorded, it is re-read every pass (so it verifies
+          itself if the evidence appears), and ending it is the explicit
+          decision ``verify`` records. Never "ask readiness, then verify":
+          ``verify`` re-reads and stops a Mission terminally if the second read
+          differs from the first.
+        - A run whose verification is pending proof is not re-verified, so the
+          bounded attempts are not spent; meeting the obligation and verifying
+          again is explicit.
+
+        Another process holding the Mission's guard (the panel's Start, another
+        runtime) is reported BUSY and skipped. The answer is the Mission's
+        ``status`` plus ``advance``: ``{action, waiting_for, detail}``."""
+        try:
+            with self._exclusive(mission_id, blocking=False) as held:
+                if not held:
+                    return self._advanced(
+                        mission_id, ADVANCE_BUSY, None,
+                        "another process is acting on this Mission; it is"
+                        " looked at again on the next pass")
+                return self._advance(mission_id)
+        except MissionBridgeRefusal as exc:
+            # The state moved under us (a cancel, a pause, a terminal write by
+            # another seam): not a failure, only the next pass's input.
+            if exc.problem == PROBLEM_PAUSED:
+                return self._advanced(mission_id, ADVANCE_PAUSED, None,
+                                      PAUSE_STATEMENT)
+            if exc.problem == PROBLEM_WRONG_STATE:
+                return self._advanced(mission_id, ADVANCE_NONE, None,
+                                      "the Mission is no longer in a state"
+                                      " that can be advanced")
+            if exc.problem == PROBLEM_RUN_GUARD:
+                return self._advanced(mission_id, ADVANCE_UNREADABLE, None,
+                                      "the run guard is unavailable (%s)"
+                                      % PROBLEM_RUN_GUARD)
+            raise
+
+    def _advanced(self, mission_id, action, waiting_for, detail, result=None):
+        result = self.status(mission_id) if result is None else result
+        result["advance"] = {"action": action, "waiting_for": waiting_for,
+                             "detail": detail}
+        return result
+
+    def _advance(self, mission_id):
+        mission = self._view(mission_id)["record"]
+        state = mission["state"]
+        run = mission.get("run")
+        if state not in (mission_record.STATE_AUTHORIZED,
+                         mission_record.STATE_RUNNING):
+            return self._advanced(
+                mission_id, ADVANCE_NONE, None,
+                "mission is %s: nothing to advance" % state)
+        if run is None or run.get("intent") is None:
+            return self._advanced(
+                mission_id, ADVANCE_NONE, None,
+                "no start has been recorded; progression never starts a"
+                " Mission (it begins when you press Start)")
+        if mission_manifest.run_is_paused(run):
+            return self._advanced(mission_id, ADVANCE_PAUSED, None,
+                                  PAUSE_STATEMENT)
+        try:
+            if state == mission_record.STATE_AUTHORIZED:
+                return self._advance_authorized(mission_id, run)
+            return self._advance_running(mission_id, run)
+        except MissionBridgeRefusal:
+            raise
+        except Exception as exc:
+            # A read that raised (an observer, a listing, a hardened file
+            # read): visible as such, with the class only (a message can carry
+            # a path), and NOTHING recorded: every record is written after
+            # its reads. It is looked at again on the next pass.
+            return self._advanced(
+                mission_id, ADVANCE_UNREADABLE, None,
+                "a read failed (%s); nothing was recorded" % type(exc).__name__)
+
+    def _advance_authorized(self, mission_id, run):
+        receipt = run["receipt"]
+        if receipt is None or receipt["task_id"] is None:
+            last = (run.get("reconcile_unobserved") or {}).get("last_attempted_at")
+            if last is not None and self._clock() - last < RECONCILE_SPACING_SECONDS:
+                return self._advanced(
+                    mission_id, ADVANCE_WAIT, WAIT_RECONCILE_SPACING,
+                    "the last reconcile was moments ago; the next is at least"
+                    " %d seconds after it" % RECONCILE_SPACING_SECONDS)
+            return self._advanced(
+                mission_id, ADVANCE_RECONCILE, None,
+                "evidence only: nothing was bound, spawned or re-dispatched",
+                result=self._reconcile_run(mission_id))
+        result = self._observe_run(mission_id)
+        if result.get("observed") is True:
+            return self._advanced(
+                mission_id, ADVANCE_OBSERVE, None,
+                "the workspace names this run's target", result=result)
+        if result.get("target_binding") != evidence_module.BINDING_EXACT:
+            return self._advanced(
+                mission_id, ADVANCE_UNREADABLE, None,
+                "the target could not be read exactly (%s); nothing was"
+                " recorded" % result.get("target_binding"), result=result)
+        return self._advanced(
+            mission_id, ADVANCE_WAIT, WAIT_TARGET_NOT_OBSERVED,
+            "the workspace does not yet show the bound target for this run",
+            result=result)
+
+    def _advance_running(self, mission_id, run):
+        pending = run.get("pending_proof")
+        if pending is not None:
+            return self._advanced(
+                mission_id, ADVANCE_WAIT, WAIT_PENDING_PROOF,
+                "verification is blocked on %d approved proof obligation(s)"
+                " (attempt %d of %d); meeting them is explicit, so it is not"
+                " retried here"
+                % (len(pending["blockers"]), pending["attempts"],
+                   mission_record.MAX_VERIFICATION_ATTEMPTS))
+        raw, evidence = self._fresh_reads(run["intent"]["workspace_realpath"])
+        exact = evidence_module.BINDING_EXACT
+        for name in ("observation", "target_task"):
+            if evidence[name]["status"] != exact:
+                # Nothing can be said about the team: this is UNKNOWN, not
+                # "still working". It is never decided and never recorded.
+                return self._advanced(
+                    mission_id, ADVANCE_UNREADABLE, None,
+                    "the target's %s could not be read exactly (%s); nothing"
+                    " was recorded" % (name, evidence[name]["status"]))
+        report = self._report_from(run["receipt"], evidence)
+        holds, reported = self._conjuncts(mission_id, run, report, raw, evidence)
+        ready, failed = mission_record.verification_outcome(holds)
+        if ready:
+            return self._advanced(
+                mission_id, ADVANCE_VERIFY, None,
+                "every conjunct held in one fresh read; the decision was"
+                " recorded",
+                result=self._decide_verification(
+                    mission_id, run, report, holds, reported, evidence))
+        if holds["target_stopped"] is not True:
+            return self._advanced(
+                mission_id, ADVANCE_WAIT,
+                dict(mission_record.VERIFY_CONJUNCTS)["target_stopped"],
+                "the team has not stopped; nothing is determined")
+        return self._advanced(
+            mission_id, ADVANCE_HOLD, failed,
+            "the team has stopped but verification would not hold (%s);"
+            " nothing was recorded, it is re-read each pass, and ending it is"
+            " your explicit decision" % failed)
 
     def prove(self, mission_id, operation, arguments):
         """ONE existing Mission State proof operation, under the bridge's

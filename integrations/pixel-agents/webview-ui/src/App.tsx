@@ -12,6 +12,8 @@ import { DiCodeReview } from './components/DiCodeReview.js';
 import type { DiCodeReviewAccess } from './components/DiCodeReviewEntry.js';
 import type { EvidenceSelection } from './components/diEvidenceFormat.js';
 import type { DiEvidenceAccess } from './components/DiEvidenceLibrary.js';
+import { DiMissionRequest } from './components/DiMissionRequest.js';
+import type { DiMissionRequestAccess } from './components/DiMissionRequestEntry.js';
 import {
   DI_FIXTURE_BANNER,
   diCharacterLabel,
@@ -41,6 +43,7 @@ import {
   ZOOM_MIN,
 } from './constants.js';
 import { useDiCodeReview } from './hooks/useDiCodeReview.js';
+import { useDiMissionRequest } from './hooks/useDiMissionRequest.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
@@ -293,6 +296,23 @@ function App() {
       },
     }),
     [openReview],
+  );
+  // item 4: the Mission request workspace. It talks only to the closed `diMissionRequest`
+  // messages the server relays to the request panel's loopback adapter (the token stays in the
+  // server), asks for nothing the records do not offer, and clears itself the moment the client
+  // cannot vouch for the office.
+  const mission = useDiMissionRequest(diClientReason, diOfficeState !== null);
+  const missionOpener = useRef<HTMLElement | null>(null);
+  const openMission = mission.open;
+  const missionAccess = useMemo<DiMissionRequestAccess>(
+    () => ({
+      state: mission.state,
+      open: (tab, opener) => {
+        missionOpener.current = opener;
+        openMission(tab);
+      },
+    }),
+    [mission.state, openMission],
   );
   // Round 15 F2: a read pending when the client stops vouching for the office state is
   // forgotten with it (its answer, if any, is dropped by the message handler).
@@ -1055,9 +1075,13 @@ function App() {
           />
           {diOfficeState?.fixtureMode && (
             // EXPLICIT fixture preview only: fixed, above every overlay (Map included), never
-            // inside the panel, so it cannot scroll away or be hidden with it.
+            // inside the panel, so it cannot scroll away or be hidden with it. It sits at the bottom
+            // of the WORLD column, narrower than the world's guaranteed width, so it covers no
+            // heading and no control of any panel or workspace (it is preview furniture and must not
+            // shape the product's layout). Where a workspace covers the whole window it hides this
+            // one, and carries its own FIXTURE label.
             <div
-              className="fixed top-4 left-1/2 -translate-x-1/2 z-50 pixel-panel px-12 py-4 text-sm text-warning pointer-events-none select-none"
+              className="di-fixture-banner fixed left-[12px] bottom-[104px] z-50 max-w-[220px] pixel-panel px-8 py-4 text-sm text-warning pointer-events-none select-none"
               role="status"
               data-testid="di-fixture-banner"
             >
@@ -1074,6 +1098,15 @@ function App() {
               announced={diAnnounced}
               evidence={diEvidence}
               review={reviewAccess}
+              mission={missionAccess}
+            />
+          )}
+          {diOfficeState && (
+            <DiMissionRequest
+              control={mission}
+              panelCollapsed={diPanelCollapsed}
+              returnFocusTo={missionOpener}
+              fixture={isFixturePreview}
             />
           )}
           <DiCodeReview

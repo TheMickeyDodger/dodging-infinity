@@ -652,9 +652,12 @@ class CliSeamTests(unittest.TestCase):
         fake = FakeExecution(calls)
         real_acquire = cli_module.acquire_runtime_lock
 
-        def observed_acquire(state_directory):
+        def observed_acquire(state_directory,
+                             lock_file_name=cli_module.RUNTIME_LOCK_FILE_NAME):
+            # The real signature (see test_acquire_runtime_lock_and_call_site_
+            # are_unchanged): a MissionCore-mode caller passes its own lock name.
             calls.append("lock")
-            return real_acquire(state_directory)
+            return real_acquire(state_directory, lock_file_name)
 
         with self._broker_built(), _runtime_functions_forbidden(), \
              patch.object(cli_module, "acquire_runtime_lock",
@@ -678,8 +681,9 @@ class CliSeamTests(unittest.TestCase):
         real_acquire = cli_module.acquire_runtime_lock
         descriptors = []
 
-        def observed_acquire(state_directory):
-            descriptor = real_acquire(state_directory)
+        def observed_acquire(state_directory,
+                             lock_file_name=cli_module.RUNTIME_LOCK_FILE_NAME):
+            descriptor = real_acquire(state_directory, lock_file_name)
             descriptors.append(descriptor)
             return descriptor
 
@@ -704,8 +708,9 @@ class CliSeamTests(unittest.TestCase):
         real_acquire = cli_module.acquire_runtime_lock
         descriptors = []
 
-        def observed_acquire(state_directory):
-            descriptor = real_acquire(state_directory)
+        def observed_acquire(state_directory,
+                             lock_file_name=cli_module.RUNTIME_LOCK_FILE_NAME):
+            descriptor = real_acquire(state_directory, lock_file_name)
             descriptors.append(descriptor)
             return descriptor
 
@@ -780,15 +785,26 @@ class CliSeamTests(unittest.TestCase):
             "the adapter is constructed inside main",
         )
 
-    def test_main_keyword_surface_grew_by_exactly_one_default_none(self):
+    def test_main_keyword_surface_is_exactly_these_defaulted_names(self):
+        # The surface is pinned EXACTLY, defaults included, so any further
+        # drift still fails here. It grew by ``execution`` (the Runtime seam)
+        # and then by ``mission_composition`` (item 4): both are test-only
+        # injection seams, both default to None, and ``mission_composition=None``
+        # means "no MissionCore composition substituted": production passes
+        # nothing and gets the real one. Every pre-existing caller, which passes
+        # none of the new names, therefore reaches exactly the default-mode
+        # behaviour it always did; the tests in this file are the proof of that.
         tree = ast.parse(CLI_PATH.read_text())
         main = next(
             node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name == "main"
         )
         names = [arg.arg for arg in main.args.args]
-        self.assertEqual(names, ["argv", "sleeper", "passes", "execution"])
-        self.assertEqual(len(main.args.defaults), 4)
+        self.assertEqual(
+            names,
+            ["argv", "sleeper", "passes", "execution", "mission_composition"],
+        )
+        self.assertEqual(len(main.args.defaults), 5)
         for default in main.args.defaults:
             self.assertIsInstance(default, ast.Constant)
             self.assertIsNone(default.value)
@@ -804,9 +820,22 @@ class CliSeamTests(unittest.TestCase):
             and node.name == "acquire_runtime_lock"
         ]
         self.assertEqual(len(definitions), 1)
+        # Item 4 added ONE defaulted parameter so MissionCore mode can hold its
+        # own lock file. Only ``state_directory`` is required, and the default
+        # is the ORIGINAL ``RUNTIME_LOCK_FILE_NAME`` (a bare name, not a
+        # literal), so every one-argument caller, ``main``'s included, holds
+        # exactly the lock it always held. Pinned exactly, default included.
         self.assertEqual(
-            [arg.arg for arg in definitions[0].args.args], ["state_directory"]
+            [arg.arg for arg in definitions[0].args.args],
+            ["state_directory", "lock_file_name"],
         )
+        self.assertEqual(len(definitions[0].args.defaults), 1)
+        default = definitions[0].args.defaults[0]
+        self.assertIsInstance(default, ast.Name)
+        self.assertEqual(default.id, "RUNTIME_LOCK_FILE_NAME")
+        self.assertIsNone(definitions[0].args.vararg)
+        self.assertIsNone(definitions[0].args.kwarg)
+        self.assertEqual(definitions[0].args.kwonlyargs, [])
         main = next(
             node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name == "main"

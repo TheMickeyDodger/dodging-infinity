@@ -8,9 +8,11 @@ import re
 import shlex
 import sys
 import time
+from collections import namedtuple
 from pathlib import Path
 
 from . import identity
+from . import runtime as runtime_module
 from .heartbeat import heartbeat_process_command
 from .instance import HerdrInstance
 from .runtime import agent_info, jrun, prompt, run, split, start_agent
@@ -249,6 +251,14 @@ Do not kill a slow agent without inspecting it first.
 """
 
 
+#: The startup stages after the roles were contracted ("post-bootstrap"). A
+#: failure in one of them leaves a retained diagnostic (see
+#: ``runtime.capture_binding_failure``); a failure earlier is the existing
+#: agent-start diagnostic's.
+STAGE_ESTABLISH_ROLE_BINDINGS = "establish_role_bindings"
+STAGE_HEARTBEAT_CONTROLLER = "heartbeat_controller"
+
+
 class BindingsNotEstablished(Exception):
     """Bootstrap could not bind every role from exact live evidence.
 
@@ -257,7 +267,23 @@ class BindingsNotEstablished(Exception):
     this module every unbound role classifies as UNBOUND, and a later
     caller is unable to tell that apart from a role that failed to
     start.
+
+    The failure CARRIES its gaps (the message is unchanged): ``stage``,
+    ``repo`` and ``roles``, one entry per role whose evidence was incomplete,
+    each ``{"logical", "agent", "reason", "session"}``. ``reason`` is
+    `identity.binding_gap`'s own text (or, for a role Herdr returned no
+    record for, a fixed sentence naming only a KNOWN status), and
+    ``session`` is ABSENT / PRESENT / UNKNOWN: whether a session id was
+    carried, never its value. Information that travels with the failure
+    cannot be lost to ordering; there is no side channel.
     """
+
+    def __init__(self, message="", *, stage=STAGE_ESTABLISH_ROLE_BINDINGS,
+                 repo=None, roles=()):
+        super().__init__(message)
+        self.stage = stage
+        self.repo = repo
+        self.roles = list(roles)
 
 
 #: How long `establish_role_bindings` will keep asking Herdr for a
@@ -268,28 +294,51 @@ BINDING_PROBE_SETTLE_SECONDS = 30.0
 BINDING_PROBE_POLL_SECONDS = 0.5
 
 
-def role_binding_evidence(logical, agent, prober):
-    """``(binding, gap)`` for one role, from EXACT LIVE EVIDENCE.
+#: One role's probe, read once: the binding (or None), the gap text the
+#: message has always carried, whether a session id was ABSENT / PRESENT /
+#: UNKNOWN, and the BOUNDED ``reason`` a diagnostic may repeat (the same text
+#: as ``gap`` except that a status Herdr returned is repeated only if it is
+#: one of `identity.KNOWN_AGENT_STATUSES`).
+RoleObservation = namedtuple("RoleObservation", "binding gap session reason")
 
-    Exactly one of the two is None. The evidence required is the same
-    evidence `classify` will later compare against: a readable agent
-    record, its stable identity, and its session id. Anything less is
-    a gap, and a gap is not written — a binding assembled from
-    partial evidence would read as authoritative and compare wrongly
-    forever after.
+
+def role_binding_observation(logical, agent, prober):
+    """``RoleObservation`` for one role, from EXACT LIVE EVIDENCE.
+
+    The evidence required is the same evidence `classify` will later compare
+    against: a readable agent record, its stable identity, and its session
+    id. Anything less is a gap, and a gap is not written — a binding
+    assembled from partial evidence would read as authoritative and compare
+    wrongly forever after. Nothing is inferred and no session id is ever
+    invented: an absent session is ABSENT.
     """
     probe = prober(agent)
     record = identity.agent_record(probe)
     if record is None:
-        return None, (
+        status = (probe or {}).get("status")
+        return RoleObservation(
+            None,
             "Herdr returned no readable record for `%s` (status %r)"
-            % (agent, (probe or {}).get("status"))
+            % (agent, status),
+            identity.SESSION_UNKNOWN,
+            "Herdr returned no readable record (status %s)"
+            % identity.safe_status(status),
         )
     binding = identity.binding_for(logical, agent, record)
     gap = identity.binding_gap(binding)
-    if gap is not None:
-        return None, gap
-    return binding, None
+    return RoleObservation(
+        binding if gap is None else None, gap,
+        identity.session_state(record), gap)
+
+
+def role_binding_evidence(logical, agent, prober):
+    """``(binding, gap)`` for one role, from EXACT LIVE EVIDENCE.
+
+    Exactly one of the two is None. Unchanged for every existing caller; it
+    is `role_binding_observation` without the diagnostic fields.
+    """
+    observed = role_binding_observation(logical, agent, prober)
+    return observed.binding, observed.gap
 
 
 def establish_role_bindings(herd, agents, prober=None, clock=None,
@@ -331,11 +380,11 @@ def establish_role_bindings(herd, agents, prober=None, clock=None,
     while True:
         gaps = {}
         for logical, agent in sorted(pending.items()):
-            binding, gap = role_binding_evidence(logical, agent, probe)
-            if gap is None:
-                bindings["roles"][logical] = binding
+            observed = role_binding_observation(logical, agent, probe)
+            if observed.gap is None:
+                bindings["roles"][logical] = observed.binding
             else:
-                gaps[logical] = gap
+                gaps[logical] = observed
         if not gaps or now() >= deadline:
             break
         pending = {
@@ -349,10 +398,59 @@ def establish_role_bindings(herd, agents, prober=None, clock=None,
             " unbound role classifies as UNBOUND and nothing later"
             " can tell that apart from a role that never started"
             % (len(gaps), settle,
-               "; ".join("%s: %s" % item for item in sorted(gaps.items())))
+               "; ".join("%s: %s" % (logical, observed.gap)
+                         for logical, observed in sorted(gaps.items()))),
+            stage=STAGE_ESTABLISH_ROLE_BINDINGS,
+            repo=str(getattr(herd, "repo", "")) or None,
+            roles=[
+                {"logical": logical, "agent": agents[logical],
+                 "reason": observed.reason, "session": observed.session}
+                for logical, observed in sorted(gaps.items())
+            ],
         )
     identity.save_bindings(herd.herd_root, bindings)
     return bindings
+
+
+def _retain_post_bootstrap_failure(exc, herd, stage, workspace_id,
+                                   runtime_state):
+    """Write the bounded, private diagnostic of a POST-bootstrap startup
+    failure. Called from ``start_herd``'s handler BEFORE its cleanup closes
+    the workspace and removes runtime.json, and written to the same private
+    directory the agent-start diagnostic uses.
+
+    It can never replace the failure it describes: every ordinary failure of
+    this function (building the record, writing it, anything) is swallowed
+    here, so the caller's original exception is the one that propagates and
+    the cleanup still runs. Only a BaseException (an interrupt) passes
+    through, and the caller's ``finally`` still cleans up.
+
+    What it records: the stage; the failure's type (``BINDINGS_NOT_ESTABLISHED``
+    with each affected logical role's gap, or ``UNKNOWN`` with the class name
+    only; an exception's message is never stored); the attempted workspace.
+    No session id is invented or copied.
+    """
+    try:
+        if (isinstance(exc, BindingsNotEstablished)
+                and stage == STAGE_ESTABLISH_ROLE_BINDINGS):
+            failure = {"type": "BINDINGS_NOT_ESTABLISHED",
+                       "class": type(exc).__name__}
+            panes = runtime_state.get("panes") or {}
+            roles = [dict(entry, pane=panes.get(entry.get("logical")))
+                     for entry in exc.roles if isinstance(entry, dict)]
+        else:
+            failure = {"type": "UNKNOWN", "class": type(exc).__name__}
+            roles = []
+        record = runtime_module.build_binding_failure_record(
+            stage=stage, failure=failure,
+            workspace={"workspace_id": workspace_id,
+                       "repo": str(herd.repo),
+                       "runtime_created_at": runtime_state.get("created_at")},
+            settle_seconds=BINDING_PROBE_SETTLE_SECONDS, roles=roles)
+        runtime_module.capture_binding_failure(
+            herd.herd_root / "state" / "diagnostics", record)
+    except Exception:
+        return
 
 
 def start_herd(
@@ -451,6 +549,12 @@ def start_herd(
     root_pane = (
         workspace["result"]["root_pane"]["pane_id"]
     )
+
+    # None until every role has been started and contracted. From the binding
+    # step on it names where startup is, so the handler below can retain a
+    # diagnostic for a POST-bootstrap failure (an earlier one is the agent-start
+    # diagnostic's).
+    stage = None
 
     try:
         leads = max(
@@ -667,7 +771,9 @@ def start_herd(
         # whose roles are bound. A failure RAISES into the handler
         # below rather than warning, because a warning would leave
         # exactly the state this increment exists to remove.
+        stage = STAGE_ESTABLISH_ROLE_BINDINGS
         establish_role_bindings(herd, agents)
+        stage = STAGE_HEARTBEAT_CONTROLLER
 
         # Run the package-owned heartbeat controller.
         if orchestration.get(
@@ -724,22 +830,33 @@ def start_herd(
 
         return runtime_state
 
-    except Exception:
+    except Exception as exc:
         print(
             "Startup failed; closing partial harness "
             f"workspace {workspace_id}..."
         )
 
-        run([
-            "herdr",
-            "workspace",
-            "close",
-            workspace_id,
-        ])
-
+        # A POST-bootstrap failure leaves its diagnostic FIRST, while the
+        # workspace and runtime.json still exist. The write cannot raise an
+        # ordinary exception (it swallows its own), and the cleanup below is
+        # in a `finally`, so neither a failed diagnostic nor an interrupt
+        # during it skips the cleanup. The bare `raise` re-raises the ORIGINAL
+        # failure.
         try:
-            state_path.unlink()
-        except FileNotFoundError:
-            pass
+            if stage is not None:
+                _retain_post_bootstrap_failure(
+                    exc, herd, stage, workspace_id, runtime_state)
+        finally:
+            run([
+                "herdr",
+                "workspace",
+                "close",
+                workspace_id,
+            ])
+
+            try:
+                state_path.unlink()
+            except FileNotFoundError:
+                pass
 
         raise

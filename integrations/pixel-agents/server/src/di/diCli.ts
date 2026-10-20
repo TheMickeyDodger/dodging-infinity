@@ -52,6 +52,7 @@ import { DiOffice } from './diOffice.js';
 import { makeDiStateWriteGuard, validateDiStateRoot } from './diStateRoot.js';
 import type { FixtureSource } from './fixtureSource.js';
 import { createFixtureSource, readFixtureScript } from './fixtureSource.js';
+import { DiMissionRequests } from './missionRequests.js';
 
 export interface DiCliArgs {
   stateDir: string;
@@ -69,6 +70,12 @@ export interface DiCliArgs {
   port?: number;
   /** EXPLICIT: the backend is a synthetic FIXTURE stand-in; label everything as such. */
   fixturePreview: boolean;
+  /**
+   * item 4: the Mission request panel adapter's discovery file (dimission_panel.py), READ ONLY.
+   * Absent: the panel is honestly "not configured". Independent of the catalog backend, so it
+   * combines with a fixture source (the world is a fixture; the panel is whatever this names).
+   */
+  missionPanelDiscovery?: string;
 }
 
 export class DiCliArgsError extends Error {}
@@ -84,6 +91,11 @@ const USAGE = `Usage: pixel-agents-di --state-dir <absolute dir> --backend-disco
                                  INSTEAD of the backend. Canonical discovery is then DISABLED:
                                  no discovery file is read and no backend connection is made.
                                  Implies --fixture-preview. Absolute.
+  --mission-panel-discovery <file>
+                                 The Mission request panel adapter's discovery file
+                                 (dimission_panel.py), READ ONLY. Absolute. Optional: without it
+                                 the office shows the request panel as not configured. The
+                                 token it holds stays in this server; a browser never sees it.
   --port, -p <n>                 Loopback port (default: OS-assigned)
   --contract-version <1|2>       The catalog contract version this process reads (default 1).
                                  ONE version per process: a response of any other version is
@@ -113,6 +125,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
   let port: number | undefined;
   let contractVersion: QueryContractVersion = DEFAULT_QUERY_CONTRACT_VERSION;
   let fixturePreview = false;
+  let missionPanelDiscovery: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -140,6 +153,13 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
         }
         port = parsed;
       }
+    } else if (flag === '--mission-panel-discovery') {
+      if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
+      i++;
+      if (!path.isAbsolute(value)) {
+        throw new DiCliArgsError('--mission-panel-discovery must be an absolute path');
+      }
+      missionPanelDiscovery = path.normalize(value);
     } else if (flag === '--contract-version') {
       if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
       i++;
@@ -175,6 +195,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
       port,
       contractVersion,
       fixturePreview: true,
+      missionPanelDiscovery,
     };
   }
   if (!backendDiscovery || !path.isAbsolute(backendDiscovery)) {
@@ -186,6 +207,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
     port,
     contractVersion,
     fixturePreview,
+    missionPanelDiscovery,
   };
 }
 
@@ -265,6 +287,14 @@ async function main(): Promise<void> {
     // The fixture REPLACES both backend seams; without one, the real reader and client are used.
     deps: fixture ? fixture.deps : undefined,
   });
+  // item 4: the request panel. Its token stays in THIS process; the browser only ever sends the
+  // closed diMissionRequest messages, which are relayed here and answered to the asker alone.
+  const missionRequests = new DiMissionRequests(args.missionPanelDiscovery ?? null);
+  console.log(
+    args.missionPanelDiscovery
+      ? `[Pixel Agents DI] mission request panel discovery (read-only): ${args.missionPanelDiscovery}`
+      : '[Pixel Agents DI] mission request panel: not configured (--mission-panel-discovery)',
+  );
   if (args.fixturePreview)
     console.log(
       '[Pixel Agents DI] FIXTURE PREVIEW: backend is a synthetic fixture stand-in; views are labelled',
@@ -290,6 +320,7 @@ async function main(): Promise<void> {
         ambientSprites,
         readEvidence: (m, reply) => void office.readEvidence(m, reply),
         readCodeReview: (m, reply) => void office.readCodeReview(m, reply),
+        missionRequest: (m, reply) => void missionRequests.handle(m, reply),
       });
       if (typeof disposition === 'object') {
         // The type and the reason only — never the payload.

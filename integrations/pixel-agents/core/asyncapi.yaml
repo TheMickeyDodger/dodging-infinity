@@ -124,6 +124,7 @@ components:
         - $ref: '#/components/schemas/AmbientSpritesLoaded'
         - $ref: '#/components/schemas/DiEvidenceContent'
         - $ref: '#/components/schemas/DiCodeReview'
+        - $ref: '#/components/schemas/DiMissionRequestReply'
       discriminator: type
 
     ClientMessage:
@@ -154,6 +155,7 @@ components:
         - $ref: '#/components/schemas/SaveAmbientState'
         - $ref: '#/components/schemas/DiEvidenceRead'
         - $ref: '#/components/schemas/DiCodeReviewRead'
+        - $ref: '#/components/schemas/DiMissionRequest'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -980,6 +982,131 @@ components:
     DiEvidenceMedia:
       type: string
       enum: [text/plain, text/html]
+
+    DiMissionRequest:
+      description: |
+        DI office only (item 4, Mission requests): ONE closed request to the request panel's local
+        adapter, relayed by the server, which alone holds the adapter's bearer token (a client
+        never sees it). `seq` is a number the client chooses; the reply echoes it with `op`. Each
+        `op` takes exactly its own fields and no others, and anything else is refused:
+        `refresh` (the overview of requests and conversations), `conversation` (conversationId),
+        `request` (requestRef), `offer` (requestRef: issue or re-read the FROZEN decision offer;
+        while an offer is live every window is shown the same one, with one absolute expiry),
+        `result` (requestRef), `turn` (conversationId or null, text: one plain-language turn of the
+        restricted, read-only conversation), `submit` (turnId, digest of the draft that was read,
+        optional supersedes), `decide` (requestRef, missionId, revision, digest, reply: the word
+        the person typed, relayed unchanged; and the EXACT offer displayed: offerDigest,
+        expiresAt, scope, deliveryTargets, repositoryUrl), `checkApproval` (requestRef),
+        `withdraw` (requestRef, missionId, revision, digest) and `run` (requestRef, command:
+        dispatch, observe, reconcile or verify; progression normally needs none of the last
+        three, which a running progression runtime does). Nothing here names a path, a shell, a principal, a provider or a model. A
+        decision is the person's typed reply to exactly the displayed Mission, revision and
+        digest; it is an operator attestation, not independently verified. Answered with exactly
+        one diMissionRequestReply to the asking connection only.
+      type: object
+      additionalProperties: false
+      required: [type, seq, op]
+      properties:
+        type:
+          const: diMissionRequest
+        seq:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        op:
+          $ref: '#/components/schemas/DiMissionRequestOp'
+        conversationId:
+          type: [string, 'null']
+          maxLength: 35
+        text:
+          type: string
+          maxLength: 8000
+        requestRef:
+          type: string
+          maxLength: 35
+        turnId:
+          type: string
+          maxLength: 35
+        missionId:
+          type: string
+          maxLength: 35
+        revision:
+          type: integer
+          minimum: 1
+        digest:
+          type: string
+          maxLength: 64
+        reply:
+          type: string
+          maxLength: 200
+        offerDigest:
+          type: string
+          maxLength: 64
+        expiresAt:
+          type: integer
+          minimum: 1
+        scope:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            maxLength: 40
+        deliveryTargets:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            maxLength: 40
+        repositoryUrl:
+          type: [string, 'null']
+          maxLength: 220
+        command:
+          type: string
+          maxLength: 16
+        supersedes:
+          type: [string, 'null']
+          maxLength: 35
+
+    DiMissionRequestOp:
+      type: string
+      enum:
+        [refresh, conversation, request, offer, result, turn, submit, decide, checkApproval,
+         withdraw, run]
+
+    DiMissionRequestReply:
+      description: |
+        DI office only: the answer to one diMissionRequest, to the asking connection only. `state`
+        ok carries the adapter's own answer in `answer`; refused carries the code and the words
+        of whichever side refused (`problem`, `reason`, with the adapter's `details` inside
+        `answer`); unavailable means the request panel's adapter could not be reached or is not
+        configured (nothing was changed). EVERYTHING in `answer` is UNTRUSTED data: provider text,
+        a person's words and a team's result among it. A client shows it as inert text and never
+        renders, executes, follows or fetches from it, and never treats it as a decision.
+      type: object
+      additionalProperties: false
+      required: [type, seq, op, state, problem, reason, answer]
+      properties:
+        type:
+          const: diMissionRequestReply
+        seq:
+          type: integer
+        op:
+          $ref: '#/components/schemas/DiMissionRequestOp'
+        state:
+          $ref: '#/components/schemas/DiMissionRequestState'
+        problem:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+        answer:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: true
+
+    DiMissionRequestState:
+      type: string
+      enum: [ok, refused, unavailable]
 
     DiCodeReviewRead:
       description: |

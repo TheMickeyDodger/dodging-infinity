@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.test-dom.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test-mission.tsbuildinfo",
+    /* The item 4 browser test (the real App in Chrome over the real server relay). Beyond the DOM lib
+       its callbacks need, it IMPORTS the real server relay (handleDiClientMessage, DiMissionRequests,
+       AgentStateStore), and the server's sources are written with TypeScript parameter properties,
+       which `erasableSyntaxOnly` forbids. That flag exists so SHIPPED webview code stays erasable;
+       these server files are not shipped here, they are type-checked only as an import of this one test,
+       and under their own project (server/tsconfig.json) they are already checked with it off.
+       The relaxation is therefore confined to this single project and this single test. */
+    "erasableSyntaxOnly": false
+  },
+  "include": ["test/diMissionRequest.test.ts"],
+  "exclude": []
+}

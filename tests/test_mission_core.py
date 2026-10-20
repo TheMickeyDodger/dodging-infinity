@@ -1732,6 +1732,21 @@ class ETrustSeparationTests(unittest.TestCase):
         # composer (observe only; pinned in test_static 12h).
         # Item 2 (deliberate, exact): the evidence library's one admitted
         # content read (pure read helpers only; pinned in test_static 12j).
+        # Item 4 (deliberate, exact): the DI World request panel's backend.
+        # THREE mission_panel modules import mission.record and nothing else
+        # of Mission Core: journal.py (validate_proposal, proposal_digest and
+        # MissionError, to check a stored draft), draft.py (the action-scope,
+        # run-requirement and evidence-kind constants, and proposal_digest, to
+        # build and digest a draft) and lifecycle.py (the lifecycle-state
+        # constants, the attested-approval limit and its residual-risk text, to
+        # derive honest words from the records). They use Mission Core's OWN
+        # validator and digest so a draft is judged by the canonical code
+        # rather than a parallel copy that could drift from it. None imports a
+        # store, state or service module, takes a lock, saves, or calls a
+        # Mission operation, and none authorizes anything: the exact names
+        # each may touch, and that the whole package names no decision,
+        # authorization or state-operation entry point, are pinned in
+        # test_static 12m.
         self.assertEqual(
             {r for r in importers if not r.startswith("mission/")},
             {"pr_delivery/mission_parent.py", "local_request/cli.py",
@@ -1739,7 +1754,9 @@ class ETrustSeparationTests(unittest.TestCase):
              "target_runtime/mission_bridge.py",
              "mission_sources/sources.py",
              "target_runtime/mission_state.py",
-             "target_runtime/artifact_content.py"},
+             "target_runtime/artifact_content.py",
+             "mission_panel/journal.py", "mission_panel/draft.py",
+             "mission_panel/lifecycle.py"},
         )
 
     def test_E4_mission_never_names_pr_delivery_or_a_provider(self):

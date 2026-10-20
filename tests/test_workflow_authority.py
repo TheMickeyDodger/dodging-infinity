@@ -2183,6 +2183,12 @@ class BoundConstantPinTests(unittest.TestCase):
         "target_runtime/cli.py": {
             "RUNTIME_POLL_INTERVAL_SECONDS": 5,
         },
+        # Item 4: reconcile attempts are a DURABLE counter that stops the run
+        # at MAX_RECONCILE_ATTEMPTS, so progression spaces them: at most one per
+        # this many seconds, read from the record's own last attempt.
+        "target_runtime/mission_bridge.py": {
+            "RECONCILE_SPACING_SECONDS": 30,
+        },
         "target_runtime/prepare.py": {
             "MAX_INSTRUCTION_FILES": 8,
             "MAX_INSTRUCTION_FILE_BYTES": 65536,
@@ -2463,6 +2469,94 @@ class BoundConstantPinTests(unittest.TestCase):
             # Task 8: the operator-attested approval's relayed evidence.
             "MAX_RELAYED_REPLY_CHARS": 200,
             "MAX_RELAY_REF_CHARS": 128,
+        },
+        # Item 4: the DI World request panel's durable bookkeeping. It holds
+        # no authority; these are its hard record and text bounds.
+        "mission_panel/journal.py": {
+            "MAX_TURN_RECORDS": 2048,
+            "MAX_TURN_TEXT_CHARS": 8000,
+            "MAX_DETAIL_CHARS": 500,
+            # The frozen decision offers kept at once; when full a new offer
+            # is refused, never evicted (an eviction would void a live one).
+            "MAX_OFFER_RECORDS": 256,
+        },
+        # Item 4: the panel's restricted drafting conversation. Two provider
+        # turns at once at most; a read-only drafting turn is killed at the
+        # deadline and recorded UNCERTAIN; the replayed earlier conversation
+        # (quoted, untrusted) is bounded.
+        "mission_panel/conversation.py": {
+            "MAX_CONCURRENT_TURNS": 2,
+            "TURN_DEADLINE_SECONDS": 300,
+        },
+        "mission_panel/draft.py": {
+            "MAX_TRANSCRIPT_CHARS": 24000,
+        },
+        # Item 4: the controller's display bounds. What one overview, one
+        # conversation view and one retrieved result may carry to a window.
+        # Item 4: the panel's loopback adapter. The most bytes of one request
+        # body, and the deepest nesting of one JSON body, it will parse; its
+        # connection bound and socket timeout are catalog_http's, imported.
+        "mission_panel/http_adapter.py": {
+            "MAX_BODY_BYTES": 65536,
+            "MAX_JSON_DEPTH": 8,
+            # Pinned HERE as well as in mission_panel/wire.py on purpose. This is a
+            # re-export of wire.MAX_RESPONSE_BYTES, and that value is a CROSS-LANGUAGE
+            # invariant: it must equal the office relay's MAX_PANEL_RESPONSE_BYTES in
+            # server/src/di/missionPanelClient.ts (tests/test_mission_panel_wire.py reads
+            # the TypeScript). A change to the relay's bound should trip the pin in both
+            # places, so this is kept rather than dropped. (The opposite call was right
+            # for MAX_LISTED_REQUESTS, a plain alias with no partner in another language:
+            # that alias was dropped and its users use the original.)
+            "MAX_RESPONSE_BYTES": 4194304,
+        },
+        # Item 4: the progression pass. At most this many Missions are
+        # examined per pass; more eligible ones are reached by rotation and the
+        # pass says it was bounded.
+        "mission_panel/progress.py": {
+            "MAX_PASS_MISSIONS": 32,
+        },
+        # Item 4: the cross-process per-Mission run guard. A blocking hold waits
+        # at most GUARD_WAIT_SECONDS, polling every GUARD_POLL_SECONDS, then
+        # reports BUSY. Pacing between lock attempts; nothing about a Mission is
+        # decided by either.
+        "target_runtime/mission_run_guard.py": {
+            "GUARD_WAIT_SECONDS": 30,
+            "GUARD_POLL_SECONDS": 0.05,
+        },
+        # Item 4: the progression runtime's status file. A status whose last
+        # pass is older than STATUS_STALE_SECONDS is STALE; the file, the Missions
+        # it lists and each explanation or failure name it carries are bounded.
+        "target_runtime/mission_progress_status.py": {
+            "STATUS_STALE_SECONDS": 30,
+            "MAX_STATUS_BYTES": 65536,
+            "MAX_STATUS_MISSIONS": 32,
+            "MAX_REPORT_DETAIL_CHARS": 300,
+            "MAX_PROBLEM_CHARS": 80,
+        },
+        # Item 4 (startup diagnostic delta): the read-only projection of the diagnostic a failed
+        # child start retained in its workspace. It examines at most this many candidate file
+        # names (more is AMBIGUOUS, not a slow scan; the writer retains 20), reports at most this
+        # many roles, and caps every text field it returns. Bounds on a REPORT; none decides
+        # anything about a Mission.
+        "target_runtime/start_cause.py": {
+            "MAX_START_CAUSE_CANDIDATES": 40,
+            "MAX_START_CAUSE_ROLES": 16,
+            "MAX_START_CAUSE_FIELD_CHARS": 300,
+        },
+        "mission_panel/service.py": {
+            "MAX_OVERVIEW_REQUESTS": 20,
+            "MAX_OVERVIEW_CONVERSATIONS": 10,
+            "MAX_VIEW_TURNS": 50,
+            "MAX_RESULT_TEXT_CHARS": 60000,
+            "FIRST_WORDS_CHARS": 120,
+            # Serialized bytes of turns one conversation view carries (see the module's comment):
+            # a byte budget under the 4 MiB relay bound, never a character count.
+            "MAX_VIEW_BYTES": 3145728,
+        },
+        # Item 4: the panel's wire format. The most bytes the panel sends in one answer; it must
+        # equal the office's relay bound (a test reads the TypeScript constant).
+        "mission_panel/wire.py": {
+            "MAX_RESPONSE_BYTES": 4194304,
         },
         "local_request/cli.py": {
             "MAX_REQUEST_CHARS": 65536,
