@@ -427,7 +427,7 @@ class LauncherTests(Bounded):
 
     def setUp(self):
         super(LauncherTests, self).setUp()
-        self.tmp = tempfile.TemporaryDirectory(prefix="di-pnl-", dir="/private/tmp")
+        self.tmp = tempfile.TemporaryDirectory(prefix="di-pnl-")
         self.addCleanup(self.tmp.cleanup)
         self.state = os.path.join(self.tmp.name, "state")
         self.control = os.path.join(self.tmp.name, "control")
@@ -532,8 +532,10 @@ class StartupHelperTests(Bounded):
     """The harness's own helper, on the two cases that matter."""
 
     def spawn(self, code):
+        cwd = tempfile.TemporaryDirectory(prefix="di-pnl-")
+        self.addCleanup(cwd.cleanup)             # runs after the reap below (LIFO)
         process = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, cwd="/private/tmp")
+                                   stderr=subprocess.PIPE, cwd=cwd.name)
         _LAUNCHED.append(process)
         self.addCleanup(reap_process, process)
         return process
@@ -601,9 +603,11 @@ class OrdinaryInterruptionTests(Bounded):
         return True
 
     def interrupted_by(self, number):
+        cwd = tempfile.TemporaryDirectory(prefix="di-pnl-")
+        self.addCleanup(cwd.cleanup)             # runs after the reap below (LIFO)
         harness = subprocess.Popen(
             [sys.executable, "-c", self.HARNESS], stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, cwd="/private/tmp",
+            stderr=subprocess.PIPE, cwd=cwd.name,
             env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
         self.addCleanup(reap_process, harness)
         ready, _, _ = select.select([harness.stdout], [], [], 60)
