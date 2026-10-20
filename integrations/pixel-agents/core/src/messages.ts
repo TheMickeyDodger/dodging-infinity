@@ -43,7 +43,8 @@ export type ServerMessage =
   | AmbientStateLoaded
   | AmbientSpritesLoaded
   | DiEvidenceContent
-  | DiCodeReview;
+  | DiCodeReview
+  | DiMissionRequestReply;
 
 export type ClientMessage =
   | WebviewReady
@@ -70,7 +71,8 @@ export type ClientMessage =
   | RequestDiagnostics
   | SaveAmbientState
   | DiEvidenceRead
-  | DiCodeReviewRead;
+  | DiCodeReviewRead
+  | DiMissionRequest;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -1107,6 +1109,31 @@ export interface DiCodeReviewLine {
   clipped: number;
 }
 
+export interface DiMissionRequestReply {
+  type: 'diMissionRequestReply';
+  seq: number;
+  op: DiMissionRequestOp;
+  state: DiMissionRequestState;
+  problem: string | null;
+  reason: string | null;
+  answer: Record<string, any> | null;
+}
+
+export type DiMissionRequestOp =
+  | 'refresh'
+  | 'conversation'
+  | 'request'
+  | 'offer'
+  | 'result'
+  | 'turn'
+  | 'submit'
+  | 'decide'
+  | 'checkApproval'
+  | 'withdraw'
+  | 'run';
+
+export type DiMissionRequestState = 'ok' | 'refused' | 'unavailable';
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -1242,4 +1269,25 @@ export interface DiCodeReviewRead {
   listing: string;
   snapshot?: string;
   fileId?: string;
+}
+
+export interface DiMissionRequest {
+  type: 'diMissionRequest';
+  seq: number;
+  op: DiMissionRequestOp;
+  conversationId?: string | null;
+  text?: string;
+  requestRef?: string;
+  turnId?: string;
+  missionId?: string;
+  revision?: number;
+  digest?: string;
+  reply?: string;
+  offerDigest?: string;
+  expiresAt?: number;
+  scope?: string[];
+  deliveryTargets?: string[];
+  repositoryUrl?: string | null;
+  command?: string;
+  supersedes?: string | null;
 }

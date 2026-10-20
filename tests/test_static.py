@@ -2024,6 +2024,18 @@ MISSION_ALLOWED_CONSUMERS = frozenset({
     # PURE read helpers (journal.head_cursor, state lookups, record constants,
     # store.activation_contract); what it may call is pinned in (12j).
     'target_runtime/artifact_content.py',
+    # Item 4 (DI World request panel; deliberate, exact): THREE mission_panel
+    # modules import mission.record and nothing else of Mission Core, only
+    # for constants, the two PURE helpers (validate_proposal, proposal_digest)
+    # and MissionError: journal.py (checks a stored draft), draft.py (builds
+    # and digests a draft) and lifecycle.py (derives honest words from the
+    # records). They use Mission Core's OWN validator and digest so a draft is
+    # never judged by a parallel copy that could drift from it. None imports
+    # a store, state or service module, takes a lock, saves or calls a
+    # Mission operation, and none authorizes anything; the exact names each
+    # may touch are pinned in (12m).
+    'mission_panel/journal.py', 'mission_panel/draft.py',
+    'mission_panel/lifecycle.py',
 })
 MISSION_READ_ONLY_OPEN_FILE = 'mission/store.py'
 
@@ -3469,5 +3481,165 @@ for _node in ast.walk(_cr_tree):
             _node.value, ast.Name) and _node.value.id == 'os':
         assert _node.attr in _CR_FILESYSTEM_CALLS | {'path', 'sep'}, (
             CODE_REVIEW_FILE, _node.lineno, _node.attr)
+
+# (12m) Item 4 (DI World request panel): THREE mission_panel modules import
+#       Mission Core's record module, deliberate and exact, and NOTHING else of
+#       Mission Core. Each may touch only the closed set of names below:
+#       constants, the two PURE helpers (validate_proposal, proposal_digest,
+#       which are Mission Core's own canonical validation and digest, so a
+#       draft is never judged by a parallel copy) and the MissionError type.
+#       No store, state, service or journal module is imported, and the only
+#       CALLS on the record module are the two pure helpers.
+PANEL_MISSION_READERS = {
+    'mission_panel/journal.py': {
+        'MissionError', 'proposal_digest', 'validate_proposal'},
+    'mission_panel/draft.py': {
+        'ACTION_SCOPES', 'ACTION_SCOPE_ENGINEERING_CHANGE',
+        'ACTION_SCOPE_REPOSITORY_READ', 'ACTION_SCOPE_VERIFICATION_RUN',
+        'EVIDENCE_KIND_VERIFICATION_RECORD', 'RUN_REQUIRED_ACTION_SCOPE',
+        'RUN_RESULT_REQUIREMENT_KEY', 'proposal_digest'},
+    'mission_panel/lifecycle.py': {
+        'MAX_ATTESTED_APPROVAL_VALIDITY_SECONDS',
+        'OPERATOR_ATTESTED_RESIDUAL_RISK', 'STATE_AUTHORIZED',
+        'STATE_AWAITING_DECISION'},
+}
+PANEL_PURE_HELPERS = {'validate_proposal', 'proposal_digest'}
+for _rel, _names in PANEL_MISSION_READERS.items():
+    _pt = ast.parse((R / _rel).read_text())
+    _mission_imports = sorted(
+        [(None, a.name) for n in ast.walk(_pt) if isinstance(n, ast.Import)
+         for a in n.names if a.name.split('.')[0] == 'mission']
+        + [(n.module, a.name) for n in ast.walk(_pt)
+           if isinstance(n, ast.ImportFrom)
+           and (n.module or '').split('.')[0] == 'mission'
+           for a in n.names], key=repr)
+    assert _mission_imports == [('mission', 'record')], (
+        _rel, _mission_imports)
+    _used = {n.attr for n in ast.walk(_pt)
+             if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
+             and n.value.id == 'mission_record'}
+    assert _used == _names, (_rel, sorted(_used ^ _names))
+    _called = {n.func.attr for n in ast.walk(_pt)
+               if isinstance(n, ast.Call)
+               and isinstance(n.func, ast.Attribute)
+               and isinstance(n.func.value, ast.Name)
+               and n.func.value.id == 'mission_record'}
+    assert _called <= PANEL_PURE_HELPERS, (_rel, sorted(_called))
+
+# (12n) Item 4 (DI World request panel): the WHOLE mission_panel package never
+#       authorizes anything and offers no shell, PTY, filesystem or command
+#       route. Pinned structurally over every module of the package:
+#       (1) no decision, authorization, id-minting or state-operation entry
+#           point is named (identifier, attribute, import or string), and no
+#           call is named record_* / mint_* / apply_* / issue_*: the panel
+#           holds no principal context and applies no decision;
+#       (2) the effect-bearing calls on the request surface exist ONLY in the
+#           named controller functions: attest_approval (the person's typed
+#           exact word, relayed) in decide and check_approval; run_command in
+#           run; cancel in withdraw and _submit_reserved; submit in
+#           _submit_reserved; advance (the progression pass's bridge step, which
+#           never dispatches) in progress.py's _advance_one. No other module of
+#           the package makes any of them;
+#       (3) the one process the package can cause is the restricted
+#           conversation spawn: subprocess is imported by conversation.py
+#           alone, called as exactly one subprocess.run, with no shell keyword;
+#           no module names pty, shlex, ctypes, webbrowser, urllib or socket,
+#           and none calls system, popen, exec*, spawn*, fork* or kill*;
+#       (4) the HTTP server is imported by http_adapter.py alone, and the only
+#           open() in the package is journal.py's read-only one.
+PANEL_DIR = R / 'mission_panel'
+PANEL_FILES = sorted(PANEL_DIR.glob('*.py'))
+assert {f.name for f in PANEL_FILES} >= {
+    '__init__.py', 'conversation.py', 'draft.py', 'http_adapter.py',
+    'journal.py', 'lifecycle.py', 'service.py'}, PANEL_FILES
+PANEL_FORBIDDEN_NAMES = frozenset({
+    'apply_human_decision', 'apply_operator_attested_approval',
+    'issue_mission_authorization', 'mint_decision_id', 'mint_request_id',
+    'mint_state_operation_id', 'withdraw_proposal', 'OperatorAttestedContext',
+    'AuthenticatedContext', 'OPERATOR_ATTESTED_CONTEXT',
+    'LOCAL_CALLER_CONTEXT'})
+PANEL_FORBIDDEN_CALL_PREFIXES = ('record_', 'mint_', 'apply_', 'issue_')
+PANEL_EFFECT_CALLS = {
+    'attest_approval': {('service.py', 'decide'), ('service.py', 'check_approval')},
+    'run_command': {('service.py', 'run')},
+    'cancel': {('service.py', 'withdraw'), ('service.py', '_submit_reserved')},
+    'submit': {('service.py', '_submit_reserved')},
+    # The progression pass: the ONLY thing the runtime does to a Mission, one
+    # bridge step per eligible request, from the pass's one named function.
+    'advance': {('progress.py', '_advance_one')},
+}
+PANEL_FORBIDDEN_IMPORT_ROOTS = frozenset({
+    'pty', 'shlex', 'ctypes', 'webbrowser', 'urllib', 'socket', 'requests',
+    'multiprocessing', 'asyncio'})
+PANEL_FORBIDDEN_CALLS = frozenset({
+    'system', 'popen', 'fork', 'forkpty', 'kill', 'killpg', 'execv', 'execve',
+    'execvp', 'execl', 'execle', 'execlp', 'spawn', 'spawnv', 'spawnl',
+    'Popen', 'call', 'check_call', 'check_output', 'getoutput',
+    'unlink', 'remove', 'rmdir', 'rmtree', 'rename', 'replace', 'chmod',
+    'symlink', 'link', 'truncate'})
+_panel_effect_seen = {}
+_panel_subprocess_files = set()
+_panel_http_files = set()
+_panel_open_calls = []
+_panel_subprocess_runs = 0
+for _path in PANEL_FILES:
+    _tree = ast.parse(_path.read_text())
+    _enclosing = {}
+    for _fn in ast.walk(_tree):
+        if isinstance(_fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for _inner in ast.walk(_fn):
+                _enclosing[id(_inner)] = _fn.name       # innermost wins (walk is BFS)
+    for _node in ast.walk(_tree):
+        _idents = set()
+        if isinstance(_node, ast.Name):
+            _idents.add(_node.id)
+        elif isinstance(_node, ast.Attribute):
+            _idents.add(_node.attr)
+        elif isinstance(_node, ast.ImportFrom):
+            _idents |= {a.name for a in _node.names}
+        elif isinstance(_node, ast.Constant) and isinstance(_node.value, str):
+            _idents.add(_node.value)
+        assert not _idents & PANEL_FORBIDDEN_NAMES, (
+            _path.name, getattr(_node, 'lineno', None),
+            sorted(_idents & PANEL_FORBIDDEN_NAMES))
+        if isinstance(_node, (ast.Import, ast.ImportFrom)):
+            _roots = ([a.name.split('.')[0] for a in _node.names]
+                      if isinstance(_node, ast.Import)
+                      else [(_node.module or '').split('.')[0]])
+            assert not set(_roots) & PANEL_FORBIDDEN_IMPORT_ROOTS, (
+                _path.name, _node.lineno, _roots)
+            if 'subprocess' in _roots:
+                _panel_subprocess_files.add(_path.name)
+            _mods = ([a.name for a in _node.names] if isinstance(_node, ast.Import)
+                     else [_node.module or ''])
+            if any(m in ('http.server', 'socketserver') for m in _mods):
+                _panel_http_files.add(_path.name)
+        if isinstance(_node, ast.Call):
+            _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+            assert not (_name or '').startswith(PANEL_FORBIDDEN_CALL_PREFIXES), (
+                _path.name, _node.lineno, _name)
+            assert _name not in PANEL_FORBIDDEN_CALLS, (
+                _path.name, _node.lineno, _name)
+            assert not any(k.arg == 'shell' for k in _node.keywords), (
+                _path.name, _node.lineno, 'no shell keyword')
+            if _name in PANEL_EFFECT_CALLS:
+                _panel_effect_seen.setdefault(_name, set()).add(
+                    (_path.name, _enclosing.get(id(_node))))
+            if _name == 'open':
+                _panel_open_calls.append((_path.name, _node.lineno, [
+                    a.value for a in _node.args[1:2]
+                    if isinstance(a, ast.Constant)]))
+            if (_name == 'run' and isinstance(_node.func, ast.Attribute)
+                    and getattr(_node.func.value, 'id', None) == 'subprocess'):
+                _panel_subprocess_runs += 1
+for _call, _where in _panel_effect_seen.items():
+    assert _where <= PANEL_EFFECT_CALLS[_call], (
+        _call, sorted(_where, key=repr))
+assert set(_panel_effect_seen) == set(PANEL_EFFECT_CALLS), sorted(_panel_effect_seen)
+assert _panel_subprocess_files == {'conversation.py'}, _panel_subprocess_files
+assert _panel_subprocess_runs == 1, _panel_subprocess_runs
+assert _panel_http_files == {'http_adapter.py'}, _panel_http_files
+assert [(f, m) for f, _, m in _panel_open_calls] == [('journal.py', ['r'])], (
+    _panel_open_calls)
 
 print('static tests: OK')

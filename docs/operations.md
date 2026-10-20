@@ -243,6 +243,67 @@ python3 -m json.tool FILE
 The file records what the pane showed at failure; it does not explain the
 cause by itself.
 
+### When the roles start but do not bind
+
+Bootstrap starts every role, then binds each one to the live session Herdr
+reports for it, retrying for 30 seconds. If any role still cannot be bound, or
+anything else fails after the roles were started, bootstrap leaves **one more
+kind of diagnostic**, written before it closes the workspace and removes
+`state/runtime.json`:
+
+```text
+HERD_ROOT/state/diagnostics/startup-binding-failure-UTC_TIMESTAMP-RANDOM.json
+```
+
+What it means: the team was started and contracted, but startup then failed.
+It records the **stage** it stopped at and the failure's **type**. For a
+binding failure it lists each **affected role** (and only those) with the
+reason bootstrap already states for it (for example "the recorded binding
+carries no session") and whether a session id was `ABSENT`, `PRESENT` or
+`UNKNOWN` (no readable record). It is evidence about **this one startup
+attempt in this workspace**, not about any earlier or later one.
+
+What it will not hold, by design: a prompt, pane text or transcript, a
+credential, the environment, a session id's value (only whether one was
+carried), or an exception's message. A failure of any type other than the
+binding failure is recorded as `UNKNOWN` with its class name only. Redaction
+of the text fields is the same **best-effort pattern matching, not a
+guarantee**, so treat the file as sensitive. The file states these limits in
+its own `limitations`.
+
+Bounds: at most 32 roles (the real total is recorded and a cut is marked),
+200 characters per name, 300 per reason, 1,024 for the repository path, the
+whole file at 65,536; the newest 20 files of this kind are kept (counted apart
+from the agent-start files); directory `700`, file `600`. A diagnostic that
+cannot be written never replaces the startup failure or skips the cleanup: the
+original failure is the one raised.
+
+**In the Mission request panel.** When a child's Start is in doubt (the intent
+is recorded and no receipt exists), the panel shows why, if it can bind this
+file to this exact attempt: the stage, the type and each affected role. It
+reads the file server-side, read-only, through the same hardened bounded reader
+used for run results, and shows the file's **name**, never its path; the window
+never reads the disk. A file is the attempt's only if it sits in the run
+intent's own workspace, its recorded repository is that workspace (named for the
+Mission), its stage and fields are in the closed vocabulary, its runtime began no
+earlier than the intent was recorded, and **exactly one** file qualifies. The
+newest file is never chosen. Otherwise the panel says the cause is **not
+known** (none binds, or more than one claims it). Nothing is stored for this:
+the file is the record, so a reload or a second window shows the same.
+
+**The no-replay boundary.** Reading the diagnostic starts nothing. It does not
+respawn, retry, reset or reconcile anything, and a Start in doubt stays in
+doubt: recorded once, never replayed. The panel does not say a retry is safe.
+The only run action it offers for an in-doubt Start is the evidence-only
+reconcile, which is bounded.
+
+Inspect it with:
+
+```bash
+ls -t HERD_ROOT/state/diagnostics/
+python3 -m json.tool FILE
+```
+
 ## 6. Create and run a Mission
 
 The short form dispatches an objective directly:

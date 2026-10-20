@@ -76,6 +76,44 @@ DIAGNOSTIC_SCHEMA = "herdr_agent_start_failure_diagnostic_v1"
 REDACTED = "<REDACTED>"
 TRUNCATED = "[TRUNCATED]"
 
+# -- failed role-binding diagnostic (POST-bootstrap; observability only) ---
+#
+# When a herd starts every role but cannot BIND them (or fails later in
+# startup), ``start_herd`` writes one bounded, private record here BEFORE its
+# cleanup closes the workspace and removes runtime.json, so the failure
+# explains itself afterwards. The record is a CLOSED list of known metadata:
+# the stage, the failure's type, the attempted workspace and, per affected
+# logical role, the binding gap `identity.binding_gap` already states and
+# whether a session id was ABSENT / PRESENT / UNKNOWN. It never holds a
+# prompt, pane text, a transcript, a credential, the environment, a session
+# VALUE or an exception message; a failure of any other type is labelled
+# UNKNOWN with its class name only. Redaction of the text fields is the same
+# best-effort pass as above. Retention is the shared DIAGNOSTIC_MAX_FILES,
+# counted per kind. The file is read back by the bridge through the hardened
+# 64 KiB workspace reader, so its cap may not exceed that reader's bound.
+BINDING_DIAGNOSTIC_FILE_PREFIX = "startup-binding-failure-"
+BINDING_DIAGNOSTIC_SCHEMA = "herdr_startup_binding_failure_diagnostic_v1"
+BINDING_DIAGNOSTIC_MAX_ROLES = 32
+BINDING_DIAGNOSTIC_ID_MAX_CHARS = 200
+BINDING_DIAGNOSTIC_REASON_MAX_CHARS = 300
+BINDING_DIAGNOSTIC_REPO_MAX_CHARS = 1024
+BINDING_DIAGNOSTIC_FILE_MAX_CHARS = 65536
+BINDING_FAILURE_TYPES = ("BINDINGS_NOT_ESTABLISHED", "UNKNOWN")
+BINDING_SESSION_STATES = ("ABSENT", "PRESENT", "UNKNOWN")
+BINDING_DIAGNOSTIC_LIMITATIONS = (
+    "Redaction is best-effort pattern matching, not a guarantee.",
+    "This file holds a closed list of known metadata only: never a prompt,"
+    " pane text, a transcript, a credential, the environment or an"
+    " exception message.",
+    "Only the affected roles (those whose binding evidence was incomplete)"
+    " are listed; a role that is not listed bound normally.",
+    "A failure of any type other than BINDINGS_NOT_ESTABLISHED is recorded"
+    " as UNKNOWN with its class name only; its message is never stored.",
+    "A session is recorded only as ABSENT, PRESENT or UNKNOWN; its value is"
+    " never stored and none is ever inferred.",
+    "This describes one startup attempt in this workspace only.",
+)
+
 # Redaction is ONE linear pass over whitespace-separated words, on input
 # already capped (DIAGNOSTIC_READ_MAX_BYTES characters): every check is a
 # substring test, a prefix test or a scan of simple maximal character runs,
@@ -437,9 +475,9 @@ def _fit(record):
     return text
 
 
-def _retained(directory):
+def _retained(directory, prefix=DIAGNOSTIC_FILE_PREFIX):
     found = []
-    for path in directory.glob(DIAGNOSTIC_FILE_PREFIX + "*.json"):
+    for path in directory.glob(prefix + "*.json"):
         try:
             found.append((path.stat().st_mtime, path.name, path))
         except FileNotFoundError:
@@ -447,28 +485,28 @@ def _retained(directory):
     return [path for _, _, path in sorted(found)]
 
 
-def _make_room(directory):
+def _make_room(directory, prefix=DIAGNOSTIC_FILE_PREFIX):
     """Prune the oldest diagnostics BEFORE publishing, leaving room for
     exactly one more under DIAGNOSTIC_MAX_FILES. If deletion cannot get
     there, refuse: the caller then publishes nothing (and the original
     start error is still raised), so retention never exceeds its cap."""
-    retained = _retained(directory)
+    retained = _retained(directory, prefix)
     for old in retained[:max(0, len(retained) - (DIAGNOSTIC_MAX_FILES - 1))]:
         try:
             old.unlink()
         except OSError:
             pass
-    if len(_retained(directory)) > DIAGNOSTIC_MAX_FILES - 1:
+    if len(_retained(directory, prefix)) > DIAGNOSTIC_MAX_FILES - 1:
         raise OSError("diagnostic retention cannot make room; not publishing")
 
 
-def _write_private(directory, name, text):
+def _write_private(directory, name, text, prefix=DIAGNOSTIC_FILE_PREFIX):
     directory = Path(directory)
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     if directory.is_symlink() or not directory.is_dir():
         raise OSError("diagnostic directory is not a real directory")
     os.chmod(directory, 0o700)
-    _make_room(directory)
+    _make_room(directory, prefix)
     final = directory / name
     temporary = directory / (".tmp-" + name)
     fd = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -526,6 +564,92 @@ def capture_start_failure(diagnostic_dir, name, pane, role_cfg, timeout,
         DIAGNOSTIC_FILE_PREFIX, safe_name, now.strftime("%Y%m%dT%H%M%SZ"),
         secrets.token_hex(4))
     return _write_private(diagnostic_dir, filename, _fit(record))
+
+
+def _identifier(value, limit):
+    """A bounded, redacted text field, or None when the value is not text."""
+    return _clean(value, limit) if isinstance(value, str) else None
+
+
+def build_binding_failure_record(*, stage, failure, workspace, settle_seconds,
+                                 roles):
+    """The bounded record of one post-bootstrap failure. Everything is
+    re-validated here: a caller's value that is not the expected kind of
+    thing becomes None / UNKNOWN, never a stringified copy, and a malformed
+    role entry is dropped rather than repaired."""
+    failure = failure if isinstance(failure, dict) else {}
+    kind = failure.get("type")
+    kind = kind if kind in BINDING_FAILURE_TYPES else "UNKNOWN"
+    klass = failure.get("class")
+    klass = (re.sub(r"[^A-Za-z0-9_.]", "_", klass)[:BINDING_DIAGNOSTIC_ID_MAX_CHARS]
+             if isinstance(klass, str) else None)
+    workspace = workspace if isinstance(workspace, dict) else {}
+    created = workspace.get("runtime_created_at")
+    raw_roles = list(roles) if isinstance(roles, (list, tuple)) else []
+    entries = []
+    for item in raw_roles:
+        if not isinstance(item, dict):
+            continue
+        session = item.get("session")
+        entries.append({
+            "logical": _identifier(item.get("logical"),
+                                   BINDING_DIAGNOSTIC_ID_MAX_CHARS),
+            "agent": _identifier(item.get("agent"),
+                                 BINDING_DIAGNOSTIC_ID_MAX_CHARS),
+            "pane": _identifier(item.get("pane"),
+                                BINDING_DIAGNOSTIC_ID_MAX_CHARS),
+            "reason": _identifier(item.get("reason"),
+                                  BINDING_DIAGNOSTIC_REASON_MAX_CHARS),
+            "session": session if session in BINDING_SESSION_STATES
+            else "UNKNOWN",
+        })
+    kept = entries[:BINDING_DIAGNOSTIC_MAX_ROLES]
+    now = datetime.now(timezone.utc)
+    record = {
+        "schema": BINDING_DIAGNOSTIC_SCHEMA,
+        "redaction": "best-effort pattern matching; not a guarantee",
+        "captured_at": now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        "stage": _identifier(stage, BINDING_DIAGNOSTIC_ID_MAX_CHARS),
+        "failure": {"type": kind, "class": klass},
+        "workspace": {
+            "workspace_id": _identifier(workspace.get("workspace_id"),
+                                        BINDING_DIAGNOSTIC_ID_MAX_CHARS),
+            "repo": _identifier(workspace.get("repo"),
+                                BINDING_DIAGNOSTIC_REPO_MAX_CHARS),
+            "runtime_created_at": created if isinstance(created, int)
+            and not isinstance(created, bool) else None,
+        },
+        "settle_seconds": float(settle_seconds)
+        if isinstance(settle_seconds, (int, float))
+        and not isinstance(settle_seconds, bool) else None,
+        "roles_total": len(raw_roles),
+        "roles_truncated": len(kept) < len(raw_roles),
+        "roles": kept,
+        "limitations": list(BINDING_DIAGNOSTIC_LIMITATIONS),
+    }
+    # The whole file is capped; if the roles alone would pass it, drop from
+    # the end and say so (the counts above stay the truth).
+    while record["roles"] and len(json.dumps(
+            record, indent=1, sort_keys=True)) > BINDING_DIAGNOSTIC_FILE_MAX_CHARS:
+        record["roles"].pop()
+        record["roles_truncated"] = True
+    return record
+
+
+def capture_binding_failure(diagnostic_dir, record):
+    """Write one bounded record (see ``build_binding_failure_record``)
+    privately and atomically, retaining at most DIAGNOSTIC_MAX_FILES of this
+    kind, and return its path. Raises OSError rather than publish a file over
+    its cap or through a symlinked directory."""
+    text = json.dumps(record, indent=1, sort_keys=True)
+    if len(text) > BINDING_DIAGNOSTIC_FILE_MAX_CHARS:
+        raise OSError("binding diagnostic exceeds its cap; not publishing")
+    now = datetime.now(timezone.utc)
+    filename = "%s%s-%s.json" % (
+        BINDING_DIAGNOSTIC_FILE_PREFIX, now.strftime("%Y%m%dT%H%M%SZ"),
+        secrets.token_hex(4))
+    return _write_private(diagnostic_dir, filename, text,
+                          BINDING_DIAGNOSTIC_FILE_PREFIX)
 
 
 def start_agent(

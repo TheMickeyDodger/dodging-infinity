@@ -7,9 +7,17 @@
  * arbitrary directory. Those capabilities are not disabled here; they are ABSENT.
  * This module imports no hook provider, no AgentRuntime, no scanner and no
  * consent code, so no message — whatever a client sends, behind whatever button —
- * can reach one. The messages it does act on only render the office or persist
+ * can reach one. The messages it does act on only render the office, persist
  * office-local preferences (layout, seats, display toggles) under the DI state
- * root (see stateRoot.ts).
+ * root (see stateRoot.ts), or READ by an admitted reference (evidence, code review).
+ *
+ * ONE deliberate, bounded exception (item 4, Mission requests): `diMissionRequest`. It is not
+ * passive: it can submit a proposal, relay a person's typed decision and ask for a run to start.
+ * It is still not a shell, a PTY, a filesystem read or a command route. It is one of eleven closed
+ * operations, each with its own exact keys and reference-shaped ids, relayed by the server (which
+ * alone holds the token) to the request panel's loopback adapter. That adapter, not this module,
+ * binds a decision to the displayed Mission, revision and digest and records it as an operator
+ * attestation that is NOT independently verified; this module never decides anything.
  */
 
 import type { AmbientSpriteSheet } from '../../../core/src/messages.js';
@@ -24,6 +32,7 @@ import { readAmbientState, writeAmbientState } from './ambientStatePersistence.j
 import { parseCodeReviewRead } from './codeReview.js';
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
 import { parseEvidenceRead } from './evidenceContent.js';
+import { parseMissionRequest } from './missionRequests.js';
 
 export type DiSend = (message: Record<string, unknown>) => void;
 
@@ -43,6 +52,11 @@ export interface DiMessageContext {
    * connection only, by an admitted reference; absent, the message is refused.
    */
   readCodeReview?: (msg: Record<string, unknown>, send: DiSend) => void;
+  /**
+   * item 4: the Mission request panel (DiMissionRequests.handle). It answers the asking
+   * connection only; absent, the message is refused.
+   */
+  missionRequest?: (msg: Record<string, unknown>, send: DiSend) => void;
 }
 
 /** What the handler did with one message (returned for tests and diagnostics). */
@@ -61,6 +75,7 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'saveAmbientState',
   'diEvidenceRead',
   'diCodeReviewRead',
+  'diMissionRequest',
 ] as const;
 
 /**
@@ -198,6 +213,17 @@ export function handleDiClientMessage(
       }
       if (!ctx.readCodeReview) return { refused: 'no code review reader in this office' };
       ctx.readCodeReview(msg, send);
+      return 'handled';
+    }
+
+    // item 4 (Mission requests): one of eleven closed operations, relayed to the request panel's
+    // loopback adapter. The shape is checked HERE, before anything is sent, and again by the
+    // handler that relays it; a decision is the person's typed word, never anything generated.
+    case 'diMissionRequest': {
+      const parsed = parseMissionRequest(msg);
+      if (!parsed.ok) return { refused: `diMissionRequest ${parsed.reason}` };
+      if (!ctx.missionRequest) return { refused: 'no request panel in this office' };
+      ctx.missionRequest(msg, send);
       return 'handled';
     }
 

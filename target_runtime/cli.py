@@ -24,12 +24,36 @@ state directory from ONE configuration, never two:
 
 Exit codes: 0 success, 2 configuration problem, 3 another Runtime
 instance already holds the lock.
+
+MissionCore mode (item 4, the DI World request panel). Naming the panel's four
+locations selects a second, separate mode BEFORE any workflow machinery is
+built; the default mode above is unchanged and none of its code runs in this
+one:
+
+- ``--mission-state-dir`` / ``--mission-control-repo`` /
+  ``--mission-workspace-repository`` / ``--mission-workspaces-root``, all four
+  together, exactly the locations ``dimission_panel.py`` is started with. The
+  stack is composed by ``mission_panel.composition`` (the call the panel makes
+  too), so the two share stores, bridge and per-Mission run guard.
+- It advances ONLY the requests the panel's own journal durably submitted that
+  are approved and not withdrawn, one ``MissionBridge.advance`` step each per
+  pass, at the same pacing as the default mode. It never starts a Mission (a
+  Mission begins when the person presses Start), never infers success from
+  waiting, and never touches a Mission, request or workflow record that is not
+  the panel's.
+- Its single-owner lock is ``MISSION_RUNTIME_LOCK_FILE_NAME`` in the state
+  directory: a different file from the default mode's, so the two modes share no
+  claim or lease state, and two instances over the same state cannot both run.
+- It publishes ``mission_progress_status.json`` beside the state after every
+  pass, which the panel reads to say whether progression is running.
 """
 
 import argparse
 import fcntl
 import os
+import signal
 import sys
+import threading
 import time
 
 from codex_gateway import role_turn as role_turn_module
@@ -56,6 +80,11 @@ from target_runtime.workspace_trust import default_config_path
 EXIT_OK = 0
 EXIT_CONFIG = 2
 EXIT_LOCKED = 3
+
+# MissionCore mode's own single-owner lock, in the panel's state directory. It
+# is NOT the default mode's lock (RUNTIME_LOCK_FILE_NAME): the two modes share no
+# claim or lease state.
+MISSION_RUNTIME_LOCK_FILE_NAME = "mission_runtime.lock"
 
 # Bounded client-side wait between claim passes (ruling N-2: bounded
 # waits where genuinely needed; this is pacing, not a mission
@@ -172,14 +201,15 @@ def _report_new_refusals(processed, previously_reported=None):
     return reported
 
 
-def acquire_runtime_lock(state_directory):
+def acquire_runtime_lock(state_directory, lock_file_name=RUNTIME_LOCK_FILE_NAME):
     """Hold the Runtime's single-instance lock, or return None.
 
-    This is the exact lock /status probes: holding it is what makes
-    the Runtime visible as running.
+    By default this is the exact lock /status probes: holding it is what
+    makes the Runtime visible as running. MissionCore mode passes its own
+    file name and so holds a different lock.
     """
     os.makedirs(state_directory, mode=0o700, exist_ok=True)
-    lock_path = os.path.join(state_directory, RUNTIME_LOCK_FILE_NAME)
+    lock_path = os.path.join(state_directory, lock_file_name)
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -217,6 +247,23 @@ def _build_parser():
         " Never together with --config"
         % runtime_config_module.RUNTIME_CONFIG_SCHEMA,
     )
+    for flag, what in (
+        ("--mission-state-dir", "the request panel's state directory"),
+        ("--mission-control-repo", "the control repository"),
+        ("--mission-workspace-repository", "the repository Mission workspaces"
+                                           " are prepared from"),
+        ("--mission-workspaces-root", "the directory Mission workspaces are"
+                                      " prepared under"),
+    ):
+        parser.add_argument(
+            flag,
+            metavar="PATH",
+            default=None,
+            help="MissionCore mode (all four together, absolute paths): %s,"
+            " exactly as dimission_panel.py is started. Advances the"
+            " Missions that panel started. Never with --config or"
+            " --runtime-config" % what,
+        )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("once", help="run one claim pass and exit")
     subparsers.add_parser(
@@ -330,7 +377,191 @@ def _composed_broker(state_directory, control_repository, workspaces_root,
     return broker, state_directory
 
 
-def main(argv=None, sleeper=None, passes=None, execution=None):
+_MISSION_OPTIONS = ("mission_state_dir", "mission_control_repo",
+                    "mission_workspace_repository", "mission_workspaces_root")
+_MISSION_FLAGS = ("--mission-state-dir", "--mission-control-repo",
+                  "--mission-workspace-repository", "--mission-workspaces-root")
+# What a pass can report that a person needs to know about and that no record of
+# the Mission says on its own: reported once, again if it clears and recurs.
+_MISSION_NOTABLE_ACTIONS = ("hold", "refused", "unreadable")
+
+
+def _mission_locations(namespace):
+    """The four locations, validated, or ``ValueError`` with why not."""
+    if namespace.config is not None or namespace.runtime_config is not None:
+        raise ValueError(
+            "MissionCore mode never combines with --config or"
+            " --runtime-config: it composes from the request panel's own"
+            " locations")
+    values = [getattr(namespace, name) for name in _MISSION_OPTIONS]
+    missing = [flag for flag, value in zip(_MISSION_FLAGS, values) if value is None]
+    if missing:
+        raise ValueError(
+            "MissionCore mode needs all four locations together; missing: %s"
+            % ", ".join(missing))
+    for flag, value in zip(_MISSION_FLAGS, values):
+        if not os.path.isabs(value):
+            raise ValueError("%s must be an absolute path" % flag)
+    state_directory, control, repository, root = values
+    if not os.path.isdir(control):
+        raise ValueError("the control repository is not a directory")
+    if not os.path.isdir(repository):
+        raise ValueError("the workspace repository is not a directory")
+    return state_directory, control, repository, root
+
+
+def _report_mission_conditions(report, previously_reported):
+    """Write each notable condition once; return those ACTUALLY reported.
+
+    The same containment as ``_report_new_refusals``: a diagnostic on the
+    degraded path must never end the unattended loop (a closed stderr did
+    exactly that to the default mode), and a condition whose write failed stays
+    eligible for the next pass."""
+    current = {
+        (m["mission_id"], m["action"], m["waiting_for"]): m
+        for m in report["missions"] if m["action"] in _MISSION_NOTABLE_ACTIONS}
+    reported = set(current) & set(previously_reported)
+    stream = getattr(sys, "stderr", None)
+    for key in sorted(set(current) - set(previously_reported), key=repr):
+        if stream is None:
+            continue
+        entry = current[key]
+        line = "dirun: mission %s %s (%s): %s\n" % (
+            _safe_report_text(entry["mission_id"], 200),
+            _safe_report_text(entry["action"], 200),
+            _safe_report_text(entry["waiting_for"], 200),
+            _safe_report_text(entry["detail"]))
+        try:
+            stream.write(line)
+        except Exception:
+            continue
+        reported.add(key)
+    return reported
+
+
+def _say(line):
+    """One diagnostic line to stderr, contained (see the function above)."""
+    stream = getattr(sys, "stderr", None)
+    if stream is None:
+        return False
+    try:
+        stream.write(line + "\n")
+    except Exception:
+        return False
+    return True
+
+
+def _raise_interrupt(signum, frame):
+    raise KeyboardInterrupt
+
+
+def _main_mission(namespace, sleeper, passes, composition_factory):
+    """MissionCore mode: pass over the panel's started Missions, publishing a
+    status after every pass. Exit codes as the default mode's."""
+    try:
+        state_directory, control, repository, root = _mission_locations(namespace)
+    except ValueError as exc:
+        print("dirun: config: %s" % exc, file=sys.stderr)
+        return EXIT_CONFIG
+    lock_descriptor = acquire_runtime_lock(
+        state_directory, MISSION_RUNTIME_LOCK_FILE_NAME)
+    if lock_descriptor is None:
+        print(
+            "dirun: another MissionCore runtime already holds the lock in %s;"
+            " refusing to run twice" % state_directory,
+            file=sys.stderr,
+        )
+        return EXIT_LOCKED
+    # Imported here, not at module level: the default mode never loads them.
+    from mission_panel import composition as composition_module
+    from mission_panel import progress as progress_module
+    from target_runtime import mission_progress_status as status_module
+    previous_handler = None
+    if namespace.command == "run" and (
+        threading.current_thread() is threading.main_thread()
+    ):
+        previous_handler = signal.signal(signal.SIGTERM, _raise_interrupt)
+    started_at = int(time.time())
+    done = 0
+    report = {"examined": 0, "eligible": 0, "truncated": False,
+              "unknown_requests": 0, "missions": []}
+    problem = None
+    digest = None
+    try:
+        try:
+            composed = (composition_factory or composition_module.compose)(
+                state_directory, control, repository, root)
+            digest = composed.digest
+            if composed.bridge is None:
+                raise ValueError("no bridge")
+            ledger = progress_module.ProgressionPass(
+                composed.journal, composed.surface, composed.bridge)
+        except Exception as exc:
+            print("dirun: config: cannot compose the Mission stack (%s)"
+                  % type(exc).__name__, file=sys.stderr)
+            return EXIT_CONFIG
+        pause = sleeper or time.sleep
+        remaining = passes
+        reported = set()
+        reported_problem = None
+        reported_publish = None
+        while True:
+            try:
+                report = ledger.run_pass()
+                problem = None
+            except Exception as exc:
+                # The pass could not read its records AT ALL: published as that
+                # (never as a quiet "nothing to do") and shown once.
+                report = {"examined": 0, "eligible": 0, "truncated": False,
+                          "unknown_requests": 0, "missions": []}
+                problem = type(exc).__name__
+            done += 1
+            if problem != reported_problem:
+                if problem is not None:
+                    _say("dirun: mission progression pass failed (%s); nothing"
+                         " was advanced" % problem)
+                reported_problem = problem
+            reported = _report_mission_conditions(report, reported)
+            try:
+                status_module.write_status(
+                    state_directory, digest, os.getpid(), started_at, done,
+                    RUNTIME_POLL_INTERVAL_SECONDS, report, False,
+                    int(time.time()), problem)
+                reported_publish = None
+            except OSError as exc:
+                if reported_publish != type(exc).__name__:
+                    _say("dirun: the status file could not be written (%s)"
+                         % type(exc).__name__)
+                reported_publish = type(exc).__name__
+            if namespace.command == "once":
+                _say("dirun: mission progression pass: examined %d of %d"
+                     " eligible request(s); %d linked request(s) unknown to"
+                     " the store" % (report["examined"], report["eligible"],
+                                     report["unknown_requests"]))
+                return EXIT_OK
+            if remaining is not None:
+                remaining -= 1
+                if remaining <= 0:
+                    return EXIT_OK
+            pause(RUNTIME_POLL_INTERVAL_SECONDS)
+    except KeyboardInterrupt:
+        return EXIT_OK
+    finally:
+        if previous_handler is not None:
+            signal.signal(signal.SIGTERM, previous_handler)
+        if digest is not None:
+            try:
+                status_module.write_status(
+                    state_directory, digest, os.getpid(), started_at, done,
+                    RUNTIME_POLL_INTERVAL_SECONDS, report, True,
+                    int(time.time()), problem)
+            except OSError:
+                pass
+        os.close(lock_descriptor)
+
+
+def main(argv=None, sleeper=None, passes=None, execution=None,
+         mission_composition=None):
     """CLI entry. ``sleeper``/``passes`` exist ONLY for tests (an
     injected pacing bound); production callers pass nothing and run
     unbounded — pacing, not a mission timeout. ``execution`` likewise
@@ -338,7 +569,10 @@ def main(argv=None, sleeper=None, passes=None, execution=None):
     three Runtime calls and nothing else (config load, lock, exit
     codes, printing, and pacing are the real code either way);
     production callers pass nothing and get the Runtime-backed adapter
-    built from ``_build_broker``."""
+    built from ``_build_broker``. ``mission_composition`` is likewise
+    test-only: it replaces ``mission_panel.composition.compose`` in
+    MissionCore mode (a hermetic test substitutes the bridge's two effect
+    seams through it); production passes nothing."""
     parser = _build_parser()
     try:
         namespace = parser.parse_args(argv)
@@ -348,6 +582,9 @@ def main(argv=None, sleeper=None, passes=None, execution=None):
     if namespace.command not in ("once", "run"):
         parser.print_help(sys.stderr)
         return EXIT_CONFIG
+    if any(getattr(namespace, name) is not None for name in _MISSION_OPTIONS):
+        # Selected BEFORE the workflow store, broker or recovery path exists.
+        return _main_mission(namespace, sleeper, passes, mission_composition)
     try:
         broker, state_directory = _build_broker(namespace)
     except ConfigError as exc:

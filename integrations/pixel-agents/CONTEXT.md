@@ -193,6 +193,48 @@ The preferred detection mode, in which agent status is driven by hooks.
 The fallback detection mode, in which agent status is inferred from transcript activity, timers, and silence.
 _Avoid_: file fallback, transcript mode, polling mode
 
+## Mission Requests (Codex Orchestrator)
+
+**Codex Orchestrator**:
+The office panel where a person asks for engineering work in ordinary words, reads an exact proposal, decides on it, starts it and follows it to a verified result. Codex only converses and drafts; the proposal, decision and run are DI's.
+_Avoid_: chatbot, agent (an agent is a tracked session), "Mission requests" as the name of the thing asked for
+
+**Draft**:
+A proposal Codex wrote in a conversation. It is text: nothing is of record, approved or started until the person submits it.
+_Avoid_: proposal (that is the proposal of record), request
+
+**Proposal of record**:
+A proposal Mission Core holds, with a revision and a digest, after the person submits a draft. A decision binds to exactly this.
+_Avoid_: request (the local request is the record of a submission, not the proposal)
+
+**Offer**:
+The exact thing a decision would bind: the proposal's identity, its permitted scope, repository and delivery targets, an absolute expiry, and the digest naming all of it. Frozen when first shown and the same in every window while live.
+_Avoid_: prompt, confirmation
+
+**Attested approval**:
+A decision recorded because the panel relayed the exact word the person typed. It is an operator attestation, not verified human authorship: DI cannot confirm who typed it.
+_Avoid_: signed approval, verified approval, authenticated approval
+
+**Withdrawal**:
+Taking back a pending proposal. Permanently closes it, is not a decision, and is never called a denial. A **revision** is a withdrawal plus a separate new proposal; nothing is edited in place.
+_Avoid_: reject, deny, edit
+
+**Start**:
+The explicit, separate act after an approval that records DI's intent to run and asks Herdr for the team. Durable intent, not an exactly-once guarantee; an unknown outcome is a **hold** that is reconciled, never started again.
+_Avoid_: run (the run is what follows), dispatch (the internal name), launch (that is an agent concept)
+
+**Progression runtime**:
+The separate process (`dirun.py`, MissionCore mode) that moves a started Mission along: observe, bounded reconcile, and a verification only when every condition holds in one fresh read. It never starts a Mission and never records waiting or a failure as success.
+_Avoid_: scheduler, poller, worker
+
+**Hold**:
+A run that is not progressing for a reason that is shown and not hidden: an unknown start, or a team that stopped without succeeding. Nothing is recorded as an outcome; ending a failed run is the person's explicit decision.
+_Avoid_: pending, retrying
+
+**Fixture preview**:
+An office launched or driven with synthetic data and labelled FIXTURE / VISUAL TEST everywhere. Nothing in it is a real request awaiting a real decision.
+_Avoid_: demo, mock
+
 ## Integration Boundary
 
 **Provider**:

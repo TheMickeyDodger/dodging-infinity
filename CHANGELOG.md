@@ -2,6 +2,71 @@
 
 ## Unreleased
 
+- **Codex Orchestrator: request, review, approve, start and follow a Mission from the
+  Pixel Agents DI office.** The one deliberate exception to "the office only
+  observes". A person asks for work in ordinary words (a restricted, read-only
+  Codex conversation), reads Mission Core's exact proposal of record, decides on
+  an exact, frozen offer by typing the exact word, presses Start, and then sees
+  the Mission advance to a retrievable verified result. No delivery authority
+  is added: nothing is committed, pushed, merged, released or deployed from
+  here. See docs/pixel-agents-office.md, "Requesting Missions".
+  - **Approval is operator-attested, not verified human authorship.** There is
+    no authenticated human principal in Pixel; the panel relays the typed word,
+    the record says `operator_attested_not_independently_verified`, and the
+    screen says so before the decision. The ordinary unauthenticated approve
+    stays refused. A withdrawal is a withdrawal, never a denial; a revision is a
+    separate record; an unknown conversation turn, submission or Start is shown
+    and recorded as uncertain and is never retried.
+  - **Progression is automatic after an explicit Start.** `dirun.py` gains a
+    MissionCore mode (`--mission-state-dir`, `--mission-control-repo`,
+    `--mission-workspace-repository`, `--mission-workspaces-root`), selected
+    before any workflow machinery is built; the default workflow mode is
+    unchanged and the two share no lock or state. It advances only requests the
+    panel's own journal submitted, approved and not withdrawn, through the new
+    `MissionBridge.advance`: one step by the Mission's actual state, never a
+    dispatch, and a verification recorded only when every condition holds in ONE
+    fresh read. A team that stopped without succeeding is a visible hold, not a
+    recorded outcome. `MissionBridge` operations take a cross-process
+    per-Mission run guard shared by the panel's Start and the runtime.
+  - New: `dimission_panel.py` and `mission_panel/` (journal, draft, conversation,
+    lifecycle, service, loopback HTTP adapter, composition, progression pass),
+    `target_runtime/mission_run_guard.py`, `mission_progress_status.py`,
+    `local_request` read-only `list_requests` and `binding_status`, the
+    `diMissionRequest` protocol message (eleven closed operations; the token
+    stays in the office's server), and the webview workspace. Every new bound is
+    exact-pinned. `scripts/di-candidate-manifest.mjs` names the frozen source
+    bytes and verifies a package against them.
+  - **What a person approves is what the screen shows.** The proposal's proof
+    rules (what counts as done: evidence, artifacts, prerequisites, resource
+    readiness, permitted blockers, the attempt and checkpoint budget) are read
+    under the canonical closed shape and written out in sentences, in the
+    proposal and again inside the offer that binds them. A proposal carrying
+    anything the window cannot represent is not approvable from it (stated in
+    words; withdrawal stays possible). A revision that changes only the rules
+    is a different proposal and leaves the old display refused as stale.
+  - **A long conversation is cut by bytes, not characters, and says so.** The
+    panel serializes as raw UTF-8 with one shared serializer and one 4 MiB
+    response bound (equal to the office relay's, checked by a test), measures a
+    conversation view in those serialized bytes against a 3 MiB budget, and
+    sends the most recent turns that fit with how many it holds, shows and
+    leaves out, and which bound (turns or bytes) left them out. The window
+    states it. An answer that would still exceed the bound is refused in words,
+    never sent to be rejected mid-stream.
+  - **A failed child startup leaves a diagnostic, and an in-doubt Start says why.**
+    When startup fails after the roles were contracted, `start_herd` writes one
+    bounded, private record (stage, failure type, each affected role's binding gap,
+    session ABSENT/PRESENT/UNKNOWN) before its cleanup, reusing the agent-start
+    diagnostic's redaction, private write and retention; a failing write never
+    replaces the startup failure or skips the cleanup. `BindingsNotEstablished`
+    carries the same gaps (its message is unchanged). The bridge's new read-only
+    `startup_cause` projects the file onto the exact attempt, through the hardened
+    bounded reader, bound by the run intent's own workspace and start time and never
+    by recency (zero matches or several: the cause is reported as not known), and the
+    panel shows it on the request view. No Mission Core or journal field was added.
+    A hold stays a hold: nothing is respawned or replayed. See docs/operations.md.
+  - The browser tests are real-App integration over SOURCE (Vite), not
+    production-package proof.
+
 - **Pixel Agents DI office: an early, read-only increment.** The office is
   vendored into its own subtree, `integrations/pixel-agents/`, with its own
   Node.js dependency and build boundary, alongside the read-only catalog

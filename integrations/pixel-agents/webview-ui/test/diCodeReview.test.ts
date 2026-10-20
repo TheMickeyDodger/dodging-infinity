@@ -74,6 +74,30 @@ let requests: Array<Record<string, unknown>> = [];
 let replyHook: ((request: Record<string, unknown>, reply: DiCodeReview) => DiCodeReview | null) | null = null;
 let replyDelayMs = 0;
 let otherMessages: string[] = [];
+/** The overview pings the Mission request entry sends (item 4); allowed only in exactly one shape. */
+let overviewPings: Array<Record<string, unknown>> = [];
+
+/**
+ * The ONE message besides code review reads that this view's session may carry: the Mission request
+ * entry's read of its overview (`op: 'refresh'`), sent from the office panel whether or not any review
+ * is open. It is a READ to render the entry's summary; it advances nothing. Exactly `{type, seq, op}`:
+ * a refresh that carries anything more, and every other `diMissionRequest` op (request, offer,
+ * conversation, turn, submit, decide, withdraw, run...), is NOT allowed and stays in `otherMessages`,
+ * where the assertion at the end of the session fails on it. In particular nothing carrying `reply`,
+ * `offerDigest`, `expiresAt`, `scope` or `deliveryTargets` can leave this view unnoticed.
+ */
+function isOverviewPing(msg: Record<string, unknown>): boolean {
+  const keys = Object.keys(msg).sort();
+  return (
+    msg.type === 'diMissionRequest' &&
+    msg.op === 'refresh' &&
+    keys.length === 3 &&
+    keys[0] === 'op' &&
+    keys[1] === 'seq' &&
+    keys[2] === 'type' &&
+    typeof msg.seq === 'number'
+  );
+}
 
 const expectConnection = (reconnect = false) => {
   readyOnOpen = reconnect;
@@ -100,8 +124,10 @@ function serve(ws: WebSocket) {
       const send = () => ws.readyState === ws.OPEN && ws.send(JSON.stringify(reply));
       if (replyDelayMs > 0) setTimeout(send, replyDelayMs);
       else send();
+    } else if (isOverviewPing(msg)) {
+      overviewPings.push(msg);
     } else if (msg.type !== 'webviewReady' && msg.type !== 'saveAgentSeats') {
-      otherMessages.push(String(msg.type));
+      otherMessages.push(msg.type === 'diMissionRequest' ? `diMissionRequest:${String(msg.op)}` : String(msg.type));
     }
   });
 }
@@ -171,6 +197,7 @@ beforeEach(async (ctx) => {
   await page?.close();
   requests = [];
   otherMessages = [];
+  overviewPings = [];
   replyHook = null;
   replyDelayMs = 0;
   dialogs = 0;
@@ -1489,6 +1516,50 @@ test(
       }
     }
     assert.deepEqual(otherMessages, [], `no other message type was sent: ${otherMessages.join()}`);
+    // The only other traffic is the entry's read-only overview ping, in exactly its one shape.
+    for (const ping of overviewPings) assert.ok(isOverviewPing(ping), JSON.stringify(ping));
   },
   STEPS_MS,
 );
+
+test('the code-review view allows exactly one Mission request message: a bare overview refresh', () => {
+  assert.equal(isOverviewPing({ type: 'diMissionRequest', seq: 4, op: 'refresh' }), true);
+  // Anything that does something, or carries anything, is not the ping.
+  const refused: Array<Record<string, unknown>> = [
+    { type: 'diMissionRequest', seq: 4, op: 'decide', requestRef: 'lr-x', reply: 'approve' },
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', reply: 'approve' },
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', offerDigest: 'a'.repeat(64) },
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', expiresAt: 1 },
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', scope: ['engineering_change'] },
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', deliveryTargets: [] },
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', text: 'hello' },
+    { type: 'diMissionRequest', seq: 4, op: 'request', requestRef: 'lr-x' },
+    { type: 'diMissionRequest', seq: 4, op: 'offer', requestRef: 'lr-x' },
+    { type: 'diMissionRequest', seq: 4, op: 'conversation', conversationId: 'cv-x' },
+    { type: 'diMissionRequest', seq: 4, op: 'run', requestRef: 'lr-x', command: 'dispatch' },
+    { type: 'diMissionRequest', op: 'refresh' },
+    { type: 'diMissionRequest', seq: '4', op: 'refresh' },
+    { type: 'diCodeReviewRead', seq: 4, op: 'refresh' },
+    // An extra key of ANY name, including ones that sort after `type`, is not the ping.
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', unexpected: 1 },
+    { type: 'diMissionRequest', seq: 4, op: 'refresh', zzz: 'x' },
+  ];
+  for (const msg of refused) assert.equal(isOverviewPing(msg), false, JSON.stringify(msg));
+  // Every OTHER operation is refused even when it carries nothing else: only `refresh` is a ping.
+  for (const op of [
+    'conversation',
+    'request',
+    'offer',
+    'result',
+    'turn',
+    'submit',
+    'decide',
+    'checkApproval',
+    'withdraw',
+    'run',
+    'not-an-op',
+    '',
+  ]) {
+    assert.equal(isOverviewPing({ type: 'diMissionRequest', seq: 4, op }), false, `bare op ${op}`);
+  }
+});

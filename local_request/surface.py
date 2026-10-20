@@ -138,6 +138,7 @@ REQUEST_KEYS = mission_record.PROPOSAL_KEYS + mission_record.PROPOSAL_OPTIONAL_K
 DELIVERY_AUTHORITY = "none"
 DISPATCH = "none"
 
+
 PROBLEM_UNKNOWN_FIELD = "local_request_unknown_field"
 PROBLEM_BAD_REQUEST = "local_request_bad_request"
 PROBLEM_INCOMPLETE_REQUEST = "local_request_proof_contract_required"
@@ -655,6 +656,100 @@ class LocalRequestSurface(object):
                 result["effect"] = incomplete_cancellation_effect(
                     request_ref, entry["mission_id"], mission_state)
         return result
+
+    # -- re-reading what is of record (read-only) -------------------------
+
+    def list_requests(self, limit=None):
+        """READ-ONLY: the requests this surface holds, newest first, each as
+        the record the surface itself keeps (the exact stored proposal and
+        its digest, the surface state, the cancellation if any, the attested
+        approval if any). A reconnecting window, a reload or a second window
+        enumerates what is OF RECORD here instead of trusting what it last
+        displayed. Nothing is locked, written or created, Mission Core is
+        not consulted (``status`` does that, per request), and no control
+        capability or capability digest is ever returned."""
+        if limit is not None and (
+            not isinstance(limit, int) or isinstance(limit, bool)
+            or not 1 <= limit <= store_module.MAX_REQUEST_RECORDS
+        ):
+            # Bounded by the store's own hard record bound: a listing can
+            # never be asked for more than the surface can hold.
+            _refuse(PROBLEM_BAD_REQUEST,
+                    "limit must be null or an integer from 1 to %d"
+                    % store_module.MAX_REQUEST_RECORDS)
+        document = self._store.load()
+        ordered = sorted(document["requests"].values(),
+                         key=lambda e: (e["created_at"], e["request_ref"]),
+                         reverse=True)
+        shown = ordered if limit is None else ordered[:limit]
+        return {
+            "ok": True, "status": "listed",
+            "total": len(ordered), "truncated": len(shown) < len(ordered),
+            "requests": [{
+                "request_ref": e["request_ref"], "mission_id": e["mission_id"],
+                "surface_state": e["state"], "created_at": e["created_at"],
+                "proposal": copy.deepcopy(e["proposal"]),
+                "proposal_digest_sha256": e["proposal_digest_sha256"],
+                "cancellation": copy.deepcopy(e["cancellation"]),
+                "attested_approval": copy.deepcopy(e.get("attested_approval")),
+            } for e in shown],
+            "delivery_authority": DELIVERY_AUTHORITY, "dispatch": DISPATCH,
+        }
+
+    def binding_status(self, request_ref, mission_id, revision,
+                       proposal_digest_sha256, expires_at=None):
+        """READ-ONLY: how a DISPLAYED proposal (the Mission id, revision and
+        digest a window shows) relates to Mission Core's current one, in the
+        closed ``store.BINDINGS`` vocabulary. Anything but
+        ``matches_current_revision`` means the display is stale and must be
+        invalidated, never re-pointed at the current proposal. A withdrawn
+        request (complete or interrupted) is refused, not classified, and a
+        display for another Mission is refused. The attested decision
+        re-checks the same binding itself; this is the read a window makes
+        BEFORE it offers a decision."""
+        if not isinstance(request_ref, str) or not isinstance(
+            mission_id, str
+        ) or not mission_id:
+            _refuse(PROBLEM_AMBIGUOUS,
+                    "an explicit request_ref and Mission id are required; a"
+                    " display is never matched to a guessed proposal")
+        if not isinstance(revision, int) or isinstance(revision, bool) or (
+            revision < 1
+        ):
+            _refuse(PROBLEM_BAD_REQUEST, "revision must be a positive integer")
+        if not isinstance(proposal_digest_sha256, str) or len(
+            proposal_digest_sha256
+        ) != 64 or any(ch not in "0123456789abcdef"
+                       for ch in proposal_digest_sha256):
+            _refuse(PROBLEM_BAD_REQUEST,
+                    "proposal_digest_sha256 must be 64 lowercase hex")
+        if expires_at is not None and (
+            not isinstance(expires_at, int) or isinstance(expires_at, bool)
+            or expires_at < 0
+        ):
+            _refuse(PROBLEM_BAD_REQUEST,
+                    "expires_at must be null or a non-negative integer")
+        document = self._store.load()
+        entry = self._record(document, request_ref)
+        if entry["state"] == store_module.STATE_CANCELLED:
+            _refuse(PROBLEM_CANCELLED, CANCELLED_REASON, request_ref=request_ref)
+        if entry["mission_id"] is not None and mission_id != entry["mission_id"]:
+            _refuse(PROBLEM_MISATTRIBUTED,
+                    "request %s is bound to mission %s, not %s"
+                    % (request_ref, entry["mission_id"], mission_id))
+        if self._withdrawn(entry):
+            _refuse(PROBLEM_CANCELLATION_INCOMPLETE,
+                    "local cancellation of request %s is INCOMPLETE (the"
+                    " Mission carries its withdrawal marker); it is not a"
+                    " proposal awaiting a decision" % request_ref,
+                    request_ref=request_ref)
+        return {
+            "ok": True, "status": "binding", "request_ref": request_ref,
+            "mission_id": entry["mission_id"],
+            "binding": self._binding(entry, revision, proposal_digest_sha256,
+                                     expires_at, self._now()),
+            "delivery_authority": DELIVERY_AUTHORITY, "dispatch": DISPATCH,
+        }
 
     # -- the run route (Task 8 increment 2b) ------------------------------
 

@@ -147,27 +147,31 @@ def _read_bounded(stdin, limit, what):
 
 
 def build_bridge(missions, control_repo, clock, workspace_repository=None,
-                 workspaces_root=None):
+                 workspaces_root=None, run_guard=None):
     """The REAL run bridge with its production defaults (the real spawn
     bridge, the read-only observers, the zero-argument git transport, the
     process-ownership seam), configured for automatic Mission workspaces
     when both paths are given, with Claude workspace trust written to the
     configuration the started Herdr reads. Imported here, lazily, for the
     run commands alone: no other command loads anything that can start
-    work."""
+    work. ``run_guard`` is the optional cross-process per-Mission guard
+    (``target_runtime.mission_run_guard``): the panel and the progression
+    runtime pass the same one, built over the same state directory."""
     from target_runtime import mission_bridge
     return mission_bridge.MissionBridge(
         missions, control_repo, clock,
         workspace_repository=workspace_repository,
         workspaces_root=workspaces_root,
-        trust_config_path=mission_bridge.production_trust_config_path())
+        trust_config_path=mission_bridge.production_trust_config_path(),
+        run_guard=run_guard)
 
 
-def configured_bridge_factory(workspace_repository, workspaces_root):
+def configured_bridge_factory(workspace_repository, workspaces_root,
+                              run_guard=None):
     """``build_bridge`` with the configured workspace paths."""
     def factory(missions, control_repo, clock):
         return build_bridge(missions, control_repo, clock,
-                            workspace_repository, workspaces_root)
+                            workspace_repository, workspaces_root, run_guard)
     return factory
 
 

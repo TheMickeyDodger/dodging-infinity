@@ -65,6 +65,43 @@ REAL_POPEN = subprocess.Popen
 BASELINE = "88543887059ed5944732f3d04d6dfea77188392c"
 BASELINE_RUNTIME_SHA256 = (
     "cd8960206e878f8958d223bc13d826c9fb6c59df23db2e3eb27d2a27c315c961")
+#: The ENUMERATED allowance over BASELINE on ``herdr/runtime.py``. Nothing else may differ. Each entry is named
+#: literally and is reversed in turn by the fence test; what remains must hash to BASELINE_RUNTIME_SHA256 above,
+#: which is UNCHANGED.
+#:
+#: 1. the process-group datum (one line in the runner's result dict);
+RUNTIME_PROCESS_GROUP_LINE = b'        "process_group": proc.pid,\n'
+#: 2. seven one-line substitutions in the diagnostic's retention helpers. Each only adds an optional ``prefix``
+#:    parameter that DEFAULTS to the baseline's own constant and threads it through, so every baseline call is the
+#:    same call. ``(current line, baseline line)``;
+RUNTIME_PREFIX_SUBSTITUTIONS = (
+    (b'def _retained(directory, prefix=DIAGNOSTIC_FILE_PREFIX):\n',
+     b'def _retained(directory):\n'),
+    (b'    for path in directory.glob(prefix + "*.json"):\n',
+     b'    for path in directory.glob(DIAGNOSTIC_FILE_PREFIX + "*.json"):\n'),
+    (b'def _make_room(directory, prefix=DIAGNOSTIC_FILE_PREFIX):\n',
+     b'def _make_room(directory):\n'),
+    (b'    retained = _retained(directory, prefix)\n',
+     b'    retained = _retained(directory)\n'),
+    (b'    if len(_retained(directory, prefix)) > DIAGNOSTIC_MAX_FILES - 1:\n',
+     b'    if len(_retained(directory)) > DIAGNOSTIC_MAX_FILES - 1:\n'),
+    (b'def _write_private(directory, name, text, prefix=DIAGNOSTIC_FILE_PREFIX):\n',
+     b'def _write_private(directory, name, text):\n'),
+    (b'    _make_room(directory, prefix)\n',
+     b'    _make_room(directory)\n'),
+)
+#: 3. two INSERTIONS for the startup-binding diagnostic. Each is located by the exact bytes before and after it and
+#:    pinned by its own length and SHA-256, so an edit INSIDE one fails here until it is deliberately re-pinned.
+#:    ``(name, bytes before, bytes after, length, sha256)``.
+RUNTIME_DIAGNOSTIC_INSERTIONS = (
+    ("the binding diagnostic's constants",
+     b'TRUNCATED = "[TRUNCATED]"\n', b'\n# Redaction is ONE linear pass', 2259,
+     "95d16dcf7a0b4b15352aeedf5073dc7f02c98d2855b4f042120cdbbd1a19fb90"),
+    ("the binding diagnostic's record builder and writer",
+     b'    return _write_private(diagnostic_dir, filename, _fit(record))\n\n\n',
+     b'def start_agent(\n', 4174,
+     "fa9f46dc1e0307e9da4edad4c45ddd77afbcac70dc992e6bfa85d1ad886f2870"),
+)
 TASK = "20261014-000000-aaaaaa"
 OTHER_TASK = "20261014-000001-bbbbbb"
 
@@ -499,18 +536,40 @@ class FenceAndWiringTests(Fixture):
         self.assertEqual(self.engine_calls, [["herdr", "agent", "list"]] * 2)
         self.engine_calls.clear()
 
-    def test_the_runner_change_is_one_additive_datum(self):
-        """``herdr/runtime.py`` is BASELINE plus exactly ONE line, the group
-        id as a datum (its pre-reap SIGKILL and its reap are untouched), and
-        ``_command_record``'s explicit projection is not widened. BASELINE
-        is identified by its pinned digest, not by Git history."""
+    def test_the_runner_differs_from_baseline_only_by_the_enumerated_allowance(self):
+        """``herdr/runtime.py`` is BASELINE plus a closed, ENUMERATED allowance and nothing else. BASELINE is
+        identified by its pinned digest, not by Git history, and that digest has NOT moved. (This test was
+        ``test_the_runner_change_is_one_additive_datum`` while the allowance was a single line.)
+
+        Permitted, each named literally above and reversed here in turn: (1) the group id as a datum in the result
+        dict (the pre-reap SIGKILL and the reap are untouched); (2) seven one-line substitutions in the diagnostic's
+        retention helpers that only thread an optional ``prefix`` defaulting to the baseline's own constant; (3) the
+        startup-binding diagnostic's two inserted blocks, each located by its exact neighbours and pinned by length
+        and SHA-256. After all of them are reversed the remainder must hash to BASELINE_RUNTIME_SHA256 and, where
+        the BASELINE commit is present, equal its blob. Any other change (a different line, a moved block, an edit
+        inside an inserted block) changes the remainder or a pinned digest and fails here until it is deliberately
+        enumerated: the pin is a bounded allowance, not a loosened one. ``_command_record``'s explicit projection
+        is not widened."""
         current = (REPO_ROOT / "herdr" / "runtime.py").read_bytes()
-        added = b'        "process_group": proc.pid,\n'
+        added = RUNTIME_PROCESS_GROUP_LINE
         self.assertEqual(current.count(added), 1)
         # ...and the line sits where it belongs: next in the result dict.
         self.assertEqual(current.count(
             b'    result = {\n        "started": True,\n' + added), 1)
         remainder = current.replace(added, b"", 1)
+        for current_line, baseline_line in RUNTIME_PREFIX_SUBSTITUTIONS:
+            self.assertEqual(remainder.count(current_line), 1, current_line)
+            remainder = remainder.replace(current_line, baseline_line, 1)
+        for name, before, after, size, digest in RUNTIME_DIAGNOSTIC_INSERTIONS:
+            self.assertEqual(remainder.count(before), 1, name)
+            self.assertEqual(remainder.count(after), 1, name)
+            start = remainder.index(before) + len(before)
+            end = remainder.index(after)
+            self.assertLess(start, end, name)
+            block = remainder[start:end]
+            self.assertEqual(len(block), size, name)
+            self.assertEqual(hashlib.sha256(block).hexdigest(), digest, name)
+            remainder = remainder[:start] + remainder[end:]
         self.assertEqual(hashlib.sha256(remainder).hexdigest(),
                          BASELINE_RUNTIME_SHA256)
         blob = "%s:herdr/runtime.py" % BASELINE

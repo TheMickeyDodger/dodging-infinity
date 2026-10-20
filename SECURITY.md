@@ -31,8 +31,40 @@ Changes involving the following areas deserve additional scrutiny:
 - handling of local configuration, tokens, and credentials
 - the Telegram Remote Operator adapter (remote input surface, bot
   token handling, approval binding)
+- the Codex Orchestrator request panel (`mission_panel/`, `dimission_panel.py`,
+  the progression runtime): see below
 
 Security fixes should include regression coverage whenever practical.
+
+## Codex Orchestrator request panel
+
+What it is and where its edges are, for anyone reviewing a change to it:
+
+- **Approval is operator-attested, not verified.** There is no authenticated human principal
+  in the office. The panel relays the exact word a person typed to the local request surface; the
+  record says `operator_attested_not_independently_verified`, and the screen says so before the
+  decision. A same-user process could fabricate it. The ordinary unauthenticated approval is
+  still refused, and no text from a model or a team can reach a decision.
+- **The browser holds no authority.** The request panel is a separate loopback process
+  (127.0.0.1, per-launch bearer token compared in constant time, exact `Host` and `Origin`,
+  closed JSON bodies, no 5xx). Its token lives only in the office's server memory; the page has
+  no token, shell, terminal or filesystem route, only eleven closed message operations with exact
+  fields. Nothing rendered from a provider or a team is markup.
+- **A decision binds an exact, frozen offer** (Mission, revision, digest, scope, repository,
+  delivery targets, one absolute expiry) and is compared with both the retained offer and
+  Mission Core's current record before any authority write. A stale display and an expired one
+  are different refusals.
+- **No delivery authority.** `delivery_authority` is `none` throughout: the panel and the
+  progression runtime never commit, push, merge, tag, release or deploy.
+- **No silent retry of an uncertain effect.** An unknown provider turn, submission or Start is
+  recorded and shown as uncertain and never repeated; durable intent is not an exactly-once
+  guarantee.
+- **The runtime never starts a Mission and never infers success.** `MissionBridge.advance`
+  acts by the Mission's recorded state, takes ONE fresh read before recording a verification,
+  and holds a team that stopped without succeeding. Operations on one Mission are serialized
+  across processes by a per-Mission file lock.
+- **Scope.** The runtime advances only requests the panel's own journal submitted. It does not
+  read other surfaces' requests, other Missions or workflow records.
 
 ## Telegram Remote Operator surface
 
