@@ -366,8 +366,13 @@ export class TrafficWorld {
   update(dt: number, people: TrafficPeople, reduced: boolean): void {
     if (this.cap === 0) return;
     this.markPeople(people);
-    // priority first, every time: nobody is ever driven through
-    for (const v of this.vehicles) if (this.onRoad(v)) this.yieldIfStoodIn(v);
+    // priority first, every time: nobody is ever driven through, and a claim already held inside
+    // an agent's halo is given back so the vehicle stops short of them
+    for (const v of this.vehicles) {
+      if (!this.onRoad(v)) continue;
+      this.yieldIfStoodIn(v);
+      if (this.onRoad(v)) this.releaseHaloClaims(v);
+    }
     if (reduced) {
       this.settleStill();
       this.refreshPoses();
@@ -429,6 +434,22 @@ export class TrafficWorld {
         this.leave(v, true);
         return;
       }
+    }
+  }
+
+  /** Give back claims ahead of the body that now sit in a person's danger halo. The body itself
+   *  is left to yieldIfStoodIn: stepping into it removes the vehicle, standing beside it only
+   *  stops it claiming further. */
+  private releaseHaloClaims(v: Vehicle): void {
+    const body = Math.floor(v.head);
+    while (
+      v.claimed > body &&
+      v.claimed < v.route.length &&
+      this.danger[v.route[v.claimed]] === this.stamp
+    ) {
+      const tile = v.route[v.claimed];
+      if (this.occ[tile] === v.slot + 1) this.occ[tile] = 0;
+      v.claimed--;
     }
   }
 

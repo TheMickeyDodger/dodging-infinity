@@ -588,13 +588,21 @@ test(
         .sort()
         .join('|'),
     );
-    // stand the fixture's real agent on a lane tile just ahead of a vehicle that is driving, and hold it there
+    // stand the fixture's real agent on a lane tile ahead of a driving vehicle, outside every
+    // claim already held (a short route used to clamp the agent onto the vehicle, so the first
+    // look counted claims the simulation had not yet been shown). Hold the agent there.
     const placed = await p().evaluate(() => {
       const o = (
         window as unknown as {
           __diHarnessOffice: {
             getTraffic(): {
-              vehicles: Array<{ state: string; v: number; route: number[]; head: number }>;
+              vehicles: Array<{
+                state: string;
+                v: number;
+                route: number[];
+                head: number;
+                claimed: number;
+              }>;
             };
             layout: { cols: number };
             characters: Map<
@@ -604,11 +612,41 @@ test(
           };
         }
       ).__diHarnessOffice;
-      const v = o.getTraffic().vehicles.find((x) => x.state === 'drive' && x.v > 2);
-      if (!v) return null;
-      const tile = v.route[Math.min(v.route.length - 1, Math.ceil(v.head) + 3)];
-      const col = tile % o.layout.cols;
-      const row = Math.floor(tile / o.layout.cols);
+      const cols = o.layout.cols;
+      const traffic = o.getTraffic();
+      const nearClaim = (col: number, row: number) => {
+        for (const w of traffic.vehicles) {
+          if (w.state === 'inactive' || w.state === 'gone' || w.state === 'out') continue;
+          for (
+            let k = Math.max(0, Math.floor(w.head) - 4);
+            k <= w.claimed && k < w.route.length;
+            k++
+          ) {
+            const tt = w.route[k];
+            if (Math.abs((tt % cols) - col) <= 1 && Math.abs(Math.floor(tt / cols) - row) <= 1)
+              return true;
+          }
+        }
+        return false;
+      };
+      let spot: { col: number; row: number } | null = null;
+      for (const v of traffic.vehicles) {
+        if (v.state !== 'drive' || v.v <= 2) continue;
+        // one free tile between the claim and the agent, then a few more if that tile is still
+        // beside some other claim
+        for (let idx = v.claimed + 2; idx < v.route.length && idx <= v.claimed + 6; idx++) {
+          const tile = v.route[idx];
+          const col = tile % cols;
+          const row = Math.floor(tile / cols);
+          if (!nearClaim(col, row)) {
+            spot = { col, row };
+            break;
+          }
+        }
+        if (spot) break;
+      }
+      if (!spot) return null;
+      const { col, row } = spot;
       const agent = o.characters.get(9)!;
       const hold = () => {
         agent.tileCol = col;
@@ -632,10 +670,7 @@ test(
             k++
           ) {
             const tt = w.route[k];
-            if (
-              Math.abs((tt % o.layout.cols) - col) <= 1 &&
-              Math.abs(Math.floor(tt / o.layout.cols) - row) <= 1
-            )
+            if (Math.abs((tt % cols) - col) <= 1 && Math.abs(Math.floor(tt / cols) - row) <= 1)
               log.violations++;
           }
         }
