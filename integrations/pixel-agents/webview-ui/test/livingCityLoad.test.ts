@@ -784,8 +784,18 @@ test(
     );
     assert.ok(s.living.trains === 2 && s.living.residents > 100);
     assert.ok(s.tickMsMax < 100, `the slowest Map tick took ${s.tickMsMax} ms`);
+    // Paused render returns before any canvas call, so the callbacks get cheaper and more of them
+    // fit in the shorter window. Callback counts are not draws (a legal frame budget can still
+    // lose that comparison). The canvas operations are.
+    const covered = summarize(mapped);
+    const uncovered = summarize(steady);
+    assert.equal(
+      covered.canvasOpsPerFrame.max,
+      0,
+      'the canvas draws less while the Map covers it',
+    );
     assert.ok(
-      summarize(mapped).frames < summarize(steady).frames,
+      uncovered.canvasOpsPerFrame.mean > covered.canvasOpsPerFrame.mean,
       'the canvas draws less while the Map covers it',
     );
     await p().click('[data-testid="world-view-map"]'); // close the Map
