@@ -188,6 +188,10 @@ export const WORLD_MAP_REFRESH_REDUCED_MS = 2000;
 export const WORLD_MAP_RESIDENT_DOT_PX = 3;
 export const WORLD_MAP_TRAIN_BAR_PX = 4;
 export const TRANSIT_MAP_TRAIN_COLOR = '#2f8f8a';
+/** The Map's decorative-traffic markers: one box per visible vehicle, its footprint, never smaller than this many canvas pixels each way. */
+export const WORLD_MAP_VEHICLE_MIN_PX = 2;
+/** One neutral colour for every vehicle (no kind colouring, so an emergency-looking vehicle reads as an ordinary one). */
+export const WORLD_MAP_VEHICLE_COLOR = '#e6d9ae';
 export const WORLD_MAP_CAMERA_COLOR = '#ffe28a';
 export const WORLD_MAP_CAMERA_LINE_CSS_PX = 2;
 
@@ -550,8 +554,19 @@ export const TRANSIT_CROSSOVER_SEC = 2.5;
 export const TRANSIT_FRAME_SEC = 0.22;
 /** Bounded transit event log (arrivals, departures, boardings, alightings, crossovers). */
 export const TRANSIT_EVENT_LOG_MAX = 200;
-/** Residents who commute by subway (a bounded subset of the station, boulevard and market places). */
-export const AMBIENT_RIDERS_MAX = 16;
+/** Residents who ride the subway (a bounded subset of the open-ground places near the line). Every one of them
+ *  can be aboard at once and stay within the saved-snapshot bound on riders aboard (AMBIENT_SAVE_MAX_ABOARD). */
+export const AMBIENT_RIDERS_MAX = 24;
+/** A resident rides when its post is within this Manhattan distance (tiles) of a station platform (or it lives at a
+ *  station, or on the Grand or Market Boulevard), and its place is open ground. */
+export const AMBIENT_RIDER_REACH_TILES = 96;
+/** The share of riders per journey kind, out of the sum of these: a commute (to a station at least two along the line
+ *  when there is one), a hop (the next station) and an excursion (three stations and back). */
+export const AMBIENT_RIDER_KIND_WEIGHTS = { commute: 5, hop: 3, excursion: 2 } as const;
+/** Dwell profiles: a POSTED job holds its post this many times longer than an ordinary stop, a ROAMING job lingers
+ *  this fraction as long at every stop (so some residents are fixtures of a place and others keep moving). */
+export const AMBIENT_POST_DWELL_FACTOR = 2.5;
+export const AMBIENT_ROAMING_DWELL_FACTOR = 0.6;
 /** Hidden-view resume catch-up: at most this many seconds are simulated, in fixed steps. */
 export const AMBIENT_CATCHUP_MAX_SEC = 20;
 export const AMBIENT_CATCHUP_STEP_SEC = 0.1;
@@ -615,3 +630,126 @@ export const AMBIENT_IDLE_FRAME_SEC = 0.7;
 export const AMBIENT_LABEL_BG = 'rgba(20, 20, 32, 0.88)';
 export const AMBIENT_LABEL_FG = '#e8e8f0';
 export const AMBIENT_LABEL_FONT_PX = 9;
+
+// ── Living city: lighting and weather (decorative only; living city 6–9) ──────
+// Every value below is a presentation constant of the DECORATIVE city. None of it reaches a Mission, an
+// agent, an observation or anything canonical, and none of it comes from a location or a weather service.
+
+/** The darkness laid over the OUTDOORS at each lighting stage (r, g, b 0-255; a = opacity at that stage).
+ *  Day is the city exactly as it always looked: no layer is drawn at all. */
+export const CITY_LIGHT_STAGE_DAY = { r: 0, g: 0, b: 0, a: 0 } as const;
+export const CITY_LIGHT_STAGE_DUSK = { r: 74, g: 38, b: 66, a: 0.3 } as const;
+export const CITY_LIGHT_STAGE_NIGHT = { r: 8, g: 14, b: 46, a: 0.58 } as const;
+/** The darkness level of each STILL stage (0 = day, the middle = dusk, 1 = night). */
+export const CITY_LIGHT_LEVEL_DUSK = 0.5;
+export const CITY_LIGHT_LEVEL_NIGHT = 1;
+/** Below this level no layer is drawn (it could not be seen). */
+export const CITY_LIGHT_VISIBLE_EPSILON = 0.01;
+/** Seconds for a change of stage to settle (instant under reduced motion). */
+export const CITY_LIGHT_FADE_SEC = 0.8;
+/** The part of the darkness removed over INDOOR tiles: offices keep their lights on. */
+export const CITY_LIGHT_INDOOR_LIT = 0.85;
+/** Light pools punched out of the darkness: real agents (and sub-agents) and street lamps. */
+export const CITY_LIGHT_AGENT_RADIUS_TILES = 3;
+export const CITY_LIGHT_LAMP_RADIUS_TILES = 4;
+export const CITY_LIGHT_AGENT_STRENGTH = 0.95;
+export const CITY_LIGHT_LAMP_STRENGTH = 0.9;
+/** Hard cap on lights drawn in one frame (agents first, then the lamps in view). */
+export const CITY_LIGHT_MAX_LIGHTS = 96;
+/** A real agent's light sits this many sprite pixels above its position (torso, not feet). */
+export const CITY_LIGHT_AGENT_LIFT_PX = 4;
+/** Lights further than this many tiles outside the view are not drawn at all. */
+export const CITY_LIGHT_VIEW_MARGIN_TILES = 5;
+/** Resolution of the shared soft-circle sprite every light is drawn from. */
+export const CITY_LIGHT_SPRITE_PX = 64;
+/** The warm glow added around a lamp, and its strength at full night. */
+export const CITY_LIGHT_LAMP_GLOW = { r: 255, g: 196, b: 110 } as const;
+export const CITY_LIGHT_LAMP_GLOW_ALPHA = 0.22;
+/** Furniture that gives light, and where its light sits relative to its footprint (in tiles). */
+export const CITY_LIGHT_SOURCE_TYPES: readonly string[] = [
+  'DETAIL_LAMP_ORNATE',
+  'DETAIL_LAMP_MODERN',
+  'DECK_LANTERN',
+];
+/** Local-clock schedule, in hours: night until DAWN_START, dawn ramps to day by DAY_START, day until
+ *  DUSK_START, dusk ramps to night by NIGHT_START. The clock mode is a function of the clock, nothing more. */
+export const CITY_CLOCK_DAWN_START_H = 5;
+export const CITY_CLOCK_DAY_START_H = 7;
+export const CITY_CLOCK_DUSK_START_H = 17;
+export const CITY_CLOCK_NIGHT_START_H = 21;
+
+/** Weather particles. Screen-space, seeded, a fixed number per kind: never a forecast. */
+export const CITY_WEATHER_SEED = 0x2c17;
+export const CITY_RAIN_PARTICLES = 520;
+/** How often the City panel re-reads the lighting status words (Clock mode follows the clock), milliseconds. */
+export const CITY_STATUS_REFRESH_MS = 1_000;
+export const CITY_SNOW_PARTICLES = 300;
+/** Fall speed in screen heights per second, and sideways drift in screen widths per second. */
+export const CITY_RAIN_SPEED = 1.1;
+export const CITY_RAIN_DRIFT = 0.12;
+export const CITY_SNOW_SPEED = 0.07;
+export const CITY_SNOW_SWAY = 0.015;
+/** Rain streak length and snowflake size, in sprite pixels (multiplied by the zoom when drawn). */
+export const CITY_RAIN_LENGTH_PX = 6;
+export const CITY_SNOW_SIZE_PX = 1;
+export const CITY_RAIN_COLOR = 'rgba(184, 214, 255, 0.72)';
+export const CITY_SNOW_COLOR = 'rgba(245, 248, 255, 0.9)';
+/** The faint cool veil laid over the OUTDOORS while it rains or snows, so even a still frame (reduced motion)
+ *  reads as weather. Indoors is punched out of it like the night darkness; it draws nothing for clear skies. */
+export const CITY_OVERCAST_RAIN = { r: 62, g: 78, b: 104, a: 0.2 } as const;
+export const CITY_OVERCAST_SNOW = { r: 120, g: 134, b: 160, a: 0.14 } as const;
+/** A canvas fillStyle from channels (the colour literal stays in this file, like the matrix greens above). */
+export const cityRgba = (r: number, g: number, b: number, a: number): string =>
+  `rgba(${r}, ${g}, ${b}, ${a})`;
+
+// ── Living city: traffic (decorative only; living city 6–9, row 16) ───────────
+// The moving traffic is the world's OWN lane-aligned vehicle furniture brought to life. Every value below is a
+// presentation constant of the DECORATIVE city: none of it reaches a Mission, an agent, an observation or
+// anything canonical, no vehicle has any authority (an ambulance is an ordinary car that happens to look like
+// one), and real agents and pedestrians always have priority.
+
+export const TRAFFIC_SEED = 0x7a11c;
+/** Hard cap on vehicle slots ever created (the shipped world animates 70). */
+export const TRAFFIC_MAX_VEHICLES = 96;
+/** The vehicles allowed at the traffic LOW level (the rest stay parked, drawn as the furniture they are). */
+export const TRAFFIC_CAP_LOW = 24;
+/** Hard bounds on the derived road graph: free lane segments, and intersection boxes. */
+export const TRAFFIC_MAX_LANES = 256;
+export const TRAFFIC_MAX_BOXES = 64;
+/** A free lane segment shorter than this is never driven on or turned into. */
+export const TRAFFIC_LANE_MIN_TILES = 6;
+/** Tiles a vehicle holds along its lane: its own sprite's length when travelling east or west (the art runs from
+ *  2 tiles, a hatchback, to 4, the fire engine). Nothing outside this range is animated. */
+export const TRAFFIC_BODY_MIN_TILES = 2;
+export const TRAFFIC_BODY_MAX_TILES = 4;
+/** A vehicle's rolling route never holds more than this many tiles, and is extended when fewer than the lookahead remain. */
+export const TRAFFIC_ROUTE_MAX_TILES = 96;
+export const TRAFFIC_ROUTE_LOOKAHEAD_TILES = 8;
+/** Tiles claimed ahead of the head, so a vehicle can brake in time. */
+export const TRAFFIC_CLAIM_AHEAD_TILES = 2;
+/** Cruise speed range (tiles per second, per vehicle, seeded), acceleration and braking (tiles per second squared). */
+export const TRAFFIC_SPEED_MIN = 2.8;
+export const TRAFFIC_SPEED_MAX = 4.4;
+export const TRAFFIC_ACCEL = 5;
+export const TRAFFIC_BRAKE = 9;
+/** Every approach to an intersection or a crossing stops this long (plus up to the jitter) before it may enter. */
+export const TRAFFIC_STOP_DWELL_SEC = 0.7;
+export const TRAFFIC_STOP_JITTER_SEC = 0.6;
+/** At the end of a free lane segment a vehicle waits this long, fades, and re-enters at the segment's start. */
+export const TRAFFIC_END_DWELL_SEC = 1;
+export const TRAFFIC_FADE_SEC = 0.5;
+export const TRAFFIC_RESPAWN_SEC = 1.5;
+/** A vehicle waiting this long without being able to move is removed and re-enters (a gridlock valve). */
+export const TRAFFIC_STUCK_SEC = 30;
+/** Relative weights of straight on, turning right and turning left at an intersection. */
+export const TRAFFIC_TURN_WEIGHT_STRAIGHT = 6;
+export const TRAFFIC_TURN_WEIGHT_RIGHT = 3;
+export const TRAFFIC_TURN_WEIGHT_LEFT = 1;
+/** Pedestrian priority: a vehicle never claims a tile a pedestrian stands on or is about to reach (their next
+ *  path tiles), and never one adjacent to a real agent. */
+export const TRAFFIC_PEDESTRIAN_LOOKAHEAD_TILES = 3;
+export const TRAFFIC_AGENT_HALO_TILES = 1;
+/** Vehicles start at staggered times within this many seconds, so they do not move in lockstep. */
+export const TRAFFIC_START_STAGGER_SEC = 2;
+/** The words every vehicle carries when hovered: it is decoration, whatever it looks like. */
+export const TRAFFIC_LABEL = 'Decorative traffic';

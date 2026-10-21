@@ -56,8 +56,11 @@ const onToOff = new Map<string, string>(); // on asset → off asset
 // Maps animation group ID → ordered list of asset IDs by frame index
 const animationGroups = new Map<string, string[]>();
 
-// Internal catalog (includes all variants for getCatalogEntry lookups)
-let internalCatalog: CatalogEntryWithCategory[] | null = null;
+// Internal catalog (includes all variants for getCatalogEntry lookups), indexed by type. The FIRST entry of a type
+// wins, exactly as the Array.find it replaces returned it. The lookup runs for every placed piece (ten thousand in
+// the shipped world) on every furniture animation frame, so a scan of the catalog per piece dominated the frame
+// (and every simulation test) before this index existed.
+let internalByType: Map<string, CatalogEntryWithCategory> | null = null;
 
 // Dynamic catalog built from loaded assets (when available)
 // Only includes "front" variants for grouped items (shown in editor palette)
@@ -279,7 +282,9 @@ export function buildDynamicCatalog(assets: LoadedAssetData): boolean {
   }
 
   // Store full internal catalog (all variants — for getCatalogEntry lookups)
-  internalCatalog = allEntries;
+  const byType = new Map<string, CatalogEntryWithCategory>();
+  for (const entry of allEntries) if (!byType.has(entry.type)) byType.set(entry.type, entry);
+  internalByType = byType;
 
   // Visible catalog: exclude non-front variants and "on" state variants
   const visibleEntries = allEntries.filter(
@@ -311,9 +316,7 @@ export function buildDynamicCatalog(assets: LoadedAssetData): boolean {
 
 export function getCatalogEntry(type: string): CatalogEntryWithCategory | undefined {
   // Check internal catalog (includes all variants, e.g., non-front rotations)
-  if (internalCatalog) {
-    return internalCatalog.find((e) => e.type === type);
-  }
+  if (internalByType) return internalByType.get(type);
   return dynamicCatalog?.find((e) => e.type === type);
 }
 

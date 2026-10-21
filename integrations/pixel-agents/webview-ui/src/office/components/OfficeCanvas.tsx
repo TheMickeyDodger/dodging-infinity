@@ -303,6 +303,10 @@ export function OfficeCanvas({
         };
 
         const layout = officeState.getLayout();
+        const vehicles = officeState.getVehicles();
+        const hoveredVehicle = officeState.hoveredVehicleId
+          ? (vehicles.find((v) => v.id === officeState.hoveredVehicleId) ?? null)
+          : null;
         const { offsetX, offsetY } = renderFrame(
           ctx,
           w,
@@ -331,6 +335,9 @@ export function OfficeCanvas({
             ids: officeState.haloCharacterIds(Date.now() / 1000),
             intensity: haloIntensity(performance.now() / 1000, officeState.reducedMotion),
           },
+          officeState.cityRenderInput(),
+          vehicles,
+          hoveredVehicle,
         );
         offsetRef.current = { x: offsetX, y: offsetY };
 
@@ -561,6 +568,11 @@ export function OfficeCanvas({
       officeState.hoveredAmbientId =
         hitId === null && petId === null
           ? (officeState.getAmbientAt(pos.worldX, pos.worldY)?.id ?? null)
+          : null;
+      // Vehicles are hit-tested after everything else: an agent, a pet or a resident always wins the pointer.
+      officeState.hoveredVehicleId =
+        hitId === null && petId === null && officeState.hoveredAmbientId === null
+          ? (officeState.getVehicleAt(pos.worldX, pos.worldY)?.id ?? null)
           : null;
     },
     [

@@ -29,6 +29,7 @@ import type { AssetCache } from '../clientMessageHandler.js';
 import { PALETTE_COUNT } from '../constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../layoutPersistence.js';
 import { readAmbientState, writeAmbientState } from './ambientStatePersistence.js';
+import { readCityPresentation, writeCityPresentation } from './cityPresentationPersistence.js';
 import { parseCodeReviewRead } from './codeReview.js';
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
 import { parseEvidenceRead } from './evidenceContent.js';
@@ -73,6 +74,7 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'setGhostHeadlessAgents',
   'setShowAreas',
   'saveAmbientState',
+  'saveCityPresentation',
   'diEvidenceRead',
   'diCodeReviewRead',
   'diMissionRequest',
@@ -164,6 +166,13 @@ export function handleDiClientMessage(
     // The decorative ambient snapshot (M3 S4): checked against its contract before it is written.
     case 'saveAmbientState': {
       const notWritten = writeAmbientState(msg.state);
+      return notWritten === null ? 'handled' : { refused: notWritten };
+    }
+
+    // The viewer's city presentation preferences (living city 6-9): checked against the shared
+    // contract before they are written. Local decoration; no Mission, agent or canonical meaning.
+    case 'saveCityPresentation': {
+      const notWritten = writeCityPresentation(msg.state);
       return notWritten === null ? 'handled' : { refused: notWritten };
     }
 
@@ -303,6 +312,7 @@ export function sendDiHandshake(send: DiSend, ctx: DiMessageContext): void {
   // residents for that layout, then applies it once if the world fingerprint matches
   if (ctx.ambientSprites && ctx.ambientSprites.length > 0) send({ type: 'ambientSpritesLoaded', sheets: ctx.ambientSprites });
   send({ type: 'ambientStateLoaded', state: readAmbientState() });
+  send({ type: 'cityPresentationLoaded', state: readCityPresentation() });
 
   send({ type: 'layoutLoaded', layout: readLayoutFromFile() ?? cache.defaultLayout ?? null });
 

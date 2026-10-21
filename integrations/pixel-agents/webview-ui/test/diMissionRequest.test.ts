@@ -880,12 +880,18 @@ test(
       (await text(page, T('di-mr-offer-expiry'))).split(' (')[0];
     expect(await clockTime(first)).toBe(await clockTime(second));
 
-    // — the first window decides; the second still holds the older display —
-    await approve(first);
+    // — one decision from two windows. The second has the word typed on the offer it was shown.
+    // The first window records the approval. The second then submits that same offer. The record
+    // keeps one authorization. —
     await second.fill(T('di-mr-word'), 'approve');
-    const gate = await available(second, T('di-mr-approve')).catch(() => false);
-    if (gate) await pressKey(second, T('di-mr-approve'), 'Enter');
-    await sleep(1_500);
+    await approve(first);
+    const decides = () => sent.filter((m) => m.op === 'decide').length;
+    const before = decides();
+    await pressKey(second, T('di-mr-approve'), 'Enter');
+    await waitFor('the second window to submit its own decision', async () =>
+      decides() > before ? true : false,
+    );
+    expect(decides(), 'the second window submitted a decision of its own').toBe(before + 1);
     expect((await state()).authorizations, 'two windows made two approvals').toBe(1);
     await whenText(second, T('di-mr-stage-label'), /Approved|approved/);
 

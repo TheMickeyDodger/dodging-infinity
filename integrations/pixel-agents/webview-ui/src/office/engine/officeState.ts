@@ -1,4 +1,5 @@
 import type { AmbientSaveState } from '../../../../core/src/ambientSave.js';
+import type { CityPresentation } from '../../../../core/src/cityPresentation.js';
 import type { DiOfficeState } from '../../../../core/src/messages.js';
 import { pickDiversePalette } from '../../../../core/src/paletteUtils.js';
 import {
@@ -9,6 +10,8 @@ import {
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
+  CITY_LIGHT_AGENT_LIFT_PX,
+  CITY_LIGHT_VISIBLE_EPSILON,
   DISMISS_BUBBLE_FAST_FADE_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
   GREETER_ID,
@@ -18,12 +21,20 @@ import {
   MAX_PET_ID_LENGTH,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
+  TRAFFIC_CAP_LOW,
+  TRAFFIC_MAX_VEHICLES,
+  TRAFFIC_PEDESTRIAN_LOOKAHEAD_TILES,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import type { AmbientRestoreResult } from '../ambient/ambientSave.js';
 import { applyAmbientSnapshot, serializeAmbient } from '../ambient/ambientSave.js';
 import type { AmbientResident, AmbientWorld } from '../ambient/ambientWorld.js';
 import { buildAmbientWorld } from '../ambient/ambientWorld.js';
+import { CityEffects } from '../city/cityEffects.js';
+import { cityMaskFor, lampLights } from '../city/cityMask.js';
+import type { CityRenderInput } from '../city/cityRender.js';
+import { weatherVeil } from '../city/cityWeather.js';
+import { getColorizedSprite } from '../colorize.js';
 import { haloEligibleCharacterIds } from '../halo.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
@@ -39,6 +50,9 @@ import { inRegions, livingRegions, livingTiles as confineLiving } from '../layou
 import { boundRenderCaches } from '../renderCaches.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
+import { buildTrafficWorld } from '../traffic/trafficBuild.js';
+import { vehicleAt } from '../traffic/trafficRender.js';
+import type { TrafficPeople, TrafficWorld, Vehicle } from '../traffic/trafficWorld.js';
 import type { Train } from '../transit/transitWorld.js';
 import { deriveTransitLine, TransitWorld } from '../transit/transitWorld.js';
 import type {
@@ -49,6 +63,7 @@ import type {
   PlacedFurniture,
   PlacedPet,
   Seat,
+  SpriteData,
   TileType as TileTypeVal,
 } from '../types.js';
 import {
@@ -143,10 +158,31 @@ export class OfficeState {
   /** Bumped whenever the furniture instances change for a reason OTHER than an animation frame
    *  (layout rebuild, auto-state ON/OFF swap): what a cache of the STATIC scene keys on. */
   furnitureStaticVersion = 0;
+  /** Sprites for furniture whose auto-on state animates, indexed into `furniture`. Null until the
+   *  first animation tick has indexed them. After that, a frame change swaps those sprites and
+   *  does not rebuild the whole metropolis (that rebuild was the slow cluster in the frame p95). */
+  private furnitureAnimSlots: { index: number; sprites: SpriteData[] }[] | null = null;
   /** REDUCED MOTION — set only in DI mode, from prefers-reduced-motion. Transitions settle
    *  at once and nothing moves on its own; it never changes activity, live or any other data.
    *  Normal Pixel never sets it, so its behaviour is unchanged. */
   reducedMotion = false;
+
+  /** The decorative city's lighting and weather (living city 6-9): the viewer's choices and what is shown.
+   *  Local decoration; it reads no Mission or agent state and writes none. */
+  readonly city = new CityEffects();
+
+  /** The decorative traffic (living city 6-9): the world's own lane-aligned vehicle furniture, brought to life.
+   *  Built lazily, only in the DI office and only while the choice is not 'off'; rebuilt when the layout is
+   *  replaced. It reads where people are (to give way) and writes nothing outside itself. */
+  private traffic: TrafficWorld | null = null;
+  private readonly trafficPeople: { agentOwn: number[]; agentNear: number[]; walkerOwn: number[]; walkerNear: number[] } = {
+    agentOwn: [],
+    agentNear: [],
+    walkerOwn: [],
+    walkerNear: [],
+  };
+  /** Vehicle under the pointer (hover label). Never an agent id. */
+  hoveredVehicleId: string | null = null;
   selectedAgentId: number | null = null;
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
@@ -210,8 +246,10 @@ export class OfficeState {
     this.tileMap = layoutToTileMap(layout);
     this.seats = homeSeats(layout, layoutToSeats(layout.furniture));
     this.blockedTiles = getBlockedTiles(layout.furniture);
+    this.traffic = null; // its lanes came from the old layout
     this.rebuildFurnitureInstances();
     this.walkableTiles = livingTiles(layout, this.tileMap, this.blockedTiles, this.seats);
+    this.syncTraffic();
 
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
@@ -919,6 +957,10 @@ export class OfficeState {
   }
 
   private rebuildFurnitureInstances(animationFrameOnly = false): void {
+    if (animationFrameOnly && this.furnitureAnimSlots !== null) {
+      this.applyFurnitureAnimFrame();
+      return;
+    }
     if (!animationFrameOnly) this.furnitureStaticVersion++;
     // Collect tiles where active agents face desks
     const autoOnTiles = new Set<string>();
@@ -952,38 +994,83 @@ export class OfficeState {
       }
     }
 
-    if (autoOnTiles.size === 0) {
-      this.furniture = layoutToFurnitureInstances(this.layout.furniture);
-      return;
-    }
-
-    // Build modified furniture list with auto-state and animation applied
+    // A vehicle that is driving is drawn by the traffic, not as furniture: its static copy is skipped here.
+    // The LAYOUT is untouched (and with traffic off nothing is skipped), so 'off' is the world exactly as it was.
+    const source = this.visibleFurniture();
     const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
-    const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map((item) => {
-      const entry = getCatalogEntry(item.type);
-      if (!entry) return item;
-      // Check if any tile of this furniture overlaps an auto-on tile
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          if (autoOnTiles.has(`${item.col + dc},${item.row + dr}`)) {
-            let onType = getOnStateType(item.type);
-            if (onType !== item.type) {
-              // Check if the on-state type has animation frames
-              const frames = getAnimationFrames(onType);
-              if (frames && frames.length > 1) {
-                const frameIdx = animFrame % frames.length;
-                onType = frames[frameIdx];
+    let rendered = source;
+    if (autoOnTiles.size > 0) {
+      // Build modified furniture list with auto-state and animation applied
+      rendered = source.map((item) => {
+        const entry = getCatalogEntry(item.type);
+        if (!entry) return item;
+        // Check if any tile of this furniture overlaps an auto-on tile
+        for (let dr = 0; dr < entry.footprintH; dr++) {
+          for (let dc = 0; dc < entry.footprintW; dc++) {
+            if (autoOnTiles.has(`${item.col + dc},${item.row + dr}`)) {
+              let onType = getOnStateType(item.type);
+              if (onType !== item.type) {
+                // Check if the on-state type has animation frames
+                const frames = getAnimationFrames(onType);
+                if (frames && frames.length > 1) {
+                  const frameIdx = animFrame % frames.length;
+                  onType = frames[frameIdx];
+                }
+                return { ...item, type: onType };
               }
-              return { ...item, type: onType };
+              return item;
             }
-            return item;
           }
         }
-      }
-      return item;
-    });
+        return item;
+      });
+    }
 
-    this.furniture = layoutToFurnitureInstances(modifiedFurniture);
+    this.furniture = layoutToFurnitureInstances(rendered);
+    this.furnitureAnimSlots = this.indexFurnitureAnim(rendered);
+  }
+
+  /** Instance index matches layoutToFurnitureInstances, which skips a type the catalog does not know. */
+  private indexFurnitureAnim(items: PlacedFurniture[]): { index: number; sprites: SpriteData[] }[] {
+    const slots: { index: number; sprites: SpriteData[] }[] = [];
+    let index = 0;
+    for (const item of items) {
+      if (!getCatalogEntry(item.type)) continue;
+      const frames = getAnimationFrames(item.type);
+      if (frames && frames.length > 1) {
+        const sprites: SpriteData[] = [];
+        for (const type of frames) {
+          const frameEntry = getCatalogEntry(type);
+          if (!frameEntry) continue;
+          sprites.push(this.furnitureSprite(item, type, frameEntry.sprite));
+        }
+        if (sprites.length > 1) slots.push({ index, sprites });
+      }
+      index++;
+    }
+    return slots;
+  }
+
+  private furnitureSprite(item: PlacedFurniture, type: string, base: SpriteData): SpriteData {
+    if (!item.color) return base;
+    const { h, s, b: bv, c: cv } = item.color;
+    return getColorizedSprite(
+      `furn-${type}-${h}-${s}-${bv}-${cv}-${item.color.colorize ? 1 : 0}`,
+      base,
+      item.color,
+    );
+  }
+
+  private applyFurnitureAnimFrame(): void {
+    const slots = this.furnitureAnimSlots;
+    if (!slots || slots.length === 0) return;
+    const frame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
+    for (const slot of slots) {
+      const inst = this.furniture[slot.index];
+      if (!inst) continue;
+      const sprite = slot.sprites[frame % slot.sprites.length];
+      if (inst.sprite !== sprite) inst.sprite = sprite;
+    }
   }
 
   setAgentTool(id: number, tool: string | null): void {
@@ -1202,6 +1289,10 @@ export class OfficeState {
   }
 
   update(dt: number): void {
+    // The city's lighting follows its target; weather moves unless motion is reduced. The game loop's
+    // hidden guard means neither advances while the view is hidden.
+    this.city.update(dt, Date.now(), this.reducedMotion);
+
     // Furniture animation cycling (held on one frame under reduced motion; ON/OFF auto-state
     // still follows activity, rebuilt by setAgentActive)
     if (!this.reducedMotion) {
@@ -1272,6 +1363,13 @@ export class OfficeState {
     // The subway holds still under reduced motion too (decorative motion)
     if (this.transit && !this.reducedMotion) this.transit.update(dt);
 
+    // ── Decorative traffic ─────────────────────────────────────
+    // Motion holds still under reduced motion; priority never does (a vehicle still gives way to anyone
+    // who steps into it). It reads where people are and writes nothing to them.
+    if (this.traffic && this.traffic.activeCap > 0) {
+      this.traffic.update(dt, this.gatherTrafficPeople(), this.reducedMotion);
+    }
+
     // ── Pet FSM ────────────────────────────────────────────────
     for (const pet of this.pets) {
       // Pets are decoration: they hold still under reduced motion (their bubbles still tick)
@@ -1296,6 +1394,7 @@ export class OfficeState {
       return;
     this.ambientEnabled = enabled;
     this.rebuildAmbient();
+    this.syncTraffic();
   }
 
   private rebuildAmbient(): void {
@@ -1400,6 +1499,112 @@ export class OfficeState {
     const ids = haloEligibleCharacterIds(this.diOffice, nowSec);
     for (const id of ids) if (!this.characters.has(id)) ids.delete(id);
     return ids;
+  }
+
+  /** Take the viewer's city presentation choices (already validated by the caller). */
+  setCityPresentation(next: CityPresentation): void {
+    this.city.setPresentation(next, Date.now(), this.reducedMotion);
+    this.syncTraffic();
+  }
+
+  /** The furniture to draw as furniture: the layout's, less the pieces a driving vehicle stands in for. The filtered
+   *  list is kept while neither the layout's furniture nor the hidden set has changed (animation frames rebuild the
+   *  instances several times a second and must not refilter ten thousand pieces each time). */
+  private visibleFurniture(): PlacedFurniture[] {
+    const hidden = this.traffic?.hiddenUids();
+    if (!hidden || hidden.size === 0) return this.layout.furniture;
+    const traffic = this.traffic!;
+    const version = traffic.hiddenVersion;
+    const cached = this.visibleCache;
+    if (cached && cached.traffic === traffic && cached.source === this.layout.furniture && cached.version === version) return cached.list;
+    const list = this.layout.furniture.filter((f) => !hidden.has(f.uid));
+    this.visibleCache = { traffic, source: this.layout.furniture, version, list };
+    return list;
+  }
+  private visibleCache: { traffic: TrafficWorld; source: PlacedFurniture[]; version: number; list: PlacedFurniture[] } | null = null;
+
+  /** Bring the traffic in line with the choice: built on first need (DI office only), its cap set from the
+   *  level, and the furniture instances rebuilt when the set of hidden static copies changed. */
+  private syncTraffic(): void {
+    const mode = this.city.presentation.traffic;
+    const cap = mode === 'normal' ? TRAFFIC_MAX_VEHICLES : mode === 'low' ? TRAFFIC_CAP_LOW : 0;
+    if (!this.ambientEnabled || cap === 0) {
+      if (this.traffic && this.traffic.activeCap > 0) {
+        this.traffic.setCap(0);
+        this.rebuildFurnitureInstances();
+      }
+      return;
+    }
+    if (!this.traffic) this.traffic = buildTrafficWorld(this.layout, getCatalogEntry, getBlockedTiles);
+    const before = this.traffic.hiddenVersion;
+    this.traffic.setCap(cap);
+    if (this.traffic.hiddenVersion !== before) this.rebuildFurnitureInstances();
+  }
+
+  /** Who traffic must give way to: where everyone is and where they are about to step. Reused arrays. */
+  private gatherTrafficPeople(): TrafficPeople {
+    const p = this.trafficPeople;
+    p.agentOwn.length = 0;
+    p.agentNear.length = 0;
+    p.walkerOwn.length = 0;
+    p.walkerNear.length = 0;
+    const cols = this.layout.cols;
+    const look = TRAFFIC_PEDESTRIAN_LOOKAHEAD_TILES;
+    for (const ch of this.getCharacters()) {
+      p.agentOwn.push(ch.tileRow * cols + ch.tileCol);
+      for (let i = 0; i < ch.path.length && i < look; i++) p.agentNear.push(ch.path[i].row * cols + ch.path[i].col);
+    }
+    if (this.ambient) {
+      for (const r of this.ambient.residents) {
+        if (r.state === 'riding') continue;
+        p.walkerOwn.push(r.tileRow * cols + r.tileCol);
+        if (r.state === 'walk') for (let i = r.routePos; i < r.route.length && i < r.routePos + look; i++) p.walkerNear.push(r.route[i]);
+      }
+    }
+    for (const pet of this.pets) {
+      p.walkerOwn.push(pet.tileRow * cols + pet.tileCol);
+      for (let i = 0; i < pet.path.length && i < look; i++) p.walkerNear.push(pet.path[i].row * cols + pet.path[i].col);
+    }
+    return p;
+  }
+
+  /** The vehicles to draw (empty with traffic off). */
+  getVehicles(): readonly Vehicle[] {
+    return this.traffic && this.traffic.activeCap > 0 ? this.traffic.visible() : [];
+  }
+
+  /** The traffic itself, for the budget measurements and tests; null until it is first needed. */
+  getTraffic(): TrafficWorld | null {
+    return this.traffic;
+  }
+
+  /** The vehicle under a world-pixel point. Callers check real agents, pets and residents FIRST. */
+  getVehicleAt(worldX: number, worldY: number): Vehicle | null {
+    return vehicleAt(this.getVehicles(), worldX, worldY);
+  }
+
+  /** What the renderer draws for the city this frame, or null when there is nothing to draw (day, no
+   *  weather): a day with clear skies costs nothing. */
+  cityRenderInput(): CityRenderInput | null {
+    const lit = this.city.level >= CITY_LIGHT_VISIBLE_EPSILON;
+    const wet = this.city.weather.count > 0;
+    if (!lit && !wet) return null;
+    const veil = wet ? weatherVeil(this.city.weather.kind) : null;
+    const agents: { x: number; y: number }[] = [];
+    if (lit || veil) {
+      for (const ch of this.getCharacters()) {
+        if (ch.matrixEffect === 'despawn') continue;
+        agents.push({ x: ch.x, y: ch.y - CITY_LIGHT_AGENT_LIFT_PX });
+      }
+    }
+    return {
+      level: lit ? this.city.level : 0,
+      mask: cityMaskFor(this.layout),
+      lamps: lit ? lampLights(this.layout, footprintOf) : [],
+      agents,
+      weather: wet ? this.city.weather : null,
+      veil,
+    };
   }
 
   /** The trains to draw (empty without a subway or while disabled). */

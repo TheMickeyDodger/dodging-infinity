@@ -131,6 +131,14 @@ interface ExtensionMessageState {
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
   layoutReady: boolean;
+  /**
+   * Bumped on every layoutLoaded that is applied. The layout itself is written straight onto
+   * OfficeState, and layoutReady is already true when a later layout replaces an earlier one, so
+   * nothing else re-renders. Camera controls read the layout during render: without this they stay
+   * mounted for the previous world (a small default has no Districts button while the canvas
+   * already shows the replacement).
+   */
+  layoutEpoch: number;
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
   workspaceFolders: WorkspaceFolder[];
@@ -242,6 +250,7 @@ export function useExtensionMessages(
   >({});
   const [subagentCharacters, setSubagentCharacters] = useState<SubagentCharacter[]>([]);
   const [layoutReady, setLayoutReady] = useState(false);
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [layoutWasReset, setLayoutWasReset] = useState(false);
   const [loadedAssets, setLoadedAssets] = useState<
     { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> } | undefined
@@ -501,6 +510,9 @@ export function useExtensionMessages(
         pendingAgents = [];
         layoutReadyRef.current = true;
         setLayoutReady(true);
+        // A replacement layout does not change layoutReady (already true) or any other React
+        // state — the saved-layout checkpoint is a ref — so bump an epoch to re-read OfficeState.
+        setLayoutEpoch((n) => n + 1);
         // DI: the CANONICAL layout-ready flush. The legacy flush above draws the server's store
         // with no recorded identity; reconcile against the office state ALREADY RECEIVED now, on
         // layout arrival — never wait for the next office message (the animation authority then
@@ -1208,6 +1220,7 @@ export function useExtensionMessages(
     subagentTools,
     subagentCharacters,
     layoutReady,
+    layoutEpoch,
     layoutWasReset,
     loadedAssets,
     workspaceFolders,

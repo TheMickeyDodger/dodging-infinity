@@ -35,8 +35,12 @@ import {
   AMBIENT_PATROL_RADIUS_TILES,
   AMBIENT_POPULATION_CAP,
   AMBIENT_POPULATION_ORDINARY,
+  AMBIENT_POST_DWELL_FACTOR,
   AMBIENT_RIDE_WAIT_MAX_SEC,
+  AMBIENT_RIDER_KIND_WEIGHTS,
+  AMBIENT_RIDER_REACH_TILES,
   AMBIENT_RIDERS_MAX,
+  AMBIENT_ROAMING_DWELL_FACTOR,
   AMBIENT_ROUTE_MAX_LENGTH,
   AMBIENT_ROUTINE_MAX_STOPS,
   AMBIENT_ROUTINE_STOPS,
@@ -61,6 +65,17 @@ import { AmbientPathfinder } from './ambientPath.js';
 import { hashString, SeededRng } from './ambientRng.js';
 
 export type AmbientState = 'dwell' | 'need-path' | 'walk' | 'retry' | 'waiting' | 'riding';
+
+/** What a subway rider's day is: to a station at least two along (commute), to the next one (hop), or round three. */
+export type RiderKind = 'commute' | 'hop' | 'excursion';
+
+/** A rider's journey plan as the world derived it: its kind and the stations it rides to, in order, then home to the first. */
+export interface RiderJourney {
+  readonly id: string;
+  readonly kind: RiderKind;
+  /** Station indices: the one it boards at first, then each it rides to. */
+  readonly stations: readonly number[];
+}
 
 export interface AmbientResident {
   /** Durable local identity: derived from the seed, place and job, stable across loads. */
@@ -353,8 +368,10 @@ export class AmbientWorld {
   readonly placeOf: (idx: number) => string | null;
   /** Room coverage of many-roomed places: rooms, rooms on some routine, rooms the stop cap left out. */
   coverage = { rooms: 0, covered: 0, uncoveredByCap: 0, longestRoutine: 0 };
-  /** Subway commuters (ids), a bounded subset. */
+  /** Subway riders (ids), a bounded subset. */
   riders: string[] = [];
+  /** Each rider's journey plan (kind and stations), derived from the world and the seed. */
+  journeys: RiderJourney[] = [];
   /** EASTER EGGS (M3 S6): each family and the place it was homed in (null: no matching place). */
   eggs: Array<{ job: AmbientJobId; home: string | null; id: string | null }> = [];
   private cursor = 0;
@@ -674,7 +691,14 @@ export class AmbientWorld {
     r.frame = 0;
     r.route = new Int32Array(0);
     r.routePos = 0;
-    r.timer = r.rng.range(AMBIENT_DWELL_MIN_SEC, AMBIENT_DWELL_MAX_SEC);
+    // dwell profile: a posted job holds its post, a roaming job keeps moving (the profile is derived, never saved)
+    const factor =
+      AMBIENT_JOBS[r.job].style === 'posted'
+        ? r.routineIndex === 0
+          ? AMBIENT_POST_DWELL_FACTOR
+          : 1
+        : AMBIENT_ROAMING_DWELL_FACTOR;
+    r.timer = r.rng.range(AMBIENT_DWELL_MIN_SEC, AMBIENT_DWELL_MAX_SEC) * factor;
     if (r.rides && r.rides[r.routineIndex] >= 0) {
       r.state = 'waiting';
       r.timer = AMBIENT_RIDE_WAIT_MAX_SEC;
@@ -1084,53 +1108,114 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     if (r.routine.length > AMBIENT_ROUTINE_MAX_STOPS) throw new Error(`routine of ${r.id} exceeds the stop bound`);
     coverage.longestRoutine = Math.max(coverage.longestRoutine, r.routine.length);
   }
-  // SUBWAY COMMUTERS: a bounded subset of the station, boulevard and market residents ride between
-  // stations: post -> platform A -> (ride) -> platform B -> a forecourt stop near B -> platform B ->
-  // (ride) -> platform A. Their rooms are open ground, so room coverage is unaffected.
+  // SUBWAY RIDERS: a bounded subset of the residents who live at a station or on the Grand or Market Boulevard (as ever),
+  // and of the residents of OPEN-GROUND places near the line, ride between stations (a many-roomed building elsewhere
+  // keeps every resident its room coverage needs, so it supplies none). Each rider has a JOURNEY of one of three
+  // kinds, chosen from its own seeded stream:
+  //   commute    post -> platform A -> (ride, past a station when the line has one) -> platform B -> a forecourt stop
+  //              near B -> platform B -> (ride) -> platform A -> post
+  //   hop        the same, to the NEXT station along the line
+  //   excursion  three stations: A -> B -> C -> A, with a forecourt stop at B and at C
+  // Platform tiles are DEALT round-robin per station (seeded; one deal for the tiles riders wait on, one for the tiles they
+  // alight on), so riders spread along a platform instead of standing on one another. Nothing here is saved: a rider's plan is derived from the world and the seed, so every load rebuilds the
+  // same one (and the snapshot fingerprint binds to it). Rooms are open ground, so room coverage is unaffected.
   const transit = input.transit ?? null;
   const riderIds: string[] = [];
+  const journeys: RiderJourney[] = [];
   if (transit) {
     const islands = transit.stations.map((st) => st.island.filter((t) => walk(t) && onNetwork(t) && !seatZone.has(t)));
+    // Two deals per station over the same shuffled platform: the tiles a rider WAITS on (a long stand) come from the front,
+    // the tiles it ALIGHTS on (a short one) from the back, so waiting riders never share a tile until a platform has more
+    // waiting riders than tiles.
+    const orders = islands.map((tiles, s) => new SeededRng(hashString(`platform-${s}`, seed)).shuffle([...tiles]));
+    const dealt = islands.map(() => ({ wait: 0, alight: 0 }));
+    const waitTile = (s: number): number => orders[s][dealt[s].wait++ % orders[s].length];
+    const alightTile = (s: number): number => orders[s][orders[s].length - 1 - (dealt[s].alight++ % orders[s].length)];
+    // the forecourt above each station's platform (open ground on the network)
+    const forecourtRow = transit.eastRow - 2;
+    const forecourts = transit.stations.map((st) => {
+      const list: number[] = [];
+      for (let c = st.c - 10; c <= st.c + 10; c++) {
+        const t = forecourtRow * cols + c;
+        if (c >= 0 && c < cols && walk(t) && onNetwork(t)) list.push(t);
+      }
+      return list;
+    });
+    const nearLine = (t: number): boolean => {
+      const tc = t % cols;
+      const tr = (t - tc) / cols;
+      return transit.stations.some((st) =>
+        st.island.some((i) => {
+          const c = i % cols;
+          return Math.abs(c - tc) + Math.abs((i - c) / cols - tr) <= AMBIENT_RIDER_REACH_TILES;
+        }),
+      );
+    };
     const candidates = residents
       .map((r, k) => ({ r, k }))
-      .filter(({ r }) => /Station$|^Grand Boulevard$|^Market Boulevard$/.test(r.district))
-      .sort((a, b) => hashString(a.r.id, seed) - hashString(b.r.id, seed))
-      .slice(0, AMBIENT_RIDERS_MAX);
+      .filter(({ r, k }) => /Station$|^Grand Boulevard$|^Market Boulevard$/.test(r.district) || (pools[plan[k].pool].rooms.length <= 1 && nearLine(r.routine[0])))
+      .sort((a, b) => hashString(a.r.id, seed) - hashString(b.r.id, seed));
+    const stationCount = transit.stations.length;
+    const W = AMBIENT_RIDER_KIND_WEIGHTS;
+    const weightSum = W.commute + W.hop + W.excursion;
     for (const { r, k } of candidates) {
+      if (riderIds.length >= AMBIENT_RIDERS_MAX) break;
       const post = r.routine[0];
       const pc = post % cols;
       let a = 0;
-      for (let s2 = 1; s2 < transit.stations.length; s2++)
+      for (let s2 = 1; s2 < stationCount; s2++)
         if (Math.abs(transit.stations[s2].c - pc) < Math.abs(transit.stations[a].c - pc)) a = s2;
-      let b = r.rng.int(transit.stations.length - 1);
-      if (b >= a) b++;
-      if (islands[a].length === 0 || islands[b].length === 0) continue;
-      const pick = (list: number[]) => list[r.rng.int(list.length)];
-      const pA = pick(islands[a]);
-      const pB = pick(islands[b]);
-      const pB2 = pick(islands[b]);
-      const pA2 = pick(islands[a]);
-      // a stop on the forecourt above B's platform (open ground, on the network)
-      const forecourt: number[] = [];
-      const fr = transit.eastRow - 2;
-      for (let c = transit.stations[b].c - 10; c <= transit.stations[b].c + 10; c++) {
-        const t = fr * cols + c;
-        if (c >= 0 && c < cols && walk(t) && onNetwork(t)) forecourt.push(t);
+      const others = transit.stations.map((_, s) => s).filter((s) => s !== a);
+      const roll = r.rng.int(weightSum);
+      let kind: RiderKind = roll < W.commute ? 'commute' : roll < W.commute + W.hop ? 'hop' : 'excursion';
+      if (kind === 'excursion' && stationCount < 3) kind = 'commute';
+      let b: number;
+      let c3 = -1;
+      if (kind === 'hop') {
+        const next = [a - 1, a + 1].filter((s) => s >= 0 && s < stationCount);
+        b = next[r.rng.int(next.length)];
+      } else if (kind === 'commute') {
+        const far = others.filter((s) => Math.abs(s - a) >= 2);
+        const pickFrom = far.length > 0 ? far : others;
+        b = pickFrom[r.rng.int(pickFrom.length)];
+      } else {
+        b = others[r.rng.int(others.length)];
+        const rest = others.filter((s) => s !== b);
+        c3 = rest[r.rng.int(rest.length)];
       }
-      if (forecourt.length === 0) continue;
-      const nearB = pick(forecourt);
-      const routine = Int32Array.from([post, pA, pB, nearB, pB2, pA2]);
-      if (![...routine].every((t) => graph.connected(post, t))) continue;
+      const used = c3 >= 0 ? [a, b, c3] : [a, b];
+      if (used.some((s) => islands[s].length === 0 || forecourts[s].length === 0)) continue;
+      const near = (s: number) => forecourts[s][r.rng.int(forecourts[s].length)];
+      const pA = waitTile(a);
+      const pB = alightTile(b);
+      const nearB = near(b);
+      const pB2 = waitTile(b);
+      let routine: number[];
+      const rideAt: Array<[number, number]> = [[1, b]];
+      if (c3 >= 0) {
+        const pC = alightTile(c3);
+        const nearC = near(c3);
+        const pC2 = waitTile(c3);
+        const pA2 = alightTile(a);
+        routine = [post, pA, pB, nearB, pB2, pC, nearC, pC2, pA2];
+        rideAt.push([4, c3], [7, a]);
+      } else {
+        const pA2 = alightTile(a);
+        routine = [post, pA, pB, nearB, pB2, pA2];
+        rideAt.push([4, a]);
+      }
+      if (routine.length > AMBIENT_ROUTINE_MAX_STOPS || !routine.every((t) => graph.connected(post, t))) continue;
       const rides = new Int8Array(routine.length).fill(-1);
-      rides[1] = b;
-      rides[4] = a;
-      residents[k] = { ...r, routine, rides, routineIndex: 0, legCache: new Map() };
+      for (const [i, s] of rideAt) rides[i] = s;
+      residents[k] = { ...r, routine: Int32Array.from(routine), rides, routineIndex: 0, legCache: new Map() };
       riderIds.push(r.id);
+      journeys.push({ id: r.id, kind, stations: used });
     }
   }
   const built = new AmbientWorld(residents, pathfinder, graph, seed, seatZone, seatNeighbours, placeOf);
   built.coverage = coverage;
   built.riders = riderIds;
+  built.journeys = journeys;
   built.eggs = eggHomes.map(({ job, pool }) => {
     const r = pool >= 0 ? residents.find((x) => x.job === job) : undefined;
     return { job, home: r ? r.district : null, id: r ? r.id : null };
