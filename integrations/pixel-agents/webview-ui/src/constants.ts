@@ -540,6 +540,37 @@ export const AMBIENT_CONGESTION_PASS_SEC = 2.5;
 export const AMBIENT_AGENT_BLOCK_REPLAN_SEC = 0.8;
 /** Yield search radius (tiles) when a resident must clear an agent's tile or assigned seat. */
 export const AMBIENT_YIELD_RADIUS = 3;
+/**
+ * WORKING-OFFICE VISIBLE OCCUPANCY. A pool that holds a seat (the Palace, a Mission's room, the legacy
+ * single Office) shows at most min(AMBIENT_WORKING_OFFICE_ON_DUTY, max(1, ceil(T /
+ * AMBIENT_WORKING_OFFICE_TILES_PER_RESIDENT))) residents ON DUTY at once, where T is the pool's
+ * RESIDENT-ELIGIBLE tiles exactly as `addPool` builds them (`pool.tiles.length`): walkable, on the main
+ * pedestrian network, NOT a seat tile or a seat tile's walkable neighbour, and belonging to that place. T is
+ * not the room's or the place's area. A small floor therefore shows fewer than a large office. The rest are
+ * OFF DUTY: derived (never saved), frozen exactly where and as they are, not drawn, not hoverable, not an
+ * obstacle, and every id, job, routine, ride and the saved-state fingerprint stay as they were. A pool
+ * already at or under its bound is untouched. This value is the CAP (what a large office shows); it was
+ * chosen from the BUILT expanded-office pictures. There is no floor: thinning the Palace is permitted; what
+ * must be preserved is every identity, job, journey, transit state and supported save.
+ */
+export const AMBIENT_WORKING_OFFICE_ON_DUTY = 16;
+/**
+ * Resident-eligible pool tiles (`pool.tiles.length`, see AMBIENT_WORKING_OFFICE_ON_DUTY) per resident on
+ * duty: a pool of T such tiles shows at most ceil(T / this) residents, never fewer than one and never more
+ * than AMBIENT_WORKING_OFFICE_ON_DUTY. Chosen from the BUILT default-office comparison at normal zoom, 8 on
+ * duty (14) against 4 (34): at 8 about five residents still stood in a knot above the working table; at 4
+ * every seated agent was plainly visible with a few spaced residents keeping the room alive. In the shipped
+ * worlds: the default office's Mission pool has T = 105, so 4 are on duty; expanded-office's Office pool has
+ * T = 718, so ceil(718 / 34) = 22, capped to 16; the Palace has T = 2183, so ceil(2183 / 34) = 65, capped to
+ * 16, which is above its 11 residents, so all 11 stay on duty and it is unchanged. (The tests pin these.)
+ */
+export const AMBIENT_WORKING_OFFICE_TILES_PER_RESIDENT = 34;
+/**
+ * Seconds between hand-overs in one working office: one resident steps off duty at its next dwell
+ * boundary and the next in the roster steps on. Chosen from the built moving frames only; there was no
+ * separate study of the cadence.
+ */
+export const AMBIENT_DUTY_ROTATION_SEC = 6;
 /** Cached leg paths per resident (one per routine leg); the cache is dropped with the roster. */
 export const AMBIENT_LEG_CACHE_PER_RESIDENT = 6;
 /** Routine stops per resident (its post plus patrol stops). */

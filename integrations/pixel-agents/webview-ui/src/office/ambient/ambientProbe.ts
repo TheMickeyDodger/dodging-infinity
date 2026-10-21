@@ -21,6 +21,8 @@ export interface AmbientProbeEntry {
   /** The pending leg (routine index) and the current state's remaining timer, raw. */
   routineIndex: number;
   timer: number;
+  /** Whether the resident is ON DUTY (drawn, simulated, hoverable); an off-duty resident is frozen and not drawn. */
+  onDuty: boolean;
 }
 
 /** A train as the probe copies it, RAW (no rounding, station by index): read straight from the
@@ -63,8 +65,10 @@ declare global {
   }
 }
 
+/** The FULL simulated roster, on duty or not, each with its duty flag (the drawn list is `onDuty`). */
 export function snapshotAmbient(officeState: OfficeState): AmbientProbeEntry[] {
-  return officeState.getAmbientResidents().map((r) => ({
+  const world = officeState.ambient;
+  return (world?.residents ?? []).map((r) => ({
     id: r.id,
     job: r.job,
     district: r.district,
@@ -77,6 +81,7 @@ export function snapshotAmbient(officeState: OfficeState): AmbientProbeEntry[] {
     places: [...r.placesVisited],
     routineIndex: r.routineIndex,
     timer: r.timer,
+    onDuty: world?.isOnDuty(r) ?? true,
   }));
 }
 

@@ -141,12 +141,23 @@ EXCLUDED_STATE_INVALID = "root_state_invalid"
 EXCLUSION_REASONS = (EXCLUDED_ENTRY_INVALID, EXCLUDED_ROOT_ABSENT,
                      EXCLUDED_ROOT_REFUSED, EXCLUDED_STATE_REFUSED,
                      EXCLUDED_STATE_INVALID)
+#: The exclusions that mean a root's role records could NOT be read (an unusable registration, a refused
+#: root, a refused or invalid state artifact): such a root is counted in ``roots_role_records_unreadable``
+#: and can never be reported as "records no roles". ``EXCLUDED_ROOT_ABSENT`` (a removed checkout: nothing
+#: can be hiding there) and a root with no herd state at all (never started) are NOT in this set: they
+#: stay disclosed in the ``locators`` account only.
+UNREADABLE_EXCLUSIONS = (EXCLUDED_ENTRY_INVALID, EXCLUDED_ROOT_REFUSED,
+                         EXCLUDED_STATE_REFUSED, EXCLUDED_STATE_INVALID)
 
 #: A runtime or role-bindings record that is present but not a JSON object.
 ROLE_RECORDS_NOT_AN_OBJECT = "role_records_not_a_json_object"
 
 # ``runtime_agents`` block problems.
 PROBLEM_SINGLE_PASS = "role_records_read_in_one_source_pass_only"
+#: Every task-native source of the answer pass was read fresh and no root of
+#: any of them records a role, so the capture had nothing to observe: an
+#: EMPTY roster, said with its counts, never a failure to look.
+PROBLEM_NO_ROLE_RECORDS = "task_native_sources_record_no_roles"
 PROBLEM_SNAPSHOT_NOT_FRESH = "runtime_snapshot_not_fresh"
 PROBLEM_NATIVE_NOT_OBSERVED = "native_stable_identity_not_observed"
 PROBLEM_SOURCE_NOT_FRESH = "task_native_source_not_fresh"
@@ -540,7 +551,9 @@ def _read(source, now, budget, record):
         record({"source_id": source["source_id"], "at": now,
                 "health": reading["health"], "problem": reading["problem"],
                 "requested": seen["aliases"],
-                "read_account": reading["read_account"], "roots": roots})
+                "read_account": reading["read_account"], "roots": roots,
+                "excluded": list((reading.get("locators") or {}).get(
+                    "excluded", ()))})
     budget.missions_remaining -= len(views)
     return reading
 
@@ -803,6 +816,23 @@ def _role_key(role):
             role["workspace_id"], json.dumps(role["entry"], sort_keys=True))
 
 
+def _excluded_unreadable(readings):
+    """How many registered roots of these readings were EXCLUDED because their
+    role records could not be read (``UNREADABLE_EXCLUSIONS``)."""
+    return sum(1 for r in readings for entry in r.get("excluded", ())
+               if entry["reason"] in UNREADABLE_EXCLUSIONS)
+
+
+def _roster_empty(readings, fresh):
+    """True when EVERY task-native reading of the pass is ``fresh``, no accepted
+    root records a role or holds unreadable role records, AND no registered root
+    was excluded for being unreadable: nothing readable is never "records
+    nothing"."""
+    return len(fresh) == len(readings) and not _excluded_unreadable(fresh) \
+        and not any(root["runtime_roles"] or root["problem"] is not None
+                    for r in fresh for root in r["roots"])
+
+
 def runtime_agents(observation, missions, reading, now, capture,
                    sources=None):
     """The ``runtime_agents`` block (``contract``) of one refresh.
@@ -826,9 +856,12 @@ def runtime_agents(observation, missions, reading, now, capture,
                              "problem": block["problem"], "requested": None,
                              "read_account": None, "roots": []})
     if not readings:
+        # No task-native source is registered at all (the answer pass's
+        # source blocks hold none either): said as such, never as "no role
+        # records", which a registered source could also mean.
         return contract.runtime_agents_block(
             contract.RUNTIME_AGENTS_NOT_APPLICABLE,
-            contract.PROBLEM_NO_TASK_NATIVE_SOURCE)
+            contract.PROBLEM_TASK_NATIVE_SOURCE_NOT_REGISTERED)
     second = [r for r in readings if r["health"] == contract.HEALTH_FRESH]
     # What the registries REQUESTED, from every reading of this pass whose
     # registry was read (degraded ones included); a reading whose registry
@@ -857,7 +890,7 @@ def runtime_agents(observation, missions, reading, now, capture,
                               for root in r["roots"]),
         "roots_role_records_unreadable": sum(
             1 for r in second for root in r["roots"]
-            if root["problem"] is not None),
+            if root["problem"] is not None) + _excluded_unreadable(second),
         "roots_over_capacity": len(over_capacity),
         "names_over_bound": capture.get("names_over_bound") or 0,
     }
@@ -867,6 +900,13 @@ def runtime_agents(observation, missions, reading, now, capture,
         return contract.runtime_agents_block(
             contract.RUNTIME_AGENTS_UNAVAILABLE, PROBLEM_SINGLE_PASS,
             counts=counts, second_pass_at=second_at)
+    if _roster_empty(readings, second) and (
+            not reading.is_live() or capture.get("native_cwd") is None):
+        # Only where nothing could be observed: a capture that DID observe
+        # stays ``observed`` with zero agents below.
+        return contract.runtime_agents_block(
+            contract.RUNTIME_AGENTS_NOT_APPLICABLE, PROBLEM_NO_ROLE_RECORDS,
+            counts=counts, first_pass_at=first_at, second_pass_at=second_at)
     if not reading.is_live():
         return contract.runtime_agents_block(
             contract.RUNTIME_AGENTS_UNAVAILABLE, PROBLEM_SNAPSHOT_NOT_FRESH,

@@ -262,14 +262,18 @@ class SourceRegistry(object):
         return [dict(s) for s in self.load()["sources"]]
 
     def register(self, source_id, kind, store_dir, producer, max_age_seconds,
-                 now):
-        """Add one source; idempotent for an identical source."""
+                 now, create_directory=True):
+        """Add one source; idempotent for an identical source.
+        ``create_directory=False`` makes the lock and the write refuse to
+        create a registry directory that does not exist (``FileNotFoundError``,
+        nothing created); the default creates it, as it always has."""
         candidate = validate_source({
             "source_id": source_id, "kind": kind, "store_dir": store_dir,
             "producer": producer, "max_age_seconds": max_age_seconds,
             "registered_at": now,
         })
-        with exclusive_store_lock(self.directory, REGISTRY_LOCK_FILE_NAME):
+        with exclusive_store_lock(self.directory, REGISTRY_LOCK_FILE_NAME,
+                                  create_directory=create_directory):
             document = self.load()
             for existing in document["sources"]:
                 same = all(existing[k] == candidate[k] for k in SOURCE_KEYS
@@ -292,7 +296,7 @@ class SourceRegistry(object):
                                                 MAX_REGISTERED_SOURCES))
             document["sources"].append(candidate)
             document["sources"].sort(key=lambda s: s["source_id"])
-            self._write(document)
+            self._write(document, create_directory)
         return {"outcome": OUTCOME_REGISTERED, "source": dict(candidate)}
 
     def unregister(self, source_id):
@@ -307,7 +311,7 @@ class SourceRegistry(object):
             self._write(document)
         return {"outcome": OUTCOME_REMOVED, "source_id": source_id}
 
-    def _write(self, document):
+    def _write(self, document, create_directory=True):
         """THE one registry rewrite (registration AND removal): validate the
         document, refuse it if its serialised form (as ``atomic_write_json``
         writes it) would exceed what ``load`` can read back, and only then
@@ -318,4 +322,5 @@ class SourceRegistry(object):
         validate_document(document)
         require_serialized_size(document)
         atomic_write_json(self.directory, self.path, document,
-                          temp_prefix=".mission_sources-")
+                          temp_prefix=".mission_sources-",
+                          create_directory=create_directory)

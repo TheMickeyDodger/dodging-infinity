@@ -32,6 +32,7 @@ import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../office/engine/renderer.js';
 import { setFloorSprites } from '../office/floorTiles.js';
+import { diSeatingOrder, reconcileDiSeats } from '../office/layout/diSeating.js';
 import {
   aspectBands,
   assignDiZones,
@@ -399,6 +400,10 @@ export function useExtensionMessages(
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
         noteFolderName(folderName);
       }
+      // DI seating: desks go to the team members first and then to the runtime agents in office-state order,
+      // whatever the arrival order, so a late ACTIVE member is never left deskless behind an earlier runtime
+      // agent and a reload seats exactly as the continuous page does (nobody is added or removed here).
+      reconcileDiSeats(os, diSeatingOrder(state));
       diDrawnRef.current = plan.next;
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

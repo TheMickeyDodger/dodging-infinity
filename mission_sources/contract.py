@@ -86,6 +86,12 @@ KIND_TASK_NATIVE = "task_native"
 SOURCE_KINDS = (KIND_MISSION_CORE, KIND_WORKFLOW_STORE, KIND_TASK_NATIVE)
 #: ``runtime_agents`` when no task-native reading supplied role records.
 PROBLEM_NO_TASK_NATIVE_SOURCE = "no_task_native_role_records"
+#: ``runtime_agents`` when the registry was read and registers NO source of
+#: kind ``task_native`` at all: so no team outside the canonical records can
+#: be listed, which is not the same as a registered source that records no
+#: role. The supported setup step that registers it is
+#: ``dicatalog.py task-source --registry DIR --ensure``.
+PROBLEM_TASK_NATIVE_SOURCE_NOT_REGISTERED = "task_native_source_not_registered"
 #: Kinds whose records are CANONICAL Mission / workflow records: a
 #: task-native record defers to any of them that names the same task or
 #: root (``roster.deferrals``), and never stands in for one that could not

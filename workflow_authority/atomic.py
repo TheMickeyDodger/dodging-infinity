@@ -32,7 +32,8 @@ import tempfile
 WORKFLOWS_LOCK_FILE_NAME = "workflows.lock"
 
 
-def atomic_write_json(directory, path, document, temp_prefix):
+def atomic_write_json(directory, path, document, temp_prefix,
+                      create_directory=True):
     """The ONE atomic-replace primitive for every protected store.
 
     Temp file created in the same directory, ``fchmod`` 600,
@@ -42,8 +43,14 @@ def atomic_write_json(directory, path, document, temp_prefix):
     from ``WorkflowStore.save`` (P1-A6) so the sibling PR delivery
     store shares it instead of copying it; the caller validates the
     document before calling this — nothing here validates.
+
+    ``create_directory`` (default True: the directory is created, as it
+    always was) can be False for a writer that must NEVER create its
+    directory: a missing one then raises ``FileNotFoundError`` and
+    nothing is created.
     """
-    os.makedirs(directory, mode=0o700, exist_ok=True)
+    if create_directory:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
     descriptor, temp_path = tempfile.mkstemp(
         prefix=temp_prefix, suffix=".tmp", dir=directory
     )
@@ -68,7 +75,8 @@ def atomic_write_json(directory, path, document, temp_prefix):
 
 
 @contextlib.contextmanager
-def exclusive_store_lock(directory, lock_file_name=WORKFLOWS_LOCK_FILE_NAME):
+def exclusive_store_lock(directory, lock_file_name=WORKFLOWS_LOCK_FILE_NAME,
+                         create_directory=True):
     """Blocking cross-process lock over the workflow store.
 
     Hold this around every load-modify-save cycle. The lock file is
@@ -76,8 +84,12 @@ def exclusive_store_lock(directory, lock_file_name=WORKFLOWS_LOCK_FILE_NAME):
     the held descriptor. ``lock_file_name`` defaults to the workflow
     store's lock; the sibling PR delivery store passes its own name so
     the two stores never serialize against each other.
+    ``create_directory`` is as for ``atomic_write_json``: True (the
+    default) creates the directory; False raises ``FileNotFoundError``
+    for a missing one and creates nothing.
     """
-    os.makedirs(directory, mode=0o700, exist_ok=True)
+    if create_directory:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
     lock_path = os.path.join(directory, lock_file_name)
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:

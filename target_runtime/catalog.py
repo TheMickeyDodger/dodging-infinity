@@ -5,6 +5,7 @@
                             --store-dir PATH --producer LABEL
                             [--max-age-seconds N]
     dicatalog.py unregister --registry DIR --source-id ID
+    dicatalog.py task-source --registry DIR [--store-dir PATH] [--ensure]
     dicatalog.py query      --registry DIR [--herd-root PATH ...]
                             [--wait-seconds S]
     dicatalog.py serve      --registry DIR [--herd-root PATH ...]
@@ -29,6 +30,31 @@ Registration is explicit, inspectable DATA (``mission_sources.registry``):
 ``register`` and ``unregister`` are the only writers, and they write only
 the registry file in the directory the operator names; ``sources`` prints
 the records as they are. Nothing is discovered by scanning.
+
+``task-source`` is the supported setup step for the DI-native task source
+(``task_native``: the directory where ``herdctl init`` records every
+repository, by default herdctl's own ``~/.config/dodging-infinity``), so a
+team ``herdctl`` registers needs no registration of its own. Without
+``--ensure`` it only READS the registry and prints one JSON line saying
+whether that store is registered and, when it is not, the exact command to
+run. With ``--ensure`` it registers ``TASK_SOURCE_ID`` through the
+registry's own ``register`` when no ``task_native`` source names that store
+(by real path, under any id); otherwise it writes nothing. A refusal is the
+registry's own, reported with its problem and an action, never repaired. It
+never creates the registry directory, and an unreadable registry is refused
+before any lock is taken; one that becomes unreadable between the status read
+and the writer's locked read is reported from THAT failure (``unknown``). After
+an operational write failure (permission, disk, I/O) the registry is RE-READ
+(read-only) and the report is built from that read, never from the earlier
+status: when it still does not register the source the report is outcome
+``failed`` / problem ``registry_not_writable`` and says the registry still reads
+as it did; when the replacement had already landed (the atomic writer replaces
+the file and only then syncs its directory) the report is ``failed`` /
+``registry_write_unconfirmed``, names the source as registered, and says the new
+registry was not rolled back and its durability was not confirmed; when the
+registry cannot be re-read the report states that uncertainty (``unknown``, the
+read's own health and problem, "may have been updated"). Always exit 5, always
+one JSON line with an action, and nothing is repaired or rolled back.
 
 The answer (``catalog_answer``) is one closed JSON object: ``endpoint`` and
 ``endpoint_version``; ``requested_at`` (the clock when the refresh's request
@@ -131,13 +157,15 @@ Stated limits: the registered stores and the registry are read in-process,
 so a read the kernel never returns (for example on a hung network mount)
 blocks the query thread and holds the slot; callers are still answered.
 The runtime residuals are ``runtime_snapshot``'s, by name. Writes:
-``register`` and ``unregister`` write the registry; nothing else here
-writes anything. No model is invoked anywhere on this path.
+``register``, ``unregister`` and ``task-source --ensure`` write the
+registry, through the registry's own writer; nothing else here writes
+anything. No model is invoked anywhere on this path.
 """
 
 import argparse
 import json
 import os
+import shlex
 import sys
 import threading
 import time
@@ -187,6 +215,36 @@ EXIT_USAGE = 2
 EXIT_UNAVAILABLE = 4
 EXIT_REGISTRATION_REFUSED = 5
 EXIT_FRAME_REFUSED = 6
+
+# -- the DI-native task source (``task-source``) ---------------------------
+
+#: The record ``task-source --ensure`` registers: herdctl's repository
+#: registry as the ``task_native`` source, read by
+#: ``herdr_task_source.read_herdr_task``.
+TASK_SOURCE_ID = "di_herdr_tasks"
+TASK_SOURCE_PRODUCER = "herdctl"
+#: Where ``herdctl init`` writes ``repos.json`` (``herdr.registry``, which
+#: this module may not import; parity pinned by test), under the home
+#: directory.
+HERDCTL_STORE_PARTS = (".config", "dodging-infinity")
+TASK_SOURCE_REGISTERED = "registered"
+TASK_SOURCE_NOT_REGISTERED = "not_registered"
+#: The registry could not be read: whether the source is registered is
+#: UNKNOWN, never "not registered".
+TASK_SOURCE_UNKNOWN = "unknown"
+TASK_SOURCE_KEYS = ("registry", "registry_health", "registry_problem",
+                    "store_dir", "task_native_sources", "state", "source",
+                    "outcome", "problem", "detail", "action")
+OUTCOME_REFUSED = "refused"
+#: The registry (or its directory) could not be WRITTEN for an operational reason (permission, disk, I/O),
+#: as opposed to a refusal the registry itself decided: nothing was written, and nothing is repaired.
+OUTCOME_FAILED = "failed"
+PROBLEM_REGISTRY_DIRECTORY_ABSENT = "registry_directory_absent"
+PROBLEM_REGISTRY_NOT_WRITABLE = "registry_not_writable"
+#: A write failed and a fresh read shows the registry NOT as it was (the replacement landed before a later
+#: step failed), or cannot be read: whether it changed is established by that read or stays explicit
+#: uncertainty, never "nothing changed" and never a rollback that did not happen.
+PROBLEM_REGISTRY_WRITE_UNCONFIRMED = "registry_write_unconfirmed"
 
 
 def refresh_budget(source_passes):
@@ -864,6 +922,256 @@ def serve(owner, in_stream, out_fd, clock):
         owner.shutdown()
 
 
+# -- the DI-native task source: the supported setup step -------------------
+
+def default_task_store_dir():
+    """The directory where ``herdctl init`` writes ``repos.json`` for this
+    user (``~/.config/dodging-infinity``), or None when the home directory
+    does not resolve to an absolute path."""
+    home = os.path.expanduser("~")
+    if not os.path.isabs(home):
+        return None
+    return os.path.normpath(os.path.join(home, *HERDCTL_STORE_PARTS))
+
+
+def _ensure_command(registry_directory, store_dir):
+    """The exact command that registers ``store_dir`` (``--store-dir`` only
+    when it is not the default)."""
+    text = "python3 dicatalog.py task-source --registry %s" % shlex.quote(
+        registry_directory)
+    if store_dir != default_task_store_dir():
+        text += " --store-dir %s" % shlex.quote(store_dir)
+    return text + " --ensure"
+
+
+def _task_source_action(problem, registry, store_dir):
+    """The operator's next step for ``problem``, naming exact commands."""
+    directory = shlex.quote(registry.directory)
+    path = shlex.quote(registry.path)
+    ensure = _ensure_command(registry.directory, store_dir)
+    sources = "python3 dicatalog.py sources --registry %s" % directory
+    remove = ("python3 dicatalog.py unregister --registry %s --source-id"
+              % directory)
+    again = ", then run again: " + ensure
+    if problem in (contract_module.PROBLEM_TASK_NATIVE_SOURCE_NOT_REGISTERED,
+                   registry_module.PROBLEM_REGISTRY_ABSENT):
+        return ensure
+    if problem == PROBLEM_REGISTRY_DIRECTORY_ABSENT:
+        return ("create the registry directory, then register the source:"
+                " mkdir -m 700 %s && %s" % (directory, ensure))
+    if problem == registry_module.PROBLEM_REGISTRY_PERMISSIONS:
+        return ("the registry file is group- or other-accessible, so it was"
+                " refused and not used; check who changed it and that every"
+                " source in it is yours (cat %s), restrict it (chmod 600 %s)"
+                % (path, path) + again)
+    if problem == registry_module.PROBLEM_REGISTRY_UNREADABLE:
+        return ("the registry file is a symbolic link, not a regular file,"
+                " or unreadable, and was left as it is; put the private"
+                " regular file it should be at %s" % path + again)
+    if problem == registry_module.PROBLEM_REGISTRY_MALFORMED:
+        return ("the registry file is not a valid source registry and was"
+                " left as it is; restore %s from a copy you trust, or move it"
+                " aside and register your sources again" % path + again)
+    if problem == registry_module.PROBLEM_REGISTRY_INCOMPATIBLE:
+        return ("the registry file has another schema version and was left"
+                " as it is; read it with the release that wrote it, or move"
+                " %s aside and register your sources again" % path + again)
+    if problem == registry_module.PROBLEM_SOURCE_ID_CONFLICT:
+        return ("the id %s is already registered for another source;"
+                " nothing was changed. Inspect it (%s); only if that record"
+                " is wrong, remove it (%s %s)"
+                % (TASK_SOURCE_ID, sources, remove, TASK_SOURCE_ID) + again)
+    if problem == registry_module.PROBLEM_REGISTRY_FULL:
+        return ("the registry holds its maximum of %d sources; nothing was"
+                " changed. Remove one you no longer need (%s ID; see %s)"
+                % (registry_module.MAX_REGISTERED_SOURCES, remove, sources)
+                + again)
+    if problem == registry_module.PROBLEM_REGISTRY_SIZE:
+        return ("the registry would exceed its %d-byte bound; nothing was"
+                " changed. Remove a source you no longer need (%s ID; see"
+                " %s)" % (registry_module.MAX_REGISTRY_BYTES, remove, sources)
+                + again)
+    if problem == PROBLEM_REGISTRY_NOT_WRITABLE:
+        return ("the registry could not be written and still reads as it did; it was not repaired."
+                " Check who owns the directory and that you may write there (ls -ld %s), and free"
+                " disk space if that is the cause" % directory + again)
+    if problem == PROBLEM_REGISTRY_WRITE_UNCONFIRMED:
+        check = "python3 dicatalog.py task-source --registry %s" % directory
+        if store_dir != default_task_store_dir():
+            check += " --store-dir %s" % shlex.quote(store_dir)
+        return ("the write reported an error, so the registry may have been updated; nothing was rolled"
+                " back. Inspect it (%s) and check the source (%s); run %s again only if the source is"
+                " not listed" % (sources, check, ensure))
+    if problem == registry_module.PROBLEM_SOURCE_INVALID:
+        return ("pass --store-dir as an absolute, normalised path (no"
+                " trailing slash, no . or .. part); nothing was changed")
+    return "nothing was changed; inspect the registry: " + sources
+
+
+def _unreadable_report(registry, store_dir, exc):
+    """The report for a registry that could NOT be read, built from that failure alone: whether the
+    source is registered is ``unknown``, the health and ``registry_problem`` are the failure's own, and
+    nothing about any earlier read is carried over."""
+    report = dict.fromkeys(TASK_SOURCE_KEYS)
+    report.update(registry=registry.directory, store_dir=store_dir)
+    next_step = exc.problem
+    if exc.problem == registry_module.PROBLEM_REGISTRY_ABSENT and (
+            not os.path.isdir(registry.directory)):
+        next_step = PROBLEM_REGISTRY_DIRECTORY_ABSENT
+    report.update(
+        registry_health=query_module._REGISTRY_PROBLEM_HEALTH.get(
+            exc.problem, contract_module.HEALTH_MALFORMED),
+        registry_problem=exc.problem, state=TASK_SOURCE_UNKNOWN,
+        problem=exc.problem, detail=str(exc),
+        action=_task_source_action(next_step, registry, store_dir))
+    return report
+
+
+def task_source_status(registry, store_dir):
+    """READ-ONLY: is a ``task_native`` source registered for ``store_dir``
+    (by real path, under any id)? One report (``TASK_SOURCE_KEYS``); a
+    registry that cannot be read is ``unknown`` with its own problem and
+    health, never an empty registry."""
+    report = dict.fromkeys(TASK_SOURCE_KEYS)
+    report.update(registry=registry.directory, store_dir=store_dir)
+    try:
+        document = registry.load(absent_is_empty=False)
+    except registry_module.RegistryError as exc:
+        return _unreadable_report(registry, store_dir, exc)
+    natives = [dict(s) for s in document["sources"]
+               if s["kind"] == contract_module.KIND_TASK_NATIVE]
+    wanted = os.path.realpath(store_dir)
+    matching = [s for s in natives
+                if os.path.realpath(s["store_dir"]) == wanted]
+    report.update(registry_health=contract_module.HEALTH_FRESH,
+                  task_native_sources=natives)
+    if matching:
+        report.update(state=TASK_SOURCE_REGISTERED, source=matching[0])
+        return report
+    problem = contract_module.PROBLEM_TASK_NATIVE_SOURCE_NOT_REGISTERED
+    report.update(
+        state=TASK_SOURCE_NOT_REGISTERED, problem=problem,
+        detail="no task_native source names %s, so the teams herdctl"
+        " registers there are not discovered" % store_dir,
+        action=_task_source_action(problem, registry, store_dir))
+    return report
+
+
+def _registry_directory_exists(registry):
+    """The courtesy precheck: does the registry directory exist? Not the guarantee: the writer itself
+    refuses to create it (``register(create_directory=False)``)."""
+    return os.path.isdir(registry.directory)
+
+
+def _directory_absent_report(registry, store_dir):
+    """The refusal for a registry directory that does not exist (this step never creates it), built from
+    a fresh read so nothing stale is carried over."""
+    return dict(
+        task_source_status(registry, store_dir), outcome=OUTCOME_REFUSED,
+        problem=PROBLEM_REGISTRY_DIRECTORY_ABSENT,
+        detail="the registry directory %s does not exist; this step does"
+        " not create it" % registry.directory,
+        action=_task_source_action(PROBLEM_REGISTRY_DIRECTORY_ABSENT,
+                                   registry, store_dir))
+
+
+def _write_failure_report(registry, store_dir, exc):
+    """The report for an OPERATIONAL write failure (permission, disk, I/O). The registry is NEVER repaired,
+    and nothing is assumed about what the failed write left behind: the atomic writer replaces the file
+    and only THEN syncs the directory, so an error can arrive with the new registry already in place. The
+    current state is therefore RE-READ (read-only) and the report built from that read: still not
+    registered (the failure came before the replacement: said so), registered now (the replacement
+    landed: not rolled back, said so), or unreadable (explicit uncertainty). Always a failure."""
+    what = "%s: %s" % (type(exc).__name__, exc.strerror or exc)
+    now = task_source_status(registry, store_dir)
+    if now["state"] == TASK_SOURCE_NOT_REGISTERED:
+        # the same read that proves it: the registry still does not register the source
+        return dict(now, outcome=OUTCOME_FAILED,
+                    problem=PROBLEM_REGISTRY_NOT_WRITABLE,
+                    detail="%s; the registry still reads as it did" % what,
+                    action=_task_source_action(PROBLEM_REGISTRY_NOT_WRITABLE,
+                                               registry, store_dir))
+    if now["state"] == TASK_SOURCE_REGISTERED:
+        detail = ("%s, reported after the registry was replaced: it now registers the source, was not"
+                  " rolled back, and the write's durability was not confirmed" % what)
+    else:
+        detail = ("%s; the registry cannot be read now, so it may have been updated" % what)
+    return dict(now, outcome=OUTCOME_FAILED,
+                problem=PROBLEM_REGISTRY_WRITE_UNCONFIRMED, detail=detail,
+                action=_task_source_action(PROBLEM_REGISTRY_WRITE_UNCONFIRMED,
+                                           registry, store_dir))
+
+
+def ensure_task_source(registry, store_dir, now):
+    """Register ``TASK_SOURCE_ID`` for ``store_dir`` through the registry's
+    own ``register`` when no ``task_native`` source names that store;
+    otherwise write nothing (``unchanged``). An unreadable registry is
+    refused before any lock is taken; a missing registry directory is
+    refused, never created; every refusal is the registry's own."""
+    report = task_source_status(registry, store_dir)
+    if report["state"] == TASK_SOURCE_REGISTERED:
+        return dict(report, outcome=registry_module.OUTCOME_UNCHANGED)
+    if report["registry_problem"] not in (
+            None, registry_module.PROBLEM_REGISTRY_ABSENT):
+        return dict(report, outcome=OUTCOME_REFUSED)
+    if not _registry_directory_exists(registry):
+        return _directory_absent_report(registry, store_dir)
+    try:
+        # the writer is told NEVER to create the directory: the precheck above can be overtaken by a
+        # directory that disappears before the lock is taken
+        result = registry.register(
+            TASK_SOURCE_ID, contract_module.KIND_TASK_NATIVE, store_dir,
+            TASK_SOURCE_PRODUCER, contract_module.DEFAULT_MAX_AGE_SECONDS,
+            now, create_directory=False)
+    except registry_module.RegistryError as exc:
+        if exc.problem in query_module._REGISTRY_PROBLEM_HEALTH:
+            # the WRITER's locked read failed (the registry changed since the status read): the report
+            # is rebuilt from that failure, never the stale "fresh, not registered"
+            return dict(_unreadable_report(registry, store_dir, exc),
+                        outcome=OUTCOME_REFUSED)
+        return dict(report, outcome=OUTCOME_REFUSED, problem=exc.problem,
+                    detail=str(exc), action=_task_source_action(
+                        exc.problem, registry, store_dir))
+    except FileNotFoundError as exc:
+        if not _registry_directory_exists(registry):
+            return _directory_absent_report(registry, store_dir)
+        return _write_failure_report(registry, store_dir, exc)
+    except OSError as exc:
+        return _write_failure_report(registry, store_dir, exc)
+    return dict(task_source_status(registry, store_dir),
+                outcome=result["outcome"])
+
+
+def _task_source(registry, args, clock):
+    """``task-source``: one JSON report line; exit 0 only when the source is
+    registered (check) or was registered or found unchanged (``--ensure``).
+    """
+    store_dir = args.store_dir or default_task_store_dir()
+    if store_dir is None:
+        print("dicatalog: the home directory is not absolute; pass"
+              " --store-dir", file=sys.stderr)
+        return EXIT_USAGE
+    if args.ensure:
+        report = ensure_task_source(registry, store_dir, clock())
+        code = (EXIT_REGISTRATION_REFUSED
+                if report["outcome"] in (OUTCOME_REFUSED, OUTCOME_FAILED)
+                else EXIT_OK)
+        if code != EXIT_OK:
+            print("dicatalog: %s (%s): %s"
+                  % (report["outcome"], report["problem"], report["detail"]),
+                  file=sys.stderr)
+    else:
+        report = task_source_status(registry, store_dir)
+        code = (EXIT_OK if report["state"] == TASK_SOURCE_REGISTERED
+                else EXIT_UNAVAILABLE)
+        if code != EXIT_OK:
+            print("dicatalog: task_native source %s (%s): %s"
+                  % (report["state"], report["problem"], report["detail"]),
+                  file=sys.stderr)
+    _emit(report)
+    return code
+
+
 def _parser():
     parser = argparse.ArgumentParser(
         prog="dicatalog.py",
@@ -875,6 +1183,10 @@ def _parser():
             ("sources", "print the registered sources as recorded"),
             ("register", "register ONE source (writes the registry only)"),
             ("unregister", "remove ONE source (writes the registry only)"),
+            ("task-source", "report whether the DI-native task_native"
+                            " source (herdctl's repository registry) is"
+                            " registered; --ensure registers it (writes the"
+                            " registry only)"),
             ("query", "ONE-SHOT: print one catalog answer as one JSON line"),
             ("serve", "LONG-LIVED: answer request lines on stdin, one JSON"
                       " answer line each, on stdout")):
@@ -890,6 +1202,15 @@ def _parser():
                              default=contract_module.DEFAULT_MAX_AGE_SECONDS)
         elif name == "unregister":
             sub.add_argument("--source-id", required=True)
+        elif name == "task-source":
+            sub.add_argument("--store-dir", metavar="PATH",
+                             help="the directory holding herdctl's"
+                             " repos.json (default: ~/.config/"
+                             "dodging-infinity, where herdctl init writes"
+                             " it)")
+            sub.add_argument("--ensure", action="store_true",
+                             help="register it when absent; otherwise"
+                             " write nothing")
         elif name in ("query", "serve"):
             sub.add_argument("--herd-root", action="append", metavar="PATH",
                              help="an absolute, resolved herd root for the"
@@ -941,7 +1262,9 @@ def main(argv=None, clock=None, listing_argv=None, stdin=None):
     for path in [args.registry] + list(getattr(args, "herd_root", None)
                                        or []) + ([args.delivery_store] if (
                                            getattr(args, "delivery_store",
-                                                   None)) else []):
+                                                   None)) else []) + (
+            [args.store_dir] if args.command == "task-source"
+            and args.store_dir is not None else []):
         if not os.path.isabs(path):
             print("dicatalog: paths must be absolute: %s" % path,
                   file=sys.stderr)
@@ -952,6 +1275,8 @@ def main(argv=None, clock=None, listing_argv=None, stdin=None):
               file=sys.stderr)
         return EXIT_USAGE
     registry = registry_module.SourceRegistry(args.registry)
+    if args.command == "task-source":
+        return _task_source(registry, args, clock)
     try:
         if args.command == "sources":
             _emit({"registry": args.registry,

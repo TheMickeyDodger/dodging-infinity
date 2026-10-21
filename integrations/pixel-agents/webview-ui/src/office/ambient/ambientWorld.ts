@@ -21,6 +21,7 @@ import {
   AMBIENT_CONGESTION_PASS_SEC,
   AMBIENT_DECK_MIN,
   AMBIENT_DISTRICT_WEIGHT_EXPONENT,
+  AMBIENT_DUTY_ROTATION_SEC,
   AMBIENT_DWELL_MAX_SEC,
   AMBIENT_DWELL_MIN_SEC,
   AMBIENT_HUB_SPACING,
@@ -46,6 +47,8 @@ import {
   AMBIENT_ROUTINE_STOPS,
   AMBIENT_WALK_FRAME_DURATION_SEC,
   AMBIENT_WALK_SPEED_PX_PER_SEC,
+  AMBIENT_WORKING_OFFICE_ON_DUTY,
+  AMBIENT_WORKING_OFFICE_TILES_PER_RESIDENT,
   AMBIENT_WORLD_SEED,
   AMBIENT_YIELD_RADIUS,
   CHARACTER_HIT_HALF_WIDTH,
@@ -59,7 +62,12 @@ import type { OfficeLayout, TileType as TileTypeVal } from '../types.js';
 import { Direction, TILE_SIZE, TileType } from '../types.js';
 import { PedestrianGraph } from './ambientGraph.js';
 import type { AmbientJobId } from './ambientJobs.js';
-import { AMBIENT_EGGS, AMBIENT_JOBS, jobsForDistrict, REQUIRED_AMBIENT_JOBS } from './ambientJobs.js';
+import {
+  AMBIENT_EGGS,
+  AMBIENT_JOBS,
+  jobsForDistrict,
+  REQUIRED_AMBIENT_JOBS,
+} from './ambientJobs.js';
 import type { WalkMask } from './ambientPath.js';
 import { AmbientPathfinder } from './ambientPath.js';
 import { hashString, SeededRng } from './ambientRng.js';
@@ -162,6 +170,10 @@ export interface AmbientBuildInput {
   population?: number;
   /** The subway line, when the world has one: a bounded set of residents commute on it. */
   transit?: TransitLine | null;
+  /** At most this many residents of a WORKING OFFICE (a pool holding a seat) are on duty at once; default AMBIENT_WORKING_OFFICE_ON_DUTY. */
+  onDutyCap?: number;
+  /** A working office shows at most ceil(T / this) on duty, T being its pool's resident-eligible tiles (`pool.tiles.length`); 0 or less: no density bound, only the cap. Default AMBIENT_WORKING_OFFICE_TILES_PER_RESIDENT. */
+  onDutyTilesPerResident?: number;
 }
 
 /** One resident's validated restore step (AmbientWorld.planRestore / commitRestore). */
@@ -229,7 +241,12 @@ export function buildWalkMask(
 function allocate(weights: number[], total: number, mins: number[]): number[] {
   const n = weights.length;
   if (n === 0 || total <= 0) return weights.map(() => 0);
-  if (mins.reduce((a, b) => a + b, 0) > total) return allocate(weights, total, mins.map(() => 0));
+  if (mins.reduce((a, b) => a + b, 0) > total)
+    return allocate(
+      weights,
+      total,
+      mins.map(() => 0),
+    );
   let remaining = total - mins.reduce((a, b) => a + b, 0);
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
   const exact = weights.map((w) => (w / sum) * remaining);
@@ -249,6 +266,24 @@ interface Pool {
   min: number;
   /** The place's ROOMS: its floor split at door openings (one room for open ground). */
   rooms: number[][];
+  /** The legacy whole-floor pool of a layout without places. */
+  fallback?: boolean;
+}
+
+/**
+ * One WORKING OFFICE's duty roster (derived from the world and the clock; NEVER saved). `order` is the
+ * fixed seed-hashed order of its members; `onDuty` holds who is on duty, oldest first; a resident in
+ * `retiring` steps off duty at its next dwell boundary, and `owed` newcomers come on as places free.
+ */
+interface DutyGroup {
+  readonly label: string;
+  readonly cap: number;
+  readonly order: AmbientResident[];
+  readonly onDuty: AmbientResident[];
+  readonly retiring: Set<AmbientResident>;
+  next: number;
+  clock: number;
+  owed: number;
 }
 
 /**
@@ -257,9 +292,19 @@ interface Pool {
  * doors and stays one room. Rooms under MIN_ROOM_TILES are folded away (alcoves, door reveals).
  */
 const MIN_ROOM_TILES = 6;
-export function roomsOf(tiles: number[], cols: number, rows: number, tileMap: TileTypeVal[][]): number[][] {
+export function roomsOf(
+  tiles: number[],
+  cols: number,
+  rows: number,
+  tileMap: TileTypeVal[][],
+): number[][] {
   const open = (c: number, r: number) =>
-    c >= 0 && r >= 0 && c < cols && r < rows && tileMap[r][c] !== TileType.WALL && tileMap[r][c] !== TileType.VOID;
+    c >= 0 &&
+    r >= 0 &&
+    c < cols &&
+    r < rows &&
+    tileMap[r][c] !== TileType.WALL &&
+    tileMap[r][c] !== TileType.VOID;
   const run = (c: number, r: number, dc: number, dr: number): number => {
     if (!open(c, r)) return 0;
     let n = 1;
@@ -269,9 +314,22 @@ export function roomsOf(tiles: number[], cols: number, rows: number, tileMap: Ti
   };
   const isDoor = (c: number, r: number): boolean => {
     const h = run(c, r, 1, 0);
-    if (h <= 8 && open(c, r - 1) && open(c, r + 1) && run(c, r - 1, 1, 0) > h + 1 && run(c, r + 1, 1, 0) > h + 1) return true;
+    if (
+      h <= 8 &&
+      open(c, r - 1) &&
+      open(c, r + 1) &&
+      run(c, r - 1, 1, 0) > h + 1 &&
+      run(c, r + 1, 1, 0) > h + 1
+    )
+      return true;
     const v = run(c, r, 0, 1);
-    return v <= 8 && open(c - 1, r) && open(c + 1, r) && run(c - 1, r, 0, 1) > v + 1 && run(c + 1, r, 0, 1) > v + 1;
+    return (
+      v <= 8 &&
+      open(c - 1, r) &&
+      open(c + 1, r) &&
+      run(c - 1, r, 0, 1) > v + 1 &&
+      run(c + 1, r, 0, 1) > v + 1
+    );
   };
   const member = new Set<number>();
   for (const t of tiles) if (!isDoor(t % cols, Math.floor(t / cols))) member.add(t);
@@ -325,7 +383,9 @@ export function roomsOf(tiles: number[], cols: number, rows: number, tileMap: Ti
     }
     const zones = new Map<number, number[]>();
     for (const t of room) {
-      const key = Math.floor(Math.floor(t / cols) / HALL_ZONE_TILES) * 1000 + Math.floor((t % cols) / HALL_ZONE_TILES);
+      const key =
+        Math.floor(Math.floor(t / cols) / HALL_ZONE_TILES) * 1000 +
+        Math.floor((t % cols) / HALL_ZONE_TILES);
       const z = zones.get(key);
       if (z) z.push(t);
       else zones.set(key, [t]);
@@ -375,6 +435,12 @@ export class AmbientWorld {
   /** EASTER EGGS (M3 S6): each family and the place it was homed in (null: no matching place). */
   eggs: Array<{ job: AmbientJobId; home: string | null; id: string | null }> = [];
   private cursor = 0;
+  /** Working offices' duty rosters (derived; never saved). Empty: every resident is on duty. */
+  private dutyGroups: DutyGroup[] = [];
+  private rosters: Array<{ label: string; tiles: number; members: number; cap: number }> = [];
+  /** Residents off duty: frozen, not drawn, not hoverable, not counted in `occupancy`. */
+  private readonly offDuty = new Set<AmbientResident>();
+  private visibleCache: AmbientResident[] | null = null;
 
   constructor(
     residents: AmbientResident[],
@@ -400,6 +466,120 @@ export class AmbientWorld {
     return this.pathfinder.mask.cols;
   }
 
+  /**
+   * WORKING-OFFICE VISIBLE OCCUPANCY. Each group is one working office (a pool that holds a seat) with its
+   * `tiles`: the pool's RESIDENT-ELIGIBLE tiles as `addPool` builds them (`pool.tiles.length`: walkable, on the
+   * main pedestrian network, not a seat tile or a seat tile's walkable neighbour, in that place), NOT the room's
+   * or the place's area. Its bound is min(`cap`, max(1, ceil(tiles / `tilesPerResident`))). A group larger than
+   * its bound has at most that many members ON DUTY at once: the first `bound` of a seed-hashed order at
+   * t = 0 (so a reopened save shows exactly the bound), then one steps off at a dwell boundary and the next in the
+   * order steps on every AMBIENT_DUTY_ROTATION_SEC. OFF DUTY IS FROZEN, never deletion: nothing about the
+   * resident changes (id, job, routine, routineIndex, rides, tile, state, timer), it is simply not simulated,
+   * not drawn, not hit-testable and not an obstacle until its turn. Derived from the world and this world's
+   * own update clock, so it is never saved and reduced motion (which never calls `update`) freezes it. A
+   * resident with a ride plan is never rotated.
+   */
+  configureDuty(
+    groups: ReadonlyArray<{ label: string; tiles: number; members: readonly AmbientResident[] }>,
+    cap: number,
+    tilesPerResident: number,
+  ): void {
+    this.dutyGroups = [];
+    this.rosters = [];
+    this.offDuty.clear();
+    this.visibleCache = null;
+    const ceiling = Math.max(1, Math.floor(cap));
+    const per = tilesPerResident > 0 ? tilesPerResident : 0; // 0 or less: no density bound, only the cap
+    for (const group of groups) {
+      const members = group.members.filter((r) => !r.rides);
+      const bound =
+        per > 0 ? Math.min(ceiling, Math.max(1, Math.ceil(group.tiles / per))) : ceiling;
+      this.rosters.push({
+        label: group.label,
+        tiles: group.tiles,
+        members: members.length,
+        cap: bound,
+      });
+      if (members.length <= bound) continue;
+      const order = [...members].sort(
+        (a, b) =>
+          hashString(a.id, this.seed) - hashString(b.id, this.seed) || (a.id < b.id ? -1 : 1),
+      );
+      for (const r of order.slice(bound)) {
+        this.offDuty.add(r);
+        if (r.state !== 'riding') this.occupancy[r.tileRow * this.cols + r.tileCol]--;
+      }
+      this.dutyGroups.push({
+        label: group.label,
+        cap: bound,
+        order,
+        onDuty: order.slice(0, bound),
+        retiring: new Set(),
+        next: bound % order.length,
+        clock: AMBIENT_DUTY_ROTATION_SEC,
+        owed: 0,
+      });
+    }
+  }
+
+  /** Every working office with the resident-eligible tiles (`pool.tiles.length`) its bound was computed from, its resident count and its bound (also those left untouched). */
+  dutyRosters(): ReadonlyArray<{ label: string; tiles: number; members: number; cap: number }> {
+    return this.rosters;
+  }
+
+  /** Whether `r` is on duty (drawn, simulated, hoverable). Everyone is, outside a working office. */
+  isOnDuty(r: AmbientResident): boolean {
+    return !this.offDuty.has(r);
+  }
+
+  /** The residents to DRAW and hit-test: the roster itself when nobody is off duty, else the on-duty residents. */
+  visibleResidents(): readonly AmbientResident[] {
+    if (this.offDuty.size === 0) return this.residents;
+    if (this.visibleCache === null)
+      this.visibleCache = this.residents.filter((r) => !this.offDuty.has(r));
+    return this.visibleCache;
+  }
+
+  /** Advance every duty roster by `dt`: schedule hand-overs, retire the flagged at a dwell boundary, bring the next on. */
+  private rotateDuty(dt: number): void {
+    for (const g of this.dutyGroups) {
+      g.clock -= dt;
+      while (g.clock <= 0) {
+        g.clock += AMBIENT_DUTY_ROTATION_SEC;
+        const leaving = g.onDuty.find((r) => !g.retiring.has(r));
+        if (leaving) {
+          g.retiring.add(leaving);
+          g.owed++;
+        }
+      }
+      for (const r of [...g.retiring]) if (r.state === 'dwell') this.stepOff(g, r);
+      while (g.owed > 0 && g.onDuty.length < g.cap) if (!this.stepOn(g)) g.owed = 0;
+    }
+  }
+
+  private stepOff(g: DutyGroup, r: AmbientResident): void {
+    this.offDuty.add(r);
+    this.occupancy[r.tileRow * this.cols + r.tileCol]--;
+    g.onDuty.splice(g.onDuty.indexOf(r), 1);
+    g.retiring.delete(r);
+    this.visibleCache = null;
+  }
+
+  private stepOn(g: DutyGroup): boolean {
+    for (let k = 0; k < g.order.length; k++) {
+      const r = g.order[g.next];
+      g.next = (g.next + 1) % g.order.length;
+      if (!this.offDuty.has(r)) continue;
+      this.offDuty.delete(r);
+      this.occupancy[r.tileRow * this.cols + r.tileCol]++;
+      g.onDuty.push(r);
+      g.owed--;
+      this.visibleCache = null;
+      return true;
+    }
+    return false;
+  }
+
   /** Tiles real agents have priority on this tick: their own tiles plus assigned seats' zones. */
   priorityTiles(ctx: AmbientAgentContext | undefined): Set<number> {
     const set = new Set<number>(ctx?.agentTiles ?? []);
@@ -412,7 +592,10 @@ export class AmbientWorld {
   update(dt: number, ctx?: AmbientAgentContext): void {
     const priority = this.priorityTiles(ctx);
     const agentTiles = ctx?.agentTiles ?? new Set<number>();
+    if (this.dutyGroups.length > 0) this.rotateDuty(dt);
+    const off = this.offDuty;
     for (const r of this.residents) {
+      if (off.size > 0 && off.has(r)) continue; // off duty: frozen
       const here = r.tileRow * this.cols + r.tileCol;
       // Agents win: a resident standing on an agent's tile or an assigned seat's zone steps aside.
       const midStep = r.state === 'walk' && r.moveProgress > 0;
@@ -454,7 +637,7 @@ export class AmbientWorld {
     const n = this.residents.length;
     for (let k = 0; k < n && budget > 0; k++) {
       const r = this.residents[(this.cursor + k) % n];
-      if (r.state !== 'need-path') continue;
+      if (r.state !== 'need-path' || (off.size > 0 && off.has(r))) continue;
       budget--;
       this.plan(r);
     }
@@ -490,7 +673,7 @@ export class AmbientWorld {
     const cols = this.cols;
     let yields = 0;
     for (const r of this.residents) {
-      if (r.state === 'riding') continue;
+      if (r.state === 'riding' || this.offDuty.has(r)) continue;
       const here = r.tileRow * cols + r.tileCol;
       if (!priority.has(here)) continue;
       const steps = this.yieldPath(r, priority);
@@ -712,25 +895,33 @@ export class AmbientWorld {
    * to its post; a waiting resident must be on an island platform with a ride pending at that leg; a
    * resident aboard must have a ride pending at its leg.
    */
-  planRestore(entries: ReadonlyArray<readonly [string, number, number, number, number, number]>): RestorePlan[] | string {
-    if (entries.length !== this.residents.length) return `the snapshot holds ${entries.length} residents; this world has ${this.residents.length}`;
+  planRestore(
+    entries: ReadonlyArray<readonly [string, number, number, number, number, number]>,
+  ): RestorePlan[] | string {
+    if (entries.length !== this.residents.length)
+      return `the snapshot holds ${entries.length} residents; this world has ${this.residents.length}`;
     const plan: RestorePlan[] = [];
     const seen = new Set<string>();
     for (const [id, ri, col, row, code, timer] of entries) {
       const r = this.byId(id);
       if (!r || seen.has(id)) return `resident ${id} is not in this world`;
       seen.add(id);
-      if (ri < 0 || ri >= r.routine.length) return `resident ${id}: routine index ${ri} outside its routine`;
+      if (ri < 0 || ri >= r.routine.length)
+        return `resident ${id}: routine index ${ri} outside its routine`;
       const tile = row * this.cols + col;
       if (code === 3) {
-        if (!r.rides || r.rides[ri] < 0) return `resident ${id} is aboard with no ride pending at its leg`;
+        if (!r.rides || r.rides[ri] < 0)
+          return `resident ${id} is aboard with no ride pending at its leg`;
         plan.push({ r, routineIndex: ri, tile, state: 'riding', timer: 0 });
         continue;
       }
-      if (!this.pathfinder.isWalkable(col, row) || !this.graph.connected(r.routine[0], tile)) return `resident ${id}: saved tile ${col},${row} is not reachable in this world`;
+      if (!this.pathfinder.isWalkable(col, row) || !this.graph.connected(r.routine[0], tile))
+        return `resident ${id}: saved tile ${col},${row} is not reachable in this world`;
       if (code === 2) {
-        if (!r.rides || r.rides[ri] < 0) return `resident ${id} is waiting with no ride pending at its leg`;
-        if (!this.stationTiles.some((st) => st.has(tile))) return `resident ${id} is waiting off any platform`;
+        if (!r.rides || r.rides[ri] < 0)
+          return `resident ${id} is waiting with no ride pending at its leg`;
+        if (!this.stationTiles.some((st) => st.has(tile)))
+          return `resident ${id} is waiting off any platform`;
         plan.push({ r, routineIndex: ri, tile, state: 'waiting', timer });
         continue;
       }
@@ -751,7 +942,9 @@ export class AmbientWorld {
   commitRestore(plan: readonly RestorePlan[]): void {
     for (const p of plan) {
       const r = p.r;
-      if (r.state !== 'riding') this.occupancy[r.tileRow * this.cols + r.tileCol]--;
+      // an off-duty resident is not counted in `occupancy` (it blocks nobody), so it is neither taken out nor put back
+      const counted = !this.offDuty.has(r);
+      if (counted && r.state !== 'riding') this.occupancy[r.tileRow * this.cols + r.tileCol]--;
       r.routineIndex = p.routineIndex;
       r.route = new Int32Array(0);
       r.routePos = 0;
@@ -766,7 +959,7 @@ export class AmbientWorld {
       r.y = r.tileRow * TILE_SIZE + TILE_SIZE / 2;
       // a rider aboard keeps its last ground tile but occupies none; the train carries it from its
       // first update
-      if (p.state !== 'riding') this.occupancy[p.tile]++;
+      if (counted && p.state !== 'riding') this.occupancy[p.tile]++;
     }
   }
 
@@ -831,6 +1024,7 @@ export class AmbientWorld {
     let best: AmbientResident | null = null;
     for (const r of this.residents) {
       if (r.state === 'riding') continue; // aboard a train: not on the ground, not hit-testable
+      if (this.offDuty.has(r)) continue; // off duty: not drawn, so never hoverable or clickable
       if (
         worldX >= r.x - CHARACTER_HIT_HALF_WIDTH &&
         worldX <= r.x + CHARACTER_HIT_HALF_WIDTH &&
@@ -844,11 +1038,18 @@ export class AmbientWorld {
   }
 
   /** Counts by job label, for the legend. */
-  summary(): { total: number; byJob: Array<{ job: AmbientJobId; label: string; count: number }> } {
+  summary(): {
+    total: number;
+    onDuty: number;
+    offDuty: number;
+    byJob: Array<{ job: AmbientJobId; label: string; count: number }>;
+  } {
     const counts = new Map<AmbientJobId, number>();
     for (const r of this.residents) counts.set(r.job, (counts.get(r.job) ?? 0) + 1);
     return {
       total: this.residents.length,
+      onDuty: this.residents.length - this.offDuty.size,
+      offDuty: this.offDuty.size,
       byJob: [...counts].map(([job, count]) => ({ job, label: AMBIENT_JOBS[job].label, count })),
     };
   }
@@ -922,7 +1123,13 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
       const c = i % cols;
       const r = (i - c) / cols;
       const t = tileMap[r][c];
-      if (placeOf(i) === label && t !== TileType.WALL && t !== TileType.VOID && !WATER_FLOOR_TILES.has(t)) floor.push(i);
+      if (
+        placeOf(i) === label &&
+        t !== TileType.WALL &&
+        t !== TileType.VOID &&
+        !WATER_FLOOR_TILES.has(t)
+      )
+        floor.push(i);
     }
     const rooms = roomsOf(floor, cols, rows, tileMap)
       .map((room) => room.filter(contains))
@@ -941,7 +1148,8 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     const contains = (i: number): boolean => walk(i) && onNetwork(i) && !seatZone.has(i);
     const tiles: number[] = [];
     for (let i = 0; i < cols * rows; i++) if (contains(i)) tiles.push(i);
-    if (tiles.length >= MIN_POOL_TILES) pools.push({ label: 'Office', tiles, contains, min: 0, rooms: [tiles] });
+    if (tiles.length >= MIN_POOL_TILES)
+      pools.push({ label: 'Office', tiles, contains, min: 0, rooms: [tiles], fallback: true });
   }
   if (pools.length === 0 || population === 0)
     return new AmbientWorld([], pathfinder, graph, seed, seatZone, seatNeighbours, placeOf);
@@ -987,7 +1195,9 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
 
   // Rooms are dealt round-robin (in a seeded order) to each place's residents' posts and stops, so a
   // many-roomed building has every room on someone's routine: inhabited, not just reachable.
-  const roomOrder = pools.map((p, i) => new SeededRng(hashString(`rooms-${p.label}-${i}`, seed)).shuffle(p.rooms.map((_, k) => k)));
+  const roomOrder = pools.map((p, i) =>
+    new SeededRng(hashString(`rooms-${p.label}-${i}`, seed)).shuffle(p.rooms.map((_, k) => k)),
+  );
   const roomCursor = pools.map(() => 0);
   const nextRoom = (pool: number): number[] => {
     const order = roomOrder[pool];
@@ -998,7 +1208,11 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
   // SIBLING places share a first word ("Cathedral", "Cathedral Parvis", "Cathedral Quarter"): their
   // residents always include a stop in a sibling, so the doors between them carry real traffic.
   const firstWord = (l: string) => l.trim().split(/\s+/)[0].toLowerCase();
-  const siblings = pools.map((p, i) => pools.map((_, j) => j).filter((j) => j !== i && firstWord(pools[j].label) === firstWord(p.label)));
+  const siblings = pools.map((p, i) =>
+    pools
+      .map((_, j) => j)
+      .filter((j) => j !== i && firstWord(pools[j].label) === firstWord(p.label)),
+  );
   // a stop INSIDE a room: prefer a tile with all four neighbours walkable (never a doorway cell)
   const roomTile = (rng: SeededRng, room: number[]): number => {
     for (let tries = 0; tries < 16; tries++) {
@@ -1095,7 +1309,9 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
         coverage.uncoveredByCap++;
         continue;
       }
-      const host = [...hosts].sort((a, b) => a.routine.length - b.routine.length || (a.id < b.id ? -1 : 1))[0];
+      const host = [...hosts].sort(
+        (a, b) => a.routine.length - b.routine.length || (a.id < b.id ? -1 : 1),
+      )[0];
       const t = roomTile(host.rng, room);
       if (!graph.connected(host.routine[0], t)) continue;
       const k = residents.indexOf(host);
@@ -1105,7 +1321,8 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     }
   });
   for (const r of residents) {
-    if (r.routine.length > AMBIENT_ROUTINE_MAX_STOPS) throw new Error(`routine of ${r.id} exceeds the stop bound`);
+    if (r.routine.length > AMBIENT_ROUTINE_MAX_STOPS)
+      throw new Error(`routine of ${r.id} exceeds the stop bound`);
     coverage.longestRoutine = Math.max(coverage.longestRoutine, r.routine.length);
   }
   // SUBWAY RIDERS: a bounded subset of the residents who live at a station or on the Grand or Market Boulevard (as ever),
@@ -1123,14 +1340,19 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
   const riderIds: string[] = [];
   const journeys: RiderJourney[] = [];
   if (transit) {
-    const islands = transit.stations.map((st) => st.island.filter((t) => walk(t) && onNetwork(t) && !seatZone.has(t)));
+    const islands = transit.stations.map((st) =>
+      st.island.filter((t) => walk(t) && onNetwork(t) && !seatZone.has(t)),
+    );
     // Two deals per station over the same shuffled platform: the tiles a rider WAITS on (a long stand) come from the front,
     // the tiles it ALIGHTS on (a short one) from the back, so waiting riders never share a tile until a platform has more
     // waiting riders than tiles.
-    const orders = islands.map((tiles, s) => new SeededRng(hashString(`platform-${s}`, seed)).shuffle([...tiles]));
+    const orders = islands.map((tiles, s) =>
+      new SeededRng(hashString(`platform-${s}`, seed)).shuffle([...tiles]),
+    );
     const dealt = islands.map(() => ({ wait: 0, alight: 0 }));
     const waitTile = (s: number): number => orders[s][dealt[s].wait++ % orders[s].length];
-    const alightTile = (s: number): number => orders[s][orders[s].length - 1 - (dealt[s].alight++ % orders[s].length)];
+    const alightTile = (s: number): number =>
+      orders[s][orders[s].length - 1 - (dealt[s].alight++ % orders[s].length)];
     // the forecourt above each station's platform (open ground on the network)
     const forecourtRow = transit.eastRow - 2;
     const forecourts = transit.stations.map((st) => {
@@ -1153,7 +1375,11 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     };
     const candidates = residents
       .map((r, k) => ({ r, k }))
-      .filter(({ r, k }) => /Station$|^Grand Boulevard$|^Market Boulevard$/.test(r.district) || (pools[plan[k].pool].rooms.length <= 1 && nearLine(r.routine[0])))
+      .filter(
+        ({ r, k }) =>
+          /Station$|^Grand Boulevard$|^Market Boulevard$/.test(r.district) ||
+          (pools[plan[k].pool].rooms.length <= 1 && nearLine(r.routine[0])),
+      )
       .sort((a, b) => hashString(a.r.id, seed) - hashString(b.r.id, seed));
     const stationCount = transit.stations.length;
     const W = AMBIENT_RIDER_KIND_WEIGHTS;
@@ -1167,7 +1393,8 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
         if (Math.abs(transit.stations[s2].c - pc) < Math.abs(transit.stations[a].c - pc)) a = s2;
       const others = transit.stations.map((_, s) => s).filter((s) => s !== a);
       const roll = r.rng.int(weightSum);
-      let kind: RiderKind = roll < W.commute ? 'commute' : roll < W.commute + W.hop ? 'hop' : 'excursion';
+      let kind: RiderKind =
+        roll < W.commute ? 'commute' : roll < W.commute + W.hop ? 'hop' : 'excursion';
       if (kind === 'excursion' && stationCount < 3) kind = 'commute';
       let b: number;
       let c3 = -1;
@@ -1204,15 +1431,33 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
         routine = [post, pA, pB, nearB, pB2, pA2];
         rideAt.push([4, a]);
       }
-      if (routine.length > AMBIENT_ROUTINE_MAX_STOPS || !routine.every((t) => graph.connected(post, t))) continue;
+      if (
+        routine.length > AMBIENT_ROUTINE_MAX_STOPS ||
+        !routine.every((t) => graph.connected(post, t))
+      )
+        continue;
       const rides = new Int8Array(routine.length).fill(-1);
       for (const [i, s] of rideAt) rides[i] = s;
-      residents[k] = { ...r, routine: Int32Array.from(routine), rides, routineIndex: 0, legCache: new Map() };
+      residents[k] = {
+        ...r,
+        routine: Int32Array.from(routine),
+        rides,
+        routineIndex: 0,
+        legCache: new Map(),
+      };
       riderIds.push(r.id);
       journeys.push({ id: r.id, kind, stations: used });
     }
   }
-  const built = new AmbientWorld(residents, pathfinder, graph, seed, seatZone, seatNeighbours, placeOf);
+  const built = new AmbientWorld(
+    residents,
+    pathfinder,
+    graph,
+    seed,
+    seatZone,
+    seatNeighbours,
+    placeOf,
+  );
   built.coverage = coverage;
   built.riders = riderIds;
   built.journeys = journeys;
@@ -1221,6 +1466,26 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     return { job, home: r ? r.district : null, id: r ? r.id : null };
   });
   if (transit) built.stationTiles = transit.stations.map((st) => new Set(st.island));
+  // WORKING OFFICES: a pool that HOLDS A SEAT (the Palace, a Mission's room, the legacy single Office) shows at
+  // most min(`onDutyCap`, ceil(T / `onDutyTilesPerResident`)) residents on duty at once, T = the pool's resident-eligible tiles, `p.tiles.length` (AmbientWorld.configureDuty). A seatless district, and any
+  // rider, is never rotated. Nothing here changes who exists, how many, or any routine tile.
+  const seats = input.seats ?? [];
+  const holdsSeat = (p: Pool): boolean =>
+    p.fallback === true
+      ? seats.length > 0
+      : seats.some((st) => placeOf(st.seatRow * cols + st.seatCol) === p.label);
+  built.configureDuty(
+    pools
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => holdsSeat(p))
+      .map(({ p, i }) => ({
+        label: p.label,
+        tiles: p.tiles.length,
+        members: residents.filter((_, k) => plan[k].pool === i),
+      })),
+    input.onDutyCap ?? AMBIENT_WORKING_OFFICE_ON_DUTY,
+    input.onDutyTilesPerResident ?? AMBIENT_WORKING_OFFICE_TILES_PER_RESIDENT,
+  );
   return built;
 }
 
