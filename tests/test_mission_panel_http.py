@@ -120,10 +120,25 @@ def startup_line(case, process, wait=STARTUP_WAIT_SECONDS):
     stderr, so reading it eagerly (for instance as an assertion's message
     argument, which Python evaluates before the assertion runs) blocks forever
     on SUCCESS. The failure message therefore carries the real stderr, bounded,
-    and is computed only when there is no line."""
+    and is computed only when there is no line.
+
+    End of file on stdout is not the moment the process becomes reapable: an
+    exiting process has its descriptors closed BEFORE the kernel lets its
+    parent collect it, so one ``poll()`` taken right at end of file can still
+    say "running" about a process that has already exited on its own. On end of
+    file the helper therefore waits for the exit itself, within what is left of
+    the same ``wait`` bound, and only a process still running when that bound
+    ends is reported as running and stopped. A process that never closes its
+    stdout reaches the bound in ``select`` and is judged exactly as before."""
+    deadline = time.monotonic() + wait
     ready, _, _ = select.select([process.stdout], [], [], wait)
     line = process.stdout.readline() if ready else b""
     if not line:
+        if ready:                               # end of file, not the bound
+            try:
+                process.wait(max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                pass                            # still running: judged below
         how = "it had already exited on its own"
         if process.poll() is None:
             how = ("it was still running, so this test sent it SIGTERM; the exit status after"
@@ -618,6 +633,45 @@ class LauncherTests(Bounded):
         self.assertFalse(os.path.exists(self.discovery), "the cleanup did not run")
 
 
+class ExitHeldUntilAsked(object):
+    """A REAL launcher whose exit is held until the helper first asks about it.
+
+    The launcher closes its stdout and then waits for ``release`` before it exits. The first
+    ``poll()`` or ``wait()`` creates ``release``, and a ``poll()`` does so only AFTER the
+    operating system has answered it. So end of file always comes before the exit is
+    observable, and the order is fixed by construction rather than by scheduling. Every answer
+    the helper gets is the operating system's own; nothing here invents a status."""
+
+    def __init__(self, process, release):
+        self._process = process
+        self._release = release
+        self.stdout = process.stdout
+        self.stderr = process.stderr
+
+    @property
+    def returncode(self):
+        return self._process.returncode
+
+    def _let_it_exit(self):
+        if not os.path.exists(self._release):
+            open(self._release, "w").close()
+
+    def poll(self):
+        answer = self._process.poll()
+        self._let_it_exit()
+        return answer
+
+    def wait(self, timeout=None):
+        self._let_it_exit()
+        return self._process.wait(timeout)
+
+    def terminate(self):
+        self._process.terminate()
+
+    def kill(self):
+        self._process.kill()
+
+
 class StartupHelperTests(Bounded):
     """The harness's own helper, on the two cases that matter."""
 
@@ -680,6 +734,44 @@ class StartupHelperTests(Bounded):
         self.assertIn("exit 0", message)
         self.assertIn("this test sent it SIGTERM", message)      # ... and the report says whose
         self.assertIn("says nothing about whether it would have started", message)
+
+    def test_S5_a_launcher_whose_stdout_closes_before_it_exits_is_not_reported_as_stopped(self):
+        # End of file on stdout is observable BEFORE the exit is: an exiting process has its
+        # descriptors closed before it can be reaped. Here that order is fixed by a handshake,
+        # not a timer: the launcher closes its stdout and cannot exit until the helper first
+        # ASKS about it (see ExitHeldUntilAsked). A helper that judges from a poll() at end of
+        # file is answered "running" by the operating system every time; one that waits for
+        # the exit sees the launcher's own status 2. Nothing may stop it.
+        scratch = tempfile.TemporaryDirectory(prefix="di-pnl-")
+        self.addCleanup(scratch.cleanup)
+        release = os.path.join(scratch.name, "release")
+        process = ExitHeldUntilAsked(self.spawn(
+            "import os, sys, time\nsys.stderr.write('refused: the discovery file exists\\n')\n"
+            "sys.stderr.flush()\nos.close(1)\ndeadline = time.monotonic() + 60\n"
+            "while not os.path.exists(%r):\n"
+            "    if time.monotonic() > deadline:\n        sys.exit(3)\n"
+            "    time.sleep(0.005)\nsys.exit(2)\n" % release), release)
+        with self.assertRaises(AssertionError) as caught:
+            startup_line(self, process)
+        message = str(caught.exception)
+        self.assertIn("had already exited on its own", message)
+        self.assertNotIn("SIGTERM", message)
+        self.assertIn("exit 2", message)
+        self.assertIn("refused: the discovery file exists", message)
+        self.assertEqual(process.returncode, 2, "its own exit status, not a signal from this test")
+
+    def test_S6_a_launcher_that_closes_stdout_and_hangs_is_still_bounded_and_reaped(self):
+        # The other side of S5: end of file followed by NO exit. Waiting for the exit stays
+        # inside the same bound, and the launcher is still stopped and reported as stopped.
+        process = self.spawn("import os, time\nos.close(1)\ntime.sleep(60)\n")
+        started = time.monotonic()
+        with self.assertRaises(AssertionError) as caught:
+            startup_line(self, process, wait=1)
+        self.assertLess(time.monotonic() - started, 30)
+        self.assertIsNotNone(process.poll(), "a hung launcher must be reaped")
+        message = str(caught.exception)
+        self.assertIn("within 1s", message)
+        self.assertIn("this test sent it SIGTERM", message)
 
 
 class OrdinaryInterruptionTests(Bounded):
