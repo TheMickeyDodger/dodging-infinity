@@ -226,6 +226,14 @@ let otherMessages: string[] = [];
 /** While true the relay HOLDS the page's reads: nothing reaches the adapter and nothing is answered. */
 let closed = false;
 let held: Array<() => void> = [];
+/** Every request the relay handed to the owner, by window, with the owner's reply once it came. */
+type Relayed = {
+  ws: WebSocket;
+  msg: Record<string, unknown>;
+  reply: Record<string, unknown> | null;
+};
+let relayed: Relayed[] = [];
+let socketOf = new Map<Page, WebSocket>();
 let dialogs = 0;
 /**
  * A labelled SYNTHETIC seam: when set, every reply the real relay would send to the page passes through it
@@ -245,13 +253,20 @@ function serve(ws: WebSocket) {
     const msg = JSON.parse(String(data)) as Record<string, unknown>;
     if (msg.type === 'diMissionRequest') {
       sent.push(msg);
-      const send = (m: Record<string, unknown>) =>
-        ws.readyState === ws.OPEN && ws.send(JSON.stringify(mutateReply ? mutateReply(m) : m));
-      const deliver = () =>
+      const entry: Relayed = { ws, msg, reply: null };
+      const send = (m: Record<string, unknown>) => {
+        entry.reply = m;
+        return (
+          ws.readyState === ws.OPEN && ws.send(JSON.stringify(mutateReply ? mutateReply(m) : m))
+        );
+      };
+      const deliver = () => {
+        relayed.push(entry);
         handleDiClientMessage(msg, send, {
           ...ctxBase,
           missionRequest: (m, reply) => void panel.handle(m, reply),
         });
+      };
       if (closed) held.push(deliver);
       else deliver();
     } else if (msg.type === 'webviewReady') {
@@ -271,6 +286,24 @@ const openRelay = () => {
   held = [];
   for (const deliver of flush) deliver();
 };
+/**
+ * Close a window that has nothing more to show, and wait until nothing it sent can still hold one of the office's
+ * concurrent-call slots (`MAX_CONCURRENT_PANEL_CALLS`): the relay is not holding reads, its connection is
+ * closed (no message of it can arrive after that), and every call of it the relay delivered has been answered (the
+ * office frees a call's slot before it answers it).
+ */
+async function closeWindow(page: Page) {
+  const ws = socketOf.get(page)!;
+  expect(closed, 'the relay is still holding reads').toBe(false);
+  await page.close();
+  await waitFor('the closed window’s connection to close', async () => ws.readyState === ws.CLOSED);
+  await waitFor('every call of the closed window to be answered', async () =>
+    relayed.every((e) => e.ws !== ws || e.reply !== null),
+  );
+}
+/** The window's decisions that reached the owner, each with the owner's reply (null until it answers). */
+const decisionsFrom = (page: Page) =>
+  relayed.filter((e) => e.ws === socketOf.get(page) && e.msg.op === 'decide');
 
 beforeAll(async () => {
   server = await createServer({
@@ -350,6 +383,8 @@ beforeEach(async (ctx) => {
   otherMessages = [];
   closed = false;
   held = [];
+  relayed = [];
+  socketOf = new Map();
   dialogs = 0;
   mutateReply = null;
   outsideRequests = [];
@@ -399,6 +434,7 @@ async function openWindow(): Promise<Page> {
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const ws = await connected;
+  socketOf.set(page, ws);
   // The office is a labelled FIXTURE (the existing explicit `fixtureMode`): the whole window says so.
   ws.send(JSON.stringify({ ...office.states.live, fixtureMode: true }));
   await page.waitForSelector(`${T('di-office-panel')}, ${T('di-office-panel-collapsed')}`, {
@@ -722,7 +758,11 @@ test(
     closed = true;
     const closedAt = Date.now() / 1000;
     await sleep(800);
-    const before = await state();
+    // Read at a PASS BOUNDARY: no runtime pass is in flight while this is read. Every pass it counts has
+    // finished before the team is told it is COMPLETE below, so the pass that writes COMPLETED begins after
+    // it, and the harness counts a pass before any of its work: one pass is enough to move the count.
+    const before = await harness.control({ op: 'state', at_pass_boundary: true });
+    expect(before.ok, `no runtime pass boundary: ${JSON.stringify(before)}`).toBe(true);
     const beforeAt = Date.now() / 1000;
     const calls = before.service_calls as number;
     await waitFor('the runtime to observe the team running', async () => {
@@ -880,18 +920,59 @@ test(
       (await text(page, T('di-mr-offer-expiry'))).split(' (')[0];
     expect(await clockTime(first)).toBe(await clockTime(second));
 
-    // — one decision from two windows. The second has the word typed on the offer it was shown.
-    // The first window records the approval. The second then submits that same offer. The record
-    // keeps one authorization. —
+    // — one decision from two windows. The second has the word typed on the offer it was shown,
+    // so its own refresh can read the first window's approval without taking that offer off the
+    // screen. The second then submits that same offer. The record keeps one authorization, and the
+    // second submit is an idempotent find of it. —
     await second.fill(T('di-mr-word'), 'approve');
+    await waitFor('Approve to be available in the second window', () =>
+      available(second, T('di-mr-approve')),
+    );
     await approve(first);
+    // Start can show (the first window's own poll read the approved record) before the owner's answer to that
+    // window's decide is back: wait for the answer before reading it.
+    await waitFor('the owner to answer the first window’s decision', async () => {
+      const got = decisionsFrom(first);
+      return got.length > 0 && got.every((e) => e.reply !== null) ? got : false;
+    });
+    const [firstDecision] = decisionsFrom(first);
+    expect(
+      decisionsFrom(first),
+      'the first window’s decision did not reach the owner',
+    ).toHaveLength(1);
+    expect(firstDecision.reply, 'the first window’s decision was not recorded').toMatchObject({
+      state: 'ok',
+      answer: { decision: { idempotent: false } },
+    });
+    const authorizationId = (firstDecision.reply!.answer as Json).decision
+      .authorization_id as string;
+    expect(authorizationId).toMatch(/^ma-[0-9a-f]{32}$/);
+    // The word was typed before the first window decided. The controls stay after the record moves,
+    // and the second window submits the offer it already holds.
+    expect(
+      await exists(second, T('di-mr-word')),
+      'the second window lost the offer it had already typed',
+    ).toBe(true);
     const decides = () => sent.filter((m) => m.op === 'decide').length;
     const before = decides();
     await pressKey(second, T('di-mr-approve'), 'Enter');
-    await waitFor('the second window to submit its own decision', async () =>
-      decides() > before ? true : false,
+    const secondDecisions = await waitFor(
+      'the owner to answer the second window’s decision',
+      async () => {
+        const got = decisionsFrom(second);
+        return got.length > 0 && got.every((e) => e.reply !== null) ? got : false;
+      },
     );
     expect(decides(), 'the second window submitted a decision of its own').toBe(before + 1);
+    // It reached the owner, which found the first decision: no second authority.
+    expect(
+      secondDecisions,
+      'the second window’s decision did not reach the owner once',
+    ).toHaveLength(1);
+    expect(secondDecisions[0].reply, 'the second window made a second decision').toMatchObject({
+      state: 'ok',
+      answer: { decision: { idempotent: true, authorization_id: authorizationId } },
+    });
     expect((await state()).authorizations, 'two windows made two approvals').toBe(1);
     await whenText(second, T('di-mr-stage-label'), /Approved|approved/);
 
@@ -1338,6 +1419,9 @@ test(
     await second.click(T(`di-mr-request-${ref}`));
     await second.waitForSelector(T('di-mr-start-cause'), { timeout: 30_000 });
     expect(await text(second, T('di-mr-start-cause'))).toBe(cause);
+    // That was the second window's one claim. It is closed and drained, so its polling holds none of the office's
+    // call slots while the first window goes on with another request below.
+    await closeWindow(second);
 
     // The run is then stopped durably by a reconcile that can prove nothing. It is no longer \u201cin doubt\u201d: the
     // window stops using that stage's words (and its Reconcile advice), while the retained cause remains the honest
