@@ -83,7 +83,14 @@ beforeEach(async (ctx) => {
     void d.dismiss();
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('[data-testid="di-evidence-library"]', { timeout: 30_000 });
+  // feature13: the library lives in the full-size inspector. Reach it the way a person does: the
+  // Mission card's labelled "Evidence library" doorway, by keyboard (focus, Enter).
+  await page.waitForSelector('[data-testid="di-open-evidence"]', { timeout: 30_000 });
+  await page.focus('[data-testid="di-open-evidence"]');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('[role="dialog"] [data-testid="di-evidence-library"]', {
+    timeout: 30_000,
+  });
   // Trip-wires an executed artifact would fire.
   await page.evaluate(() => {
     const w = window as unknown as Record<string, unknown>;

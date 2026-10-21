@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **A calmer Mission panel and a full-size inspector for the Pixel Agents DI office.** The side panel now answers three
+  questions first: what is running, its observed status (a word and a shape, never colour alone) and who is on it. Setup
+  prose, raw codes and provenance sit behind disclosure, while stale, not-live and unverified-identity caveats stay on the
+  face. "Open inspector", from a Mission or the selected agent, opens a full-size dialog with the objective as its source
+  reports it (not the whole original task prompt), the team, the source fields each status came from, freshness, and task
+  chains, evidence and review where the source reports them. Focus moves in and returns, Tab stays inside, Escape closes,
+  and "Show in the office" takes you to the agent on the map. Mission rows exported from formatted herdctl tasks now carry
+  their real objective, and where a source exported only a section header the panel says no goal was reported rather than
+  guessing. Observation only: no new authority, and unknown is never shown as zero. See the README, "A calm overview and a
+  full-size inspector".
+
 - **Living city: lighting, weather and traffic for the Pixel Agents DI office.** A City button opens day/dusk/night/clock
   lighting, clear/rain/snow weather and Off/Low/Normal traffic. Traffic brings the world's own 68 lane-aligned parked vehicles to life on
   the lanes derived from its road tiles: stop lines, atomic intersections and crossings, queues, seeded turns, priority for people and real

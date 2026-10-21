@@ -2622,5 +2622,175 @@ class ExportForConsumerTests(MixedRegistry, HerdrFixture):
                 handle.write("\n")
 
 
+class ObjectiveExtractionTests(unittest.TestCase):
+    """feature13: the display objective of a formatted ``herdctl task --mission``.
+
+    The formatter writes the description as ``OBJECTIVE\n<goal>`` followed by
+    optional ``CONSTRAINTS`` / ``RULES`` / ``ACCEPTANCE CRITERIA`` /
+    ``VERIFICATION`` sections, so the first non-empty line is the HEADING. These
+    cases drive the ACTUAL formatter (``herdctl.task`` with ``--mission``, its
+    dispatch seam captured: nothing is dispatched, no Mission or agent is
+    started) and feed the exact text it produced through ``hts._objective``, so
+    producer and consumer cannot drift apart silently. All content is SYNTHETIC.
+    """
+
+    @staticmethod
+    def formatted(mission):
+        """The description ``herdctl task --mission`` would dispatch for ``mission``."""
+        import herdctl
+        from types import SimpleNamespace
+        control_plane = mock.Mock()
+        with mock.patch.object(herdctl, "load_mission", return_value=mission), \
+                mock.patch.object(herdctl, "resolve_repo_ref",
+                                  return_value=Path("/tmp/synthetic-demo")), \
+                mock.patch.object(herdctl, "HerdrControlPlane",
+                                  return_value=control_plane):
+            herdctl.task(SimpleNamespace(
+                repo=None, text=None, mission=True, rejection_drill=False,
+                rule=[]))
+        control_plane.dispatch_task.assert_called_once()
+        return control_plane.dispatch_task.call_args[0][1]
+
+    @staticmethod
+    def first_line_before(description):
+        """The rule BEFORE this change (kept here to state what the defect was)."""
+        for line in description.splitlines():
+            if line.strip():
+                return line.strip()
+        return None
+
+    def test_a_real_formatted_row_yields_its_goal_not_its_heading(self):
+        text = self.formatted({
+            "objective": "  Migrate the SYNTHETIC ingestion service.  ",
+            "constraints": ["Do not change the schema"],
+            "rules": ["Preserve compatibility"],
+            "acceptance_criteria": ["Tests pass"],
+            "verification": ["python3 -m unittest"],
+        })
+        self.assertEqual(text.splitlines()[0], "OBJECTIVE")
+        # BEFORE: the heading (the defect). AFTER: the goal.
+        self.assertEqual(self.first_line_before(text), "OBJECTIVE")
+        self.assertEqual(hts._objective(text),
+                         "Migrate the SYNTHETIC ingestion service.")
+
+    def test_every_optional_section_leaves_the_goal_unchanged(self):
+        goal = "Fix the SYNTHETIC authentication bug"
+        for keys in ((), ("constraints",), ("rules",), ("acceptance_criteria",),
+                     ("verification",),
+                     ("constraints", "rules", "acceptance_criteria",
+                      "verification")):
+            mission = {"objective": goal}
+            for key in keys:
+                mission[key] = ["a bullet"]
+            self.assertEqual(hts._objective(self.formatted(mission)), goal,
+                             keys)
+
+    def test_an_empty_objective_falls_to_unknown_never_the_next_heading(self):
+        for objective in ("", "   ", None):
+            text = self.formatted({"objective": objective,
+                                   "constraints": ["Do not change the schema"],
+                                   "rules": ["Preserve compatibility"]})
+            self.assertIn("\nCONSTRAINTS\n", text)
+            self.assertIsNone(hts._objective(text), repr(objective))
+
+    def test_a_heading_only_description_is_unknown(self):
+        self.assertIsNone(hts._objective("OBJECTIVE"))
+        self.assertIsNone(hts._objective("OBJECTIVE\n"))
+        self.assertIsNone(hts._objective("\n  OBJECTIVE  \n\n   \n"))
+        # Formatted from a record that has only a heading's worth of content.
+        self.assertIsNone(hts._objective(self.formatted({"objective": ""})))
+
+    def test_ordinary_free_text_is_preserved_exactly(self):
+        for text, want in (
+                ("Fix auth\nmore detail", "Fix auth"),
+                ("\n\n   Fix auth   \nmore", "Fix auth"),
+                ("Fix auth", "Fix auth"),
+                ("Objective\nFix auth", "Objective"),       # not the exact heading
+                ("OBJECTIVES\nFix auth", "OBJECTIVES"),
+                ("OBJECTIVE: Fix auth", "OBJECTIVE: Fix auth"),
+                ("CONSTRAINTS\n- a", "CONSTRAINTS"),        # no OBJECTIVE heading: as before
+                ("- a bullet first\nOBJECTIVE\nFix auth", "- a bullet first")):
+            self.assertEqual(hts._objective(text), want, text)
+            self.assertEqual(hts._objective(text), self.first_line_before(text))
+        self.assertIsNone(hts._objective(""))
+        self.assertIsNone(hts._objective("  \n \n"))
+
+    def test_a_description_that_is_not_a_string_is_unknown(self):
+        for value in (None, 7, 1.5, True, ["OBJECTIVE", "goal"], {"a": 1},
+                      b"OBJECTIVE\ngoal"):
+            self.assertIsNone(hts._objective(value), repr(value))
+
+    def test_the_bound_and_its_ellipsis_are_unchanged_for_both_forms(self):
+        self.assertEqual(hts.MAX_OBJECTIVE_CHARS, 160)
+        long_goal = "g" * (hts.MAX_OBJECTIVE_CHARS + 40)
+        for text in (long_goal, self.formatted({"objective": long_goal})):
+            got = hts._objective(text)
+            self.assertEqual(len(got), hts.MAX_OBJECTIVE_CHARS)
+            self.assertEqual(got, "g" * (hts.MAX_OBJECTIVE_CHARS - 1) + "…")
+        exact = "e" * hts.MAX_OBJECTIVE_CHARS
+        self.assertEqual(hts._objective(self.formatted({"objective": exact})),
+                         exact)
+
+    def test_ambiguous_forms_fall_to_unknown_never_a_guess(self):
+        # An objective that IS one of the section words cannot be told from the
+        # heading that follows an empty objective: unknown, not a guess.
+        for word in ("CONSTRAINTS", "RULES", "ACCEPTANCE CRITERIA",
+                     "VERIFICATION"):
+            self.assertIsNone(
+                hts._objective(self.formatted({"objective": word})), word)
+        # A bullet BELONGING TO A SECTION, or a later section, is never promoted to the goal.
+        self.assertIsNone(hts._objective("OBJECTIVE\n\nCONSTRAINTS\n- a goal?"))
+        self.assertIsNone(hts._objective("OBJECTIVE\nRULES\n- a goal?"))
+        # A REPEATED heading is indistinguishable from a malformed record, so the
+        # conservative answer is unknown: returning it would recreate the very
+        # unreadable-heading output this extraction exists to remove. (The UI then says,
+        # truthfully, that this source reported no goal.) An objective that is literally
+        # the word OBJECTIVE is not worth recreating that defect for.
+        self.assertIsNone(hts._objective("OBJECTIVE\nOBJECTIVE"))
+        self.assertIsNone(hts._objective(self.formatted({"objective": "OBJECTIVE"})))
+        self.assertIsNone(hts._objective("OBJECTIVE\n\n  OBJECTIVE  \nA goal?"))
+
+    def test_a_dash_line_after_the_heading_is_the_objectives_own_text(self):
+        # No bullet rejection (that would be a heuristic: "- do X" is a legitimate objective).
+        # The formatter's bullets only follow a section heading, and a heading right after
+        # OBJECTIVE is refused before its bullets are reached; so from the formatter a "- "
+        # line in that position is the objective's own text, returned as written.
+        text = self.formatted({"objective": "- do X first\n- then Y",
+                               "rules": ["a rule"]})
+        self.assertEqual(hts._objective(text), "- do X first")
+        self.assertEqual(hts._objective("OBJECTIVE\n- something"), "- something")
+        # A bullet BELONGING to a section is never reached: the heading is refused first.
+        self.assertIsNone(hts._objective(self.formatted({"objective": "",
+                                                         "rules": ["- a rule"]})))
+
+    def test_only_the_first_goal_line_is_used_and_the_record_is_not_changed(self):
+        mission = {"objective": "First line of the goal\nsecond line",
+                   "rules": ["r"]}
+        before = json.dumps(mission, sort_keys=True)
+        text = self.formatted(mission)
+        self.assertEqual(hts._objective(text), "First line of the goal")
+        self.assertEqual(json.dumps(mission, sort_keys=True), before)
+
+    def test_the_known_headings_are_exactly_the_formatters_five(self):
+        # Producer and consumer stay locked: format a FULL mission with the real formatter and
+        # take every non-bullet, non-blank line it wrote. They are the five headings this
+        # module knows, in the formatter's order; a heading added to (or renamed in) herdctl.py
+        # fails here instead of silently leaking into the office as a "goal".
+        text = self.formatted({
+            "objective": "A SYNTHETIC goal",
+            "constraints": ["c"], "rules": ["r"],
+            "acceptance_criteria": ["a"], "verification": ["v"]})
+        headings = [line for line in text.splitlines()
+                    if line and not line.startswith("- ")
+                    and line != "A SYNTHETIC goal"]
+        self.assertEqual(
+            headings,
+            ["OBJECTIVE", "CONSTRAINTS", "RULES", "ACCEPTANCE CRITERIA",
+             "VERIFICATION"])
+        self.assertEqual(headings[0], hts._MISSION_OBJECTIVE_HEADING)
+        self.assertEqual(set(headings), set(hts._MISSION_SECTION_HEADINGS))
+        self.assertEqual(len(hts._MISSION_SECTION_HEADINGS), 5)
+
+
 if __name__ == "__main__":
     unittest.main()

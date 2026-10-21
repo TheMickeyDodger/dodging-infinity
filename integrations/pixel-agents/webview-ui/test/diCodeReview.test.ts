@@ -370,20 +370,37 @@ test(
     assert.match(entry, /Open code review/);
     assert.match(entry, /View only/);
     assert.match(entry, /team.s changes/);
-    // the panel scrolls the selected agent's Mission into view; the entry is ALSO pinned at the top
-    // of the panel, so it stays in reach however far the panel has scrolled
-    const bar = await p().locator(T('di-open-code-review-bar')).boundingBox();
-    assert.ok(bar !== null, 'the entry is pinned while an agent is selected');
-    assert.ok(bar.y >= 0 && bar.y + bar.height <= VIEW.height, `in view: y=${bar.y}`);
+    // feature13: the entry lives in the Selected DOCK, which never scrolls out of the panel (the old
+    // pinned bar's invariant: the entry stays in reach however far the panel has scrolled). Proven
+    // by scrolling the Missions list to its end and back: the entry's box does not move, in view.
+    const inView = async () => {
+      const box = await p().locator(T('di-open-code-review')).boundingBox();
+      assert.ok(box !== null, 'the entry is offered in the dock while an agent is selected');
+      assert.ok(box.y >= 0 && box.y + box.height <= VIEW.height, `in view: y=${box.y}`);
+      return box;
+    };
+    const resting = await inView();
+    await p().$eval(T('di-op-main'), (el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    assert.deepEqual(await inView(), resting, 'scrolled to the end: the entry has not moved');
+    await p().$eval(T('di-op-main'), (el) => {
+      el.scrollTop = 0;
+    });
+    assert.deepEqual(await inView(), resting, 'scrolled back: the entry has not moved');
     assert.equal(await exists(T('di-review-dialog')), false, 'nothing opens by itself');
     assert.deepEqual(requests, [], 'selecting an agent reads nothing');
-    // the same agent, its assignment no longer active: no button, and the reason in words
+    // the same agent, its assignment no longer active: no button, the fact on the dock, and the
+    // reason in words one step away (the inspector)
     send(S.inactive);
+    await p().waitForSelector(T('di-dock-code-review-unavailable'), { timeout: 15_000 });
+    assert.match(await text(T('di-dock-code-review-unavailable')), /not offered/);
+    assert.equal(await exists(T('di-open-code-review')), false);
+    await p().click(T('di-open-inspector-selection'));
     await p().waitForSelector(T('di-code-review-unavailable'), { timeout: 15_000 });
     const why = await text(T('di-code-review-unavailable'));
     assert.match(why, /not offered/);
     assert.match(why, /not active work/);
-    assert.equal(await exists(T('di-open-code-review')), false);
     await shot('entry-not-offered');
   },
   STEPS_MS,

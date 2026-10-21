@@ -196,7 +196,7 @@ A busy working office used to bury its real agents under decorative residents. T
 ### See the work behind the characters
 
 - **Select an agent** to inspect its role, source, and associated Mission.
-- **Switch Missions** in the inspector and follow available task chains and review records.
+- **Switch Missions** in the side panel, and open the inspector to follow available task chains and review records.
 - **Recognize current activity** through the working-agent glow and visible freshness information.
 - **Explore the world** with the map, district navigation, and camera controls.
 - **Return to the office** and reconstruct the current recorded Mission observations.
@@ -204,6 +204,18 @@ A busy working office used to bury its real agents under decorative residents. T
 Real agents come from DI’s Mission catalog. Ambient residents give the world its everyday life and are identified separately. An office that is simply running is a read-only view of recorded work; Mission commands and approvals remain in the operating interfaces unless you deliberately configure the optional request panel described below.
 
 The screenshots above show the running local world. The living metropolis is an optional preset that can be imported into the office.
+
+### A calm overview and a full-size inspector
+
+The side panel answers three questions at a glance: **what is running, what is its observed status, and who is on it.** Each Mission shows its objective, one status (Running, Waiting, Blocked, Failed where the source reports a failure, Ended, Stale, Disconnected or Unknown) written as a word and a shape rather than colour alone, and its team. What could mislead you stays on the face: a stale or not-live view, a team that is not bound, an identity that is not verified.
+
+![The side panel's overview under its “LIVE - FIXTURE DATA” header: two Missions, each with its objective, observed status and team, and an Open inspector button](assets/pixel-world/operational-panel-overview.png)
+
+**Open inspector**, on a Mission or on the selected agent, opens a full-size inspector over the office: the objective as its source reports it (not the whole original task prompt), the status and the source fields it was derived from, the team, task chains and checkpoints where the source reports them, evidence and review records, and the freshness and limits of what was observed. It behaves as a dialog: focus moves in, Tab stays inside, and Escape or Close returns you to where you were. **Show in the office** takes you from a team member to that agent on the map. Evidence, code review and Mission requests stay reachable from the panel and inspector wherever your office offers them.
+
+![The full-size inspector for a Mission: heading and status, objective, and the team with each member's identity and observed state](assets/pixel-world/operational-panel-inspector.png)
+
+Both screenshots use synthetic test data, and the product says so in the frame (“LIVE - FIXTURE DATA”); how they were made is noted in [assets/pixel-world/operational-panel.md](assets/pixel-world/operational-panel.md). Status is what was observed, never assumed: unknown stays unknown rather than zero, a reported result is not shown as a verified one, and where a Mission's source exported no goal, such as a task row whose objective is only a section header, the panel says no goal was reported instead of inventing one. This is still a read-only view; it adds no new authority.
 
 ### An optional in-world request: the Codex Orchestrator
 

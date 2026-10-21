@@ -27,41 +27,43 @@ export function DiCodeReviewEntry({
   missionRef: string;
   access: DiCodeReviewAccess | null;
   /**
-   * `full`: in the inspector, with the explanation. `bar`: the compact entry pinned to the top of
-   * the panel while this agent is selected (so it cannot scroll out of reach).
+   * feature13. `dock`: in the office panel's Selected dock, which never leaves the viewport — the
+   * entry a person reaches by selecting a member (the button, one line of what it is; where it is
+   * not offered, that fact, with its reason one step away in the inspector). `full`: in the
+   * inspector, with the whole explanation and the reason in words.
    */
-  variant?: 'full' | 'bar';
+  variant?: 'full' | 'dock';
 }) {
   const offer = member.codeReview;
-  const bar = variant === 'bar';
+  const dock = variant === 'dock';
   // An office that predates the review says nothing about it: nothing is invented.
   if (offer === undefined) return null;
-  const shell = bar
-    ? 'sticky top-0 z-10 -mx-8 px-8 py-3 flex items-center gap-4 flex-wrap bg-bg border-y-2 border-accent'
-    : 'flex flex-col gap-1';
+  // Styled by the calm panel's stylesheet (diOperationalPanel.css).
   if (offer.state !== 'offered' || offer.listing === null || offer.taskId === null) {
-    return (
-      <div
-        className={shell}
-        data-testid={bar ? 'di-code-review-bar-unavailable' : 'di-code-review-unavailable'}
-      >
+    return dock ? (
+      <div className="di-op-selected-body" data-testid="di-dock-code-review-unavailable">
         <span className="text-text-muted">
-          Code review is not offered for {member.agent} now.
-          {bar ? ' Reason below.' : ` ${unavailableWords(offer.reason)}`}
+          Code review is not offered for {member.agent} now. The reason is in the inspector.
+        </span>
+      </div>
+    ) : (
+      <div className="di-op-selected-body" data-testid="di-code-review-unavailable">
+        <span className="text-text-muted">
+          Code review is not offered for {member.agent} now. {unavailableWords(offer.reason)}
         </span>
       </div>
     );
   }
   const { listing, taskId } = offer;
   return (
-    <div className={shell} data-testid={bar ? 'di-code-review-bar' : 'di-code-review-entry'}>
-      {bar && <span className="text-text-muted">{member.agent} selected</span>}
+    <div
+      className="di-op-selected-body"
+      data-testid={dock ? 'di-code-review-entry' : 'di-inspector-code-review'}
+    >
       <button
         type="button"
-        className={`self-start cursor-pointer border-2 border-accent bg-active-bg text-left ${
-          bar ? 'px-4 py-2 text-sm' : 'px-3 py-2'
-        } ${DI_FOCUS_RING}`}
-        data-testid={bar ? 'di-open-code-review-bar' : 'di-open-code-review'}
+        className={`di-op-button ${DI_FOCUS_RING}`}
+        data-testid={dock ? 'di-open-code-review' : 'di-inspector-open-code-review'}
         disabled={access === null}
         onClick={(event) =>
           access?.open(
@@ -73,12 +75,11 @@ export function DiCodeReviewEntry({
       >
         Open code review
       </button>
-      {!bar && (
-        <span className="text-text-muted">
-          Read what is changed in this assignment&apos;s worktree, in a large window. View only: it
-          shows the team&apos;s changes and changes nothing.
-        </span>
-      )}
+      <span className={dock ? 'text-text-muted di-op-review-hint' : 'text-text-muted'}>
+        {dock
+          ? 'View only: the team’s changes, in a large window; it changes nothing.'
+          : 'Read what is changed in this assignment’s worktree, in a large window. View only: it shows the team’s changes and changes nothing.'}
+      </span>
     </div>
   );
 }

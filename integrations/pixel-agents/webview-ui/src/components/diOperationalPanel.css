@@ -1,0 +1,812 @@
+/*
+ * feature13 — the DI office OPERATIONAL PANEL: a calm reading surface docked beside the pixel world.
+ *
+ * The world stays the pixel centrepiece; this panel is an operational list. It reads first what is
+ * running, its observed status and who is working on it, in a plain reading typeface, aligned rows,
+ * generous spacing and restrained colour. Detail lives one step behind labelled disclosures.
+ *
+ * Colours are SOLID tokens on .di-op-theme (no alpha), so test/diOperationalPanelContrast.test.ts can
+ * compute every text/surface pairing from this very file. The Tailwind colour variables the shared
+ * helpers emit (text-text, text-text-muted, text-warning, text-status-success, border-border,
+ * outline-accent, ...) are redefined here for this subtree only, so every existing helper renders in
+ * the panel's palette. Status is never carried by colour alone: every status has a shape and words.
+ *
+ * No animation here except state changes a person caused; nothing pulses or moves on its own.
+ */
+
+.di-op-theme {
+  /* surfaces */
+  --op-bg: #151824;
+  --op-surface: #1c2030;
+  --op-surface-2: #242a3d;
+  --op-line: #2c3245;
+  /* boundaries a control needs to be seen (3:1 against the surfaces above) */
+  --op-edge: #7a82a3;
+  /* text */
+  --op-text: #eceef5;
+  --op-muted: #a7acc0;
+  --op-link: #aab4ff;
+  /* focus: unmistakable on every surface above */
+  --op-focus: #ffd166;
+  /* status words and shapes */
+  --op-running: #74d6a0;
+  --op-waiting: #a9bdd6;
+  --op-blocked: #f4b860;
+  --op-failed: #ff9a9a;
+  --op-ended: #c3c7d6;
+  --op-disconnected: #f4b860;
+  --op-stale: #e9c97a;
+  --op-unknown: #b4b9cb;
+  --op-warn: #f4c06e;
+  --op-good: #7fd8a3;
+  /* selection */
+  --op-selected-bg: #262d4a;
+  --op-selected-edge: #8c97ff;
+
+  --op-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --op-font-code:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* the shared helpers' Tailwind colours, in this panel's palette */
+  --color-text: var(--op-text);
+  --color-text-muted: var(--op-muted);
+  --color-warning: var(--op-warn);
+  --color-status-success: var(--op-good);
+  --color-danger: var(--op-failed);
+  --color-border: var(--op-line);
+  --color-accent: var(--op-focus);
+  --color-bg: var(--op-bg);
+  --color-active-bg: var(--op-surface-2);
+
+  color: var(--op-text);
+  font-family: var(--op-font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.di-op {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 16px 20px;
+  color: var(--op-text);
+  background: var(--op-bg);
+  border-left: 1px solid var(--op-line);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.di-op-theme *,
+.di-op-theme *::before,
+.di-op-theme *::after {
+  box-sizing: border-box;
+  /* index.css sets the pixel face on EVERY element (`* { font-pixel }`): a reading surface uses the
+     reading faces, so children inherit from .di-op-theme and identifiers use the code face (below). */
+  font-family: inherit;
+}
+.di-op-theme code,
+.di-op-theme .di-op-ref {
+  font-family: var(--op-font-code);
+  font-size: 12px;
+}
+/* A complete source-qualified ref is never cut: with no natural break it wraps wherever it must. */
+.di-op-theme .di-op-ref {
+  overflow-wrap: anywhere;
+}
+
+/* The shared helpers' pixel type scale is far too large in a reading face: normalised here. */
+.di-op-theme .text-2xs,
+.di-op-theme .text-xs {
+  font-size: 13px;
+}
+.di-op-theme .text-sm {
+  font-size: 14px;
+}
+.di-op-theme .border-2,
+.di-op-theme .border-t-2,
+.di-op-theme .border-y-2 {
+  border-width: 0;
+}
+.di-op-theme .border-t-2 {
+  border-top-width: 1px;
+}
+
+/* ---------- focus: the same ring on every control and row ---------- */
+
+.di-op-theme :focus {
+  outline: none;
+}
+.di-op-theme :focus-visible {
+  outline: 2px solid var(--op-focus);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* ---------- header ---------- */
+
+.di-op-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.di-op-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.di-op-title-status {
+  font-weight: 500;
+}
+.di-op-quiet-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--op-muted);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.di-op-quiet-button:hover {
+  color: var(--op-text);
+  background: var(--op-surface);
+}
+
+/* ---------- compact ancillary entries ---------- */
+
+.di-op-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.di-op-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--op-surface);
+  border: 1px solid var(--op-line);
+  border-radius: 10px;
+}
+.di-op-entry-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.di-op-entry-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-op-entry-note {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.di-op-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.di-op-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.di-op-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--op-edge);
+  border-radius: 7px;
+  background: var(--op-surface-2);
+  color: var(--op-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+.di-op-button:hover {
+  border-color: var(--op-muted);
+}
+.di-op-button:disabled {
+  cursor: default;
+  color: var(--op-muted);
+}
+.di-op-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--op-link);
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.di-op-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------- disclosures ---------- */
+
+.di-op-theme details > summary {
+  cursor: pointer;
+  color: var(--op-muted);
+  font-size: 12px;
+  list-style: none;
+}
+.di-op-theme details > summary::-webkit-details-marker {
+  display: none;
+}
+.di-op-theme details > summary::before {
+  content: '›';
+  display: inline-block;
+  width: 12px;
+  color: var(--op-muted);
+}
+.di-op-theme details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.di-op-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 2px 12px;
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 38%) 1fr;
+  gap: 8px;
+}
+.di-op-row > :first-child {
+  color: var(--op-muted);
+}
+.di-op-row > :last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--op-text);
+}
+
+/* ---------- find ---------- */
+
+.di-op-find {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Find may give way (its results scroll) before the panel overflows and pushes the dock out. */
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.di-op-find-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.di-op-find-head .di-op-find-outcome {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.di-op-find-head .di-op-link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.di-op-find label {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-find input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--op-edge);
+  border-radius: 8px;
+  background: var(--op-surface);
+  color: var(--op-text);
+  font-size: 13px;
+}
+.di-op-find input::placeholder {
+  color: var(--op-muted);
+}
+.di-op-find-outcome {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-find-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  /* never less than one whole result (a result can wrap to two lines), so a shrunk list stays reachable
+     and every result the keyboard reaches is scrolled fully into view inside it */
+  min-height: 62px;
+  overflow-y: auto;
+}
+
+/* A SHORT window: descriptive text gives way before the Missions do. The request entry's tagline is the
+   product's own description of the Orchestrator (it stays in the element's title and in the "why"
+   disclosure of an unavailable entry); its name, status and both actions stay. */
+@media (max-height: 820px) {
+  /* spacing gives way before anything is hidden or shrunk */
+  .di-op {
+    gap: 10px;
+  }
+  .di-op-entry-tagline {
+    display: none;
+  }
+  /* the dock's one-line explanation of the code review button (the button keeps its title) */
+  .di-op-review-hint {
+    display: none;
+  }
+}
+/* A selection holds the dock open, and its Mission is kept at the TOP of the list (MissionCard), so the
+   reserve is just the card and the fade. */
+.di-op-has-selection .di-op-main {
+  min-height: 136px;
+}
+/* A selection's dock never gives up below its header, identity and ALL its actions (they come first in
+   the dock): 190px holds them plus the 28px fade; everything after them scrolls inside the dock. An
+   empty dock ("Select a character...") has no such floor and stays compact. */
+.di-op-selected-actions {
+  min-height: 190px;
+}
+
+/* ---------- missions: the primary list ---------- */
+
+/* ONE scrolling region: the Missions first, then the secondary sections. It takes every pixel the
+   compact top and the Selected dock leave, and it RESERVES one whole Mission card (objective, status
+   and team: 99px, plus the 28px fade below) in EVERY state. Under pressure something less important
+   gives way instead: Find's results shrink (they scroll) and the Selected dock's descriptive body
+   scrolls under its pinned actions (.di-op-selected-actions); neither is allowed to crush this list to
+   a faded sliver, and none of them may push the dock out of the window. */
+.di-op-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 0;
+  /* nothing selected: the list sits at its top, so its heading and coverage line (87px) come first:
+     that plus one whole card (99px) and the 28px fade, measured 186px + 28px */
+  min-height: 216px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -6px;
+  padding: 0 6px 4px;
+}
+.di-op-missions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.di-op-missions:focus-visible {
+  outline-offset: 0;
+}
+.di-op-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.di-op-section-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-op-caveat {
+  color: var(--op-warn);
+  font-size: 12px;
+}
+.di-op-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.di-op-filter select {
+  flex: 0 1 190px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--op-edge);
+  border-radius: 7px;
+  background: var(--op-surface);
+  color: var(--op-text);
+  font-size: 12px;
+}
+
+.di-op-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  background: var(--op-surface);
+  border: 1px solid var(--op-line);
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+.di-op-card[data-selected-mission='true'] {
+  background: var(--op-selected-bg);
+  border-color: var(--op-selected-edge);
+}
+.di-op-objective {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--op-text);
+  overflow-wrap: anywhere;
+}
+.di-op-objective[data-goal='none'] {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--op-warn);
+}
+.di-op-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+.di-op-team {
+  color: var(--op-text);
+  font-size: 12px;
+}
+.di-op-team-roles {
+  color: var(--op-muted);
+}
+.di-op-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--op-muted);
+}
+.di-op-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* status badge: shape + words, then the sentence */
+.di-op-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.di-op-status-glyph {
+  font-size: 11px;
+}
+.di-op-status[data-status='running'] {
+  color: var(--op-running);
+}
+.di-op-status[data-status='waiting'] {
+  color: var(--op-waiting);
+}
+.di-op-status[data-status='blocked'] {
+  color: var(--op-blocked);
+}
+.di-op-status[data-status='failed'] {
+  color: var(--op-failed);
+}
+.di-op-status[data-status='ended'] {
+  color: var(--op-ended);
+}
+.di-op-status[data-status='disconnected'] {
+  color: var(--op-disconnected);
+}
+.di-op-status[data-status='stale'] {
+  color: var(--op-stale);
+}
+.di-op-status[data-status='unknown'] {
+  color: var(--op-unknown);
+}
+.di-op-status-sentence {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+
+/* member rows */
+.di-op-members {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.di-op-member-group-head {
+  color: var(--op-muted);
+  font-size: 11px;
+  padding: 2px 0;
+}
+.di-op-list-row {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--op-text);
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.di-op-list-row:hover {
+  background: var(--op-surface-2);
+}
+.di-op-list-row[aria-current='true'] {
+  background: var(--op-selected-bg);
+  color: var(--op-text);
+}
+.di-op-list-row .di-op-sub {
+  color: var(--op-muted);
+}
+
+/* ---------- selected ---------- */
+
+/* The Selected dock: always on screen; a long selection scrolls inside it. */
+.di-op-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* may give way (its descriptive body scrolls) so the Missions keep their reserved card */
+  flex-shrink: 1;
+  max-height: 40%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -16px -20px;
+  padding: 12px 16px 16px;
+  background: var(--op-bg);
+  border-top: 1px solid var(--op-line);
+}
+.di-op-nav {
+  display: flex;
+  gap: 2px;
+}
+.di-op-nav button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--op-muted);
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.di-op-nav button:hover {
+  color: var(--op-text);
+  background: var(--op-surface);
+}
+.di-op-selected-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.di-op-selected-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.di-op-muted {
+  color: var(--op-muted);
+}
+
+.di-op-selected-body > .di-op-button {
+  align-self: flex-start;
+}
+
+/* the compact reception desk */
+.di-op-theme [data-testid='di-reception-entry'] {
+  padding: 10px 12px;
+  background: var(--op-surface);
+  border: 1px solid var(--op-line);
+  border-radius: 10px;
+}
+.di-op-theme [data-testid='di-reception-entries'] {
+  max-height: 220px;
+}
+
+/* ---------- secondary sections (below the primary list) ---------- */
+
+.di-op-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--op-line);
+}
+
+/* collapsed: one small, quiet button */
+.di-op-collapsed {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  padding: 6px 12px;
+  border: 1px solid var(--op-edge);
+  border-radius: 8px;
+  background: var(--op-bg);
+  color: var(--op-text);
+  font-family: var(--op-font-ui);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .di-op-theme details > summary::before {
+    transition: transform 120ms ease-out;
+  }
+}
+
+/* ---------- feature13 v3: uniform cards, roster one step away ---------- */
+
+.di-op-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.di-op-team-details > summary {
+  padding: 2px 0;
+}
+.di-op-team-details[open] > summary {
+  margin-bottom: 4px;
+}
+.di-op-button-primary {
+  border-color: var(--op-selected-edge);
+  background: var(--op-selected-bg);
+}
+.di-op-entry-compact {
+  gap: 4px;
+  padding: 8px 12px;
+}
+.di-op-subhead {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--op-text);
+}
+.di-op-detail-open {
+  padding-left: 0;
+}
+
+/* A scroll region never slices a sentence silently: its last 28px fade out, a visible sign that
+   more is below; padding lets the very end scroll clear of the fade. */
+.di-op-main,
+.di-op-selected {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+.di-op-main {
+  padding-bottom: 28px;
+}
+.di-op-selected {
+  padding-bottom: 28px;
+}
+
+/* ---------- the full-size inspector (a modal dialog; diModal.ts) ---------- */
+
+.di-op-inspector-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(8px, 2.4vw, 32px);
+  background: #05060acc;
+  overscroll-behavior: contain;
+}
+.di-op-inspector {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 920px);
+  height: min(100%, 920px);
+  min-width: 0;
+  min-height: 0;
+  background: var(--op-bg);
+  border: 1px solid var(--op-line);
+  border-radius: 16px;
+  box-shadow: 0 28px 80px #000000b3;
+  overflow: hidden;
+}
+.di-op-inspector:focus {
+  outline: none;
+}
+.di-op-inspector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--op-line);
+}
+.di-op-inspector-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.di-op-inspector-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--op-text);
+  overflow-wrap: anywhere;
+}
+.di-op-inspector-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 20px 24px 32px;
+}
+.di-op-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+}
+.di-op-inspector-section > h3 {
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--op-line);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--op-text);
+}
+.di-op-inspector-objective {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--op-text);
+  overflow-wrap: anywhere;
+}
+.di-op-inspector-objective[data-goal='none'] {
+  color: var(--op-warn);
+}
+.di-op-inspector-member {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--op-surface);
+  border: 1px solid var(--op-line);
+  border-radius: 10px;
+}
+.di-op-inspector .di-op-row {
+  grid-template-columns: minmax(140px, 32%) 1fr;
+}
+.di-op-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
