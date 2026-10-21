@@ -988,8 +988,19 @@ interface CityState {
   tilesDriven: number;
   rainY: number;
 }
-const cityState = (): Promise<CityState> =>
-  p().evaluate(() => {
+/** The city's state, read in one page task. With `hideFirst` the view is hidden in that same task BEFORE the read, so the
+ *  state returned is the state at the instant of hiding: a frame cannot advance anything between a separate read and a
+ *  separate hide (each is its own round trip to the page), and a baseline read that way would differ from "while hidden"
+ *  by that one frame, which is the harness's ordering and not the product's hidden guard. */
+const cityState = (hideFirst = false): Promise<CityState> =>
+  p().evaluate((hide) => {
+    if (hide) {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }
     const o = (window as unknown as { __diHarnessOffice: Office }).__diHarnessOffice;
     return {
       clock: o.ambientClock,
@@ -1021,7 +1032,7 @@ const cityState = (): Promise<CityState> =>
       tilesDriven: o.getTraffic()!.counters.tilesDriven,
       rainY: o.city.weather.ys[0],
     };
-  });
+  }, hideFirst);
 
 test(
   'REDUCED MOTION: with the preference on, nothing of the four moves, and the frame costs less than it does in motion',
@@ -1184,9 +1195,8 @@ test(
         return out;
       }, jump);
 
-    // 1. hidden for real seconds: nothing advances
-    const before = await cityState();
-    await hide();
+    // 1. hidden for real seconds: nothing advances. The baseline is read in the same page task that hides the view.
+    const before = await cityState(true);
     await p().waitForTimeout(4000);
     const during = await cityState();
     assert.deepEqual(during.vehicles, before.vehicles, 'no vehicle moved while hidden');
