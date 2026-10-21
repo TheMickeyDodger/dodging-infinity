@@ -588,13 +588,15 @@ test(
         .sort()
         .join('|'),
     );
-    // stand the fixture's real agent on a lane tile ahead of a driving vehicle, outside every
-    // claim already held (a short route used to clamp the agent onto the vehicle, so the first
-    // look counted claims the simulation had not yet been shown). Hold the agent there.
+    // Stand the fixture's real agent on a tile a driving vehicle has ALREADY reserved (within one
+    // tile of that claim, not on a tile it is standing in). releaseHaloClaims gives the claim back
+    // on the next traffic update. Count only after that one update: the original tolerance is still
+    // exactly zero, and the look before the update must already see the reserved tile.
     const placed = await p().evaluate(() => {
       const o = (
         window as unknown as {
           __diHarnessOffice: {
+            update(dt: number): void;
             getTraffic(): {
               vehicles: Array<{
                 state: string;
@@ -604,7 +606,7 @@ test(
                 claimed: number;
               }>;
             };
-            layout: { cols: number };
+            layout: { cols: number; rows: number };
             characters: Map<
               number,
               { tileCol: number; tileRow: number; x: number; y: number; path: unknown[] }
@@ -613,40 +615,75 @@ test(
         }
       ).__diHarnessOffice;
       const cols = o.layout.cols;
+      const rows = o.layout.rows;
       const traffic = o.getTraffic();
-      const nearClaim = (col: number, row: number) => {
-        for (const w of traffic.vehicles) {
-          if (w.state === 'inactive' || w.state === 'gone' || w.state === 'out') continue;
-          for (
-            let k = Math.max(0, Math.floor(w.head) - 4);
-            k <= w.claimed && k < w.route.length;
-            k++
-          ) {
+      const absent = (state: string) => state === 'inactive' || state === 'gone' || state === 'out';
+      const onRoad = (state: string) =>
+        state === 'in' || state === 'drive' || state === 'stop' || state === 'end';
+      // Same window the assertion uses: from four tiles behind the body through the last claim.
+      const look = (col: number, row: number, claimedOf: (index: number) => number) => {
+        let hits = 0;
+        let forward = 0;
+        let stoodOn = false;
+        traffic.vehicles.forEach((w, index) => {
+          if (absent(w.state)) return;
+          const body = Math.floor(w.head);
+          const claimed = claimedOf(index);
+          for (let k = Math.max(0, body - 4); k <= claimed && k < w.route.length; k++) {
             const tt = w.route[k];
-            if (Math.abs((tt % cols) - col) <= 1 && Math.abs(Math.floor(tt / cols) - row) <= 1)
-              return true;
+            const dist = Math.max(
+              Math.abs((tt % cols) - col),
+              Math.abs(Math.floor(tt / cols) - row),
+            );
+            if (dist === 0) stoodOn = true;
+            if (dist <= 1) {
+              hits++;
+              if (k > body) forward++;
+            }
           }
-        }
-        return false;
+        });
+        return { hits, forward, stoodOn };
       };
-      let spot: { col: number; row: number } | null = null;
+      // What releaseHaloClaims would leave: claims ahead of the body that sit in the agent's halo
+      // are given back from the front, and everything else stays.
+      const afterRelease = (col: number, row: number) => {
+        const claimed = traffic.vehicles.map((w) => w.claimed);
+        traffic.vehicles.forEach((w, index) => {
+          if (!onRoad(w.state)) return;
+          const body = Math.floor(w.head);
+          while (claimed[index] > body && claimed[index] < w.route.length) {
+            const tt = w.route[claimed[index]];
+            if (Math.max(Math.abs((tt % cols) - col), Math.abs(Math.floor(tt / cols) - row)) > 1)
+              break;
+            claimed[index]--;
+          }
+        });
+        return look(col, row, (index) => claimed[index]).hits;
+      };
+      let spot: { col: number; row: number; before: number } | null = null;
       for (const v of traffic.vehicles) {
-        if (v.state !== 'drive' || v.v <= 2) continue;
-        // one free tile between the claim and the agent, then a few more if that tile is still
-        // beside some other claim
-        for (let idx = v.claimed + 2; idx < v.route.length && idx <= v.claimed + 6; idx++) {
-          const tile = v.route[idx];
-          const col = tile % cols;
-          const row = Math.floor(tile / cols);
-          if (!nearClaim(col, row)) {
-            spot = { col, row };
-            break;
+        if (v.state !== 'drive' || v.v <= 2 || v.claimed <= Math.floor(v.head)) continue;
+        const tip = v.route[v.claimed];
+        const tipCol = tip % cols;
+        const tipRow = Math.floor(tip / cols);
+        for (let dy = -1; dy <= 1 && !spot; dy++) {
+          for (let dx = -1; dx <= 1 && !spot; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const col = tipCol + dx;
+            const row = tipRow + dy;
+            if (col < 0 || row < 0 || col >= cols || row >= rows) continue;
+            const seen = look(col, row, (index) => traffic.vehicles[index].claimed);
+            // Beside a claim the vehicle already holds ahead of its body, and not standing in
+            // one (that is the yield, not the claim it must give back). One update must be able
+            // to clear every tile the assertion counts.
+            if (seen.hits > 0 && seen.forward > 0 && !seen.stoodOn && afterRelease(col, row) === 0)
+              spot = { col, row, before: seen.hits };
           }
         }
         if (spot) break;
       }
       if (!spot) return null;
-      const { col, row } = spot;
+      const { col, row, before } = spot;
       const agent = o.characters.get(9)!;
       const hold = () => {
         agent.tileCol = col;
@@ -655,6 +692,9 @@ test(
         agent.y = row * 16 + 8;
         agent.path = [];
       };
+      hold();
+      // The one tick the vehicle is allowed. Counting starts at the state this update leaves.
+      o.update(1 / 60);
       const log = { violations: 0, frames: 0 };
       const loop = () => {
         hold();
@@ -663,7 +703,7 @@ test(
           vehicles: Array<{ state: string; route: number[]; head: number; claimed: number }>;
         };
         for (const w of t.vehicles) {
-          if (w.state === 'inactive' || w.state === 'gone' || w.state === 'out') continue;
+          if (absent(w.state)) continue;
           for (
             let k = Math.max(0, Math.floor(w.head) - 4);
             k <= w.claimed && k < w.route.length;
@@ -678,9 +718,13 @@ test(
       };
       (window as unknown as { __priorityLog: typeof log }).__priorityLog = log;
       loop();
-      return { col, row };
+      return { col, row, before };
     });
-    assert.ok(placed, 'a vehicle should be driving');
+    assert.ok(placed, 'a driving vehicle should already be holding a tile next to the agent');
+    assert.ok(
+      placed.before > 0,
+      'the agent was not within one tile of a claim the vehicle already held',
+    );
     await p().waitForTimeout(4000);
     const log = await p().evaluate(
       () =>

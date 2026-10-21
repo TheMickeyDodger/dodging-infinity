@@ -23,11 +23,11 @@ import {
   isDecisionWord,
   isPending,
   isWrite,
-  offerMatchesDisplay,
   MR_POLL_CLOSED_MS,
   MR_POLL_OPEN_MS,
   MR_POLL_TURN_MS,
   offeredActions,
+  offerMatchesDisplay,
   reduce,
   withdrawFields,
 } from '../components/diMissionRequestModel.js';
