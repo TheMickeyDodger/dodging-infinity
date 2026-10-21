@@ -790,10 +790,10 @@ export class OfficeState {
   seatIfFree(agentId: number): boolean {
     const ch = this.characters.get(agentId);
     if (!ch || ch.isSubagent || ch.seatId) return false;
-    const uid = this.findFreeSeat(ch.folderName);
-    if (!uid) return false;
-    this.reassignSeat(agentId, uid);
-    return ch.seatId === uid;
+    const seatId = this.findFreeSeat(ch.folderName);
+    if (!seatId) return false;
+    this.reassignSeat(agentId, seatId);
+    return ch.seatId === seatId;
   }
 
   /**
