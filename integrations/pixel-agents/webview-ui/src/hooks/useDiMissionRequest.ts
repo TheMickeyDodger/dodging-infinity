@@ -23,6 +23,7 @@ import {
   isDecisionWord,
   isPending,
   isWrite,
+  offerMatchesDisplay,
   MR_POLL_CLOSED_MS,
   MR_POLL_OPEN_MS,
   MR_POLL_TURN_MS,
@@ -249,8 +250,15 @@ export function useDiMissionRequest(
     const ref = s.selectedRef;
     const view = ref === null ? undefined : s.views[ref];
     if (!ref || !view || view.stale || s.unvouched !== null) return;
+    // The record may already show another window's approval, which drops `decide` from the
+    // latest actions. This window still holds the offer it read: a typed word on that offer is
+    // sent, and the record keeps a single authorization.
+    const heldOffer =
+      view.offer !== null &&
+      offerMatchesDisplay(view.displayed, view.offer) &&
+      isDecisionWord(s.typed);
     if (
-      !offeredActions(s, ref).includes('decide') ||
+      (!offeredActions(s, ref).includes('decide') && !heldOffer) ||
       !isDecisionWord(s.typed) ||
       actionPending(s, 'decide', ref)
     )
