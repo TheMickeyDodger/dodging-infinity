@@ -880,9 +880,11 @@ test(
       (await text(page, T('di-mr-offer-expiry'))).split(' (')[0];
     expect(await clockTime(first)).toBe(await clockTime(second));
 
-    // — the first window decides; the second still holds the older display —
-    await approve(first);
+    // — one decision from two windows. The second polls the record and, once that read shows the
+    // approval, unmounts the decide controls. Type the word while that offer is still on screen,
+    // then let the first window decide, and submit from the second only while it still offers it. —
     await second.fill(T('di-mr-word'), 'approve');
+    await approve(first);
     const gate = await available(second, T('di-mr-approve')).catch(() => false);
     if (gate) await pressKey(second, T('di-mr-approve'), 'Enter');
     await sleep(1_500);
