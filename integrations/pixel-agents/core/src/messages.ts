@@ -41,6 +41,7 @@ export type ServerMessage =
   | AgentDiagnostics
   | DiOfficeState
   | AmbientStateLoaded
+  | CityPresentationLoaded
   | AmbientSpritesLoaded
   | DiEvidenceContent
   | DiCodeReview
@@ -70,6 +71,7 @@ export type ClientMessage =
   | SetShowAreas
   | RequestDiagnostics
   | SaveAmbientState
+  | SaveCityPresentation
   | DiEvidenceRead
   | DiCodeReviewRead
   | DiMissionRequest;
@@ -940,6 +942,11 @@ export interface AmbientStateLoaded {
   state: Record<string, any> | null;
 }
 
+export interface CityPresentationLoaded {
+  type: 'cityPresentationLoaded';
+  state: Record<string, any> | null;
+}
+
 export interface AmbientSpritesLoaded {
   type: 'ambientSpritesLoaded';
   sheets: AmbientSpriteSheet[];
@@ -1251,6 +1258,11 @@ export interface RequestDiagnostics {
 
 export interface SaveAmbientState {
   type: 'saveAmbientState';
+  state: Record<string, any>;
+}
+
+export interface SaveCityPresentation {
+  type: 'saveCityPresentation';
   state: Record<string, any>;
 }
 

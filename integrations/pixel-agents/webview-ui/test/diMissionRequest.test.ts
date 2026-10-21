@@ -226,9 +226,6 @@ let otherMessages: string[] = [];
 /** While true the relay HOLDS the page's reads: nothing reaches the adapter and nothing is answered. */
 let closed = false;
 let held: Array<() => void> = [];
-/** ONE window's hold: while its socket is here the relay holds that window's READS; its writes still pass. */
-const READ_OPS = new Set(['refresh', 'conversation', 'request', 'offer', 'result']);
-let readHolds = new Map<WebSocket, Array<() => void>>();
 /** Every request the relay handed to the owner, by window, with the owner's reply once it came. */
 type Relayed = {
   ws: WebSocket;
@@ -270,9 +267,7 @@ function serve(ws: WebSocket) {
           missionRequest: (m, reply) => void panel.handle(m, reply),
         });
       };
-      const windowHold = readHolds.get(ws);
       if (closed) held.push(deliver);
-      else if (windowHold && READ_OPS.has(String(msg.op))) windowHold.push(deliver);
       else deliver();
     } else if (msg.type === 'webviewReady') {
       resolveConnected(ws);
@@ -292,31 +287,14 @@ const openRelay = () => {
   for (const deliver of flush) deliver();
 };
 /**
- * Hold ONE window's reads from here, once none of its reads is still with the owner: every reply it gets after
- * this was computed before this call, so what it shows can change only through its own writes.
- */
-async function holdReads(page: Page) {
-  const ws = socketOf.get(page)!;
-  readHolds.set(ws, []);
-  await waitFor('the window’s reads already sent to be answered', async () =>
-    relayed.every((e) => e.ws !== ws || e.reply !== null),
-  );
-}
-const releaseReads = (page: Page) => {
-  const ws = socketOf.get(page)!;
-  const flush = readHolds.get(ws) ?? [];
-  readHolds.delete(ws);
-  for (const deliver of flush) deliver();
-};
-/**
  * Close a window that has nothing more to show, and wait until nothing it sent can still hold one of the office's
- * concurrent-call slots (`MAX_CONCURRENT_PANEL_CALLS`): none of its reads is held at the relay, its connection is
+ * concurrent-call slots (`MAX_CONCURRENT_PANEL_CALLS`): the relay is not holding reads, its connection is
  * closed (no message of it can arrive after that), and every call of it the relay delivered has been answered (the
  * office frees a call's slot before it answers it).
  */
 async function closeWindow(page: Page) {
   const ws = socketOf.get(page)!;
-  expect(closed || readHolds.has(ws), 'the window still has reads held at the relay').toBe(false);
+  expect(closed, 'the relay is still holding reads').toBe(false);
   await page.close();
   await waitFor('the closed window’s connection to close', async () => ws.readyState === ws.CLOSED);
   await waitFor('every call of the closed window to be answered', async () =>
@@ -405,7 +383,6 @@ beforeEach(async (ctx) => {
   otherMessages = [];
   closed = false;
   held = [];
-  readHolds = new Map();
   relayed = [];
   socketOf = new Map();
   dialogs = 0;
@@ -943,10 +920,14 @@ test(
       (await text(page, T('di-mr-offer-expiry'))).split(' (')[0];
     expect(await clockTime(first)).toBe(await clockTime(second));
 
-    // — the first window decides; the second still holds the older display —
-    // The second window's reads are held at the relay, so its own refresh cannot take the live offer off its
-    // screen while the first window decides. Its writes still reach the owner.
-    await holdReads(second);
+    // — one decision from two windows. The second has the word typed on the offer it was shown,
+    // so its own refresh can read the first window's approval without taking that offer off the
+    // screen. The second then submits that same offer. The record keeps one authorization, and the
+    // second submit is an idempotent find of it. —
+    await second.fill(T('di-mr-word'), 'approve');
+    await waitFor('Approve to be available in the second window', () =>
+      available(second, T('di-mr-approve')),
+    );
     await approve(first);
     // Start can show (the first window's own poll read the approved record) before the owner's answer to that
     // window's decide is back: wait for the answer before reading it.
@@ -966,14 +947,14 @@ test(
     const authorizationId = (firstDecision.reply!.answer as Json).decision
       .authorization_id as string;
     expect(authorizationId).toMatch(/^ma-[0-9a-f]{32}$/);
-    // The second window, still showing the live offer, decides too: the attempt is always made.
-    expect(await exists(second, T('di-mr-word')), 'the second window lost the live offer').toBe(
-      true,
-    );
-    await second.fill(T('di-mr-word'), 'approve');
-    await waitFor('Approve to be available in the second window', () =>
-      available(second, T('di-mr-approve')),
-    );
+    // The word was typed before the first window decided. The controls stay after the record moves,
+    // and the second window submits the offer it already holds.
+    expect(
+      await exists(second, T('di-mr-word')),
+      'the second window lost the offer it had already typed',
+    ).toBe(true);
+    const decides = () => sent.filter((m) => m.op === 'decide').length;
+    const before = decides();
     await pressKey(second, T('di-mr-approve'), 'Enter');
     const secondDecisions = await waitFor(
       'the owner to answer the second window’s decision',
@@ -982,6 +963,7 @@ test(
         return got.length > 0 && got.every((e) => e.reply !== null) ? got : false;
       },
     );
+    expect(decides(), 'the second window submitted a decision of its own').toBe(before + 1);
     // It reached the owner, which found the first decision: no second authority.
     expect(
       secondDecisions,
@@ -992,7 +974,6 @@ test(
       answer: { decision: { idempotent: true, authorization_id: authorizationId } },
     });
     expect((await state()).authorizations, 'two windows made two approvals').toBe(1);
-    releaseReads(second);
     await whenText(second, T('di-mr-stage-label'), /Approved|approved/);
 
     // — a request withdrawn is WITHDRAWN, never "denied" —

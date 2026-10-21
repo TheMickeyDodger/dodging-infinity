@@ -163,7 +163,7 @@ export function WorldMap({
       return true;
     };
     // what the living layer drew on the last tick (evidence hook below)
-    let livingCounts = { residents: 0, trains: 0 };
+    let livingCounts = { residents: 0, trains: 0, vehicles: 0 };
     const draw = () => {
       const t0 = performance.now();
       const rebuilt = ensureStatic();
@@ -200,9 +200,16 @@ export function WorldMap({
       const sy = ch / (l.rows * TILE_SIZE);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(scaled, 0, 0);
-      // the LIVING layer (C3): ambient residents and trains as markers, from the same live objects
-      // the canvas draws, at this Map's cadence; drawn FIRST so real agents and pets sit on top
-      livingCounts = drawLivingLayer(ctx, officeState.getAmbientResidents(), officeState.getTrains(), sx, sy);
+      // the LIVING layer (C3): ambient residents, trains and decorative traffic as markers, from the same
+      // live objects the canvas draws, at this Map's cadence; drawn FIRST so real agents and pets sit on top
+      livingCounts = drawLivingLayer(
+        ctx,
+        officeState.getAmbientResidents(),
+        officeState.getTrains(),
+        sx,
+        sy,
+        officeState.getVehicles(),
+      );
       // the LIVE layer: every worker and pet where it is now (1 sprite px = sx canvas px)
       ctx.setTransform(sx, 0, 0, sy, 0, 0);
       ctx.imageSmoothingEnabled = false;
@@ -276,7 +283,7 @@ export function WorldMap({
       <canvas
         ref={canvasRef}
         data-testid="world-map-canvas"
-        title="The whole world. Click a spot to go there."
+        title="The whole world. Click a spot to go there. Dots are decorative residents, bars are trains, boxes are decorative traffic."
         className="absolute pixel-panel"
         style={{
           left: rect.x,

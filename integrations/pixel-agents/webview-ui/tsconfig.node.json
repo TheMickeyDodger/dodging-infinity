@@ -28,8 +28,12 @@
     "noUncheckedSideEffectImports": true
   },
   "include": ["vite.config.ts", "../core/src/assets/**/*.ts", "test/**/*.ts"],
-  /* type-checked by tsconfig.test-dom.json, which adds the DOM lib (and JSX) for the renderers */
+  /* type-checked by tsconfig.test-dom.json, which adds the DOM lib (and JSX) for the renderers; the two living-city
+     browser tests are type-checked by tsconfig.test-city.json (DOM lib, and the real server handler they import) */
   "exclude": [
+    "test/livingCityApp.test.ts",
+    "test/livingCityTraffic.test.ts",
+    "test/livingCityLoad.test.ts",
     "test/haloAura.test.ts",
     "test/diReceptionDesk.test.ts",
     "test/diRuntimeAgents.test.ts",

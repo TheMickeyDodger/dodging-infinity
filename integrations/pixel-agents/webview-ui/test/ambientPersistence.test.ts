@@ -36,6 +36,18 @@ let withWaiting: AmbientSaveState | undefined;
 let withAboard: AmbientSaveState | undefined;
 const RUN_MAX_STEPS = 6000; // 600 simulated seconds: the run stops early once every case was seen
 
+/** A snapshot in which some rider's destination can be put BEHIND its train (the refusal case below needs one): the
+ *  rider's station, one step further along the train's direction, is still on the line. */
+function hasMovableRider(world: OfficeState, s: AmbientSaveState): boolean {
+  const stations = world.transit!.line.stations.length;
+  return s.trains.some((t) =>
+    t[8].some((id) => {
+      const d = world.ambient!.destinationOf(id);
+      return d >= 0 && d + t[1] >= 0 && d + t[1] < stations;
+    }),
+  );
+}
+
 beforeAll(() => {
   loadBundledCatalog();
   source = new OfficeState(living());
@@ -45,7 +57,7 @@ beforeAll(() => {
     const s = source.serializeAmbient(Date.now())!;
     for (const t of s.trains) if (byTrainState[t[5]] === undefined && (t[5] !== 0 || t[8].length > 0)) byTrainState[t[5]] = clone(s);
     if (!withWaiting && s.residents.some((r) => r[4] === 2)) withWaiting = clone(s);
-    if (!withAboard && k >= 600 && s.residents.filter((r) => r[4] === 3).length >= 2) withAboard = clone(s);
+    if (!withAboard && k >= 600 && s.residents.filter((r) => r[4] === 3).length >= 2 && hasMovableRider(source, s)) withAboard = clone(s);
     if (withWaiting && withAboard && [0, 1, 2, 3].every((c) => byTrainState[c])) break;
   }
   // a precondition, asserted in the first test: an undefined here fails, it never skips
@@ -184,6 +196,8 @@ test('REFUSED WHOLE, with a reason, and nothing changes: other world, contract, 
   for (const [name, mutate, hint] of cases) {
     const s = clone(saved);
     mutate(s);
+    // the rider-behind-its-train snapshot is a snapshot the CONTRACT admits (a well-formed save): it is the world that refuses it
+    if (hint === 'behind the train') assert.equal(checkAmbientSave(s), null, `${name}: admissible by the contract`);
     const o = new OfficeState(living());
     o.setAmbientEnabled(true);
     const before = o.serializeAmbient(0);

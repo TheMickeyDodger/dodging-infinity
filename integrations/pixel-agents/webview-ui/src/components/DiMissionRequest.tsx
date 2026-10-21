@@ -930,6 +930,12 @@ function RunBlock({
   );
 }
 
+/** The word is already typed on the offer this window read. Another window's approval drops
+ *  `decide` from the latest actions; the controls stay so this window can still submit that offer. */
+function holdingDecision(view: MrView, state: { typed: string }): boolean {
+  return view.offer !== null && isDecisionWord(state.typed);
+}
+
 function Detail({
   view,
   control,
@@ -1041,7 +1047,7 @@ function Detail({
           , a separate record.
         </p>
       )}
-      {!view.stale && actions.includes('decide') && (
+      {!view.stale && (actions.includes('decide') || holdingDecision(view, control.state)) && (
         <DecisionBlock view={view} control={control} nowMs={nowMs} />
       )}
       {!view.stale && actions.includes('withdraw') && (

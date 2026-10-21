@@ -13,6 +13,8 @@ interface BottomToolbarProps {
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
   workspaceFolders: WorkspaceFolder[];
+  /** DI office: the City button (lighting and weather). Absent = no button. */
+  city?: { open: boolean; onToggle: () => void };
 }
 
 export function BottomToolbar({
@@ -22,6 +24,7 @@ export function BottomToolbar({
   isSettingsOpen,
   onToggleSettings,
   workspaceFolders,
+  city,
 }: BottomToolbarProps) {
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [isBypassMenuOpen, setIsBypassMenuOpen] = useState(false);
@@ -127,6 +130,18 @@ export function BottomToolbar({
       >
         Layout
       </Button>
+      {city && (
+        <Button
+          variant={city.open ? 'active' : 'default'}
+          aria-expanded={city.open}
+          aria-controls="city-controls"
+          onClick={city.onToggle}
+          title="City lighting and weather (decoration only)"
+          data-testid="city-button"
+        >
+          City
+        </Button>
+      )}
       <Button
         variant={isSettingsOpen ? 'active' : 'default'}
         onClick={onToggleSettings}

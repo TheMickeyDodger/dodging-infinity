@@ -121,6 +121,7 @@ components:
         # DI office (additive; sent only by the DI office surface)
         - $ref: '#/components/schemas/DiOfficeState'
         - $ref: '#/components/schemas/AmbientStateLoaded'
+        - $ref: '#/components/schemas/CityPresentationLoaded'
         - $ref: '#/components/schemas/AmbientSpritesLoaded'
         - $ref: '#/components/schemas/DiEvidenceContent'
         - $ref: '#/components/schemas/DiCodeReview'
@@ -153,6 +154,7 @@ components:
         - $ref: '#/components/schemas/RequestDiagnostics'
         # DI office (additive; handled only by the DI office surface)
         - $ref: '#/components/schemas/SaveAmbientState'
+        - $ref: '#/components/schemas/SaveCityPresentation'
         - $ref: '#/components/schemas/DiEvidenceRead'
         - $ref: '#/components/schemas/DiCodeReviewRead'
         - $ref: '#/components/schemas/DiMissionRequest'
@@ -819,6 +821,25 @@ components:
               description: Opaque bounded snapshot; format owned by the webview (ambientSave.ts) and checked by the server on save.
             - type: 'null'
 
+    CityPresentationLoaded:
+      description: |
+        DI office only: the viewer's last SAVED city presentation preferences (lighting, weather,
+        traffic), or `null` when none was saved. Sent in the handshake. The webview validates it
+        against the shared contract (core/src/cityPresentation.ts) before applying it and falls
+        back to the defaults when it is refused. Local decoration only: it has no Mission, agent
+        or canonical meaning, and no value in it comes from a location or a weather service.
+      type: object
+      additionalProperties: false
+      required: [type, state]
+      properties:
+        type:
+          const: cityPresentationLoaded
+        state:
+          oneOf:
+            - type: object
+              description: Opaque bounded record; format owned by core/src/cityPresentation.ts and checked by the server on save and on read.
+            - type: 'null'
+
     AmbientSpritesLoaded:
       description: |
         DI office only: the decorative AMBIENT character sheets (job sheets and the Easter-egg
@@ -852,6 +873,22 @@ components:
         state:
           type: object
           description: Opaque bounded snapshot; format owned by the webview (ambientSave.ts).
+
+    SaveCityPresentation:
+      description: |
+        DI office only: persist the viewer's city presentation preferences under the DI state root
+        (city-presentation.json). Refused unless it matches the contract (at most
+        CITY_PRESENTATION_MAX_BYTES). Local presentation state only: no Mission, agent or
+        canonical meaning.
+      type: object
+      additionalProperties: false
+      required: [type, state]
+      properties:
+        type:
+          const: saveCityPresentation
+        state:
+          type: object
+          description: Opaque bounded record; format owned by core/src/cityPresentation.ts.
 
     DiEvidenceRead:
       description: |

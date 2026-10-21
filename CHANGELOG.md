@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Living city: lighting, weather and traffic for the Pixel Agents DI office.** A City button opens day/dusk/night/clock
+  lighting, clear/rain/snow weather and Off/Low/Normal traffic. Traffic brings the world's own 68 lane-aligned parked vehicles to life on
+  the lanes derived from its road tiles: stop lines, atomic intersections and crossings, queues, seeded turns, priority for people and real
+  agents, no vehicle with any authority, held still under reduced motion, nothing saved or simulated while closed. The residents and the subway are refined:
+  24 riders on journeys of three kinds (a commute, a hop, an excursion round three stations), platform tiles dealt so waiting riders never
+  share a tile, posted and roaming dwell profiles, a "waiting for a train" label, and a saved snapshot bound to each resident's journey plan
+  (one saved by an earlier build is ignored once). The Map draws each visible vehicle as a small box. Measured at ordinary, crowded and maximal-eligible
+  loads, hidden and visible, paused, held still, across settings changes and a reload. Decoration only: it changes nothing about Missions, agents, activity,
+  assignment, approval or delivery, and uses no weather service or location. Offices stay lit at night, real
+  agents and street lamps carry light, weather is drawn over the outdoors only, reduced motion holds everything
+  still, and the choice is saved as a four-key record (`city-presentation.json`) that is validated before it is
+  written and again when it is read. The Clock mode follows this computer's local time while the view is open; it
+  is a function of the clock, not a simulation. See docs/pixel-agents-office.md, "The living city: lighting and
+  weather".
+
 - **Codex Orchestrator: request, review, approve, start and follow a Mission from the
   Pixel Agents DI office.** The one deliberate exception to "the office only
   observes". A person asks for work in ordinary words (a restricted, read-only

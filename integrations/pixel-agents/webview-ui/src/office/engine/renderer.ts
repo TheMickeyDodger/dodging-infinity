@@ -48,12 +48,15 @@ import {
   SELECTED_OUTLINE_ALPHA,
   SELECTION_DASH_PATTERN,
   SELECTION_HIGHLIGHT_COLOR,
+  TRAFFIC_LABEL,
   VOID_TILE_DASH_PATTERN,
   VOID_TILE_OUTLINE_COLOR,
 } from '../../constants.js';
 import { ambientLabel } from '../ambient/ambientJobs.js';
 import { ambientFrame, ambientSheetFor } from '../ambient/ambientSprites.js';
 import type { AmbientResident } from '../ambient/ambientWorld.js';
+import type { CityFrame, CityRenderInput } from '../city/cityRender.js';
+import { renderCityLighting, renderCityWeather } from '../city/cityRender.js';
 import { getColorizedFloorSprite, hasFloorSprites, WALL_COLOR } from '../floorTiles.js';
 import { getCatalogEntry } from '../layout/furnitureCatalog.js';
 import type { VisibleTiles } from '../projection.js';
@@ -68,6 +71,8 @@ import {
   BUBBLE_WAITING_SPRITE,
   getCharacterSprites,
 } from '../sprites/spriteData.js';
+import { vehiclePlacement, vehicleSprite } from '../traffic/trafficRender.js';
+import type { Vehicle } from '../traffic/trafficWorld.js';
 import type { Train } from '../transit/transitWorld.js';
 import { TRAIN_CARS } from '../transit/transitWorld.js';
 import type {
@@ -466,6 +471,7 @@ export function renderScene(
   ambient: readonly AmbientResident[] = [],
   trains: readonly Train[] = [],
   halo: { ids: ReadonlySet<number>; intensity: number } | null = null,
+  vehicles: readonly Vehicle[] = [],
 ): void {
   const drawables: ZDrawable[] = [];
 
@@ -499,6 +505,32 @@ export function renderScene(
         },
       });
     }
+  }
+
+  // Decorative traffic (living city 6-9): the world's own vehicle art, placed from each vehicle's pose, culled to
+  // the canvas before the sprite cache is touched. Sorted with everything else by the bottom of its ground tile.
+  for (const v of vehicles) {
+    const sprite = vehicleSprite(v);
+    if (!sprite) continue;
+    const p = vehiclePlacement(v, sprite);
+    const vx = Math.round(offsetX + p.x * zoom);
+    const vy = Math.round(offsetY + p.y * zoom);
+    if (vx + p.w * zoom < 0 || vy + p.h * zoom < 0 || vx > canvasW || vy > canvasH) continue;
+    const cachedVehicle = getCachedSprite(sprite, zoom);
+    const alpha = v.fade;
+    drawables.push({
+      zY: p.zY,
+      draw: (c) => {
+        if (alpha < 1) {
+          c.save();
+          c.globalAlpha = alpha;
+          c.drawImage(cachedVehicle, vx, vy);
+          c.restore();
+        } else {
+          c.drawImage(cachedVehicle, vx, vy);
+        }
+      },
+    });
   }
 
   // Characters
@@ -682,6 +714,25 @@ export function renderScene(
   }
 }
 
+function renderVehicleLabel(ctx: CanvasRenderingContext2D, v: Vehicle, offsetX: number, offsetY: number, zoom: number): void {
+  const sprite = vehicleSprite(v);
+  if (!sprite) return;
+  const p = vehiclePlacement(v, sprite);
+  const fontPx = Math.max(AMBIENT_LABEL_FONT_PX, Math.round(AMBIENT_LABEL_FONT_PX * zoom * 0.5));
+  ctx.save();
+  ctx.font = `${fontPx}px "FS Pixel Sans", monospace`;
+  const w = Math.ceil(ctx.measureText(TRAFFIC_LABEL).width) + fontPx;
+  const h = fontPx + Math.round(fontPx * 0.6);
+  const x = Math.round(offsetX + (p.x + p.w / 2) * zoom - w / 2);
+  const y = Math.round(offsetY + p.y * zoom - h - 2);
+  ctx.fillStyle = AMBIENT_LABEL_BG;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = AMBIENT_LABEL_FG;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(TRAFFIC_LABEL, x + Math.round(fontPx / 2), y + Math.round(h / 2));
+  ctx.restore();
+}
+
 function renderAmbientLabel(
   ctx: CanvasRenderingContext2D,
   r: AmbientResident,
@@ -689,7 +740,7 @@ function renderAmbientLabel(
   offsetY: number,
   zoom: number,
 ): void {
-  const text = ambientLabel(r.job);
+  const text = ambientLabel(r.job, r.state === 'waiting');
   const fontPx = Math.max(AMBIENT_LABEL_FONT_PX, Math.round(AMBIENT_LABEL_FONT_PX * zoom * 0.5));
   ctx.save();
   ctx.font = `${fontPx}px "FS Pixel Sans", monospace`;
@@ -1121,6 +1172,9 @@ export function renderFrame(
   hoveredAmbientId?: string | null,
   trains?: readonly Train[],
   halo?: { ids: ReadonlySet<number>; intensity: number } | null,
+  city?: CityRenderInput | null,
+  vehicles?: readonly Vehicle[],
+  hoveredVehicle?: Vehicle | null,
 ): { offsetX: number; offsetY: number } {
   // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -1192,7 +1246,18 @@ export function renderFrame(
     ambient ?? [],
     trains ?? [],
     halo ?? null,
+    vehicles ?? [],
   );
+
+  // The city's light and weather (living city 6-9): over the scene, UNDER the bubbles, labels, selection
+  // chrome and every DOM overlay, so none of those is ever darkened. A clear day draws nothing.
+  if (city) {
+    const frame: CityFrame = { canvasWidth, canvasHeight, offsetX, offsetY, zoom, view };
+    if (city.level > 0 || city.veil) {
+      renderCityLighting(ctx, { level: city.level, veil: city.veil, mask: city.mask, lamps: city.lamps, agents: city.agents }, frame);
+    }
+    if (city.weather) renderCityWeather(ctx, city.weather, city.mask, frame);
+  }
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom);
@@ -1205,6 +1270,9 @@ export function renderFrame(
     const r = ambient.find((a) => a.id === hoveredAmbientId);
     if (r) renderAmbientLabel(ctx, r, offsetX, offsetY, zoom);
   }
+
+  // Hovered vehicle: its label always says it is decorative, whatever it looks like.
+  if (hoveredVehicle) renderVehicleLabel(ctx, hoveredVehicle, offsetX, offsetY, zoom);
 
   // Area labels (above bubbles + characters, below editor overlays)
   if (showAreas) {
