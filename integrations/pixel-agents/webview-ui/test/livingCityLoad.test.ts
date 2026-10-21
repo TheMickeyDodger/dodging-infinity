@@ -94,7 +94,7 @@ const BUDGET = {
   frameP95Ms: 50,
   /** An ordinary simulation tick (no furniture rebuild), milliseconds, at the 95th percentile. */
   tickP95Ms: 8,
-  /** What night, rain and traffic together may add to the p95 of callbacks that did not also rebuild furniture, and to the mean ordinary tick, over the same world with all three off (residents and subway run in both). The all-callback p95 sits on that rebuild, so it is not this delta. */
+  /** What night, rain and traffic together may add to the p95 callback and to the mean ordinary tick, over the same world with all three off (residents and subway run in both). */
   featuresAddFrameP95Ms: 6,
   featuresAddTickMs: 1.5,
   /** The longest a resident may share a real agent's tile, and the longest a vehicle may hold one, seconds: a yield is a few ticks, never a stand-off. */
@@ -341,10 +341,6 @@ async function waitForLife() {
 
 interface Window10 {
   frames: number[];
-  /** Callbacks that did not also rebuild furniture. The 95th percentile of all callbacks sits on the
-   *  rebuild cluster (about one frame in twenty), so a p95 delta mixes that inherited cost into the
-   *  night/rain/traffic comparison whenever the two windows fall on different sides of it. */
-  plainFrames: number[];
   ops: number[];
   ticks: number[];
   animTicks: number[];
@@ -377,13 +373,11 @@ async function installProbe() {
     const state = {
       running: false,
       frames: [] as number[],
-      plainFrames: [] as number[],
       ops: [] as number[],
       ticks: [] as number[],
       animTicks: [] as number[],
       long: 0,
       opsNow: 0,
-      rebuildThisFrame: false,
       started: 0,
     };
     const proto = CanvasRenderingContext2D.prototype as unknown as Record<
@@ -412,12 +406,9 @@ async function installProbe() {
       raf((t) => {
         if (!state.running) return cb(t);
         state.opsNow = 0;
-        state.rebuildThisFrame = false;
         const t0 = performance.now();
         cb(t);
-        const ms = performance.now() - t0;
-        state.frames.push(ms);
-        if (!state.rebuildThisFrame) state.plainFrames.push(ms);
+        state.frames.push(performance.now() - t0);
         state.ops.push(state.opsNow);
       });
     // PRIORITY AUDIT (real agents are always put first): every tick, whether a resident stands on, or a vehicle holds, the tile
@@ -465,9 +456,7 @@ async function installProbe() {
       const ms = performance.now() - t0;
       checkPriority(dt);
       if (!state.running) return;
-      const rebuilt = Math.floor(o.furnitureAnimTimer / 0.2) !== before;
-      if (rebuilt) state.rebuildThisFrame = true;
-      (rebuilt ? state.animTicks : state.ticks).push(ms);
+      (Math.floor(o.furnitureAnimTimer / 0.2) !== before ? state.animTicks : state.ticks).push(ms);
     };
     try {
       new PerformanceObserver((list) => (state.long += list.getEntries().length)).observe({
@@ -479,12 +468,10 @@ async function installProbe() {
     w.__load = {
       start() {
         state.frames = [];
-        state.plainFrames = [];
         state.ops = [];
         state.ticks = [];
         state.animTicks = [];
         state.long = 0;
-        state.rebuildThisFrame = false;
         state.started = performance.now();
         state.running = true;
       },
@@ -492,7 +479,6 @@ async function installProbe() {
         state.running = false;
         return {
           frames: state.frames,
-          plainFrames: state.plainFrames,
           ops: state.ops,
           ticks: state.ticks,
           animTicks: state.animTicks,
@@ -557,13 +543,6 @@ function summarize(w: Window10) {
       p50: f1(pct(w.frames, 0.5)),
       p95: f1(pct(w.frames, 0.95)),
       max: f1(Math.max(0, ...w.frames)),
-    },
-    plainFrames: w.plainFrames.length,
-    plainFrameMs: {
-      mean: f1(mean(w.plainFrames)),
-      p50: f1(pct(w.plainFrames, 0.5)),
-      p95: f1(pct(w.plainFrames, 0.95)),
-      max: f1(Math.max(0, ...w.plainFrames)),
     },
     tickMs: {
       n: w.ticks.length,
@@ -837,17 +816,10 @@ test(
     const on = summarize(steady);
     const off = summarize(control);
     console.log(
-      `MEASURED [ordinary] night, rain and traffic together add (a three-effects delta; residents and subway run in both arms), per frame: mean ${f1(on.frameMs.mean - off.frameMs.mean)} ms, p95 ${f1(on.frameMs.p95 - off.frameMs.p95)} ms, plain p95 ${f1(on.plainFrameMs.p95 - off.plainFrameMs.p95)} ms (${on.plainFrames} and ${off.plainFrames} callbacks with no furniture rebuild); per ordinary tick: mean ${f1(on.tickMs.mean - off.tickMs.mean)} ms; the furniture rebuild (inherited) costs ${off.animTickMs.mean} ms per 0.2 s with lighting, weather and traffic off`,
-    );
-    // All-callback p95 sits on the furniture-rebuild cluster (about one frame in twenty). The two
-    // windows can land on opposite sides of that cluster, which charges the rebuild to night, rain
-    // and traffic. The budget is their cost on the callbacks that did not rebuild furniture.
-    assert.ok(
-      on.plainFrames > on.seconds * 8 && off.plainFrames > off.seconds * 8,
-      'night, rain and traffic together add little to the frame',
+      `MEASURED [ordinary] night, rain and traffic together add (a three-effects delta; residents and subway run in both arms), per frame: mean ${f1(on.frameMs.mean - off.frameMs.mean)} ms, p95 ${f1(on.frameMs.p95 - off.frameMs.p95)} ms; per ordinary tick: mean ${f1(on.tickMs.mean - off.tickMs.mean)} ms; the furniture rebuild (inherited) costs ${off.animTickMs.mean} ms per 0.2 s with lighting, weather and traffic off`,
     );
     assert.ok(
-      on.plainFrameMs.p95 - off.plainFrameMs.p95 <= BUDGET.featuresAddFrameP95Ms,
+      on.frameMs.p95 - off.frameMs.p95 <= BUDGET.featuresAddFrameP95Ms,
       'night, rain and traffic together add little to the frame',
     );
     assert.ok(on.tickMs.mean - off.tickMs.mean <= BUDGET.featuresAddTickMs);

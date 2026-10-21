@@ -34,6 +34,7 @@ import { CityEffects } from '../city/cityEffects.js';
 import { cityMaskFor, lampLights } from '../city/cityMask.js';
 import type { CityRenderInput } from '../city/cityRender.js';
 import { weatherVeil } from '../city/cityWeather.js';
+import { getColorizedSprite } from '../colorize.js';
 import { haloEligibleCharacterIds } from '../halo.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
@@ -62,6 +63,7 @@ import type {
   PlacedFurniture,
   PlacedPet,
   Seat,
+  SpriteData,
   TileType as TileTypeVal,
 } from '../types.js';
 import {
@@ -156,6 +158,10 @@ export class OfficeState {
   /** Bumped whenever the furniture instances change for a reason OTHER than an animation frame
    *  (layout rebuild, auto-state ON/OFF swap): what a cache of the STATIC scene keys on. */
   furnitureStaticVersion = 0;
+  /** Sprites for furniture whose auto-on state animates, indexed into `furniture`. Null until the
+   *  first animation tick has indexed them. After that, a frame change swaps those sprites and
+   *  does not rebuild the whole metropolis (that rebuild was the slow cluster in the frame p95). */
+  private furnitureAnimSlots: { index: number; sprites: SpriteData[] }[] | null = null;
   /** REDUCED MOTION — set only in DI mode, from prefers-reduced-motion. Transitions settle
    *  at once and nothing moves on its own; it never changes activity, live or any other data.
    *  Normal Pixel never sets it, so its behaviour is unchanged. */
@@ -951,6 +957,10 @@ export class OfficeState {
   }
 
   private rebuildFurnitureInstances(animationFrameOnly = false): void {
+    if (animationFrameOnly && this.furnitureAnimSlots !== null) {
+      this.applyFurnitureAnimFrame();
+      return;
+    }
     if (!animationFrameOnly) this.furnitureStaticVersion++;
     // Collect tiles where active agents face desks
     const autoOnTiles = new Set<string>();
@@ -987,38 +997,80 @@ export class OfficeState {
     // A vehicle that is driving is drawn by the traffic, not as furniture: its static copy is skipped here.
     // The LAYOUT is untouched (and with traffic off nothing is skipped), so 'off' is the world exactly as it was.
     const source = this.visibleFurniture();
-    if (autoOnTiles.size === 0) {
-      this.furniture = layoutToFurnitureInstances(source);
-      return;
-    }
-
-    // Build modified furniture list with auto-state and animation applied
     const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
-    const modifiedFurniture: PlacedFurniture[] = source.map((item) => {
-      const entry = getCatalogEntry(item.type);
-      if (!entry) return item;
-      // Check if any tile of this furniture overlaps an auto-on tile
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          if (autoOnTiles.has(`${item.col + dc},${item.row + dr}`)) {
-            let onType = getOnStateType(item.type);
-            if (onType !== item.type) {
-              // Check if the on-state type has animation frames
-              const frames = getAnimationFrames(onType);
-              if (frames && frames.length > 1) {
-                const frameIdx = animFrame % frames.length;
-                onType = frames[frameIdx];
+    let rendered = source;
+    if (autoOnTiles.size > 0) {
+      // Build modified furniture list with auto-state and animation applied
+      rendered = source.map((item) => {
+        const entry = getCatalogEntry(item.type);
+        if (!entry) return item;
+        // Check if any tile of this furniture overlaps an auto-on tile
+        for (let dr = 0; dr < entry.footprintH; dr++) {
+          for (let dc = 0; dc < entry.footprintW; dc++) {
+            if (autoOnTiles.has(`${item.col + dc},${item.row + dr}`)) {
+              let onType = getOnStateType(item.type);
+              if (onType !== item.type) {
+                // Check if the on-state type has animation frames
+                const frames = getAnimationFrames(onType);
+                if (frames && frames.length > 1) {
+                  const frameIdx = animFrame % frames.length;
+                  onType = frames[frameIdx];
+                }
+                return { ...item, type: onType };
               }
-              return { ...item, type: onType };
+              return item;
             }
-            return item;
           }
         }
-      }
-      return item;
-    });
+        return item;
+      });
+    }
 
-    this.furniture = layoutToFurnitureInstances(modifiedFurniture);
+    this.furniture = layoutToFurnitureInstances(rendered);
+    this.furnitureAnimSlots = this.indexFurnitureAnim(rendered);
+  }
+
+  /** Instance index matches layoutToFurnitureInstances, which skips a type the catalog does not know. */
+  private indexFurnitureAnim(items: PlacedFurniture[]): { index: number; sprites: SpriteData[] }[] {
+    const slots: { index: number; sprites: SpriteData[] }[] = [];
+    let index = 0;
+    for (const item of items) {
+      if (!getCatalogEntry(item.type)) continue;
+      const frames = getAnimationFrames(item.type);
+      if (frames && frames.length > 1) {
+        const sprites: SpriteData[] = [];
+        for (const type of frames) {
+          const frameEntry = getCatalogEntry(type);
+          if (!frameEntry) continue;
+          sprites.push(this.furnitureSprite(item, type, frameEntry.sprite));
+        }
+        if (sprites.length > 1) slots.push({ index, sprites });
+      }
+      index++;
+    }
+    return slots;
+  }
+
+  private furnitureSprite(item: PlacedFurniture, type: string, base: SpriteData): SpriteData {
+    if (!item.color) return base;
+    const { h, s, b: bv, c: cv } = item.color;
+    return getColorizedSprite(
+      `furn-${type}-${h}-${s}-${bv}-${cv}-${item.color.colorize ? 1 : 0}`,
+      base,
+      item.color,
+    );
+  }
+
+  private applyFurnitureAnimFrame(): void {
+    const slots = this.furnitureAnimSlots;
+    if (!slots || slots.length === 0) return;
+    const frame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
+    for (const slot of slots) {
+      const inst = this.furniture[slot.index];
+      if (!inst) continue;
+      const sprite = slot.sprites[frame % slot.sprites.length];
+      if (inst.sprite !== sprite) inst.sprite = sprite;
+    }
   }
 
   setAgentTool(id: number, tool: string | null): void {
