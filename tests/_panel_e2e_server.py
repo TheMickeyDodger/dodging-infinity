@@ -41,6 +41,8 @@ answered by one stdout JSON line:
     {"op": "edit_contract", "request_ref": "lr-..."}     an authenticated revision that changes ONLY
                                                          the proof rules (a test of Round 27 F1)
     {"op": "state"}                                      counts, for assertions
+    {"op": "state", "at_pass_boundary": true}            the same, read with no runtime pass in
+                                                         flight (refused when none is reached)
     {"op": "stop"}
 
 The progression runtime started by ``runtime`` is the REAL ``dirun`` MissionCore
@@ -133,6 +135,9 @@ class ScriptedCodex(object):
 
 
 PASS_INTERVAL_SECONDS = 0.25
+# Bounds a pass-boundary read; inside the test's 30 s control-line wait, so a loop
+# that stopped passing is answered as a failure, never as a read.
+PASS_BOUNDARY_WAIT_SECONDS = 15
 
 
 class Counting(object):
@@ -156,7 +161,15 @@ class Counting(object):
 
 
 class Runtime(object):
-    """The real ``dirun`` MissionCore loop in a thread."""
+    """The real ``dirun`` MissionCore loop in a thread.
+
+    ``passes`` counts passes BEGUN: each pass is counted before any of its work,
+    so a transition a pass writes is never readable before that pass is counted.
+    The loop's only seam between passes is ``sleeper``; the next pass begins when
+    it returns, so that is where it is counted (the first pass, before the loop).
+
+    ``at_boundary`` reads while NO pass is in flight: it waits for the loop to be
+    inside ``sleeper`` and holds the next pass back until the read returns."""
 
     def __init__(self, world):
         self.world = world
@@ -164,6 +177,9 @@ class Runtime(object):
         self.thread = None
         self.code = None
         self.passes = 0
+        self.boundary = threading.Condition()
+        self.between = False                       # inside sleeper: no pass in flight
+        self.looping = False
 
     def start(self):
         if self.thread is not None and self.thread.is_alive():
@@ -175,16 +191,43 @@ class Runtime(object):
                 "--mission-workspaces-root", self.world.root, "run"]
 
         def sleeper(_seconds):
-            self.passes += 1
-            if self.stop.wait(PASS_INTERVAL_SECONDS):
-                raise KeyboardInterrupt
+            with self.boundary:
+                self.between = True
+                self.boundary.notify_all()
+            stopped = self.stop.wait(PASS_INTERVAL_SECONDS)
+            with self.boundary:                    # a boundary read holds the next pass here
+                self.between = False
+                if stopped:
+                    raise KeyboardInterrupt
+                self.passes += 1                   # the next pass, before any of its work
 
         def target():
-            self.code = runtime_cli.main(
-                argv, sleeper=sleeper,
-                mission_composition=self.world.mission_composition)
+            try:
+                self.code = runtime_cli.main(
+                    argv, sleeper=sleeper,
+                    mission_composition=self.world.mission_composition)
+            finally:
+                with self.boundary:
+                    self.between = self.looping = False
+                    self.boundary.notify_all()
+        with self.boundary:
+            self.passes += 1                       # the first pass, before the loop runs it
+            self.looping = True
         self.thread = threading.Thread(target=target, name="progression", daemon=True)
         self.thread.start()
+
+    def at_boundary(self, read, timeout):
+        """``read()`` with no pass in flight, the next pass held until it returns.
+        None when the loop reaches no boundary within ``timeout`` (it is not
+        running, or it stopped passing): never a read taken mid-pass."""
+        deadline = time.monotonic() + timeout
+        with self.boundary:
+            while not self.between:
+                remaining = deadline - time.monotonic()
+                if not self.looping or remaining <= 0:
+                    return None
+                self.boundary.wait(remaining)
+            return read()
 
     def end(self):
         self.stop.set()
@@ -393,6 +436,14 @@ def control(world, server, command):
         if command.get("stop"):
             world.runtime.end()
         return {"ok": True, "alive": world.runtime.alive(), "code": world.runtime.code}
+    if op == "state" and command.get("at_pass_boundary"):
+        # The same counts, read with NO pass in flight (``Runtime.at_boundary``).
+        read = world.runtime.at_boundary(
+            lambda: control(world, server, {"op": "state"}), PASS_BOUNDARY_WAIT_SECONDS)
+        if read is None:
+            return {"ok": False, "error": "the runtime reached no pass boundary",
+                    "runtime_alive": world.runtime.alive()}
+        return dict(read, at_pass_boundary=True)
     if op == "state":
         missions_file = os.path.join(world.state, "missions.json")
         authorizations = 0

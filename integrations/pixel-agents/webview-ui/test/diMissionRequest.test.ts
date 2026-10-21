@@ -226,6 +226,17 @@ let otherMessages: string[] = [];
 /** While true the relay HOLDS the page's reads: nothing reaches the adapter and nothing is answered. */
 let closed = false;
 let held: Array<() => void> = [];
+/** ONE window's hold: while its socket is here the relay holds that window's READS; its writes still pass. */
+const READ_OPS = new Set(['refresh', 'conversation', 'request', 'offer', 'result']);
+let readHolds = new Map<WebSocket, Array<() => void>>();
+/** Every request the relay handed to the owner, by window, with the owner's reply once it came. */
+type Relayed = {
+  ws: WebSocket;
+  msg: Record<string, unknown>;
+  reply: Record<string, unknown> | null;
+};
+let relayed: Relayed[] = [];
+let socketOf = new Map<Page, WebSocket>();
 let dialogs = 0;
 /**
  * A labelled SYNTHETIC seam: when set, every reply the real relay would send to the page passes through it
@@ -245,14 +256,23 @@ function serve(ws: WebSocket) {
     const msg = JSON.parse(String(data)) as Record<string, unknown>;
     if (msg.type === 'diMissionRequest') {
       sent.push(msg);
-      const send = (m: Record<string, unknown>) =>
-        ws.readyState === ws.OPEN && ws.send(JSON.stringify(mutateReply ? mutateReply(m) : m));
-      const deliver = () =>
+      const entry: Relayed = { ws, msg, reply: null };
+      const send = (m: Record<string, unknown>) => {
+        entry.reply = m;
+        return (
+          ws.readyState === ws.OPEN && ws.send(JSON.stringify(mutateReply ? mutateReply(m) : m))
+        );
+      };
+      const deliver = () => {
+        relayed.push(entry);
         handleDiClientMessage(msg, send, {
           ...ctxBase,
           missionRequest: (m, reply) => void panel.handle(m, reply),
         });
+      };
+      const windowHold = readHolds.get(ws);
       if (closed) held.push(deliver);
+      else if (windowHold && READ_OPS.has(String(msg.op))) windowHold.push(deliver);
       else deliver();
     } else if (msg.type === 'webviewReady') {
       resolveConnected(ws);
@@ -271,6 +291,41 @@ const openRelay = () => {
   held = [];
   for (const deliver of flush) deliver();
 };
+/**
+ * Hold ONE window's reads from here, once none of its reads is still with the owner: every reply it gets after
+ * this was computed before this call, so what it shows can change only through its own writes.
+ */
+async function holdReads(page: Page) {
+  const ws = socketOf.get(page)!;
+  readHolds.set(ws, []);
+  await waitFor('the window’s reads already sent to be answered', async () =>
+    relayed.every((e) => e.ws !== ws || e.reply !== null),
+  );
+}
+const releaseReads = (page: Page) => {
+  const ws = socketOf.get(page)!;
+  const flush = readHolds.get(ws) ?? [];
+  readHolds.delete(ws);
+  for (const deliver of flush) deliver();
+};
+/**
+ * Close a window that has nothing more to show, and wait until nothing it sent can still hold one of the office's
+ * concurrent-call slots (`MAX_CONCURRENT_PANEL_CALLS`): none of its reads is held at the relay, its connection is
+ * closed (no message of it can arrive after that), and every call of it the relay delivered has been answered (the
+ * office frees a call's slot before it answers it).
+ */
+async function closeWindow(page: Page) {
+  const ws = socketOf.get(page)!;
+  expect(closed || readHolds.has(ws), 'the window still has reads held at the relay').toBe(false);
+  await page.close();
+  await waitFor('the closed window’s connection to close', async () => ws.readyState === ws.CLOSED);
+  await waitFor('every call of the closed window to be answered', async () =>
+    relayed.every((e) => e.ws !== ws || e.reply !== null),
+  );
+}
+/** The window's decisions that reached the owner, each with the owner's reply (null until it answers). */
+const decisionsFrom = (page: Page) =>
+  relayed.filter((e) => e.ws === socketOf.get(page) && e.msg.op === 'decide');
 
 beforeAll(async () => {
   server = await createServer({
@@ -350,6 +405,9 @@ beforeEach(async (ctx) => {
   otherMessages = [];
   closed = false;
   held = [];
+  readHolds = new Map();
+  relayed = [];
+  socketOf = new Map();
   dialogs = 0;
   mutateReply = null;
   outsideRequests = [];
@@ -399,6 +457,7 @@ async function openWindow(): Promise<Page> {
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const ws = await connected;
+  socketOf.set(page, ws);
   // The office is a labelled FIXTURE (the existing explicit `fixtureMode`): the whole window says so.
   ws.send(JSON.stringify({ ...office.states.live, fixtureMode: true }));
   await page.waitForSelector(`${T('di-office-panel')}, ${T('di-office-panel-collapsed')}`, {
@@ -722,7 +781,11 @@ test(
     closed = true;
     const closedAt = Date.now() / 1000;
     await sleep(800);
-    const before = await state();
+    // Read at a PASS BOUNDARY: no runtime pass is in flight while this is read. Every pass it counts has
+    // finished before the team is told it is COMPLETE below, so the pass that writes COMPLETED begins after
+    // it, and the harness counts a pass before any of its work: one pass is enough to move the count.
+    const before = await harness.control({ op: 'state', at_pass_boundary: true });
+    expect(before.ok, `no runtime pass boundary: ${JSON.stringify(before)}`).toBe(true);
     const beforeAt = Date.now() / 1000;
     const calls = before.service_calls as number;
     await waitFor('the runtime to observe the team running', async () => {
@@ -881,12 +944,55 @@ test(
     expect(await clockTime(first)).toBe(await clockTime(second));
 
     // — the first window decides; the second still holds the older display —
+    // The second window's reads are held at the relay, so its own refresh cannot take the live offer off its
+    // screen while the first window decides. Its writes still reach the owner.
+    await holdReads(second);
     await approve(first);
+    // Start can show (the first window's own poll read the approved record) before the owner's answer to that
+    // window's decide is back: wait for the answer before reading it.
+    await waitFor('the owner to answer the first window’s decision', async () => {
+      const got = decisionsFrom(first);
+      return got.length > 0 && got.every((e) => e.reply !== null) ? got : false;
+    });
+    const [firstDecision] = decisionsFrom(first);
+    expect(
+      decisionsFrom(first),
+      'the first window’s decision did not reach the owner',
+    ).toHaveLength(1);
+    expect(firstDecision.reply, 'the first window’s decision was not recorded').toMatchObject({
+      state: 'ok',
+      answer: { decision: { idempotent: false } },
+    });
+    const authorizationId = (firstDecision.reply!.answer as Json).decision
+      .authorization_id as string;
+    expect(authorizationId).toMatch(/^ma-[0-9a-f]{32}$/);
+    // The second window, still showing the live offer, decides too: the attempt is always made.
+    expect(await exists(second, T('di-mr-word')), 'the second window lost the live offer').toBe(
+      true,
+    );
     await second.fill(T('di-mr-word'), 'approve');
-    const gate = await available(second, T('di-mr-approve')).catch(() => false);
-    if (gate) await pressKey(second, T('di-mr-approve'), 'Enter');
-    await sleep(1_500);
+    await waitFor('Approve to be available in the second window', () =>
+      available(second, T('di-mr-approve')),
+    );
+    await pressKey(second, T('di-mr-approve'), 'Enter');
+    const secondDecisions = await waitFor(
+      'the owner to answer the second window’s decision',
+      async () => {
+        const got = decisionsFrom(second);
+        return got.length > 0 && got.every((e) => e.reply !== null) ? got : false;
+      },
+    );
+    // It reached the owner, which found the first decision: no second authority.
+    expect(
+      secondDecisions,
+      'the second window’s decision did not reach the owner once',
+    ).toHaveLength(1);
+    expect(secondDecisions[0].reply, 'the second window made a second decision').toMatchObject({
+      state: 'ok',
+      answer: { decision: { idempotent: true, authorization_id: authorizationId } },
+    });
     expect((await state()).authorizations, 'two windows made two approvals').toBe(1);
+    releaseReads(second);
     await whenText(second, T('di-mr-stage-label'), /Approved|approved/);
 
     // — a request withdrawn is WITHDRAWN, never "denied" —
@@ -1332,6 +1438,9 @@ test(
     await second.click(T(`di-mr-request-${ref}`));
     await second.waitForSelector(T('di-mr-start-cause'), { timeout: 30_000 });
     expect(await text(second, T('di-mr-start-cause'))).toBe(cause);
+    // That was the second window's one claim. It is closed and drained, so its polling holds none of the office's
+    // call slots while the first window goes on with another request below.
+    await closeWindow(second);
 
     // The run is then stopped durably by a reconcile that can prove nothing. It is no longer \u201cin doubt\u201d: the
     // window stops using that stage's words (and its Reconcile advice), while the retained cause remains the honest
