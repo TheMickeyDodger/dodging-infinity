@@ -11,6 +11,7 @@ import path from 'node:path';
 
 import { beforeAll, test } from 'vitest';
 
+import { AMBIENT_RIDERS_MAX, AMBIENT_ROUTINE_MAX_STOPS } from '../src/constants.ts';
 import { OfficeState } from '../src/office/engine/officeState.ts';
 import { isWalkable } from '../src/office/layout/tileMap.ts';
 import { drawLivingLayer } from '../src/office/livingLayer.ts';
@@ -77,8 +78,9 @@ test('riders are aboard, not on the ground: hidden from hit-testing and from the
   assert.equal(rects, onGround + 2);
 });
 
-test('commuters are a bounded subset, and their routines stay within the stop bound', () => {
+test('riders are a bounded subset, and every routine (riders included) stays within the stop bound', () => {
   const w = os.ambient!;
-  assert.ok(w.riders.length > 0 && w.riders.length <= 16);
-  assert.ok(w.coverage.longestRoutine <= 10);
+  assert.ok(w.riders.length > 0 && w.riders.length <= AMBIENT_RIDERS_MAX);
+  assert.ok(w.coverage.longestRoutine <= AMBIENT_ROUTINE_MAX_STOPS);
+  for (const r of w.residents) assert.ok(r.routine.length <= AMBIENT_ROUTINE_MAX_STOPS, `${r.id}: ${r.routine.length} stops`);
 });

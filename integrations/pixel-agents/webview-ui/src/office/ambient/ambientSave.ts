@@ -44,6 +44,15 @@ function fnv(values: Iterable<number>): string {
   }
   return h.toString(16).padStart(8, '0');
 }
+/** Every resident's routine tiles and ride plan, in roster order: what a saved journey is a journey THROUGH. */
+function* journeyPlan(world: AmbientWorld): Iterable<number> {
+  for (const r of world.residents) {
+    for (const t of r.routine) yield t;
+    yield -1;
+    if (r.rides) for (const v of r.rides) yield v + 2;
+    yield -2;
+  }
+}
 function* chars(list: Iterable<string>): Iterable<number> {
   for (const s of list) {
     for (let i = 0; i < s.length; i++) yield s.charCodeAt(i);
@@ -59,7 +68,9 @@ type FingerprintLayout = {
   furniture?: ReadonlyArray<{ type: string; col: number; row: number }>;
 };
 
-/** The world (tiles AND furniture) + resident-set fingerprint a snapshot is bound to. */
+/** The world (tiles AND furniture) + resident-set + journey-plan fingerprint a snapshot is bound to. The plan is in it
+ *  so a snapshot is only ever applied to the routines and rides it was saved from: a roster whose routines changed
+ *  refuses the old snapshot as another world, rather than putting a saved resident on a different journey. */
 export function ambientFingerprint(layout: FingerprintLayout, world: AmbientWorld): string {
   return [
     `${layout.cols}x${layout.rows}`,
@@ -67,6 +78,7 @@ export function ambientFingerprint(layout: FingerprintLayout, world: AmbientWorl
     `t${fnv(layout.tiles)}`,
     `f${fnv(chars((layout.furniture ?? []).map((f) => `${f.type}@${f.col},${f.row}`)))}`,
     `a${fnv(chars(world.residents.map((r) => r.id)))}`,
+    `j${fnv(journeyPlan(world))}`,
     `n${world.residents.length}`,
   ].join('|');
 }

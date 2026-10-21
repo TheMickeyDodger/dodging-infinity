@@ -121,9 +121,9 @@ const DISTRICT_JOBS: ReadonlyArray<{ match: RegExp; jobs: readonly AmbientJobId[
 const DEFAULT_JOBS: readonly AmbientJobId[] = ['courier', 'jogger', 'tourist', 'gardener'];
 
 /** The words every resident label carries: it is Ambient, it is decorative. */
-export function ambientLabel(job: AmbientJobId): string {
+export function ambientLabel(job: AmbientJobId, waitingForTrain = false): string {
   const j = AMBIENT_JOBS[job];
-  return `Ambient · ${j.label} · ${j.activity} · decorative`;
+  return `Ambient · ${j.label} · ${waitingForTrain ? 'waiting for a train' : j.activity} · decorative`;
 }
 
 export function jobsForDistrict(label: string): readonly AmbientJobId[] {

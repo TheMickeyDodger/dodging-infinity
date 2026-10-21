@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.test-dom.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test-city.tsbuildinfo",
+    /* The living-city browser tests (the real App in Chrome over the shipped world). Beyond the DOM lib their in-page
+       callbacks need, they IMPORT the real server handler, the city and ambient persistence modules and
+       AgentStateStore, and the server's sources are written with TypeScript parameter properties, which
+       `erasableSyntaxOnly` forbids. That flag exists so SHIPPED webview code stays erasable (tsconfig.app.json keeps
+       it on); these server files are not shipped here, they are type-checked only as an import of these three tests,
+       and under their own project (server/tsconfig.json) they are already checked with it off.
+       The relaxation is therefore confined to this single project and these three tests, the same shape as
+       tsconfig.test-mission.json. */
+    "erasableSyntaxOnly": false
+  },
+  "include": [
+    "test/livingCityApp.test.ts",
+    "test/livingCityTraffic.test.ts",
+    "test/livingCityLoad.test.ts"
+  ],
+  "exclude": []
+}

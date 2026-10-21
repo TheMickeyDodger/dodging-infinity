@@ -6,6 +6,7 @@ import { toMajorMinor } from './changelogData.js';
 import { AmbientLegend } from './components/AmbientLegend.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
+import { CityControls } from './components/CityControls.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { DiCodeReview } from './components/DiCodeReview.js';
@@ -42,6 +43,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from './constants.js';
+import { useCityPresentation } from './hooks/useCityPresentation.js';
 import { useDiCodeReview } from './hooks/useDiCodeReview.js';
 import { useDiMissionRequest } from './hooks/useDiMissionRequest.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
@@ -124,6 +126,11 @@ function App() {
     () => editor.isEditMode && editor.isDirty,
     [editor.isEditMode, editor.isDirty],
   );
+
+  // The viewer's city lighting/weather choices (living city 6-9). Called BEFORE useExtensionMessages: that
+  // hook sends webviewReady in its mount effect and the server answers with the saved choices.
+  const city = useCityPresentation(getOfficeState);
+  const [isCityOpen, setIsCityOpen] = useState(false);
 
   const {
     diOfficeState,
@@ -1197,7 +1204,17 @@ function App() {
         isSettingsOpen={isSettingsOpen}
         onToggleSettings={() => setIsSettingsOpen((v) => !v)}
         workspaceFolders={workspaceFolders}
+        city={isDiMode ? { open: isCityOpen, onToggle: () => setIsCityOpen((v) => !v) } : undefined}
       />
+      {isDiMode && isCityOpen && (
+        <CityControls
+          presentation={city.presentation}
+          onChoose={city.choose}
+          onClose={() => setIsCityOpen(false)}
+          lightingStatus={() => officeState.city.lightingStatus(Date.now())}
+          reducedMotion={officeState.reducedMotion}
+        />
+      )}
 
       <VersionIndicator
         currentVersion={extensionVersion}

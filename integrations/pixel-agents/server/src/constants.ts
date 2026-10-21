@@ -105,6 +105,8 @@ export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';
 /** DI office only: the decorative ambient snapshot (core/src/ambientSave.ts), under the DI state root. */
 export const AMBIENT_STATE_FILE_NAME = 'ambient-state.json';
+/** The viewer's city presentation preferences (lighting, weather, traffic) under the DI state root. */
+export const CITY_PRESENTATION_FILE_NAME = 'city-presentation.json';
 export const LAYOUT_FILE_POLL_INTERVAL_MS = 2000;
 export const LAYOUT_REVISION_KEY = 'layoutRevision';
 export const CONFIG_FILE_NAME = 'config.json';

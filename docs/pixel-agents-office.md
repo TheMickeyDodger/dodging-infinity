@@ -265,14 +265,23 @@ like the other presets (Settings, Import Layout (paste JSON), then reload). In c
   is open, even with no real agents: in this world, 145 residents (140 ordinary, with jobs such
   as bellhop, police officer, firefighter, store clerk and barista, plus five Easter-egg
   families). They are labelled Ambient and decorative, are never agents, never take a seat, and
-  a real agent always wins selection and seating.
-- **Subway.** Four stations and two trains; residents board at one station and alight at
-  another. The Stations list moves the camera only: a jump is instant camera travel, not a ride.
+  a real agent always wins selection and seating. A posted job (a clerk, a receptionist, a gardener) holds its
+  post two and a half times as long as an ordinary stop; a roaming job (a courier, a jogger, a tourist) lingers
+  six tenths as long at every stop, so some residents are fixtures of a place and others keep moving.
+- **Subway.** Four stations and two trains. A bounded set of residents (24 in this world) ride them: each walks
+  from its post to a station's island platform, waits there (its label then says "waiting for a train"), boards the
+  train that is heading its way, rides, and alights at the station its journey names, on foot and by train, never by
+  camera. A journey is one of three kinds, chosen once per resident from the seed: a *commute* (to a station at least
+  two along the line, passing one), a *hop* (to the next station) or an *excursion* (round three stations and home).
+  Riders are residents of the stations and of the Grand and Market Boulevards and of open-ground places within 96
+  tiles of a platform; the platform tiles are dealt out, so riders waiting for a train never share a tile. The
+  Stations list moves the camera only: a jump is instant camera travel, not a ride.
 - **Saving and moving the simulation.** While open, the office saves the residents' and trains'
   state (identities, routines, journeys in progress) under its own state folder. Settings,
   Export Ambient Snapshot downloads it; Import Ambient Snapshot (paste JSON) restores it. A
-  snapshot from a different world or resident set, or over 65,536 bytes, is refused whole and
-  nothing changes.
+  snapshot from a different world, resident set or journey plan, or over 65,536 bytes, is refused whole and
+  nothing changes. (The snapshot is bound to each resident's routine and ride plan, so one saved before the
+  journey plans were extended is ignored once, and the residents start from their seed.)
 - **Viewer closed.** Nothing runs while the office page is closed: no simulation time passes. A
   hidden tab is caught up by at most 20 seconds when it is shown again.
 - **The glow.** An agent glows, with a soft pale-gold aura around its body, only while the
@@ -1188,6 +1197,177 @@ changed paths copied onto it has the same digest as the working tree (a test che
 An artifact that is a directory is hashed whole, with nothing excluded. `verify` exits non-zero
 if the checkout is no longer the frozen source or an artifact is not the one recorded. It is a
 name for bytes and a tamper check, not a signature.
+
+## The living city: lighting, weather, traffic, residents and the subway
+
+The City button in the bottom toolbar opens a small panel with three choices: lighting, weather and traffic (the last is described in "Moving traffic", below). The residents and the subway (described above, under the living metropolis) are the fourth part of the same city and have no switch of their own. All are **decoration**: they are
+drawn on your screen and change nothing about Missions, agents, their activity, an assignment, an approval or a
+delivery. No weather service, location or credential is used, and the office never reads or sends anything to
+make them work.
+
+**Lighting** has four choices:
+
+- **Day** is the city exactly as it always looked. It draws no extra layer and costs nothing. It is the default.
+- **Dusk** and **Night** are still stages you choose. Nothing about them advances.
+- **Clock** follows *this computer's* local time of day while the view is open (night until 05:00, a dawn ramp to
+  07:00, day until 17:00, a dusk ramp to 21:00, night after). It is a function of the clock, **not a simulation**:
+  nothing is simulated while the view is closed, asleep or rebooted, and opening the office later simply shows
+  whatever stage the clock is at.
+
+At dusk and night the outdoors darkens, but offices stay lit, real agents carry a soft light, and street lamps and
+lanterns glow. Labels, bubbles, the selection and every panel are drawn after the lighting and are never darkened.
+
+**Weather** is **Clear**, **Rain** or **Snow**. It is a fixed, seeded set of particles drawn over the *outdoors only*:
+a particle over an indoor tile is not drawn, so offices stay dry. While it rains or snows a faint cool veil also lies
+over the outdoors, so even a still frame reads as weather. It is not a forecast.
+
+**Reduced motion.** With the operating system's reduced-motion preference on, lighting jumps to its stage instead of
+fading (the Clock shows the nearest still stage rather than a gradual ramp), and weather is held as one still frame.
+Turning the preference on while the view is open holds the rain where it is.
+
+**What is saved.** Only your choices, as a tiny record in `city-presentation.json` under the DI state root (exactly
+four keys: a version and the three modes). Nothing else is saved: no time, no stage, no particle, no position. A
+saved record that does not match the contract is ignored whole and the defaults stand. The record is checked before
+it is written and again when it is read.
+
+**How this is tested, and what that does and does not show.** The engine (lighting level math, the indoor/outdoor
+mask, the lamp lights, the particle field, the per-frame caps) is tested directly, including on the shipped
+metropolis world, with exact assertions of every bound. A real-browser check mounts the actual App from source in
+headless Chrome over the shipped world with a labelled *fixture* office state: it opens the panel by keyboard,
+compares canvas pixels (day is pixel-for-pixel the original look; night is darker while the lit things stay lit;
+weather adds pixels and leaves none behind when cleared), saves through the real persistence module under a temp
+store and reloads. That is integration over source, **not** production-package proof, and not evidence of a live
+provider. The weather's veil and the indoor lighting depend on the world's tile types, so a world that colours its
+floors differently will light differently.
+
+### Moving traffic
+
+**Traffic** is the third choice in the City panel: **Off**, **Low** or **Normal**. It brings the world's OWN parked vehicles to life: the
+68 taxis, sedans, hatchbacks, SUVs, police cruisers, fire engines and ambulances that the metropolis already places on its streets, facing the
+way their lane runs, drive the streets they stand on. It adds no new art and no new road: the lanes are derived from the road tiles
+(three-wide bands with a dashed centre, zebra crossings across them, and the three-by-three intersections where two bands cross), and every
+vehicle is drawn with the world's own `VEHICLE_*` sprite. **Off** is exactly the parked street as it always was. **Low** lets up to 24 drive
+and the rest stay parked; **Normal** lets up to 96, which here means every one of the 68. While a vehicle drives, its parked copy is simply not
+drawn (the layout itself is never touched).
+
+How it behaves, and what that does and does not mean:
+
+- Vehicles **stop at a stop line** before every intersection and crossing, wait their turn, and enter only when the whole intersection or
+  crossing and the tile beyond it are free. They queue behind one another and turn right, turn left or go straight at an intersection by a
+  seeded choice (there is no path search and no destination). Two vehicles can never hold the same tile.
+- **People have priority.** A vehicle never enters a tile that a resident, pet or real agent stands on or is about to step onto, and never
+  one adjacent to a real agent. If someone steps into a vehicle anyway it gives way at once: it fades out and comes back later. Vehicles never
+  change what anyone can walk on, so decoration can never block a real agent.
+- **A vehicle that looks like an ambulance, a fire engine or a police cruiser is an ordinary car.** It has no siren, no flashing, no priority
+  and no meaning; it obeys every stop and gives way to people exactly like a taxi. Pointing at any vehicle labels it "Decorative traffic".
+- **Reduced motion** shows every vehicle at the place it is parked and holds it still; with the preference on, a vehicle still gives way to
+  anyone who steps into it. (In the shipped world the street at rest is the same picture as the parked street: measured, below.)
+- **Nothing here is saved or simulated while the view is closed.** A reload, restart or reopened tab rebuilds the same vehicles, with the same
+  ids, from the same seed at the places they were parked: no vehicle is ever duplicated, and no continuity is claimed. A hidden tab advances
+  nothing, and there is no catch-up. Only the traffic CHOICE is saved.
+- Only the DI office runs traffic; ordinary Pixel never does.
+
+What stays parked, and the limits: vehicles in parking lots (those facing up or down) and the angled `DETAIL_TAXI` and `DETAIL_VAN` props stay
+exactly where they are. Those props stand in some lanes and cut them into shorter stretches, and each of the four intersections on the
+row-39 street has a parked taxi inside it, so those four are not usable intersections (12 of 16 are). A vehicle that reaches the end of a
+stretch waits about a second, fades, and re-enters at its parking place about a second and a half later, so the street is busy but not a
+closed loop. A vehicle that has been unable to move for 30 seconds is removed and re-enters (a gridlock valve; it has not opened in any run).
+
+How this is tested, and what that does and does not show. The engine is tested directly on a small synthetic crossroads (stop lines and
+dwell, atomic claims of an intersection, lawful turns, queues, a pedestrian on the crossing, a pedestrian about to step onto it, a real agent
+beside the lane, someone stepping into a vehicle, reduced motion, the cap, determinism, and that an ambulance behaves exactly as a taxi) and
+on the shipped metropolis (over ten simulated minutes no tile was ever claimed twice and no vehicle left a lane; a real agent standing on a real
+road held vehicles back; the layout, blocked tiles and the seeded residents and trains were byte-identical with traffic on and off).
+A real-browser check mounts the actual App from source over the shipped world with a labelled *fixture* office state and proves the motion on
+the canvas itself: it matches each vehicle's real sprite file, pixel for pixel, against the canvas at the position its pose predicts, and finds
+the same vehicle at a different place 0.7 s later. That is integration over source, **not** production-package proof, and no part of it is
+evidence of a live provider.
+
+### All four together: the Map, the limits and what was measured
+
+**The Map.** The Map shows the same city from above: residents as job-coloured dots, the two trains as teal bars and, new with
+traffic, every **visible vehicle as a small box** of one neutral colour, its own footprint, never smaller than two pixels. The boxes
+are drawn from the same vehicles the canvas draws, at the Map's own slow redraw (twice a second; every two seconds under reduced
+motion), so a vehicle on the Map can be a moment behind the one on the canvas. A vehicle that is driving is not also drawn as parked
+furniture, so a vehicle never appears twice: it is parked furniture in the Map's static layer, or a box, never both. **It does not follow
+that every vehicle is shown at every moment.** A vehicle that has reached the end of its stretch waits, fades and returns (a second or two), and
+while it is away it has neither a parked copy nor a box: forty seconds into a run with traffic Normal, 38 pieces were still parked and 55 boxes were on
+the Map, of the 106 vehicle pieces the world places, so the other 13 of the 68 driving slots were away. Held still (reduced motion) every vehicle is shown, parked or as a
+box. With traffic Off the Map is exactly the parked street. The boxes are not coloured by kind, so nothing on the Map looks like an emergency vehicle.
+
+**Hidden, closed, paused and reduced.** While the tab is hidden nothing advances. When it is shown again the residents and the subway are
+caught up by **at most 20 seconds, in at most 200 steps**, however long it was hidden; the traffic and the weather are **not** caught up
+(a street that was hidden is simply where it was). **Nothing runs while the page is closed, the computer is asleep or it is rebooted:** no
+simulation time passes, and nothing is claimed about what the city did meanwhile. Opening the Map covers the canvas and the canvas stops
+drawing; the world underneath keeps advancing, and the Map shows it. With reduced motion everything is held still (night shown at once,
+the rain on one frame, the vehicles where they are parked, the residents and trains where they stand); a resident, a vehicle or a train
+still gives way to a real agent.
+
+**Reload and restart.** The residents and trains are saved while the office is open (see above) and a reload restores each resident once and
+each rider aboard its own train, and the journeys carry on: a restored rider alights where it was going, and is recorded as having boarded in
+an earlier run. The traffic is **not** saved: it is rebuilt from its seed, the same vehicles with the same ids at the places they were parked,
+and never continues what it was doing. Only your lighting, weather and traffic choices are saved. A snapshot that does not belong to this
+world, these residents or these journeys is refused whole and the city starts fresh.
+
+**What it costs, as measured.** These were measured in the real App in the installed Chrome on one Mac, over the source with Vite's
+development server (an unminified build: **not** the production package, whose own measurement is separate), against the shipped world with the
+fixture office state. The loads: *ordinary* (145 residents, 24 of them riding the subway, 68 vehicle slots, rain and night, 16 fixture agents),
+*crowded* (the population at its cap of 200, and 24 more agents put on the streets among them) and *maximal eligible* (the same, the camera at its widest: the largest values this world can reach, 200 residents, 24 riders, 2 trains, 68 vehicle slots and 520 rain particles).
+Figures are rounded; the run's logs have the exact ones.
+
+| What | Bound | Ordinary | Crowded / maximal eligible |
+| --- | --- | --- | --- |
+| Residents | 200 | 145 | 200 |
+| Riders (and aboard at once) | 24 (32) | 24 (up to 16 seen) | 24 |
+| Trains | 4 (2 on this line) | 2 | 2 |
+| Vehicles | 96 (68 slots in this world) | about 52 on the street, of 68 | about 52 of 68 |
+| Rain particles | 520 | 520 | 520 |
+| Lights lit per frame | 96 | at most 49 at any of twelve camera positions of a normal viewport (39 in an earlier run: it depends where the agents stand) | the same twelve positions; 96 only on a synthetic frame no camera reaches (the whole world at a quarter of the scale) |
+| Path searches per tick | 4 | 4 | 4 |
+| Saved snapshot | 65,536 bytes | about 7 KB | about 10 KB |
+| Saved city choices | 256 bytes | 62 bytes | 62 bytes |
+| Timed `requestAnimationFrame` callbacks, **per callback** (first labelled "Game-loop frame (simulation plus issuing every draw call)": the timing wrapper times every callback registered by anyone, so it cannot show which is the game loop, and two callbacks share each requestAnimationFrame timestamp; see below) | 50 ms at the 95th percentile (declared for this per-callback sample) | mean 3.5 ms, 95th percentile 5.6 ms | mean 3.6 ms, 95th percentile 5.6 to 5.9 ms |
+| One ordinary simulation tick | 8 ms at the 95th percentile | mean 0.1 ms | mean 0.2 ms |
+| Elements added to the page | 120 | 25 (the open City panel) | 25 |
+| Catch-up of a long absence (20 s, 200 steps) | 600 ms | about 5 ms | about 5 ms |
+
+Night, rain and traffic together add nothing measurable to the **per-callback** figures: with lighting Day, weather Off and traffic Off the same world's
+per-callback cost is the same (mean 3.6 ms, 95th percentile 5.5 ms, against 3.5 and 5.6 with them on). That comparison is a **three-effects delta**: the
+residents and the subway were running in BOTH arms, so **the cost of the residents' refinement was never isolated** and is not claimed. The figures are the
+main thread's cost of **issuing** the drawing, per callback, not the browser's rasterising of it.
+
+**What the callbacks sharing one timestamp cost together.** The per-callback figures above are NOT the cost of the callbacks that run at one timestamp, and the
+first label on that row overstated what the sample is. In the built application two callbacks share each `requestAnimationFrame` timestamp. A separate,
+one-run measurement of the BUILT application (the fixture viewer serving the built bundle, installed Chrome 155, 1600 by 1000, no hooks) grouped the callbacks
+by identical timestamp and summed each group. These **per shared-timestamp callback sums**, 95th percentile, were **29.4 ms** with night, rain and traffic on
+and the camera on the street grid (29.5 ms by nearest rank), **33.1 ms** with the Map open, and **5.7 ms** with reduced motion, over about **59.92, 57.25 and
+60.00 distinct timestamps per second** (about 120 per second is only the callback count). **These sums are main-thread callback time only: they exclude
+layout, raster, the GPU and any other work, and they make no presentation claim, no display-frame-rate claim and no GPU claim.** The measurement shows shared
+timestamps and nothing more; it does not show that one timestamp is one presented frame. The sums are **materially higher** than the 3.5 ms and 5.6 ms above,
+and in the visible and Map runs some of them exceed 16.7 ms, which is the spacing between distinct timestamps at about 60 per second (60 of 719 sums and 40 of
+458, arriving at exactly 5 per second, the cadence of the furniture rebuild below: a matching rate, not an attribution). All three 95th percentiles are **below
+the 50 ms number**, which was declared for the per-callback sample, so this compares a different quantity with it; no sum was over 50 ms, and there was no long
+task and no page error. Nothing here relaxes a limit or changes the engine: it is a correction to what the sample was called. The sample still does not say
+which callback is the game loop.
+Three things are worth saying plainly. First, **the vehicle bound of 96 cannot be reached in this world**, which has 68 vehicles that can drive.
+Second, one cost in these figures is **not part of the living city and is unchanged by it**: every 0.2 s the office rebuilds the instances of its
+furniture (ten thousand pieces in this world), about 24 ms in the development build, the same with every feature on or off. It is the inherited contributor
+these runs identified (the slowest samples are about the size of one such rebuild, and in the built application the shared-timestamp callback sums over 16.7 ms arrive at the same 5
+per second); this document does not claim it is the only one. Third, residents may cross a road anywhere, not only at a crossing; vehicles give way to them (over five simulated
+minutes with 145 residents, someone stepped into a vehicle 20 times and the vehicle faded out and came back, vehicles were held back 968 times
+for people on the road ahead, none was ever stuck, and the street drove 98.6 per cent as many tiles as with nobody on foot).
+
+**How this is tested.** The refined residents and subway are tested on the shipped world: 24 riders of three journey kinds, each plan checked
+against its routine and ride plan; every rider walking to a platform, waiting, boarding, riding and alighting at the stations its plan names, in
+the plan's order, over half an hour of simulated time; an excursion resumed after a reload on its second and third ride; platform tiles dealt
+apart (two riders waiting on one tile for 0 seconds in half an hour; a platform tile held by any two residents at once for 242 seconds in half
+an hour, against 227 seconds in ten minutes before the refinement: what is left is one resident walking along a one-tile platform past another); the posted and roaming dwell profiles;
+and the snapshot's binding to the journey plan. The four together are tested as one OfficeState: residents and trains identical whatever the
+lighting, weather and traffic are set to, traffic identical whatever the lighting and weather are, the Map accounting for every vehicle in every
+traffic setting, and the search, hub, route, routine and aboard bounds at the population cap. In the real App, the loads above, reduced motion
+(nothing of the four moves in ten seconds), a hidden tab and the bounded resume, twelve settings changes in a row, a reload mid-journey, and a
+snapshot of another plan being refused. That is integration over source with a labelled fixture office state, **not** production-package proof, and
+not evidence of a live provider.
 
 ## Licensing
 
