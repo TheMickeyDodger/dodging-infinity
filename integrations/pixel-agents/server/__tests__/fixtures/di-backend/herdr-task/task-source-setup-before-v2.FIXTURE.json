@@ -1,0 +1,723 @@
+{
+  "detail": null,
+  "endpoint": "di.mission_catalog",
+  "endpoint_version": 1,
+  "problem": null,
+  "requested_at": 1800000000,
+  "response": {
+    "chain_observation": {
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "over_capacity_count": 0,
+      "problem": null,
+      "producer": "target_runtime.runtime_snapshot",
+      "root_count": 1,
+      "unavailable_count": 0
+    },
+    "contract": "di.mission_sources.query",
+    "contract_version": 2,
+    "generated_at": 1800000000,
+    "limits": {
+      "max_chain_depth": 1,
+      "max_child_records": 32,
+      "max_herd_roots": 16,
+      "max_json_depth": 64,
+      "max_observed_missions": 16,
+      "max_query_input_bytes": 67108864,
+      "max_query_missions": 2048,
+      "max_registry_bytes": 262144,
+      "max_review_preamble_bytes": 4096,
+      "max_review_preamble_lines": 16,
+      "max_snapshot_agents": 512,
+      "max_snapshot_tasks": 256,
+      "max_sources": 128,
+      "max_store_read_bytes": 16777216,
+      "max_task_bindings": 32,
+      "min_poll_interval_seconds": 5,
+      "reported_freshness_bound_seconds": 600
+    },
+    "max_age_seconds": 60,
+    "missions": [
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_task_mismatch",
+            "record": null,
+            "state": "refused",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "task_not_in_snapshot",
+          "state": "disappeared",
+          "task_id": "task-0001"
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "parent_task_mismatch",
+          "record_count": null,
+          "state": "unavailable"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "start_result",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-0001",
+          "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-a2793393d2bdd4b3bc60b00c6dab2287"
+        },
+        "lifecycle": {
+          "model": "mission_core.mission_state/1",
+          "standing": "active",
+          "state": "RUNNING"
+        },
+        "members": [],
+        "mission_ref": "mission_core:mn-a2793393d2bdd4b3bc60b00c6dab2287",
+        "mission_state": {
+          "detail": null,
+          "execution_identity": {
+            "cursor_sha256": null,
+            "identity_sha256": null,
+            "problem": "execution_mission_not_completed",
+            "state": "not_applicable"
+          },
+          "inputs": {
+            "baseline": "unobserved",
+            "candidate_applicability": "unproven",
+            "cursor": "sampled_before_collection",
+            "kinds": {
+              "candidate": {
+                "reason": null,
+                "supplied": "reported"
+              },
+              "delivery": {
+                "reason": "no attested delivery receipt links this mission to a delivery record",
+                "supplied": "unavailable"
+              },
+              "review": {
+                "reason": "the observed root's current task is not the mission's task",
+                "supplied": "unavailable"
+              },
+              "task": {
+                "reason": "the observed root's current task is not the mission's task",
+                "supplied": "unavailable"
+              }
+            }
+          },
+          "problem": null,
+          "report": {
+            "artifacts": {
+              "detail": "available flags and locators are recorded assertions; nothing is dereferenced",
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": []
+            },
+            "blockers": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "active": [],
+                "hard_active": false
+              }
+            },
+            "budget": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "attempts_consumed": 0,
+                "attempts_remaining": 1,
+                "checkpoints_consumed": 0,
+                "checkpoints_remaining": 2
+              }
+            },
+            "candidate": {
+              "detail": null,
+              "freshness": "fresh",
+              "observed_at": 1800000000,
+              "position": 1,
+              "revision": 1,
+              "source": "adapter:candidate",
+              "standing": "reported",
+              "value": {
+                "artifact_digests": {},
+                "baseline_digest_sha256": null
+              }
+            },
+            "completion": {
+              "closure": null,
+              "closure_verified": false,
+              "contradicted": false,
+              "holds": [
+                "no_canonical_closure",
+                "proof_not_satisfied",
+                "review_unavailable"
+              ],
+              "limits": {
+                "identity": "transport_credential_only",
+                "non_verifying_evidence_kinds": [
+                  "NARRATIVE_CLAIM",
+                  "PROCESS_EXIT"
+                ],
+                "separation_of_duties": "not_enforced"
+              },
+              "reported_complete": false,
+              "reported_success": false,
+              "verified_success": false
+            },
+            "continuation": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "attempts": 0,
+                "checkpoints": 0,
+                "latest_checkpoint": null
+              }
+            },
+            "contract": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "activation_id": "mt-ab31c9d70a41f0fac336ff6c4da93960",
+                "active": true,
+                "authority_live": true,
+                "current": true,
+                "problem": null,
+                "revision": 1
+              }
+            },
+            "cursor": {
+              "event_id": "mo-01c917171bd3f59f3af3669b8b264847",
+              "journal_digest_sha256": "88b3cd61508c4c3cf326e98ec632fa9f52a3199101db2898ff08bd5b4bf0c981",
+              "mission_id": "mn-a2793393d2bdd4b3bc60b00c6dab2287",
+              "position": 1,
+              "revision": 1,
+              "schema_version": 1
+            },
+            "delivery": {
+              "detail": "no attested delivery receipt links this mission to a delivery record",
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "adapter:delivery",
+              "standing": "unavailable",
+              "value": null
+            },
+            "delivery_receipts": {
+              "detail": "recorded receipt references; only an ATTESTED reference (recorded through the delivery layer's validating path and re-proved on load) establishes receipt validity, and only the one succeeded receipt state is a completed effect; an unattested reference and a delivery source's report are unverified claims, the report reflected only when bound to a recorded receipt and fresh",
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "attested": [],
+                "effects_completed": [],
+                "recorded": [],
+                "report_bound_attested": null,
+                "report_bound_to": null,
+                "report_fresh": null,
+                "unattested": []
+              }
+            },
+            "dependencies": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "registry",
+              "standing": "verified",
+              "value": {
+                "prerequisite_problems": [],
+                "satisfied": true,
+                "slots": {}
+              }
+            },
+            "evidence": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": []
+            },
+            "mission_id": "mn-a2793393d2bdd4b3bc60b00c6dab2287",
+            "observed_at": 1800000000,
+            "pending_decisions": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "awaiting_decision": false,
+                "live_authorization": false,
+                "next_permitted_step": null,
+                "revision": 1
+              }
+            },
+            "phase": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "current_revision": 1,
+                "revisions": 1,
+                "state": "RUNNING"
+              }
+            },
+            "progress": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "closure_reason": null,
+                "progress": "IN_PROGRESS"
+              }
+            },
+            "proof": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "requirements": {
+                  "tests_pass": "MISSING"
+                },
+                "satisfied": false
+              }
+            },
+            "provenance": {
+              "collection": {
+                "collected_at": {
+                  "event_id": "mo-01c917171bd3f59f3af3669b8b264847",
+                  "journal_digest_sha256": "88b3cd61508c4c3cf326e98ec632fa9f52a3199101db2898ff08bd5b4bf0c981",
+                  "mission_id": "mn-a2793393d2bdd4b3bc60b00c6dab2287",
+                  "position": 1,
+                  "revision": 1,
+                  "schema_version": 1
+                },
+                "head": {
+                  "event_id": "mo-01c917171bd3f59f3af3669b8b264847",
+                  "journal_digest_sha256": "88b3cd61508c4c3cf326e98ec632fa9f52a3199101db2898ff08bd5b4bf0c981",
+                  "mission_id": "mn-a2793393d2bdd4b3bc60b00c6dab2287",
+                  "position": 1,
+                  "revision": 1,
+                  "schema_version": 1
+                },
+                "status": "current"
+              },
+              "cursor": {
+                "event_id": "mo-01c917171bd3f59f3af3669b8b264847",
+                "journal_digest_sha256": "88b3cd61508c4c3cf326e98ec632fa9f52a3199101db2898ff08bd5b4bf0c981",
+                "mission_id": "mn-a2793393d2bdd4b3bc60b00c6dab2287",
+                "position": 1,
+                "revision": 1,
+                "schema_version": 1
+              },
+              "drift": [],
+              "freshness_bound_seconds": 600,
+              "journal_digest_sha256": "88b3cd61508c4c3cf326e98ec632fa9f52a3199101db2898ff08bd5b4bf0c981",
+              "moved_during_collection": null,
+              "position": 1,
+              "record_source": "record",
+              "revision": 1,
+              "sources": {
+                "candidate": {
+                  "detail": null,
+                  "observed_at": 1800000000,
+                  "source": "adapter:candidate",
+                  "standing": "reported"
+                },
+                "delivery": {
+                  "detail": "no attested delivery receipt links this mission to a delivery record",
+                  "observed_at": null,
+                  "source": "adapter:delivery",
+                  "standing": "unavailable"
+                },
+                "review": {
+                  "detail": "the observed root's current task is not the mission's task",
+                  "observed_at": null,
+                  "source": "adapter:review",
+                  "standing": "unavailable"
+                },
+                "task": {
+                  "detail": "the observed root's current task is not the mission's task",
+                  "observed_at": null,
+                  "source": "adapter:task",
+                  "standing": "unavailable"
+                }
+              }
+            },
+            "readiness": {
+              "detail": null,
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "record",
+              "standing": "verified",
+              "value": {
+                "resources": {},
+                "satisfied": true
+              }
+            },
+            "reconciliation": null,
+            "review": {
+              "detail": "the observed root's current task is not the mission's task",
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "adapter:review",
+              "standing": "unavailable",
+              "value": null
+            },
+            "revision": 1,
+            "sequence": 1,
+            "task": {
+              "detail": "the observed root's current task is not the mission's task",
+              "freshness": null,
+              "observed_at": null,
+              "position": 1,
+              "revision": 1,
+              "source": "adapter:task",
+              "standing": "unavailable",
+              "value": null
+            },
+            "time": {
+              "now": 1800000000,
+              "record_updated_at": 1800000000,
+              "source": "clock"
+            }
+          },
+          "state": "observed"
+        },
+        "native": {
+          "cancel_requested": false,
+          "paused": false
+        },
+        "native_id": "mn-a2793393d2bdd4b3bc60b00c6dab2287",
+        "objective": "Fixture mission",
+        "producer": {
+          "declared": "dodging-infinity",
+          "recorded": {
+            "principal_kind": "unauthenticated_local_caller",
+            "transport": "local_request"
+          }
+        },
+        "revision": 1,
+        "source_id": "mission_core",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "task_not_in_snapshot",
+              "state": "disappeared",
+              "task_id": "task-0001"
+            },
+            "chain": "direct",
+            "chain_task_id": "task-0001",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "observed",
+              "path": "/__synthetic__/di-fixture-root/ws-mn-a2793393d2bdd4b3bc60b00c6dab2287",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": 1800000000,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "source_kind_has_no_canonical_review",
+            "record": null,
+            "state": "not_applicable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "workspace_unrecorded",
+          "state": "unbound",
+          "task_id": "task-0002"
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_execution_unresolved",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": null,
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-0002",
+          "workspace_realpath": null
+        },
+        "lifecycle": {
+          "model": "workflow_authority.workflow_phase/2",
+          "standing": "active",
+          "state": "DISPATCHED"
+        },
+        "members": [],
+        "mission_ref": "workflows:wf-0002",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "ambiguity": "none"
+        },
+        "native_id": "wf-0002",
+        "objective": "Resolve the defect",
+        "producer": {
+          "declared": "dodging-infinity",
+          "recorded": {
+            "origin_transport": "grok_bot",
+            "telegram_bound": false
+          }
+        },
+        "revision": 1,
+        "source_id": "workflows",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "workspace_unrecorded",
+              "state": "unbound",
+              "task_id": "task-0002"
+            },
+            "chain": "direct",
+            "chain_task_id": "task-0002",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "unknown",
+              "path": null,
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": "DISPATCHED",
+          "problem": null,
+          "state": "observed"
+        }
+      }
+    ],
+    "registry": {
+      "directory": "/__synthetic__/di-fixture-root/registry",
+      "health": "fresh",
+      "max_serialized_bytes": 262144,
+      "max_sources": 128,
+      "problem": null,
+      "serialized_bytes": 585,
+      "source_count": 2
+    },
+    "runtime_agents": {
+      "agents": [],
+      "agents_over_bound": 0,
+      "caveat": null,
+      "counts": {
+        "ambiguous": 0,
+        "names_over_bound": 0,
+        "registries_unread": 0,
+        "represented_by_teams": 0,
+        "roles_live": 0,
+        "roles_recorded": 0,
+        "roots_over_capacity": 0,
+        "roots_read": 0,
+        "roots_requested": 0,
+        "roots_role_records_unreadable": 0,
+        "unavailable": 0,
+        "unverified": 0,
+        "verified": 0
+      },
+      "first_pass_at": null,
+      "observed_at": null,
+      "problem": "task_native_source_not_registered",
+      "second_pass_at": null,
+      "state": "not_applicable"
+    },
+    "runtime_snapshot": {
+      "agent_count": 4,
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "problem": null,
+      "producer": "target_runtime.runtime_snapshot",
+      "task_count": 0
+    },
+    "sources": [
+      {
+        "health": "fresh",
+        "kind": "mission_core",
+        "max_age_seconds": 60,
+        "observed_at": 1800000000,
+        "problem": null,
+        "producer": "dodging-infinity",
+        "record_count": 1,
+        "source_id": "mission_core",
+        "store_dir": "/__synthetic__/di-fixture-root/stores/mc"
+      },
+      {
+        "health": "fresh",
+        "kind": "workflow_store",
+        "max_age_seconds": 60,
+        "observed_at": 1800000000,
+        "problem": null,
+        "producer": "dodging-infinity",
+        "record_count": 1,
+        "source_id": "workflows",
+        "store_dir": "/__synthetic__/di-fixture-root/stores/legacy"
+      }
+    ],
+    "unmatched_runtime_agent_count": 4,
+    "valid_until": 1800000060
+  },
+  "retry_after_seconds": null,
+  "runtime_capture": {
+    "available": true,
+    "configured": true,
+    "detail": null,
+    "discovery": {
+      "bindings": {
+        "mission_core:mn-a2793393d2bdd4b3bc60b00c6dab2287": {
+          "declared": "dodging-infinity",
+          "identity_source": "start_result",
+          "mission_ref": "mission_core:mn-a2793393d2bdd4b3bc60b00c6dab2287",
+          "model": "mission_core.mission_state/1",
+          "source_id": "mission_core",
+          "task_id": "task-0001",
+          "workspace_realpath": "/__synthetic__/di-fixture-root/ws-mn-a2793393d2bdd4b3bc60b00c6dab2287"
+        }
+      },
+      "conflicts": [],
+      "listing_anchor": null,
+      "missions_by_root": {
+        "/__synthetic__/di-fixture-root/ws-mn-a2793393d2bdd4b3bc60b00c6dab2287": "mission_core:mn-a2793393d2bdd4b3bc60b00c6dab2287"
+      },
+      "roots": [
+        "/__synthetic__/di-fixture-root/ws-mn-a2793393d2bdd4b3bc60b00c6dab2287"
+      ]
+    },
+    "observed_at": 1800000000,
+    "problem": null,
+    "refresh_budget": {
+      "per_pass_max_query_input_bytes": 67108864,
+      "per_pass_max_query_missions": 2048,
+      "per_pass_max_registry_bytes": 262144,
+      "shared_input": {
+        "charged_bytes": 56658,
+        "exhausted": false,
+        "max_bytes": 268435456,
+        "reads_refused": 0
+      },
+      "source_passes": 4,
+      "sum_max_query_input_bytes": 268435456,
+      "sum_max_query_missions": 8192,
+      "sum_max_registry_bytes": 1048576
+    },
+    "registered_roots": [],
+    "roots": {
+      "captured": [
+        "/__synthetic__/di-fixture-root/ws-mn-a2793393d2bdd4b3bc60b00c6dab2287"
+      ],
+      "children": {
+        "captured": [],
+        "over_capacity": [],
+        "recorded": [],
+        "unavailable": []
+      },
+      "discovered": [
+        "/__synthetic__/di-fixture-root/ws-mn-a2793393d2bdd4b3bc60b00c6dab2287"
+      ],
+      "over_capacity": [],
+      "registered": [],
+      "unavailable": []
+    }
+  },
+  "served": "refreshed"
+}

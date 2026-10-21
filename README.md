@@ -176,6 +176,23 @@ The original palace opens into forests, mountain lakes, farms, a harbour, and a 
 
 The included living-metropolis preset spans **352 × 312 tiles**, with **145 decorative residents**, **four subway stations**, and **two trains**.
 
+### Teams show up without per-team setup, and their desks stay readable
+
+The office needs no source configured for each team. After the one-time [task-source step](#4-open-the-visual-office) (`python3 dicatalog.py task-source --registry /absolute/path/to/office-catalog --ensure`), it shows the current verified roles of the teams working in the repositories you prepared with `herdctl init`, within the limits it discloses. A team can still be absent: its session may not bind, its records may be stale, a source may be refused or unreadable, or the runtime listing may be over its fixed capacity. When no team shows, the office's runtime-agents line says why in three situations. `Runtime agents: not_applicable (task_native_source_not_registered)` means no task source is registered, so run the step-4 command. `Runtime agents: not_applicable (task_native_sources_record_no_roles)` means the registered sources were read fresh and none of their repositories records a role, so there is nothing to show yet; the office's runtime evidence counts say how many repositories were read. Role records that could not be read are counted on their own (`roots_role_records_unreadable`) and are never reported as "record no roles".
+
+A busy working office used to bury its real agents under decorative residents. The office now draws only some of a working office's residents at a time, the ones *on duty*, and says so in its legend (`Ambient residents · 4 on duty of 140 · decorative`). The rest are off duty: still simulated, with their ids, jobs, routines and saved positions unchanged, resting where they stand while residents take turns on duty, one hand-over every six seconds. In the default office (4 of 140 drawn) and in the expanded-office preset (16 of 140 drawn) that is an **actual reduction** in what is on screen. The Palace was **already readable and is unchanged**: its 11 residents are below the bound, so every resident of the living metropolis is still drawn.
+
+| Default office: 4 of 140 residents on duty | Expanded office: 16 of 140 residents on duty |
+|---|---|
+| ![The default office with four agents seated at their desks and a few residents walking, with the legend reading 4 on duty of 140](assets/pixel-world/team-discovery-default-office.png) | ![The expanded office with two teams at their desks and a few residents walking the corridors, with the legend reading 16 on duty of 140](assets/pixel-world/team-discovery-expanded-office.png) |
+| One team of four agents; the busy ones glow at their desks. | Two teams of four agents across the connected rooms. |
+
+![The Palace of the living metropolis with agents at open, readable desks and a handful of residents; unchanged, with the legend reading 145 residents](assets/pixel-world/team-discovery-palace-unchanged.png)
+
+*The Palace, unchanged: it was already readable, and all 145 residents of the world are drawn.*
+
+*All three pictures are synthetic: owned synthetic records shown through the real catalog bridge (no substituted catalog), captured from the candidate build. They are not live Mission work, and the 140 residents of the first two offices are all still simulated; see the [provenance note](assets/pixel-world/team-discovery-provenance.md).*
+
 ### See the work behind the characters
 
 - **Select an agent** to inspect its role, source, and associated Mission.
@@ -370,6 +387,16 @@ python3 dicatalog.py sources \
 ```
 
 The Mission Core store contains `missions.json`; the WorkflowStore contains `workflows.json`. Use the real stores from your setup. The [source-registration guide](https://github.com/TheMickeyDodger/dodging-infinity/blob/main/docs/pixel-agents-office.md#register-the-sources) explains how to identify them.
+
+Then add the DI-native task source, so the teams working in a repository you prepared with `herdctl init` (step 2) need no per-team source configuration; the office shows the current verified roles of those teams, within the limits it discloses (a team can still be absent, for example when its session cannot be bound, its records are stale, a source is refused or unreadable, or the runtime listing is over its fixed capacity):
+
+```bash
+python3 dicatalog.py task-source \
+  --registry /absolute/path/to/office-catalog \
+  --ensure
+```
+
+It registers the directory where `herdctl init` keeps its repository list (`~/.config/dodging-infinity`; pass `--store-dir` for another) as the `task_native` source `di_herdr_tasks`, and writes only the registry. Running it again changes nothing, and that store already registered under another id counts as done. For an existing office catalog this command is the whole adoption step: it never rewrites or repairs an existing entry, and a refusal names its problem and the next step, leaving the registry as it was. A write failure (permission, disk, I/O) is a different outcome: it is reported as `failed` with exit 5 after the registry is read again, and when the replacement had already landed it is reported as `registry_write_unconfirmed` (not rolled back, durability not confirmed) rather than as unchanged. Without `--ensure` it only reports, as one JSON line, whether the source is registered and, if not, the exact command to run. When the office reads `Runtime agents: not_applicable (task_native_source_not_registered)`, this is the command that fixes it.
 
 Start the catalog bridge from the DI checkout root:
 

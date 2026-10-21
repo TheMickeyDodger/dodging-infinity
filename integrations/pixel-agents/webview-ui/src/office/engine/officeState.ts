@@ -754,6 +754,49 @@ export class OfficeState {
   }
 
   /**
+   * DI seating: a character GIVES UP its seat. It stays the same character (id, selection, activity, look,
+   * zone) and stands on the nearest free walkable tile, seatless like any character that arrived to none.
+   * Returns the freed seat's uid, or null when it held none. Called only by the DI reconciliation
+   * (`reconcileDiSeats`); the generic seating (`addAgent`, `findFreeSeat`, `rebuildFromLayout`) is unchanged.
+   */
+  vacateSeat(agentId: number): string | null {
+    const ch = this.characters.get(agentId);
+    if (!ch || ch.isSubagent || !ch.seatId) return null;
+    const uid = ch.seatId;
+    const seat = this.seats.get(uid);
+    if (seat) seat.assigned = false;
+    ch.seatId = null;
+    const spot = this.closestFreeWalkableTile(ch.tileCol, ch.tileRow);
+    if (spot) {
+      ch.tileCol = spot.col;
+      ch.tileRow = spot.row;
+      ch.x = spot.col * TILE_SIZE + TILE_SIZE / 2;
+      ch.y = spot.row * TILE_SIZE + TILE_SIZE / 2;
+    }
+    ch.path = [];
+    ch.moveProgress = 0;
+    ch.state = CharacterState.IDLE;
+    ch.frame = 0;
+    ch.frameTimer = 0;
+    ch.wanderTimer = 0;
+    ch.wanderCount = 0;
+    return uid;
+  }
+
+  /**
+   * DI seating: seat a character that holds none in a FREE seat (its zone, then an unzoned seat, then any, as
+   * `findFreeSeat` orders them) and walk it there. False when it already has a seat or none is free.
+   */
+  seatIfFree(agentId: number): boolean {
+    const ch = this.characters.get(agentId);
+    if (!ch || ch.isSubagent || ch.seatId) return false;
+    const uid = this.findFreeSeat(ch.folderName);
+    if (!uid) return false;
+    this.reassignSeat(agentId, uid);
+    return ch.seatId === uid;
+  }
+
+  /**
    * Move a just-linked teammate to the free seat closest to its lead, so teams
    * cluster. Only moves when that seat is strictly closer than the teammate's
    * current one — a teammate created as a plain external agent (seated by an
@@ -1555,7 +1598,8 @@ export class OfficeState {
       for (let i = 0; i < ch.path.length && i < look; i++) p.agentNear.push(ch.path[i].row * cols + ch.path[i].col);
     }
     if (this.ambient) {
-      for (const r of this.ambient.residents) {
+      // the visible residents only: an off-duty resident is not drawn, so it is no obstacle to a vehicle
+      for (const r of this.ambient.visibleResidents()) {
         if (r.state === 'riding') continue;
         p.walkerOwn.push(r.tileRow * cols + r.tileCol);
         if (r.state === 'walk') for (let i = r.routePos; i < r.route.length && i < r.routePos + look; i++) p.walkerNear.push(r.route[i]);
@@ -1612,13 +1656,16 @@ export class OfficeState {
     return this.transit?.trains ?? [];
   }
 
-  /** The residents to draw (empty while disabled). */
+  /** The residents to DRAW (empty while disabled): the ON-DUTY residents. A working office shows at most
+   *  min(AMBIENT_WORKING_OFFICE_ON_DUTY, ceil(T / AMBIENT_WORKING_OFFICE_TILES_PER_RESIDENT)) of its residents
+   *  at once (T = its pool's resident-eligible tiles); the rest are off duty, still simulated state
+   *  (`ambient.residents` is the full roster), and not drawn. */
   getAmbientResidents(): readonly AmbientResident[] {
-    return this.ambient?.residents ?? [];
+    return this.ambient?.visibleResidents() ?? [];
   }
 
-  /** The resident under a world-pixel point. Callers check real agents FIRST: an agent always
-   *  wins the pointer over a resident. */
+  /** The resident under a world-pixel point; never an off-duty one (it is not drawn, so it can never be
+   *  hovered or clicked). Callers check real agents FIRST: an agent always wins the pointer over a resident. */
   getAmbientAt(worldX: number, worldY: number): AmbientResident | null {
     return this.ambient?.residentAt(worldX, worldY) ?? null;
   }

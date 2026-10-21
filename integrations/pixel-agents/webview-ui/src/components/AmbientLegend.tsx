@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { OfficeState } from '../office/engine/officeState.js';
+import { ambientLegendText } from './ambientLegendText.js';
 
 /** How often the legend re-reads the roster (it changes only with the world). */
 const LEGEND_REFRESH_MS = 1_000;
@@ -12,11 +13,18 @@ const LEGEND_REFRESH_MS = 1_000;
 export function AmbientLegend({ officeState }: { officeState: OfficeState }) {
   const [summary, setSummary] = useState(() => officeState.ambient?.summary() ?? null);
   useEffect(() => {
-    const id = setInterval(() => setSummary(officeState.ambient?.summary() ?? null), LEGEND_REFRESH_MS);
+    const id = setInterval(
+      () => setSummary(officeState.ambient?.summary() ?? null),
+      LEGEND_REFRESH_MS,
+    );
     return () => clearInterval(id);
   }, [officeState]);
   if (!summary || summary.total === 0) return null;
-  const jobs = summary.byJob.map((j) => `${j.label} ${j.count}`).join(', ');
+  const jobs =
+    summary.byJob.map((j) => `${j.label} ${j.count}`).join(', ') +
+    (summary.offDuty > 0
+      ? `. ${summary.offDuty} are off duty (resting in the working office, none removed) and take their turn.`
+      : '');
   return (
     <div
       className="fixed bottom-56 left-10 z-40 pixel-panel px-8 py-4 text-xs pointer-events-none select-none"
@@ -24,7 +32,7 @@ export function AmbientLegend({ officeState }: { officeState: OfficeState }) {
       data-testid="ambient-legend"
       title={jobs}
     >
-      Ambient residents · {summary.total} · decorative
+      {ambientLegendText(summary)}
     </div>
   );
 }

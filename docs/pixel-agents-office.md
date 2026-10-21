@@ -78,8 +78,9 @@ The bridge's tests are the repository's ordinary Python suites, for example
 
 ## Register the sources
 
-The office reads ONE dedicated catalog registry bound to two sources: the Mission Core store
-and the WorkflowStore. Run from the root of your Dodging Infinity checkout. Every path must
+The office reads ONE dedicated catalog registry bound to its sources: the Mission Core store,
+the WorkflowStore and the DI-native task source. Run from the root of your Dodging Infinity
+checkout. Every path must
 be absolute. `EX` is a scratch directory of your choosing; the store directories are the
 absolute directories of **your** stores.
 
@@ -94,9 +95,15 @@ python3 -B dicatalog.py register --registry "$EX/registry" \
   --source-id di_v2_store --kind workflow_store \
   --store-dir "$HOME/.config/dodging-infinity/v2/store" \
   --producer dodging-infinity-v2
+python3 -B dicatalog.py task-source --registry "$EX/registry" --ensure
 python3 -B dicatalog.py sources --registry "$EX/registry"
 ```
 
+- The `task_native` source is herdctl's own repository list, the directory where
+  `herdctl init` writes `repos.json` (`~/.config/dodging-infinity`; `--store-dir` names
+  another). `task-source --ensure` registers it as `di_herdr_tasks` and changes nothing once
+  that store is registered under any id; without `--ensure` it only reports, with the exact
+  command when the source is missing. It is a locator: the repositories it names are only read.
 - The `mission_core` store is the directory holding `missions.json`: the absolute
   `--state-dir DIR` that your `python3 direquest.py --state-dir DIR ...` commands use. It has
   no default.
@@ -268,6 +275,18 @@ like the other presets (Settings, Import Layout (paste JSON), then reload). In c
   a real agent always wins selection and seating. A posted job (a clerk, a receptionist, a gardener) holds its
   post two and a half times as long as an ordinary stop; a roaming job (a courier, a jogger, a tourist) lingers
   six tenths as long at every stop, so some residents are fixtures of a place and others keep moving.
+- **A crowded working office shows only some of its residents at a time.** A pool that holds a real desk (a Mission's room,
+  the legacy single Office, the Palace) draws at most min(16, ceil(T / 34)) of its residents on duty, where T is that pool's
+  resident-eligible tiles as the world builds them: walkable, on the main pedestrian network, not a seat or a seat's walkable
+  neighbour, and in that place (not the room's or place's area). The rest are off duty: still residents, with their ids, jobs,
+  routines, ride plans and positions exactly as they were, but frozen, not drawn, not hoverable and not in anyone's way. One steps
+  off at its next pause and the next steps on, one hand-over per working office every six seconds, so the office stays alive. In the default office as shipped
+  (T = 105) that is 4 of 140; in the expanded-office preset (T = 718) it is 16 of 140; the Palace (T = 2183) holds 11 residents,
+  below its bound, so it is unchanged: it was already readable. The legend reads "Ambient residents · 4 on duty of 140 ·
+  decorative". Nothing is deleted or re-identified, other districts and the subway riders are not rotated, nothing off duty is
+  saved as such (it is derived from the world and the clock), and a snapshot saved at the older density loads exactly and shows
+  the on-duty count when the office reopens. The values were chosen from built screenshots at normal zoom; the six-second cadence
+  from moving frames only.
 - **Subway.** Four stations and two trains. A bounded set of residents (24 in this world) ride them: each walks
   from its post to a station's island platform, waits there (its label then says "waiting for a train"), boards the
   train that is heading its way, rides, and alights at the station its journey names, on foot and by train, never by

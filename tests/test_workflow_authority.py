@@ -1887,6 +1887,63 @@ class MigrationTests(unittest.TestCase):
             migrate.migrate_state(self.tmp.name)
 
 
+class CreateDirectoryOptInTests(unittest.TestCase):
+    """The shared atomic primitives take an OPT-IN ``create_directory``: its default keeps what every
+    existing caller has always had (the directory is created, 0700), and ``False`` refuses to create it,
+    so a writer that must never create its directory can say so AT the boundary."""
+
+    def test_the_default_creates_the_directory_for_the_lock_the_write_and_register(self):
+        import inspect
+
+        from mission_sources import contract, registry as registry_module
+        from workflow_authority import atomic
+        for function in (atomic.exclusive_store_lock, atomic.atomic_write_json,
+                         registry_module.SourceRegistry.register):
+            self.assertIs(
+                inspect.signature(function).parameters["create_directory"].default, True,
+                function.__qualname__)
+        with tempfile.TemporaryDirectory() as base:
+            locked = os.path.join(base, "a", "locked")
+            with atomic.exclusive_store_lock(locked, "x.lock"):
+                pass
+            self.assertEqual(stat.S_IMODE(os.stat(locked).st_mode), 0o700)
+            self.assertTrue(os.path.exists(os.path.join(locked, "x.lock")))
+            written = os.path.join(base, "b", "written")
+            atomic.atomic_write_json(written, os.path.join(written, "f.json"), {"k": 1}, ".t-")
+            self.assertEqual(stat.S_IMODE(os.stat(written).st_mode), 0o700)
+            self.assertEqual(json.load(open(os.path.join(written, "f.json"))), {"k": 1})
+            registered = os.path.join(base, "c", "registry")
+            result = registry_module.SourceRegistry(registered).register(
+                "s1", contract.KIND_MISSION_CORE, os.path.join(base, "store"), "p", 60, 1)
+            self.assertEqual(result["outcome"], registry_module.OUTCOME_REGISTERED)
+            self.assertTrue(os.path.isfile(os.path.join(registered, registry_module.REGISTRY_FILE_NAME)))
+
+    def test_false_refuses_to_create_the_directory_for_the_lock_and_the_write(self):
+        from workflow_authority import atomic
+        with tempfile.TemporaryDirectory() as base:
+            missing = os.path.join(base, "missing")
+            with self.assertRaises(FileNotFoundError):
+                with atomic.exclusive_store_lock(missing, "x.lock", create_directory=False):
+                    self.fail("the lock was taken in a directory that does not exist")
+            with self.assertRaises(FileNotFoundError):
+                atomic.atomic_write_json(missing, os.path.join(missing, "f.json"), {}, ".t-",
+                                         create_directory=False)
+            self.assertEqual(os.listdir(base), [], "nothing was created")
+
+    def test_false_changes_nothing_when_the_directory_exists(self):
+        from workflow_authority import atomic
+        with tempfile.TemporaryDirectory() as base:
+            os.chmod(base, 0o700)
+            with atomic.exclusive_store_lock(base, "x.lock", create_directory=False):
+                self.assertTrue(os.path.exists(os.path.join(base, "x.lock")))
+            atomic.atomic_write_json(base, os.path.join(base, "f.json"), {"k": 2}, ".t-",
+                                     create_directory=False)
+            self.assertEqual(stat.S_IMODE(os.stat(os.path.join(base, "f.json")).st_mode), 0o600)
+            self.assertEqual(json.load(open(os.path.join(base, "f.json"))), {"k": 2})
+            self.assertEqual(sorted(os.listdir(base)), ["f.json", "x.lock"],
+                             "no temp file is left behind")
+
+
 class StoreLockTests(unittest.TestCase):
     def test_exclusive_store_lock_excludes_a_second_holder(self):
         import threading

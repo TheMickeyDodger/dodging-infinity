@@ -990,7 +990,7 @@ class Required5Dedup(HerdrFixture):
         runtime = self.runtime(self.answer(self.owner()))
         self.assertEqual((runtime["state"], runtime["problem"]),
                          (contract.RUNTIME_AGENTS_NOT_APPLICABLE,
-                          contract.PROBLEM_NO_TASK_NATIVE_SOURCE))
+                          contract.PROBLEM_TASK_NATIVE_SOURCE_NOT_REGISTERED))
 
 
 # ---------------------------------------------------------------------------
@@ -1854,6 +1854,9 @@ class Round9BudgetInvariant(HerdrFixture):
                                  contract.RUNTIME_AGENTS_UNAVAILABLE)
                 self.assertNotEqual(block["problem"],
                                     contract.PROBLEM_NO_TASK_NATIVE_SOURCE)
+                self.assertNotEqual(
+                    block["problem"],
+                    contract.PROBLEM_TASK_NATIVE_SOURCE_NOT_REGISTERED)
                 self.assertEqual(block["counts"]["registries_unread"], 1)
                 self.assertEqual(block["counts"]["roots_requested"], 0)
 
@@ -2008,6 +2011,319 @@ class LocatorRegressions(HerdrFixture):
         text = Path(hts.__file__).read_text()
         self.assertNotIn("from herdr import registry", text)
         self.assertNotIn("registry_load(", text)
+
+
+# ---------------------------------------------------------------------------
+# The missing-source diagnostic (part B): THREE states the runtime-agents
+# block keeps apart, through the REAL catalog owner with root discovery (the
+# documented office setup), in both query contract versions. The literals are
+# stated here, independently of the code.
+# ---------------------------------------------------------------------------
+
+NOT_REGISTERED = "task_native_source_not_registered"
+NO_ROLE_RECORDS = "task_native_sources_record_no_roles"
+OLD_AMBIGUOUS = "no_task_native_role_records"
+
+
+class TaskNativeSourceStates(HerdrFixture):
+
+    def runtime_for(self, version):
+        return self.runtime(self.answer(self.owner(version=version)))
+
+    def test_1_no_task_native_source_registered_says_so(self):
+        store = self.mission_state("mc")
+        self.register(source_id="mc", store=store)
+        self.running_mission(store, task_id=TASK_K)
+        for version in (1, 2):
+            with self.subTest(version=version):
+                answer = self.answer(self.owner(version=version))
+                runtime = self.runtime(answer)
+                self.assertEqual((runtime["state"], runtime["problem"]),
+                                 (contract.RUNTIME_AGENTS_NOT_APPLICABLE,
+                                  NOT_REGISTERED))
+                self.assertEqual(runtime["agents"], [])
+                # The registry itself was read: this is not a registry
+                # failure, and the canonical Mission is still listed.
+                self.assertEqual(answer["response"]["registry"]["health"],
+                                 contract.HEALTH_FRESH)
+                self.assertEqual(
+                    [s["kind"] for s in answer["response"]["sources"]],
+                    [contract.KIND_MISSION_CORE])
+                self.assertEqual(len(answer["response"]["missions"]), 1)
+
+    def test_1_an_empty_registry_is_also_not_registered(self):
+        self.register(source_id="mc")
+        self.registry.unregister("mc")
+        self.assertEqual(self.registry.sources(), [])
+        runtime = self.runtime_for(2)
+        self.assertEqual((runtime["state"], runtime["problem"]),
+                         (contract.RUNTIME_AGENTS_NOT_APPLICABLE,
+                          NOT_REGISTERED))
+
+    def test_2_a_registered_source_that_cannot_be_read_reports_its_own(self):
+        roots = {"r%04d" % i: "/synthetic/r%04d" % i
+                 for i in range(hts.MAX_REGISTERED_ROOTS + 1)}
+        cases = (
+            ("absent", None, contract.HEALTH_UNAVAILABLE,
+             "herdr_registry_absent"),
+            ("malformed", "[1, 2]\n", contract.HEALTH_MALFORMED,
+             "herdr_registry_shape_unexpected"),
+            ("incompatible", json.dumps({"version": 2, "repos": {}}),
+             contract.HEALTH_INCOMPATIBLE,
+             "herdr_registry_version_unsupported"),
+            ("over_bound", json.dumps({"version": 1, "repos": {
+                alias: {"path": path} for alias, path in roots.items()}}),
+             contract.HEALTH_UNAVAILABLE,
+             "herdr_registry_exceeds_root_bound"))
+        for index, (name, raw, health, problem) in enumerate(cases):
+            for version in (1, 2):
+                with self.subTest(case=name, version=version):
+                    self.fresh_registry("sources-%s-%d" % (name, version))
+                    if raw is None:
+                        directory = os.path.join(self.root, "none-%d-%d"
+                                                 % (index, version))
+                        os.makedirs(directory)
+                    else:
+                        directory = self.herd_registry(
+                            {}, raw=raw, name="reg-%s-%d" % (name, version))
+                    self.register_native(directory)
+                    answer = self.answer(self.owner(version=version))
+                    source = self.source(answer)
+                    self.assertEqual((source["health"], source["problem"]),
+                                     (health, problem))
+                    runtime = self.runtime(answer)
+                    self.assertEqual(
+                        (runtime["state"], runtime["problem"]),
+                        (contract.RUNTIME_AGENTS_UNAVAILABLE,
+                         "task_native_source_not_fresh:" + problem))
+                    self.assertEqual(runtime["agents"], [])
+
+    def test_3_a_healthy_source_with_an_empty_roster_is_empty(self):
+        never = os.path.realpath(os.path.join(self.root, "never-started"))
+        os.makedirs(never)
+        cases = (("no_aliases", {}, 0),
+                 ("never_started", {"never": never}, 1))
+        for name, roots, requested in cases:
+            for version in (1, 2):
+                with self.subTest(case=name, version=version):
+                    self.fresh_registry("sources-%s-%d" % (name, version))
+                    self.register_native(self.herd_registry(
+                        roots, name="reg-%s-%d" % (name, version)))
+                    answer = self.answer(self.owner(version=version))
+                    source = self.source(answer)
+                    self.assertEqual(source["health"], contract.HEALTH_FRESH)
+                    self.assertEqual(source["missions"]
+                                     if "missions" in source else [], [])
+                    runtime = self.runtime(answer)
+                    # Genuinely empty: not unavailable, not a failure, and
+                    # not the not-registered message.
+                    self.assertEqual((runtime["state"], runtime["problem"]),
+                                     (contract.RUNTIME_AGENTS_NOT_APPLICABLE,
+                                      NO_ROLE_RECORDS))
+                    self.assertEqual(runtime["agents"], [])
+                    # Inspectable: empty BECAUSE zero roles were recorded
+                    # across the roots actually read, in both passes.
+                    self.assertEqual(runtime["counts"], {
+                        "roots_requested": requested, "roots_read": 0,
+                        "roles_recorded": 0, "roles_live": 0, "verified": 0,
+                        "unverified": 0, "ambiguous": 0, "unavailable": 0,
+                        "represented_by_teams": 0, "roots_over_capacity": 0,
+                        "names_over_bound": 0,
+                        "roots_role_records_unreadable": 0,
+                        "registries_unread": 0})
+                    self.assertIs(type(runtime["first_pass_at"]), int)
+                    self.assertIs(type(runtime["second_pass_at"]), int)
+                    self.assertIsNone(runtime["observed_at"])
+                    # Nothing was captured, and that is disclosed as such.
+                    self.assertFalse(answer["runtime_capture"]["available"])
+
+    def test_3_an_empty_roster_a_live_capture_observed_stays_observed(self):
+        """A capture that RAN (it observed a canonical team's root, or the
+        empty roster's own task root) is a positive two-pass observation of
+        zero roles: it stays ``observed`` with zero agents, exactly as
+        before the missing-source diagnostic."""
+        def canonical_team():
+            store = self.mission_state("mc")
+            self.register(source_id="mc", store=store)
+            _, workspace = self.running_mission(store, task_id=TASK_K)
+            team = self.team("w5k", TASK_K, root=workspace, mission=False)
+            self.register_native(self.herd_registry({}, name="reg-empty"))
+            return team.rows, 0, 0
+
+        def task_without_roles():
+            root = os.path.realpath(os.path.join(self.root, "repo-norole"))
+            os.makedirs(os.path.join(root, ".herd", "state"))
+            self.write(os.path.join(root, ".herd", "state"), "task.json", {
+                "version": 1, "id": TASK_N, "status": "ACTIVE",
+                "description": "SYNTHETIC task", "repo": root,
+                "started_at": NOW})
+            self.register_native(self.herd_registry({"norole": root},
+                                                    name="reg-norole"))
+            return [], 1, 1
+
+        for name, build in (("canonical_team", canonical_team),
+                            ("task_without_roles", task_without_roles)):
+            with self.subTest(case=name):
+                self.fresh_registry("sources-" + name)
+                rows, requested, read = build()
+                answer = self.answer(self.owner(rows, version=2))
+                runtime = self.runtime(answer)
+                self.assertTrue(answer["runtime_capture"]["available"])
+                self.assertEqual(
+                    {key: runtime[key] for key in (
+                        "state", "problem", "caveat", "agents",
+                        "agents_over_bound")},
+                    {"state": contract.RUNTIME_AGENTS_OBSERVED,
+                     "problem": None,
+                     "caveat": "two_pass_agreement_not_atomic_aba_not_detected",
+                     "agents": [], "agents_over_bound": 0})
+                for key in ("observed_at", "first_pass_at", "second_pass_at"):
+                    self.assertIs(type(runtime[key]), int)
+                self.assertEqual(runtime["counts"], {
+                    "roots_requested": requested, "roots_read": read,
+                    "roles_recorded": 0, "roles_live": 0, "verified": 0,
+                    "unverified": 0, "ambiguous": 0, "unavailable": 0,
+                    "represented_by_teams": 0, "roots_over_capacity": 0,
+                    "names_over_bound": 0, "roots_role_records_unreadable": 0,
+                    "registries_unread": 0})
+
+    def test_3_a_single_pass_empty_roster_keeps_its_disclosure(self):
+        """Without the discovery pass the role records are read in ONE
+        source pass: that evidence-quality disclosure is kept for an empty
+        roster too, never replaced by the empty-roster message."""
+        self.register_native(self.herd_registry({}, name="reg-single"))
+        root = os.path.realpath(os.path.join(self.root, "manual-root"))
+        os.makedirs(root)
+        owner = catalog.CatalogService(
+            self.registry.directory, self.clock, [root],
+            self.plan(stdout=listing_stdout([])), monotonic=self.ticks)
+
+        def end():
+            owner.shutdown()
+            owner.settle(10)
+        self.addCleanup(end)
+        runtime = self.runtime(self.answer(owner))
+        self.assertEqual((runtime["state"], runtime["problem"]),
+                         (contract.RUNTIME_AGENTS_UNAVAILABLE,
+                          "role_records_read_in_one_source_pass_only"))
+        self.assertEqual(runtime["counts"]["roles_recorded"], 0)
+
+    def test_3_unreadable_role_records_are_never_an_empty_roster(self):
+        boot = self.team("boot", None, task=False)
+        self.write(os.path.join(boot.root, ".herd", "state"),
+                   "runtime.json", None, raw="[not, an object")
+        self.register_native(self.herd_registry({"boot": boot.root}))
+        runtime = self.runtime(self.answer(self.owner(boot.rows)))
+        self.assertEqual(runtime["counts"]["roots_role_records_unreadable"],
+                         1)
+        self.assertNotEqual(runtime["problem"], NO_ROLE_RECORDS)
+
+    # -- finding 1 of the partial review: an unreadable root is never an EMPTY roster --------------
+
+    def unreadable_case(self, how):
+        """One registered root whose state cannot be read, and nothing else: no capture, no anchor."""
+        self._unreadable_cases = getattr(self, "_unreadable_cases", 0) + 1
+        boot = self.team("u%d" % self._unreadable_cases, None, task=False)
+        state = os.path.join(boot.root, ".herd", "state")
+        alias_path = boot.root
+        if how == "state_refused":        # a symlinked role artifact: refused by the hardened read
+            real = os.path.join(state, "runtime.json")
+            os.rename(real, real + ".real")
+            os.symlink(real + ".real", real)
+        elif how == "state_invalid":      # a task record that is not an object
+            self.write(state, "task.json", None, raw="[not, an object")
+        elif how == "root_refused":       # a registered root that is a symlink
+            alias_path = os.path.join(self.root, "link-to-" + boot.root.rsplit("-", 1)[-1])
+            os.symlink(boot.root, alias_path)
+        elif how == "entry_invalid":      # a registration the locator cannot use
+            alias_path = "relative/not-absolute"
+        elif how == "root_absent":        # a removed checkout: nothing there to read
+            alias_path = os.path.join(self.root, "removed-checkout")
+        self.register_native(self.herd_registry({"chain": alias_path}))
+        return boot
+
+    def test_3_an_unreadable_root_is_never_reported_as_an_empty_roster(self):
+        reasons = {"state_refused": hts.EXCLUDED_STATE_REFUSED,
+                   "state_invalid": hts.EXCLUDED_STATE_INVALID,
+                   "root_refused": hts.EXCLUDED_ROOT_REFUSED,
+                   "entry_invalid": hts.EXCLUDED_ENTRY_INVALID}
+        for how, reason in reasons.items():
+            for version in (1, 2):
+                with self.subTest(case=how, version=version):
+                    self.fresh_registry("sources-%s-%d" % (how, version))
+                    self.unreadable_case(how)
+                    answer = self.answer(self.owner(version=version))
+                    self.assertEqual(self.source(answer)["locators"]["excluded"],
+                                     [{"alias": "chain", "reason": reason}])
+                    runtime = self.runtime(answer)
+                    self.assertNotEqual(runtime["problem"], NO_ROLE_RECORDS)
+                    self.assertEqual((runtime["state"], runtime["problem"]),
+                                     (contract.RUNTIME_AGENTS_UNAVAILABLE,
+                                      hts.PROBLEM_SNAPSHOT_NOT_FRESH))
+                    # visible in the counts: one root requested, none read, ONE unreadable
+                    self.assertEqual(runtime["counts"]["roots_requested"], 1)
+                    self.assertEqual(runtime["counts"]["roots_read"], 0)
+                    self.assertEqual(
+                        runtime["counts"]["roots_role_records_unreadable"], 1)
+
+    def test_3_a_removed_checkout_has_nothing_to_read_so_the_roster_is_empty(self):
+        # registered_root_absent does NOT block the verdict: the checkout is gone, so no record can be
+        # hiding there; the exclusion stays in the locators account and the counts say what was asked.
+        for version in (1, 2):
+            with self.subTest(version=version):
+                self.fresh_registry("sources-absent-%d" % version)
+                self.unreadable_case("root_absent")
+                answer = self.answer(self.owner(version=version))
+                self.assertEqual(self.source(answer)["locators"]["excluded"],
+                                 [{"alias": "chain",
+                                   "reason": hts.EXCLUDED_ROOT_ABSENT}])
+                runtime = self.runtime(answer)
+                self.assertEqual((runtime["state"], runtime["problem"]),
+                                 (contract.RUNTIME_AGENTS_NOT_APPLICABLE,
+                                  NO_ROLE_RECORDS))
+                self.assertEqual(runtime["counts"]["roots_requested"], 1)
+                self.assertEqual(
+                    runtime["counts"]["roots_role_records_unreadable"], 0)
+
+    def test_3_an_unreadable_root_beside_a_live_capture_is_counted_not_hidden(self):
+        # A live capture that ran (a canonical team's root) stays `observed` with zero agents, and the
+        # unreadable root is counted beside it instead of vanishing.
+        store = self.mission_state("mc")
+        self.register(source_id="mc", store=store)
+        _, workspace = self.running_mission(store, task_id=TASK_K)
+        team = self.team("w5k", TASK_K, root=workspace, mission=False)
+        bad = self.team("bad", None, task=False)
+        state = os.path.join(bad.root, ".herd", "state")
+        os.rename(os.path.join(state, "runtime.json"),
+                  os.path.join(state, "runtime.json.real"))
+        os.symlink(os.path.join(state, "runtime.json.real"),
+                   os.path.join(state, "runtime.json"))
+        self.register_native(self.herd_registry({"bad": bad.root}))
+        runtime = self.runtime(self.answer(self.owner(team.rows, version=2)))
+        self.assertEqual(runtime["state"], contract.RUNTIME_AGENTS_OBSERVED)
+        self.assertEqual(runtime["counts"]["roots_role_records_unreadable"], 1)
+        self.assertEqual(runtime["agents"], [])
+
+    def test_3_a_degraded_source_beside_an_empty_one_is_never_empty(self):
+        self.register_native(self.herd_registry({}, name="reg-empty"),
+                             source_id="empty")
+        absent = os.path.join(self.root, "no-repos")
+        os.makedirs(absent)
+        self.register_native(absent, source_id="gone")
+        runtime = self.runtime_for(2)
+        self.assertNotEqual(runtime["problem"], NO_ROLE_RECORDS)
+        self.assertNotEqual(runtime["problem"], NOT_REGISTERED)
+        self.assertEqual(runtime["state"], contract.RUNTIME_AGENTS_UNAVAILABLE)
+
+    def test_the_three_states_are_distinct_and_none_is_the_old_message(self):
+        self.assertEqual(len({NOT_REGISTERED, NO_ROLE_RECORDS,
+                              "task_native_source_not_fresh"}), 3)
+        self.assertEqual(contract.PROBLEM_TASK_NATIVE_SOURCE_NOT_REGISTERED,
+                         NOT_REGISTERED)
+        self.assertEqual(hts.PROBLEM_NO_ROLE_RECORDS, NO_ROLE_RECORDS)
+        self.assertNotIn(OLD_AMBIGUOUS, (NOT_REGISTERED, NO_ROLE_RECORDS))
+        # The engine-neutral package names no engine in the new code.
+        self.assertNotIn("herd", NOT_REGISTERED)
 
 
 class VocabularyTests(unittest.TestCase):

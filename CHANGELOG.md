@@ -17,6 +17,26 @@
   is a function of the clock, not a simulation. See docs/pixel-agents-office.md, "The living city: lighting and
   weather".
 
+- **Native Herdr teams found without per-team setup, and desks that are easier to find in crowded offices.** `python3 dicatalog.py
+  task-source --registry DIR --ensure` registers DI's native task source once (the directory `herdctl init` keeps its repository list in,
+  `~/.config/dodging-infinity` unless `--store-dir` says otherwise); after that the teams working in an initialised repository need no
+  per-team source configuration, and the Pixel Agents DI office shows their current verified roles within the limits it discloses (a team can
+  still be absent: its session may not bind, its records may be stale, a source may be refused or unreadable, or the runtime listing may be
+  over its fixed capacity). Without `--ensure` it only reports, as one JSON line, whether the source is
+  registered and the exact command to run. It writes only the registry, never creates the registry directory, never rewrites or repairs an
+  existing entry, and answers a registry it could not write with outcome `failed` and exit 5 after reading it again, so a replacement that had
+  already landed is reported as unconfirmed rather than as unchanged. The runtime-agents block now says why no team shows: no task-native
+  source is registered (`task_native_source_not_registered`), the registered sources were read fresh and record no roles
+  (`task_native_sources_record_no_roles`, an empty roster with its counts), or some role records could not be read (counted, never called
+  empty). A seat fix keeps the members of a Mission at desks ahead of idle runtime agents, whether the office loaded fresh or the team
+  arrived later. In a crowded working office the office now draws a bounded number of its decorative residents at once: at most 16, and
+  fewer in a small floor, ceil(T / 34) where T is the pool's resident-eligible tiles (4 of 140 in the default office, 16 of 140 in
+  the expanded-office preset). The others are off duty, resting where they stand; residents take turns on duty, one hand-over per working office every six
+  seconds, at a pause; the legend says "N on duty of M". Nothing is deleted or re-identified: ids, jobs, routines, journeys, the subway and saved snapshots are unchanged,
+  and an older save reopens exactly. The Palace was already readable and is unchanged (its 11 residents are below the bound). The six-second
+  cadence was judged from moving frames only. The resident policy is decoration only: it changes nothing about Missions, agents, activity,
+  assignment, approval or delivery (the seat fix above is a separate change to which agent gets which desk). See README step 4 and docs/pixel-agents-office.md, "Ambient residents and jobs".
+
 - **Codex Orchestrator: request, review, approve, start and follow a Mission from the
   Pixel Agents DI office.** The one deliberate exception to "the office only
   observes". A person asks for work in ordinary words (a restricted, read-only
