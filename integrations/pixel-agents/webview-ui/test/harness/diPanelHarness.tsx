@@ -11,6 +11,9 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { DiOfficeState } from '../../../core/src/messages.ts';
+import type { DiCodeReviewAccess } from '../../src/components/DiCodeReviewEntry.tsx';
+import type { DiMissionRequestAccess } from '../../src/components/DiMissionRequestEntry.tsx';
+import { INITIAL_STATE } from '../../src/components/diMissionRequestModel.ts';
 import { DiOfficePanel } from '../../src/components/DiOfficePanel.tsx';
 import type { OfficeState } from '../../src/office/engine/officeState.ts';
 import fixture from '../fixtures/di-office-state-session-mismatch-v2.FIXTURE.json';
@@ -39,6 +42,37 @@ const office = {
   getLayout: () => ({ areas: [] as Array<{ label: string; color: string }> }),
 };
 
+/**
+ * FIXTURE stand-ins for the App's two entry seams, recording what a person's action reached: the live
+ * code review (offered per member by the office state) and the Mission request workspace (configured:
+ * availability "ok"). They open nothing themselves; the App's own tests cover the dialogs they open.
+ */
+const calls = {
+  review: [] as Array<{
+    missionRef: string;
+    memberRef: string;
+    taskId: string;
+    listing: string;
+    openerTestId: string | null;
+  }>,
+  mission: [] as Array<{ tab: string; openerTestId: string | null }>,
+};
+const review: DiCodeReviewAccess = {
+  open: (target, opener) =>
+    calls.review.push({
+      missionRef: target.missionRef,
+      memberRef: target.memberRef,
+      taskId: target.taskId,
+      listing: target.listing,
+      openerTestId: opener.getAttribute('data-testid'),
+    }),
+};
+const missionAccess: DiMissionRequestAccess = {
+  state: { ...INITIAL_STATE, availability: { kind: 'ok' } },
+  open: (tab, opener) =>
+    calls.mission.push({ tab, openerTestId: opener.getAttribute('data-testid') }),
+};
+
 const listeners = new Set<(next: DiOfficeState) => void>();
 
 export function Harness() {
@@ -55,6 +89,8 @@ export function Harness() {
       officeState={office as unknown as OfficeState}
       collapsed={false}
       onCollapsedChange={() => undefined}
+      review={review}
+      mission={missionAccess}
     />
   );
 }
@@ -63,6 +99,7 @@ declare global {
   interface Window {
     __diHarness: {
       office: typeof office;
+      calls: typeof calls;
       initial: DiOfficeState;
       /** Publish a new office state (a later projection), as the transport would. */
       update: (edit: (state: DiOfficeState) => DiOfficeState) => void;
@@ -74,6 +111,7 @@ declare global {
 let latest = initial;
 window.__diHarness = {
   office,
+  calls,
   initial,
   update: (edit) => {
     latest = edit(structuredClone(latest));

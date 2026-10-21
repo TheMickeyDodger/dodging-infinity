@@ -158,18 +158,51 @@ test('arrow keys, Home and End move between runtime rows; Space selects', async 
   assert.equal(await selectedId(), agent.characterId);
 });
 
-test('keyboard focus on a row is VISIBLE: the same 2px solid accent outline as a reception entry', async () => {
-  assert.notEqual(await tabTo('[data-testid="di-reception-entry"]'), null);
-  const reception = await focusOutline();
-  assert.equal(reception.style, 'solid');
-  assert.equal(reception.width, '2px');
-  assert.notEqual(await tabTo('[data-testid="di-runtime-row"]'), null);
-  assert.deepEqual(await focusOutline(), reception);
+/**
+ * feature13: a Mission card's team roster is a CLOSED disclosure ("Team members (n)"), off the card
+ * face by default. Reach it as a person does: Tab to its summary, check it is closed and its rows
+ * are not shown, open it with Enter. Returns the Tab presses it took.
+ */
+async function openFirstRoster(): Promise<number> {
+  const presses = await tabTo('[data-testid="di-mission-roster"] > summary');
+  assert.notEqual(presses, null, 'Tab never reached a team roster disclosure');
+  const before = await p().evaluate(() => {
+    const d = document.activeElement!.parentElement as HTMLDetailsElement;
+    const row = d.querySelector('[data-testid="di-member-row"]');
+    // checkVisibility(): false inside a closed disclosure (its content is not rendered).
+    return { open: d.open, rowShown: row ? row.checkVisibility() : null };
+  });
+  assert.deepEqual(before, { open: false, rowShown: false }, 'the roster is off the card face');
+  assert.match(
+    await activeText(),
+    /^Team members \(\d+\)$/,
+    'the disclosure names itself and its size',
+  );
+  await p().keyboard.press('Enter');
+  assert.equal(
+    await p().evaluate(() => (document.activeElement!.parentElement as HTMLDetailsElement).open),
+    true,
+    'Enter opens the roster',
+  );
+  return presses!;
+}
+
+test('keyboard focus on a row is VISIBLE: the same 2px solid accent outline on every list control', async () => {
+  await openFirstRoster();
+  const summary = await focusOutline();
+  assert.equal(summary.style, 'solid');
+  assert.equal(summary.width, '2px');
   assert.notEqual(await tabTo('[data-testid="di-member-row"]'), null);
-  assert.deepEqual(await focusOutline(), reception);
+  const member = await focusOutline();
+  assert.deepEqual(member, summary);
+  assert.notEqual(await tabTo('[data-testid="di-reception-entry"]'), null);
+  assert.deepEqual(await focusOutline(), member);
+  assert.notEqual(await tabTo('[data-testid="di-runtime-row"]'), null);
+  assert.deepEqual(await focusOutline(), member);
 });
 
-test('Tab reaches a team member row; Enter selects that member', async () => {
+test('Tab reaches a team member row (once its roster is opened); Enter selects that member', async () => {
+  await openFirstRoster();
   assert.notEqual(
     await tabTo('[data-testid="di-member-row"]'),
     null,
@@ -227,13 +260,25 @@ test('the unverified listing: every record listed, reachable by keyboard, opened
   assert.equal(await selectedId(), null, 'an unverified record never becomes a drawn selection');
   const record = unverified.find((a) => label.includes(a.agent));
   assert.ok(record);
-  // Provenance (the raw reason, the recorded session) is behind a labelled disclosure.
+  // Provenance (the raw reason, the recorded session) is behind a labelled disclosure. feature13:
+  // the dock face carries NONE of it (stronger than before); the inspector holds it, after the
+  // plain outcome and behind its disclosure.
+  const dockFace = (await text('di-selected-unverified')) ?? '';
+  assert.ok(!dockFace.includes(record.identityReason), 'no raw reason code on the dock face');
+  if (record.session) assert.ok(!dockFace.includes(record.session), 'no raw session on the face');
+  await p().click('[data-testid="di-open-inspector-selection"]');
+  await p().waitForSelector('[data-testid="di-inspector-unverified"]');
   const html = await p().evaluate(
-    () => document.querySelector('[data-testid="di-selected-unverified"]')?.innerHTML ?? '',
+    () => document.querySelector('[data-testid="di-inspector-unverified"]')?.innerHTML ?? '',
   );
   const details = html.indexOf('<details');
   assert.ok(details > 0);
+  assert.ok(html.indexOf('Not established') < details, 'the plain outcome precedes the disclosure');
   assert.ok(html.indexOf(record.identityReason) > details);
+  if (record.session) assert.ok(html.indexOf(record.session) > details);
+  await p().keyboard.press('Escape');
+  await p().waitForSelector('[role="dialog"]', { state: 'detached' });
+  assert.equal(await selectedId(), null, 'closing the inspector selects nothing');
 });
 
 // -- item 08: find ----------------------------------------------------------------------------

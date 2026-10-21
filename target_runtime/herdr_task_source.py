@@ -124,6 +124,13 @@ ROOT_KEY_HEX = 12
 #: The display objective: the task description's first non-empty line,
 #: bounded (a description is a whole prompt). Display only, never identity.
 MAX_OBJECTIVE_CHARS = 160
+#: The headings ``herdctl task --mission`` writes into a task description
+#: (herdctl.py ``task``): the first section's, and the four optional ones that
+#: follow it. Exact strings; see ``_objective``.
+_MISSION_OBJECTIVE_HEADING = "OBJECTIVE"
+_MISSION_SECTION_HEADINGS = frozenset(
+    (_MISSION_OBJECTIVE_HEADING, "CONSTRAINTS", "RULES",
+     "ACCEPTANCE CRITERIA", "VERIFICATION"))
 
 # Source-level problems: the registry document itself.
 PROBLEM_REGISTRY_ABSENT = "herdr_registry_absent"
@@ -412,14 +419,40 @@ def _root_state(root, reservation):
 
 
 def _objective(description):
+    """The display objective: the description's first non-empty line, bounded.
+
+    ONE exact exception, for the description ``herdctl task --mission`` writes
+    (herdctl.py ``task``): sections joined by a blank line, the first being the
+    literal line ``OBJECTIVE`` followed by the mission's objective, then
+    optionally ``CONSTRAINTS``, ``RULES``, ``ACCEPTANCE CRITERIA`` and
+    ``VERIFICATION``, each followed by ``- `` bullet lines. When the first
+    non-empty line is exactly ``OBJECTIVE``, the objective is the NEXT non-empty
+    line, unless that line is exactly one of the five formatter headings
+    (``_MISSION_SECTION_HEADINGS``, ``OBJECTIVE`` itself included) or there is no
+    next line: then it is unknown (``None``). An empty objective is written as
+    ``OBJECTIVE`` followed directly by the next section's heading, and a repeated
+    heading is indistinguishable from a malformed record, so both are unknown (an
+    objective that is literally one of those five words is therefore unknown too):
+    a heading is never returned as a goal. Any other next line is returned as
+    written, including one that begins with ``- ``: the formatter's bullets only
+    ever follow a section heading, a heading in this position is refused before
+    its bullets are reached, so from the formatter a ``- `` line here is the
+    objective's own text. Any other FIRST line is returned exactly as before. The
+    only comparison is of a stripped line against those five exact strings;
+    nothing else about a line is inspected. Display only, never identity."""
     if type(description) is not str:
         return None
-    for line in description.splitlines():
-        line = line.strip()
-        if line:
-            return (line if len(line) <= MAX_OBJECTIVE_CHARS
-                    else line[:MAX_OBJECTIVE_CHARS - 1] + "…")
-    return None
+    lines = (line for line in (raw.strip() for raw in description.splitlines())
+             if line)
+    first = next(lines, None)
+    if first == _MISSION_OBJECTIVE_HEADING:
+        first = next(lines, None)
+        if first in _MISSION_SECTION_HEADINGS:
+            first = None
+    if first is None:
+        return None
+    return (first if len(first) <= MAX_OBJECTIVE_CHARS
+            else first[:MAX_OBJECTIVE_CHARS - 1] + "…")
 
 
 def _int_or_none(value):

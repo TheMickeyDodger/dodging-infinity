@@ -171,6 +171,28 @@ async function waitForCharacter(id: number) {
     { timeout: 30_000 },
   );
 }
+/**
+ * feature13: the evidence library lives in the full-size inspector. Reach it the way a person does:
+ * the Mission card's labelled "Evidence library" doorway, by keyboard (focus, Enter).
+ */
+async function openEvidence(owner?: { state: DiOfficeState; artifactId: string }) {
+  // The Mission that LISTS the artifact owns the doorway (a state can hold several libraries).
+  const ownerRef = owner
+    ? owner.state.missions.missions.find((m) =>
+        m.evidence?.artifacts.items.some((a) => a.artifactId === owner.artifactId),
+      )?.missionRef
+    : undefined;
+  if (owner && ownerRef === undefined) assert.fail(`no Mission lists ${owner.artifactId}`);
+  const door = ownerRef
+    ? `[data-mission-ref="${ownerRef}"] [data-testid="di-open-evidence"]`
+    : '[data-testid="di-open-evidence"]';
+  await p().waitForSelector(door, { timeout: 30_000 });
+  await p().focus(door);
+  await p().keyboard.press('Enter');
+  await p().waitForSelector('[role="dialog"] [data-testid="di-evidence-library"]', {
+    timeout: 30_000,
+  });
+}
 async function openPanel() {
   await p().waitForSelector(
     '[data-testid="di-office-panel"], [data-testid="di-office-panel-collapsed"]',
@@ -393,6 +415,7 @@ test(
     });
     send(evidence.states.live);
     await openPanel();
+    await openEvidence();
     const row = `[data-testid="di-evidence-artifact-row"][data-artifact-id="${html.artifactId}"]`;
     await p().waitForSelector(row, { timeout: 30_000 });
     await p().focus(row);
@@ -454,6 +477,7 @@ test(
       evidence.states.links64.missions.missions[0].evidence!.verification.items[0].artifactIds;
     send(evidence.states.links64);
     await openPanel();
+    await openEvidence();
     await p().waitForSelector('[data-testid="di-evidence-link-count"]', { timeout: 30_000 });
     assert.equal(ids.length, 64);
     let entries = await linkEntries();
@@ -534,6 +558,7 @@ test(
     answerReads(evidence, received);
     send(evidence.states.live);
     await openPanel();
+    await openEvidence();
     await readRow(text.artifactId);
     await p().waitForSelector('[data-testid="di-evidence-text"]', { timeout: 10_000 });
     assert.equal(await shownText(), text.content!.text);
@@ -585,6 +610,7 @@ test(
     expiring.times.validUntil = Math.floor(Date.now() / 1000) + 3;
     send(expiring);
     await openPanel();
+    await openEvidence();
     await readRow(text.artifactId);
     await p().waitForSelector('[data-testid="di-evidence-text"]', { timeout: 10_000 });
     assert.equal(await shownText(), text.content!.text);
@@ -642,6 +668,7 @@ test(
     answerReads(h, received);
     send(h.states.live);
     await openPanel();
+    await openEvidence({ state: h.states.live, artifactId: text.artifactId });
     await p().waitForSelector(rowOf(text.artifactId), { timeout: 30_000 });
     const execution = (await historicalLibrary()).find(
       (e) => e.basis === 'historical_completed_execution',
@@ -721,6 +748,7 @@ test(
     answerReads(h, []);
     send(h.states.live);
     await openPanel();
+    await openEvidence({ state: h.states.live, artifactId: text.artifactId });
     await readRow(text.artifactId);
     await p().waitForSelector('[data-testid="di-evidence-text"]', { timeout: 10_000 });
     send(h.states.stale);

@@ -14,7 +14,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
-import { expect, type Page, test, type WebSocketRoute } from '@playwright/test';
+import { expect, type Locator, type Page, test, type WebSocketRoute } from '@playwright/test';
 
 import { buildRealisticFixture } from './realisticFixture';
 
@@ -194,8 +194,9 @@ async function characterPoint(
   );
 }
 
-async function expectInViewport(page: Page, testId: string): Promise<void> {
-  const box = await page.getByTestId(testId).boundingBox();
+async function expectInViewport(page: Page, target: string | Locator): Promise<void> {
+  const testId = typeof target === 'string' ? target : 'element';
+  const box = await (typeof target === 'string' ? page.getByTestId(target) : target).boundingBox();
   const viewport = page.viewportSize()!;
   expect(box, `${testId} rendered`).not.toBeNull();
   expect(box!.y, `${testId} top`).toBeGreaterThanOrEqual(0);
@@ -205,6 +206,87 @@ async function expectInViewport(page: Page, testId: string): Promise<void> {
   expect(box!.x + box!.width, `${testId} right within the viewport`).toBeLessThanOrEqual(
     viewport.width,
   );
+}
+
+/**
+ * feature13: the full-size INSPECTOR, reached as a person does. A Mission's card carries an explicit
+ * "Open inspector"; the Selected dock carries one for the selection. `read` runs inside the open
+ * dialog; the dialog is then closed with Escape (focus returns to the opener).
+ */
+async function inInspector<T>(
+  page: Page,
+  opener: Locator,
+  read: (dialog: Locator) => Promise<T>,
+): Promise<T> {
+  await opener.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 5_000 });
+  try {
+    return await read(dialog);
+  } finally {
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  }
+}
+const missionInspector = <T>(page: Page, missionRef: string, read: (d: Locator) => Promise<T>) =>
+  inInspector(
+    page,
+    page.locator(`[data-mission-ref="${missionRef}"]`).getByTestId('di-open-inspector-mission'),
+    read,
+  );
+const selectionInspector = <T>(page: Page, read: (d: Locator) => Promise<T>) =>
+  inInspector(
+    page,
+    page.getByTestId('di-selected-agent').getByTestId('di-open-inspector-selection'),
+    read,
+  );
+
+/** The "model confirmed running" value of a record, inside an open inspector. */
+const modelConfirmed = (scope: Locator) =>
+  scope
+    .getByText('model confirmed running', { exact: true })
+    .locator('xpath=following-sibling::span[1]');
+
+/** One member's raw provenance row in an open Mission inspector (identified by its complete ref). */
+const provenanceRow = (dialog: Locator, memberRef: string) =>
+  dialog
+    .getByTestId('di-inspector-provenance')
+    .locator('.di-op-row')
+    .filter({ hasText: memberRef })
+    // the "status derived from" row cites every member by ref too: it is not the member's own row
+    .filter({ hasNotText: 'status derived from' });
+
+/**
+ * A complete source-qualified ref is shown WHOLE: the element's text is exactly the ref (no
+ * ellipsis) and every one of its line boxes lies inside its dock or dialog.
+ */
+async function refShownWhole(ref: Locator, expected: string): Promise<void> {
+  const result = await ref.evaluate((el) => {
+    const box = el
+      .closest('[data-testid="di-selected-agent"], [role="dialog"]')!
+      .getBoundingClientRect();
+    const rects = Array.from(el.getClientRects());
+    return {
+      text: el.textContent,
+      ellipsis: getComputedStyle(el).textOverflow === 'ellipsis',
+      inside:
+        rects.length > 0 &&
+        rects.every((r) => r.left >= box.left - 0.5 && r.right <= box.right + 0.5),
+    };
+  });
+  expect(result).toEqual({ text: expected, ellipsis: false, inside: true });
+}
+
+/** A Mission card's roster rows are inside a closed "Team members" disclosure: open it, as a person does. */
+async function rosterRow(page: Page, missionRef: string, logical: string): Promise<Locator> {
+  const card = page.locator(`[data-mission-ref="${missionRef}"]`);
+  const roster = card.getByTestId('di-mission-roster');
+  if (!(await roster.evaluate((el) => (el as HTMLDetailsElement).open)))
+    await roster.locator('summary').click();
+  return card
+    .getByTestId('di-member-row')
+    .filter({ hasText: `${logical} (` })
+    .first();
 }
 
 test('DI office production build: usable with eleven realistic-length FIXTURE Missions', async ({
@@ -521,18 +603,41 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
       .click();
     await expect(page.getByTestId('di-settings-note')).toHaveCount(0);
 
-    // All four first-gate items readily visible, no scrolling.
-    for (const id of ['di-freshness-summary', 'di-coverage', 'di-selected-agent', 'di-missions'])
-      await expectInViewport(page, id);
+    // feature13 (section 0): the Missions LEAD. The first Mission's objective, observed status and team
+    // are readily visible without scrolling, with the coverage caveat and the Selected dock inside the
+    // viewport. (The envelope/runtime freshness rows moved out of the first screen by design: they are
+    // asserted below where they now live, reachable with one scroll of the Missions region.)
+    const firstCard = page.locator(`[data-mission-ref="${fixture.missionRefs[0]}"]`);
+    await expectInViewport(page, firstCard.getByTestId('di-mission-objective'));
+    await expectInViewport(page, firstCard.getByTestId('di-op-status'));
+    await expectInViewport(page, firstCard.getByTestId('di-mission-team'));
+    for (const id of ['di-coverage', 'di-selected-agent']) await expectInViewport(page, id);
     await expect(page.getByTestId('di-coverage')).toContainText(
       'Linked child-task roles: NOT COVERED',
     );
-    await expect(page.getByTestId('di-freshness-summary')).toContainText('fresh');
-    await expect(page.getByTestId('di-freshness-summary')).toContainText('served refreshed');
+    // Freshness is stated and reachable: in the Office data section, one scroll away, still in the
+    // viewport once there; the face carries the office's LIVE state.
+    await expect(page.getByTestId('di-office-panel')).toContainText('DI Mission office: LIVE');
+    const freshness = page.getByTestId('di-freshness-summary');
+    await freshness.scrollIntoViewIfNeeded();
+    await expectInViewport(page, 'di-freshness-summary');
+    await expect(freshness).toContainText('fresh');
+    await expect(freshness).toContainText('served refreshed');
     const missionsList = page.getByTestId('di-missions');
     await expect(missionsList).toContainText('Missions: 11');
-    for (const ref of fixture.missionRefs) await expect(missionsList).toContainText(ref);
-    const bounded = await missionsList.evaluate((el) => ({
+    // Every one of the eleven Missions is its OWN card, identified by its complete source-qualified
+    // ref (exact, never a substring), and that ref is shown whole in its inspector.
+    for (const ref of fixture.missionRefs) {
+      await expect(page.locator(`[data-mission-ref="${ref}"]`)).toHaveCount(1);
+      await missionInspector(page, ref, async (dialog) => {
+        await refShownWhole(dialog.getByTestId('di-inspector-qualifier'), ref);
+      });
+    }
+    await page.getByTestId('di-missions').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    // The Missions live in ONE bounded scroll region (the panel's main region), inside the viewport.
+    const region = page.getByTestId('di-op-main');
+    await expectInViewport(page, 'di-op-main');
+    const bounded = await region.evaluate((el) => ({
       scrolls: el.scrollHeight > el.clientHeight,
       overflowY: getComputedStyle(el).overflowY,
     }));
@@ -560,14 +665,15 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     const point = await characterPoint(page, target.characterId!);
     await page.mouse.click(point.x, point.y);
     const selected = page.getByTestId('di-selected-agent');
-    await expect(selected).toContainText(target.memberRef, { timeout: 5_000 });
+    // The dock is concise: it names the member (logical and role) and its Mission by the COMPLETE
+    // source-qualified ref (shown whole, never clipped), with identity and state in words.
+    const logical = target.memberRef.split('#')[1];
+    await expect(selected.getByTestId('di-selected-member')).toContainText(logical, {
+      timeout: 5_000,
+    });
     await expect(selected).toContainText(target.missionRef);
-    await expect(selected).toContainText(target.taskId.value!);
-    await expect(selected).toContainText('session_confirmed');
-    const refFits = await selected
-      .getByText(target.missionRef, { exact: true })
-      .evaluate((el) => ({ text: el.textContent, fits: el.scrollWidth <= el.clientWidth }));
-    expect(refFits).toEqual({ text: target.missionRef, fits: true }); // full source qualifier, never clipped
+    await expect(selected).toContainText('identity confirmed');
+    await refShownWhole(selected.getByText(target.missionRef, { exact: true }), target.missionRef);
     await expectInViewport(page, 'di-selected-agent');
     // The canvas label agrees with the office state (never a tool-derived "Idle"), and the
     // inert "Close agent" control is not offered in DI mode.
@@ -579,13 +685,17 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     await expect(page.getByTitle('Close agent')).toHaveCount(0);
     await delay(400);
     await shot(page, '02-agent-selected-by-click-FIXTURE.png');
-    // Provider comes from the PROJECTION; the model is the literal "unknown", rendered as such.
-    const modelValue = (scope: typeof selected) =>
-      scope
-        .locator('span', { hasText: /^running model$/ })
-        .locator('xpath=following-sibling::span[1]');
-    await expect(selected).toContainText('pod-executor1 / claude');
-    await expect(modelValue(selected)).toHaveText('unknown');
+    // The raw identity fields live in the inspector (one "Open inspector" away): asserted there,
+    // exactly. Provider comes from the PROJECTION; the model is "unknown", rendered as such.
+    await selectionInspector(page, async (dialog) => {
+      const member = dialog.getByTestId('di-inspector-member');
+      await expect(member).toContainText(target.memberRef);
+      await expect(member).toContainText(target.missionRef);
+      await expect(member).toContainText(target.taskId.value!);
+      await expect(member).toContainText('present (session_confirmed)');
+      await expect(member).toContainText('pod-executor1 / claude');
+      await expect(modelConfirmed(member)).toHaveText('unknown (no supported source reports it)');
+    });
 
     // FRAMING at DPR 1 (same 1440x900, its own context): the fit picks HALF the DPR-2 zoom's
     // device pixels for the same world, and characters stay clickable.
@@ -643,10 +753,16 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
           (window as unknown as HooksWindow).__pixelAgentsTestHooks!.getView!(),
         ),
       });
+      const p1Selected = p1.getByTestId('di-selected-agent');
       await expect(
-        p1.getByTestId('di-selected-agent'),
+        p1Selected.getByTestId('di-selected-member'),
         `DPR 1 click selects ${p1Target.memberRef}; observed ${p1Observed}`,
-      ).toContainText(p1Target.memberRef, { timeout: 5_000 });
+      ).toContainText(p1Target.memberRef.split('#')[1], { timeout: 5_000 });
+      await expect(p1Selected).toContainText(p1Target.missionRef);
+      // ...and the canvas selected THAT character: its label appears on it.
+      await expect(
+        p1.locator(`[data-testid="agent-overlay"][data-agent-id="${p1Target.characterId}"]`),
+      ).toContainText('busy');
       await labelFixture(p1);
       await shot(p1, '02c-framing-1440x900-dpr1-FIXTURE.png');
       await ctx1.close();
@@ -663,9 +779,16 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     const codexPoint = await characterPoint(page, codexTarget.characterId!);
     expect(codexPoint.onCanvas, `supervisor clickable (top ${codexPoint.topElement})`).toBe(true);
     await page.mouse.click(codexPoint.x, codexPoint.y);
-    await expect(selected).toContainText(codexTarget.memberRef, { timeout: 5_000 });
-    await expect(selected).toContainText('pod-supervisor / codex');
-    await expect(modelValue(selected)).toHaveText('unknown');
+    await expect(selected.getByTestId('di-selected-member')).toContainText('supervisor', {
+      timeout: 5_000,
+    });
+    await expect(selected).toContainText(codexTarget.missionRef);
+    await selectionInspector(page, async (dialog) => {
+      const member = dialog.getByTestId('di-inspector-member');
+      await expect(member).toContainText(codexTarget.memberRef);
+      await expect(member).toContainText('pod-supervisor / codex');
+      await expect(modelConfirmed(member)).toHaveText('unknown (no supported source reports it)');
+    });
     await delay(400);
     await shot(page, '02b-codex-agent-selected-by-click-FIXTURE.png');
 
@@ -673,17 +796,29 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     const replacedRef = [...fixture.members.entries()].find(
       ([, m]) => m.classification === 'replaced',
     )![0];
-    const replacedRow = page
-      .getByTestId('di-member-row')
-      .filter({ hasText: replacedRef.split('#')[1] });
+    const [replacedMissionRef, replacedLogical] = replacedRef.split('#');
+    // The face (its card): the team line counts it NOT live, and its roster row says in words that
+    // it is a replaced member and not live.
+    await expect(
+      page.locator(`[data-mission-ref="${replacedMissionRef}"]`).getByTestId('di-mission-team'),
+    ).toContainText('Team 2 · 1 live');
+    const replacedRow = await rosterRow(page, replacedMissionRef, replacedLogical);
     await replacedRow.scrollIntoViewIfNeeded();
-    await expect(replacedRow).toContainText('replaced (session_changed)');
-    await expect(replacedRow).toContainText('NOT LIVE: member_replaced:session_changed');
-    await expect(replacedRow).toContainText(`sess-${replacedRef.split('#')[1]}-1`);
-    await expect(replacedRow).toContainText(`sess-${replacedRef.split('#')[1]}-2`);
-    await expect(missionsList).toContainText('2 (1 live)');
+    await expect(replacedRow).toContainText('replaced by another session');
+    await expect(replacedRow).toContainText('NOT LIVE');
     expect((await seatedCharacters(page)).length).toBe(liveMemberCount);
     await shot(page, '03-replaced-visible-unconfirmed-FIXTURE.png');
+    // The raw fields, verbatim, in the Mission's inspector (provenance): both sessions.
+    await missionInspector(page, replacedMissionRef, async (dialog) => {
+      const row = provenanceRow(dialog, replacedRef);
+      await expect(row).toContainText('replaced (session_changed)');
+      await expect(row).toContainText('NOT LIVE: member_replaced:session_changed');
+      await expect(row).toContainText(`sess-${replacedLogical}-1`);
+      await expect(row).toContainText(`sess-${replacedLogical}-2`);
+      await expect(dialog.locator(`[data-member-ref="${replacedRef}"]`)).toContainText(
+        'replaced in the last observation',
+      );
+    });
 
     // (e) freshness detail: the distinct times, one interaction away.
     await page.getByText('Freshness detail and times').click();
@@ -711,12 +846,30 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
       .getByTestId('di-office-panel')
       .getByText('waiting: catalog_refresh_throttled');
     await expect(header.first()).toBeVisible({ timeout: 20_000 });
-    const tones = await page
-      .getByTestId('di-office-panel')
-      .getByText(/waiting: catalog_refresh_throttled|no_response:catalog_refresh_throttled/)
-      .evaluateAll((els) => els.map((el) => el.className));
-    expect(tones.length).toBeGreaterThan(0);
-    for (const tone of tones) expect(tone).not.toMatch(/danger|warning/);
+    // The elements that EXPRESS the waiting state — the header and the Office data envelope row —
+    // and the Missions state stay in the neutral tone: neither error (danger) nor caution (warning).
+    const officePanel = page.getByTestId('di-office-panel');
+    const tonesOf = (loc: Locator) => loc.evaluateAll((els) => els.map((el) => el.className));
+    const waitingTones = await tonesOf(officePanel.getByText('waiting: catalog_refresh_throttled'));
+    expect(waitingTones.length).toBeGreaterThanOrEqual(2);
+    for (const tone of waitingTones) expect(tone).not.toMatch(/danger|warning/);
+    const missionsStateTones = await tonesOf(
+      page.getByTestId('di-missions').locator('.di-op-section-title > span'),
+    );
+    expect(missionsStateTones.length).toBeGreaterThan(0);
+    for (const tone of missionsStateTones) expect(tone).not.toMatch(/danger|warning/);
+    // EVERY element that carries the reason — the reception desk's separate staleness notice
+    // included — never takes the ERROR tone. (That notice uses the product's CAUTION tone by design
+    // since the desk was added, DiReceptionDesk.tsx, which postdates this spec's single revision; the
+    // old blanket "no warning" assertion on all reason-bearing elements was therefore already
+    // unsatisfiable at HEAD, independent of feature13.)
+    const allTones = await tonesOf(
+      officePanel.getByText(
+        /waiting: catalog_refresh_throttled|no_response:catalog_refresh_throttled/,
+      ),
+    );
+    expect(allTones.length).toBeGreaterThanOrEqual(waitingTones.length + missionsStateTones.length);
+    for (const tone of allTones) expect(tone).not.toMatch(/danger/);
     await expect
       .poll(async () => (await seatedCharacters(page)).length, { timeout: 5_000 })
       .toBe(0);
@@ -751,19 +904,28 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     expect((await seatedCharacters(page)).map((c) => c.id).sort((a, b) => a - b)).toEqual(
       idsBefore,
     ); // unknown, not gone: no character removed
-    const executorRow = page.getByTestId('di-member-row').filter({ hasText: 'executor1' }).first();
-    await expect(executorRow).toContainText('present (session_confirmed)'); // verbatim, never relabelled
-    await expect(executorRow).toContainText('NOT LIVE: transport_reconnecting');
-    // Every previously live member keeps its verbatim backend values (never disappeared/ended).
-    for (const member of live) {
-      const logical = member.memberRef.split('#')[1];
-      await expect(
-        page
-          .getByTestId('di-member-row')
-          .filter({ hasText: `${logical} (` })
-          .first(),
-      ).toContainText('present (session_confirmed)');
-    }
+    // The face (the card's roster, its disclosure opened as a person does): the row keeps its identity
+    // in words and says NOT LIVE — never relabelled as gone.
+    const execTarget = live.find((m) => m.memberRef.endsWith('#executor1'))!;
+    const executorRow = await rosterRow(page, execTarget.missionRef, 'executor1');
+    await expect(executorRow).toContainText('identity confirmed');
+    await expect(executorRow).toContainText('NOT LIVE');
+    // The raw backend values stay VERBATIM — never relabelled, never disappeared/ended — for EVERY
+    // previously live member, asserted in each Mission's inspector (provenance).
+    const liveByMission = new Map<string, typeof live>();
+    for (const member of live)
+      liveByMission.set(member.missionRef, [
+        ...(liveByMission.get(member.missionRef) ?? []),
+        member,
+      ]);
+    for (const [missionRef, members] of liveByMission)
+      await missionInspector(page, missionRef, async (dialog) => {
+        for (const member of members) {
+          const row = provenanceRow(dialog, member.memberRef);
+          await expect(row).toContainText('present (session_confirmed)');
+          await expect(row).toContainText('NOT LIVE: transport_reconnecting');
+        }
+      });
     await expect(panel).toContainText('DI Mission office: NOT LIVE: transport_reconnecting');
     await shot(page, '07-server-lost-not-live-FIXTURE.png');
 
@@ -827,11 +989,18 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     expect(drawnNow).not.toContain(removedId); // removal reconciled
     expect(drawnNow).not.toContain(replacedId); // replaced: not drawn, not live
     expect(drawnNow).toContain(addedId); // addition reconciled
-    const leadRow = page.getByTestId('di-member-row').filter({ hasText: 'lead1 (' }).first();
+    // lead1 is REPLACED in the reconciled roster: visible, in words on its card and, verbatim with
+    // both sessions, in its Mission's inspector.
+    const leadMissionRef = rosterReplacedRef.split('#')[0];
+    const leadRow = await rosterRow(page, leadMissionRef, 'lead1');
     await leadRow.scrollIntoViewIfNeeded();
-    await expect(leadRow).toContainText('replaced (session_changed)'); // visible, verbatim
-    await expect(leadRow).toContainText('sess-lead1-1');
-    await expect(leadRow).toContainText('sess-lead1-2');
+    await expect(leadRow).toContainText('replaced by another session');
+    await missionInspector(page, leadMissionRef, async (dialog) => {
+      const row = provenanceRow(dialog, rosterReplacedRef);
+      await expect(row).toContainText('replaced (session_changed)'); // visible, verbatim
+      await expect(row).toContainText('sess-lead1-1');
+      await expect(row).toContainText('sess-lead1-2');
+    });
     await expect.poll(typingCount, { timeout: 30_000 }).toBe(liveMemberCount - 1);
     await shot(page, '08b-reconnect-reconciled-FIXTURE.png');
 
@@ -958,11 +1127,19 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     const bPoint = await characterPoint(page, bId);
     expect(bPoint.onCanvas, `B clickable (top ${bPoint.topElement})`).toBe(true);
     await page.mouse.click(bPoint.x, bPoint.y);
-    await expect(page.getByTestId('di-selected-agent')).toContainText(
-      fixture.changedRoster.addedRef,
-      { timeout: 5_000 },
-    );
+    const [addedMissionRef, addedLogical] = fixture.changedRoster.addedRef.split('#');
+    const bDock = page.getByTestId('di-selected-agent');
+    await expect(bDock.getByTestId('di-selected-member')).toContainText(addedLogical, {
+      timeout: 5_000,
+    });
+    await expect(bDock).toContainText(addedMissionRef);
     await shot(page, '09d-B-confirmed-drawn-selectable-FIXTURE.png');
+    // The complete member ref (source-qualified) is in the inspector.
+    await selectionInspector(page, async (dialog) => {
+      await expect(dialog.getByTestId('di-inspector-member')).toContainText(
+        fixture.changedRoster.addedRef,
+      );
+    });
     roster = 'base';
     await expect.poll(typingCount, { timeout: 30_000 }).toBe(liveMemberCount);
 

@@ -22,23 +22,57 @@ export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAcce
   if (access === null) return null;
   const { state } = access;
   const counts = countsOf(state.overview);
-  const button = `cursor-pointer border-2 border-accent bg-active-bg text-left px-4 py-2 text-sm ${DI_FOCUS_RING}`;
+  // feature13: a COMPACT entry in the calm panel (diOperationalPanel.css). Where requests cannot be
+  // read in this office, the entry is ONE row — its name, that fact, and the model's own sentence
+  // (why, and how to set it up) one step behind; the two actions appear only where requests exist.
+  const unavailable = state.unvouched === null && state.availability.kind === 'unavailable';
+  const button = `di-op-button ${DI_FOCUS_RING}`;
+  if (unavailable)
+    return (
+      <section
+        className="di-op-entry di-op-entry-compact"
+        aria-labelledby="di-mr-entry-title"
+        data-testid="di-mr-entry"
+      >
+        <div className="di-op-entry-head">
+          <h2 id="di-mr-entry-title" className="di-op-entry-title">
+            {MR_NAME}
+          </h2>
+          <p aria-live="polite" data-testid="di-mr-entry-summary" className="di-op-entry-note">
+            Not available in this office
+          </p>
+        </div>
+        <details data-testid="di-mr-entry-why">
+          <summary className={DI_FOCUS_RING}>Why, and how to set it up</summary>
+          <div className="di-op-detail-body">
+            <p data-testid="di-mr-entry-tagline">{MR_TAGLINE}</p>
+            <p>{entryWords(state)}</p>
+          </div>
+        </details>
+      </section>
+    );
   return (
-    <section
-      className="flex flex-col gap-2 shrink-0 border-2 border-accent p-4"
-      aria-labelledby="di-mr-entry-title"
-      data-testid="di-mr-entry"
-    >
-      <h2 id="di-mr-entry-title" className="text-sm">
-        {MR_NAME}
-      </h2>
-      <p className="text-text-muted" data-testid="di-mr-entry-tagline">
+    <section className="di-op-entry" aria-labelledby="di-mr-entry-title" data-testid="di-mr-entry">
+      <div className="di-op-entry-head">
+        <h2 id="di-mr-entry-title" className="di-op-entry-title">
+          {MR_NAME}
+        </h2>
+        <p
+          aria-live="polite"
+          data-testid="di-mr-entry-summary"
+          className="di-op-entry-note di-op-clamp-1"
+        >
+          {entryWords(state)}
+        </p>
+      </div>
+      <p
+        className="di-op-entry-note di-op-entry-tagline di-op-clamp-1"
+        data-testid="di-mr-entry-tagline"
+        title={MR_TAGLINE}
+      >
         {MR_TAGLINE}
       </p>
-      <p aria-live="polite" data-testid="di-mr-entry-summary" className="text-text-muted">
-        {entryWords(state)}
-      </p>
-      <div className="flex flex-wrap gap-4">
+      <div className="di-op-actions">
         <button
           type="button"
           className={button}
