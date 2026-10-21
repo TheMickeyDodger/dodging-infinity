@@ -144,6 +144,7 @@ function App() {
     subagentTools,
     subagentCharacters,
     layoutReady,
+    layoutEpoch,
     layoutWasReset,
     loadedAssets,
     workspaceFolders,
@@ -530,7 +531,9 @@ function App() {
   // DISTRICTS come from the layout's own areas (data): recomputed only when the layout changes
   const districts = useMemo(
     () => (largeWorld ? districtsOf(liveLayout) : []),
-    [liveLayout, largeWorld],
+    // layoutEpoch: see useExtensionMessages. A replaced layout is not a new liveLayout identity
+    // until this render, and this render only happens because the epoch changed.
+    [liveLayout, largeWorld, layoutEpoch],
   );
   const [districtStatus, setDistrictStatus] = useState<string | null>(null);
   const goToDistrict = useCallback(
