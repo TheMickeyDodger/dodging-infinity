@@ -32,6 +32,7 @@ import { readAmbientState, writeAmbientState } from './ambientStatePersistence.j
 import { readCityPresentation, writeCityPresentation } from './cityPresentationPersistence.js';
 import { parseCodeReviewRead } from './codeReview.js';
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
+import { readDiSeatPreferences, writeDiSeatPreferences } from './diSeatPreferencesPersistence.js';
 import { parseEvidenceRead } from './evidenceContent.js';
 import { parseMissionRequest } from './missionRequests.js';
 
@@ -75,6 +76,7 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'setShowAreas',
   'saveAmbientState',
   'saveCityPresentation',
+  'saveDiSeatPreferences',
   'diEvidenceRead',
   'diCodeReviewRead',
   'diMissionRequest',
@@ -118,6 +120,17 @@ const BOOLEAN_SETTINGS: Readonly<Record<string, string>> = {
 };
 
 const INERT: ReadonlySet<string> = new Set(DI_INERT_MESSAGE_TYPES);
+
+/**
+ * The number-keyed seats a client saved during THIS server process, per store (the process-lifetime object). The DI handshake offers a character's seat
+ * only from here: a seat file written by an earlier process names characters by numbers that process assigned, and numbers restart at 1, so an old
+ * number-keyed entry could attach a seat to a different agent. Such entries are ignored, never misapplied; the identity-keyed preferences
+ * (seat-preferences.json) carry the seating across restarts instead.
+ */
+const seatsSavedThisProcess = new WeakMap<
+  AgentStateStore,
+  Record<string, { palette?: number; hueShift?: number; seatId?: string }>
+>();
 
 /**
  * A FRESH DI office (no config yet under its state root) shows its Mission zones (Areas)
@@ -184,7 +197,16 @@ export function handleDiClientMessage(
         msg.seats as Record<string, AgentSeatMeta>,
         cache.characters?.characters.length ?? PALETTE_COUNT,
       );
+      // these number-keyed seats were saved by THIS process, so each number still names the same identity (the identity map never reassigns a number)
+      seatsSavedThisProcess.set(store, { ...(msg.seats as Record<string, AgentSeatMeta>) });
       return 'handled';
+    }
+
+    // The office's seat preferences, keyed by canonical identity (never by the process-local number): checked against the shared contract before
+    // anything is written. Local seating preference; no Mission, agent or canonical meaning.
+    case 'saveDiSeatPreferences': {
+      const notWritten = writeDiSeatPreferences(msg.state);
+      return notWritten === null ? 'handled' : { refused: notWritten };
     }
 
     case 'setSoundEnabled':
@@ -295,7 +317,7 @@ export function sendDiHandshake(send: DiSend, ctx: DiMessageContext): void {
   // materializes them on the next layoutLoaded (same ordering as standalone).
   const agentIds: number[] = [];
   const folderNames: Record<number, string> = {};
-  const persistedSeats = adapter?.loadSeats() ?? {};
+  const persistedSeats = seatsSavedThisProcess.get(store) ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
@@ -307,6 +329,8 @@ export function sendDiHandshake(send: DiSend, ctx: DiMessageContext): void {
     };
   }
   send({ type: 'existingAgents', agents: agentIds, agentMeta, folderNames, externalAgents: {} });
+  // the identity-keyed seat preferences, before the layout: the webview holds them until it places characters
+  send({ type: 'diSeatPreferencesLoaded', state: readDiSeatPreferences() });
 
   // the decorative ambient snapshot BEFORE the layout: the webview holds it until it builds the
   // residents for that layout, then applies it once if the world fingerprint matches

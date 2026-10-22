@@ -122,6 +122,20 @@ async function inspectorShows(testid: string, needle: string): Promise<string> {
 }
 
 /**
+ * Wait until the inspector's RENDERED text matches `pattern`, then return it. `inspectorShows` waits only for a name that is on screen both before and
+ * after an update, so it cannot tell a render that has caught up from one that has not; a state change is awaited by the text it must produce.
+ */
+async function inspectorMatches(testid: string, pattern: RegExp): Promise<string> {
+  await p().waitForFunction(
+    ([t, source, flags]) =>
+      new RegExp(source, flags).test(document.querySelector(`[data-testid="${t}"]`)?.textContent ?? ''),
+    [testid, pattern.source, pattern.flags] as const,
+    { timeout: 5_000 },
+  );
+  return (await text(testid)) ?? '';
+}
+
+/**
  * The ONE runtime record a row names: its first-layer name is "<logical> · <root alias>" (source-
  * qualified only when the list holds several sources; this fixture holds one). Exactly one record
  * must match — an ambiguous row is a failure, not a pick.
@@ -209,8 +223,16 @@ test('keyboard focus on a row is VISIBLE: the same 2px solid accent outline on e
   assert.notEqual(await tabTo('[data-testid="di-member-row"]'), null);
   const member = await focusOutline();
   assert.deepEqual(member, summary);
+  // The reception entries live in the ONE reception inbox (a dialog) rather than inline in the panel:
+  // open it from the keyboard at the sidebar entry; an entry there carries the same outline.
+  await p().focus('[data-testid="di-open-reception"]');
+  await p().keyboard.press('Enter');
+  await p().waitForSelector('[data-testid="di-reception-inbox"]');
   assert.notEqual(await tabTo('[data-testid="di-reception-entry"]'), null);
   assert.deepEqual(await focusOutline(), member);
+  await p().keyboard.press('Escape');
+  await p().waitForSelector('[data-testid="di-reception-inbox"]', { state: 'detached' });
+  assert.ok(await active('[data-testid="di-open-reception"]'), 'focus returns to the sidebar entry');
   assert.notEqual(await tabTo('[data-testid="di-runtime-row"]'), null);
   assert.deepEqual(await focusOutline(), member);
 });
@@ -429,8 +451,10 @@ test('selection survives a reordering update and says plainly when its agent lea
       }),
     agent.agentRef,
   );
-  const now = await inspectorShows('di-selected-runtime-agent', agent.agent);
+  // await the render this state change must produce (the name alone is on screen before and after it), then assert the exact words
+  const now = await inspectorMatches('di-selected-runtime-agent', /not drawn/i);
   assert.match(now, /not drawn/i);
+  assert.ok(now.includes(agent.agent), 'still the same selected agent');
   // 3. The agent leaves the office state: the inspector says so, and selects nothing else.
   await p().evaluate(
     (ref) =>

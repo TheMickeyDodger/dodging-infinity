@@ -44,6 +44,30 @@ export function formatCategoryHeadline(c: DiReceptionCategory): string {
   }
 }
 
+/**
+ * The inbox's plain first-layer words for a category, with its shape. Only `known_empty` says
+ * "nothing reported" (a successful read); an unsupported or unreadable category never reads as empty.
+ * The exact reason code stays one disclosure away (`formatCategoryHeadline`).
+ */
+export function plainCategoryHeadline(c: DiReceptionCategory): string {
+  const glyph = RECEPTION_GLYPH[c.outcome];
+  switch (c.outcome) {
+    case 'present': {
+      const n = c.entriesTotal;
+      const also = c.counts.unsupported + c.counts.unavailable;
+      return `${glyph} ${n} ${n === 1 ? 'needs' : 'need'} attention${also > 0 ? ` · ${also} couldn’t be checked` : ''}`;
+    }
+    case 'known_empty':
+      return `${glyph} nothing reported (read succeeded)`;
+    case 'unsupported':
+      return `${glyph} not reported by this source`;
+    case 'unavailable':
+      return `${glyph} can’t be read just now`;
+    case 'partial':
+      return `${glyph} only partly known`;
+  }
+}
+
 export function outcomeClass(outcome: DiReceptionOutcome): string {
   switch (outcome) {
     case 'known_empty':
@@ -55,6 +79,11 @@ export function outcomeClass(outcome: DiReceptionOutcome): string {
     case 'partial':
       return 'text-warning';
   }
+}
+
+/** `YYYY-MM-DD HH:MM UTC` for an epoch-seconds value: absolute, so it reads the same everywhere. */
+export function utcStamp(epochSeconds: number): string {
+  return `${new Date(epochSeconds * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 export function formatGap(g: DiReceptionGap): string {
@@ -119,6 +148,25 @@ export function invalidateReception(r: DiReception, reason: string): DiReception
     categories: r.categories.map((c) =>
       c.outcome === 'known_empty' ? { ...c, outcome: 'unavailable', reason: why } : c,
     ),
+    // Source-keyed entries (delivery proposals) are no more current than the Mission entries.
+    ...(r.sourceEntries === undefined
+      ? {}
+      : {
+          sourceEntries: r.sourceEntries.map((e) => ({
+            ...e,
+            current: false,
+            staleReasons: [...e.staleReasons, why],
+          })),
+        }),
+    ...(r.sourceCoverage === undefined
+      ? {}
+      : {
+          sourceCoverage: r.sourceCoverage.map((c) =>
+            c.outcome === 'known_empty'
+              ? { ...c, outcome: 'unavailable' as const, reason: why }
+              : c,
+          ),
+        }),
     notices: [
       ...r.notices,
       {

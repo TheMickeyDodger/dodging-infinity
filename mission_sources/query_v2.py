@@ -373,9 +373,16 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
                 max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
                 registry_directory=None, registry_bytes=None,
                 observed_roots=None, confirmed_bindings=None, compose=None,
-                budget=None, runtime_agents=None):
+                budget=None, runtime_agents=None, delivery_presentations=None):
     """One version 2 response over an already loaded (and validated)
-    registry. ``runtime_agents``: as ``query.assemble``. ``observed_roots`` and ``confirmed_bindings``: see
+    registry. ``runtime_agents``: as ``query.assemble``.
+    ``delivery_presentations``: None (not registered) or a callable taking
+    this response's missions, what the Mission side could inspect
+    (``contract_v2.INSPECTIONS``) and the response's own ``{source_id: kind}``,
+    and returning its ``delivery_presentations`` block (D1; see
+    ``target_runtime.mission_state.DeliveryPresentationsReader``); a failure of
+    the hook is an unavailable block, never an empty one. ``observed_roots``
+    and ``confirmed_bindings``: see
     ``roster.classify``; ``compose``: see the module; ``budget``: this
     pass's ``PassBudget`` (the owner's, of its SHARED refresh budget; a
     standalone one when None)."""
@@ -420,14 +427,43 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         registry, source_blocks, reading.describe(), chain_reading.describe(),
         missions, unmatched,
         None if runtime_agents is None
-        else runtime_agents(missions, reading, now, source_blocks))
+        else runtime_agents(missions, reading, now, source_blocks),
+        _delivery_presentations_block(
+            delivery_presentations, missions, _inspection(source_blocks),
+            dict((block["source_id"], block["kind"])
+                 for block in source_blocks)))
     return contract_v2.validate_response_v2(response)
+
+
+def _inspection(source_blocks):
+    """Whether every registered workflow-store source was read fresh: only
+    then is "no registered Mission has this workflow id" a known fact."""
+    if all(block["health"] == contract.HEALTH_FRESH for block in source_blocks
+           if block["kind"] == contract.KIND_WORKFLOW_STORE):
+        return contract_v2.INSPECTION_COMPLETE
+    return contract_v2.INSPECTION_SOURCES_INCOMPLETE
+
+
+def _delivery_presentations_block(hook, missions, inspection, kinds):
+    """The ``delivery_presentations`` block of one response: not registered
+    without a hook; the hook's block when it validates; else an explicit
+    unavailable block (never an empty list). The source's registration and
+    availability are its own, independent of the Mission registry."""
+    if hook is None:
+        return None
+    try:
+        return contract_v2.validate_delivery_presentations(
+            hook(missions, inspection, kinds))
+    except Exception:                                      # noqa: BLE001
+        return contract_v2.delivery_presentations_block(
+            contract_v2.DELIVERY_PRESENTATIONS_UNAVAILABLE, "reader_failed",
+            contract_v2.DELIVERY_STORE_NOT_REGISTERED, None, [])
 
 
 def query_v2(source_registry, runtime_snapshot, chain_observation, now,
              max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
              observed_roots=None, confirmed_bindings=None, compose=None,
-             budget=None, runtime_agents=None):
+             budget=None, runtime_agents=None, delivery_presentations=None):
     """``query.query`` for version 2: a registry that cannot be loaded
     degrades explicitly (its own health and problem, no sources, no
     missions) instead of raising or reading as empty."""
@@ -447,9 +483,14 @@ def query_v2(source_registry, runtime_snapshot, chain_observation, now,
             valid_until_v2(now, max_age_seconds, reading, chain_reading, []),
             limits_v2(), registry, [], reading.describe(),
             chain_reading.describe(), [], None,
-            query_module.registry_failed_agents(runtime_agents))
+            query_module.registry_failed_agents(runtime_agents),
+            # The presentations source is registered (or not) on its own: a
+            # registry that cannot be loaded changes only what can be linked.
+            _delivery_presentations_block(
+                delivery_presentations, [],
+                contract_v2.INSPECTION_REGISTRY_UNAVAILABLE, {}))
         return contract_v2.validate_response_v2(response)
     return assemble_v2(document, runtime_snapshot, chain_observation, now,
                        max_age_seconds, readers, source_registry.directory,
                        size, observed_roots, confirmed_bindings, compose,
-                       budget, runtime_agents)
+                       budget, runtime_agents, delivery_presentations)

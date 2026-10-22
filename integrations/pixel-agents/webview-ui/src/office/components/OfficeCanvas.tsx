@@ -55,6 +55,9 @@ interface OfficeCanvasProps {
   /** An opaque overlay (the DI Map) covers the whole canvas: the loop keeps UPDATING the world
    *  (so the overlay's live layer moves) but skips drawing a scene nobody can see. */
   renderPaused?: boolean;
+  /** DI office: the reception desk (or its receptionist) was clicked. The desk is an entrance to the
+   *  same reception inbox as the sidebar; absent = ordinary Pixel, where the desk is just furniture. */
+  onReceptionClick?: () => void;
 }
 
 export function OfficeCanvas({
@@ -77,11 +80,14 @@ export function OfficeCanvas({
   centerWhenWorldFits = false,
   onUserPan,
   renderPaused = false,
+  onReceptionClick,
 }: OfficeCanvasProps) {
   const centerWhenWorldFitsRef = useRef(centerWhenWorldFits);
   centerWhenWorldFitsRef.current = centerWhenWorldFits;
   const onUserPanRef = useRef(onUserPan);
   onUserPanRef.current = onUserPan;
+  const onReceptionClickRef = useRef(onReceptionClick);
+  onReceptionClickRef.current = onReceptionClick;
   // read by the running loop each frame (a ref: toggling it never restarts the loop)
   const renderPausedRef = useRef(renderPaused);
   renderPausedRef.current = renderPaused;
@@ -553,7 +559,7 @@ export function OfficeCanvas({
       officeState.hoveredTile = tile;
       const canvas = canvasRef.current;
       if (canvas) {
-        canvas.style.cursor = computeNormalModeCursor({
+        const cursor = computeNormalModeCursor({
           hitId,
           petId,
           selectedAgentId: officeState.selectedAgentId,
@@ -562,6 +568,13 @@ export function OfficeCanvas({
           getSeat: (seatId) => officeState.seats.get(seatId),
           getCharacter: (id) => officeState.characters.get(id),
         });
+        // The reception desk is clickable in DI mode: the pointer says so (agents and pets win first).
+        canvas.style.cursor =
+          cursor === 'default' &&
+          onReceptionClickRef.current !== undefined &&
+          officeState.getReceptionAt(pos.worldX, pos.worldY)
+            ? 'pointer'
+            : cursor;
       }
       officeState.hoveredAgentId = hitId;
       // Ambient residents are hit-tested LAST: a real agent or pet always wins the pointer.
@@ -803,6 +816,13 @@ export function OfficeCanvas({
         } else {
           officeState.showPetBubble(petId);
         }
+        return;
+      }
+
+      // Reception desk (or its receptionist): an entrance to the reception inbox. Agents and pets
+      // won the pointer above; the receptionist is no agent and is never selected or followed.
+      if (onReceptionClickRef.current && officeState.getReceptionAt(pos.worldX, pos.worldY)) {
+        onReceptionClickRef.current();
         return;
       }
 

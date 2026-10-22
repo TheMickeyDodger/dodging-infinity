@@ -73,15 +73,17 @@ def _outcome(status, error_code, detail, unrecognized=0):
 
 
 def settle(result, repository_url):
-    """``(state, assistant_text, outcome, draft, draft_problem)`` for what the
-    provider returned. A result that is not a gateway result is UNCERTAIN."""
+    """``(state, assistant_text, outcome, draft, draft_problem, questions)`` for
+    what the provider returned (``questions`` is the journal's value for a
+    COMPLETED turn and None otherwise). A result that is not a gateway result is
+    UNCERTAIN."""
     status = getattr(result, "status", None)
     state = _STATE_BY_STATUS.get(status)
     if state is None or not hasattr(result, "error"):
         return (journal_module.TURN_UNCERTAIN, None,
                 _outcome("uncertain", "unrecognized_result",
                          "the provider returned a result this panel does not"
-                         " recognise"), None, None)
+                         " recognise"), None, None, None)
     error = result.error
     unrecognized = getattr(result, "unrecognized_event_lines", 0)
     if state == journal_module.TURN_COMPLETED and isinstance(result.message, str):
@@ -93,13 +95,13 @@ def settle(result, repository_url):
                       % journal_module.MAX_TURN_TEXT_CHARS)
         draft, problem = draft_module.extract_draft(message, repository_url)
         return (state, text, _outcome(status, None, detail, unrecognized),
-                draft, problem)
+                draft, problem, draft_module.extract_questions(message))
     if state == journal_module.TURN_COMPLETED:
         state = journal_module.TURN_UNCERTAIN
     return (state, None,
             _outcome(status, None if error is None else error.code,
                      None if error is None else error.detail, unrecognized),
-            None, None)
+            None, None, None)
 
 
 class InFlight(object):
@@ -208,18 +210,18 @@ class PanelConversation(object):
                     "uncertain", DEADLINE_ERROR_CODE,
                     "the provider did not answer within %d seconds and was"
                     " killed; what it did is unknown, so the turn was not"
-                    " retried" % TURN_DEADLINE_SECONDS), None, None)
+                    " retried" % TURN_DEADLINE_SECONDS), None, None, None)
             except Exception as exc:
                 fields = (journal_module.TURN_UNCERTAIN, None, _outcome(
                     "uncertain", RAISED_ERROR_CODE,
                     "the provider call raised %s: %s; its outcome is unknown, so"
                     " the turn was not retried" % (type(exc).__name__, exc)),
-                    None, None)
+                    None, None, None)
             else:
                 fields = settle(result, self._repository_url)
-            state, text, outcome, draft, problem = fields
+            state, text, outcome, draft, problem, questions = fields
             self._journal.finish_turn(turn_id, state, text, outcome, draft,
-                                      problem, self._clock())
+                                      problem, self._clock(), questions)
         except Exception:
             # The record stays RESERVED; once this turn leaves the in-flight
             # set a later reconcile settles it as UNCERTAIN. Never a retry.

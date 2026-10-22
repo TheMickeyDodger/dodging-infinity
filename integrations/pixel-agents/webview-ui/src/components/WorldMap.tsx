@@ -75,7 +75,17 @@ export function WorldMap({
   }, []);
 
   // While the Map is open it owns the keyboard (installMapKeyGuard): nothing reaches the editor.
-  useEffect(() => installMapKeyGuard(window, onClose), [onClose]);
+  // A modal dialog opened over it (diModal.ts makes #root inert while one is open) is the foreground
+  // surface and owns the keyboard: the guard yields to it.
+  useEffect(
+    () =>
+      installMapKeyGuard(
+        window,
+        onClose,
+        () => document.getElementById('root')?.hasAttribute('inert') === true,
+      ),
+    [onClose],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;

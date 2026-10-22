@@ -61,6 +61,8 @@ declare global {
       restore?: () => unknown;
       /** Raw train copies (TrainProbeEntry), independent of the snapshot serializer. */
       trainsRaw?: () => TrainProbeEntry[];
+      /** READ-ONLY three-office seating evidence (OfficeState.officeAssignment): copies only, null without detected offices. */
+      officeAssignment?: () => unknown;
     };
   }
 }

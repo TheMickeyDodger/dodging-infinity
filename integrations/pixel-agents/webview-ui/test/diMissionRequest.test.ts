@@ -47,6 +47,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'vitest
 import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 
+import { checkDiSeatPreferences } from '../../core/src/diSeatPreferences.ts';
 import type { DiOfficeState } from '../../core/src/messages.ts';
 import { AgentStateStore } from '../../server/src/agentStateStore.ts';
 import { handleDiClientMessage } from '../../server/src/di/diClientMessages.ts';
@@ -223,6 +224,8 @@ let sockets: WebSocket[] = [];
 /** Every diMissionRequest the page sent, exactly as received. */
 let sent: Array<Record<string, unknown>> = [];
 let otherMessages: string[] = [];
+/** The identity-keyed seat saves the page sent, with the payload and the phase each was sent in (see the classification in the websocket handler). */
+let seatPreferenceSaves: Array<{ relayClosed: boolean; payload: unknown }> = [];
 /** While true the relay HOLDS the page's reads: nothing reaches the adapter and nothing is answered. */
 let closed = false;
 let held: Array<() => void> = [];
@@ -271,6 +274,12 @@ function serve(ws: WebSocket) {
       else deliver();
     } else if (msg.type === 'webviewReady') {
       resolveConnected(ws);
+    } else if (msg.type === 'saveDiSeatPreferences') {
+      // An ALLOWED LOCAL-PERSISTENCE message (P2-C), like `saveAgentSeats`: the page saves WHERE each identity sits — a seating preference, no Mission
+      // state, no request, nothing canonical — the first time an identity is seated and afterwards only when the map changes. `closed` here means only
+      // that the diMissionRequest relay is HELD; the websocket and the local save channel stay connected, so this is an ordinary save on a connected
+      // channel, not a message sent offline. It is recorded WITH its payload and validated below; `otherMessages` stays strict for everything else.
+      seatPreferenceSaves.push({ relayClosed: closed, payload: msg.state });
     } else if (msg.type !== 'saveAgentSeats') {
       otherMessages.push(String(msg.type));
     }
@@ -381,6 +390,7 @@ beforeEach(async (ctx) => {
   panel = new DiMissionRequests(harness.discovery, { log: () => undefined });
   sent = [];
   otherMessages = [];
+  seatPreferenceSaves = [];
   closed = false;
   held = [];
   relayed = [];
@@ -616,8 +626,9 @@ async function submitDraft(page: Page): Promise<string> {
   } catch (e) {
     throw new Error(`${String(e).split('\n')[0]} -- ${await whatHappened(page)}`, { cause: e });
   }
-  // The reference of THE request now open, as the proposal's own source line states it.
-  const source = await text(page, T('di-mr-proposal-source'));
+  // The reference of THE request now open, as the exact references state it. They sit in one closed disclosure, so
+  // they are read from the document's text, not from what is currently drawn.
+  const source = await page.$eval(T('di-mr-proposal-source'), (el) => el.textContent ?? '');
   const found = /lr-[0-9a-f]{32}/.exec(source);
   if (found === null) throw new Error(`the open proposal names no request reference: ${source}`);
   return found[0];
@@ -710,8 +721,22 @@ test(
     // The window says, twice and in words, that none of this is real: the office's own fixture label and the
     // workspace's. A screenshot of either part carries it.
     expect(await text(page, T('di-fixture-banner'))).toMatch(/FIXTURE \/ VISUAL TEST/);
+    // The workspace says it in ONE compact context area: the short statement is visible, and the full wording is one disclosure away.
     expect(await text(page, T('di-mr-fixture-banner'))).toMatch(
-      /Nothing here is a real request awaiting a real decision/,
+      /synthetic; no approval given here is real/,
+    );
+    expect(
+      await page.$eval(T('di-mr-fixture-banner'), (el) => el.textContent ?? ''),
+      'the full fixture wording is not one disclosure away',
+    ).toMatch(/Nothing here is a real request awaiting a real decision/);
+    // the context area is persistent: it holds the fixture row and the progress row, and offers no way to dismiss either
+    expect(await exists(page, T('di-mr-context'))).toBe(true);
+    expect(
+      await page.$$eval(`${T('di-mr-context')} button`, (els) => els.length),
+      'a dismiss control inside the context area',
+    ).toBe(0);
+    expect(await page.$$eval(`${T('di-mr-context')} [data-testid]`, (els) => els.map((e) => e.getAttribute('data-testid')))).toEqual(
+      expect.arrayContaining(['di-mr-fixture-banner', 'di-mr-progression']),
     );
     // The office's fixture watermark is preview furniture and must cover NO title and NO control (the first
     // preview showed it lettered over "Mission requests" and "Wider reading").
@@ -728,6 +753,50 @@ test(
     await shot(page, '02-draft-not-yet-a-proposal', T('di-mr-draft'));
     const ref = await submitDraft(page);
     await expectFocusKept(page, 'submitting the draft and opening the proposal of record');
+    // The first layer of the open request reads: its plain title, its status in words, its next step. Every exact
+    // reference (the request, "of record", Mission Core, the revision, the digest) is in ONE labelled disclosure.
+    const heading = await text(page, T('di-mr-detail-heading'));
+    expect(heading).not.toMatch(/lr-[0-9a-f]{32}/);
+    const objectiveLine = (await text(page, T('di-mr-proposal-objective')))
+      .split(/\r?\n/)
+      .find((l) => l.trim() !== '')!
+      .trim();
+    expect(objectiveLine.startsWith(heading.replace(/\u2026$/, ''))).toBe(true);
+    expect(await text(page, T('di-mr-stage-label'))).toBe('Waiting for your decision');
+    const stageWords = await text(page, T('di-mr-stage-detail'));
+    expect(stageWords).toMatch(/Nothing has been approved and nothing has started\./);
+    expect(stageWords).toMatch(/typing the word approve/);
+    expect(stageWords).not.toMatch(/Mission Core|digest|revision|of record/);
+    expect(await text(page, T('di-mr-refs'))).toBe('Exact references (technical)');
+    const refsText = await page.$eval(T('di-mr-refs'), (el) => el.textContent ?? '');
+    expect(refsText).toContain(ref);
+    expect(refsText).toMatch(
+      /This proposal is of record: Mission Core holds it as revision 1 with digest [0-9a-f]+\./,
+    );
+    expect(refsText).toMatch(/Read from the record/);
+    expect(refsText).toMatch(/Mission mn-[0-9a-f]+/);
+    expect(await page.locator(T('di-mr-proposal-source')).count()).toBe(1);
+    expect(await page.locator(`${T('di-mr-proposal')} ${T('di-mr-proposal-source')}`).count()).toBe(0);
+    // the proposal's section is plainly named, and its raw keys come after their plain words, muted, never dropped
+    expect(await page.locator('section[aria-label="The proposal"]').count()).toBe(1);
+    expect(await page.locator('section[aria-label="The proposal of record"]').count()).toBe(0);
+    const scopeKeys = await page.$$eval(`${T('di-mr-proposal')} li .di-mr-key`, (els) =>
+      els.map((e) => e.textContent),
+    );
+    expect(scopeKeys).toEqual(expect.arrayContaining(['(engineering_change)', '(repository_read)']));
+    const ruleKeys = await page.$$eval(`${T('di-mr-proposal-rules')} ${T('di-mr-key')}`, (els) =>
+      els.map((e) => e.textContent),
+    );
+    expect(ruleKeys.join(' ')).toMatch(/run_result/);
+    expect(ruleKeys.join(' ')).toMatch(/VERIFICATION_RECORD/);
+    expect(
+      await page.$eval(`${T('di-mr-proposal-rules')} ${T('di-mr-key')}`, (el) => getComputedStyle(el).color !== getComputedStyle(el.parentElement!).color),
+      'a raw key is drawn secondary (a different, muted colour)',
+    ).toBe(true);
+    // The decision section still states exactly what approving binds to.
+    expect(await text(page, T('di-mr-approval-binding'))).toMatch(
+      /^You are approving revision 1 of this proposal \(digest [0-9a-f]{12}\u2026\)\.$/,
+    );
     expect(await text(page, T('di-mr-provenance'))).toMatch(
       /operator attestation, not independently verified/,
     );
@@ -796,6 +865,21 @@ test(
     expect(result).toMatch(/not independent verification/);
     expect(result).toMatch(/not been pushed, merged or released/);
     await shot(page, '07-verified-result-retrieved-not-delivered', T('di-mr-result'));
+    // The identity-keyed seat save is sent ONCE, on the first real change (measured: 668 ms after the window opened, one identity, 2.2 s before the
+    // relay was held; a later reconcile that changes nothing sends nothing — `sameSeatPrefs`). A second send would be churn.
+    expect(seatPreferenceSaves.length, 'the identity-keyed seat save is sent once, on the first real change').toBe(1);
+    // Its payload is bounded and PREFERENCE-ONLY: the closed {v, entries} shape within the contract's bounds, each entry exactly an identity tuple and a seat id.
+    for (const save of seatPreferenceSaves) {
+      const payload = save.payload as { v: unknown; entries: Array<Record<string, unknown>> };
+      expect(Object.keys(payload).sort()).toEqual(['entries', 'v']);
+      expect(checkDiSeatPreferences(payload)).toBeNull();
+      expect(payload.entries.length).toBeGreaterThanOrEqual(1);
+      for (const entry of payload.entries) {
+        expect(Object.keys(entry).sort()).toEqual(['i', 's']);
+        expect(Array.isArray(entry.i) && (entry.i as unknown[]).length === 5).toBe(true);
+        expect(typeof entry.s).toBe('string');
+      }
+    }
     expect(otherMessages).toEqual([]);
     expect(dialogs).toBe(0);
     expect(outsideRequests).toEqual([]);
@@ -1182,6 +1266,42 @@ test(
     await page.$eval(T('di-mr-body'), (el) => (el.scrollTop = 0));
     await shot(page, '40-wider-reading-mode-headers-and-controls');
 
+    // Wider reading with LITTLE room beside the sidebar is never worse than ordinary reading at the same width (it once left the open
+    // request a 23px sliver, scrolled the pane sideways and clipped the title behind "Narrower reading"): the list stacks above the
+    // request, nothing overflows, the title is whole. Only where the pane really is wider than the ordinary pane do the two columns return.
+    for (const [width, split] of [
+      [1020, false],
+      [1100, false],
+      [1309, true],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await waitFor(
+        `the pane to settle at ${width}px`,
+        async () => (await page.getAttribute(T('di-mr'), 'data-split')) === String(split),
+      );
+      const now = await page.evaluate(() => {
+        const q = (id: string) => document.querySelector(`[data-testid="${id}"]`) as HTMLElement;
+        const body = q('di-mr-body');
+        const heading = q('di-mr-heading');
+        const grid = document.querySelector('.di-mr-requests') as HTMLElement;
+        return {
+          covering: q('di-mr').getAttribute('data-covering'),
+          wide: q('di-mr').getAttribute('data-wide'),
+          columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+          bodyOverflow: body.scrollWidth - body.clientWidth,
+          titleClipped: heading.scrollWidth > heading.clientWidth + 1,
+          detailWidth: Math.round(q('di-mr-detail').getBoundingClientRect().width),
+        };
+      });
+      expect(now.covering, `${width}px is beside the sidebar`).toBe('false');
+      expect(now.wide, `wider reading stays chosen at ${width}px`).toBe('true');
+      expect(now.columns, `${width}px: list/detail columns`).toBe(split ? 2 : 1);
+      expect(now.bodyOverflow, `${width}px: the pane scrolls sideways`).toBe(0);
+      expect(now.titleClipped, `${width}px: the title is clipped`).toBe(false);
+      expect(now.detailWidth, `${width}px: the open request is a sliver`).toBeGreaterThanOrEqual(280);
+    }
+    await page.setViewportSize(VIEW);
+
     // narrow: the workspace covers the window, says so in words, and carries its own FIXTURE label
     await page.setViewportSize({ width: 560, height: 900 });
     await page.waitForSelector(T('di-mr-covering-note'));
@@ -1190,6 +1310,9 @@ test(
       'hidden',
     );
     expect(await text(page, T('di-mr-fixture-banner'))).toMatch(
+      /synthetic; no approval given here is real/,
+    );
+    expect(await page.$eval(T('di-mr-fixture-banner'), (el) => el.textContent ?? '')).toMatch(
       /Nothing here is a real request awaiting a real decision/,
     );
     const inView = await page.evaluate(() => {
@@ -1224,6 +1347,20 @@ test(
     await shot(page, '41-narrow-viewport-headers-and-controls');
     await expectFocusKept(page, 'resizing to a narrow window');
     await page.setViewportSize(VIEW);
+
+    // Hiding the sidebar while the workspace is open takes its opener away. Escape then returns focus to the control that shows the
+    // sidebar again (visible, and named for what it does), never to <body>.
+    await page.click('button:has-text("◂ hide")');
+    await page.waitForSelector(T('di-office-panel-collapsed'));
+    await page.focus(T('di-mr-heading'));
+    await page.keyboard.press('Escape');
+    await page.waitForSelector(T('di-mr'), { state: 'detached' });
+    expect(
+      await page.evaluate(
+        () => document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName,
+      ),
+      'after Escape with the sidebar hidden, focus is lost',
+    ).toBe('di-office-panel-collapsed');
   },
   STEPS_MS,
 );
@@ -1453,6 +1590,174 @@ test(
     expect(unknown).not.toMatch(/startup-binding-failure|lead1/);
     expect((await state()).spawn_calls).toBe(2);
     await shot(page, '51-start-in-doubt-cause-not-known', T('di-mr-start-cause'));
+  },
+  STEPS_MS,
+);
+
+// ── The covering workspace and the world's own overlays ──────────────────────────────────────────
+
+/** What a world overlay or a dialog does to the workspace, from the real stacking order on screen (a hit test with pointer events forced on, so a click-through overlay counts). */
+async function stackingAboveWorkspace(page: Page) {
+  return page.evaluate(() => {
+    const style = document.createElement('style');
+    style.id = 'test-force-pointer-events';
+    style.textContent = '* { pointer-events: auto !important; }';
+    document.head.appendChild(style);
+    try {
+      // the workspace may be CLOSED (the legend is checked after it closes): then nothing is compared against it
+      const ws = document.querySelector('[data-testid="di-mr"]') as HTMLElement | null;
+      const describe = (el: Element) =>
+        `${el.tagName.toLowerCase()}${el.getAttribute('data-testid') ? `[${el.getAttribute('data-testid')}]` : ''}.${String(el.className).slice(0, 40)} z=${getComputedStyle(el).zIndex}`;
+      const occluders: string[] = [];
+      for (const el of ws ? document.querySelectorAll<HTMLElement>('body *') : []) {
+        if (!ws) break;
+        if (ws.contains(el) || el.contains(ws)) continue;
+        const cs = getComputedStyle(el);
+        if (cs.position !== 'fixed' && cs.position !== 'absolute') continue;
+        if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        if (r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) continue;
+        const x = Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1);
+        const y = Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1);
+        const stack = document.elementsFromPoint(x, y);
+        const own = stack.findIndex((e) => el.contains(e));
+        const inWs = stack.findIndex((e) => ws.contains(e));
+        if (own !== -1 && inWs !== -1 && own < inWs) occluders.push(describe(el));
+      }
+      const legend = document.querySelector('[data-testid="ambient-legend"]') as HTMLElement | null;
+      let legendFacts: { present: boolean; visible: boolean; belowWorkspace: boolean; aboveWorld: boolean } = {
+        present: false,
+        visible: false,
+        belowWorkspace: false,
+        aboveWorld: false,
+      };
+      if (legend) {
+        const r = legend.getBoundingClientRect();
+        const stack = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        const own = stack.findIndex((e) => legend.contains(e));
+        const inWs = ws ? stack.findIndex((e) => ws.contains(e)) : -1;
+        const cs = getComputedStyle(legend);
+        legendFacts = {
+          present: true,
+          visible: r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0,
+          belowWorkspace: own !== -1 && inWs !== -1 && inWs < own,
+          aboveWorld: own === 0,
+        };
+      }
+      const heading = ws ? document.querySelector('[data-testid="di-mr-heading"]') : null;
+      const h = heading?.getBoundingClientRect();
+      const headingTop = h ? document.elementsFromPoint(h.left + h.width / 2, h.top + h.height / 2)[0] : null;
+      const banner = document.querySelector('.di-fixture-banner') as HTMLElement | null;
+      return {
+        occluders,
+        legend: legendFacts,
+        headingOnTop: !!ws && !!headingTop && ws.contains(headingTop),
+        bannerVisibility: banner ? getComputedStyle(banner).visibility : null,
+      };
+    } finally {
+      document.getElementById('test-force-pointer-events')?.remove();
+    }
+  });
+}
+
+test(
+  'L. A covering workspace sits above every world overlay and below the dialogs: nothing letters over its text, a dialog opened before the window narrowed stays above it, the legend returns when it closes, and focus, Escape and Close behave (1019x720 and 599x700, sidebar shown and hidden; the hidden 1019x720 window is beside, not covering)',
+  async () => {
+    for (const collapsed of [false, true]) {
+      for (const [width, height, closeWith] of [
+        [1019, 720, 'Escape'],
+        [599, 700, 'Close'],
+      ] as const) {
+        // the REAL rule (layoutFor): the workspace covers iff the window minus the side panel (420 px; none when hidden) minus 240 px leaves under 360 px:
+        // below 1020 px with the side panel shown, below 600 px with it hidden. So 1019x720 covers only with the side panel shown.
+        const covers = width - (collapsed ? 0 : 420) - 240 < 360;
+        const where = `${collapsed ? 'sidebar hidden' : 'sidebar shown'} · ${width}x${height} (${covers ? 'covering' : 'beside'})`;
+        const page = await openWindow();
+        // the legend mounts once the ambient roster has a summary (it re-reads every second), so wait for it before anything is measured
+        await waitFor(`${where}: the ambient legend`, async () => (await page.$(T('ambient-legend'))) !== null, 30_000);
+        // the workspace opens beside the side panel in the ordinary window; the sidebar is hidden FIRST where that is the state under test
+        await openWorkspace(page);
+        if (collapsed) {
+          await page.click('button:has-text("◂ hide")');
+          await page.waitForSelector(T('di-office-panel-collapsed'));
+        }
+        // A dialog must stay above the workspace once it covers the window. The toolbar is covered then, so the Settings modal is opened FIRST
+        // (the toolbar is visible beside the workspace) and the window is narrowed afterwards.
+        await page.getByRole('button', { name: 'Settings', exact: true }).click();
+        const stamped = await waitFor(`${where}: the Settings modal`, async () => {
+          const found = await page.evaluate(() => {
+            const fixed = [...document.querySelectorAll<HTMLElement>('body *')].filter((e) => {
+              const cs = getComputedStyle(e);
+              return (
+                cs.position === 'fixed' &&
+                (cs.zIndex === '50' || cs.zIndex === '51') &&
+                !e.classList.contains('di-fixture-banner')
+              );
+            });
+            const backdrop = fixed.find((e) => getComputedStyle(e).zIndex === '50');
+            const panel = fixed.find((e) => getComputedStyle(e).zIndex === '51');
+            backdrop?.setAttribute('data-test-modal-backdrop', '1');
+            panel?.setAttribute('data-test-modal', '1');
+            return !!backdrop && !!panel;
+          });
+          return found;
+        });
+        expect(stamped, `${where}: the Settings modal opened`).toBe(true);
+        await page.setViewportSize({ width, height });
+        await waitFor(
+          `${where}: the layout to settle`,
+          async () => (await page.getAttribute(T('di-mr'), 'data-covering')) === String(covers),
+        );
+        const modal = await page.evaluate(() => {
+          const panel = document.querySelector('[data-test-modal]') as HTMLElement;
+          const backdrop = document.querySelector('[data-test-modal-backdrop]') as HTMLElement;
+          const r = panel.getBoundingClientRect();
+          const mid = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)[0];
+          const corner = document.elementsFromPoint(2, 2)[0];
+          return { panelOnTop: !!mid && panel.contains(mid), backdropOnTop: corner === backdrop };
+        });
+        expect(modal.panelOnTop, `${where}: the Settings modal is under the covering workspace`).toBe(true);
+        expect(modal.backdropOnTop, `${where}: the modal backdrop is under the covering workspace`).toBe(true);
+        await page.click('[data-test-modal] button');
+        await page.waitForSelector('[data-test-modal]', { state: 'detached' });
+
+        const layers = await stackingAboveWorkspace(page);
+        expect(layers.legend.present, `${where}: the legend is on the page (the check has something to check)`).toBe(true);
+        expect(layers.legend.visible, `${where}: the legend is drawn`).toBe(true);
+        expect(layers.headingOnTop, `${where}: the workspace title is covered`).toBe(true);
+        if (covers) {
+          // No world overlay may letter over the covering workspace's text; the legend is the one that did.
+          expect(layers.legend.belowWorkspace, `${where}: the ambient legend letters over the covering workspace`).toBe(true);
+          expect(layers.occluders, `${where}: world overlays over the covering workspace`).toEqual([]);
+          expect(layers.bannerVisibility, `${where}: the fixture banner is not hidden while covering`).toBe('hidden');
+        } else {
+          // Beside the side panel the workspace covers nothing: the legend stays above the world, untouched, and the fixture banner stays drawn.
+          expect(layers.legend.aboveWorld, `${where}: something covers the legend beside the workspace`).toBe(true);
+          expect(layers.bannerVisibility, `${where}: the fixture banner is hidden although the workspace does not cover`).toBe('visible');
+        }
+
+        // Close it by the route under test; focus goes to the opener, or to the control that shows the side panel again when it was hidden.
+        if (closeWith === 'Escape') {
+          await page.focus(T('di-mr-heading'));
+          await page.keyboard.press('Escape');
+        } else {
+          await page.click(T('di-mr-close'));
+        }
+        await page.waitForSelector(T('di-mr'), { state: 'detached' });
+        expect(
+          await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.tagName),
+          `${where}: after ${closeWith}, focus is not on the control that opened the workspace`,
+        ).toBe(collapsed ? 'di-office-panel-collapsed' : 'di-mr-open');
+
+        // The legend and the fixture banner are back exactly as before, above the world.
+        const closed = await stackingAboveWorkspace(page);
+        expect(closed.legend.present && closed.legend.visible, `${where}: the legend is back after close`).toBe(true);
+        expect(closed.legend.aboveWorld, `${where}: something covers the legend after close`).toBe(true);
+        expect(closed.bannerVisibility, `${where}: the fixture banner is back after close`).toBe('visible');
+        await closeWindow(page);
+      }
+    }
   },
   STEPS_MS,
 );

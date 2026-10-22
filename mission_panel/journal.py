@@ -51,6 +51,11 @@ JOURNAL_LOCK_FILE_NAME = "mission_panel_journal.lock"
 MAX_TURN_RECORDS = 2048
 MAX_TURN_TEXT_CHARS = 8000
 MAX_DETAIL_CHARS = 500
+# The clarifying questions a COMPLETED turn declared in its ``mission-questions`` block (C1): at
+# most this many, each a single plain line of at most this many characters. The prompt asks for at
+# most three at a time; the bounds are the extractor's refusal, never a truncation.
+MAX_QUESTIONS = 3
+MAX_QUESTION_CHARS = 280
 # The LIVE (unexpired) offers at once. Expired offers are pruned, never counted.
 MAX_OFFER_RECORDS = 256
 
@@ -79,6 +84,11 @@ TURN_KEYS = (
     "state", "user_text", "assistant_text", "gateway_request_id", "outcome",
     "draft", "draft_problem", "submission",
 )
+# Keys a turn MAY carry. Every journal written before ``questions`` existed has none of them and
+# validates unchanged: an ABSENT key means "this panel version did not read the reply for
+# questions", which is not the same as a present key with no items ("read; none declared").
+OPTIONAL_TURN_KEYS = ("questions",)
+QUESTIONS_KEYS = ("items", "problem")
 # The offer's bound fields: what a person is shown and a decision must match. ``expires_at`` is
 # ABSOLUTE and is fixed when the offer is issued; it is never recomputed.
 OFFER_BOUND_KEYS = (
@@ -267,8 +277,43 @@ def _validate_submission(sub, where):
         _bad(where, "a REFUSED submission names its problem")
 
 
+def question_problem(text):
+    """Why ``text`` cannot be a declared question, or None: one non-empty line
+    of printable text within the bound. Never repaired or truncated."""
+    if not isinstance(text, str) or not text.strip():
+        return "a question must be a non-empty string"
+    if len(text) > MAX_QUESTION_CHARS:
+        return "a question is at most %d characters" % MAX_QUESTION_CHARS
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in text):
+        return "a question is one plain line (no control characters)"
+    return None
+
+
+def _validate_questions(questions, where):
+    _closed(questions, QUESTIONS_KEYS, where)
+    items = questions["items"]
+    if not isinstance(items, list) or len(items) > MAX_QUESTIONS:
+        _bad(where + ".items", "must be a list of at most %d questions" % MAX_QUESTIONS)
+    for item in items:
+        if question_problem(item) is not None:
+            _bad(where + ".items", question_problem(item))
+    if len(set(items)) != len(items):
+        _bad(where + ".items", "must not repeat a question")
+    _optional_text(questions["problem"], MAX_DETAIL_CHARS, where + ".problem")
+    if items and questions["problem"] is not None:
+        _bad(where, "a questions block yields questions or a problem, not both")
+
+
+def _closed_turn(turn, where):
+    """A turn has every ``TURN_KEYS`` key and may add the ``OPTIONAL_TURN_KEYS``."""
+    if not isinstance(turn, dict) or not set(TURN_KEYS) <= set(turn) or (
+            set(turn) - set(TURN_KEYS) - set(OPTIONAL_TURN_KEYS)):
+        _bad(where, "must be an object with exactly the keys %s (and optionally %s)"
+             % (", ".join(TURN_KEYS), ", ".join(OPTIONAL_TURN_KEYS)))
+
+
 def _validate_turn(key, turn, where):
-    _closed(turn, TURN_KEYS, where)
+    _closed_turn(turn, where)
     if not _id_ok(turn["turn_id"], TURN_ID_PREFIX) or turn["turn_id"] != key:
         _bad(where, "turn_id must be its own key and a ct- id")
     if not _id_ok(turn["conversation_id"], CONVERSATION_ID_PREFIX):
@@ -302,6 +347,10 @@ def _validate_turn(key, turn, where):
         _bad(where, "only a COMPLETED turn can carry a draft or a draft problem")
     if turn["draft"] is not None:
         _validate_draft(turn["draft"], where + ".draft")
+    if "questions" in turn:
+        if turn["state"] != TURN_COMPLETED:
+            _bad(where, "only a COMPLETED turn can carry questions")
+        _validate_questions(turn["questions"], where + ".questions")
     if turn["submission"] is not None:
         if turn["draft"] is None:
             _bad(where, "only a turn with a draft can be submitted")
@@ -543,7 +592,7 @@ class PanelJournal(object):
         raise JournalError("no unused id could be minted", PROBLEM_BAD_TURN)
 
     def finish_turn(self, turn_id, state, assistant_text, outcome, draft,
-                    draft_problem, now):
+                    draft_problem, now, questions=None):
         with self._writing() as (document, changed):
             turn = document["turns"].get(turn_id)
             if turn is None:
@@ -556,6 +605,8 @@ class PanelJournal(object):
                 "state": state, "finished_at": max(now, turn["created_at"]),
                 "assistant_text": assistant_text, "outcome": outcome,
                 "draft": draft, "draft_problem": draft_problem})
+            if questions is not None:
+                turn["questions"] = questions
             changed["changed"] = True
             validate_document(document, self.path)
             return copy.deepcopy(turn)

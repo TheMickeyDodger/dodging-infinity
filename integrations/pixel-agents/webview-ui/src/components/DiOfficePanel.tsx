@@ -87,7 +87,6 @@ import type { DiAgentPhrase, DiRuntimeGroup } from './diPlainSummary.js';
 import {
   agentNow,
   agentPhrase,
-  attentionSummary,
   firstLayerName,
   missionResults,
   missionTitle,
@@ -99,7 +98,9 @@ import {
   teamSummary,
   viewLimits,
 } from './diPlainSummary.js';
-import { DiReceptionDesk } from './DiReceptionDesk.js';
+import { DiReceptionInbox } from './DiReceptionInbox.js';
+import type { DiReceptionInboxAccess } from './diReceptionInboxState.js';
+import { attentionLine, buildInbox, panelSourceOf } from './diReceptionItems.js';
 import { useRovingFocus } from './diRovingFocus.js';
 
 interface DiOfficePanelProps {
@@ -116,6 +117,11 @@ interface DiOfficePanelProps {
   review?: DiCodeReviewAccess | null;
   /** item 4: the Mission request workspace seam (absent: no entry is drawn). */
   mission?: DiMissionRequestAccess | null;
+  /**
+   * The reception inbox seam (owned by App): the sidebar's attention entry and the in-world desk are
+   * two entrances to ONE dialog. Absent: the attention line is words only and no inbox exists.
+   */
+  receptionInbox?: DiReceptionInboxAccess | null;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -2301,6 +2307,7 @@ function DiOfficePanelBody({
   evidence = null,
   review = null,
   mission = null,
+  receptionInbox = null,
 }: DiOfficePanelProps) {
   const [selectedId, setSelectedId] = useState<number | null>(officeState.selectedAgentId);
   useEffect(() => {
@@ -2351,8 +2358,6 @@ function DiOfficePanelBody({
    */
   const [hiddenReception, setHiddenReception] = useState<ReadonlySet<string>>(() => new Set());
   const missionsRef = useRef<HTMLElement>(null);
-  /** The reception desk below the Missions: "Go to the desk" scrolls it into view (view only). */
-  const receptionRef = useRef<HTMLDivElement>(null);
   /** feature13: the full-size inspector — what it is open on, and the control that opened it. */
   const [inspector, setInspector] = useState<InspectorTarget | null>(null);
   const inspectorOpener = useRef<HTMLElement | null>(null);
@@ -2370,6 +2375,40 @@ function DiOfficePanelBody({
     );
     dock?.focus();
   });
+  /**
+   * "Show this Mission" from the reception inbox closes the inbox first (the world must be SEEN, and
+   * the modal keeps #root inert until it unmounts), then does the same view-only jump the inline list
+   * always did. The dialog's own return-focus runs first; the jump then lands focus on the Missions.
+   */
+  const afterReceptionClose = useRef<(() => void) | null>(null);
+  const receptionOpen = receptionInbox?.open === true;
+  useEffect(() => {
+    if (receptionOpen || afterReceptionClose.current === null) return;
+    const run = afterReceptionClose.current;
+    afterReceptionClose.current = null;
+    run();
+  });
+  /**
+   * A destination the inbox sends the person to (a Mission in the list, a Mission's details) lives in
+   * the EXPANDED sidebar. With the sidebar collapsed it is expanded first, and the action runs once the
+   * panel is drawn (its Missions list and inspector exist only then), so the jump always lands on
+   * something visible — also for a Mission with no drawn agent, which has no camera destination.
+   */
+  const afterExpand = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (collapsed || afterExpand.current === null) return;
+    const run = afterExpand.current;
+    afterExpand.current = null;
+    run();
+  });
+  const whenExpanded = (action: () => void) => {
+    if (!collapsed) {
+      action();
+      return;
+    }
+    afterExpand.current = action;
+    onCollapsedChange(false);
+  };
   /** VIEW-ONLY navigation: moves the office selection and camera, nothing else. */
   const navigateTo = (id: number | null) => {
     if (id === null || !officeState.characters.has(id)) return;
@@ -2378,6 +2417,14 @@ function DiOfficePanelBody({
     seenId.current = id;
     setSelectedId(id);
     setMemory(remember(recordForCharacter(state, id)));
+  };
+  /** VIEW-ONLY: nothing is selected, as the person's own deselection would leave it (canvas, camera, panel). */
+  const clearSelection = () => {
+    officeState.selectedAgentId = null;
+    officeState.cameraFollowId = null;
+    seenId.current = null;
+    setSelectedId(null);
+    setMemory(null);
   };
   const { envelope, times, coverage, missions } = state;
   /** VIEW-ONLY: show one Mission in the list (and nothing else). */
@@ -2390,7 +2437,13 @@ function DiOfficePanelBody({
   const jumpToMission = (missionRef: string) => {
     showMission(missionRef);
     const picked = missions.missions.find((m) => m.missionRef === missionRef);
-    navigateTo(picked?.members.members.find((m) => m.characterId !== null)?.characterId ?? null);
+    const id = picked?.members.members.find((m) => m.characterId !== null)?.characterId ?? null;
+    if (id !== null && officeState.characters.has(id)) navigateTo(id);
+    // A Mission with nothing drawn has no agent to select and no camera destination. Showing it must
+    // not leave the PREVIOUS agent selected beside it (the dock and the details would then speak of
+    // the wrong Mission): the selection is replaced by "nothing", and the requested Mission, alone in
+    // the list, is the destination. (navigateTo itself still ignores null for every other caller.)
+    else clearSelection();
   };
   /** VIEW-ONLY: select a record — on the map when it is drawn, in the inspector always. */
   const selectRecord = (record: DiRecord) => {
@@ -2419,26 +2472,113 @@ function DiOfficePanelBody({
   const snapshotFreshness = officeFreshness(state, times.snapshotObservedAt);
   const runtimeFreshness = officeFreshness(state, state.runtimeAgents?.observedAt ?? null);
 
+  /** What this window knows about the request panel (the inbox lists what it reports needs the person). */
+  const panelSource = panelSourceOf(mission === null ? null : mission.state);
+  /**
+   * The inbox's routes into the request panel. The inbox closes first (its modal keeps #root inert),
+   * then the panel opens on that one conversation or request and READS it; nothing is sent from here.
+   */
+  const panelActions =
+    mission?.openConversation && mission.openRequest
+      ? {
+          openConversation: (conversationId: string) => {
+            const opener = receptionInbox?.returnFocusTo.current ?? null;
+            afterReceptionClose.current = () =>
+              mission.openConversation?.(
+                conversationId,
+                opener?.isConnected === true
+                  ? opener
+                  : (document.querySelector<HTMLElement>('[data-testid="di-open-reception"]') ??
+                      document.body),
+              );
+            receptionInbox?.close();
+          },
+          openRequest: (requestRef: string) => {
+            const opener = receptionInbox?.returnFocusTo.current ?? null;
+            afterReceptionClose.current = () =>
+              mission.openRequest?.(
+                requestRef,
+                opener?.isConnected === true
+                  ? opener
+                  : (document.querySelector<HTMLElement>('[data-testid="di-open-reception"]') ??
+                      document.body),
+              );
+            receptionInbox?.close();
+          },
+        }
+      : undefined;
+
+  /** The reception inbox: ONE dialog for both entrances, drawn even while the panel is collapsed. */
+  const receptionDialog =
+    receptionInbox?.open === true
+      ? createPortal(
+          <DiReceptionInbox
+            state={state}
+            panel={panelSource}
+            panelActions={panelActions}
+            filter={receptionInbox.filter}
+            onFilterChange={receptionInbox.setFilter}
+            lastKey={receptionInbox.lastKey}
+            onFocusedKey={receptionInbox.setLastKey}
+            hidden={hiddenReception}
+            onHide={(key) => setHiddenReception((prev) => new Set(prev).add(key))}
+            onShowHidden={() => setHiddenReception(new Set())}
+            onJump={(missionRef) => {
+              afterReceptionClose.current = () => whenExpanded(() => jumpToMission(missionRef));
+              receptionInbox.close();
+            }}
+            // Details and evidence need the panel's inspector, which exists in the expanded sidebar:
+            // a collapsed sidebar is expanded first (whenExpanded), never left to do nothing.
+            missionActions={{
+              hasMission: (ref) => missions.missions.some((m) => m.missionRef === ref),
+              hasEvidence: (ref) =>
+                missions.missions.some((m) => m.missionRef === ref && m.evidence),
+              openDetails: (ref, section) => {
+                const back = receptionInbox.returnFocusTo.current;
+                afterReceptionClose.current = () =>
+                  whenExpanded(() => {
+                    inspectorOpener.current =
+                      back?.isConnected === true
+                        ? back
+                        : document.querySelector<HTMLElement>('[data-testid="di-open-reception"]');
+                    setInspector({ kind: 'mission', missionRef: ref, section });
+                  });
+                receptionInbox.close();
+              },
+            }}
+            onClose={receptionInbox.close}
+            returnFocusTo={receptionInbox.returnFocusTo}
+          />,
+          document.body,
+        )
+      : null;
+
   if (collapsed) {
     return (
-      <button
-        type="button"
-        className={`di-op-theme di-op-collapsed ${DI_FOCUS_RING}`}
-        onClick={() => onCollapsedChange(false)}
-        data-testid="di-office-panel-collapsed"
-      >
-        DI office: <LiveBadge live={state.live} reason={state.notLiveReason} /> ▸ show
-      </button>
+      <>
+        <button
+          type="button"
+          className={`di-op-theme di-op-collapsed ${DI_FOCUS_RING}`}
+          onClick={() => onCollapsedChange(false)}
+          data-testid="di-office-panel-collapsed"
+        >
+          DI office: <LiveBadge live={state.live} reason={state.notLiveReason} /> ▸ show
+        </button>
+        {receptionDialog}
+      </>
     );
   }
 
   /** The ONE attention entry's words (null: this office provides no reception desk). */
-  const attention = state.reception ? attentionSummary(state.reception, hiddenReception) : null;
-  const goToDesk = () => {
-    const desk = receptionRef.current;
-    desk?.scrollIntoView({ block: 'start', behavior: 'auto' });
-    desk?.querySelector<HTMLElement>('#di-reception-heading')?.focus({ preventScroll: true });
-  };
+  const inboxModel = buildInbox(
+    state.reception,
+    panelSource,
+    state.missions?.missions ?? [],
+    hiddenReception,
+  );
+  const attention = state.reception
+    ? { count: inboxModel.attention, text: attentionLine(inboxModel.attention) }
+    : null;
   /** Each Mission's short source-qualified ref, unique across the whole list. */
   const shortRefs = shortMissionRefs(missions.missions);
   const shown = filterMissions(missions.missions, focusMission, liveOnly);
@@ -2523,14 +2663,17 @@ function DiOfficePanelBody({
                   )}
                   {attention.text}
                 </span>
-                <button
-                  type="button"
-                  className={`di-op-link ${DI_FOCUS_RING}`}
-                  onClick={goToDesk}
-                  title="View only: scrolls to the list of what needs attention, in this panel"
-                >
-                  Show the list
-                </button>
+                {receptionInbox && (
+                  <button
+                    type="button"
+                    className={`di-op-link ${DI_FOCUS_RING}`}
+                    data-testid="di-open-reception"
+                    onClick={(event) => receptionInbox.openFrom(event.currentTarget)}
+                    title="View only: opens the reception inbox, the same one as the reception desk in the office"
+                  >
+                    Open reception
+                  </button>
+                )}
               </div>
             </>
           ) : (
@@ -2698,37 +2841,6 @@ function DiOfficePanelBody({
           ))}
         </section>
 
-        <div ref={receptionRef} className="di-op-secondary">
-          {limits && (
-            // The exact limits of this view, beside the attention list they qualify (the face says
-            // them once, in one plain sentence; "Show the list" leads here).
-            <details className="di-op-limits-detail" data-testid="di-view-limits-detail">
-              <summary className={DI_FOCUS_RING}>What this view may not show</summary>
-              <ul className="di-op-detail-body">
-                {limits.items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {state.reception ? (
-            <DiReceptionDesk
-              reception={state.reception}
-              hidden={hiddenReception}
-              onHide={(key) => setHiddenReception((prev) => new Set(prev).add(key))}
-              onShowHidden={() => setHiddenReception(new Set())}
-              onJump={jumpToMission}
-              fixture={state.fixtureMode === true}
-              compact
-            />
-          ) : (
-            // An office state from a server without the desk: said so, never an empty desk.
-            <section className="text-text-muted" data-testid="di-reception-absent">
-              Reception desk: not provided by this office.
-            </section>
-          )}
-        </div>
-
         <RuntimeAgentsSection
           runtime={state.runtimeAgents}
           selectedKey={selectedKey}
@@ -2888,6 +3000,8 @@ function DiOfficePanelBody({
           </div>
         )}
       </section>
+
+      {receptionDialog}
 
       {inspector && (
         <OfficeInspector

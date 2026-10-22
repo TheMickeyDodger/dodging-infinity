@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **The request workspace matches the side panel (Pixel Agents DI office).** Ask and Requests now read as part of the same product as the side
+  panel: its palette, type scale, lines and controls; a compact header with quiet tabs; one persistent context area (never dismissable) instead
+  of two tall banners; short You / Assistant labels with the drafting-versus-decision note said once; and counts that name what they count
+  (`1 request needs you · 1 conversation waiting for your answer · 1 request in all`). An older reply with a closed technical block shows its
+  prose, a view-only note and its exact original behind a disclosure, and is never listed or counted. An open request leads with its plain
+  title, status and next step, with the request id, Mission, revision and digest together under "Exact references (technical)"; raw keys follow
+  their plain words; the decision still states exactly what approving binds to. Smaller windows are covered: wider reading no longer squeezes
+  the open request or scrolls sideways where there is little room, the header title is never clipped, and Escape returns focus to the control
+  that shows the side panel when it was hidden; and where it covers a narrow window it now sits above the office's own overlays (the ambient legend no longer letters over its text) and below the dialogs. Presentation only: no change to who decides, to approve, start or withdraw, to any binding, or to the server.
+  See the README and [`docs/pixel-agents-office.md`](docs/pixel-agents-office.md), "The workspace".
+- **One Reception inbox, a decorative receptionist, real agents in all three grand offices, and calmer interiors (Pixel Agents DI
+  office).** The side panel's attention entry and the in-world desk now open one Reception inbox: what needs you, from Mission Core, the
+  delivery proposals (opt-in) and the request panel. Each card has a plain first layer with no ids or codes, a next step that agrees with
+  its button, and one count shared with the request panel's own card; the exact record stays one disclosure away. A permanent, decorative
+  receptionist stands at the lobby desk (not a worker, with no authority). Agents are placed across the Palace, the Botanical Atrium and
+  the Deco Observatory, workstations first (a workstation faces a desk and a PC or monitor; a four-agent Mission sits 2/1/1 on workstations; a seat held now or remembered for an identity, even at a bare table, is kept), and are remembered by identity across restarts; an existing
+  single-office roster is re-placed once. Office residents now stop in lobbies and corridors instead of at the desks while the offices keep
+  their people, and the saved residents of the previous build carry over: restored exactly where unchanged, reset fresh where changed, and
+  refused rather than guessed when a rider's plan changed. In the request panel's transcript the assistant's questions read as questions,
+  with its exact reply one disclosure away. Observation only: no new authority. See the README and
+  [`docs/pixel-agents-office.md`](docs/pixel-agents-office.md), "Reception: what needs you".
+
 - **A calmer Mission panel and a full-size inspector for the Pixel Agents DI office.** The side panel now answers three
   questions first: what is running, its observed status (a word and a shape, never colour alone) and who is on it. Setup
   prose, raw codes and provenance sit behind disclosure, while stale, not-live and unverified-identity caveats stay on the

@@ -33,6 +33,7 @@ import {
   cityRgba,
 } from '../../constants.js';
 import type { VisibleTiles } from '../projection.js';
+import { registerRenderCache } from '../renderCaches.js';
 import { TILE_SIZE } from '../types.js';
 import type { DarknessColor } from './cityLight.js';
 import { levelColor } from './cityLight.js';
@@ -85,9 +86,18 @@ let sprites: { white: CityLayer; warm: CityLayer } | null = null;
 /** Replace the surface factory (tests); null restores the default. Drops every cached surface. */
 export function setCityLayerFactory(factory: CityLayerFactory | null): void {
   layerFactory = factory ?? defaultLayerFactory;
+  resetCityLayers();
+}
+
+/** The render-cache lifecycle (renderCaches.ts): drop the cached surfaces. The two light sprites are drawn ONCE and kept, so they
+ *  must be rebuilt after a context restore; the darkness layer is cleared and redrawn every frame. */
+export function resetCityLayers(): void {
   darkness = null;
   sprites = null;
 }
+
+// joins the lifecycle (renderCaches.ts does not import this DOM module); it holds no carpet-layer pixels, so it reports none
+registerRenderCache({ reset: resetCityLayers, pixels: () => 0 });
 
 function ensureDarkness(width: number, height: number): { layer: CityLayer; ctx: CityCtx } | null {
   if (darkness && darkness.layer.width === width && darkness.layer.height === height)

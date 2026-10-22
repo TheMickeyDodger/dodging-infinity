@@ -11,8 +11,11 @@ one bounded, no-follow read of the registered store file through the store's
 OWN load boundary (``mission.store.accept_loaded_document``) and whose
 ``lock`` and ``save`` REFUSE. The delivery layer is reached through ONE
 call, ``validated_receipt`` (pure validation of a document this module
-loaded); never an attesting, recording or transport path. Nothing here
-writes, registers, mints, reserves or repairs anything.
+loaded), and, for the delivery-presentations reader at the end of this
+module, ``validated_attestation`` (the same unchanged validation, returning
+only the proposal digest a record attests) and the pure
+``delivery_proposal_digest``; never an attesting, recording or transport
+path. Nothing here writes, registers, mints, reserves or repairs anything.
 
 THE CURSOR IS SAMPLED FIRST. ``sample`` reads each registered Mission Core
 store ONCE (load 1) BEFORE the runtime capture and before ANY report is
@@ -67,6 +70,33 @@ from target_runtime import state_artifact
 DELIVERY_STORE_FILE = "pr_delivery.json"
 DELIVERY_STORE_SCHEMA_VERSION = 1
 MAX_DELIVERY_STORE_BYTES = 4194304
+#: The delivery presentations reader (D1). The Grok Bot state file it reads
+#: and its schema version, the bytes it may read, and the bounds of one
+#: presentations map; all re-declared (this module may not import the Grok
+#: Bot) and pinned equal to their owners by test.
+PRESENTATIONS_FILE = "grok_bot_requests.json"
+PRESENTATIONS_SCHEMA_VERSION = 1
+MAX_PRESENTATIONS_FILE_BYTES = 8388608
+MAX_DELIVERY_PRESENTATIONS = 16
+RECEIPT_KEYS = ("proposal", "display_digest_sha256")
+PROPOSAL_KEYS = ("binding", "expires_at", "presented_at")
+PRESENTATION_MODES = ("pull_request", "pr_update")
+#: At most this many records in the PR delivery store (``pr_delivery.store``).
+MAX_DELIVERY_RECORDS = 64
+MAX_REPOSITORY_URL_CHARS = 512
+MAX_WORKFLOW_ID_CHARS = 128
+#: The latest time a presentation may carry (the end of year 9999, UTC): a
+#: bound on what is read, never a repair of what is stored.
+MAX_EPOCH_SECONDS = 253402300799
+#: The bounds of the pure-Python canonical-input check that runs BEFORE any
+#: digest or validation call over a presented proposal or a delivery record:
+#: containers nested at most this deep, and at most this many values in all
+#: (the root included), charged before anything is queued.
+MAX_CANONICAL_DEPTH = 16
+MAX_CANONICAL_NODES = 262144
+#: The catalog source kind of a workflow-authority store (``mission_sources``
+#: ``contract.KIND_WORKFLOW_STORE``), re-declared and pinned equal by test.
+WORKFLOW_STORE_KIND = "workflow_store"
 MAX_LOCATOR_PARTS = 16
 _OPEN_MODE_BITS = 0o077
 #: The task status literals the report vocabulary admits, EXACTLY.
@@ -680,3 +710,341 @@ class MissionStateComposer(object):
 def _block(state_name, problem, detail=None):
     return {"state": state_name, "problem": problem, "detail": detail,
             "report": None, "inputs": None}
+
+
+# -- D1: the Grok Bot delivery PRESENTATIONS, read-only -----------------------
+
+
+_HEX_DIGITS = frozenset("0123456789abcdef")
+_WORKFLOW_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
+#: The characters a public repository URL may carry here (no credentials,
+#: query strings or fragments).
+_URL_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                       "0123456789:/._-")
+
+
+def _hex64(value):
+    return type(value) is str and len(value) == 64 and not set(value) - (
+        _HEX_DIGITS)
+
+
+def _is_version(value, expected):
+    """The stored schema version: an int equal to ``expected``. A bool is
+    never an int here (``True == 1``), as in the canonical stores."""
+    return type(value) is int and value == expected
+
+
+def _epoch(value):
+    """A stored presentation time, or None. ``pr_delivery`` takes these from
+    ``time.time()``, so a finite, non-bool int or float is canonical; anything
+    else (bool, string, NaN, infinity, negative, absurdly large) is not.
+    Finite means ``value - value == 0.0`` (NaN and the infinities fail it)."""
+    if type(value) is not int and type(value) is not float:
+        return None
+    if type(value) is float and value - value != 0.0:
+        return None
+    return value if 0 <= value <= MAX_EPOCH_SECONDS else None
+
+
+def _plain_canonical(value):
+    """True when ``value`` is plain data with a canonical JSON form at ANY
+    depth: only dict (string keys) / list / str / int / bool / None / FINITE
+    float, nested at most ``MAX_CANONICAL_DEPTH`` containers deep and holding at
+    most ``MAX_CANONICAL_NODES`` values in all (the root included). Pure Python
+    (no import), iterative, and run BEFORE any digest or validation call, so
+    those calls cannot meet a value they refuse (a NaN or an infinity nested
+    anywhere, a non-string key, a value that is not JSON).
+
+    The bounds are charged BEFORE anything is enqueued: a container's whole
+    child count is taken from the ``remaining`` budget first and refused at once
+    when it does not fit, only containers are queued, and the depth is checked at
+    the moment a container is queued. So ``pending`` can never hold more than the
+    bound, and an oversized flat container costs one length check."""
+    remaining = MAX_CANONICAL_NODES
+    pending = [([value], 0)]
+    while pending:
+        container, depth = pending.pop()
+        size = len(container)
+        if size > remaining:
+            return False
+        remaining -= size
+        if type(container) is dict:
+            for key in container:
+                if type(key) is not str:
+                    return False
+            children = container.values()
+        else:
+            children = container
+        for child in children:
+            kind = type(child)
+            if kind is dict or kind is list:
+                if depth + 1 > MAX_CANONICAL_DEPTH:
+                    return False
+                pending.append((child, depth + 1))
+            elif kind is float:
+                if child - child != 0.0:
+                    return False
+            elif kind is not str and kind is not int and kind is not bool and (
+                    child is not None):
+                return False
+    return True
+
+
+def _repository_url(binding):
+    """The binding's public repository URL, or None when it is not a plain
+    web URL of the bounded shape (never an error: it is display text)."""
+    repository = binding.get("repository")
+    url = repository.get("repository_url") if type(repository) is dict else None
+    if type(url) is not str or not 0 < len(url) <= MAX_REPOSITORY_URL_CHARS:
+        return None
+    if not (url.startswith("https://") or url.startswith("http://")):
+        return None
+    return url if not set(url) - _URL_CHARS else None
+
+
+def _mission_binding(binding):
+    """``None`` for a null mission binding; the allowlisted pair for a
+    well-formed one; raises ``_Unavailable`` for a malformed one."""
+    mission = binding.get("mission")
+    if mission is None:
+        return None
+    if type(mission) is not dict or sorted(mission) != [
+            "mission_authorization_digest_sha256", "workflow_id"]:
+        raise _Unavailable("presentations_invalid")
+    workflow_id = mission["workflow_id"]
+    digest = mission["mission_authorization_digest_sha256"]
+    if type(workflow_id) is not str or not 0 < len(workflow_id) <= (
+            MAX_WORKFLOW_ID_CHARS) or set(workflow_id) - _WORKFLOW_ID_CHARS:
+        raise _Unavailable("presentations_invalid")
+    if digest is not None and not _hex64(digest):
+        raise _Unavailable("presentations_invalid")
+    return {"workflow_id": workflow_id,
+            "authorization_digest_sha256": digest}
+
+
+def _link(binding_mission, workflow_missions, inspection):
+    """The entry's Mission link, from the exact workflow id only.
+
+    "No registered Mission" and a unique match are claimed only when the
+    Mission side was fully inspected (``inspection``); otherwise the entry is
+    unlinked with the reason it is not known, never with "no match". Two
+    matches are ambiguous whatever else could not be read."""
+    if binding_mission is None:
+        return {"state": contract_v2.LINK_UNLINKED_NO_MISSION_BINDING,
+                "mission_ref": None,
+                "authorization_digest":
+                    contract_v2.AUTHORIZATION_NOT_COMPARABLE}
+    found = workflow_missions.get(binding_mission["workflow_id"], [])
+    if inspection == contract_v2.INSPECTION_REGISTRY_UNAVAILABLE:
+        link_state, ref = contract_v2.LINK_UNLINKED_REGISTRY_UNAVAILABLE, None
+    elif len(found) > 1:
+        link_state, ref = contract_v2.LINK_UNLINKED_AMBIGUOUS, None
+    elif inspection != contract_v2.INSPECTION_COMPLETE:
+        link_state, ref = contract_v2.LINK_UNLINKED_SOURCES_INCOMPLETE, None
+    elif not found:
+        link_state, ref = contract_v2.LINK_UNLINKED_NO_REGISTERED_MISSION, None
+    else:
+        link_state, ref = contract_v2.LINK_LINKED, found[0]
+    # The catalog does not carry a workflow Mission's authorization digest, so
+    # a match is never reported as corroborated or differing.
+    return {"state": link_state, "mission_ref": ref,
+            "authorization_digest": contract_v2.AUTHORIZATION_NOT_COMPARABLE}
+
+
+class DeliveryPresentationsReader(object):
+    """The explicitly registered, READ-ONLY reader of the Grok Bot's delivery
+    PRESENTATIONS, for query contract version 2, over two directories the
+    operator named (nothing is discovered):
+
+    - ``presentations``: the Grok Bot state directory holding
+      ``grok_bot_requests.json``. ONLY its ``delivery_presentations`` map is
+      taken (the proposals the Grok route DISPLAYED, each keyed by the digest
+      of the proposal itself, at most ``MAX_DELIVERY_PRESENTATIONS``); every
+      other key of that document is never inspected, validated, copied, logged
+      or echoed, so a malformed ``requests`` map cannot make this reader
+      refuse, because it is not read. Each proposal is checked to be plain
+      data with a canonical JSON form BEFORE its digest is computed
+      (``_plain_canonical``), and its content-address is then checked through
+      the delivery layer's own pure ``delivery_proposal_digest``: a key that is
+      not the digest of its proposal makes the source unavailable.
+    - ``delivery_store``: the registered PR delivery store (the SAME
+      directory ``MissionStateComposer`` reads), loaded through its existing
+      ``_delivery_document``. Every record is first checked to be plain
+      canonical data, then validated by the delivery layer's UNCHANGED
+      validator through ``mission_parent.validated_attestation``, which
+      returns only the delivery id and the proposal digest its operator
+      attestation names. A record that is malformed or tampered makes the
+      source unavailable (a closed reason; nothing of the record is echoed);
+      a valid record without an attestation (a local-terminal authorization)
+      is valid and authorizes no presented proposal.
+
+    Per presentation, from actual data: ``authorized`` (a validated record
+    attests that digest; ``matching_deliveries`` says how many, never
+    merged), ``awaiting_no_recorded_authorization`` (unexpired and no
+    matching record: exactly that, not a claim that an approval is usable, and
+    a decline is never inferred), ``expired_without_authorization`` (expired
+    and no matching record) and ``unknown`` (no delivery store is registered).
+    The block is ``unavailable`` with a closed problem, never an empty list,
+    when either file is missing, unreadable, not private, too large, not JSON
+    or not the expected shape. Identity is the source plus the proposal
+    digest; a presentation is linked to a Mission only when its
+    ``binding.mission.workflow_id`` equals exactly ONE workflow-store
+    Mission's ``native_id``. Only an allowlist of display facts is projected.
+    Nothing here writes, registers, mints, reserves or repairs anything."""
+
+    def __init__(self, presentations, delivery_store, clock):
+        self._presentations = presentations
+        self._delivery_store = delivery_store
+        self._clock = clock
+        self._records = MissionStateComposer(clock, delivery_store)
+
+    def _entries(self):
+        """The validated, allowlisted presentations: plain dicts sorted by
+        ``(presented_at, digest)`` (each also holding its exact expiry, which
+        is never projected). Raises ``_Unavailable`` with a closed problem."""
+        directory = self._presentations
+        try:
+            mode = os.stat(directory).st_mode
+        except OSError:
+            raise _Unavailable("presentations_directory_missing")
+        if not stat.S_ISDIR(mode) or mode & _OPEN_MODE_BITS:
+            raise _Unavailable("presentations_directory_not_private")
+        try:
+            data = _bounded_read(os.path.join(directory, PRESENTATIONS_FILE),
+                                 MAX_PRESENTATIONS_FILE_BYTES, None)
+            document = fileread.load_bounded_json(data)
+        except fileread.FileRefused as exc:
+            raise _Unavailable("presentations_file_absent" if exc.problem == (
+                fileread.PROBLEM_FILE_ABSENT) else "presentations_unreadable")
+        except fileread.JsonRefused:
+            raise _Unavailable("presentations_json_invalid")
+        if type(document) is not dict or not _is_version(
+                document.get("schema_version"), PRESENTATIONS_SCHEMA_VERSION):
+            raise _Unavailable("presentations_schema_unsupported")
+        # The ONE map this reader takes from the document; the rest is left
+        # unexamined on purpose.
+        receipts = document.get("delivery_presentations", {})
+        del document
+        if type(receipts) is not dict or len(receipts) > (
+                MAX_DELIVERY_PRESENTATIONS):
+            raise _Unavailable("presentations_invalid")
+        entries = []
+        for key in receipts:
+            receipt = receipts[key]
+            if not _hex64(key) or type(receipt) is not dict or sorted(
+                    receipt) != sorted(RECEIPT_KEYS) or not _hex64(
+                        receipt["display_digest_sha256"]):
+                raise _Unavailable("presentations_invalid")
+            proposal = receipt["proposal"]
+            if type(proposal) is not dict or sorted(proposal) != sorted(
+                    PROPOSAL_KEYS) or not _plain_canonical(proposal):
+                raise _Unavailable("presentations_invalid")
+            # Plain canonical data: the digest below cannot meet a value it
+            # refuses (a NaN or infinity, a non-string key, a non-JSON value).
+            if authorization.delivery_proposal_digest(proposal) != key:
+                raise _Unavailable("presentations_invalid")
+            presented_at = proposal["presented_at"]
+            expires_at = proposal["expires_at"]
+            binding = proposal["binding"]
+            if _epoch(presented_at) is None or _epoch(expires_at) is None or (
+                    type(binding) is not dict
+                    or binding.get("mode") not in PRESENTATION_MODES):
+                raise _Unavailable("presentations_invalid")
+            entries.append({
+                "proposal_digest_sha256": key,
+                # whole seconds are projected; the state is decided from the
+                # exact stored ``expires_at`` (kept here, never shown)
+                "presented_at": int(presented_at),
+                "expires_at": int(expires_at),
+                "expires_exact": expires_at,
+                "mode": binding["mode"],
+                "repository_url": _repository_url(binding),
+                "binding_mission": _mission_binding(binding),
+            })
+        return sorted(entries, key=lambda e: (e["presented_at"],
+                                              e["proposal_digest_sha256"]))
+
+    def _attested_counts(self):
+        """``{proposal digest: matching delivery count}`` from the registered
+        store after the delivery layer's own validation of EVERY record, or
+        raises ``_Unavailable`` (``delivery_store_unreadable`` /
+        ``delivery_store_invalid``)."""
+        try:
+            document = self._records._delivery_document()
+        except _Unavailable:
+            raise _Unavailable("delivery_store_unreadable")
+        deliveries = document["deliveries"]
+        if sorted(document) != ["deliveries", "pr_delivery_store_schema_version"] or (
+                not _is_version(document["pr_delivery_store_schema_version"],
+                                DELIVERY_STORE_SCHEMA_VERSION)) or (
+                    len(deliveries) > MAX_DELIVERY_RECORDS):
+            raise _Unavailable("delivery_store_invalid")
+        counts = {}
+        for delivery_key in deliveries:
+            delivery = deliveries[delivery_key]
+            # Before ANY validation call (which computes digests of its own):
+            # plain canonical data only, so none of them can meet a value it
+            # refuses.
+            if not _plain_canonical(delivery):
+                raise _Unavailable("delivery_store_invalid")
+            try:
+                delivery_id, digest = mission_parent.validated_attestation(
+                    delivery)
+            except authorization.AuthorizationError:
+                raise _Unavailable("delivery_store_invalid")
+            if delivery_id != delivery_key:
+                raise _Unavailable("delivery_store_invalid")
+            if digest is not None:
+                counts[digest] = counts.get(digest, 0) + 1
+        return counts
+
+    def block(self, missions, inspection=contract_v2.INSPECTION_COMPLETE,
+              kinds=None):
+        """The version 2 envelope block over this refresh's ``missions``, what
+        the Mission side could ``inspection``-inspect, and ``kinds``
+        (``{source_id: kind}`` from the response's own source blocks). Whether
+        this source is registered, and whether it can be read, never depend
+        on the Mission registry."""
+        registered = (contract_v2.DELIVERY_STORE_REGISTERED
+                      if self._delivery_store is not None
+                      else contract_v2.DELIVERY_STORE_NOT_REGISTERED)
+        try:
+            entries = self._entries()
+            attested = (self._attested_counts()
+                        if self._delivery_store is not None else None)
+        except _Unavailable as exc:
+            return contract_v2.delivery_presentations_block(
+                contract_v2.DELIVERY_PRESENTATIONS_UNAVAILABLE, exc.reason,
+                registered, None, [])
+        now = self._clock()
+        kinds = kinds or {}
+        workflow_missions = {}
+        for mission in missions:
+            if kinds.get(mission["source_id"]) == WORKFLOW_STORE_KIND:
+                workflow_missions.setdefault(mission["native_id"],
+                                             []).append(mission["mission_ref"])
+        projected = []
+        for entry in entries:
+            digest = entry["proposal_digest_sha256"]
+            if attested is None:
+                outcome = contract_v2.DELIVERY_STATE_UNKNOWN
+                matching = None
+            else:
+                matching = attested.get(digest, 0)
+                if matching > 0:
+                    outcome = contract_v2.DELIVERY_STATE_AUTHORIZED
+                elif now < entry["expires_exact"]:
+                    outcome = contract_v2.DELIVERY_STATE_AWAITING
+                else:
+                    outcome = contract_v2.DELIVERY_STATE_EXPIRED
+            shown = dict((field, entry[field]) for field in entry
+                         if field != "expires_exact")
+            shown["source_id"] = contract_v2.DELIVERY_PRESENTATIONS_SOURCE_ID
+            shown["state"] = outcome
+            shown["matching_deliveries"] = matching
+            shown["link"] = _link(entry["binding_mission"], workflow_missions,
+                                  inspection)
+            projected.append(shown)
+        return contract_v2.delivery_presentations_block(
+            contract_v2.DELIVERY_PRESENTATIONS_OBSERVED, None, registered,
+            len(projected), projected)

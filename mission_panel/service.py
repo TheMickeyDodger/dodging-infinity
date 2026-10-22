@@ -43,6 +43,14 @@ RELAY_REF = "di-world-panel"
 DECISION_WORD = "approve"
 RUN_COMMANDS = ("dispatch", "observe", "reconcile", "verify")
 
+# What reading a COMPLETED reply for ``mission-questions`` can say. ``not_reported``: the turn was
+# written by a panel version that did not read for questions (the journal turn has no ``questions``
+# key); that is NOT "read; none declared". ``read``: this version read it (items may be empty).
+# ``not_applicable``: no completed reply to read.
+QUESTIONS_NOT_REPORTED = "not_reported_by_this_panel_version"
+QUESTIONS_READ = "read"
+QUESTIONS_NOT_APPLICABLE = "not_applicable"
+
 MAX_OVERVIEW_REQUESTS = 20
 MAX_OVERVIEW_CONVERSATIONS = 10
 MAX_VIEW_TURNS = 50
@@ -348,13 +356,56 @@ class PanelService(object):
             "scope_meanings": dict(draft_module.SCOPE_MEANINGS),
         }
 
+    @staticmethod
+    def _questions_view(turn):
+        """What this panel version read from one turn's reply for questions."""
+        if turn["state"] != journal_module.TURN_COMPLETED:
+            return {"reporting": QUESTIONS_NOT_APPLICABLE, "items": [],
+                    "problem": None}
+        declared = turn.get("questions")
+        if declared is None:
+            return {"reporting": QUESTIONS_NOT_REPORTED, "items": [],
+                    "problem": None}
+        return {"reporting": QUESTIONS_READ, "items": list(declared["items"]),
+                "problem": declared["problem"]}
+
+    @classmethod
+    def _awaiting(cls, turns):
+        """The conversation's answer state, from canonical journal fields only.
+
+        AWAITING YOUR ANSWER exactly when the newest COMPLETED turn declared
+        questions, produced no draft, and no later turn exists (a later turn of
+        any state, answered or failed or still reserved, ends it: that turn is
+        named by ``latest_turn_state``, never guessed to be an answer). A local
+        hide in any client is never a resolution; the journal is."""
+        completed = [t for t in turns
+                     if t["state"] == journal_module.TURN_COMPLETED]
+        latest = turns[-1]
+        if not completed:
+            return {"awaiting_answer": False,
+                    "questions_reporting": QUESTIONS_NOT_APPLICABLE,
+                    "questions_problem": None, "awaiting_turn_id": None,
+                    "awaiting_questions": [],
+                    "latest_turn_state": latest["state"]}
+        newest = completed[-1]
+        view = cls._questions_view(newest)
+        awaiting = bool(view["items"]) and newest["draft"] is None and (
+            newest["sequence"] == latest["sequence"])
+        return {"awaiting_answer": awaiting,
+                "questions_reporting": view["reporting"],
+                "questions_problem": view["problem"],
+                "awaiting_turn_id": newest["turn_id"] if awaiting else None,
+                "awaiting_questions": view["items"] if awaiting else [],
+                "latest_turn_state": latest["state"]}
+
     def overview(self):
         listed = self._surface.list_requests(limit=MAX_OVERVIEW_REQUESTS)
         requests = [self._summary(entry) for entry in listed["requests"]]
         conversations = []
         for item in self._journal.recent_conversations(MAX_OVERVIEW_CONVERSATIONS):
-            first = self._journal.conversation(item["conversation_id"])[0]
-            item["first_words"] = first["user_text"][:FIRST_WORDS_CHARS]
+            turns = self._journal.conversation(item["conversation_id"])
+            item["first_words"] = turns[0]["user_text"][:FIRST_WORDS_CHARS]
+            item.update(self._awaiting(turns))
             conversations.append(item)
         return {
             "ok": True, "server_now": self._clock(),
@@ -395,6 +446,7 @@ class PanelService(object):
                 "proposal_digest_sha256": draft["proposal_digest_sha256"],
                 "runnable_problem": draft_module.runnable_problem(draft["proposal"])},
             "draft_problem": turn["draft_problem"], "submission": submission,
+            "questions": self._questions_view(turn),
         }
 
     def _linked_refs(self):

@@ -126,6 +126,23 @@ export function ambientLabel(job: AmbientJobId, waitingForTrain = false): string
   return `Ambient · ${j.label} · ${waitingForTrain ? 'waiting for a train' : j.activity} · decorative`;
 }
 
-export function jobsForDistrict(label: string): readonly AmbientJobId[] {
+/**
+ * The Palace's lobby/visitor jobs when the DI reception POST exists: the one permanent receptionist stands at the desk (OfficeState
+ * `receptionist`), so no ambient resident is a second receptionist in the Palace lobby. The receptionist entry is replaced IN PLACE by an
+ * existing POSTED lobby role (a gardener tending the lobby plants), so the list keeps its length and the lobby keeps the three posted residents the
+ * receptionist slots gave it (a roaming role there left the lobby without anyone who stays): the resident COUNT of the place is unchanged and only
+ * the former receptionist slots change job (and id); every other Palace resident keeps its id and slot.
+ */
+export const PALACE_JOBS_WITH_POST: readonly AmbientJobId[] = [
+  'gardener', // in place of 'receptionist': same list length, so only those slots change; posted, like the role it replaces
+  'custodian',
+  'office-visitor',
+  'courier',
+  'office-visitor',
+];
+
+/** @param postedReceptionist the layout has the reception post: the Palace then has no ambient receptionist. */
+export function jobsForDistrict(label: string, postedReceptionist = false): readonly AmbientJobId[] {
+  if (postedReceptionist && /^palace$/i.test(label)) return PALACE_JOBS_WITH_POST;
   return DISTRICT_JOBS.find((d) => d.match.test(label))?.jobs ?? DEFAULT_JOBS;
 }

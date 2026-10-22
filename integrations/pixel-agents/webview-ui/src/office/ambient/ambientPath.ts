@@ -60,6 +60,8 @@ export class AmbientPathfinder {
     goalRow: number,
     maxExpansions: number,
     maxLength: number,
+    /** A tile index no path may step on (the receptionist's fixed stand tile); -1 = none, exactly the previous search. */
+    avoid = -1,
   ): PathResult {
     if (startCol === goalCol && startRow === goalRow) return { status: 'same', path: [], expanded: 0 };
     if (!this.isWalkable(goalCol, goalRow)) return { status: 'blocked', path: [], expanded: 0 };
@@ -102,7 +104,7 @@ export class AmbientPathfinder {
         const nr = k === 0 ? row - 1 : k === 1 ? row + 1 : row;
         if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
         const next = nr * cols + nc;
-        if (walkable[next] !== 1 || this.closed[next] === gen) continue;
+        if (walkable[next] !== 1 || this.closed[next] === gen || next === avoid) continue;
         if (this.seen[next] === gen && this.g[next] <= gNext) continue;
         this.seen[next] = gen;
         this.g[next] = gNext;

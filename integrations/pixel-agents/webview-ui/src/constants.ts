@@ -435,6 +435,64 @@ export const EMPTY_SPRITE_THUMBNAIL_BG = '#333';
 /** Maximum string length for a PlacedPet.id (defends against pathologically-long layout entries). */
 export const MAX_PET_ID_LENGTH = 128;
 
+// ── DI reception (physical desk + decorative receptionist) ───
+/** The shipped worlds' existing reception desk: the lobby desk every DI preset carries under this
+ *  uid (palace-relative (23, 9) in expanded-office, vast-forest, metropolis and living-metropolis). */
+export const DI_RECEPTION_DESK_UID = 'expansion-148';
+/** The furniture type the reception desk must still be: a recycled uid on another type is no desk. */
+export const DI_RECEPTION_DESK_TYPE = 'DESK_FRONT';
+/** Reserved id of the decorative receptionist. Outside real agent ids (positive), sub-agent ids
+ *  (small negatives) and the greeter's, so no agent, glow or seat loop can ever address it. */
+export const DI_RECEPTIONIST_ID = -1_000_000_001;
+/** The receptionist's character palette (0-5): the receptionist job's own palette. */
+export const DI_RECEPTIONIST_PALETTE = 3;
+/** Words of the desk's permanent label and accessible name. */
+export const DI_RECEPTION_LABEL = 'Reception';
+/** Stacking order of the desk target: above the canvas, below the DI panel and every dialog. */
+export const DI_RECEPTION_TARGET_Z_INDEX = 20;
+/** The shipped worlds' reception bench: the one chair that faces the reception desk. It is the receptionist's
+ *  workstation, so it is never a seat a real agent can take (alongside any seat whose facing tile is on the desk). */
+export const DI_RECEPTION_BENCH_UID = 'expansion-150';
+/** The receptionist's fixed, documented accessory (no new art: drawn from code at render time). It is drawn only on the
+ *  receptionist (`ch.isReceptionist`), never on a DI agent: a headset band over the hair and a name badge on the chest. */
+export const DI_RECEPTIONIST_HEADSET_COLOR = '#2b2b3a';
+export const DI_RECEPTIONIST_BADGE_COLOR = '#f2c94c';
+export const DI_RECEPTIONIST_BADGE_EDGE_COLOR = '#7a5a12';
+
+// ── DI three-office seating (P2-C) ──────────────────────────
+/**
+ * Office districts of a large world with an explicit home: the labels `ambientJobs.DISTRICT_JOBS` gives its office
+ * rows (a drift test pins that every pattern here matches such a row). `short` is the quick-view button label.
+ */
+export const DI_OFFICE_DISTRICT_PATTERNS: ReadonlyArray<{ match: RegExp; short: string }> = [
+  { match: /atrium/i, short: 'Atrium' },
+  { match: /observatory/i, short: 'Observatory' },
+];
+/**
+ * A district is a working office only if it holds at least this many DESK-FACING, reachable seats (a chair adjacent to and facing a desk): its
+ * workstations and its table seats together. Despite the name it does NOT count tier-1 workstations (desk AND electronics) alone, so which districts
+ * are offices is the same as before the workstation tiers existed.
+ */
+export const DI_OFFICE_MIN_WORKSTATIONS = 12;
+/** At most this many offices (the home plus detected districts) are ever selected, whatever the layout holds. */
+export const DI_OFFICE_MAX_OFFICES = 8;
+/** The label of the home office in allocation and ambient places (the home rect is the Palace). */
+export const DI_HOME_OFFICE_LABEL = 'Palace';
+/** At most this many residents of an office may STAND (dwell) inside its work rooms at a sample; the re-measurement is judged against it. */
+export const DI_OFFICE_WORK_ROOM_RESIDENT_TARGET = 2;
+/**
+ * C5, detected OFFICE pools only: of an office's ROAMING residents (taken in roster order) only every Nth makes the one cross-world visit to another
+ * place; the others keep to the office's common rooms. Every roaming resident used to make that visit, and that one long walk dominates a loop
+ * (measured: 66-88% of a roamer's time is spent outside its own office rooms, from one far stop in five), so the offices emptied. N = 4 is the smallest
+ * N at which every detected office's time-averaged PHYSICAL presence in its non-work rooms is at least S4's physical presence in the same office
+ * (work + non-work rooms), with 0 and with 24 agents (121 samples over 1200 simulated s; 24 agents against the mean of 12 wander seeds). Measured, new
+ * 0/24 agents against S4's 2.71 / 5.15 (Palace), 3.72 / 3.83 (Atrium), 3.66 / 3.66 (Observatory): N=1 Palace 2.98 (everyone visits: short), N=2 4.48
+ * and N=3 5.11 (short), N=4 Palace 5.35 / Atrium 5.15 / Observatory 4.45 (met), N=5 Palace 5.04 (short again: which roamer visits changes its walk
+ * length), N=6 5.24. `ambientOfficePresence.test.ts` pins the rule and re-measures the table. Every other place keeps its routines exactly (the remote
+ * S4 golden is byte-equal).
+ */
+export const AMBIENT_OFFICE_VISIT_EVERY = 4;
+
 // ── DI office panel ─────────────────────────────────────────
 /** Width of the docked DI office sidebar; the office canvas narrows by this while it is open. */
 export const DI_PANEL_WIDTH_PX = 420;
@@ -544,6 +602,14 @@ export const AMBIENT_DECK_MIN = 4;
 export const AMBIENT_CONGESTION_PASS_SEC = 2.5;
 /** A resident blocked by a REAL AGENT never passes through; it re-plans after this long. */
 export const AMBIENT_AGENT_BLOCK_REPLAN_SEC = 0.8;
+/**
+ * The receptionist's stand tile is a FIXED obstacle: a leg that would cross it is detoured around it (a bounded local search with the tile avoided),
+ * or fails so the resident moves on to its next stop. The journey PLAN (routines, stops, rides) is never changed by this. A detour that needs more
+ * than this many expansions or this many steps (or a leg that crosses the tile more than this many times) is a failed leg, not a long walk.
+ */
+export const AMBIENT_POST_DETOUR_MAX_EXPANSIONS = 600;
+export const AMBIENT_POST_DETOUR_MAX_LENGTH = 40;
+export const AMBIENT_POST_DETOUR_MAX_CROSSINGS = 4;
 /** Yield search radius (tiles) when a resident must clear an agent's tile or assigned seat. */
 export const AMBIENT_YIELD_RADIUS = 3;
 /**

@@ -35,9 +35,14 @@
     "test/livingCityTraffic.test.ts",
     "test/livingCityLoad.test.ts",
     "test/haloAura.test.ts",
+    "test/renderContextRestore.test.ts",
     "test/diReceptionDesk.test.ts",
     "test/diRuntimeAgents.test.ts",
     "test/diPanelKeyboard.test.ts",
+    "test/diReceptionInbox.test.ts",
+    "test/diReceptionEntrances.test.ts",
+    "test/diReceptionSources.test.ts",
+    "test/diOfficeNavigation.test.ts",
     "test/diInspector.test.ts",
     "test/diOperationalCases.test.ts",
     "test/diAppReconcile.test.ts",
@@ -45,6 +50,7 @@
     "test/diCodeReview.test.ts",
     "test/diMissionRequest.test.ts",
     "test/diPlainSummary.test.ts",
+    "test/diReceptionFinalCopy.test.ts",
     "test/harness/diAppProbe.ts"
   ]
 }

@@ -260,6 +260,75 @@ export const LOCATOR_ACCOUNT_KEYS = [
 ] as const;
 export const HERDR_TASK_MODEL = 'herdr.task/1';
 
+/**
+ * D1 — `response.delivery_presentations` (mission_sources/contract_v2.py, contract v2 ONLY): the
+ * explicitly registered, read-only reader of the Grok Bot's delivery presentations. ADDITIVE: an
+ * older catalog process sends no such key, which reads "not reported by this catalog" — never
+ * empty. When present it is projected STRICTLY (closed keys, closed vocabularies).
+ */
+export const DELIVERY_PRESENTATIONS_SOURCE_ID = 'grok_delivery_presentations';
+/** `grok_bot.index.MAX_DELIVERY_RECEIPTS`, restated by the contract. */
+export const MAX_DELIVERY_PRESENTATIONS = 16;
+export const DELIVERY_PRESENTATIONS_KEYS = [
+  'state',
+  'problem',
+  'source_id',
+  'delivery_store',
+  'coverage',
+  'total',
+  'entries',
+] as const;
+export const DELIVERY_PRESENTATIONS_STATES = ['not_registered', 'observed', 'unavailable'] as const;
+export const DELIVERY_PRESENTATIONS_PROBLEMS = [
+  'presentations_directory_missing',
+  'presentations_directory_not_private',
+  'presentations_file_absent',
+  'presentations_unreadable',
+  'presentations_json_invalid',
+  'presentations_schema_unsupported',
+  'presentations_invalid',
+  'delivery_store_unreadable',
+  'delivery_store_invalid',
+  'reader_failed',
+] as const;
+export const DELIVERY_STORE_STATES = ['registered', 'not_registered'] as const;
+export const DELIVERY_COVERAGE_KEYS = ['route', 'max_entries', 'direct_cli'] as const;
+export const DELIVERY_COVERAGE_ROUTE = 'grok_bot';
+export const DELIVERY_COVERAGE_DIRECT_CLI = 'not_stored';
+export const DELIVERY_PRESENTATION_ENTRY_KEYS = [
+  'source_id',
+  'proposal_digest_sha256',
+  'presented_at',
+  'expires_at',
+  'mode',
+  'repository_url',
+  'binding_mission',
+  'state',
+  'matching_deliveries',
+  'link',
+] as const;
+export const DELIVERY_MODES = ['pull_request', 'pr_update'] as const;
+export const DELIVERY_BINDING_MISSION_KEYS = [
+  'workflow_id',
+  'authorization_digest_sha256',
+] as const;
+export const DELIVERY_ENTRY_STATES = [
+  'awaiting_no_recorded_authorization',
+  'authorized',
+  'expired_without_authorization',
+  'unknown',
+] as const;
+export const DELIVERY_LINK_KEYS = ['state', 'mission_ref', 'authorization_digest'] as const;
+export const DELIVERY_LINK_STATES = [
+  'linked',
+  'unlinked_no_mission_binding',
+  'unlinked_no_registered_mission',
+  'unlinked_ambiguous',
+  'unlinked_registry_unavailable',
+  'unlinked_sources_incomplete',
+] as const;
+export const DELIVERY_AUTHORIZATION_CHECKS = ['corroborated', 'differs', 'not_comparable'] as const;
+
 /** Facts the backend never reports: always the LITERAL string "unknown" in a member. */
 export const UNREPORTED_FACTS = ['model', 'cost', 'tokens', 'progress'] as const;
 export const UNKNOWN_LITERAL = 'unknown';
@@ -290,5 +359,8 @@ export type Served = (typeof SERVED_VALUES)[number];
 export type WorkflowPhase = (typeof WORKFLOW_PHASES)[number];
 export type ChainKind = (typeof CHAIN_KINDS)[number];
 export type RuntimeAgentsState = (typeof RUNTIME_AGENTS_STATES)[number];
+export type DeliveryPresentationsState = (typeof DELIVERY_PRESENTATIONS_STATES)[number];
+export type DeliveryEntryState = (typeof DELIVERY_ENTRY_STATES)[number];
+export type DeliveryLinkState = (typeof DELIVERY_LINK_STATES)[number];
 export type RuntimeIdentityState = (typeof RUNTIME_IDENTITY_STATES)[number];
 export type RuntimeAssignmentState = (typeof RUNTIME_ASSIGNMENT_STATES)[number];

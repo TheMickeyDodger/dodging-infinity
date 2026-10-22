@@ -25,10 +25,14 @@ import type {
   DiReceptionGap,
   DiReceptionNotice,
   DiReceptionOutcome,
+  DiReceptionSourceCoverage,
+  DiReceptionSourceEntry,
   DiReportEntry,
 } from '../../../core/src/messages.js';
-import { DI_RECEPTION_MAX_ENTRIES } from '../constants.js';
+import { DI_RECEPTION_MAX_ENTRIES, DI_RECEPTION_MAX_SOURCE_ENTRIES } from '../constants.js';
 import type { WorkflowPhase } from './catalogContract.js';
+import { DELIVERY_PRESENTATIONS_SOURCE_ID } from './catalogContract.js';
+import type { DeliveryPresentationsView } from './catalogProjection.js';
 import type {
   MissionPresentation,
   MissionV2Presentation,
@@ -68,7 +72,26 @@ interface CategoryDef {
 
 export const RECEPTION_V1_REASON =
   'contract_v1:mission_state_and_canonical_review_are_contract_v2_blocks';
-export const RECEPTION_NOT_IN_CONTRACT = 'not_in_catalog_contract:v1_and_v2';
+export const RECEPTION_NOT_IN_CONTRACT =
+  'not_in_catalog_contract:v1_and_v2'; /** D1: delivery presentations are a contract v2 block (`response.delivery_presentations`). */
+export const RECEPTION_V1_DELIVERY_REASON =
+  'contract_v1:delivery_presentations_is_a_contract_v2_block';
+/** A contract v2 catalog that sends no such block (an older process): not reported, never none. */
+export const RECEPTION_DELIVERY_NOT_REPORTED_REASON =
+  'catalog_does_not_report:delivery_presentations';
+export const RECEPTION_DELIVERY_NOT_REGISTERED_REASON =
+  'not_registered:delivery_presentations_source';
+const DELIVERY_SOURCE_LABEL = 'Delivery proposals presented through the Grok Bot';
+/** Stated in every answer: what this reader can and cannot see. */
+const DELIVERY_COVERAGE_STATEMENT =
+  'Covers proposals presented through the Grok Bot route only, the most recent ' +
+  `${DI_RECEPTION_MAX_SOURCE_ENTRIES} that route keeps. A proposal presented directly from the ` +
+  'command line (present-dots) is not stored anywhere, so it cannot appear here: a missing ' +
+  'entry is not proof that no delivery is awaiting a decision.';
+const DELIVERY_ROUTE =
+  'Outside this office: the proposal was presented through the Grok Bot route, and any approval ' +
+  'is made there, by you, through that route. This office cannot approve, relay or deliver, ' +
+  'and does not promise an approval is still available.';
 /** Contract v1 carries no declared workflow phase (`missions[].workflow_phase` is v2-only). */
 const RECEPTION_V1_WORKFLOW_PHASE_REASON = 'contract_v1:workflow_phase_is_a_contract_v2_field';
 export const RECEPTION_V1_AUTHORIZATION_REASON =
@@ -600,14 +623,15 @@ const CATEGORIES: CategoryDef[] = [
     id: 'delivery_decision',
     label: 'Delivery awaiting a separate decision',
     statement:
-      'Not reported: no record of a delivery awaiting a separate decision exists to project. ' +
-      'A delivery proposal is presented for the decision but not stored; PR delivery stores ' +
-      'only authorizations made after approval; and the catalog delivery facts (contract ' +
-      'version 1 or 2) describe receipts already recorded.',
+      'Delivery proposals that were presented through the Grok Bot route and have no recorded ' +
+      "authorization yet. Read only from the catalog's delivery_presentations block (contract " +
+      'version 2), joined to the registered PR delivery store. ' +
+      DELIVERY_COVERAGE_STATEMENT,
     backing:
-      'none at contract versions 1 and 2, and no stored producer record of a pending delivery ' +
-      'decision',
-    route: '',
+      'contract v2: response.delivery_presentations (proposal digest, presented_at, expires_at, ' +
+      'mode, repository URL, the named Mission workflow id, state, link); Grok Bot ' +
+      'delivery_presentations map and PR delivery store, both read-only and explicitly registered',
+    route: DELIVERY_ROUTE,
     v2Only: false,
     probes: null,
   },
@@ -777,6 +801,171 @@ function gapsOf(cells: Array<{ outcome: CellOutcome; reason: string | null }>): 
   return [...counts.values()].sort((a, b) => cmp(a.outcome, b.outcome) || cmp(a.reason, b.reason));
 }
 
+// ── delivery proposals (D1): a source-keyed reader, independent of the Mission registry ──
+
+const DELIVERY_STATE_ORDER: Readonly<Record<string, number>> = {
+  awaiting_no_recorded_authorization: 0,
+  unknown: 1,
+  authorized: 2,
+  expired_without_authorization: 3,
+};
+
+function deliverySourceEntry(
+  e: DeliveryPresentationsView['entries'][number],
+  view: OfficeView,
+  envelopeStale: string | null,
+): DiReceptionSourceEntry {
+  const windowEnded =
+    e.state === 'awaiting_no_recorded_authorization' && view.times.evaluatedAt >= e.expiresAt;
+  const staleReasons = stale(
+    envelopeStale,
+    windowEnded && 'approval_window_ended_since_catalog_read',
+  );
+  return {
+    key: JSON.stringify(['delivery_decision', e.sourceId, e.proposalDigest]),
+    // The canonical content, never freshness: a locally hidden entry returns when it changes.
+    signature: JSON.stringify([
+      e.state,
+      e.expiresAt,
+      e.matchingDeliveries,
+      e.link.state,
+      e.link.missionRef,
+      e.link.authorizationDigest,
+    ]),
+    category: 'delivery_decision',
+    sourceId: e.sourceId,
+    proposalDigest: e.proposalDigest,
+    state: e.state,
+    needsYou: e.state === 'awaiting_no_recorded_authorization',
+    presentedAt: e.presentedAt,
+    expiresAt: e.expiresAt,
+    mode: e.mode,
+    repositoryUrl: e.repositoryUrl,
+    workflowId: e.bindingMission === null ? null : e.bindingMission.workflowId,
+    matchingDeliveries: e.matchingDeliveries,
+    linkState: e.link.state,
+    missionRef: e.link.missionRef,
+    authorizationCheck: e.link.authorizationDigest,
+    current: staleReasons.length === 0,
+    staleReasons,
+    route: DELIVERY_ROUTE,
+  };
+}
+
+interface DeliveryDesk {
+  category: DiReceptionCategory;
+  entries: DiReceptionSourceEntry[];
+  entriesTotal: number;
+  coverage: DiReceptionSourceCoverage;
+}
+
+/**
+ * The `delivery_decision` category and its source. Registration and availability are the
+ * presentations source's OWN: a Mission registry or Mission source that is unhealthy changes only
+ * what could be linked (already stated per entry), never whether this source is "none".
+ */
+function deliveryDesk(
+  view: OfficeView,
+  def: CategoryDef,
+  envelopeStale: string | null,
+): DeliveryDesk {
+  const dp = view.deliveryPresentations;
+  let outcome: DiReceptionOutcome;
+  let reason: string | null;
+  let note: string;
+  let statement = def.statement;
+  let all: DiReceptionSourceEntry[] = [];
+  if (view.connection.state === 'unavailable') {
+    outcome = 'unavailable';
+    reason = `connection_unavailable:${view.connection.reason}`;
+    note = 'No catalog answer: delivery proposals could not be read, and "none" is not claimed.';
+  } else if (view.contractVersion === 1) {
+    outcome = 'unsupported';
+    reason = RECEPTION_V1_DELIVERY_REASON;
+    note =
+      'Not supported at contract version 1: delivery presentations are a contract version 2 ' +
+      'block. This office process reads contract version 1, selected at launch.';
+    statement = note;
+  } else if (view.freshness === null) {
+    outcome = 'unavailable';
+    reason = view.notLiveReason ?? 'not_projected';
+    note = 'The catalog answer could not be read, so delivery proposals are unknown, not none.';
+  } else if (!dp.reported) {
+    outcome = 'unsupported';
+    reason = RECEPTION_DELIVERY_NOT_REPORTED_REASON;
+    note =
+      'This catalog does not report delivery presentations (it predates the block). That is ' +
+      'unknown to this office, not "none".';
+  } else if (dp.state === 'not_registered') {
+    outcome = 'unsupported';
+    reason = RECEPTION_DELIVERY_NOT_REGISTERED_REASON;
+    note =
+      'This catalog was started without a delivery-presentations source, so no Grok Bot ' +
+      'presentations are read. That is not "none".';
+  } else if (dp.state === 'unavailable') {
+    outcome = 'unavailable';
+    reason = `delivery_presentations_unavailable:${dp.problem ?? 'no_reason_recorded'}`;
+    note =
+      'The registered presentations source could not be read now' +
+      `${dp.problem === null ? '' : ` (${dp.problem})`}. That is not "none".`;
+  } else {
+    all = dp.entries
+      .map((e) => deliverySourceEntry(e, view, envelopeStale))
+      .sort(
+        (a, b) =>
+          (DELIVERY_STATE_ORDER[a.state] ?? 9) - (DELIVERY_STATE_ORDER[b.state] ?? 9) ||
+          b.presentedAt - a.presentedAt ||
+          cmp(a.proposalDigest, b.proposalDigest),
+      );
+    if (all.length > 0) {
+      outcome = 'present';
+      reason = null;
+      const undetermined = all.filter((e) => e.state === 'unknown').length;
+      note =
+        `${all.length} presented proposal(s) read.` +
+        (undetermined > 0
+          ? ` For ${undetermined} of them, whether a matching authorization is recorded was not ` +
+            'determined (no delivery-store check is available), so none is called waiting, ' +
+            'authorized or expired.'
+          : '');
+    } else if (envelopeStale !== null) {
+      // A "none" from a stale answer is not a "none".
+      outcome = 'unavailable';
+      reason = envelopeStale;
+      note = 'The catalog answer is not fresh: "none" is not claimed.';
+    } else {
+      outcome = 'known_empty';
+      reason = null;
+      note = 'The Grok Bot route recorded no delivery proposals.';
+    }
+  }
+  const entries = all.slice(0, DI_RECEPTION_MAX_SOURCE_ENTRIES);
+  const total = outcome === 'present' || outcome === 'known_empty' ? all.length : null;
+  return {
+    category: {
+      category: def.id,
+      label: def.label,
+      statement,
+      backing: def.backing,
+      outcome,
+      reason,
+      counts: { present: 0, knownEmpty: 0, unsupported: 0, unavailable: 0 },
+      gaps: [],
+      entriesTotal: all.length,
+    },
+    entries,
+    entriesTotal: all.length,
+    coverage: {
+      sourceId: DELIVERY_PRESENTATIONS_SOURCE_ID,
+      label: DELIVERY_SOURCE_LABEL,
+      outcome,
+      reason,
+      statement: `${note} ${DELIVERY_COVERAGE_STATEMENT}`,
+      total,
+    },
+  };
+}
+
 export function deriveReception(view: OfficeView): DiReception {
   const ctx: Ctx = {
     envelope:
@@ -795,7 +984,18 @@ export function deriveReception(view: OfficeView): DiReception {
 
   const categories: DiReceptionCategory[] = [];
   const present: DiReceptionEntry[] = [];
+  let sourceEntries: DiReceptionSourceEntry[] = [];
+  let sourceEntriesTotal = 0;
+  const sourceCoverage: DiReceptionSourceCoverage[] = [];
   for (const def of CATEGORIES) {
+    if (def.id === 'delivery_decision') {
+      const desk = deliveryDesk(view, def, ctx.envelope);
+      categories.push(desk.category);
+      sourceEntries = desk.entries;
+      sourceEntriesTotal = desk.entriesTotal;
+      sourceCoverage.push(desk.coverage);
+      continue;
+    }
     const base = {
       category: def.id,
       label: def.label,
@@ -888,6 +1088,10 @@ export function deriveReception(view: OfficeView): DiReception {
     entries: sorted.slice(0, DI_RECEPTION_MAX_ENTRIES),
     entriesTotal: sorted.length,
     entriesCap: DI_RECEPTION_MAX_ENTRIES,
+    sourceEntries,
+    sourceEntriesTotal,
+    sourceEntriesCap: DI_RECEPTION_MAX_SOURCE_ENTRIES,
+    sourceCoverage,
     notices: [...notices, ...runtimeNotices(view)],
     minPollIntervalSeconds: poll,
     refreshStatement:

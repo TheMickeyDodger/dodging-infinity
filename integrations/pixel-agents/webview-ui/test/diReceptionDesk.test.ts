@@ -20,7 +20,6 @@ import type {
   DiReceptionOutcome,
 } from '../../core/src/messages.ts';
 import { withClientInvalidation } from '../src/components/diOfficeFormat.ts';
-import { DiReceptionDesk } from '../src/components/DiReceptionDesk.tsx';
 import {
   formatCategoryHeadline,
   formatEntryCurrency,
@@ -30,6 +29,7 @@ import {
   nextEntryIndex,
   visibleEntries,
 } from '../src/components/diReceptionFormat.ts';
+import { DiReceptionInbox } from '../src/components/DiReceptionInbox.tsx';
 
 const category = (over: Partial<DiReceptionCategory> = {}): DiReceptionCategory => ({
   category: 'blockers',
@@ -107,17 +107,41 @@ const reception = (over: Partial<DiReception> = {}): DiReception => ({
   ...over,
 });
 
-function render(r: DiReception, hidden: ReadonlySet<string> = new Set()): string {
+/**
+ * The reception, rendered through the ONE inbox dialog (the compact desk it replaced is gone). The
+ * claims below were made about the desk; they are the inbox's now, over the same inputs.
+ */
+function render(
+  r: DiReception,
+  hidden: ReadonlySet<string> = new Set(),
+  fixtureMode = false,
+): string {
   return renderToStaticMarkup(
-    createElement(DiReceptionDesk, {
-      reception: r,
+    createElement(DiReceptionInbox, {
+      state: {
+        reception: r,
+        fixtureMode,
+        coverage: {
+          scope: 'synthetic',
+          statement: 'synthetic',
+          linkedChildRoles: 'covered',
+          linkedChildStatement: 'synthetic',
+        },
+        missions: { state: 'known_empty', reason: null, missions: [] },
+      },
       hidden,
       onHide: () => {},
       onShowHidden: () => {},
       onJump: () => {},
+      onClose: () => {},
+      returnFocusTo: { current: null },
     }),
   );
 }
+
+/** The text of every <button> in the markup, in order. */
+const buttonTexts = (html: string): string[] =>
+  [...html.matchAll(/<button[^>]*>([^<]*)</g)].map((m) => m[1]);
 
 const OUTCOMES: DiReceptionOutcome[] = [
   'present',
@@ -162,14 +186,15 @@ test('an unsupported category shows its reason and its contract-version statemen
   assert.match(html, /Not reported at contract version 1 or 2\./);
 });
 
-test('the desk is a keyboard list: a labelled region, focusable entries, real buttons, visible focus', () => {
+test('the inbox is a keyboard list: a labelled dialog, focusable entries, real buttons, visible focus', () => {
   const html = render(
     reception({ entries: [entry(), entry({ key: 'k2', missionRef: 'src-b:mn-1' })] }),
   );
-  assert.match(html, /<section[^>]*aria-labelledby="di-reception-heading"/);
-  assert.match(html, /<h2 id="di-reception-heading"/);
+  assert.match(html, /role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="di-reception-inbox-title"/);
+  assert.match(html, /<h2 id="di-reception-inbox-title"/);
   assert.equal((html.match(/<li[^>]*tabindex="0"/g) ?? []).length, 2);
-  assert.equal((html.match(/<button type="button"/g) ?? []).length, 4);
+  // Close, then two buttons per entry (Show this Mission, Hide in this view).
+  assert.equal(buttonTexts(html).length, 1 + 2 * 2);
   assert.match(html, /focus-visible:outline/);
   assert.match(html, /aria-keyshortcuts="ArrowUp ArrowDown Home End"/);
 });
@@ -186,8 +211,8 @@ test('arrow keys move through entries, Home and End jump, and focus never leaves
 
 test('no control can approve, resolve, retry, dispatch or deliver — and nothing links out', () => {
   const html = render(reception());
-  const buttons = [...html.matchAll(/<button type="button"[^>]*>([^<]*)</g)].map((m) => m[1]);
-  assert.deepEqual(buttons, ['Show this Mission', 'Hide in this view']);
+  const buttons = buttonTexts(html);
+  assert.deepEqual(buttons, ['Close', 'Show this Mission', 'Hide in this view']);
   assert.doesNotMatch(buttons.join(' '), /approve|resolve|retry|dispatch|deliver|authori[sz]e/i);
   assert.doesNotMatch(html, /<a\s|href=/);
 });
@@ -207,7 +232,12 @@ test('dismissal is presentation only: hidden here, labelled so, and back when th
 });
 
 test('dismissal writes nothing anywhere: no transport, no storage, no client message', () => {
-  for (const file of ['DiReceptionDesk.tsx', 'diReceptionFormat.ts']) {
+  for (const file of [
+    'DiReceptionInbox.tsx',
+    'diReceptionItems.ts',
+    'diReceptionFormat.ts',
+    'diReceptionInboxState.ts',
+  ]) {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', file), 'utf-8');
     assert.doesNotMatch(
       src,
@@ -270,7 +300,7 @@ test('identity is source-qualified: identical objectives stay two entries with t
       ],
     }),
   );
-  assert.equal((html.match(/Ship the synthetic thing/g) ?? []).length, 2);
+  assert.equal((html.match(/<p class="di-op-objective">Ship the synthetic thing<\/p>/g) ?? []).length, 2);
   assert.match(html, /src-a:mn-1/);
   assert.match(html, /src-b:mn-1/);
   assert.match(html, /producer-b/);
@@ -303,18 +333,9 @@ test('an office state WITHOUT the optional desk is invalidated without inventing
   assert.equal('reception' in presented, false);
 });
 
-test('in a FIXTURE preview every LIVE on the desk is qualified — never a bare LIVE over fixture data', () => {
+test('in a FIXTURE preview every LIVE on the inbox is qualified — never a bare LIVE over fixture data', () => {
   const live = reception({ entries: [entry({ live: true, notLiveReason: null })] });
-  const fixtureHtml = renderToStaticMarkup(
-    createElement(DiReceptionDesk, {
-      reception: live,
-      hidden: new Set<string>(),
-      onHide: () => {},
-      onShowHidden: () => {},
-      onJump: () => {},
-      fixture: true,
-    }),
-  );
+  const fixtureHtml = render(live, new Set<string>(), true);
   assert.match(fixtureHtml, /LIVE - FIXTURE DATA/);
   assert.doesNotMatch(fixtureHtml, /· LIVE</);
   assert.match(render(live), /· LIVE</);

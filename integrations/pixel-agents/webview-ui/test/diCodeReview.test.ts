@@ -34,6 +34,7 @@ import { afterAll, beforeAll, beforeEach, test } from 'vitest';
 import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 
+import { checkDiSeatPreferences } from '../../core/src/diSeatPreferences.ts';
 import type { DiCodeReview, DiOfficeState } from '../../core/src/messages.ts';
 import { reviewNotOfferedConsequence } from '../src/components/diCodeReviewModel.ts';
 
@@ -75,6 +76,8 @@ let requests: Array<Record<string, unknown>> = [];
 let replyHook: ((request: Record<string, unknown>, reply: DiCodeReview) => DiCodeReview | null) | null = null;
 let replyDelayMs = 0;
 let otherMessages: string[] = [];
+/** The identity-keyed seat saves the page sent (an allowed LOCAL-persistence message, classified in the websocket handler and validated in the session test). */
+let seatPreferenceSaves: unknown[] = [];
 /** The overview pings the Mission request entry sends (item 4); allowed only in exactly one shape. */
 let overviewPings: Array<Record<string, unknown>> = [];
 
@@ -127,6 +130,11 @@ function serve(ws: WebSocket) {
       else send();
     } else if (isOverviewPing(msg)) {
       overviewPings.push(msg);
+    } else if (msg.type === 'saveDiSeatPreferences') {
+      // An ALLOWED LOCAL-PERSISTENCE message (P2-C), like `saveAgentSeats`: the OFFICE saves where each identity sits (a seating preference — no Mission
+      // state, no request, nothing canonical) the first time it is seated and afterwards only when the map changes. It is not the code-review view's
+      // traffic; it is recorded with its payload and validated in the session test, and `otherMessages` stays strict for everything else.
+      seatPreferenceSaves.push(msg.state);
     } else if (msg.type !== 'webviewReady' && msg.type !== 'saveAgentSeats') {
       otherMessages.push(msg.type === 'diMissionRequest' ? `diMissionRequest:${String(msg.op)}` : String(msg.type));
     }
@@ -198,6 +206,7 @@ beforeEach(async (ctx) => {
   await page?.close();
   requests = [];
   otherMessages = [];
+  seatPreferenceSaves = [];
   overviewPings = [];
   replyHook = null;
   replyDelayMs = 0;
@@ -1556,6 +1565,18 @@ test(
         assert.equal(typeof value, 'string');
         // an identifier, never a path, a root, a ref or an option
         assert.doesNotMatch(String(value), /[/\\]|\.\.|^-/, `${key} looks like a path or option`);
+      }
+    }
+    // The local identity-keyed seat save, if the office sent one, is bounded and PREFERENCE-ONLY: the closed {v, entries} shape within the contract's
+    // bounds, each entry exactly an identity tuple and a seat id. (Sent on the first real change; a second send with nothing changed would be churn.)
+    assert.equal(seatPreferenceSaves.length, 1, 'exactly one identity-keyed seat save: the first persistence of the fixture identity, none after');
+    for (const state of seatPreferenceSaves) {
+      const payload = state as { v: unknown; entries: Array<Record<string, unknown>> };
+      assert.deepEqual(Object.keys(payload).sort(), ['entries', 'v']);
+      assert.equal(checkDiSeatPreferences(payload), null);
+      for (const entry of payload.entries) {
+        assert.deepEqual(Object.keys(entry).sort(), ['i', 's']);
+        assert.ok(Array.isArray(entry.i) && entry.i.length === 5 && typeof entry.s === 'string');
       }
     }
     assert.deepEqual(otherMessages, [], `no other message type was sent: ${otherMessages.join()}`);

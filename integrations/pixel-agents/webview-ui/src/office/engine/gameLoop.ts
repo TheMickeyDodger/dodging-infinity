@@ -1,4 +1,5 @@
 import { MAX_DELTA_TIME_SEC, SIM_MIN_TICK_INTERVAL_SEC, SIM_TICK_BURST } from '../../constants.js';
+import { resetRenderCaches } from '../renderCaches.js';
 import type { FrameClock } from './frameStep.js';
 import { documentHidden, nextFrameDelta } from './frameStep.js';
 
@@ -11,6 +12,14 @@ export interface GameLoopCallbacks {
 export function startGameLoop(canvas: HTMLCanvasElement, callbacks: GameLoopCallbacks): () => void {
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
+
+  // When the browser loses and restores a 2D canvas context (the trigger is not determined here) it comes back EMPTY: every bitmap
+  // drawn once and kept (the sprite canvases, the carpet layer, the city's light sprites) is blank, and nothing would redraw it.
+  // Forget them all through the render-cache lifecycle (renderCaches.ts) so the next draw rebuilds them: on the loss, and again on
+  // the restore (what was built in between is blank too). Events run between frames, never inside one. SUPPORTED: these two events
+  // on this canvas (and on the carpet layer's, renderer.ts).
+  canvas.addEventListener('contextlost', resetRenderCaches);
+  canvas.addEventListener('contextrestored', resetRenderCaches);
 
   const clock: FrameClock = { lastTime: 0 };
   let rafId = 0;
@@ -40,5 +49,7 @@ export function startGameLoop(canvas: HTMLCanvasElement, callbacks: GameLoopCall
   return () => {
     stopped = true;
     cancelAnimationFrame(rafId);
+    canvas.removeEventListener('contextlost', resetRenderCaches);
+    canvas.removeEventListener('contextrestored', resetRenderCaches);
   };
 }

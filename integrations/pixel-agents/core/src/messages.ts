@@ -42,6 +42,7 @@ export type ServerMessage =
   | DiOfficeState
   | AmbientStateLoaded
   | CityPresentationLoaded
+  | DiSeatPreferencesLoaded
   | AmbientSpritesLoaded
   | DiEvidenceContent
   | DiCodeReview
@@ -72,6 +73,7 @@ export type ClientMessage =
   | RequestDiagnostics
   | SaveAmbientState
   | SaveCityPresentation
+  | SaveDiSeatPreferences
   | DiEvidenceRead
   | DiCodeReviewRead
   | DiMissionRequest;
@@ -792,6 +794,10 @@ export interface DiReception {
   minPollIntervalSeconds: number | null;
   refreshStatement: string;
   dismissalStatement: string;
+  sourceEntries?: DiReceptionSourceEntry[];
+  sourceEntriesTotal?: number;
+  sourceEntriesCap?: number;
+  sourceCoverage?: DiReceptionSourceCoverage[];
 }
 
 export interface DiReceptionCategory {
@@ -866,6 +872,37 @@ export interface DiReceptionCause {
 export interface DiReceptionNotice {
   reason: string;
   statement: string;
+}
+
+export interface DiReceptionSourceEntry {
+  key: string;
+  signature: string;
+  category: DiReceptionCategoryId;
+  sourceId: string;
+  proposalDigest: string;
+  state: string;
+  needsYou: boolean;
+  presentedAt: number;
+  expiresAt: number;
+  mode: string;
+  repositoryUrl: string | null;
+  workflowId: string | null;
+  matchingDeliveries: number | null;
+  linkState: string;
+  missionRef: string | null;
+  authorizationCheck: string;
+  current: boolean;
+  staleReasons: string[];
+  route: string;
+}
+
+export interface DiReceptionSourceCoverage {
+  sourceId: string;
+  label: string;
+  outcome: DiReceptionOutcome;
+  reason: string | null;
+  statement: string;
+  total: number | null;
 }
 
 export interface DiRuntimeAgents {
@@ -944,6 +981,11 @@ export interface AmbientStateLoaded {
 
 export interface CityPresentationLoaded {
   type: 'cityPresentationLoaded';
+  state: Record<string, any> | null;
+}
+
+export interface DiSeatPreferencesLoaded {
+  type: 'diSeatPreferencesLoaded';
   state: Record<string, any> | null;
 }
 
@@ -1263,6 +1305,11 @@ export interface SaveAmbientState {
 
 export interface SaveCityPresentation {
   type: 'saveCityPresentation';
+  state: Record<string, any>;
+}
+
+export interface SaveDiSeatPreferences {
+  type: 'saveDiSeatPreferences';
   state: Record<string, any>;
 }
 

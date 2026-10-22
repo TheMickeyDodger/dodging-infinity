@@ -236,6 +236,18 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
   return seats;
 }
 
+/** The tiles covered by desk furniture (catalog `isDesk`), as `col,row` keys: what a chair "faces" when it works at a desk. */
+export function getDeskTiles(furniture: PlacedFurniture[]): Set<string> {
+  const deskTiles = new Set<string>();
+  for (const item of furniture) {
+    const entry = getCatalogEntry(item.type);
+    if (!entry || !entry.isDesk) continue;
+    for (let dr = 0; dr < entry.footprintH; dr++)
+      for (let dc = 0; dc < entry.footprintW; dc++) deskTiles.add(`${item.col + dc},${item.row + dr}`);
+  }
+  return deskTiles;
+}
+
 /** Get the set of tiles occupied by seats (so they can be excluded from blocked tiles)
  * @internal */
 export function getSeatTiles(seats: Map<string, Seat>): Set<string> {

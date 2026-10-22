@@ -2,9 +2,11 @@
  * Item 4 — the Mission request workspace.
  *
  * A reading surface docked beside the office panel, NOT a modal: the world stays visible and
- * usable while a request is read, decided and run. It keeps the product's hard 2px borders and
- * square corners where that costs no readability, and uses a plain reading typeface, high
- * contrast and a focus ring that cannot be missed.
+ * usable while a request is read, decided and run. It speaks the SAME visual language as the
+ * operational side panel (diOperationalPanel.css): the same blue-grey surfaces and lines, the same
+ * 13px base with 14px reading text, 1px subtle lines, the same small radii, compact controls and calm
+ * status words. The only hard edges left are the ones a control needs to be seen (the 3:1 `--mr-border`)
+ * and a focus ring that cannot be missed.
  *
  * Colours are SOLID tokens on .di-mr (no alpha), so test/diMissionRequestContrast.test.ts can
  * compute the contrast of every text/background pairing from this very file. Change a token and
@@ -15,40 +17,42 @@
  */
 
 .di-mr {
-  /* surfaces */
-  --mr-bg: #12121c;
-  --mr-surface: #1a1a29;
-  --mr-surface-2: #23233a;
-  --mr-code-bg: #0e0e17;
-  --mr-border: #7373a6;
-  --mr-border-soft: #34344f;
+  /* surfaces (the side panel's own values) */
+  --mr-bg: #151824;
+  --mr-surface: #1c2030;
+  --mr-surface-2: #242a3d;
+  --mr-code-bg: #151824;
+  /* a boundary a control needs to be seen (3:1), and the subtle line between cards */
+  --mr-border: #7a82a3;
+  --mr-border-soft: #2c3245;
   /* text */
-  --mr-text: #eef0f8;
-  --mr-muted: #b6b9d0;
-  --mr-link: #a9b4ff;
+  --mr-text: #eceef5;
+  --mr-muted: #a7acc0;
+  --mr-link: #aab4ff;
   /* focus: unmistakable on every surface above */
-  --mr-focus: #ffd84d;
+  --mr-focus: #ffd166;
   /* controls */
-  --mr-btn-bg: #2f2f4d;
-  --mr-btn-hover: #3d3d63;
-  --mr-btn-text: #eef0f8;
-  --mr-primary-bg: #ffd84d;
-  --mr-primary-text: #12121c;
-  --mr-danger-bg: #4a1c28;
-  --mr-danger-border: #ff9494;
-  --mr-tab-on-bg: #2c2b6d;
-  /* notices */
-  --mr-info-bg: #1d2a44;
-  --mr-warn-bg: #3d3216;
-  --mr-block-bg: #3e1b25;
-  --mr-ok-bg: #123524;
+  --mr-btn-bg: #242a3d;
+  --mr-btn-hover: #2a3148;
+  --mr-btn-text: #eceef5;
+  --mr-primary-bg: #262d4a;
+  --mr-primary-text: #eceef5;
+  --mr-selected-edge: #8c97ff;
+  --mr-danger-bg: #3a2330;
+  --mr-danger-border: #ff9a9a;
+  --mr-tab-on-bg: #262d4a;
+  /* notices: quiet tints of the same family; the words carry the state */
+  --mr-info-bg: #1f2640;
+  --mr-warn-bg: #2d2a1d;
+  --mr-block-bg: #34222c;
+  --mr-ok-bg: #1a3029;
   /* the journey */
-  --mr-step-done: #8ff0b0;
-  --mr-step-now: #ffe08a;
-  --mr-step-next: #b6b9d0;
+  --mr-step-done: #74d6a0;
+  --mr-step-now: #f4c06e;
+  --mr-step-next: #a7acc0;
   /* the always-drawn scrollbar of the reading pane */
-  --mr-scroll-thumb: #9a9ad0;
-  --mr-scroll-track: #23233a;
+  --mr-scroll-thumb: #7a82a3;
+  --mr-scroll-track: #242a3d;
 
   --mr-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --mr-font-code:
@@ -64,24 +68,27 @@
   min-height: 0;
   color: var(--mr-text);
   background: var(--mr-bg);
-  border-left: 2px solid var(--mr-border);
-  box-shadow: -4px 0 0 #05050a;
+  border-left: 1px solid var(--mr-border-soft);
   font-family: var(--mr-font-ui);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.45;
   overflow: hidden;
 }
 /* Where the workspace COVERS the whole window (a narrow one), it hides the office's fixture banner
-   instead of being lettered over by it; the workspace carries its own FIXTURE label at its top. */
+   instead of being lettered over by it; the workspace carries its own synthetic label above its tabs. */
 body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   visibility: hidden;
 }
 
-/* a window too narrow to leave room for the office: the workspace covers it, and says so */
+/* a window too narrow to leave room for the office: the workspace covers it, and says so.
+   Covering, it sits ABOVE every world overlay (the ambient legend z 40, the agents' labels z 41 and 42, the world and city controls z 30, the
+   toolbar, zoom, connection and version chips z 10 to 20) so none of them letters over its text, and BELOW the greeter's intro bubble (45) and
+   every modal and dialog (50 and up; the inspector, Reception and code review backdrops 1000), so those still open over it. Beside the side
+   panel it keeps z 21: it covers none of the overlays there. The order is pinned by diMissionRequestStacking.test.ts. */
 .di-mr[data-covering='true'] {
   left: 0;
   width: auto;
-  z-index: 30;
+  z-index: 44;
   border-left: 0;
 }
 
@@ -97,6 +104,7 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 .di-mr .di-mr-mono,
 .di-mr .di-mr-digest-full {
   font-family: var(--mr-font-code);
+  font-size: 12px;
 }
 
 /* ---------- focus: the same strong ring on every control ---------- */
@@ -112,118 +120,193 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 /* ---------- structure ---------- */
 
 .di-mr-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--mr-surface);
-  border-bottom: 2px solid var(--mr-border);
+  display: grid;
+  /* the title never shrinks below its own longest word: where the tools need the room, they wrap under each other instead */
+  grid-template-columns: minmax(min-content, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 12px 8px;
+  background: var(--mr-bg);
+  border-bottom: 1px solid var(--mr-border-soft);
+}
+/* the title and the tagline become cells of the header grid: the tools share the title's row, the tagline gets the full width under them */
+.di-mr-titles {
+  display: contents;
 }
 .di-mr-title {
+  grid-column: 1;
+  grid-row: 1;
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.3;
 }
+.di-mr-tagline {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  color: var(--mr-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
 .di-mr-head-tools {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   flex-wrap: wrap;
+  flex-shrink: 0;
   gap: 6px;
   justify-content: flex-end;
 }
-.di-mr-covering {
-  margin: 0;
-  padding: 8px 14px;
-  color: var(--mr-text);
-  background: var(--mr-warn-bg);
-  border-bottom: 2px solid var(--mr-border);
+.di-mr-head-tools button {
+  padding: 4px 9px;
+  font-size: 12px;
 }
+.di-mr-covering,
 .di-mr-status {
   margin: 0;
-  padding: 8px 14px;
+  padding: 6px 12px;
+  color: var(--mr-text);
+  background: var(--mr-warn-bg);
+  border-bottom: 1px solid var(--mr-border-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.di-mr-status {
   background: var(--mr-surface-2);
-  border-bottom: 2px solid var(--mr-border-soft);
   color: var(--mr-muted);
-}
-.di-mr-fixture {
-  margin: 0;
-  padding: 8px 14px;
-  background: var(--mr-warn-bg);
-  border-bottom: 2px solid var(--mr-border-soft);
-  color: var(--mr-text);
-  font-weight: bold;
-}
-.di-mr-progression {
-  margin: 0;
-  padding: 10px 14px;
-  border: 2px solid var(--mr-border-soft);
-  color: var(--mr-text);
-}
-.di-mr-progression p {
-  margin: 0;
-}
-.di-mr-progression summary {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 2px 4px;
-  cursor: pointer;
-  color: var(--mr-link);
-  text-decoration: underline;
-}
-.di-mr-progression ul {
-  margin: 8px 0 0;
-  padding-left: 20px;
-}
-.di-mr-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.di-mr-tagline {
-  margin: 0;
-  color: var(--mr-muted);
-  font-size: 0.9em;
-}
-.di-mr-progression[data-tone='ok'] {
-  background: var(--mr-ok-bg);
-}
-.di-mr-progression[data-tone='warn'] {
-  background: var(--mr-warn-bg);
 }
 .di-mr-status[data-tone='block'] {
   background: var(--mr-block-bg);
   color: var(--mr-text);
 }
 
+/* the tabs: a quiet segmented control */
 .di-mr-tabs {
   display: flex;
-  background: var(--mr-surface);
-  border-bottom: 2px solid var(--mr-border);
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--mr-bg);
+  border-bottom: 1px solid var(--mr-border-soft);
 }
-.di-mr-tab {
+.di-mr .di-mr-tab {
   flex: 1 1 0;
   min-width: 0;
-  padding: 9px 12px;
-  color: var(--mr-text);
-  background: var(--mr-surface);
-  border: 0;
-  border-bottom: 4px solid var(--mr-surface);
-  font-size: 15px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 6px;
+  padding: 6px 10px;
+  color: var(--mr-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
   cursor: pointer;
 }
-.di-mr-tab[aria-selected='true'] {
-  background: var(--mr-tab-on-bg);
-  border-bottom-color: var(--mr-focus);
-  font-weight: 700;
+.di-mr .di-mr-tab:hover {
+  color: var(--mr-text);
+  background: var(--mr-surface);
 }
+.di-mr .di-mr-tab[aria-selected='true'] {
+  color: var(--mr-text);
+  background: var(--mr-tab-on-bg);
+  border-color: var(--mr-selected-edge);
+  font-weight: 600;
+}
+/* a small chip with words: what it counts is in its words, never in its colour */
 .di-mr-badge {
   display: inline-block;
-  margin-left: 6px;
   padding: 0 7px;
-  color: var(--mr-primary-text);
-  background: var(--mr-primary-bg);
-  font-weight: 700;
+  color: var(--mr-text);
+  background: var(--mr-surface-2);
+  border: 1px solid var(--mr-border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* ONE compact, persistent context area: what is synthetic here, and what automatic progress does */
+.di-mr-context {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--mr-bg);
+  border-bottom: 1px solid var(--mr-border-soft);
+}
+.di-mr-ctx {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 8px;
+  padding: 5px 8px;
+  background: var(--mr-surface);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 8px;
+}
+.di-mr-ctx[data-tone='warn'] {
+  background: var(--mr-warn-bg);
+}
+.di-mr-ctx[data-tone='ok'] {
+  background: var(--mr-ok-bg);
+}
+.di-mr-ctx p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.di-mr-ctx details {
+  grid-column: 2;
+}
+.di-mr-ctx details p,
+.di-mr-ctx details ul {
+  margin: 4px 0 0;
+  color: var(--mr-muted);
+}
+.di-mr-ctx details ul {
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 12px;
+}
+.di-mr-chip {
+  display: block;
+  padding: 0 6px;
+  color: var(--mr-text);
+  background: var(--mr-surface-2);
+  border: 1px solid var(--mr-border);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* disclosures: the side panel's own shape */
+.di-mr details > summary {
+  padding: 2px 0;
+  color: var(--mr-muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.di-mr details > summary::-webkit-details-marker {
+  display: none;
+}
+.di-mr details > summary::before {
+  content: '›';
+  display: inline-block;
+  width: 12px;
+  color: var(--mr-muted);
+}
+.di-mr details[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .di-mr-body {
@@ -231,21 +314,22 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 .di-mr-body::-webkit-scrollbar,
 .di-mr-reading::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   background: var(--mr-scroll-track);
 }
 .di-mr-body::-webkit-scrollbar-thumb,
 .di-mr-reading::-webkit-scrollbar-thumb {
   background: var(--mr-scroll-thumb);
   border: 2px solid var(--mr-scroll-track);
+  border-radius: 6px;
 }
 @supports not selector(::-webkit-scrollbar) {
   .di-mr-body,
@@ -260,10 +344,17 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   line-height: 1.35;
 }
 .di-mr h3 {
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+/* the open request's heading is its plain title; the references live in their own disclosure */
+.di-mr-detail > h3 {
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 .di-mr h4 {
-  font-size: 15px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--mr-text);
 }
 .di-mr p {
@@ -275,32 +366,49 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 .di-mr-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 12px;
   background: var(--mr-surface);
-  border: 2px solid var(--mr-border-soft);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 12px;
+}
+/* said once, above the transcript: a quiet line, not a banner */
+.di-mr-note {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--mr-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.di-mr-technical-note {
+  margin: 4px 0 0;
+  color: var(--mr-muted);
+  font-size: 12px;
 }
 
 /* ---------- controls ---------- */
 
 .di-mr button {
-  padding: 7px 12px;
+  padding: 5px 10px;
   color: var(--mr-btn-text);
   background: var(--mr-btn-bg);
-  border: 2px solid var(--mr-border);
-  font-size: 15px;
+  border: 1px solid var(--mr-border);
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1.3;
   text-align: left;
   cursor: pointer;
 }
 .di-mr button:hover {
   background: var(--mr-btn-hover);
+  border-color: var(--mr-muted);
 }
 .di-mr button[data-primary='true'] {
   color: var(--mr-primary-text);
   background: var(--mr-primary-bg);
-  border-color: var(--mr-primary-bg);
-  font-weight: 700;
+  border-color: var(--mr-selected-edge);
+  font-weight: 600;
 }
 .di-mr button[data-danger='true'] {
   background: var(--mr-danger-bg);
@@ -318,14 +426,38 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 }
 .di-mr button[aria-disabled='true']:hover {
   background: var(--mr-btn-bg);
+  border-color: var(--mr-border);
 }
 .di-mr-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 .di-mr-hint {
   color: var(--mr-muted);
+}
+/* a raw key (a requirement key, an evidence kind, a permitted action) after its plain words: the same text, exactly, drawn secondary */
+.di-mr-key {
+  color: var(--mr-muted);
+  font-size: 12px;
+}
+/* the exact references of a request: one quiet, labelled disclosure */
+.di-mr-refs {
+  padding: 4px 10px;
+  background: var(--mr-surface);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 8px;
+}
+.di-mr-refs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 4px 12px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.di-mr-refs-body p {
+  margin: 0;
 }
 
 .di-mr textarea,
@@ -334,17 +466,19 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   padding: 8px 10px;
   color: var(--mr-text);
   background: var(--mr-code-bg);
-  border: 2px solid var(--mr-border);
-  font-size: 15px;
+  border: 1px solid var(--mr-border);
+  border-radius: 8px;
+  font-size: 14px;
   line-height: 1.45;
 }
 .di-mr textarea {
-  min-height: 110px;
+  min-height: 96px;
   resize: vertical;
 }
 .di-mr label {
   display: block;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* ---------- notices ---------- */
@@ -362,9 +496,10 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: var(--mr-info-bg);
-  border: 2px solid var(--mr-border);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 8px;
 }
 .di-mr-notice[data-kind='refusal'] {
   background: var(--mr-block-bg);
@@ -374,11 +509,12 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   background: var(--mr-warn-bg);
 }
 .di-mr-notice-kind {
-  font-weight: 700;
+  font-weight: 600;
 }
 .di-mr-box {
-  padding: 10px 12px;
-  border: 2px solid var(--mr-border);
+  padding: 8px 10px;
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 8px;
   background: var(--mr-info-bg);
 }
 .di-mr-box[data-tone='warn'] {
@@ -396,7 +532,7 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 .di-mr-log {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -404,20 +540,23 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 .di-mr-turn {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .di-mr-said {
-  padding: 9px 11px;
-  background: var(--mr-surface-2);
-  border: 2px solid var(--mr-border-soft);
+  padding: 8px 10px;
+  background: var(--mr-surface);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 10px;
+  font-size: 14px;
 }
 .di-mr-said[data-who='you'] {
-  border-color: var(--mr-border);
+  background: var(--mr-surface-2);
 }
 .di-mr-who {
   display: block;
-  margin-bottom: 3px;
-  font-weight: 700;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--mr-muted);
 }
 
@@ -430,12 +569,12 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 }
 .di-mr-line {
   display: block;
-  min-height: 1.5em;
+  min-height: 1.45em;
 }
 .di-mr-ctl {
   padding: 0 3px;
   color: var(--mr-primary-text);
-  background: var(--mr-focus);
+  background: var(--mr-selected-edge);
   font-family: var(--mr-font-code);
   font-size: 0.9em;
 }
@@ -444,7 +583,9 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   overflow: auto;
   padding: 8px 10px;
   background: var(--mr-code-bg);
-  border: 2px solid var(--mr-border-soft);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 8px;
+  font-size: 14px;
 }
 .di-mr-reading[data-open='true'] {
   max-height: none;
@@ -452,11 +593,12 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 .di-mr-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: 8px;
   margin: 0;
 }
 .di-mr-fields dt {
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--mr-muted);
 }
 .di-mr-fields dd {
@@ -472,7 +614,8 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   padding: 4px 6px;
   overflow-wrap: anywhere;
   background: var(--mr-code-bg);
-  border: 2px solid var(--mr-border-soft);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 6px;
 }
 
 /* ---------- the journey ---------- */
@@ -486,9 +629,11 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   padding: 0;
 }
 .di-mr-step {
-  padding: 4px 9px;
+  padding: 2px 9px;
   background: var(--mr-surface-2);
-  border: 2px solid var(--mr-border-soft);
+  border: 1px solid var(--mr-border-soft);
+  border-radius: 999px;
+  font-size: 12px;
   color: var(--mr-step-next);
 }
 .di-mr-step[data-state='done'] {
@@ -498,7 +643,7 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 .di-mr-step[data-state='now'] {
   color: var(--mr-step-now);
   border-color: var(--mr-step-now);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* ---------- the list of requests ---------- */
@@ -506,11 +651,11 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 .di-mr-requests {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
+  gap: 12px;
 }
-/* Two columns only where the pane really is wide; a pane that covers a narrow window stacks the list above the
-   detail even if wider reading was chosen earlier, so nothing is clipped or scrolls sideways. */
-.di-mr[data-wide='true']:not([data-covering='true']) .di-mr-requests {
+/* Two columns only where wider reading really made the pane wider than the ordinary pane (data-split, from twoColumnReading);
+   otherwise the list stacks above the detail exactly as in ordinary reading, so nothing is squeezed or scrolls sideways. */
+.di-mr[data-split='true'] .di-mr-requests {
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
 }
 .di-mr-list {
@@ -526,10 +671,17 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
   flex-direction: column;
   gap: 2px;
   width: 100%;
+  padding: 8px 10px;
+  background: var(--mr-surface);
+  border-color: var(--mr-border-soft);
+  border-radius: 10px;
+}
+.di-mr-list button:hover {
+  border-color: var(--mr-border);
 }
 .di-mr-list button[aria-current='true'] {
   background: var(--mr-tab-on-bg);
-  border-color: var(--mr-focus);
+  border-color: var(--mr-selected-edge);
 }
 .di-mr-row-objective {
   overflow: hidden;
@@ -541,6 +693,7 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 }
 .di-mr-row-stage {
   color: var(--mr-muted);
+  font-size: 12px;
 }
 
 .di-mr-visually-hidden {
@@ -563,8 +716,9 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 
 /* The proof rules: every rule as a sentence, in sections; long digests and keys wrap rather than clip. */
 .di-mr-rules h5 {
-  margin: 10px 0 2px;
-  font-size: 1em;
+  margin: 8px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
 }
 .di-mr-rules ul {
   margin: 0;
@@ -572,4 +726,14 @@ body:has(.di-mr[data-covering='true']) .di-fixture-banner {
 }
 .di-mr-rules li {
   overflow-wrap: anywhere;
+}
+
+/* the assistant's declared questions, read as a short numbered list (the exact reply stays behind a disclosure) */
+.di-mr-questions {
+  margin: 4px 0 6px;
+  padding-left: 22px;
+  list-style: decimal;
+}
+.di-mr-questions li {
+  margin: 2px 0;
 }

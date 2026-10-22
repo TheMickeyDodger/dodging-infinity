@@ -131,6 +131,22 @@ node dist/di-cli.js --state-dir /absolute/office-state \
   (for example `"$EX/runtime-v2/backend-discovery.json"`). Each process reads one version
   for its whole life, and a per-request selector is refused. `--delivery-store DIR` is
   version 2 only.
+- **Delivery proposals in Reception (opt-in).** `--delivery-presentations DIR` is version 2 only
+  and is never discovered: you name, by absolute path, the Grok Bot state directory (mode 0700)
+  whose `grok_bot_requests.json` the catalog may read, read-only. The catalog reads that whole file
+  within a byte bound, parses it as JSON, checks its `schema_version`, and then selects ONLY the
+  `delivery_presentations` map (at most 16 proposals the Grok route recorded). The file's other maps
+  (requests, presentations, approval consumption, workflow maps, recovery seals) are left unexamined
+  and are never projected or logged. Each selected proposal, and each delivery record when
+  `--delivery-store` is given, is checked in full in its canonical form, and only the allowlisted
+  facts are shown: the proposal digest, when it was presented and expires, its mode, the public
+  repository URL, the workflow id it names, and a state. Pass `--delivery-store DIR` too, naming the PR
+  delivery store, and each proposal also says whether a matching authorization is recorded;
+  without it the state is `unknown`. A proposal is tied to a Mission only when it names a workflow
+  id that exactly one registered workflow Mission has; otherwise it is listed on its own with the
+  reason. It covers the Grok Bot route only: a proposal presented straight from the command line
+  (`present-dots`) is not stored anywhere, so it cannot appear. When the flag is not given, Reception
+  labels it "not reported" and does not show it as "none".
 - **Runtime source.** The bridge needs `--discover-roots` or at least one
   `--herd-root PATH`; without one it refuses to start (exit 2).
 - **Discovery file.** The bridge publishes `{url, port, token}` atomically and no-clobber as a
@@ -146,6 +162,65 @@ node dist/di-cli.js --state-dir /absolute/office-state \
 
 Recovery after a killed office, profiles, and the full limits are in
 [`packaging/di/README.txt`](../integrations/pixel-agents/packaging/di/README.txt).
+
+## Reception: what needs you
+
+**One inbox.** The attention entry in the side panel and the reception desk in the world (the lobby desk with its permanent, decorative
+receptionist and a "Reception" label) open the same full-size dialog. It is view only: nothing in the inbox itself approves, starts, retries or
+delivers anything (a card's "Open the request panel" only opens the panel), and the receptionist is not a worker and has no authority.
+
+**What it lists.** Six categories: *Blockers*; *Clarification*; *Authorization / reauthorization*; *Failed verification*; *Results ready for
+review*; *Delivery awaiting a separate decision*. They are drawn from three kinds of source, each saying what it covers. First, the catalog's
+source-qualified Mission observations: Mission Core's state, the workflow-store phase, members' reported activity, the DI-progression pause
+flag and the canonical review record, with each category's own limits (some categories exist only at contract version 2, and a category a
+source does not report is labelled "not reported by this source"). Not all of that is Mission Core, and the catalog itself reports no
+clarification requests; the only clarification entries are the request panel's conversations awaiting your answer. Second, the delivery
+proposals the Grok Bot route presented (opt-in, below). Third, the Mission request panel's overview (its 10 most recent conversations and
+20 newest requests). A source that was not read, or does not report a kind, is labelled as such ("not reported by this office", "not set
+up") and is not shown as "none": delivery is "not reported" until you opt in, and the panel is "not set up" until you configure it. Above the
+cards, one or two plain lines say what could not be fully checked and what each source reports ("Delivery proposals: 2 waiting · Request
+panel: 4 waiting"); the detail behind them is one disclosure.
+
+**Reading a card.** The first layer is *what happened* (one or two source-backed sentences), *why it needs you* (one sentence) and *what you
+can do*, in plain words, with identifiers and codes kept out of it (the Mission's own title, and any text a source wrote, are shown as
+written). Exact identities, every cause with its details, reason codes, digests and the full route text are one disclosure away
+("Identity, causes and the route to act"). Severity is shown in words, and only where the source gave one.
+
+**What you can do is what the buttons do.** When the request panel lists the same decision, the card says to decide it in the request panel
+(it records your decision; the inbox approves nothing) and offers **Open the request panel**. Otherwise it names the Operator route and says
+why there is no in-office route: no request panel is set up here, it is not available or could not be read just now, it does not list this
+decision, or this kind of item has no panel route.
+
+**One count.** The request panel's own card says how many requests need you and how many conversations are waiting for your answer, with every
+number naming what it counts (`1 request needs you · 1 conversation waiting for your answer · 1 request in all`); the
+inbox lists those items (a decision the panel and Mission Core both report is one card) and the coverage line says the same total.
+
+**Questions.** A conversation whose newest reply asked questions is listed with the questions as quoted, untrusted text; answering happens
+in the request panel. In the panel's transcript the declared `mission-questions` block reads as a short list of questions, with the
+assistant's exact reply one disclosure away; replies recorded earlier, or that the panel could not read for questions, are shown exactly as
+written.
+
+**Hiding.** "Hide in this view" is a preference of this view. It resolves nothing, approves nothing and dismisses nothing anywhere; hidden
+entries come back when the page reloads, and "Show N hidden" brings them back sooner.
+
+**Opt-in setup.** Neither source below is on by default; a source that is off is reported as not set up or not reported. Paths are examples; use your own.
+
+```bash
+# delivery proposals (contract version 2): you name the Grok Bot state directory (mode 0700) and, optionally, the PR delivery store
+python3 -B dicatalog_http.py --registry "$EX/registry" --discover-roots \
+  --discovery-file "$EX/runtime-v2/backend-discovery.json" --contract-version 2 \
+  --delivery-presentations /abs/grok-bot-state --delivery-store /abs/pr-delivery-store
+node dist/di-cli.js --state-dir /abs/office-state \
+  --backend-discovery "$EX/runtime-v2/backend-discovery.json" --contract-version 2
+
+# the request panel: start it (see "Requesting Missions" below), then tell the office where its discovery file is
+node dist/di-cli.js --state-dir /abs/office-state \
+  --backend-discovery "$EX/runtime-v2/backend-discovery.json" --contract-version 2 \
+  --mission-panel-discovery /abs/panel-run/panel.json
+```
+
+Delivery proposals cover the Grok Bot route only: a proposal presented straight from the command line is not stored anywhere and cannot
+appear. The details and limits of each source are in the Launch section above and in "Requesting Missions" below.
 
 ## World preset
 
@@ -282,11 +357,108 @@ like the other presets (Settings, Import Layout (paste JSON), then reload). In c
   routines, ride plans and positions exactly as they were, but frozen, not drawn, not hoverable and not in anyone's way. One steps
   off at its next pause and the next steps on, one hand-over per working office every six seconds, so the office stays alive. In the default office as shipped
   (T = 105) that is 4 of 140; in the expanded-office preset (T = 718) it is 16 of 140; the Palace (T = 2183) holds 11 residents,
-  below its bound, so it is unchanged: it was already readable. The legend reads "Ambient residents · 4 on duty of 140 ·
+  below its bound, so this rule draws all of them. (That rule does not make the Palace's interior unchanged: where its residents stand is the
+  separate interior rule below, which supersedes the earlier statement that the Palace was already readable.) The legend reads "Ambient residents · 4 on duty of 140 ·
   decorative". Nothing is deleted or re-identified, other districts and the subway riders are not rotated, nothing off duty is
   saved as such (it is derived from the world and the clock), and a snapshot saved at the older density loads exactly and shows
   the on-duty count when the office reopens. The values were chosen from built screenshots at normal zoom; the six-second cadence
   from moving frames only.
+- **The reception post (DI office).** The lobby desk has one permanent, stationary receptionist (decorative: not an agent, not on a seat, without the working
+  glow and not selectable) in a fixed headset and name badge drawn from code, with its own "Reception" label. Its own
+  workstation, the one chair that faces the desk, is reserved: no seating path of this build assigns it, and a saved seat id for it
+  is ignored. The tile it stands on is blocked for agents, pets and the residents' routes, and the residents' plans do not target it; a
+  resident whose route would cross it is detoured around it, within a bounded search. **One honest exception:** when that tile is the ONLY way through (blocking
+  it would cut the lobby in two), it is left passable, and residents and agents walk through it and briefly overlap the decorative
+  receptionist. That is a documented fallback for such a layout, not a missing check; on the shipped worlds the tile is blocked. The
+  Palace has no second, ambient receptionist: its three former receptionist slots are posted gardeners tending the lobby plants (a posted role,
+  like the one replaced, so the lobby keeps three residents who stay), in place, so the number of residents is unchanged; the Atrium and the
+  Observatory keep theirs in their lobbies.
+- **Real agents across the three grand offices.** In a large world with an explicit home, the offices are found from the layout itself:
+  the home (the Palace) and every office district (Botanical Atrium, Deco Observatory) that holds at least 12 desk-facing chairs and can
+  be walked to from the home. A *workstation* is a reachable chair that faces a desk **and** faces a PC or monitor, by the same rule that
+  switches a monitor on when an agent sits down (so the lit screen and the seating agree). A reachable chair at a desk-category piece with
+  nothing electronic in front of it (a long library or meeting table, a coffee table) is a *table seat*, labelled "table, not workstation";
+  every other chair of the Palace (its lounge chairs) is labelled "chair, not workstation". All three kinds remain eligible seats: an
+  agent that holds one now, or that this build remembers for its identity, keeps it. Seats an earlier build saved by a per-run character number
+  are not trusted: those agents are placed once by this rule (the one-time migration below) and then remembered by identity. A new agent is placed on a workstation while one is free in any office; only
+  when none is free anywhere is a table seat used, and only when no table seat is free either is a chair used, each labelled as what it
+  is. On the shipped living metropolis (after the receptionist's reserved bench) the measured seats are: the Palace 124 eligible = 44
+  workstations (40 at desks, 4 at monitored long tables) + 21 table seats + 59 lounge chairs; the Botanical Atrium 90 = 72 workstations +
+  18 table seats; the Deco Observatory 90 = 72 workstations + 18 table seats; 188 workstations in all. The rule for a FRESH placement of N
+  agents over E offices is a target of floor(N/E) workstations each, the remainder going to the first offices (Palace, Atrium,
+  Observatory); the targets give way to valid existing preferences (an agent
+  that already has a valid seat keeps it, which can leave an office above or below its share) and to capacity (a full office's share moves on
+  to the next). A seat an agent holds now or that is remembered for its identity counts toward its office's share whatever kind of seat it is (a table seat or a
+  lounge chair included), so a roster already seated in one office leaves that office fewer new agents. An office that is over its share
+  still receives a new agent when it is the only office with a free workstation: nobody is left without a desk while any workstation is free.
+  The *at least 12 desk-facing chairs* that make a district an office count workstations and table seats together, not workstations alone,
+  so which districts are offices does not depend on whether a desk has a monitor. Agents are taken team by team (the lead first) and a team stays together while its office has room; a lone four-agent
+  Mission placed fresh is 2/1/1. An agent that already sits somewhere stays there while its seat, the layout and its identity remain
+  valid; a seat that disappears, becomes reserved or falls outside the detected offices is re-placed by the same rule. Worlds where offices
+  are not detected keep their existing (fallback) seating behaviour. Where each agent likes to sit is kept by its canonical identity
+  (`seat-preferences.json` in the state directory: at most 512 entries and 128 KiB; identities that are present now are protected, the
+  history of absent identities is evicted first, oldest first, and an active set over the budget is a reported, deterministic subset; every
+  identity component is bounded by the catalog contract's own text bound), and not by the server's process-local number, which names a
+  different agent after a restart: the number-keyed seats an earlier process saved are not offered to a new one. An existing single-office
+  roster is therefore re-placed once, by this rule, and is then stable under the same conditions as any other seat. Placement does not edit
+  saved layouts.
+- **Calmer office interiors, still alive.** The residents of the three offices stop in the lobby, corridor and courtyard rooms (the rooms
+  with no desk-facing seat at all: neither a workstation nor a table seat, so a library or meeting-table room counts as a work room for them),
+  not at the desks: none of their posts or stops is in a work room, though they can still walk through one on the way
+  between rooms. Their one long walk is shared out: of an office's
+  roaming residents (couriers, custodians, visitors), taken in roster order, only every fourth makes the single cross-world visit to another
+  place, and the others keep to the office's own rooms. (Every roaming resident used to make that visit, and the walk took most of its time:
+  measured on this world, a roamer spent 66 to 88 percent of its time outside its own office rooms.) The Atrium and the Observatory are working
+  offices now, so their residents rotate on and off duty like the Palace's. The residents of every other place keep their plans in every shipped preset, and in the living metropolis their looks and start
+  timers as well (tests pin all of it against the previous build's code path); an office resident that differs from the previous build is
+  reset fresh by the migration below.
+
+  **What is compared.** The comparator is *not* an execution of the previous build. It is the previous build's resident plans (the "S4
+  ambient plans"), **reproduced on this final candidate engine with the office switched off**. With 24 agents the idle agents wander at
+  random and the comparator's residents get caught up among them in the work rooms, so the 24-agent comparator is the **mean over the fixed
+  seeds 1 to 12** (`Math.random` seeded per run); with no agents it is one deterministic run. In these runs the candidate's counts were
+  identical with 0 and with 24 agents (its residents may still walk through work rooms; none was found standing in one at the sampled
+  instants).
+
+  Measured from the residents' actual tile positions (a resident of the office standing on a tile of one of its rooms): **121 samples, one
+  every 10 *simulated* seconds, over 1200 s**, with no agents and with 24 agents (8 per office, seated at every third workstation of each
+  office's detection-order list, so the Palace's agents sit at its workstations, not at table seats). Figures are residents of the office
+  on average per sample, from the final source state's run of `ambientOfficePresence.test.ts` (deterministic: seeded):
+
+  | Office | Comparator: anywhere in the office, 0 agents | Comparator: anywhere in the office, 24 agents (mean of seeds 1 to 12; range) | Candidate: in its non-work rooms, 0 / 24 agents | Standing in work rooms: comparator with 0 agents, average (peak); candidate | Fewest in the candidate's non-work rooms at any of the 121 samples |
+  |---|---|---|---|---|---|
+  | Palace | 2.71 | 4.72 (3.43 to 6.07) | 5.35 / 5.35 | 0.70 (7); 0 | 1 |
+  | Botanical Atrium | 3.72 | 3.82 (3.76 to 3.84) | 5.15 / 5.15 | 0.64 (5); 0 | 2 |
+  | Deco Observatory | 3.66 | 3.67 (3.64 to 3.72) | 4.45 / 4.45 | 0.58 (6); 0 | 1 |
+
+  The candidate's non-work average is at least the comparator's whole-office average in every office, with and without agents, and no
+  resident of an office was found standing in a work room at any of the 121 samples. At the sampled instants t = 0 / 600 / 1200 s the
+  Palace's non-work rooms hold 11 / 1 / 5 of its residents, the Atrium's 8 / 4 / 5 and the Observatory's 8 / 6 / 4. Those are statements about
+  the sampled instants, not a promise for every moment, and whether that reads as "calm but alive" is for the eye (see the time-lapse crops
+  in the README).
+
+  *History, labelled.* An earlier measurement of the same comparator gave the Palace's 24-agent mean as 5.15 (range 4.10 to 6.03) and the
+  satellites' as 3.83 and 3.66. It seated the 24 agents at every desk-facing seat of the list; this table seats them at the workstations
+  only, which moves all eight of the Palace's agents and none of the satellites' (a rerun of the same code with each list reproduced both
+  sets of figures). The 24-agent comparator moves with where its agents sit, which is why the seat list is stated; the candidate's figures,
+  and the comparator with no agents, did not change.
+- **Saved residents survive that change.** A snapshot saved by the previous build is recognised only if it is exactly that build's plan
+  for this same layout (the exact predecessor, rebuilt from the same code): residents whose plan is unchanged are restored exactly, the few
+  that changed start fresh at their posts, and the result says so ("migrated", with the counts) rather than claiming an exact restore. On
+  the living metropolis that is 118 restored exactly, 27 starting fresh (24 whose routine changed and 3 new) and 3 retired, with the two
+  trains and their riders carried over; a world whose plan did not change (the expanded office) applies exactly, with no migration. If a resident who was waiting for or riding a
+  train is among the changed, the whole migration is refused (`migration_unsupported:in_transit_resident_changed`), nothing is applied,
+  and nothing is saved over that file for the session. Anything else that does not match is another world, as before. Nothing is saved
+  before the restore attempt has been recorded, so the saved file is not replaced before the restore attempt has been recorded.
+- **Limits of the receptionist, the interiors and the migration, said plainly.** The receptionist's tile adds no waiting of its own: in a
+  one-tile-wide test corridor crowded with wandering agents the replans and the longest wait are identical with and without it (the long wait,
+  151 s in that synthetic corridor, is the existing give-way behaviour among real agents, not caused by the post), and on the living
+  metropolis no resident was found stuck at or because of the post. That is not a claim that nobody is ever stuck anywhere. The interior
+  figures above are measurements of the sampled instants on this world, against the previous build's resident plans reproduced on this engine (the
+  24-agent comparator a seeded mean, because its idle agents wander at random); they are not a guarantee for other layouts or other agent counts. The migration recognises the previous
+  build's plan only: a snapshot from any other build, or for a different resident set, is treated as another world and is not applied.
+- **Quick views.** With the offices detected, the camera controls gain an Atrium and an Observatory button (the same jump as the
+  Districts list).
 - **Subway.** Four stations and two trains. A bounded set of residents (24 in this world) ride them: each walks
   from its post to a station's island platform, waits there (its label then says "waiting for a train"), boards the
   train that is heading its way, rides, and alights at the station its journey names, on foot and by train, never by
@@ -973,6 +1145,18 @@ node dist/di-cli.js --state-dir /abs/office-state --backend-discovery "$DISCOVER
   workflow machinery is built, and never combine with `--config` or `--runtime-config`. Without
   them it is the existing workflow Runtime, unchanged. The two modes use different lock files and
   share no state.
+
+### The workspace
+
+Ask and Requests are two tabs of one workspace that is drawn in the side panel's own palette, type scale, lines and controls, so the two read as one product.
+
+- **Header and tabs.** The title and the compact **Wider reading** and **Close** controls share a row; the one-line tagline runs under them. The Requests tab carries a small chip that says what it counts ("1 request needs you"); its text is its accessible name, so it never relies on colour.
+- **One persistent context area** sits under the tabs, never hidden and with no way to dismiss it. In a fixture office its first row says the conversation, proposals and results are synthetic and that no approval given there is real (the full original wording is the disclosure "The full notice"). Its second row says whether automatic progress is on or off and what that means after Start, with the existing "Details about automatic progress".
+- **Ask.** Each turn is labelled **You** or **Assistant**. One note above the transcript says the assistant only drafts with you, that its words are not a decision and carry no authority, and that decisions happen in Requests; each assistant turn also carries that meaning for assistive technology. A reply with questions the panel could validate shows them as a numbered list with the exact reply one disclosure away. An **older** reply that was recorded without question reading and contains a closed technical block shows its prose, the note "This earlier reply includes a technical block (view only; not a current question)." and its exact original behind "The exact original reply". Such a reply is never listed as a question, never counted and never changes any state; an unclosed or malformed block, or a reply that would be left empty, is shown as written.
+- **Requests.** The open request leads with its **plain title** (the first line of what you asked for), then its **status and next step** in the panel's own words, then one closed disclosure, **Exact references (technical)**: the request id, the Mission, the revision, the digest (the whole digest one control away), "Read from the record …" and the sentence that Mission Core holds this revision with that digest. The proposal below is shown in full; where a permitted action or a rule has a raw key, the plain words come first and the exact key follows, muted, never dropped. The decision section opens with exactly what approving binds to: "You are approving revision N of this proposal (digest …)".
+- **Counts.** The sidebar card and the tab chip say what they count in words: requests that need you, conversations waiting for your answer, requests in all. They come from the same facts the Reception inbox uses.
+
+**Sizes.** The workspace sits beside the side panel when there is room and otherwise covers the window and says so in words. The rule (`layoutFor` in `diMissionRequestModel.ts`): the side panel is 420 px; the workspace keeps at least 240 px of the world visible; it takes 600 px (960 px in wider reading) when there is room and covers the window when fewer than 360 px would remain. With the side panel shown that is a covering workspace below a 1020 px window; with the side panel hidden, below 600 px. Wider reading puts the request list beside the open request only where the pane is at least 640 px wide (`MR_SPLIT_MIN_PX`); a narrower pane stacks the list above the request exactly as ordinary reading does, so wider reading is never worse than ordinary reading at the same width. Escape closes the workspace and returns focus to the control that opened it; if the side panel was hidden while the workspace was open, focus goes to the control that shows the side panel again. Tab visits the workspace's own controls in order and then leaves it (it never traps focus). Where the workspace covers the window it sits above the office's own overlays (the ambient legend, the agents' labels, the world and city controls) so none of them letters over its text, and below the greeter's bubble and every dialog, which still open over it; beside the side panel it covers none of them. That order is pinned by `webview-ui/test/diMissionRequestStacking.test.ts`.
 
 ### Requesting
 

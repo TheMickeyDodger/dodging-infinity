@@ -20,6 +20,8 @@ import {
   shouldRequestDiBootstrap,
   watchTransportState,
 } from '../components/diOfficeFormat.js';
+import { diPlacementModel } from '../components/diPlacementModel.js';
+import { planDiSeats } from '../components/diSeatPlan.js';
 import {
   DI_CLIENT_CHECK_MS,
   DI_DEFAULT_LAYOUT_FINGERPRINT,
@@ -33,6 +35,13 @@ import type { OfficeState } from '../office/engine/officeState.js';
 import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../office/engine/renderer.js';
 import { setFloorSprites } from '../office/floorTiles.js';
 import { diSeatingOrder, reconcileDiSeats } from '../office/layout/diSeating.js';
+import type { SeatPrefs } from '../office/layout/diSeatPrefs.js';
+import {
+  mergeSeatPrefsReport,
+  sameSeatPrefs,
+  seatPrefsFromRecord,
+  seatPrefsToRecord,
+} from '../office/layout/diSeatPrefs.js';
 import {
   aspectBands,
   assignDiZones,
@@ -241,6 +250,10 @@ export function useExtensionMessages(
   );
   /** DI only: the last office state as RECEIVED, for the layout-ready flush (a ref: handlers read it). */
   const diStoredRef = useRef<DiOfficeState | null>(null);
+  /** DI only: the identity-keyed seat preferences (canonical identity key -> seat id): loaded in the handshake, merged with where characters sit, saved when changed. */
+  const diSeatPrefsRef = useRef<SeatPrefs>(new Map());
+  /** DI only: refusal reasons already reported, so a persistently refused entry is said once, not every reconcile. */
+  const diSeatPrefsReportedRef = useRef(new Set<string>());
   /** DI only: the PRESENTED office state (after client invalidation) — the sole animation authority. */
   const diPresentedRef = useRef<DiOfficeState | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
@@ -385,11 +398,27 @@ export function useExtensionMessages(
         setSelectedAgent((prev) => (prev === id ? null : prev));
         os.removeAgent(id);
       }
+      // WHERE each character sits is decided by identity, never by the process-local number: with the three offices detected by the allocation
+      // (reserve every held / preferred seat first, then place the fresh ones by the quota rule); otherwise by the character's own preference.
+      const seating = diPlacementModel(state);
+      const seatPlan = planDiSeats(
+        os,
+        seating,
+        diSeatPrefsRef.current,
+        (id) => diMetaRef.current.get(id)?.seatId,
+      );
       for (const { id, folderName } of plan.add) {
         // Restored members keep their persisted look and seat and appear without the spawn
         // effect; a fresh join (agentCreated) keeps its server look and spawns.
         const meta = diMetaRef.current.get(id);
-        os.addAgent(id, meta?.palette, meta?.hueShift, meta?.seatId, meta?.restored, folderName);
+        os.addAgent(
+          id,
+          meta?.palette,
+          meta?.hueShift,
+          seatPlan.seatFor.get(id),
+          meta?.restored,
+          folderName,
+        );
         if (os.characters.get(id)?.matrixEffect === 'despawn') {
           // The previous character for this number is still despawning (addAgent does
           // not draw over it): leave it unrecorded so the NEXT message draws the new
@@ -405,6 +434,36 @@ export function useExtensionMessages(
       // agent and a reload seats exactly as the continuous page does (nobody is added or removed here).
       reconcileDiSeats(os, diSeatingOrder(state));
       diDrawnRef.current = plan.next;
+      // evidence (read-only) and persistence of where each real character sits now, by identity
+      const sitting = new Map<string, string>();
+      for (const [id, key] of seating.keys) {
+        const seat = os.characters.get(id)?.seatId;
+        if (!seat) continue;
+        sitting.set(key, seat);
+        os.noteDiPlacement(id, key, seatPlan.placement.get(id) ?? 'unplanned');
+      }
+      os.pruneDiPlacementNotes();
+      const budget = mergeSeatPrefsReport(diSeatPrefsRef.current, sitting, (why) => {
+        if (diSeatPrefsReportedRef.current.has(why)) return;
+        diSeatPrefsReportedRef.current.add(why);
+        console.warn('[Webview] seat preference refused (that entry only):', why);
+      });
+      const merged = budget.prefs;
+      // a counted, never silent condition: the identities sitting now do not all fit the record budget (ordinarily zero)
+      os.noteSeatPreferenceOverBudget(budget.activeDropped);
+      if (budget.activeDropped > 0 && !diSeatPrefsReportedRef.current.has(`over:${budget.activeDropped}`)) {
+        diSeatPrefsReportedRef.current.add(`over:${budget.activeDropped}`);
+        console.warn(
+          `[Webview] seat preferences: ${budget.activeDropped} identities sitting now do not fit the record budget; a deterministic subset (ascending stable identity key) is kept`,
+        );
+      }
+      if (!sameSeatPrefs(merged, diSeatPrefsRef.current)) {
+        diSeatPrefsRef.current = merged;
+        transport.send({
+          type: 'saveDiSeatPreferences',
+          state: seatPrefsToRecord(merged) as unknown as Record<string, unknown>,
+        });
+      }
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (msg: any) => {
@@ -451,6 +510,15 @@ export function useExtensionMessages(
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
         });
+        return;
+      }
+
+      if (msg.type === 'diSeatPreferencesLoaded') {
+        // DI office: the saved identity-keyed seat preferences, held until characters are placed; a record that fails the contract is ignored whole
+        const loaded = seatPrefsFromRecord(msg.state, (why) =>
+          console.warn('[Webview] seat preference refused (that entry only):', why),
+        );
+        if (loaded) diSeatPrefsRef.current = loaded;
         return;
       }
 

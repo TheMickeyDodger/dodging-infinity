@@ -265,7 +265,47 @@ export interface MrRuleSection {
   lines: string[];
 }
 
-const quoted = (s: string): string => `“${s}”`;
+/**
+ * One piece of a rule's sentence. A `key` part is a raw identifier exactly as the contract states it (a requirement key, an artifact
+ * key, an evidence kind, a blocker): shown, never dropped, but drawn secondary (muted) behind the plain words that lead the sentence.
+ */
+export interface MrRulePart {
+  text: string;
+  key?: boolean;
+}
+
+export interface MrRulePartSection {
+  title: string;
+  lines: MrRulePart[][];
+}
+
+const quoted = (s: string): string => `\u201c${s}\u201d`;
+const word = (text: string): MrRulePart => ({ text });
+const key = (text: string): MrRulePart => ({ text, key: true });
+const quotedKey = (s: string): MrRulePart => key(quoted(s));
+
+/** A plain name for an evidence kind the product knows; the exact kind always follows it. An unknown kind is shown as it is. */
+const EVIDENCE_KIND_WORDS: Record<string, string> = { VERIFICATION_RECORD: 'verification record' };
+
+function evidenceKindParts(kinds: string[]): MrRulePart[] {
+  const parts: MrRulePart[] = [];
+  kinds.forEach((kind, index) => {
+    if (index > 0) parts.push(word(', '));
+    const plain = EVIDENCE_KIND_WORDS[kind];
+    if (plain === undefined) parts.push(word(kind));
+    else parts.push(word(`${plain} `), key(`(${kind})`));
+  });
+  return parts;
+}
+
+function joinKeys(items: string[]): MrRulePart[] {
+  const parts: MrRulePart[] = [];
+  items.forEach((item, index) => {
+    if (index > 0) parts.push(word(', '));
+    parts.push(quotedKey(item));
+  });
+  return parts;
+}
 
 function targetWords(target: MrTarget): string {
   switch (target.form) {
@@ -279,73 +319,105 @@ function targetWords(target: MrTarget): string {
 }
 
 /**
- * Every rule of the contract as plain sentences, in sections. Nothing is summarized away: every
- * requirement, artifact, prerequisite, readiness key, permitted blocker and budget appears, with the
- * exact numbers and digests, so two contracts that differ in any rule read differently.
+ * Every rule of the contract as plain sentences, in sections, each sentence in pieces so a raw key can be drawn secondary. The plain words
+ * lead; the exact key follows. Nothing is summarized away: every requirement, artifact, prerequisite, readiness key, permitted blocker and
+ * budget appears, with the exact numbers and digests, so two contracts that differ in any rule read differently.
  */
-export function proofRuleSections(contract: MrContract): MrRuleSection[] {
-  const sections: MrRuleSection[] = [];
+export function proofRuleParts(contract: MrContract): MrRulePartSection[] {
+  const sections: MrRulePartSection[] = [];
   sections.push({
     title: 'Proof the team must provide',
     lines:
       contract.requirements.length === 0
-        ? ['No proof requirement is recorded.']
+        ? [[word('No proof requirement is recorded.')]]
         : contract.requirements.map((r) => {
-            const kinds =
+            const kinds: MrRulePart[] =
               r.evidenceKinds.length === 0
-                ? 'evidence of any recorded kind'
-                : `evidence of kind ${r.evidenceKinds.join(', ')}`;
-            const artifacts =
+                ? [word('evidence of any recorded kind')]
+                : [word('evidence of kind '), ...evidenceKindParts(r.evidenceKinds)];
+            const artifacts: MrRulePart[] =
               r.artifactKeys.length === 0
-                ? 'needing no artifact'
-                : `needing the artifact${r.artifactKeys.length === 1 ? '' : 's'} ${r.artifactKeys.map(quoted).join(', ')}`;
-            return `${quoted(r.key)}: ${r.description} Satisfied by ${kinds}, ${artifacts}; evidence older than ${durationWords(r.maxAgeSeconds)} does not count.`;
+                ? [word('needing no artifact')]
+                : [
+                    word(`needing the artifact${r.artifactKeys.length === 1 ? '' : 's'} `),
+                    ...joinKeys(r.artifactKeys),
+                  ];
+            return [
+              word(`${r.description} Satisfied by `),
+              ...kinds,
+              word(', '),
+              ...artifacts,
+              word(`; evidence older than ${durationWords(r.maxAgeSeconds)} does not count. Requirement `),
+              quotedKey(r.key),
+              word('.'),
+            ];
           }),
   });
   sections.push({
     title: 'Artifacts that must match',
     lines:
       contract.artifacts.length === 0
-        ? ['No artifact is required.']
-        : contract.artifacts.map(
-            (a) => `${quoted(a.key)} (role ${a.role}) must have the content digest ${a.digest}.`,
-          ),
+        ? [[word('No artifact is required.')]]
+        : contract.artifacts.map((a) => [
+            word('The artifact '),
+            quotedKey(a.key),
+            word(` (role ${a.role}) must have the content digest ${a.digest}.`),
+          ]),
   });
   sections.push({
     title: 'Prerequisites that must be met first',
     lines:
       contract.dependencies.length === 0
-        ? ['No prerequisite is required.']
-        : contract.dependencies.map(
-            (d) => `${quoted(d.key)} (${d.kind}): requires ${targetWords(d.target)}.`,
-          ),
+        ? [[word('No prerequisite is required.')]]
+        : contract.dependencies.map((d) => [
+            word('Prerequisite '),
+            quotedKey(d.key),
+            word(` (${d.kind}): requires ${targetWords(d.target)}.`),
+          ]),
   });
   sections.push({
     title: 'Resources that must be ready',
     lines:
       contract.readiness.length === 0
-        ? ['No resource readiness is required.']
-        : contract.readiness.map(
-            (r) =>
-              `The resource ${quoted(r.resourceKey)} must have been confirmed ready within the last ${durationWords(r.maxAgeSeconds)}.`,
-          ),
+        ? [[word('No resource readiness is required.')]]
+        : contract.readiness.map((r) => [
+            word('The resource '),
+            quotedKey(r.resourceKey),
+            word(` must have been confirmed ready within the last ${durationWords(r.maxAgeSeconds)}.`),
+          ]),
   });
   sections.push({
     title: 'Blockers that may remain',
     lines:
       contract.permittedBlockers.length === 0
-        ? ['None. Any open blocker prevents completion.']
+        ? [[word('None. Any open blocker prevents completion.')]]
         : [
-            `These blockers may remain without preventing completion: ${contract.permittedBlockers.map(quoted).join(', ')}.`,
+            [
+              word('These blockers may remain without preventing completion: '),
+              ...joinKeys(contract.permittedBlockers),
+              word('.'),
+            ],
           ],
   });
   sections.push({
     title: 'How long the team may keep trying',
     lines: [
-      `At most ${contract.maxAttempts} attempt${contract.maxAttempts === 1 ? '' : 's'} and ${contract.maxCheckpoints} checkpoint${contract.maxCheckpoints === 1 ? '' : 's'}.`,
+      [
+        word(
+          `At most ${contract.maxAttempts} attempt${contract.maxAttempts === 1 ? '' : 's'} and ${contract.maxCheckpoints} checkpoint${contract.maxCheckpoints === 1 ? '' : 's'}.`,
+        ),
+      ],
     ],
   });
   return sections;
+}
+
+/** The same rules as plain strings: exactly the pieces of `proofRuleParts`, joined. */
+export function proofRuleSections(contract: MrContract): MrRuleSection[] {
+  return proofRuleParts(contract).map((section) => ({
+    title: section.title,
+    lines: section.lines.map((line) => line.map((part) => part.text).join('')),
+  }));
 }
 
 /** The words shown where the rules cannot be: no contract recorded, or not fully representable. */

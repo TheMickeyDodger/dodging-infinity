@@ -37,6 +37,7 @@ import type {
   BoundedList,
   CatalogEnvelope,
   CatalogResponseView,
+  DeliveryPresentationsView,
   MemberView,
   MissionReportView,
   MissionStateView,
@@ -51,7 +52,7 @@ import type {
   UnreportedFact,
   WorkflowPhaseView,
 } from './catalogProjection.js';
-import { projectResponse } from './catalogProjection.js';
+import { DELIVERY_PRESENTATIONS_NOT_REPORTED, projectResponse } from './catalogProjection.js';
 import type { EvidenceLibraryPresentation } from './evidenceLibrary.js';
 import { presentEvidenceLibrary } from './evidenceLibrary.js';
 import type { Coverage } from './identityMap.js';
@@ -453,6 +454,11 @@ export interface OfficeView {
   } | null;
   /** item 07: runtime agents not represented by any team (both contract versions). */
   runtimeAgents: RuntimeAgentsPresentation;
+  /**
+   * D1: the Grok delivery presentations block (contract v2). `reported: false` = this catalog does
+   * not report it (an older catalog, contract v1, or no answer): UNKNOWN, never empty.
+   */
+  deliveryPresentations: DeliveryPresentationsView;
 }
 
 const MISSION_CORE_MODEL = 'mission_core.mission_state/1';
@@ -513,6 +519,7 @@ export function unavailableView(
     contractVersion: version,
     chainObservation: null,
     runtimeAgents: runtimeAgentsNotReported(reason),
+    deliveryPresentations: DELIVERY_PRESENTATIONS_NOT_REPORTED,
   };
 }
 
@@ -1303,6 +1310,7 @@ export function buildOfficeView(
     contractVersion: version,
     chainObservation: null,
     runtimeAgents: runtimeAgentsNotReported('no_response'),
+    deliveryPresentations: DELIVERY_PRESENTATIONS_NOT_REPORTED,
   };
 
   if (envelope.response === null) {
@@ -1372,5 +1380,6 @@ export function buildOfficeView(
       live,
       notLiveReason,
     ),
+    deliveryPresentations: view.deliveryPresentations,
   };
 }

@@ -21,6 +21,7 @@ import {
   diCharacterTitle,
 } from './components/diOfficeFormat.js';
 import { DiOfficePanel } from './components/DiOfficePanel.js';
+import { useDiReceptionInbox } from './components/diReceptionInboxState.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
@@ -37,6 +38,7 @@ import {
   AMBIENT_SAVE_INTERVAL_MS,
   DI_DOCUMENT_TITLE,
   DI_FAVICON_DATA_URI,
+  DI_OFFICE_DISTRICT_PATTERNS,
   DI_PANEL_WIDTH_PX,
   DI_WORLD_REFLOW_MS,
   WORLD_KEY_PAN_FRACTION,
@@ -57,6 +59,7 @@ import {
   snapshotTrainsRaw,
 } from './office/ambient/ambientProbe.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
+import { ReceptionTarget } from './office/components/ReceptionTarget.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
@@ -312,6 +315,8 @@ function App() {
   const mission = useDiMissionRequest(diClientReason, diOfficeState !== null);
   const missionOpener = useRef<HTMLElement | null>(null);
   const openMission = mission.open;
+  const readConversation = mission.openConversation;
+  const readRequest = mission.select;
   const missionAccess = useMemo<DiMissionRequestAccess>(
     () => ({
       state: mission.state,
@@ -319,8 +324,28 @@ function App() {
         missionOpener.current = opener;
         openMission(tab);
       },
+      // Reception's routes into the panel: open it, then READ that one conversation or request (the
+      // panel's own read-only operations). Nothing is sent, answered or decided by either.
+      openConversation: (conversationId, opener) => {
+        missionOpener.current = opener;
+        openMission('ask');
+        readConversation(conversationId);
+      },
+      openRequest: (requestRef, opener) => {
+        missionOpener.current = opener;
+        openMission('requests');
+        readRequest(requestRef);
+      },
     }),
-    [mission.state, openMission],
+    [mission.state, openMission, readConversation, readRequest],
+  );
+  // The reception inbox: ONE dialog, two entrances (the sidebar's attention entry and the reception
+  // desk in the world). They share this state, so they can never open two different inboxes.
+  const receptionInbox = useDiReceptionInbox();
+  const receptionTargetRef = useRef<HTMLButtonElement | null>(null);
+  const openReceptionFromWorld = useCallback(
+    () => receptionInbox.openFrom(receptionTargetRef.current),
+    [receptionInbox],
   );
   // Round 15 F2: a read pending when the client stops vouching for the office state is
   // forgotten with it (its answer, if any, is dropped by the message handler).
@@ -362,6 +387,18 @@ function App() {
     return () => getOfficeState().setAmbientEnabled(false);
   }, [isDiMode]);
 
+  // DI office: the RECEPTIONIST at the reception desk — decorative, permanent while the loaded world
+  // has that desk (zero real agents included), no agent and no authority. DI mode only.
+  useEffect(() => {
+    if (!isDiMode) return;
+    getOfficeState().setReceptionistEnabled(true);
+    return () => getOfficeState().setReceptionistEnabled(false);
+  }, [isDiMode]);
+
+  // the ambient save reads this at call time: nothing is saved before the layout has loaded
+  const layoutReadyForSaveRef = useRef(false);
+  layoutReadyForSaveRef.current = layoutReady;
+
   // DI office: PERSISTENCE of the decorative ambient snapshot (M3 S4) — saved every
   // AMBIENT_SAVE_INTERVAL_MS while visible and whenever the view is hidden or closed; and a BOUNDED
   // catch-up when the view becomes visible again (at most AMBIENT_CATCHUP_MAX_SEC simulated, minus
@@ -370,7 +407,9 @@ function App() {
   useEffect(() => {
     if (!isDiMode) return;
     const save = () => {
-      const state = getOfficeState().serializeAmbient(Date.now());
+      // never before the layout has loaded, and never over a saved snapshot nobody has restored yet (OfficeState.serializeAmbientForSave)
+      if (!layoutReadyForSaveRef.current) return;
+      const state = getOfficeState().serializeAmbientForSave(Date.now());
       if (state)
         transport.send({
           type: 'saveAmbientState',
@@ -416,6 +455,7 @@ function App() {
       halo: () => [...getOfficeState().haloCharacterIds(Date.now() / 1000)],
       restore: () => getOfficeState().lastAmbientRestore,
       trainsRaw: () => snapshotTrainsRaw(getOfficeState().transit),
+      officeAssignment: () => getOfficeState().officeAssignment(),
     };
     return () => {
       delete window.__pixelAgentsAmbientProbe;
@@ -799,7 +839,8 @@ function App() {
     if ('refused' in intake) return { ok: false, reason: intake.refused };
     const os = getOfficeState();
     const result = os.importAmbientSnapshot(intake.snapshot);
-    if (result.outcome !== 'applied') return { ok: false, reason: result.reason ?? result.outcome };
+    if (result.outcome !== 'applied' && result.outcome !== 'migrated')
+      return { ok: false, reason: result.reason ?? result.outcome };
     const state = os.serializeAmbient(Date.now());
     if (state)
       transport.send({
@@ -961,6 +1002,11 @@ function App() {
         centerWhenWorldFits={isDiMode}
         onUserPan={handleUserPan}
         renderPaused={isDiMode && largeWorld && mapOpen && !editor.isEditMode}
+        onReceptionClick={
+          isDiMode && !editor.isEditMode && !(largeWorld && mapOpen)
+            ? openReceptionFromWorld
+            : undefined
+        }
       />
 
       {!isDebugMode ? (
@@ -980,6 +1026,12 @@ function App() {
               districts={districts.map((d) => d.label)}
               onSelectDistrict={goToDistrict}
               districtStatus={districtStatus}
+              offices={(getOfficeState().officeDetection?.offices ?? [])
+                .filter((o) => o.kind === 'district')
+                .map((o) => ({
+                  label: o.label,
+                  short: DI_OFFICE_DISTRICT_PATTERNS.find((p) => p.match.test(o.label))?.short ?? o.label,
+                }))}
             />
           )}
           {isDiMode && largeWorld && mapOpen && !editor.isEditMode && (
@@ -1062,6 +1114,19 @@ function App() {
               );
             })()}
 
+          {isDiMode && (
+            <ReceptionTarget
+              officeState={officeState}
+              containerRef={containerRef}
+              zoom={editor.zoom}
+              panRef={editor.panRef}
+              buttonRef={receptionTargetRef}
+              onOpen={(opener) => receptionInbox.openFrom(opener)}
+              // never over (or through) the Map, which is opaque and owns the screen while open
+              hidden={editor.isEditMode || (largeWorld && mapOpen)}
+            />
+          )}
+
           <ToolOverlay
             officeState={officeState}
             agents={agents}
@@ -1109,6 +1174,7 @@ function App() {
               evidence={diEvidence}
               review={reviewAccess}
               mission={missionAccess}
+              receptionInbox={receptionInbox}
             />
           )}
           {diOfficeState && (

@@ -42,24 +42,35 @@ import {
   isPending,
   layoutFor,
   MR_DECISION_WORD,
+  MR_DRAFTING_NOTE,
+  MR_FIXTURE_SHORT,
   MR_FIXTURE_WORDS,
   MR_NAME,
   MR_TAGLINE,
   offeredActions,
   offerState,
   omittedWords,
+  plainTitle,
   progressionWords,
   remainingSeconds,
-  scopeLine,
+  replyWithoutFencedBlocks,
+  replyWithoutQuestionsBlock,
   serverNowSeconds,
+  shortDigest,
+  splitRecordSentence,
+  technicalBlockNote,
   turnStateWords,
+  twoColumnReading,
 } from './diMissionRequestModel.js';
 import {
   Digest,
   Journey,
+  Line,
   ProofRules,
   ProposalView,
   ResultView,
+  ScopeLine,
+  SourceFacts,
   StartCauseView,
   Untrusted,
 } from './DiMissionRequestParts.js';
@@ -303,7 +314,7 @@ function DraftCard({
   );
 }
 
-function TurnView({
+export function TurnView({
   turn,
   latestDraftTurn,
   control,
@@ -315,6 +326,21 @@ function TurnView({
   meanings: Record<string, string>;
 }) {
   const stateWords = turnStateWords(turn);
+  // The assistant's declared questions read as questions for a person; the exact reply (fence and all) is one disclosure away and is never rewritten.
+  // Only when the panel itself read questions from this reply AND exactly one closed block is found; any other reply is shown exactly as written.
+  const prose =
+    turn.assistantText !== null && turn.declaredQuestions.length > 0
+      ? replyWithoutQuestionsBlock(turn.assistantText)
+      : null;
+  // An OLDER reply with technical blocks (the panel declared no questions in it, and did not refuse a block): its prose is shown without the blocks, with a note, and the
+  // exact original is one disclosure away. VIEW ONLY: nothing in a block is parsed, listed or counted, and an unclosed or malformed fence, or a reply the panel refused, is
+  // shown exactly as written.
+  const earlier =
+    turn.assistantText !== null &&
+    turn.declaredQuestions.length === 0 &&
+    (turn.questionsStatus === 'not_reported' || turn.questionsStatus === 'none_declared')
+      ? replyWithoutFencedBlocks(turn.assistantText)
+      : null;
   return (
     <li className="di-mr-turn" data-testid={`di-mr-turn-${turn.sequence}`}>
       <div className="di-mr-said" data-who="you">
@@ -326,12 +352,49 @@ function TurnView({
           className="di-mr-said"
           data-who="assistant"
           data-testid={`di-mr-assistant-${turn.sequence}`}
+          // The meaning of an assistant reply (drafting only; not a decision; no authority) is said once above the transcript and offered here, not repeated as a long label.
+          aria-describedby="di-mr-drafting-note"
         >
-          <span className="di-mr-who">
-            Assistant (a read-only drafting turn; its words are not a decision and carry no
-            authority)
-          </span>
-          <Untrusted text={turn.assistantText} />
+          <span className="di-mr-who">Assistant</span>
+          {prose === null && earlier !== null ? (
+            <>
+              {earlier.prose !== '' && <Untrusted text={earlier.prose} />}
+              <p
+                className="di-mr-technical-note"
+                data-testid={`di-mr-technical-note-${turn.sequence}`}
+              >
+                {technicalBlockNote(earlier.blocks)}
+              </p>
+              <details data-testid={`di-mr-earlier-reply-${turn.sequence}`}>
+                <summary>The exact original reply</summary>
+                <Untrusted text={turn.assistantText} />
+              </details>
+            </>
+          ) : prose === null ? (
+            <Untrusted text={turn.assistantText} />
+          ) : (
+            <>
+              {prose !== '' && <Untrusted text={prose} />}
+              <div data-testid={`di-mr-questions-${turn.sequence}`}>
+                <p>
+                  {turn.declaredQuestions.length === 1
+                    ? 'The assistant asked a question:'
+                    : `The assistant asked ${turn.declaredQuestions.length} questions:`}
+                </p>
+                <ol className="di-mr-questions">
+                  {turn.declaredQuestions.map((q) => (
+                    <li key={q} data-testid="di-mr-question">
+                      <Untrusted text={q} />
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <details data-testid={`di-mr-raw-reply-${turn.sequence}`}>
+                <summary>The assistant’s exact reply (technical detail)</summary>
+                <Untrusted text={turn.assistantText} />
+              </details>
+            </>
+          )}
         </div>
       )}
       {stateWords !== null && (
@@ -405,6 +468,9 @@ function AskTab({
       id="di-mr-panel-ask"
       aria-labelledby="di-mr-tab-ask"
     >
+      <p className="di-mr-note" id="di-mr-drafting-note" data-testid="di-mr-drafting-note">
+        {MR_DRAFTING_NOTE}
+      </p>
       {state.revising !== null && (
         <div className="di-mr-box" data-tone="warn" data-testid="di-mr-revising">
           <p>
@@ -581,6 +647,12 @@ function DecisionBlock({
   return (
     <section className="di-mr-section" aria-label="Your decision" data-testid="di-mr-decision">
       <h4>Your decision</h4>
+      <p data-testid="di-mr-approval-binding">
+        <strong>
+          You are approving revision {view.displayed.revision} of this proposal (digest{' '}
+          <code>{shortDigest(view.displayed.digest)}</code>).
+        </strong>
+      </p>
       <p>
         Approving lets DI prepare an isolated copy of the repository and start an engineering team
         on exactly the proposal above, with only the permissions listed in the offer below.
@@ -608,7 +680,9 @@ function DecisionBlock({
               <dd>
                 <ul>
                   {offer.scope.map((scope) => (
-                    <li key={scope}>{scopeLine(scope, meanings)}</li>
+                    <li key={scope}>
+                      <ScopeLine scope={scope} meanings={meanings} />
+                    </li>
                   ))}
                 </ul>
               </dd>
@@ -958,18 +1032,18 @@ function Detail({
   const meanings = state.overview?.capabilities.scopeMeanings ?? {};
   const tone = stageTone(lifecycle.stage);
   const readAt = agoWords(view.readAtMs, nowMs);
+  const title = plainTitle(request.proposal?.objective);
+  // The panel's words may open with one sentence of provenance. It is exact and stays, in the references disclosure; the rest is the status.
+  const words = splitRecordSentence(lifecycle.detail);
   return (
     <div
       data-testid="di-mr-detail"
       className="di-mr-detail"
-      style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
     >
       <h3 ref={headingRef} tabIndex={-1} data-testid="di-mr-detail-heading">
-        Request <code>{ref}</code>
+        {title === null ? 'This request' : <Line text={title} />}
       </h3>
-      <p className="di-mr-hint" data-testid="di-mr-read-at">
-        Read from the record {readAt}.
-      </p>
       {view.stale && (
         <div className="di-mr-box" data-tone="block" role="alert" data-testid="di-mr-stale">
           <p>
@@ -994,7 +1068,7 @@ function Detail({
         <p>
           <strong data-testid="di-mr-stage-label">{lifecycle.label}</strong>
         </p>
-        <p data-testid="di-mr-stage-detail">{lifecycle.detail}</p>
+        <p data-testid="di-mr-stage-detail">{words.rest}</p>
         {lifecycle.notice !== null && (
           <p data-testid="di-mr-stage-notice">
             <strong>Note:</strong> {lifecycle.notice}
@@ -1006,6 +1080,25 @@ function Detail({
           </p>
         )}
       </div>
+      <details className="di-mr-refs" data-testid="di-mr-refs">
+        <summary data-testid="di-mr-refs-summary">Exact references (technical)</summary>
+        <div className="di-mr-refs-body">
+          <p className="di-mr-hint" data-testid="di-mr-read-at">
+            Read from the record {readAt}.
+          </p>
+          {words.record !== null && <p data-testid="di-mr-stage-record">{words.record}</p>}
+          <div data-testid="di-mr-proposal-source">
+            <SourceFacts
+              source={{
+                requestRef: ref,
+                missionId: request.missionId,
+                revision: request.revision,
+                digest: request.digest,
+              }}
+            />
+          </div>
+        </div>
+      </details>
       {request.startCause !== null && (
         <StartCauseView cause={request.startCause} closed={lifecycle.terminal} />
       )}
@@ -1019,7 +1112,8 @@ function Detail({
             digest: request.digest,
           }}
           meanings={meanings}
-          heading="The proposal of record"
+          heading="The proposal"
+          showSource={false}
         />
       ) : (
         <div className="di-mr-box" data-tone="warn">
@@ -1201,7 +1295,13 @@ function Workspace({
     const back = returnFocusTo.current;
     headingRef.current?.focus();
     return () => {
-      if (back && back.isConnected) back.focus();
+      // The opener can be gone: the sidebar was hidden while the workspace was open. The control that brings the sidebar back is
+      // then the sensible, visible place for focus, never <body>.
+      const target =
+        back && back.isConnected
+          ? back
+          : document.querySelector<HTMLElement>('[data-testid="di-office-panel-collapsed"]');
+      target?.focus();
     };
   }, [returnFocusTo]);
 
@@ -1282,6 +1382,7 @@ function Workspace({
       data-testid="di-mr"
       data-wide={state.wide ? 'true' : 'false'}
       data-covering={layout.covering ? 'true' : 'false'}
+      data-split={twoColumnReading(layout, state.wide) ? 'true' : 'false'}
       style={style}
       // Keys typed in the workspace belong to it: none reaches the office behind.
       onKeyDown={(event) => {
@@ -1316,11 +1417,6 @@ function Workspace({
           </button>
         </div>
       </header>
-      {fixture && (
-        <p className="di-mr-fixture" role="note" data-testid="di-mr-fixture-banner">
-          {MR_FIXTURE_WORDS}
-        </p>
-      )}
       {layout.covering && (
         <p className="di-mr-covering" data-testid="di-mr-covering-note">
           {COVERING_WORDS}
@@ -1372,34 +1468,56 @@ function Workspace({
           Requests
           {needing > 0 && (
             <span className="di-mr-badge" data-testid="di-mr-needs-you">
-              {needing} {needing === 1 ? 'needs' : 'need'} you
+              {needing} {needing === 1 ? 'request needs' : 'requests need'} you
             </span>
           )}
         </button>
       </div>
+      {/* ONE compact, persistent context area (never dismissable, never hidden): what is synthetic here, and what automatic progress does. Each part has its own
+          row and its own disclosure; the full wording is one step away. */}
+      {(fixture || progression !== null) && (
+        <div
+          className="di-mr-context"
+          role="group"
+          aria-label="About this window"
+          data-testid="di-mr-context"
+        >
+          {fixture && (
+            <div className="di-mr-ctx" data-tone="warn" role="note" data-testid="di-mr-fixture-banner">
+              <span className="di-mr-chip">Synthetic</span>
+              <p data-testid="di-mr-fixture-line">{MR_FIXTURE_SHORT}</p>
+              <details data-testid="di-mr-fixture-details">
+                <summary data-testid="di-mr-fixture-summary">The full notice</summary>
+                <p>{MR_FIXTURE_WORDS}</p>
+              </details>
+            </div>
+          )}
+          {progression !== null && (
+            <div
+              className="di-mr-ctx"
+              data-tone={progression.tone}
+              data-state={progression.label}
+              data-testid="di-mr-progression"
+            >
+              <span className="di-mr-chip">Progress {progression.label}</span>
+              <p data-testid="di-mr-progression-line">{progression.text}</p>
+              {/* A native disclosure: Enter or Space on the summary opens it, focus is visible, and nothing
+                  here is hover- or title-only. The summary never carries the state; the line above does. */}
+              <details data-testid="di-mr-progression-details">
+                <summary data-testid="di-mr-progression-summary">
+                  Details about automatic progress
+                </summary>
+                <ul>
+                  {progression.details.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          )}
+        </div>
+      )}
       <div className="di-mr-body" data-testid="di-mr-body">
-        {progression !== null && (
-          <div
-            className="di-mr-progression"
-            data-tone={progression.tone}
-            data-state={progression.label}
-            data-testid="di-mr-progression"
-          >
-            <p data-testid="di-mr-progression-line">{progression.text}</p>
-            {/* A native disclosure: Enter or Space on the summary opens it, focus is visible, and nothing
-                here is hover- or title-only. The summary never carries the state; the line above does. */}
-            <details data-testid="di-mr-progression-details">
-              <summary data-testid="di-mr-progression-summary">
-                Details about automatic progress
-              </summary>
-              <ul>
-                {progression.details.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </details>
-          </div>
-        )}
         {state.notices.length > 0 && (
           <ul className="di-mr-notices" aria-label="Notices" data-testid="di-mr-notices">
             {state.notices.map((notice) => (

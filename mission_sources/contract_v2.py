@@ -130,7 +130,7 @@ RESPONSE_KEYS_V2 = ("contract", "contract_version", "generated_at",
                     "max_age_seconds", "valid_until", "limits", "registry",
                     "sources", "runtime_snapshot", "chain_observation",
                     "missions", "unmatched_runtime_agent_count",
-                    "runtime_agents")
+                    "runtime_agents", "delivery_presentations")
 
 # -- hard bounds (never derived from input) -----------------------------
 
@@ -560,6 +560,182 @@ CHAIN_OBSERVATION_BLOCK_KEYS = ("health", "problem", "observed_at",
 PROBLEM_CHAIN_OBSERVATION_ABSENT = "chain_observation_absent"
 PROBLEM_CHAIN_OBSERVATION_SHAPE = "chain_observation_shape_invalid"
 PROBLEM_CHAIN_OBSERVATION_SCHEMA = "chain_observation_schema_unsupported"
+
+
+# -- the Grok delivery presentations block (D1; version 2 only) ----------
+
+#: The identity of the ONE explicitly registered source of presentations.
+DELIVERY_PRESENTATIONS_SOURCE_ID = "grok_delivery_presentations"
+#: ``grok_bot.index.MAX_DELIVERY_RECEIPTS`` (and the reader's own bound),
+#: re-declared and pinned equal by test.
+MAX_DELIVERY_PRESENTATIONS = 16
+DELIVERY_PRESENTATIONS_KEYS = ("state", "problem", "source_id",
+                               "delivery_store", "coverage", "total",
+                               "entries")
+DELIVERY_PRESENTATIONS_NOT_REGISTERED = "not_registered"
+DELIVERY_PRESENTATIONS_OBSERVED = "observed"
+DELIVERY_PRESENTATIONS_UNAVAILABLE = "unavailable"
+DELIVERY_PRESENTATIONS_STATES = (DELIVERY_PRESENTATIONS_NOT_REGISTERED,
+                                 DELIVERY_PRESENTATIONS_OBSERVED,
+                                 DELIVERY_PRESENTATIONS_UNAVAILABLE)
+#: Why the block is unavailable (closed; the reader names no path or content).
+DELIVERY_PRESENTATIONS_PROBLEMS = (
+    "presentations_directory_missing", "presentations_directory_not_private",
+    "presentations_file_absent", "presentations_unreadable",
+    "presentations_json_invalid", "presentations_schema_unsupported",
+    "presentations_invalid", "delivery_store_unreadable",
+    "delivery_store_invalid", "reader_failed")
+DELIVERY_STORE_REGISTERED = "registered"
+DELIVERY_STORE_NOT_REGISTERED = "not_registered"
+DELIVERY_STORE_STATES = (DELIVERY_STORE_REGISTERED,
+                         DELIVERY_STORE_NOT_REGISTERED)
+#: What the reader covers, stated in every block: the Grok route only, the
+#: most recent ``max_entries``, and direct ``present-dots`` proposals are not
+#: stored so they cannot appear.
+DELIVERY_COVERAGE_KEYS = ("route", "max_entries", "direct_cli")
+DELIVERY_COVERAGE_ROUTE = "grok_bot"
+DELIVERY_COVERAGE_DIRECT_CLI = "not_stored"
+DELIVERY_PRESENTATION_ENTRY_KEYS = (
+    "source_id", "proposal_digest_sha256", "presented_at", "expires_at",
+    "mode", "repository_url", "binding_mission", "state",
+    "matching_deliveries", "link")
+DELIVERY_MODES = ("pull_request", "pr_update")
+DELIVERY_BINDING_MISSION_KEYS = ("workflow_id", "authorization_digest_sha256")
+DELIVERY_STATE_AWAITING = "awaiting_no_recorded_authorization"
+DELIVERY_STATE_AUTHORIZED = "authorized"
+DELIVERY_STATE_EXPIRED = "expired_without_authorization"
+DELIVERY_STATE_UNKNOWN = "unknown"
+DELIVERY_ENTRY_STATES = (DELIVERY_STATE_AWAITING, DELIVERY_STATE_AUTHORIZED,
+                         DELIVERY_STATE_EXPIRED, DELIVERY_STATE_UNKNOWN)
+DELIVERY_LINK_KEYS = ("state", "mission_ref", "authorization_digest")
+LINK_LINKED = "linked"
+LINK_UNLINKED_NO_MISSION_BINDING = "unlinked_no_mission_binding"
+LINK_UNLINKED_NO_REGISTERED_MISSION = "unlinked_no_registered_mission"
+LINK_UNLINKED_AMBIGUOUS = "unlinked_ambiguous"
+#: The Mission side could not be (fully) inspected, so "no registered Mission"
+#: is NOT known: the registry failed to load, or a workflow-store source was
+#: not read fresh this refresh. Never reported as "no match".
+LINK_UNLINKED_REGISTRY_UNAVAILABLE = "unlinked_registry_unavailable"
+LINK_UNLINKED_SOURCES_INCOMPLETE = "unlinked_sources_incomplete"
+DELIVERY_LINK_STATES = (LINK_LINKED, LINK_UNLINKED_NO_MISSION_BINDING,
+                        LINK_UNLINKED_NO_REGISTERED_MISSION,
+                        LINK_UNLINKED_AMBIGUOUS,
+                        LINK_UNLINKED_REGISTRY_UNAVAILABLE,
+                        LINK_UNLINKED_SOURCES_INCOMPLETE)
+#: What the Mission side of one refresh could inspect, handed to the
+#: presentations hook beside the missions.
+INSPECTION_COMPLETE = "complete"
+INSPECTION_SOURCES_INCOMPLETE = "sources_incomplete"
+INSPECTION_REGISTRY_UNAVAILABLE = "registry_unavailable"
+INSPECTIONS = (INSPECTION_COMPLETE, INSPECTION_SOURCES_INCOMPLETE,
+               INSPECTION_REGISTRY_UNAVAILABLE)
+#: ``corroborated`` / ``differs`` are reserved for a catalog that carries a
+#: workflow Mission's authorization digest; this one does not.
+AUTHORIZATION_NOT_COMPARABLE = "not_comparable"
+AUTHORIZATION_CHECKS = ("corroborated", "differs", AUTHORIZATION_NOT_COMPARABLE)
+
+
+def delivery_presentations_block(state, problem, delivery_store, total,
+                                 entries):
+    """One ``delivery_presentations`` block, validated before it is returned."""
+    return validate_delivery_presentations({
+        "state": state,
+        "problem": problem,
+        "source_id": DELIVERY_PRESENTATIONS_SOURCE_ID,
+        "delivery_store": delivery_store,
+        "coverage": {"route": DELIVERY_COVERAGE_ROUTE,
+                     "max_entries": MAX_DELIVERY_PRESENTATIONS,
+                     "direct_cli": DELIVERY_COVERAGE_DIRECT_CLI},
+        "total": total,
+        "entries": entries})
+
+
+def delivery_presentations_not_registered():
+    """The block of a process launched without ``--delivery-presentations``."""
+    return delivery_presentations_block(
+        DELIVERY_PRESENTATIONS_NOT_REGISTERED, None,
+        DELIVERY_STORE_NOT_REGISTERED, None, [])
+
+
+def _hex64(value, location):
+    if type(value) is not str or len(value) != 64 or set(value) - set(
+            "0123456789abcdef"):
+        raise _shape("%s must be a lowercase sha256 hex digest" % location)
+    return value
+
+
+def validate_delivery_presentations(value):
+    """Closed, deep validation of one block; raises ``contract.ContractError``."""
+    _closed(value, DELIVERY_PRESENTATIONS_KEYS, "delivery_presentations")
+    state = _member(value["state"], DELIVERY_PRESENTATIONS_STATES,
+                    "delivery_presentations.state")
+    problem = _member(value["problem"], DELIVERY_PRESENTATIONS_PROBLEMS,
+                      "delivery_presentations.problem", True)
+    if (state == DELIVERY_PRESENTATIONS_UNAVAILABLE) != (problem is not None):
+        raise _shape("delivery_presentations.problem is set exactly when the"
+                     " block is unavailable")
+    if value["source_id"] != DELIVERY_PRESENTATIONS_SOURCE_ID:
+        raise _shape("delivery_presentations.source_id is not the registered"
+                     " source")
+    _member(value["delivery_store"], DELIVERY_STORE_STATES,
+            "delivery_presentations.delivery_store")
+    coverage = _closed(value["coverage"], DELIVERY_COVERAGE_KEYS,
+                       "delivery_presentations.coverage")
+    if coverage != {"route": DELIVERY_COVERAGE_ROUTE,
+                    "max_entries": MAX_DELIVERY_PRESENTATIONS,
+                    "direct_cli": DELIVERY_COVERAGE_DIRECT_CLI}:
+        raise _shape("delivery_presentations.coverage is not the stated"
+                     " coverage")
+    total = _int(value["total"], "delivery_presentations.total", True)
+    entries = _list(value["entries"], "delivery_presentations.entries",
+                    MAX_DELIVERY_PRESENTATIONS)
+    if state != DELIVERY_PRESENTATIONS_OBSERVED:
+        if total is not None or entries:
+            raise _shape("a block that is not observed carries no entries")
+    elif total != len(entries):
+        raise _shape("delivery_presentations.total must equal the entries")
+    digests = []
+    for index, entry in enumerate(entries):
+        where = "delivery_presentations.entries[%d]" % index
+        _closed(entry, DELIVERY_PRESENTATION_ENTRY_KEYS, where)
+        if entry["source_id"] != DELIVERY_PRESENTATIONS_SOURCE_ID:
+            raise _shape("%s.source_id is not the registered source" % where)
+        digests.append(_hex64(entry["proposal_digest_sha256"],
+                              where + ".proposal_digest_sha256"))
+        presented = _int(entry["presented_at"], where + ".presented_at")
+        expires = _int(entry["expires_at"], where + ".expires_at")
+        if presented < 0 or expires < 0:
+            raise _shape("%s times must not be negative" % where)
+        _member(entry["mode"], DELIVERY_MODES, where + ".mode")
+        _text(entry["repository_url"], where + ".repository_url", True)
+        mission = entry["binding_mission"]
+        if mission is not None:
+            _closed(mission, DELIVERY_BINDING_MISSION_KEYS,
+                    where + ".binding_mission")
+            _text(mission["workflow_id"], where + ".binding_mission.workflow_id")
+            if mission["authorization_digest_sha256"] is not None:
+                _hex64(mission["authorization_digest_sha256"],
+                       where + ".binding_mission.authorization_digest_sha256")
+        _member(entry["state"], DELIVERY_ENTRY_STATES, where + ".state")
+        matching = _int(entry["matching_deliveries"],
+                        where + ".matching_deliveries", True)
+        if (entry["state"] == DELIVERY_STATE_UNKNOWN) != (matching is None):
+            raise _shape("%s.matching_deliveries is unset exactly when the"
+                         " state is unknown" % where)
+        if entry["state"] == DELIVERY_STATE_AUTHORIZED and not matching:
+            raise _shape("%s is authorized without a matching delivery"
+                         % where)
+        link = _closed(entry["link"], DELIVERY_LINK_KEYS, where + ".link")
+        _member(link["state"], DELIVERY_LINK_STATES, where + ".link.state")
+        _member(link["authorization_digest"], AUTHORIZATION_CHECKS,
+                where + ".link.authorization_digest")
+        _text(link["mission_ref"], where + ".link.mission_ref", True)
+        if (link["state"] == LINK_LINKED) != (link["mission_ref"] is not None):
+            raise _shape("%s.link.mission_ref is set exactly when linked"
+                         % where)
+    if len(digests) != len(set(digests)):
+        raise _shape("delivery_presentations.entries repeat a proposal digest")
+    return value
 
 
 # -- exact-type helpers (refuse, never repair) --------------------------
@@ -1009,7 +1185,8 @@ def read_chain_observation(value, now,
 
 def envelope_v2(generated_at, max_age_seconds, valid_until, limits, registry,
                 sources, runtime_snapshot, chain_observation, missions,
-                unmatched_runtime_agent_count, runtime_agents=None):
+                unmatched_runtime_agent_count, runtime_agents=None,
+                delivery_presentations=None):
     """Assemble one version 2 response (``contract.envelope``'s rules, plus
     the chain observation block; ``runtime_agents`` as in version 1)."""
     contract.require_int(generated_at, "generated_at")
@@ -1037,6 +1214,9 @@ def envelope_v2(generated_at, max_age_seconds, valid_until, limits, registry,
             else contract.runtime_agents_block(
                 contract.RUNTIME_AGENTS_NOT_APPLICABLE,
                 contract.PROBLEM_NO_TASK_NATIVE_SOURCE)),
+        "delivery_presentations": (
+            delivery_presentations if delivery_presentations is not None
+            else delivery_presentations_not_registered()),
     }
 
 
@@ -1338,4 +1518,5 @@ def validate_response_v2(response):
     _int(response["unmatched_runtime_agent_count"],
          "unmatched_runtime_agent_count", True)
     contract.validate_runtime_agents(response["runtime_agents"])
+    validate_delivery_presentations(response["delivery_presentations"])
     return response

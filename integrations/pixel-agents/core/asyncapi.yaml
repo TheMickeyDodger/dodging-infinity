@@ -122,6 +122,7 @@ components:
         - $ref: '#/components/schemas/DiOfficeState'
         - $ref: '#/components/schemas/AmbientStateLoaded'
         - $ref: '#/components/schemas/CityPresentationLoaded'
+        - $ref: '#/components/schemas/DiSeatPreferencesLoaded'
         - $ref: '#/components/schemas/AmbientSpritesLoaded'
         - $ref: '#/components/schemas/DiEvidenceContent'
         - $ref: '#/components/schemas/DiCodeReview'
@@ -155,6 +156,7 @@ components:
         # DI office (additive; handled only by the DI office surface)
         - $ref: '#/components/schemas/SaveAmbientState'
         - $ref: '#/components/schemas/SaveCityPresentation'
+        - $ref: '#/components/schemas/SaveDiSeatPreferences'
         - $ref: '#/components/schemas/DiEvidenceRead'
         - $ref: '#/components/schemas/DiCodeReviewRead'
         - $ref: '#/components/schemas/DiMissionRequest'
@@ -840,6 +842,24 @@ components:
               description: Opaque bounded record; format owned by core/src/cityPresentation.ts and checked by the server on save and on read.
             - type: 'null'
 
+    DiSeatPreferencesLoaded:
+      description: |
+        DI office only: the SAVED seat preferences of the office's real characters, keyed by CANONICAL IDENTITY (never by the process-local character
+        number), or `null` when none were saved. Sent in the handshake after `existingAgents` and before `layoutLoaded`. The webview validates it against
+        the shared contract (core/src/diSeatPreferences.ts) before applying it and ignores a record that is refused. A preference names a seat the
+        character prefers; it grants nothing and has no Mission meaning.
+      type: object
+      additionalProperties: false
+      required: [type, state]
+      properties:
+        type:
+          const: diSeatPreferencesLoaded
+        state:
+          oneOf:
+            - type: object
+              description: Opaque bounded record; format owned by core/src/diSeatPreferences.ts and checked by the server on save and on read.
+            - type: 'null'
+
     AmbientSpritesLoaded:
       description: |
         DI office only: the decorative AMBIENT character sheets (job sheets and the Easter-egg
@@ -889,6 +909,21 @@ components:
         state:
           type: object
           description: Opaque bounded record; format owned by core/src/cityPresentation.ts.
+
+    SaveDiSeatPreferences:
+      description: |
+        DI office only: persist the office's seat preferences (identity-keyed) under the DI state root (seat-preferences.json). Refused unless it matches
+        the contract (at most DI_SEAT_PREFERENCES_MAX_ENTRIES entries and DI_SEAT_PREFERENCES_MAX_BYTES bytes). Local seating preference only: no Mission,
+        agent state or canonical meaning.
+      type: object
+      additionalProperties: false
+      required: [type, state]
+      properties:
+        type:
+          const: saveDiSeatPreferences
+        state:
+          type: object
+          description: Opaque bounded record; format owned by core/src/diSeatPreferences.ts.
 
     DiEvidenceRead:
       description: |
@@ -1955,6 +1990,131 @@ components:
           type: string
         dismissalStatement:
           type: string
+        sourceEntries:
+          description: |
+            ADDITIVE (P2-A): entries that are keyed on a SOURCE record, not a Mission — today the
+            Grok Bot's presented delivery proposals. Absent when this office server predates them
+            (the webview then reads "not reported by this office", never "none"). Linked to a
+            Mission only when the catalog evidences one; otherwise an explicit unlinked entry.
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReceptionSourceEntry'
+        sourceEntriesTotal:
+          type: integer
+        sourceEntriesCap:
+          type: integer
+        sourceCoverage:
+          description: |
+            ADDITIVE (P2-A): what each source-keyed reader covers, per source, stated in every
+            answer. A source is never summarised as a universal "none".
+          type: array
+          items:
+            $ref: '#/components/schemas/DiReceptionSourceCoverage'
+
+    DiReceptionSourceEntry:
+      description: |
+        One presented delivery proposal (catalog contract v2 `delivery_presentations`), keyed on
+        its source and proposal digest. It records ONLY that a proposal was presented and whether a
+        matching authorization is recorded: it never says an approval is usable now, never infers
+        a decline, and carries no control. Every field is an allowlisted fact of the projection.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          key,
+          signature,
+          category,
+          sourceId,
+          proposalDigest,
+          state,
+          needsYou,
+          presentedAt,
+          expiresAt,
+          mode,
+          repositoryUrl,
+          workflowId,
+          matchingDeliveries,
+          linkState,
+          missionRef,
+          authorizationCheck,
+          current,
+          staleReasons,
+          route,
+        ]
+      properties:
+        key:
+          type: string
+          description: JSON of [category, sourceId, proposalDigest] — the source-qualified identity.
+        signature:
+          type: string
+          description: The canonical content; a locally hidden entry returns when it changes.
+        category:
+          $ref: '#/components/schemas/DiReceptionCategoryId'
+        sourceId:
+          type: string
+        proposalDigest:
+          type: string
+        state:
+          type: string
+          description: |
+            The catalog's literal: awaiting_no_recorded_authorization, authorized,
+            expired_without_authorization or unknown (no delivery store registered).
+        needsYou:
+          type: boolean
+          description: True only for awaiting_no_recorded_authorization.
+        presentedAt:
+          type: integer
+        expiresAt:
+          type: integer
+        mode:
+          type: string
+        repositoryUrl:
+          type: [string, 'null']
+        workflowId:
+          type: [string, 'null']
+          description: The Mission workflow id the proposal names, if it names one.
+        matchingDeliveries:
+          type: [integer, 'null']
+        linkState:
+          type: string
+          description: |
+            linked, or the explicit reason it is not: unlinked_no_mission_binding,
+            unlinked_no_registered_mission, unlinked_ambiguous, unlinked_registry_unavailable,
+            unlinked_sources_incomplete.
+        missionRef:
+          type: [string, 'null']
+          description: Set exactly when linkState is linked.
+        authorizationCheck:
+          type: string
+          description: corroborated, differs or not_comparable (the catalog carries no digest to compare).
+        current:
+          type: boolean
+          description: False when the catalog answer is stale or the approval window ended since it was read.
+        staleReasons:
+          type: array
+          items:
+            type: string
+        route:
+          type: string
+          description: The original route, as text. Never a control.
+
+    DiReceptionSourceCoverage:
+      type: object
+      additionalProperties: false
+      required: [sourceId, label, outcome, reason, statement, total]
+      properties:
+        sourceId:
+          type: string
+        label:
+          type: string
+        outcome:
+          $ref: '#/components/schemas/DiReceptionOutcome'
+        reason:
+          type: [string, 'null']
+        statement:
+          type: string
+        total:
+          type: [integer, 'null']
 
     DiReceptionCategoryId:
       type: string
