@@ -36,6 +36,7 @@ import path from 'node:path';
 
 import { expect, type Page, test } from '@playwright/test';
 
+import { dockNamesPredicate, memberRowName, visibleMissionRef } from './dockIdentity';
 import {
   buildIdentity,
   characterPoint,
@@ -229,13 +230,15 @@ async function runSession(
     if (!(await roster.evaluate((el) => (el as HTMLDetailsElement).open)))
       await roster.locator('summary').click();
   }
+  const visible = new Map<string, string>();
+  for (const t of targets) visible.set(t.ref, await visibleMissionRef(page, t.ref));
   const rowOf = (t: (typeof targets)[number]) =>
     cardOf(t.ref)
       .getByTestId('di-member-row')
-      .filter({ hasText: `${t.member.logical} (` })
+      .filter({ hasText: memberRowName(t.member.logical) })
       .first();
   const dockNames = (t: (typeof targets)[number]) =>
-    `() => (document.querySelector('[data-testid="di-selected-member"]')?.innerText ?? '').includes(${JSON.stringify(t.ref)}) && (document.querySelector('[data-testid="di-selected-member"]')?.innerText ?? '').includes(${JSON.stringify(t.member.logical)})`;
+    dockNamesPredicate(t.ref, visible.get(t.ref)!, t.member.logical);
 
   // 1+2. open the inspector from a card, close it.
   const firstCard = page
@@ -280,11 +283,13 @@ async function runSession(
     await rowOf(t).click();
     await page.waitForFunction(new Function(`return (${dockNames(t)})()`) as () => boolean);
     await dockOpen.click();
+    // The selection's own locate is in the details' first section (its full record, under
+    // "Everything recorded", carries none); the locator is strict, so it must be exactly one.
     await page.waitForSelector(
-      '[data-testid="di-inspector-member"] [data-testid="di-show-in-office"]',
+      '[data-testid="di-inspector-selected"] [data-testid="di-show-in-office"]',
     );
     const locate = page.locator(
-      '[data-testid="di-inspector-member"] [data-testid="di-show-in-office"]',
+      '[data-testid="di-inspector-selected"] [data-testid="di-show-in-office"]',
     );
     const id = t.member.characterId;
     record(
@@ -372,9 +377,10 @@ async function runWorldClicks(page: Page, officeUrl: string, count: number): Pro
     const id = candidates[i % candidates.length];
     const who = owner.get(id)!;
     const point = await characterPoint(page, id);
+    const whoVisible = await visibleMissionRef(page, who.ref);
     const r = await timed(page, () => page.mouse.click(point.x, point.y), {
       world: `() => document.querySelector('[data-testid="agent-overlay"][data-agent-id="${id}"]') !== null`,
-      dock: `() => { const t = document.querySelector('[data-testid="di-selected-member"]')?.innerText ?? ''; return t.includes(${JSON.stringify(who.ref)}) && t.includes(${JSON.stringify(who.logical)}); }`,
+      dock: dockNamesPredicate(who.ref, whoVisible, who.logical),
     });
     record(series, 'worldClickToLabel', r.world);
     record(series, 'worldClickToDock', r.dock);

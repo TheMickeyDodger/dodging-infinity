@@ -20,6 +20,7 @@ import type {
   DiCodeReviewLine,
   DiCodeReviewOffer,
   DiCodeReviewTarget,
+  DiMember,
   DiOfficeState,
 } from '../../../core/src/messages.js';
 
@@ -826,6 +827,42 @@ export const UNAVAILABLE_WORDS: Record<string, string> = {
 
 export function unavailableWords(reason: string | null): string {
   return (reason !== null && UNAVAILABLE_WORDS[reason]) || 'A review is not offered for this agent.';
+}
+
+/**
+ * The PLAIN CONSEQUENCE of each reason a review is not offered, for the first layer: what the
+ * person cannot do and why, in ordinary words, never the contract mechanics (those stay exact in
+ * UNAVAILABLE_WORDS, shown in the details). It never implies a review is available.
+ */
+const NOT_OFFERED_CONSEQUENCE: Record<string, string> = {
+  not_a_mission_core_record:
+    'This is a plain Herdr task with no code workspace bound to it, so code review is not offered.',
+  contract_version_1_office:
+    'This office can’t confirm which code workspace belongs to which agent, so code review is not offered here.',
+  assignment_not_active: 'Its assignment is not active work now, so code review is not offered.',
+  assignment_not_bound:
+    'Which code workspace its assignment uses is not confirmed, so code review is not offered.',
+  member_not_in_direct_task:
+    'This agent works in a linked child task, not in the Mission’s own workspace, so code review is not offered here.',
+  member_not_live: 'This agent is not confirmed running now, so code review is not offered.',
+  task_not_observed: 'No task is observed for this agent, so code review is not offered.',
+};
+
+/** True when a member's review entry states that its review is not offered (no button): the rule
+ *  DiCodeReviewEntry applies. */
+export function statesReviewNotOffered(member: DiMember): boolean {
+  const offer = member.codeReview;
+  return (
+    offer !== undefined &&
+    (offer.state !== 'offered' || offer.listing === null || offer.taskId === null)
+  );
+}
+
+export function reviewNotOfferedConsequence(reason: string | null): string {
+  return (
+    (reason !== null && NOT_OFFERED_CONSEQUENCE[reason]) ||
+    'Code review is not offered for this agent.'
+  );
 }
 
 export function clearedWords(reason: ClearedReason): { title: string; body: string } {

@@ -16,6 +16,7 @@
  */
 import { expect, type Locator, type Page, test } from '@playwright/test';
 
+import { expectDockNamesMission, memberRowName } from './dockIdentity';
 import {
   characterPoint,
   drawnCount,
@@ -90,11 +91,14 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
       word: 'Running',
       glyph: '●',
     });
-    await expect(header.getByTestId('di-mission-team')).toContainText('Team 1 · 1 live');
+    await expect(header.getByTestId('di-mission-team')).toContainText(
+      '1 of 1 members observed running',
+    );
     await inMissionInspector(page, cases.refs.header, async (dialog) => {
       const title = page.locator('#di-inspector-title');
       await expect(title).toHaveText(/^No goal reported — mn-[0-9a-f]{8,}/);
-      await expect(page.getByTestId('di-inspector-qualifier')).toHaveText(cases.refs.header);
+      await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
+      await expect(dialog.getByTestId('di-mission-qualifier')).toHaveText(cases.refs.header);
       // The heading is BOUNDED (at most two lines) however long the export is.
       const lines = await title.evaluate(
         (el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight),
@@ -137,9 +141,12 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
       expect(point.onCanvas, `${e.memberRef} clickable (top ${point.topElement})`).toBe(true);
       await page.mouse.click(point.x, point.y);
       const dock = page.getByTestId('di-selected-agent');
-      await expect(dock).toContainText(e.missionRef, { timeout: 5_000 });
-      for (const other of executors.filter((x) => x !== e))
-        await expect(dock).not.toContainText(other.missionRef);
+      await expectDockNamesMission(
+        page,
+        e.missionRef,
+        executors.map((x) => x.missionRef),
+        5_000,
+      );
       // The world: the label appears on THAT character, on neither lookalike.
       await expect(
         page.locator(`[data-testid="agent-overlay"][data-agent-id="${e.characterId}"]`),
@@ -163,9 +170,12 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('di-selected-agent')).toContainText(executors[2].missionRef, {
-      timeout: 5_000,
-    });
+    await expectDockNamesMission(
+      page,
+      executors[2].missionRef,
+      executors.map((x) => x.missionRef),
+      5_000,
+    );
     await expect(
       page.locator(`[data-testid="agent-overlay"][data-agent-id="${executors[2].characterId}"]`),
     ).toBeVisible();
@@ -181,6 +191,7 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
       card(page, cases.refs.blocked).getByTestId('di-op-status-sentence').first(),
     ).toHaveText("1 live team member terminal(s) report blocked (the terminal's own report).");
     await inMissionInspector(page, cases.refs.blocked, async (dialog) => {
+      await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
       const derived = dialog
         .getByTestId('di-inspector-provenance')
         .locator('.di-op-row')
@@ -199,13 +210,14 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
     });
     await expect(
       card(page, cases.refs.replacedBlocked).getByTestId('di-mission-team'),
-    ).toContainText('Team 2 · 1 live');
+    ).toContainText('1 of 2 members observed running');
     await expect(
       card(page, cases.refs.replacedBlocked).getByTestId('di-op-terminal-note'),
     ).toHaveText(
       "reviewer2: its terminal last reported blocked (the terminal's own report; last known, not current — not live).",
     );
     await inMissionInspector(page, cases.refs.replacedBlocked, async (dialog) => {
+      await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
       const derived = dialog
         .getByTestId('di-inspector-provenance')
         .locator('.di-op-row')
@@ -241,6 +253,7 @@ test('built app, contract v2: a reported failure and duplicate names inside one 
       card(page, cases.refs.failed).getByTestId('di-op-status-sentence').first(),
     ).toContainText('reported by the source, not verified');
     await inMissionInspector(page, cases.refs.failed, async (dialog) => {
+      await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
       const derived = dialog
         .getByTestId('di-inspector-provenance')
         .locator('.di-op-row')
@@ -261,7 +274,9 @@ test('built app, contract v2: a reported failure and duplicate names inside one 
     expect(new Set(executors.map((e) => e.chain)).size).toBe(2);
     const missionCard = card(page, cases.refs.duplicates);
     await missionCard.getByTestId('di-mission-roster').locator('summary').click();
-    const rows = missionCard.getByTestId('di-member-row').filter({ hasText: 'executor1 (' });
+    const rows = missionCard
+      .getByTestId('di-member-row')
+      .filter({ hasText: memberRowName('executor1') });
     await expect(rows).toHaveCount(2);
     expect(new Set(await rows.allInnerTexts()).size).toBe(2); // told apart on the face (direct / child)
     for (let i = 0; i < 2; i++) {
@@ -270,6 +285,8 @@ test('built app, contract v2: a reported failure and duplicate names inside one 
         .getByTestId('di-selected-agent')
         .getByTestId('di-open-inspector-selection')
         .click();
+      // The full record is under "Everything recorded": opened as a person does, then read.
+      await page.getByTestId('di-inspector-record').locator('summary').click();
       const member = page.getByTestId('di-inspector-member');
       // Whichever row was chosen, the inspector names exactly ONE of the two complete refs.
       const text = (await member.innerText()).replace(/\s+/g, ' ');

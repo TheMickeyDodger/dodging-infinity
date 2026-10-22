@@ -8,7 +8,13 @@
  * and never invents a count.
  */
 import type { MrState, MrTab } from './diMissionRequestModel.js';
-import { countsOf, entryWords, MR_NAME, MR_TAGLINE } from './diMissionRequestModel.js';
+import {
+  countsOf,
+  entryWords,
+  MR_NAME,
+  MR_TAGLINE,
+  requestsUnavailable,
+} from './diMissionRequestModel.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 
 /** The workspace seam, owned by App (null in a surface that cannot open one). */
@@ -22,28 +28,24 @@ export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAcce
   if (access === null) return null;
   const { state } = access;
   const counts = countsOf(state.overview);
-  // feature13: a COMPACT entry in the calm panel (diOperationalPanel.css). Where requests cannot be
-  // read in this office, the entry is ONE row — its name, that fact, and the model's own sentence
-  // (why, and how to set it up) one step behind; the two actions appear only where requests exist.
-  const unavailable = state.unvouched === null && state.availability.kind === 'unavailable';
   const button = `di-op-button ${DI_FOCUS_RING}`;
-  if (unavailable)
+  // Not available here: ONE quiet line — the name and that fact — with the model's own sentence
+  // (why, and how to set it up) one step behind. Demoted in prominence, never removed.
+  if (requestsUnavailable(access.state))
     return (
       <section
-        className="di-op-entry di-op-entry-compact"
+        className="di-op-mr-quiet"
         aria-labelledby="di-mr-entry-title"
         data-testid="di-mr-entry"
       >
-        <div className="di-op-entry-head">
-          <h2 id="di-mr-entry-title" className="di-op-entry-title">
-            {MR_NAME}
-          </h2>
-          <p aria-live="polite" data-testid="di-mr-entry-summary" className="di-op-entry-note">
-            Not available in this office
-          </p>
-        </div>
         <details data-testid="di-mr-entry-why">
-          <summary className={DI_FOCUS_RING}>Why, and how to set it up</summary>
+          <summary className={DI_FOCUS_RING}>
+            <span id="di-mr-entry-title">{MR_NAME}</span>:{' '}
+            <span aria-live="polite" data-testid="di-mr-entry-summary">
+              not available in this office
+            </span>{' '}
+            · why, and how to set it up
+          </summary>
           <div className="di-op-detail-body">
             <p data-testid="di-mr-entry-tagline">{MR_TAGLINE}</p>
             <p>{entryWords(state)}</p>

@@ -24,6 +24,7 @@ import { createServer } from 'vite';
 import { afterAll, beforeAll, beforeEach, test } from 'vitest';
 
 import type { DiOfficeState } from '../../core/src/messages.ts';
+import { shortMissionRefs } from '../src/components/diPlainSummary.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -90,6 +91,18 @@ const [A_REF, B_REF] = (
   .filter((m) => m.members.members.length > 0)
   .map((m) => m.missionRef);
 
+/** Each Mission's short source-qualified ref, as the panel computes it over the same list. */
+const shortRefs = shortMissionRefs(
+  (
+    JSON.parse(
+      fs.readFileSync(
+        path.join(root, 'test/fixtures/di-office-state-session-mismatch-v2.FIXTURE.json'),
+        'utf-8',
+      ),
+    ) as { state: DiOfficeState }
+  ).state.missions.missions,
+);
+
 /**
  * A patch to ONE Mission's record, applied in the page as a later projection (the office's own
  * update path), merged recursively: objects merge, arrays merge by index, and `{ $set: v }` assigns v.
@@ -152,7 +165,10 @@ test('a header-only objective is said plainly and source-qualified; status and t
   );
   // Status and team carry the row.
   assert.deepEqual(await chip(B_REF), { status: 'running', text: 'Running', glyph: '●' });
-  assert.match(await c.locator(T('di-mission-team')).innerText(), /^Team 4 · 4 live · /);
+  assert.match(
+    await c.locator(T('di-mission-team')).innerText(),
+    /^4 of 4 members observed running · 4 terminals busy$/,
+  );
   // The picker says the same, honestly, and keeps the source identity.
   const option = await p().$eval(
     `${T('di-mission-select')} option[value="${B_REF}"]`,
@@ -162,7 +178,12 @@ test('a header-only objective is said plainly and source-qualified; status and t
   // Still selectable and inspectable: the inspector shows the export verbatim and the COMPLETE ref.
   await c.locator(T('di-open-inspector-mission')).click();
   await p().waitForSelector('[role="dialog"]');
-  assert.equal(await p().$eval(T('di-inspector-qualifier'), (el) => el.textContent), B_REF);
+  assert.equal(
+    await p().$eval(T('di-inspector-short-ref'), (el) => el.getAttribute('title')),
+    B_REF,
+  );
+  await p().click(`${T('di-inspector-provenance')} > summary`);
+  assert.equal(await p().$eval(T('di-mission-qualifier'), (el) => el.textContent), B_REF);
   const dialog = await p().$eval('[role="dialog"]', (el) => (el as HTMLElement).innerText);
   assert.match(dialog, /objective as exported\s+“OBJECTIVE”/);
   assert.match(dialog, /No goal reported/);
@@ -204,7 +225,7 @@ test('two Missions whose teams share every member name stay two records: selecti
     const roster = c.locator(T('di-mission-roster'));
     if (!(await roster.evaluate((el) => (el as HTMLDetailsElement).open)))
       await roster.locator('summary').click();
-    await c.locator(T('di-member-row')).filter({ hasText: 'executor1 (' }).first().click();
+    await c.locator(T('di-member-row')).filter({ hasText: 'executor1 · executor' }).first().click();
     await p().waitForFunction(
       (id) =>
         (window as unknown as { __diHarness: Harness }).__diHarness.office.selectedAgentId === id,
@@ -212,8 +233,13 @@ test('two Missions whose teams share every member name stay two records: selecti
       { timeout: 5_000 },
     );
     const dock = await p().$eval(T('di-selected-agent'), (el) => (el as HTMLElement).innerText);
-    assert.ok(dock.includes(ref), `the dock names ${ref}`);
-    assert.ok(!dock.includes(other), `...and not the lookalike ${other}`);
+    const named = await p().$eval(T('di-selected-member-mission'), (el) =>
+      el.getAttribute('title'),
+    );
+    assert.equal(named, ref, `the dock names ${ref}`);
+    assert.notEqual(named, other, `...and not the lookalike ${other}`);
+    assert.ok(dock.includes(shortRefs.get(ref)!), 'its short source-qualified ref is shown');
+    assert.ok(!dock.includes(shortRefs.get(other)!), '...and not the lookalike\x27s');
     assert.ok(dock.includes('executor1'));
   }
 });

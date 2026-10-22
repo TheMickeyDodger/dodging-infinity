@@ -232,6 +232,11 @@ async function selectionBecomes(id: number | null) {
 }
 /** Several selection polls (250 ms) and client checks (1 s) pass. */
 const settle = () => p().waitForTimeout(1_500);
+/** The dock's freshness, in plain age words: current ("Observed …"), or not ("Not current: <why>"). */
+const CURRENT = /(^|\s)Observed (just now|\d+ (minute|hour|day)s? ago)\./;
+const NOT_CURRENT = /Not current: /;
+/** An unverified record, in the corrected words: its link to the recorded role is not established. */
+const NOT_LINKED = /can’t be safely linked to its recorded role/;
 
 async function boot() {
   send(S.live);
@@ -251,7 +256,7 @@ test(
     await settle();
     let text = await inspectorMatches(/no longer in the office state/);
     assert.match(text, new RegExp(goneAgent.logical));
-    assert.match(text, /current/i); // freshness of the evidence the notice rests on
+    assert.match(text, CURRENT); // freshness of the evidence the notice rests on
     assert.equal((await selection()).selectedAgentId, null); // nothing selected in its place
     // A later update that still lacks it: the notice stays, now with the backend's reason.
     send(S.unavailable);
@@ -259,7 +264,7 @@ test(
     text = await inspectorMatches(/no longer in the office state/);
     assert.match(text, /could not reach its backend/);
     assert.ok((await inspectorHtml()).includes('transport:backend_unreachable'));
-    assert.match(text, /NOT current/);
+    assert.match(text, NOT_CURRENT);
     // The record is listed again: the same record is shown, and the canvas selects nothing.
     send(S.liveAgain);
     await settle();
@@ -278,7 +283,7 @@ test(
     await selectOnCanvas(goneMember.characterId);
     let text = await inspectorMatches(new RegExp(goneMember.logical));
     assert.match(text, /Team member/);
-    assert.match(text, /observation is current/);
+    assert.match(text, CURRENT);
     send(S.unavailable);
     await selectionBecomes(null);
     await settle();
@@ -297,12 +302,12 @@ test(
     await boot();
     await p().focus('[data-testid="di-unverified-row"]');
     await p().keyboard.press('Enter');
-    let text = await inspectorMatches(/not established/i);
-    assert.match(text, /observation is current/);
+    let text = await inspectorMatches(NOT_LINKED);
+    assert.match(text, CURRENT);
     send(S.stale);
     await settle();
-    text = await inspectorMatches(/NOT current/);
-    assert.match(text, /not established/i); // the same record, still
+    text = await inspectorMatches(NOT_CURRENT);
+    assert.match(text, NOT_LINKED); // the same record, still
     assert.match(text, /expired/);
     assert.doesNotMatch(text, /is running/);
     const listing = await p().$eval(
@@ -310,7 +315,7 @@ test(
       (el) => (el as HTMLElement).innerText,
     );
     assert.doesNotMatch(listing, /is running/);
-    assert.match(listing, /NOT current/);
+    assert.match(listing, NOT_CURRENT);
     // A drawn runtime agent selected while live, then the office expires: its character is
     // removed (selection cleared by the canvas) and the record stays, qualified.
     send(S.live);
@@ -318,11 +323,11 @@ test(
     await selectOnCanvas(keptAgent.characterId);
     // The panel polls the office selection (250 ms): wait until it shows THIS agent first.
     await inspectorMatches(new RegExp(keptAgent.agent));
-    await inspectorMatches(/observation is current/);
+    await inspectorMatches(CURRENT);
     send(S.stale);
     await selectionBecomes(null);
     await settle();
-    text = await inspectorMatches(/NOT current/);
+    text = await inspectorMatches(NOT_CURRENT);
     assert.match(text, new RegExp(keptAgent.agent));
     assert.match(text, /Not drawn now/);
   },
@@ -335,16 +340,16 @@ test(
     await boot();
     await selectOnCanvas(keptAgent.characterId);
     await inspectorMatches(new RegExp(keptAgent.agent));
-    await inspectorMatches(/observation is current/);
+    await inspectorMatches(CURRENT);
     expectConnection(true);
     socket!.close();
-    const text = await inspectorMatches(/NOT current/);
+    const text = await inspectorMatches(NOT_CURRENT);
     assert.match(text, new RegExp(keptAgent.agent));
     assert.match(text, /not connected/);
     assert.equal((await selection()).selectedAgentId, keptAgent.characterId);
     await connected; // the transport reconnects by itself
     send(S.live);
-    await inspectorMatches(/observation is current/);
+    await inspectorMatches(CURRENT);
   },
   STEPS_MS,
 );

@@ -377,7 +377,7 @@ async function main(): Promise<void> {
       (report.images as Record<string, unknown>)['operational-panel-inspector.png'] = {
         viewportCssPx: INSPECTOR_VIEWPORT,
         deviceScaleFactor: DPR,
-        framing: 'Open inspector on the first Mission',
+        framing: 'Show details on the first Mission',
         clipCssPx: clip,
         dialogCssPx: box,
         productLabelInClip: { text: 'FIXTURE DATA (inspector kind line)', box: labelBox },

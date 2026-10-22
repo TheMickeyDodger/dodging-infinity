@@ -17,7 +17,7 @@
  *    inspector" doorway or an inspector that does not open FAILS the run, and the layout invariants
  *    that decide feature13 are asserted unconditionally on every state at every viewport: the panel
  *    never scrolls itself (overflowPx 0), the Selected dock is inside the viewport, an open inspector
- *    fits it with Close reachable, no stray dialog, every Mission card carries its "Open inspector",
+ *    fits it with Close reachable, no stray dialog, every Mission card carries its "Show details",
  *    and the first Mission's objective, status and team are in view (>= 3 cards at 1440x900).
  *  - baseline (DI_PANEL_MODE=baseline, set explicitly): the BEFORE build, which has no inspector and
  *    is expected to fail those invariants. The same checks are RECORDED in the measurements JSON
@@ -185,8 +185,14 @@ async function occurrences(page: Page, text: string): Promise<number> {
   return await page.evaluate((t) => {
     const count = (s: string | null) => (s ?? '').split(t).length - 1;
     const overlays = Array.from(document.querySelectorAll('[data-testid="agent-overlay"]'));
+    // A view may show a short ref and carry the complete one as its title: counted EXACTLY.
+    const titled = Array.from(document.querySelectorAll('[title]')).filter(
+      (el) => el.getAttribute('title') === t,
+    ).length;
     return (
-      count(document.body.textContent) - overlays.reduce((n, o) => n + count(o.textContent), 0)
+      count(document.body.textContent) -
+      overlays.reduce((n, o) => n + count(o.textContent), 0) +
+      titled
     );
   }, text);
 }
@@ -323,7 +329,7 @@ async function measurePanel(page: Page): Promise<unknown> {
             ? ('not-offered' as const)
             : ('absent' as const),
         actions: {
-          'Open inspector': action('di-open-inspector-selection'),
+          'Show details': action('di-open-inspector-selection'),
           'Show in the office': action('di-show-in-office'),
           'Show this Mission in the list': action('di-show-mission'),
           'Open code review': action('di-open-code-review'),

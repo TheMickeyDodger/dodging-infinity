@@ -35,6 +35,7 @@ import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 
 import type { DiCodeReview, DiOfficeState } from '../../core/src/messages.ts';
+import { reviewNotOfferedConsequence } from '../src/components/diCodeReviewModel.ts';
 
 const STEPS_MS = 90_000;
 
@@ -402,6 +403,31 @@ test(
     assert.match(why, /not offered/);
     assert.match(why, /not active work/);
     await shot('entry-not-offered');
+  },
+  STEPS_MS,
+);
+
+test(
+  'a member whose code review is not offered: its details say so ONCE, in its own summary (a single-member Mission)',
+  async () => {
+    const inactive = S.inactive.missions.missions[0].members.members;
+    assert.equal(inactive.length, 1, 'the case: a single-member Mission');
+    const sentence = reviewNotOfferedConsequence(inactive[0].codeReview!.reason);
+    await selectAgent();
+    send(S.inactive);
+    await p().waitForSelector(T('di-dock-code-review-unavailable'), { timeout: 15_000 });
+    await p().click(T('di-open-inspector-selection'));
+    await p().waitForSelector(T('di-inspector-selected'), { timeout: 15_000 });
+    // Counted in the VISIBLE text: the popup states it once, and the one kept is the summary's.
+    const seen = await p().evaluate((s) => {
+      const visible = (sel: string) =>
+        (document.querySelector<HTMLElement>(sel)?.innerText ?? '').split(s).length - 1;
+      return {
+        popup: visible('[role="dialog"]'),
+        summary: visible('[data-testid="di-inspector-selected"]'),
+      };
+    }, sentence);
+    assert.deepEqual(seen, { popup: 1, summary: 1 });
   },
   STEPS_MS,
 );

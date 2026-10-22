@@ -247,7 +247,8 @@ export function DiReceptionDesk({
       className="flex flex-col gap-2 border-t-2 border-border pt-4 shrink-0"
       data-testid="di-reception"
     >
-      <h2 id="di-reception-heading" className="text-sm">
+      {/* tabIndex -1: "Go to the desk" moves keyboard focus here, not only the scroll. */}
+      <h2 id="di-reception-heading" className="text-sm" tabIndex={-1}>
         Reception desk: needs attention
       </h2>
       {!compact && (

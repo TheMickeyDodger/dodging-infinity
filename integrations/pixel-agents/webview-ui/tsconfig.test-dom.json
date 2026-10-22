@@ -22,6 +22,7 @@
     "test/diAppReconcile.test.ts",
     "test/diEvidenceLibrary.test.ts",
     "test/diCodeReview.test.ts",
+    "test/diPlainSummary.test.ts",
     "test/harness/**/*.tsx",
     "test/harness/diAppProbe.ts"
   ],

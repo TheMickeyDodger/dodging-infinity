@@ -24,6 +24,7 @@ import { createServer } from 'vite';
 import { afterAll, beforeAll, beforeEach, test } from 'vitest';
 
 import type { DiOfficeState } from '../../core/src/messages.ts';
+import { shortMissionRefs } from '../src/components/diPlainSummary.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = JSON.parse(
@@ -33,6 +34,7 @@ const fixture = JSON.parse(
   ),
 ) as { state: DiOfficeState };
 const firstMission = fixture.state.missions.missions[0];
+const shortRefs = shortMissionRefs(fixture.state.missions.missions);
 const drawnMember = fixture.state.missions.missions
   .flatMap((m) => m.members.members.map((x) => ({ member: x, mission: m })))
   .find(({ member }) => member.characterId !== null)!;
@@ -133,12 +135,12 @@ const dialogFacts = () =>
 
 test('from a Mission card: Enter opens a real modal dialog named by its heading; Escape closes and returns focus', async () => {
   const presses = await tabTo(T('di-open-inspector-mission'));
-  assert.notEqual(presses, null, 'Tab never reached a card\x27s "Open inspector"');
+  assert.notEqual(presses, null, 'Tab never reached a card\x27s "Show details"');
   const opener = await activeInfo();
   assert.equal(opener.mission, firstMission.missionRef, 'the first card\x27s entry comes first');
   assert.equal(
     await p().evaluate(() => document.activeElement?.textContent),
-    'Open inspector',
+    'Show details',
     'the entry is labelled in words',
   );
   await p().keyboard.press('Enter');
@@ -210,9 +212,25 @@ test('from the Selected dock: select a member by keyboard, open its inspector, r
   });
   assert.ok(dock.top >= 0 && dock.bottom <= 900, `dock in view: ${dock.top}..${dock.bottom}`);
   assert.ok(dock.text.includes(member.logical));
-  assert.ok(dock.text.includes(drawnMember.mission.missionRef), 'names its Mission by its ref');
+  assert.equal(
+    await p().$eval(T('di-selected-member-mission'), (el) => el.getAttribute('title')),
+    drawnMember.mission.missionRef,
+    'names its Mission by its complete ref',
+  );
+  assert.ok(
+    dock.text.includes(shortRefs.get(drawnMember.mission.missionRef)!),
+    'shows its short source-qualified ref',
+  );
+  for (const other of fixture.state.missions.missions)
+    if (other.missionRef !== drawnMember.mission.missionRef)
+      assert.ok(
+        !dock.text.includes(shortRefs.get(other.missionRef)!),
+        `...and not another Mission's (${other.missionRef})`,
+      );
   assert.notEqual(await tabTo(T('di-open-inspector-selection')), null);
   await p().keyboard.press('Enter');
+  await p().waitForSelector(T('di-inspector-selected'));
+  await p().click(`${T('di-inspector-record')} > summary`);
   await p().waitForSelector(T('di-inspector-member'));
   assert.equal((await dialogFacts()).rootInert, true);
   const detail = await p().$eval(T('di-inspector-member'), (el) => el.textContent ?? '');
@@ -265,8 +283,12 @@ async function expectLocated(memberRef: string, characterId: number, missionRef:
   assert.deepEqual(await officeSel(), { selected: characterId, camera: characterId });
   // The SAME source-qualified record is selected: the dock names it and its complete Mission ref.
   const dock = await p().$eval(T('di-selected-member'), (el) => (el as HTMLElement).innerText);
-  assert.ok(dock.includes(missionRef), `dock names ${missionRef}`);
-  assert.ok(dock.includes(memberRef.split('#')[1]));
+  assert.equal(
+    await p().$eval(T('di-selected-member-mission'), (el) => el.getAttribute('title')),
+    missionRef,
+    `dock names ${missionRef}`,
+  );
+  assert.ok(dock.includes(memberRef.split('#').at(-1)!), 'the dock names the member');
   await p().waitForFunction(
     () =>
       document.activeElement?.getAttribute('data-testid') === 'di-open-inspector-selection' &&
@@ -284,8 +306,8 @@ test('locate from the dock\x27s inspector: "Show in the office" closes it and sh
   await p().keyboard.press('Enter');
   await p().waitForSelector(T('di-selected-member'));
   await p().click(T('di-open-inspector-selection'));
-  await p().waitForSelector(T('di-inspector-member'));
-  await p().click(`${T('di-inspector-member')} ${T('di-show-in-office')}`);
+  await p().waitForSelector(T('di-inspector-selected'));
+  await p().click(`${T('di-inspector-selected')} ${T('di-show-in-office')}`);
   await expectLocated(member.memberRef, member.characterId!, mission.missionRef);
 });
 
@@ -336,10 +358,10 @@ test('a NOT-DRAWN record is never offered a locate in the inspector; its plain r
   await p().keyboard.press('Enter');
   await p().waitForSelector(T('di-selected-member'));
   await p().click(T('di-open-inspector-selection'));
-  await p().waitForSelector(T('di-inspector-member'));
-  assert.equal(await p().$(`${T('di-inspector-member')} ${T('di-show-in-office')}`), null);
+  await p().waitForSelector(T('di-inspector-selected'));
+  assert.equal(await p().$(`${T('di-inspector-selected')} ${T('di-show-in-office')}`), null);
   assert.match(
-    await p().$eval(T('di-inspector-member'), (el) => el.textContent ?? ''),
+    await p().$eval(T('di-inspector-selected'), (el) => el.textContent ?? ''),
     /Not drawn now:/,
   );
 });
@@ -419,8 +441,8 @@ test('an OFFERED code review from the inspector: the inspector closes first; foc
   await offerReview(member.memberRef, taskId, 'FIXTURE-listing-0002');
   await selectDrawnMemberByFind();
   await p().click(T('di-open-inspector-selection'));
-  await p().waitForSelector(T('di-inspector-member'));
-  await p().click(T('di-inspector-open-code-review'));
+  await p().waitForSelector(T('di-inspector-selected'));
+  await p().click(`${T('di-inspector-selected')} ${T('di-inspector-open-code-review')}`);
   await p().waitForSelector('[role="dialog"]', { state: 'detached' });
   assert.equal((await dialogFacts()).rootInert, false, 'never two modals: #root is usable again');
   const [only] = (await calls()).review;

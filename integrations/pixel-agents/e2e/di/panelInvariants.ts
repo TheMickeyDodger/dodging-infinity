@@ -47,11 +47,7 @@ export interface PanelMeasure {
 }
 
 /** The dock actions a selected team member must offer, whole and in reach, on initial selection. */
-export const DOCK_ACTIONS = [
-  'Open inspector',
-  'Show in the office',
-  'Show this Mission in the list',
-];
+export const DOCK_ACTIONS = ['Show details', 'Show in the office', 'Show this Mission in the list'];
 /** The review entry: asserted wherever the dock offers one (a fixture that offers a review). */
 export const DOCK_REVIEW_ACTION = 'Open code review';
 
@@ -81,7 +77,7 @@ export function layoutInvariants(
   }
   add('Mission cards exist', m.missionCards.total > 0);
   add(
-    'every Mission card carries its "Open inspector"',
+    'every Mission card carries its "Show details"',
     m.missionCards.total > 0 && m.missionCards.withOpenInspector === m.missionCards.total,
   );
   if (state === 'b-team-member-selected') {

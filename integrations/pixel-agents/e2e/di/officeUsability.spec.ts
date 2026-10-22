@@ -16,6 +16,7 @@ import path from 'node:path';
 
 import { expect, type Locator, type Page, test, type WebSocketRoute } from '@playwright/test';
 
+import { expectDockNamesMission, memberRowName } from './dockIdentity';
 import { buildRealisticFixture } from './realisticFixture';
 
 const REPO_ROOT = path.join(__dirname, '../..');
@@ -210,7 +211,7 @@ async function expectInViewport(page: Page, target: string | Locator): Promise<v
 
 /**
  * feature13: the full-size INSPECTOR, reached as a person does. A Mission's card carries an explicit
- * "Open inspector"; the Selected dock carries one for the selection. `read` runs inside the open
+ * "Show details"; the Selected dock carries one for the selection. `read` runs inside the open
  * dialog; the dialog is then closed with Escape (focus returns to the opener).
  */
 async function inInspector<T>(
@@ -285,7 +286,7 @@ async function rosterRow(page: Page, missionRef: string, logical: string): Promi
     await roster.locator('summary').click();
   return card
     .getByTestId('di-member-row')
-    .filter({ hasText: `${logical} (` })
+    .filter({ hasText: memberRowName(logical) })
     .first();
 }
 
@@ -611,7 +612,13 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     await expectInViewport(page, firstCard.getByTestId('di-mission-objective'));
     await expectInViewport(page, firstCard.getByTestId('di-op-status'));
     await expectInViewport(page, firstCard.getByTestId('di-mission-team'));
-    for (const id of ['di-coverage', 'di-selected-agent']) await expectInViewport(page, id);
+    for (const id of ['di-view-limits', 'di-selected-agent']) await expectInViewport(page, id);
+    // The partial view in plain words on the face (product experience); the exact coverage one step
+    // away, under "About this list".
+    await expect(page.getByTestId('di-view-limits')).toContainText(
+      'team members working in linked child tasks',
+    );
+    await page.getByTestId('di-missions-about').locator('summary').click();
     await expect(page.getByTestId('di-coverage')).toContainText(
       'Linked child-task roles: NOT COVERED',
     );
@@ -630,9 +637,33 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     for (const ref of fixture.missionRefs) {
       await expect(page.locator(`[data-mission-ref="${ref}"]`)).toHaveCount(1);
       await missionInspector(page, ref, async (dialog) => {
-        await refShownWhole(dialog.getByTestId('di-inspector-qualifier'), ref);
+        await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
+        await refShownWhole(dialog.getByTestId('di-mission-qualifier'), ref);
       });
     }
+    // Each scroll region of the panel CONTAINS its positioned parts (the cards' screen-reader-only
+    // zone names are position:absolute): none escapes to stretch the panel's own scroll area, so
+    // the panel itself never scrolls past the dock into blank space.
+    const containment = await page.getByTestId('di-office-panel').evaluate((panel) => {
+      const regions = [...panel.querySelectorAll<HTMLElement>('*')].filter((el) =>
+        ['auto', 'scroll'].includes(getComputedStyle(el).overflowY),
+      );
+      const positioned = regions.flatMap((region) =>
+        [...region.querySelectorAll<HTMLElement>('*')]
+          .filter((el) => ['absolute', 'fixed'].includes(getComputedStyle(el).position))
+          .map((el) => ({ region, el })),
+      );
+      return {
+        zoneNames: panel.querySelectorAll('[data-testid="di-mission-zone"]').length,
+        escaped: positioned
+          .filter(({ region, el }) => el.offsetParent === null || !region.contains(el.offsetParent))
+          .map(({ el }) => `${el.dataset['testid'] ?? el.tagName} -> ${el.offsetParent?.tagName}`),
+        panelOverflowPx: panel.scrollHeight - panel.clientHeight,
+      };
+    });
+    expect(containment.zoneNames, 'the zone names are there to check').toBeGreaterThan(0);
+    expect(containment.escaped, 'positioned parts escape their scroll region').toEqual([]);
+    expect(containment.panelOverflowPx, 'the panel itself does not overflow').toBe(0);
     await page.getByTestId('di-missions').evaluate((el) => el.scrollIntoView({ block: 'start' }));
     // The Missions live in ONE bounded scroll region (the panel's main region), inside the viewport.
     const region = page.getByTestId('di-op-main');
@@ -671,9 +702,10 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     await expect(selected.getByTestId('di-selected-member')).toContainText(logical, {
       timeout: 5_000,
     });
-    await expect(selected).toContainText(target.missionRef);
-    await expect(selected).toContainText('identity confirmed');
-    await refShownWhole(selected.getByText(target.missionRef, { exact: true }), target.missionRef);
+    // Its Mission by title and short ref on the face, bound to the COMPLETE ref exactly (its title);
+    // its state as one plain phrase. The complete ref is shown whole in the inspector (below).
+    await expectDockNamesMission(page, target.missionRef, fixture.missionRefs);
+    await expect(selected.getByTestId('di-agent-phrase')).toHaveText(/Terminal busy/);
     await expectInViewport(page, 'di-selected-agent');
     // The canvas label agrees with the office state (never a tool-derived "Idle"), and the
     // inert "Close agent" control is not offered in DI mode.
@@ -685,7 +717,7 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     await expect(page.getByTitle('Close agent')).toHaveCount(0);
     await delay(400);
     await shot(page, '02-agent-selected-by-click-FIXTURE.png');
-    // The raw identity fields live in the inspector (one "Open inspector" away): asserted there,
+    // The raw identity fields live in the inspector (one "Show details" away): asserted there,
     // exactly. Provider comes from the PROJECTION; the model is "unknown", rendered as such.
     await selectionInspector(page, async (dialog) => {
       const member = dialog.getByTestId('di-inspector-member');
@@ -758,7 +790,7 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
         p1Selected.getByTestId('di-selected-member'),
         `DPR 1 click selects ${p1Target.memberRef}; observed ${p1Observed}`,
       ).toContainText(p1Target.memberRef.split('#')[1], { timeout: 5_000 });
-      await expect(p1Selected).toContainText(p1Target.missionRef);
+      await expectDockNamesMission(p1, p1Target.missionRef, fixture.missionRefs);
       // ...and the canvas selected THAT character: its label appears on it.
       await expect(
         p1.locator(`[data-testid="agent-overlay"][data-agent-id="${p1Target.characterId}"]`),
@@ -782,7 +814,7 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     await expect(selected.getByTestId('di-selected-member')).toContainText('supervisor', {
       timeout: 5_000,
     });
-    await expect(selected).toContainText(codexTarget.missionRef);
+    await expectDockNamesMission(page, codexTarget.missionRef, fixture.missionRefs);
     await selectionInspector(page, async (dialog) => {
       const member = dialog.getByTestId('di-inspector-member');
       await expect(member).toContainText(codexTarget.memberRef);
@@ -801,22 +833,23 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     // it is a replaced member and not live.
     await expect(
       page.locator(`[data-mission-ref="${replacedMissionRef}"]`).getByTestId('di-mission-team'),
-    ).toContainText('Team 2 · 1 live');
+    ).toContainText('1 of 2 members observed running');
     const replacedRow = await rosterRow(page, replacedMissionRef, replacedLogical);
     await replacedRow.scrollIntoViewIfNeeded();
     await expect(replacedRow).toContainText('replaced by another session');
-    await expect(replacedRow).toContainText('NOT LIVE');
+    await expect(replacedRow).toContainText('Not observed running');
     expect((await seatedCharacters(page)).length).toBe(liveMemberCount);
     await shot(page, '03-replaced-visible-unconfirmed-FIXTURE.png');
     // The raw fields, verbatim, in the Mission's inspector (provenance): both sessions.
     await missionInspector(page, replacedMissionRef, async (dialog) => {
+      await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
       const row = provenanceRow(dialog, replacedRef);
       await expect(row).toContainText('replaced (session_changed)');
       await expect(row).toContainText('NOT LIVE: member_replaced:session_changed');
       await expect(row).toContainText(`sess-${replacedLogical}-1`);
       await expect(row).toContainText(`sess-${replacedLogical}-2`);
       await expect(dialog.locator(`[data-member-ref="${replacedRef}"]`)).toContainText(
-        'replaced in the last observation',
+        'replaced by another session',
       );
     });
 
@@ -908,8 +941,7 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     // in words and says NOT LIVE — never relabelled as gone.
     const execTarget = live.find((m) => m.memberRef.endsWith('#executor1'))!;
     const executorRow = await rosterRow(page, execTarget.missionRef, 'executor1');
-    await expect(executorRow).toContainText('identity confirmed');
-    await expect(executorRow).toContainText('NOT LIVE');
+    await expect(executorRow).toContainText('Not current');
     // The raw backend values stay VERBATIM — never relabelled, never disappeared/ended — for EVERY
     // previously live member, asserted in each Mission's inspector (provenance).
     const liveByMission = new Map<string, typeof live>();
@@ -920,6 +952,7 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
       ]);
     for (const [missionRef, members] of liveByMission)
       await missionInspector(page, missionRef, async (dialog) => {
+        await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
         for (const member of members) {
           const row = provenanceRow(dialog, member.memberRef);
           await expect(row).toContainText('present (session_confirmed)');
@@ -1132,7 +1165,7 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     await expect(bDock.getByTestId('di-selected-member')).toContainText(addedLogical, {
       timeout: 5_000,
     });
-    await expect(bDock).toContainText(addedMissionRef);
+    await expectDockNamesMission(page, addedMissionRef, []);
     await shot(page, '09d-B-confirmed-drawn-selectable-FIXTURE.png');
     // The complete member ref (source-qualified) is in the inspector.
     await selectionInspector(page, async (dialog) => {

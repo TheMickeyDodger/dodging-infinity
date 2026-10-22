@@ -121,13 +121,27 @@ async function inspectorShows(testid: string, needle: string): Promise<string> {
   return (await text(testid)) ?? '';
 }
 
+/**
+ * The ONE runtime record a row names: its first-layer name is "<logical> · <root alias>" (source-
+ * qualified only when the list holds several sources; this fixture holds one). Exactly one record
+ * must match — an ambiguous row is a failure, not a pick.
+ */
+function rowAgent<A extends { logical: string; rootAliases: string[] }>(
+  records: readonly A[],
+  label: string,
+): A | undefined {
+  const hits = records.filter((a) => label.startsWith(`${a.logical} · ${a.rootAliases[0]}`));
+  assert.ok(hits.length <= 1, `the row names one record, not ${hits.length}: ${label}`);
+  return hits[0];
+}
+
 // -- item 04: the runtime row (the gap the live proof found) ------------------------------
 
 test('Tab reaches a runtime agent row; Enter selects it on the map and in the inspector', async () => {
   const presses = await tabTo('[data-testid="di-runtime-row"]');
   assert.notEqual(presses, null, 'Tab never reached a runtime agent row');
   const label = await activeText();
-  const agent = verified.find((a) => label.includes(a.agent) && label.includes(a.logical));
+  const agent = rowAgent(verified, label);
   assert.ok(agent, `the focused row names a verified runtime agent: ${label}`);
   await p().keyboard.press('Enter');
   const shown = await inspectorShows('di-selected-runtime-agent', agent.agent);
@@ -152,7 +166,7 @@ test('arrow keys, Home and End move between runtime rows; Space selects', async 
   await p().keyboard.press('End');
   assert.equal(await activeText(), last);
   await p().keyboard.press(' ');
-  const agent = verified.find((a) => last.includes(a.agent) && last.includes(a.logical));
+  const agent = rowAgent(verified, last);
   assert.ok(agent, `the last runtime row names a verified agent: ${last}`);
   await inspectorShows('di-selected-runtime-agent', agent.agent);
   assert.equal(await selectedId(), agent.characterId);
@@ -175,7 +189,7 @@ async function openFirstRoster(): Promise<number> {
   assert.deepEqual(before, { open: false, rowShown: false }, 'the roster is off the card face');
   assert.match(
     await activeText(),
-    /^Team members \(\d+\)$/,
+    /^Team \(\d+\): \S.*$/,
     'the disclosure names itself and its size',
   );
   await p().keyboard.press('Enter');
@@ -246,19 +260,19 @@ test('the unverified listing: every record listed, reachable by keyboard, opened
   );
   assert.equal(new Set(rowTexts).size, rowTexts.length);
   const listing = (await text('di-unverified')) ?? '';
-  assert.match(listing, /not verified/i);
-  // round 11: the observation is qualified by its freshness ('A live native agent named …').
-  assert.match(listing, /native agent named/);
+  assert.match(listing, /can’t be safely linked to its recorded role/);
+  // round 11: the observation is qualified by its freshness (its time, said once for the section).
+  assert.match(listing, /An agent with each name was found running/);
   // The four-agent gap stays explicit: names, panes and timestamps do not make them verified.
   assert.match(listing, /session_replaced|recorded session/);
   assert.notEqual(await tabTo('[data-testid="di-unverified-row"]'), null);
   const label = await activeText();
   await p().keyboard.press('Enter');
-  const shown = await inspectorShows('di-selected-unverified', 'not verified');
+  const shown = await inspectorShows('di-selected-unverified', 'can’t be safely linked');
   assert.match(shown, /Not drawn/);
-  assert.match(shown, /not established/i);
+  assert.match(shown, /can’t be safely linked to its recorded role/);
   assert.equal(await selectedId(), null, 'an unverified record never becomes a drawn selection');
-  const record = unverified.find((a) => label.includes(a.agent));
+  const record = rowAgent(unverified, label);
   assert.ok(record);
   // Provenance (the raw reason, the recorded session) is behind a labelled disclosure. feature13:
   // the dock face carries NONE of it (stronger than before); the inspector holds it, after the
@@ -267,18 +281,77 @@ test('the unverified listing: every record listed, reachable by keyboard, opened
   assert.ok(!dockFace.includes(record.identityReason), 'no raw reason code on the dock face');
   if (record.session) assert.ok(!dockFace.includes(record.session), 'no raw session on the face');
   await p().click('[data-testid="di-open-inspector-selection"]');
+  await p().waitForSelector('[data-testid="di-inspector-selected"]');
+  assert.match((await text('di-inspector-now')) ?? '', /can’t be safely linked/);
+  await p().click('[data-testid="di-inspector-record"] > summary');
   await p().waitForSelector('[data-testid="di-inspector-unverified"]');
+  // The labelled disclosure is "Everything recorded" (one step): the record is inside it, and
+  // within the record the plain outcome precedes the raw provenance.
+  assert.ok(
+    await p().$('[data-testid="di-inspector-record"] [data-testid="di-inspector-unverified"]'),
+    'the record is behind its labelled disclosure',
+  );
   const html = await p().evaluate(
     () => document.querySelector('[data-testid="di-inspector-unverified"]')?.innerHTML ?? '',
   );
-  const details = html.indexOf('<details');
+  const details = html.indexOf('data-testid="di-runtime-provenance"');
   assert.ok(details > 0);
-  assert.ok(html.indexOf('Not established') < details, 'the plain outcome precedes the disclosure');
+  assert.ok(html.indexOf('Not established') < details, 'the plain outcome precedes the provenance');
   assert.ok(html.indexOf(record.identityReason) > details);
   if (record.session) assert.ok(html.indexOf(record.session) > details);
   await p().keyboard.press('Escape');
   await p().waitForSelector('[role="dialog"]', { state: 'detached' });
   assert.equal(await selectedId(), null, 'closing the inspector selects nothing');
+});
+
+/**
+ * Criterion 6: every recorded identifier is reachable in ONE deliberate step. From a runtime row:
+ * select it, open its details, open "Everything recorded" ONCE; the provenance must then be
+ * VISIBLE (rendered, not merely in the markup), with this record's own values in its rendered text.
+ */
+async function provenanceAfterOneActivation(
+  rowTestid: string,
+  records: readonly (typeof runtimeAgents)[number][],
+) {
+  assert.notEqual(await tabTo(`[data-testid="${rowTestid}"]`), null);
+  const label = await activeText();
+  const agent = rowAgent(records, label);
+  assert.ok(agent, `the focused row names one record: ${label}`);
+  await p().keyboard.press('Enter');
+  await p().click('[data-testid="di-open-inspector-selection"]');
+  await p().waitForSelector('[data-testid="di-inspector-selected"]');
+  await p().click('[data-testid="di-inspector-record"] > summary');
+  // Its CONTENT must be rendered (a closed <details> is itself visible: its summary shows).
+  const seen = await p().evaluate(() => ({
+    visible:
+      document
+        .querySelector('[data-testid="di-runtime-provenance"] .di-op-detail-body')
+        ?.checkVisibility() ?? false,
+    rendered:
+      document.querySelector<HTMLElement>('[data-testid="di-inspector-record"]')?.innerText ?? '',
+  }));
+  assert.equal(seen.visible, true, 'the provenance is visible after one activation');
+  const values = [
+    agent.agentRef,
+    agent.sourceId,
+    agent.rootRef,
+    agent.identityReason,
+    agent.assignmentReason,
+    agent.session,
+    agent.taskRef,
+    agent.paneId,
+    agent.workspaceId,
+  ].filter((v): v is string => typeof v === 'string' && v !== '');
+  for (const value of values)
+    assert.ok(seen.rendered.includes(value), `"${value}" is rendered after one activation`);
+}
+
+test('runtime provenance after ONE disclosure: a verified record', async () => {
+  await provenanceAfterOneActivation('di-runtime-row', verified);
+});
+
+test('runtime provenance after ONE disclosure: a not-verified record', async () => {
+  await provenanceAfterOneActivation('di-unverified-row', unverified);
 });
 
 // -- item 08: find ----------------------------------------------------------------------------
@@ -332,7 +405,7 @@ test('find: no match says so; a Mission objective finds that Mission', async () 
 test('selection survives a reordering update and says plainly when its agent leaves the map or the state', async () => {
   assert.notEqual(await tabTo('[data-testid="di-runtime-row"]'), null);
   const label = await activeText();
-  const agent = verified.find((a) => label.includes(a.agent) && label.includes(a.logical))!;
+  const agent = rowAgent(verified, label)!;
   await p().keyboard.press('Enter');
   await inspectorShows('di-selected-runtime-agent', agent.agent);
   // 1. A later projection lists the agents in another order: the same agent stays selected.

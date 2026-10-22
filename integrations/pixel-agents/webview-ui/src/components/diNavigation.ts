@@ -342,7 +342,11 @@ const observedValue = (v: DiObservedValue) => (v.state === 'observed' ? v.value 
 const drawnText = (characterId: number | null) =>
   characterId !== null ? 'on the map' : 'not drawn';
 
-/** The short registry alias of a runtime record's root: two records with one name stay apart. */
+/**
+ * The short registry alias of a runtime record's root (alias only — no source). It does NOT by itself
+ * keep two records apart: two sources can carry the same alias. First-layer names that must tell
+ * lookalikes apart use diPlainSummary.firstLayerName (herd and source, as the list decides).
+ */
 export function rootLabel(agent: Pick<DiRuntimeAgent, 'rootAliases'>): string {
   return agent.rootAliases.length > 0 ? `root ${agent.rootAliases[0]}` : 'root alias not recorded';
 }
