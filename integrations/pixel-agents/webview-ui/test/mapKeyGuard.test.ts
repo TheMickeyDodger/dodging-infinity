@@ -40,3 +40,34 @@ test('Escape is consumed (default prevented) so nothing else treats it as its ow
   target.dispatchEvent(esc);
   assert.equal(esc.defaultPrevented, true);
 });
+
+test('a modal dialog opened over the Map owns the keyboard: the guard yields, then resumes when it closes', () => {
+  const target = new EventTarget();
+  const behind: string[] = [];
+  let closed = 0;
+  let modalOpen = false;
+  installMapKeyGuard(
+    target,
+    () => closed++,
+    () => modalOpen,
+  );
+  target.addEventListener('keydown', (e) => behind.push((e as Event & { key?: string }).key ?? ''));
+  // no dialog: the Map isolates every key and Escape closes the Map (unchanged)
+  target.dispatchEvent(keydown('ArrowDown'));
+  target.dispatchEvent(keydown('Escape'));
+  assert.deepEqual(behind, []);
+  assert.equal(closed, 1);
+  // a dialog is in front: the keys reach it, and Escape does NOT close the Map
+  modalOpen = true;
+  const esc = keydown('Escape');
+  target.dispatchEvent(keydown('ArrowDown'));
+  target.dispatchEvent(esc);
+  assert.deepEqual(behind, ['ArrowDown', 'Escape'], 'the dialog’s handlers see the keys');
+  assert.equal(closed, 1, 'Escape closed the dialog’s surface only, not the Map');
+  assert.equal(esc.defaultPrevented, false, 'the guard consumed nothing');
+  // the dialog closed: the Map is isolated again
+  modalOpen = false;
+  target.dispatchEvent(keydown('Escape'));
+  assert.equal(closed, 2);
+  assert.deepEqual(behind, ['ArrowDown', 'Escape']);
+});

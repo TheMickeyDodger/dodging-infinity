@@ -61,7 +61,7 @@ import { getColorizedFloorSprite, hasFloorSprites, WALL_COLOR } from '../floorTi
 import { getCatalogEntry } from '../layout/furnitureCatalog.js';
 import type { VisibleTiles } from '../projection.js';
 import { mapOffset, visibleTiles } from '../projection.js';
-import { registerRenderCache } from '../renderCaches.js';
+import { registerRenderCache, resetRenderCaches } from '../renderCaches.js';
 import { hasCarpetSprites } from '../sprites/carpetTiles.js';
 import { getPetSprites } from '../sprites/petSpriteData.js';
 import { getAuraSprite, getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js';
@@ -92,6 +92,7 @@ import { carpetJunctionPlan, resetCarpetPlan } from './carpetPlan.js';
 import { getCharacterSprite } from './characters.js';
 import { renderMatrixEffect } from './matrixEffect.js';
 import { getPetSpriteData } from './petEntity.js';
+import { drawReceptionistAccessory, hasReceptionistAccessory } from './receptionistAccessory.js';
 
 // ── Settings ────────────────────────────────────────────────────
 
@@ -167,7 +168,18 @@ export function resetCarpetLayer(): void {
   if (carpetLayerCanvas) {
     carpetLayerCanvas.width = 0;
     carpetLayerCanvas.height = 0;
+    // and the element itself: its own context may be the one that was lost, so the rebuild gets a FRESH canvas
+    carpetLayerCanvas = null;
   }
+}
+
+/** The layer's canvas. If its context is lost and restored it comes back EMPTY and nothing redraws it: it reports that to the
+ *  render-cache lifecycle, which forgets every cached bitmap (and this element) so the next frame rebuilds them. */
+function newCarpetLayerCanvas(): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.addEventListener('contextlost', resetRenderCaches);
+  canvas.addEventListener('contextrestored', resetRenderCaches);
+  return canvas;
 }
 
 // the layer joins the render-cache lifecycle (renderCaches.ts does not import this DOM module)
@@ -180,7 +192,7 @@ function carpetLayerFor(plan: CarpetJunctionPlan): CarpetLayer | null {
   const w = (b.jx1 - b.jx0 + 1) * TILE_SIZE;
   const h = (b.jy1 - b.jy0 + 1) * TILE_SIZE;
   if (w * h > CARPET_LAYER_MAX_PIXELS) return null;
-  const canvas = (carpetLayerCanvas ??= document.createElement('canvas'));
+  const canvas = (carpetLayerCanvas ??= newCarpetLayerCanvas());
   canvas.width = w;
   canvas.height = h;
   const c = canvas.getContext('2d');
@@ -624,6 +636,13 @@ export function renderScene(
         c.restore();
       },
     });
+    // the receptionist's fixed accessory (headset and name badge), drawn right over its own sprite and nowhere else
+    if (hasReceptionistAccessory(ch)) {
+      drawables.push({
+        zY: charZY + 0.01,
+        draw: (c) => drawReceptionistAccessory(c, drawX, drawY, zoom),
+      });
+    }
   }
 
   // ── Pets ──────────────────────────────────────────────

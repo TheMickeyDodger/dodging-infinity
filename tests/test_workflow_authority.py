@@ -2536,6 +2536,12 @@ class BoundConstantPinTests(unittest.TestCase):
             # The frozen decision offers kept at once; when full a new offer
             # is refused, never evicted (an eviction would void a live one).
             "MAX_OFFER_RECORDS": 256,
+            # The questions an assistant reply declares for the person, read
+            # from the panel's own per-turn record: at most this many, each a
+            # single plain line of at most this many characters; the extractor
+            # refuses an excess, it never truncates.
+            "MAX_QUESTIONS": 3,
+            "MAX_QUESTION_CHARS": 280,
         },
         # Item 4: the panel's restricted drafting conversation. Two provider
         # turns at once at most; a read-only drafting turn is killed at the
@@ -2834,10 +2840,31 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_FINDING_LINE_NUMBER": 9999999,
             "MAX_FINDINGS_AGGREGATE_BYTES": 8192,
             "MAX_FINDINGS_RECORD_BYTES": 32768,
+            # The delivery presentations the contract admits per response
+            # (re-declared from the delivery store's own bound and pinned
+            # equal to it by test).
+            "MAX_DELIVERY_PRESENTATIONS": 16,
         },
         "target_runtime/mission_state.py": {
             "MAX_DELIVERY_STORE_BYTES": 4194304,
             "MAX_LOCATOR_PARTS": 16,
+            # The read-only delivery-presentation reader: the whole presented
+            # file (read once, within this bound), the records it may list,
+            # the delivery-store records it may check, and the text bounds of
+            # a presented repository URL and workflow id.
+            "MAX_PRESENTATIONS_FILE_BYTES": 8388608,
+            "MAX_DELIVERY_PRESENTATIONS": 16,
+            "MAX_DELIVERY_RECORDS": 64,
+            "MAX_REPOSITORY_URL_CHARS": 512,
+            "MAX_WORKFLOW_ID_CHARS": 128,
+            # The latest time a presentation may carry (the end of year 9999,
+            # UTC): a bound on what is read, never a repair of what is stored.
+            "MAX_EPOCH_SECONDS": 253402300799,
+            # The canonical-form walk over a presented proposal or a delivery
+            # record: containers nested at most this deep, at most this many
+            # values in all.
+            "MAX_CANONICAL_DEPTH": 16,
+            "MAX_CANONICAL_NODES": 262144,
         },
         # The read-only task-native source over the DI-registered roots.
         "target_runtime/herdr_task_source.py": {

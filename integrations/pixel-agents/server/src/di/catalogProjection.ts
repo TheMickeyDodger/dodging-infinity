@@ -46,12 +46,28 @@ import {
   CHAIN_KINDS,
   classify,
   DEFAULT_QUERY_CONTRACT_VERSION,
+  DELIVERY_AUTHORIZATION_CHECKS,
+  DELIVERY_BINDING_MISSION_KEYS,
+  DELIVERY_COVERAGE_DIRECT_CLI,
+  DELIVERY_COVERAGE_KEYS,
+  DELIVERY_COVERAGE_ROUTE,
+  DELIVERY_ENTRY_STATES,
+  DELIVERY_LINK_KEYS,
+  DELIVERY_LINK_STATES,
+  DELIVERY_MODES,
+  DELIVERY_PRESENTATION_ENTRY_KEYS,
+  DELIVERY_PRESENTATIONS_KEYS,
+  DELIVERY_PRESENTATIONS_PROBLEMS,
+  DELIVERY_PRESENTATIONS_SOURCE_ID,
+  DELIVERY_PRESENTATIONS_STATES,
+  DELIVERY_STORE_STATES,
   ENDPOINT,
   ENVELOPE_KEYS,
   HEALTH_STATES,
   HERDR_TASK_MODEL,
   LIFECYCLE_MODELS,
   LOCATOR_ACCOUNT_KEYS,
+  MAX_DELIVERY_PRESENTATIONS,
   MEMBER_CLASSIFICATIONS,
   MEMBER_REASONS,
   QUERY_CONTRACT,
@@ -702,6 +718,38 @@ export interface RuntimeAgentsView {
   agentsOverBound: number;
 }
 
+/** One presented delivery proposal, exactly the allowlisted facts the catalog projects (D1). */
+export interface DeliveryPresentationEntryView {
+  sourceId: string;
+  proposalDigest: string;
+  presentedAt: number;
+  expiresAt: number;
+  mode: (typeof DELIVERY_MODES)[number];
+  repositoryUrl: string | null;
+  bindingMission: { workflowId: string; authorizationDigest: string | null } | null;
+  state: (typeof DELIVERY_ENTRY_STATES)[number];
+  matchingDeliveries: number | null;
+  link: {
+    state: (typeof DELIVERY_LINK_STATES)[number];
+    missionRef: string | null;
+    authorizationDigest: (typeof DELIVERY_AUTHORIZATION_CHECKS)[number];
+  };
+}
+
+/**
+ * D1 — `response.delivery_presentations` (contract v2). `reported: false` = an older catalog that
+ * predates the block: UNKNOWN to this office, never "none" and never known_empty. When reported it
+ * is projected STRICTLY.
+ */
+export interface DeliveryPresentationsView {
+  reported: boolean;
+  state: (typeof DELIVERY_PRESENTATIONS_STATES)[number] | null;
+  problem: (typeof DELIVERY_PRESENTATIONS_PROBLEMS)[number] | null;
+  deliveryStore: (typeof DELIVERY_STORE_STATES)[number] | null;
+  total: number | null;
+  entries: DeliveryPresentationEntryView[];
+}
+
 export interface CatalogResponseView {
   generatedAt: number;
   validUntil: number;
@@ -723,6 +771,8 @@ export interface CatalogResponseView {
   unmatchedRuntimeAgentCount: number | null;
   /** item 07: runtime agents (both contract versions; absent from older producers). */
   runtimeAgents: RuntimeAgentsView;
+  /** D1: the Grok delivery presentations block (contract v2 only; absent from older producers). */
+  deliveryPresentations: DeliveryPresentationsView;
   /** The contract version this response was projected as. */
   contractVersion: QueryContractVersion;
   /** contract v2 chain observation health; null for v1. */
@@ -1619,7 +1669,17 @@ function projectResponseCommon(raw: Json, version: QueryContractVersion): Catalo
   // item 07: `runtime_agents` is ADDITIVE in both versions — the exact v1/v2 key set, or that set
   // plus exactly `runtime_agents` (projected strictly when present).
   const baseKeys: readonly string[] = version === 2 ? RESPONSE_KEYS_V2 : RESPONSE_KEYS;
-  exactKeys(raw, 'runtime_agents' in raw ? [...baseKeys, 'runtime_agents'] : baseKeys, 'response');
+  // D1: `delivery_presentations` is ADDITIVE and contract v2 ONLY. A v2 catalog that predates it
+  // simply lacks the key (read as "not reported"); at contract v1 the key is never valid.
+  exactKeys(
+    raw,
+    [
+      ...baseKeys,
+      ...('runtime_agents' in raw ? ['runtime_agents'] : []),
+      ...(version === 2 && 'delivery_presentations' in raw ? ['delivery_presentations'] : []),
+    ],
+    'response',
+  );
   const generatedAt = int(raw.generated_at, 'response.generated_at');
   const validUntil = int(raw.valid_until, 'response.valid_until');
   const maxAgeSeconds = int(raw.max_age_seconds, 'response.max_age_seconds');
@@ -1699,6 +1759,7 @@ function projectResponseCommon(raw: Json, version: QueryContractVersion): Catalo
       'response.unmatched_runtime_agent_count',
     ),
     runtimeAgents: projectRuntimeAgents(raw),
+    deliveryPresentations: projectDeliveryPresentations(raw),
     contractVersion: version,
     chainObservation: version === 2 ? projectChainObservation(raw.chain_observation) : null,
   };
@@ -1779,6 +1840,136 @@ function projectRuntimeAgents(raw: Json): RuntimeAgentsView {
     counts,
     agents,
     agentsOverBound: int(o.agents_over_bound, `${where}.agents_over_bound`),
+  };
+}
+
+export const DELIVERY_PRESENTATIONS_NOT_REPORTED: DeliveryPresentationsView = {
+  reported: false,
+  state: null,
+  problem: null,
+  deliveryStore: null,
+  total: null,
+  entries: [],
+};
+
+const HEX64 = /^[0-9a-f]{64}$/;
+
+function member<T extends string>(values: readonly T[], value: unknown, where: string): T {
+  const c = classify(values, value);
+  if (!c.known) malformed(`${where} is not a declared value`);
+  return c.value;
+}
+
+function hex64(value: unknown, where: string): string {
+  const v = str(value, where);
+  if (!HEX64.test(v)) malformed(`${where} is not a sha256 hex digest`);
+  return v;
+}
+
+/**
+ * D1 — `response.delivery_presentations`, STRICT when present (mission_sources/contract_v2.py
+ * `validate_delivery_presentations`): closed keys and vocabularies, `problem` set exactly when
+ * unavailable, entries only when observed with `total` equal to them, a fixed source id and stated
+ * coverage, unique proposal digests, and the unknown/authorized/link consistency rules. A block
+ * that breaks any of them refuses the WHOLE response, never a partially trusted list.
+ */
+function projectDeliveryPresentations(raw: Json): DeliveryPresentationsView {
+  if (!('delivery_presentations' in raw)) return DELIVERY_PRESENTATIONS_NOT_REPORTED;
+  const where = 'response.delivery_presentations';
+  const o = obj(raw.delivery_presentations, where);
+  exactKeys(o, DELIVERY_PRESENTATIONS_KEYS, where);
+  const state = member(DELIVERY_PRESENTATIONS_STATES, o.state, `${where}.state`);
+  const problemRaw = strOrNull(o.problem, `${where}.problem`);
+  const problem =
+    problemRaw === null
+      ? null
+      : member(DELIVERY_PRESENTATIONS_PROBLEMS, problemRaw, `${where}.problem`);
+  if ((state === 'unavailable') !== (problem !== null))
+    malformed(`${where}.problem must be set exactly when unavailable`);
+  if (o.source_id !== DELIVERY_PRESENTATIONS_SOURCE_ID)
+    malformed(`${where}.source_id is not the registered source`);
+  const deliveryStore = member(DELIVERY_STORE_STATES, o.delivery_store, `${where}.delivery_store`);
+  const coverage = obj(o.coverage, `${where}.coverage`);
+  exactKeys(coverage, DELIVERY_COVERAGE_KEYS, `${where}.coverage`);
+  if (
+    coverage.route !== DELIVERY_COVERAGE_ROUTE ||
+    coverage.max_entries !== MAX_DELIVERY_PRESENTATIONS ||
+    coverage.direct_cli !== DELIVERY_COVERAGE_DIRECT_CLI
+  )
+    malformed(`${where}.coverage is not the stated coverage`);
+  const total = intOrNull(o.total, `${where}.total`);
+  if (!Array.isArray(o.entries)) malformed(`${where}.entries is not a list`);
+  if (o.entries.length > MAX_DELIVERY_PRESENTATIONS)
+    malformed(`${where}.entries exceeds the contract bound`);
+  if (state !== 'observed') {
+    if (total !== null || o.entries.length > 0)
+      malformed(`${where} carries entries while not observed`);
+  } else if (total !== o.entries.length) {
+    malformed(`${where}.total is not the number of entries`);
+  }
+  const entries = (o.entries as unknown[]).map((e, i) =>
+    projectDeliveryPresentationEntry(e, `${where}.entries[${i}]`),
+  );
+  if (new Set(entries.map((e) => e.proposalDigest)).size !== entries.length)
+    malformed(`${where}.entries repeats a proposal digest`);
+  return { reported: true, state, problem, deliveryStore, total, entries };
+}
+
+function projectDeliveryPresentationEntry(
+  raw: unknown,
+  where: string,
+): DeliveryPresentationEntryView {
+  const e = obj(raw, where);
+  exactKeys(e, DELIVERY_PRESENTATION_ENTRY_KEYS, where);
+  if (e.source_id !== DELIVERY_PRESENTATIONS_SOURCE_ID)
+    malformed(`${where}.source_id is not the registered source`);
+  const mission =
+    e.binding_mission === null ? null : obj(e.binding_mission, `${where}.binding_mission`);
+  if (mission !== null)
+    exactKeys(mission, DELIVERY_BINDING_MISSION_KEYS, `${where}.binding_mission`);
+  const state = member(DELIVERY_ENTRY_STATES, e.state, `${where}.state`);
+  const matching = intOrNull(e.matching_deliveries, `${where}.matching_deliveries`);
+  if ((state === 'unknown') !== (matching === null))
+    malformed(`${where}.matching_deliveries is unset exactly when the state is unknown`);
+  if (state === 'authorized' && !matching)
+    malformed(`${where} is authorized without a matching delivery`);
+  const link = obj(e.link, `${where}.link`);
+  exactKeys(link, DELIVERY_LINK_KEYS, `${where}.link`);
+  const linkState = member(DELIVERY_LINK_STATES, link.state, `${where}.link.state`);
+  const missionRef = strOrNull(link.mission_ref, `${where}.link.mission_ref`);
+  if ((linkState === 'linked') !== (missionRef !== null))
+    malformed(`${where}.link.mission_ref is set exactly when linked`);
+  return {
+    sourceId: DELIVERY_PRESENTATIONS_SOURCE_ID,
+    proposalDigest: hex64(e.proposal_digest_sha256, `${where}.proposal_digest_sha256`),
+    presentedAt: int(e.presented_at, `${where}.presented_at`),
+    expiresAt: int(e.expires_at, `${where}.expires_at`),
+    mode: member(DELIVERY_MODES, e.mode, `${where}.mode`),
+    repositoryUrl: strOrNull(e.repository_url, `${where}.repository_url`),
+    bindingMission:
+      mission === null
+        ? null
+        : {
+            workflowId: str(mission.workflow_id, `${where}.binding_mission.workflow_id`),
+            authorizationDigest:
+              mission.authorization_digest_sha256 === null
+                ? null
+                : hex64(
+                    mission.authorization_digest_sha256,
+                    `${where}.binding_mission.authorization_digest_sha256`,
+                  ),
+          },
+    state,
+    matchingDeliveries: matching,
+    link: {
+      state: linkState,
+      missionRef,
+      authorizationDigest: member(
+        DELIVERY_AUTHORIZATION_CHECKS,
+        link.authorization_digest,
+        `${where}.link.authorization_digest`,
+      ),
+    },
   };
 }
 

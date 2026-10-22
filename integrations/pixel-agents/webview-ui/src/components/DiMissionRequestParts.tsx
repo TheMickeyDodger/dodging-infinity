@@ -6,11 +6,11 @@
  * an attribute. A character that could change what a reader sees (a bidirectional override, a
  * zero-width character, a control byte) is shown as a visible placeholder, never performed.
  */
-import { useId, useState } from 'react';
+import { Fragment, useId, useState } from 'react';
 
 import { visibleSegments } from './diCodeReviewModel.js';
-import type { MrProofRules } from './diMissionRequestContract.js';
-import { proofRulesAbsentWords, proofRuleSections } from './diMissionRequestContract.js';
+import type { MrProofRules, MrRulePart } from './diMissionRequestContract.js';
+import { proofRuleParts, proofRulesAbsentWords } from './diMissionRequestContract.js';
 import type { MrProposal, MrResult } from './diMissionRequestModel.js';
 import {
   JOURNEY,
@@ -18,14 +18,13 @@ import {
   linesOf,
   MR_READING_LINES,
   MR_READING_LINES_WIDE,
-  scopeLine,
   shortDigest,
 } from './diMissionRequestModel.js';
 import type { MrStartCause } from './diMissionRequestStartCause.js';
 import { startCauseWords } from './diMissionRequestStartCause.js';
 
 /** One line of untrusted text with every hidden character made visible. */
-function Line({ text }: { text: string }) {
+export function Line({ text }: { text: string }) {
   return (
     <span className="di-mr-line">
       {visibleSegments(text).map((segment, index) =>
@@ -38,6 +37,50 @@ function Line({ text }: { text: string }) {
         ),
       )}
     </span>
+  );
+}
+
+/**
+ * A sentence in pieces: the plain words as they are, and each raw key (a requirement key, an artifact key, an evidence kind, a
+ * permitted action) secondary: the same text, exactly, in the muted key style. Every piece is drawn as inert text with hidden
+ * characters made visible; the key style changes how it looks and nothing else.
+ */
+export function KeyedText({ parts }: { parts: MrRulePart[] }) {
+  const inline = (text: string) =>
+    visibleSegments(text).map((segment, index) =>
+      segment.control ? (
+        <span key={index} className="di-mr-ctl" data-testid="di-mr-control">
+          {segment.text}
+        </span>
+      ) : (
+        <span key={index}>{segment.text}</span>
+      ),
+    );
+  return (
+    <div className="di-mr-text">
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {part.key === true ? (
+            <span className="di-mr-key" data-testid="di-mr-key">
+              {inline(part.text)}
+            </span>
+          ) : (
+            inline(part.text)
+          )}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** A permitted action in words, with its exact key after it and muted: "read the repository (repository_read)". */
+export function ScopeLine({ scope, meanings }: { scope: string; meanings: Record<string, string> }) {
+  const meaning = meanings[scope];
+  if (!meaning) return <>{scope}</>;
+  return (
+    <>
+      {meaning} <span className="di-mr-key">({scope})</span>
+    </>
   );
 }
 
@@ -139,6 +182,25 @@ export interface SourceIdentity {
   digest: string;
 }
 
+/** The exact references of a proposal: the request, the Mission, the revision and the digest (the whole digest one control away). */
+export function SourceFacts({ source }: { source: SourceIdentity }) {
+  return (
+    <>
+      {source.requestRef === null ? (
+        <p>A draft in this conversation. It is not a proposal of record yet.</p>
+      ) : (
+        <p>
+          Request <code>{source.requestRef}</code>, Mission <code>{source.missionId}</code>,
+          revision {source.revision}
+        </p>
+      )}
+      <p>
+        Digest <Digest digest={source.digest} />
+      </p>
+    </>
+  );
+}
+
 /**
  * The proposal EXACTLY as it is held: what is asked, where, what the team may do, what counts as
  * done, and the identity a decision is bound to. A draft shows no Mission yet, and says so.
@@ -149,12 +211,15 @@ export function ProposalView({
   meanings,
   heading,
   testId = 'di-mr-proposal',
+  showSource = true,
 }: {
   proposal: MrProposal;
   source: SourceIdentity;
   meanings: Record<string, string>;
   heading: string;
   testId?: string;
+  /** False where the exact references are shown in their own disclosure instead of as the last field. */
+  showSource?: boolean;
 }) {
   return (
     <section className="di-mr-section" aria-label={heading} data-testid={testId}>
@@ -185,7 +250,9 @@ export function ProposalView({
           <dd>
             <ul>
               {proposal.actionScope.map((scope) => (
-                <li key={scope}>{scopeLine(scope, meanings)}</li>
+                <li key={scope}>
+                  <ScopeLine scope={scope} meanings={meanings} />
+                </li>
               ))}
             </ul>
           </dd>
@@ -212,22 +279,14 @@ export function ProposalView({
             <ProofRules proof={proposal.proof} testId={`${testId}-rules`} />
           </dd>
         </div>
-        <div>
-          <dt>Source</dt>
-          <dd data-testid={`${testId}-source`}>
-            {source.requestRef === null ? (
-              <p>A draft in this conversation. It is not a proposal of record yet.</p>
-            ) : (
-              <p>
-                Request <code>{source.requestRef}</code>, Mission <code>{source.missionId}</code>,
-                revision {source.revision}
-              </p>
-            )}
-            <p>
-              Digest <Digest digest={source.digest} />
-            </p>
-          </dd>
-        </div>
+        {showSource && (
+          <div>
+            <dt>Source</dt>
+            <dd data-testid={`${testId}-source`}>
+              <SourceFacts source={source} />
+            </dd>
+          </div>
+        )}
       </dl>
     </section>
   );
@@ -283,13 +342,13 @@ export function ProofRules({ proof, testId }: { proof: MrProofRules; testId: str
   }
   return (
     <div className="di-mr-rules" data-testid={testId} data-represented="true">
-      {proofRuleSections(proof.contract).map((section) => (
+      {proofRuleParts(proof.contract).map((section) => (
         <div key={section.title} className="di-mr-rule-section">
           <h5>{section.title}</h5>
           <ul>
             {section.lines.map((line, index) => (
               <li key={index}>
-                <Untrusted text={line} />
+                <KeyedText parts={line} />
               </li>
             ))}
           </ul>

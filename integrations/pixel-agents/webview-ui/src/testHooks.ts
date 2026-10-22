@@ -40,7 +40,12 @@ declare global {
         waitingAwaitingInput?: boolean;
         isHeadless?: boolean;
         isGreeter?: boolean;
+        isReceptionist?: boolean;
       }>;
+      /** READ-ONLY three-office evidence (office-assignment export): the detected offices with their seat and workstation lists, the reserved
+       *  reception seats, and every real character's identity key, seat, office and seat kind ('workstation', else 'table, not workstation' or 'chair, not workstation'). Null
+       *  while no offices are detected. Copies only; nothing here changes seating. */
+      getOfficeAssignment?: () => ReturnType<OfficeState['officeAssignment']>;
       /** Effective "Display headless as ghosts" setting the renderer is using. */
       getGhostHeadlessAgents?: () => boolean;
       /** Render ONLY the carpet layer into a fresh w x h canvas at (offsetX, offsetY, zoom), with
@@ -225,6 +230,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   const hooks = window.__pixelAgentsTestHooks;
   if (!hooks.addAgentLog) hooks.addAgentLog = [];
 
+  hooks.getOfficeAssignment = () => officeStateRef.current?.officeAssignment() ?? null;
   hooks.getCharacters = () => {
     const os = officeStateRef.current;
     if (!os) return [];
@@ -241,6 +247,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       waitingAwaitingInput: ch.waitingAwaitingInput,
       isHeadless: ch.isHeadless,
       isGreeter: ch.isGreeter,
+      isReceptionist: ch.isReceptionist,
     }));
   };
 

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { DiMissionRequestReply } from '../../core/src/messages.ts';
 import {
   durationWords,
+  proofRuleParts,
   proofRulesAbsentWords,
   proofRuleSections,
   readProofRules,
@@ -39,6 +40,7 @@ import {
   MR_PANE_PX,
   MR_PANE_WIDE_PX,
   MR_PROGRESS_LABELS,
+  MR_SPLIT_MIN_PX,
   MR_TAGLINE,
   MR_WORLD_KEEP_PX,
   type MrEvent,
@@ -54,6 +56,7 @@ import {
   parseProgression,
   parseRequest,
   parseResult,
+  plainTitle,
   problemWords,
   progressionWords,
   reduce,
@@ -61,7 +64,9 @@ import {
   scopeLine,
   serverNowSeconds,
   shortDigest,
+  splitRecordSentence,
   turnStateWords,
+  twoColumnReading,
   unavailableWords,
   withdrawFields,
 } from '../src/components/diMissionRequestModel.ts';
@@ -1225,7 +1230,7 @@ describe('words', () => {
     expect(needsYou(['decide'])).toBe(true);
     expect(needsYou(['dispatch'])).toBe(false);
     const s: MrState = { ...INITIAL_STATE, overview, availability: { kind: 'ok' } };
-    expect(entryWords(s)).toBe('1 needs you · 1 in progress · 2 in all');
+    expect(entryWords(s)).toBe('1 request needs you · 1 request in progress · 2 requests in all');
     expect(
       entryWords({
         ...INITIAL_STATE,
@@ -2074,5 +2079,116 @@ describe('start cause: carried on the request and the live display', () => {
     expect(s.views[REF].stale).toBe(false);
     expect(s.views[REF].displayed.startCause?.state).toBe('BOUND');
     expect(s.views[REF].displayed.lifecycle.stage).toBe('dispatch_uncertain');
+  });
+});
+
+describe('panel polish: the open request leads with its plain title, status and next step', () => {
+  it('a plain title is the first line of what was asked, kept short, never invented', () => {
+    expect(plainTitle('Make the probe stable')).toBe('Make the probe stable');
+    expect(plainTitle('\n  \nFirst line\nSecond line')).toBe('First line');
+    expect(plainTitle('x'.repeat(300))).toBe(`${'x'.repeat(99)}\u2026`);
+    expect(plainTitle('')).toBeNull();
+    expect(plainTitle('   \n  ')).toBeNull();
+    expect(plainTitle(null)).toBeNull();
+    expect(plainTitle(undefined)).toBeNull();
+  });
+
+  it('splits off the provenance sentence ONLY when the words open with exactly that sentence', () => {
+    const detail =
+      'This proposal is of record: Mission Core holds it as revision 3 with digest c0d3e7669d69.' +
+      ' Nothing has been approved and nothing has started. Approving is a separate step you take here by typing the word approve;' +
+      ' the proposal can also be withdrawn.';
+    const split = splitRecordSentence(detail);
+    expect(split.record).toBe(
+      'This proposal is of record: Mission Core holds it as revision 3 with digest c0d3e7669d69.',
+    );
+    expect(split.rest.startsWith('Nothing has been approved and nothing has started.')).toBe(true);
+    // nothing is dropped: the two halves are the original words
+    expect(`${split.record} ${split.rest}`).toBe(detail);
+    // anything else is returned exactly as it is, in the first layer
+    for (const other of [
+      'The approval lapsed before the run started. Nothing was started.',
+      'This proposal is of record: somewhere else entirely. Nothing has been approved.',
+      'This proposal is of record: Mission Core holds it as revision 3 with digest c0d3e7669d69.',
+      'Note: This proposal is of record: Mission Core holds it as revision 3 with digest c0d3e7669d69. Rest.',
+      '',
+    ]) {
+      expect(splitRecordSentence(other), other).toEqual({ record: null, rest: other });
+    }
+  });
+
+  it('the proof rules lead with plain words, keep every exact key (muted by the renderer), and read as the same strings as before in content', () => {
+    const wire = contract({
+      requirements: [
+        {
+          key: 'run_result',
+          description: 'The result is bound to the run.',
+          evidence_kinds: ['VERIFICATION_RECORD'],
+          required_artifact_keys: ['result_file'],
+          max_evidence_age_seconds: 3600,
+        },
+      ],
+    });
+    const parts = proofRuleParts(rulesOf(wire).contract!);
+    const requirement = parts[0].lines[0];
+    // the plain sentence leads; the exact key of the requirement closes it, as a key part
+    expect(requirement[0].text.startsWith('The result is bound to the run. Satisfied by ')).toBe(true);
+    expect(requirement[0].key).toBeUndefined();
+    const keys = requirement.filter((p) => p.key === true).map((p) => p.text);
+    expect(keys).toEqual(['(VERIFICATION_RECORD)', '\u201cresult_file\u201d', '\u201crun_result\u201d']);
+    // the evidence kind has a plain name first and its exact kind after it
+    const sentence = requirement.map((p) => p.text).join('');
+    expect(sentence).toContain('evidence of kind verification record (VERIFICATION_RECORD)');
+    expect(sentence).toContain('needing the artifact \u201cresult_file\u201d');
+    expect(sentence.endsWith('does not count. Requirement \u201crun_result\u201d.')).toBe(true);
+    // an evidence kind the product has no plain name for is shown as it is, never dropped and never invented
+    const other = proofRuleParts(
+      rulesOf(contract({ requirements: [{ ...(contract().requirements as Loose[])[0], evidence_kinds: ['artifact_digest'] }] }))
+        .contract!,
+    )[0].lines[0]
+      .map((p) => p.text)
+      .join('');
+    expect(other).toContain('evidence of kind artifact_digest,');
+    // the other sections keep their keys as key parts after their plain words
+    const flat = parts.flatMap((section) => section.lines.flat());
+    for (const exact of ['\u201cresult_file\u201d', '\u201cbase\u201d', '\u201crepo_main\u201d', '\u201cflaky_network\u201d']) {
+      expect(flat.some((p) => p.key === true && p.text === exact), exact).toBe(true);
+    }
+    // the strings are exactly the parts joined: one source, two views
+    const strings = proofRuleSections(rulesOf(wire).contract!);
+    expect(strings.map((section) => section.lines)).toEqual(
+      parts.map((section) => section.lines.map((line) => line.map((p) => p.text).join(''))),
+    );
+  });
+});
+
+describe('wider reading is never worse than ordinary reading at the same pane width', () => {
+  // the sidebar is 420px (DI_PANEL_WIDTH_PX); the pane is min(600 | 960, viewport - sidebar - 240) and covers the window below 360
+  const at = (viewport: number, collapsed: boolean, wide: boolean) =>
+    twoColumnReading(layoutFor(viewport, collapsed, wide, 420), wide);
+
+  it('puts the list beside the request only where the pane has the room for both (MR_SPLIT_MIN_PX)', () => {
+    expect(MR_SPLIT_MIN_PX).toBe(640);
+    // sidebar expanded: covering below 1020, a 360px pane at 1020, 640px at 1300
+    expect(at(1019, false, true)).toBe(false); // covers the window
+    expect(at(1020, false, true)).toBe(false); // 360px: this once left the open request a 23px sliver and the pane scrolled sideways
+    expect(at(1100, false, true)).toBe(false); // 440px
+    expect(at(1261, false, true)).toBe(false); // 601px: wider than ordinary, but the open request would have 264px
+    expect(at(1299, false, true)).toBe(false); // 639px
+    expect(at(1300, false, true)).toBe(true); // 640px: the open request keeps 304px
+    expect(at(1309, false, true)).toBe(true); // 649px (an ordinary laptop window)
+    expect(at(1620, false, true)).toBe(true); // 960px
+    // sidebar collapsed: covering below 600, a 360px pane at 600, 640px at 880
+    expect(at(599, true, true)).toBe(false);
+    expect(at(600, true, true)).toBe(false);
+    expect(at(879, true, true)).toBe(false);
+    expect(at(880, true, true)).toBe(true);
+  });
+
+  it('never splits in ordinary reading, whatever the width', () => {
+    for (const viewport of [599, 1020, 1309, 1600, 2400]) {
+      expect(at(viewport, false, false), `${viewport}px expanded`).toBe(false);
+      expect(at(viewport, true, false), `${viewport}px collapsed`).toBe(false);
+    }
   });
 });

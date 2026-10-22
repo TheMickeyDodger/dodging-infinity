@@ -305,7 +305,8 @@ class CatalogService(object):
     def __init__(self, registry_directory, clock, herd_roots=None,
                  listing_argv=None, monotonic=None, discover=False,
                  contract_version=contract_v2_module.DEFAULT_CONTRACT_VERSION,
-                 delivery_store=None, git_transport=None):
+                 delivery_store=None, git_transport=None,
+                 delivery_presentations=None):
         if contract_version not in contract_v2_module.CONTRACT_VERSIONS or (
                 type(contract_version) is not int):
             raise ValueError("contract_version must be one of %s"
@@ -313,12 +314,16 @@ class CatalogService(object):
         if delivery_store is not None and contract_version == 1:
             raise ValueError("a delivery store is read only by query contract"
                              " version 2")
+        if delivery_presentations is not None and contract_version == 1:
+            raise ValueError("delivery presentations are read only by query"
+                             " contract version 2")
         # ONE version per owner, for its whole life: selection is a launch
         # decision, never a per-request one.
         self._contract_version = contract_version
         self._freshness = contract_v2_module.FRESHNESS_BY_VERSION[
             contract_version]
         self._composer = None
+        self._presentations = None
         if contract_version != 1:
             # Imported HERE, only when a version 2 owner is built: a
             # default (version 1) process loads neither Mission Core's
@@ -327,6 +332,15 @@ class CatalogService(object):
             from target_runtime import mission_state as mission_state_module
             self._composer = mission_state_module.MissionStateComposer(
                 clock, delivery_store)
+            # D1: the explicitly registered, read-only reader of the Grok
+            # Bot's delivery presentations; it lives in the same module as the
+            # composer above (one lazy import, nothing new), and is built only
+            # when registered.
+            self._presentations = None
+            if delivery_presentations is not None:
+                self._presentations = (
+                    mission_state_module.DeliveryPresentationsReader(
+                        delivery_presentations, delivery_store, clock).block)
         self._registry = registry_module.SourceRegistry(registry_directory)
         self._clock = clock
         self._monotonic = monotonic or time.monotonic
@@ -840,7 +854,8 @@ class CatalogService(object):
             readers=observation.pass_readers(), observed_roots=observed,
             confirmed_bindings=confirmed, compose=compose,
             budget=budget.pass_budget(),
-            runtime_agents=_runtime_agents_hook(observation, native)),
+            runtime_agents=_runtime_agents_hook(observation, native),
+            delivery_presentations=self._presentations),
             deadline)
         if "response" not in outcome:
             return catalog_answer(requested_at, None, outcome["problem"],
@@ -1230,6 +1245,11 @@ def _parser():
             sub.add_argument("--delivery-store", metavar="DIR",
                              help="version 2 only: the explicitly registered"
                              " delivery store directory")
+            sub.add_argument("--delivery-presentations", metavar="DIR",
+                             help="version 2 only: the explicitly registered"
+                             " Grok Bot state directory whose delivery"
+                             " presentations are read (read-only; only the"
+                             " delivery_presentations map)")
             if name == "query":
                 sub.add_argument("--wait-seconds", type=float,
                                  default=DEFAULT_WAIT_SECONDS)
@@ -1242,7 +1262,8 @@ def _version_options(args):
     if args.contract_version == contract_v2_module.DEFAULT_CONTRACT_VERSION:
         return {}
     return {"contract_version": args.contract_version,
-            "delivery_store": args.delivery_store}
+            "delivery_store": args.delivery_store,
+            "delivery_presentations": args.delivery_presentations}
 
 
 def _emit(value):
@@ -1263,6 +1284,8 @@ def main(argv=None, clock=None, listing_argv=None, stdin=None):
                                        or []) + ([args.delivery_store] if (
                                            getattr(args, "delivery_store",
                                                    None)) else []) + (
+            [args.delivery_presentations] if getattr(
+                args, "delivery_presentations", None) else []) + (
             [args.store_dir] if args.command == "task-source"
             and args.store_dir is not None else []):
         if not os.path.isabs(path):
@@ -1273,6 +1296,11 @@ def main(argv=None, clock=None, listing_argv=None, stdin=None):
             args.contract_version == 1):
         print("dicatalog: --delivery-store needs --contract-version 2",
               file=sys.stderr)
+        return EXIT_USAGE
+    if getattr(args, "delivery_presentations", None) and (
+            args.contract_version == 1):
+        print("dicatalog: --delivery-presentations needs --contract-version"
+              " 2", file=sys.stderr)
         return EXIT_USAGE
     registry = registry_module.SourceRegistry(args.registry)
     if args.command == "task-source":

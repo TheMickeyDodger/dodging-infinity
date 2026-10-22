@@ -7,6 +7,8 @@
  * how many are in progress, or exactly why requests cannot be read. It announces changes politely
  * and never invents a count.
  */
+import { Fragment } from 'react';
+
 import type { MrState, MrTab } from './diMissionRequestModel.js';
 import {
   countsOf,
@@ -14,6 +16,7 @@ import {
   MR_NAME,
   MR_TAGLINE,
   requestsUnavailable,
+  waitingOf,
 } from './diMissionRequestModel.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 
@@ -22,12 +25,44 @@ export interface DiMissionRequestAccess {
   state: MrState;
   /** Open the workspace; `opener` is where focus returns when it closes. */
   open: (tab: MrTab, opener: HTMLElement) => void;
+  /** Open the workspace on the Ask tab with this conversation read (a view-only read). */
+  openConversation?: (conversationId: string, opener: HTMLElement) => void;
+  /** Open the workspace on the Requests tab with this request read (a view-only read). */
+  openRequest?: (requestRef: string, opener: HTMLElement) => void;
+}
+
+/**
+ * The count words with each "number noun" pair kept together on one line: an ellipsis never cuts the line, and a wrap never parts a number from the noun it
+ * counts. The text content is exactly `entryWords`; only the pairs are wrapped.
+ */
+function CountWords({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(' \u00b7 ').map((part, index) => {
+        const pair = /^(\d+ [a-z]+)(.*)$/.exec(part);
+        return (
+          <Fragment key={`${index}-${part}`}>
+            {index > 0 && ' \u00b7 '}
+            {pair === null ? (
+              part
+            ) : (
+              <>
+                <span style={{ whiteSpace: 'nowrap' }}>{pair[1]}</span>
+                {pair[2]}
+              </>
+            )}
+          </Fragment>
+        );
+      })}
+    </>
+  );
 }
 
 export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAccess | null }) {
   if (access === null) return null;
   const { state } = access;
   const counts = countsOf(state.overview);
+  const waiting = waitingOf(state.overview);
   const button = `di-op-button ${DI_FOCUS_RING}`;
   // Not available here: ONE quiet line — the name and that fact — with the model's own sentence
   // (why, and how to set it up) one step behind. Demoted in prominence, never removed.
@@ -59,14 +94,11 @@ export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAcce
         <h2 id="di-mr-entry-title" className="di-op-entry-title">
           {MR_NAME}
         </h2>
-        <p
-          aria-live="polite"
-          data-testid="di-mr-entry-summary"
-          className="di-op-entry-note di-op-clamp-1"
-        >
-          {entryWords(state)}
-        </p>
       </div>
+      {/* The counts get a line of their own and are NEVER clamped: an ellipsis must not cut a number from the noun it counts. */}
+      <p aria-live="polite" data-testid="di-mr-entry-summary" className="di-op-entry-note">
+        <CountWords text={entryWords(state)} />
+      </p>
       <p
         className="di-op-entry-note di-op-entry-tagline di-op-clamp-1"
         data-testid="di-mr-entry-tagline"
@@ -83,6 +115,9 @@ export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAcce
           onClick={(event) => access.open('ask', event.currentTarget)}
         >
           Ask the {MR_NAME}
+          {waiting.conversations > 0
+            ? ` (${waiting.conversations} ${waiting.conversations === 1 ? 'conversation' : 'conversations'} waiting for your answer)`
+            : ''}
         </button>
         <button
           type="button"
@@ -91,7 +126,10 @@ export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAcce
           data-testid="di-mr-open-requests"
           onClick={(event) => access.open('requests', event.currentTarget)}
         >
-          Review requests{counts.needsYou > 0 ? ` (${counts.needsYou} need you)` : ''}
+          Review requests
+          {counts.needsYou > 0
+            ? ` (${counts.needsYou} ${counts.needsYou === 1 ? 'request needs' : 'requests need'} you)`
+            : ''}
         </button>
       </div>
     </section>

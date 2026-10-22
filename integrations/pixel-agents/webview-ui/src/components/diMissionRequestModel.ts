@@ -49,6 +49,11 @@ export const MR_PANE_PX = 600;
 export const MR_PANE_WIDE_PX = 960;
 /** The width of the world to keep visible beside the workspace, where the window allows it. */
 export const MR_WORLD_KEEP_PX = 240;
+/**
+ * The narrowest pane that puts the request list BESIDE the open request in wider reading: the 300px list, the 12px gap, the 24px of
+ * padding, and at least 300px left for the open request. Below it the list stacks above the request, as in ordinary reading.
+ */
+export const MR_SPLIT_MIN_PX = 640;
 
 // ---------------------------------------------------------------------------------------------
 // The adapter's answers, as untrusted JSON, parsed into the shapes the panel uses.
@@ -212,17 +217,38 @@ export interface MrCapabilities {
   scopeMeanings: Record<string, string>;
 }
 
+/**
+ * What the panel says it read from a conversation's newest completed reply for questions. `not_reported`
+ * is a panel that predates the field (or a turn recorded before it read for questions): it is NOT the
+ * same as `read` with no questions. `unreadable` is a value this window cannot account for.
+ */
+export type MrQuestionsReporting = 'read' | 'not_reported' | 'not_applicable' | 'unreadable';
+
+/** `mission_panel.journal.MAX_QUESTIONS` / `MAX_QUESTION_CHARS`, restated and pinned equal by test. */
+export const MR_MAX_QUESTIONS = 3;
+export const MR_MAX_QUESTION_CHARS = 280;
+
+export interface MrConversationSummary {
+  conversationId: string;
+  turns: number;
+  lastActivity: number;
+  firstWords: string;
+  /** The panel's own derivation: the newest completed reply asked questions and nothing came after. */
+  awaitingAnswer: boolean;
+  questionsReporting: MrQuestionsReporting;
+  questionsProblem: string | null;
+  awaitingTurnId: string | null;
+  /** UNTRUSTED display text declared by the assistant; never authority, never parsed. */
+  awaitingQuestions: string[];
+  latestTurnState: string | null;
+}
+
 export interface MrOverview {
   serverNow: number;
   capabilities: MrCapabilities;
   requests: MrSummary[];
   requestsTruncated: boolean;
-  conversations: Array<{
-    conversationId: string;
-    turns: number;
-    lastActivity: number;
-    firstWords: string;
-  }>;
+  conversations: MrConversationSummary[];
 }
 
 export interface MrDraft {
@@ -253,7 +279,19 @@ export interface MrTurn {
   draft: MrDraft | null;
   draftProblem: string | null;
   submission: MrSubmission | null;
+  /**
+   * The questions the panel READ in this completed reply's `mission-questions` block (its own validated extraction, never re-parsed here).
+   * Empty when none were declared, when the panel version predates the field, or when the block was not readable: then the reply is shown as written.
+   */
+  declaredQuestions: string[];
+  /**
+   * What the panel said about questions in this reply, for DISPLAY only: `declared` (it read them), `none_declared` (it read the reply and found none), `not_reported`
+   * (a panel that predates the field, or no report) or `refused` (it read a block it would not accept). Only a `not_reported` or `none_declared` reply may be shown
+   * with its technical blocks folded away; a `refused` reply is always shown exactly as written. Nothing here is a count, an authority or a state.
+   */
+  questionsStatus: MrTurnQuestionsStatus;
 }
+export type MrTurnQuestionsStatus = 'declared' | 'none_declared' | 'not_reported' | 'refused';
 
 /**
  * The decision OFFER a window displays: FROZEN by the adapter when first shown and shared by every
@@ -612,18 +650,189 @@ export function parseOverview(v: unknown): MrOverview | null {
     }),
     requestsTruncated: v.requests_truncated === true,
     conversations: (Array.isArray(v.conversations) ? v.conversations : []).flatMap((c) =>
-      isObject(c) && str(c.conversation_id) !== null
-        ? [
-            {
-              conversationId: str(c.conversation_id) as string,
-              turns: int(c.turns) ?? 0,
-              lastActivity: int(c.last_activity) ?? 0,
-              firstWords: str(c.first_words) ?? '',
-            },
-          ]
-        : [],
+      isObject(c) && str(c.conversation_id) !== null ? [parseConversationSummary(c)] : [],
     ),
   };
+}
+
+const TURN_ID_GRAMMAR = /^ct-[0-9a-f]{32}$/;
+
+/** A control character (C0 or DEL): a declared question is one plain line. */
+function hasControlCharacter(text: string): boolean {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/** A declared question as the panel's journal bounds it: one plain line, never repaired. */
+function validQuestion(q: unknown): q is string {
+  return (
+    typeof q === 'string' &&
+    q.trim() !== '' &&
+    q.length <= MR_MAX_QUESTION_CHARS &&
+    !hasControlCharacter(q)
+  );
+}
+
+/** The code points Python's `str.splitlines` breaks lines at (the panel's extractor splits replies with it). */
+const LINE_BREAK_CODES = new Set([0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029]);
+
+/** Split a text into lines exactly where `str.splitlines()` does (CRLF is one break; no trailing empty line). */
+function splitLikePythonLines(text: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (!LINE_BREAK_CODES.has(code)) continue;
+    out.push(text.slice(start, i));
+    if (code === 0x0d && text.charCodeAt(i + 1) === 0x0a) i++;
+    start = i + 1;
+  }
+  if (start < text.length) out.push(text.slice(start));
+  return out;
+}
+
+/**
+ * A completed reply without its `mission-questions` block, for DISPLAY only (the exact reply stays available behind a disclosure and is never
+ * rewritten). Mirrors the panel's own block rules (a line starting with ``` opens a fence; ours opens with exactly ```mission-questions; any fence closes on
+ * a line that is exactly ```; other fences are skipped whole). It answers only when it finds exactly ONE closed block; anything else is null and the
+ * reply is shown as written.
+ */
+export function replyWithoutQuestionsBlock(text: string): string | null {
+  const lines = splitLikePythonLines(text);
+  const kept: string[] = [];
+  let opened = false;
+  let ours = false;
+  let blocks = 0;
+  for (const line of lines) {
+    if (!line.startsWith('```')) {
+      if (!(opened && ours)) kept.push(line);
+      continue;
+    }
+    if (opened) {
+      if (line.trim() === '```') {
+        const wasOurs = ours;
+        opened = false;
+        ours = false;
+        if (wasOurs) blocks++;
+        else kept.push(line);
+      } else if (!ours) kept.push(line);
+      continue;
+    }
+    opened = true;
+    ours = line.trimEnd() === '```mission-questions';
+    if (!ours) kept.push(line);
+  }
+  if (opened || blocks !== 1) return null;
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * An OLDER reply's prose with its closed fenced blocks folded away, for DISPLAY only: the exact reply stays available behind a disclosure and nothing in a block is
+ * parsed, listed or counted. It answers only when the reply has at least one closed fenced block and EVERY fence in it is closed (a fence opens on a line that starts
+ * with three backticks and closes on a line that is exactly three backticks, as the panel's own extractor reads them); an unclosed or malformed fence, or no fence at
+ * all, answers null and the reply is shown exactly as written. Nothing is repaired.
+ */
+export function replyWithoutFencedBlocks(text: string): { prose: string; blocks: number } | null {
+  const kept: string[] = [];
+  let opened = false;
+  let blocks = 0;
+  for (const line of splitLikePythonLines(text)) {
+    if (opened) {
+      if (line.trim() === '```') {
+        opened = false;
+        blocks++;
+      }
+      continue;
+    }
+    if (line.startsWith('```')) {
+      opened = true;
+      continue;
+    }
+    kept.push(line);
+  }
+  if (opened || blocks === 0) return null;
+  return { prose: kept.join('\n').replace(/\n{3,}/g, '\n\n').trim(), blocks };
+}
+
+/**
+ * One conversation of the overview. The question fields are ADDITIVE: a panel that predates them sends
+ * none, which reads `not_reported` (never "no questions"). A value that breaks a bound or a grammar is
+ * `unreadable` with nothing awaited — refused, never repaired or truncated.
+ */
+function parseConversationSummary(c: Json): MrConversationSummary {
+  const base = {
+    conversationId: str(c.conversation_id) as string,
+    turns: int(c.turns) ?? 0,
+    lastActivity: int(c.last_activity) ?? 0,
+    firstWords: str(c.first_words) ?? '',
+    latestTurnState: str(c.latest_turn_state),
+  };
+  const none = (reporting: MrQuestionsReporting, problem: string | null = null) => ({
+    ...base,
+    awaitingAnswer: false,
+    questionsReporting: reporting,
+    questionsProblem: problem,
+    awaitingTurnId: null,
+    awaitingQuestions: [] as string[],
+  });
+  if (!('awaiting_answer' in c) || !('questions_reporting' in c)) return none('not_reported');
+  const reportedAs = str(c.questions_reporting);
+  const reporting: MrQuestionsReporting | null =
+    reportedAs === 'read'
+      ? 'read'
+      : reportedAs === 'not_reported_by_this_panel_version'
+        ? 'not_reported'
+        : reportedAs === 'not_applicable'
+          ? 'not_applicable'
+          : null;
+  if (reporting === null || typeof c.awaiting_answer !== 'boolean') return none('unreadable');
+  const problem = c.questions_problem === null ? null : str(c.questions_problem);
+  if (c.questions_problem !== null && problem === null) return none('unreadable');
+  const questions = c.awaiting_questions;
+  if (!Array.isArray(questions) || questions.length > MR_MAX_QUESTIONS) return none('unreadable');
+  if (!questions.every(validQuestion) || new Set(questions).size !== questions.length)
+    return none('unreadable');
+  const turnId = c.awaiting_turn_id === null ? null : str(c.awaiting_turn_id);
+  if (c.awaiting_answer) {
+    // Awaiting needs a read reply, at least one question and the turn that asked it.
+    if (
+      reporting !== 'read' ||
+      questions.length === 0 ||
+      turnId === null ||
+      !TURN_ID_GRAMMAR.test(turnId)
+    )
+      return none('unreadable');
+  } else if (questions.length > 0 || turnId !== null) {
+    return none('unreadable');
+  }
+  return {
+    ...base,
+    awaitingAnswer: c.awaiting_answer,
+    questionsReporting: reporting,
+    questionsProblem: problem,
+    awaitingTurnId: turnId,
+    awaitingQuestions: [...questions],
+  };
+}
+
+/** The questions the panel read from one turn's reply: only a `read` report with no problem and valid, unique, bounded items counts. */
+function parseTurnQuestions(v: unknown): string[] {
+  if (!isObject(v) || v.reporting !== 'read' || v.problem !== null) return [];
+  const items = v.items;
+  if (!Array.isArray(items) || items.length === 0 || items.length > MR_MAX_QUESTIONS) return [];
+  if (!items.every(validQuestion) || new Set(items).size !== items.length) return [];
+  return [...items];
+}
+
+/** How the panel's report on a reply's questions reads, for display (see `MrTurn.questionsStatus`); never repaired, never a source of any count. */
+function turnQuestionsStatus(v: unknown, declared: readonly string[]): MrTurnQuestionsStatus {
+  if (declared.length > 0) return 'declared';
+  if (!isObject(v) || v.reporting !== 'read') return 'not_reported';
+  if (v.problem !== null) return 'refused';
+  return Array.isArray(v.items) && v.items.length === 0 ? 'none_declared' : 'refused';
 }
 
 function parseTurn(v: unknown): MrTurn | null {
@@ -646,6 +855,7 @@ function parseTurn(v: unknown): MrTurn | null {
   const draft = isObject(v.draft) ? v.draft : null;
   const draftProposal = draft ? parseProposal(draft.proposal) : null;
   const submission = isObject(v.submission) ? v.submission : null;
+  const declaredQuestions = parseTurnQuestions(v.questions);
   return {
     turnId,
     conversationId,
@@ -666,6 +876,8 @@ function parseTurn(v: unknown): MrTurn | null {
           }
         : null,
     draftProblem: str(v.draft_problem),
+    declaredQuestions,
+    questionsStatus: turnQuestionsStatus(v.questions, declaredQuestions),
     submission: submission
       ? {
           state: str(submission.state) ?? 'unknown',
@@ -1394,11 +1606,39 @@ export function actionPending(state: MrState, action: MrAction, requestRef: stri
   return op !== undefined && isPending(state, op, requestRef);
 }
 
+/**
+ * What a request asks of the person, one item each: a decision, else an approval to check, and a verification. The reception inbox makes exactly one
+ * entry per item, and `waitingOf` counts the same items, so the panel card, the inbox and the coverage line cannot disagree.
+ */
+export type MrRequestNeed = 'decide' | 'check_approval' | 'verify';
+export function requestNeeds(actions: readonly MrAction[]): MrRequestNeed[] {
+  const out: MrRequestNeed[] = [];
+  if (actions.includes('decide')) out.push('decide');
+  else if (actions.includes('check_approval')) out.push('check_approval');
+  if (actions.includes('verify')) out.push('verify');
+  return out;
+}
+
 /** A request that needs the person: a decision, an approval to check, or a verification. */
 export function needsYou(actions: readonly MrAction[]): boolean {
-  return (
-    actions.includes('decide') || actions.includes('check_approval') || actions.includes('verify')
-  );
+  return requestNeeds(actions).length > 0;
+}
+
+/**
+ * Everything the panel has waiting on the person, defined ONCE and said the same everywhere (the panel's own card, the inbox's cards and the coverage
+ * line). The two kinds stay distinct: requests (a decision, an approval check, a verification) and conversations whose newest reply asked questions
+ * with nothing after it. A conversation the panel did not read for questions is not counted (its coverage line says so).
+ */
+export interface MrWaiting {
+  requests: number;
+  conversations: number;
+  total: number;
+}
+export function waitingOf(overview: MrOverview | null): MrWaiting {
+  if (overview === null) return { requests: 0, conversations: 0, total: 0 };
+  const requests = overview.requests.reduce((n, r) => n + requestNeeds(r.actions).length, 0);
+  const conversations = overview.conversations.filter((c) => c.awaitingAnswer).length;
+  return { requests, conversations, total: requests + conversations };
 }
 
 export interface MrSummaryCounts {
@@ -1412,7 +1652,7 @@ const RUNNING_STAGES = ['dispatched', 'running', 'pending_proof', 'dispatch_unce
 export function countsOf(overview: MrOverview | null): MrSummaryCounts {
   if (overview === null) return { needsYou: 0, running: 0, total: 0 };
   return {
-    needsYou: overview.requests.filter((r) => needsYou(r.actions)).length,
+    needsYou: waitingOf(overview).requests,
     running: overview.requests.filter((r) => RUNNING_STAGES.includes(r.stage)).length,
     total: overview.requests.length,
   };
@@ -1434,11 +1674,24 @@ export function entryWords(state: MrState): string {
   if (state.availability.kind === 'unavailable') return state.availability.reason;
   if (state.overview === null) return 'Reading requests…';
   const c = countsOf(state.overview);
-  if (c.total === 0) return 'No requests yet. Describe the work you want done.';
+  const w = waitingOf(state.overview);
+  const requestsWord = (n: number): string => (n === 1 ? 'request' : 'requests');
+  const asking =
+    w.conversations > 0
+      ? `${w.conversations} ${w.conversations === 1 ? 'conversation' : 'conversations'} waiting for your answer`
+      : null;
+  if (c.total === 0)
+    return asking === null
+      ? 'No requests yet. Describe the work you want done.'
+      : `${asking}. No requests yet.`;
+  // Every number names what it counts. "Needs you" covers the three things a request can ask of the person (a decision, an approval to check, a verification),
+  // the same items `waitingOf` counts for the inbox, so the card, the inbox and the coverage line cannot disagree; the last figure is the REQUEST total.
   const parts: string[] = [];
-  if (c.needsYou > 0) parts.push(`${c.needsYou} ${c.needsYou === 1 ? 'needs' : 'need'} you`);
-  if (c.running > 0) parts.push(`${c.running} in progress`);
-  parts.push(`${c.total} in all`);
+  if (c.needsYou > 0)
+    parts.push(`${c.needsYou} ${c.needsYou === 1 ? 'request needs' : 'requests need'} you`);
+  if (asking !== null) parts.push(asking);
+  if (c.running > 0) parts.push(`${c.running} ${requestsWord(c.running)} in progress`);
+  parts.push(`${c.total} ${requestsWord(c.total)} in all`);
   return parts.join(' · ');
 }
 
@@ -1632,6 +1885,27 @@ export function shortDigest(digest: string): string {
   return digest.length > 12 ? `${digest.slice(0, 12)}…` : digest;
 }
 
+/**
+ * A request's plain title: the first line of what was asked for, kept short. The whole text is always shown in the proposal;
+ * this is only the heading above it. Null when nothing was asked in words.
+ */
+export function plainTitle(objective: string | null | undefined): string | null {
+  const first = (objective ?? '').split(/\r\n|\n/).find((line) => line.trim() !== '');
+  if (first === undefined) return null;
+  const line = first.trim();
+  return line.length > 100 ? `${line.slice(0, 99).trimEnd()}\u2026` : line;
+}
+
+/**
+ * The panel's "waiting for your decision" words open with one sentence of provenance ("This proposal is of record: Mission Core
+ * holds it as revision N with digest D."). That sentence is exact and stays, but it is a reference, not the status. Split it off
+ * ONLY when the words open with exactly that sentence; any other words are returned untouched, so nothing is ever dropped.
+ */
+export function splitRecordSentence(detail: string): { record: string | null; rest: string } {
+  const found = /^(This proposal is of record: Mission Core holds it as revision \d+ with digest [0-9a-f]+\.)\s+(\S[\s\S]*)$/.exec(detail);
+  return found === null ? { record: null, rest: detail } : { record: found[1], rest: found[2] };
+}
+
 export function scopeLine(scope: string, meanings: Record<string, string>): string {
   const meaning = meanings[scope];
   return meaning ? `${meaning} (${scope})` : scope;
@@ -1669,12 +1943,37 @@ export function layoutFor(
 }
 
 /**
+ * Wider reading puts the request list BESIDE the open request only where the pane has the room for both (`MR_SPLIT_MIN_PX`). Where it
+ * does not (a window with little room beside the sidebar) the list stacks above the request exactly as in ordinary reading, so wider
+ * reading is never worse than ordinary reading at the same width: the open request is never squeezed to a sliver and nothing scrolls
+ * sideways.
+ */
+export function twoColumnReading(layout: MrLayout, wide: boolean): boolean {
+  return wide && !layout.covering && layout.widthPx >= MR_SPLIT_MIN_PX;
+}
+
+/**
  * Shown at the top of the workspace whenever the office is an EXPLICIT fixture preview
  * (`fixtureMode`): the conversation, proposals and results are synthetic, and nothing in the window
  * is a real request awaiting a real decision. A screenshot of the workspace alone carries it.
  */
 export const MR_FIXTURE_WORDS =
   'FIXTURE / VISUAL TEST: the conversation, proposals and results in this window are synthetic. Nothing here is a real request awaiting a real decision, and no approval given here is real.';
+
+/** The short, always-visible statement of the same truth; `MR_FIXTURE_WORDS` (unchanged) is one disclosure away. */
+export const MR_FIXTURE_SHORT =
+  'Conversation, proposals and results here are synthetic; no approval given here is real.';
+
+/** Said ONCE above the transcript (and offered to assistive technology on each assistant reply), instead of a long label on every reply. */
+export const MR_DRAFTING_NOTE =
+  'The assistant only drafts with you. Its words are not a decision and carry no authority; decisions happen in Requests.';
+
+/** The compact note on an older reply whose technical blocks are folded away (view only). */
+export function technicalBlockNote(blocks: number): string {
+  return blocks === 1
+    ? 'This earlier reply includes a technical block (view only; not a current question).'
+    : `This earlier reply includes ${blocks} technical blocks (view only; not current questions).`;
+}
 
 export const COVERING_WORDS =
   'This window is narrow, so the requests cover the office and its panel. Close the requests to use the world again.';

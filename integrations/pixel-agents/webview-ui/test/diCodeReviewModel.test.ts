@@ -996,7 +996,11 @@ describe('which entries can be opened', () => {
 describe('the fixture these tests stand on is the one the server suite pinned', () => {
   it('is these exact bytes, and was projected from the backend fixture the server suite pins', () => {
     const digest = createHash('sha256').update(fs.readFileSync(FIXTURE)).digest('hex');
-    expect(digest).toBe('0a5f8669960bf0f91713599ac7131b4da17b744edffc836fdc028f47a5376ccd');
+    // P2-A: regenerated through the server suite's own documented mode (DI_EXPORT_OFFICE_STATE=1) after the
+    // reception projection gained the delivery source; the ONLY differences from the previous bytes are the
+    // intended D1 additive kinds (evidence/p2a/s3-golden-diff-classification-2.log). The backend fixture it is
+    // projected from, pinned below, is unchanged.
+    expect(digest).toBe('6306f19ba61994a8dddfb1b5398c8d237ad3d98e00854308f4c6a1c5f3a11bdc');
     // the backend fixture's hash is pinned in server/__tests__/diCodeReview.test.ts; the export names it
     expect(doc.derived_from.sha256).toBe('ad29c7dcf1b8b3d7bc764db9ac9f0717efacbed2c98fb98e2786170b8325ab25');
   });

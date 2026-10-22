@@ -134,9 +134,12 @@ describe('through the real DiOffice consumer (labelled FIXTURE source, one versi
       outcome: 'unsupported',
       reason: 'not_in_catalog_contract:v1_and_v2',
     });
+    // P2-A: delivery proposals ARE a contract v2 block now. This pinned catalog answer predates it
+    // (no `delivery_presentations` key), which reads "not reported by this catalog" — unsupported,
+    // never empty and never known_empty.
     expect(category(r, 'delivery_decision')).toMatchObject({
       outcome: 'unsupported',
-      reason: 'not_in_catalog_contract:v1_and_v2',
+      reason: 'catalog_does_not_report:delivery_presentations',
     });
     expect(entriesOf(r, 'authorization').map((e) => e.missionRef)).toEqual([M9]);
   });
@@ -177,9 +180,9 @@ describe('the six categories, in the order item 06 names them', () => {
 });
 
 describe('UNSUPPORTED is its own outcome — never empty, zero, healthy or clear', () => {
-  it('clarification and delivery-awaiting-decision are unsupported at BOTH contract versions, saying so', () => {
+  it('clarification is unsupported at BOTH contract versions, saying so', () => {
     for (const r of [deriveReception(viewV1()), deriveReception(viewV2())]) {
-      for (const id of ['clarification', 'delivery_decision'] as const) {
+      for (const id of ['clarification'] as const) {
         const c = category(r, id);
         expect(c.outcome).toBe('unsupported');
         expect(c.reason).toBe('not_in_catalog_contract:v1_and_v2');
@@ -188,6 +191,27 @@ describe('UNSUPPORTED is its own outcome — never empty, zero, healthy or clear
         expect(c.counts.present).toBe(0);
         expect(entriesOf(r, id)).toEqual([]);
       }
+    }
+  });
+
+  it('delivery proposals: a catalog that does not report them (v1 office, or a v2 answer without the block) is unsupported with its OWN reason', () => {
+    const v1 = category(deriveReception(viewV1()), 'delivery_decision');
+    expect(v1).toMatchObject({
+      outcome: 'unsupported',
+      reason: 'contract_v1:delivery_presentations_is_a_contract_v2_block',
+    });
+    expect(v1.statement).toMatch(/contract version 1/);
+    const v2 = deriveReception(viewV2());
+    expect(category(v2, 'delivery_decision')).toMatchObject({
+      outcome: 'unsupported',
+      reason: 'catalog_does_not_report:delivery_presentations',
+    });
+    for (const r of [deriveReception(viewV1()), v2]) {
+      const c = category(r, 'delivery_decision');
+      expect(c.counts.knownEmpty).toBe(0);
+      expect(c.counts.present).toBe(0);
+      expect(r.sourceEntries).toEqual([]);
+      expect(r.sourceEntriesTotal).toBe(0);
     }
   });
 

@@ -107,6 +107,8 @@ export const LAYOUT_FILE_NAME = 'layout.json';
 export const AMBIENT_STATE_FILE_NAME = 'ambient-state.json';
 /** The viewer's city presentation preferences (lighting, weather, traffic) under the DI state root. */
 export const CITY_PRESENTATION_FILE_NAME = 'city-presentation.json';
+/** DI office: the identity-keyed seat preferences (core/src/diSeatPreferences.ts) under the DI state root. */
+export const DI_SEAT_PREFERENCES_FILE_NAME = 'seat-preferences.json';
 export const LAYOUT_FILE_POLL_INTERVAL_MS = 2000;
 export const LAYOUT_REVISION_KEY = 'layoutRevision';
 export const CONFIG_FILE_NAME = 'config.json';
@@ -158,6 +160,8 @@ export const DI_SHUTDOWN_DRAIN_TIMEOUT_MS = 5_000;
  * panel renders. The true total is always carried beside it, so a truncated list says so.
  */
 export const DI_RECEPTION_MAX_ENTRIES = 24;
+/** The most source-keyed reception entries (Grok delivery presentations); `grok_bot.index.MAX_DELIVERY_RECEIPTS`. */
+export const DI_RECEPTION_MAX_SOURCE_ENTRIES = 16;
 
 /**
  * Runtime agents (item 07): the most NOT-verified runtime entries one diOfficeState carries. Every

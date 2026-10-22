@@ -121,9 +121,11 @@ describe('DI handler: inert types do nothing at all', () => {
     // + diMissionRequest (item 4, DI only: the ONE deliberate, bounded non-read; eleven closed ops)
     // + saveCityPresentation (living city 6-9, DI only: the viewer's lighting/weather/traffic choice,
     //   checked against core/src/cityPresentation.ts and written under the DI state root)
-    expect(variants).toHaveLength(27);
+    // + saveDiSeatPreferences (P2-C, DI only: the identity-keyed seat preferences, checked against
+    //   core/src/diSeatPreferences.ts and written under the DI state root)
+    expect(variants).toHaveLength(28);
     const declared = new Set<string>([...DI_HANDLED_MESSAGE_TYPES, ...DI_INERT_MESSAGE_TYPES]);
-    expect(declared.size).toBe(27);
+    expect(declared.size).toBe(28);
     // every protocol variant is declared exactly one way: handled or inert, never both, never neither
     for (const variant of variants) {
       const camel = variant.replace(/^./, (c) => c.toLowerCase());
@@ -201,6 +203,7 @@ describe('DI handshake carries no Claude-shaped capability', () => {
       'settingsLoaded',
       'areaMappingsLoaded',
       'existingAgents',
+      'diSeatPreferencesLoaded',
       'ambientStateLoaded',
       'cityPresentationLoaded',
       'layoutLoaded',

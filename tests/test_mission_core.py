@@ -2282,6 +2282,22 @@ VALIDATED_RECEIPT_PROGRAM = (
     ' record["authority_digest_sha256"],'
     ' "delivery %s step %s receipt" % (record["delivery_id"], step))',
 )
+# D1 (deliberate new pin, Lead/Root-confirmed): the read-side attestation reader, as an exact
+# program: four statements, each pinned by AST equality (formatting, comments and the docstring are
+# free; nothing else is). ``copied`` is bound once from the private plain copy and validated by the
+# UNCHANGED validator BEFORE anything is read; both returned values are reads of ``copied`` (the local
+# is deliberately NOT called ``record``, so the existing planted probes of validated_receipt still
+# match their target text exactly once); there is
+# no ``step``, no receipt, no class, no decorator, no annotation, no default and no new import or
+# constant, so the function can neither take an arbitrary step nor return anything not validated.
+VALIDATED_ATTESTATION_PROGRAM = (
+    "copied = _plain_copy(delivery_document)",
+    "delivery_authorization.validate_authorization(copied)",
+    'if "attestation" not in copied["human_authorization"]:\n'
+    '    return (copied["delivery_id"], None)',
+    'return (copied["delivery_id"],'
+    ' copied["human_authorization"]["attestation"]["proposal_digest_sha256"])',
+)
 VALIDATED_RECEIPT_FIELDS = {
     "receipt_id": 'receipt["receipt_id"]',
     "receipt_digest_sha256": 'receipt["receipt_digest_sha256"]',
@@ -2318,7 +2334,13 @@ SEAM_MODULE_IMPORTS = (("dataclasses", "dataclass"), ("mission", "record"),
                        ("pr_delivery", "authorization"))
 SEAM_MODULE_DEFINITIONS = (
     "_projection", "parent_mission_authority", "_attestation", "_preflight_problem",
-    "_plain_copy", "ValidatedReceipt", "validated_receipt", "attest_validated_receipt",
+    "_plain_copy", "ValidatedReceipt", "validated_receipt",
+    # D1 (deliberate; named by the Lead and Root in BOUNDARY-DECISIONS.md "D1 exact contract
+    # inventory"): ONE plain read-side function, pinned whole-program below
+    # (VALIDATED_ATTESTATION_PROGRAM). It is not reachable from the recording function, so the
+    # attestation program above does not change.
+    "validated_attestation",
+    "attest_validated_receipt",
 )
 SEAM_MODULE_CONSTANTS = (
     "PROBLEM_PARENT_ABSENT", "PROBLEM_RECEIPT_ABSENT", "PROBLEM_STEP_UNKNOWN",
@@ -2712,6 +2734,31 @@ def attestation_confinement_problems(sources):
                and any(a.name == "dataclass" and a.asname is None for a in n.names)
                for n in tree.body):
         problems.append("dataclass is not imported from dataclasses")
+    # (2b) D1 (deliberate new pin): validated_attestation is exactly VALIDATED_ATTESTATION_PROGRAM.
+    reading = _function(tree, "validated_attestation")
+    if reading is None:
+        problems.append("validated_attestation is not defined exactly once")
+    else:
+        if [a.arg for a in reading.args.args] != ["delivery_document"] or (
+            reading.args.vararg or reading.args.kwarg or reading.args.kwonlyargs
+            or reading.args.posonlyargs or reading.args.defaults
+        ):
+            problems.append("validated_attestation has an unexpected signature")
+        if reading.decorator_list:
+            problems.append("validated_attestation is decorated")
+        if module_bindings.count("validated_attestation") != 1:
+            problems.append("validated_attestation is not bound exactly once")
+        reading_body = _body_without_docstring(reading)
+        reading_program = [text.replace("delivery_authorization", validator)
+                           for text in VALIDATED_ATTESTATION_PROGRAM]
+        if len(reading_body) != len(reading_program):
+            problems.append("validated_attestation has %d statements; expected %d"
+                            % (len(reading_body), len(reading_program)))
+        else:
+            for index, text in enumerate(reading_program):
+                if _dump(reading_body[index]) != _stmt(text):
+                    problems.append("validated_attestation statement %d is not %r"
+                                    % (index + 1, text))
     # (3) the caller's data flow.
     caller = _function(tree, ATTEST_SEAM_FUNCTION)
     if caller is None:
@@ -4213,7 +4260,13 @@ class FReceiptAttestationTests(ServiceFixture):
                          self.auth.RECEIPT_EXECUTING)
         tree = ast.parse(source)
         every = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
-        self.assertEqual(_reachable_definitions(tree, ATTEST_SEAM_FUNCTION), every)
+        # D1 (deliberate, forced by the one read-side function the Lead and Root approved): exactly ONE
+        # definition, validated_attestation, is outside the recording function's reach by design (it
+        # reads an attestation and records nothing). It is not unpinned: it has its own whole-program
+        # golden (VALIDATED_ATTESTATION_PROGRAM, checked in attestation_confinement_problems (2b)),
+        # and any OTHER definition outside the reachable set still fails here.
+        self.assertEqual(_reachable_definitions(tree, ATTEST_SEAM_FUNCTION),
+                         every - {"validated_attestation"})
         self.assertEqual(every, set(SEAM_MODULE_DEFINITIONS))
 
     def test_F7_same_receipt_step_transition_is_new_evidence_on_the_real_store(self):

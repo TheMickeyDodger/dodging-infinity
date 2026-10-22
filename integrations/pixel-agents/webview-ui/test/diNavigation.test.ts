@@ -14,7 +14,6 @@ import { test } from 'vitest';
 import type { DiMission, DiOfficeState } from '../../core/src/messages.ts';
 import {
   DI_FIND_MAX,
-  DI_FOCUS_RING,
   diRecords,
   findRecords,
   plainBinding,
@@ -235,7 +234,11 @@ test('item 09: outcome facts stay separate, unsupported or unreported facts are 
   assert.match(plainUnreported({ state: 'not_recorded', value: null, reason: null }), /^unknown/);
 });
 
-test('the focus ring is the reception desk’s own (one mechanism, not a second)', () => {
-  const desk = fs.readFileSync(path.join(root, 'src/components/DiReceptionDesk.tsx'), 'utf-8');
-  assert.ok(desk.includes(`'${DI_FOCUS_RING}'`));
+test('the focus ring is the reception inbox’s own (one mechanism, not a second)', () => {
+  const inbox = fs.readFileSync(path.join(root, 'src/components/DiReceptionInbox.tsx'), 'utf-8');
+  assert.ok(inbox.includes("import { DI_FOCUS_RING } from './diNavigation.js';"));
+  assert.ok(inbox.includes('${DI_FOCUS_RING}'));
+  // the desk it replaced is gone, and no second ring was defined in its place
+  assert.equal(fs.existsSync(path.join(root, 'src/components/DiReceptionDesk.tsx')), false);
+  assert.doesNotMatch(inbox, /const FOCUS\b/);
 });

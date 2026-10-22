@@ -959,23 +959,17 @@
           {
             "category": "delivery_decision",
             "label": "Delivery awaiting a separate decision",
-            "statement": "Not reported: no record of a delivery awaiting a separate decision exists to project. A delivery proposal is presented for the decision but not stored; PR delivery stores only authorizations made after approval; and the catalog delivery facts (contract version 1 or 2) describe receipts already recorded.",
-            "backing": "none at contract versions 1 and 2, and no stored producer record of a pending delivery decision",
+            "statement": "Delivery proposals that were presented through the Grok Bot route and have no recorded authorization yet. Read only from the catalog's delivery_presentations block (contract version 2), joined to the registered PR delivery store. Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "backing": "contract v2: response.delivery_presentations (proposal digest, presented_at, expires_at, mode, repository URL, the named Mission workflow id, state, link); Grok Bot delivery_presentations map and PR delivery store, both read-only and explicitly registered",
             "outcome": "unsupported",
-            "reason": "not_in_catalog_contract:v1_and_v2",
+            "reason": "catalog_does_not_report:delivery_presentations",
             "counts": {
               "present": 0,
               "knownEmpty": 0,
-              "unsupported": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "not_in_catalog_contract:v1_and_v2",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 0
           }
         ],
@@ -1111,6 +1105,19 @@
         ],
         "entriesTotal": 2,
         "entriesCap": 24,
+        "sourceEntries": [],
+        "sourceEntriesTotal": 0,
+        "sourceEntriesCap": 16,
+        "sourceCoverage": [
+          {
+            "sourceId": "grok_delivery_presentations",
+            "label": "Delivery proposals presented through the Grok Bot",
+            "outcome": "unsupported",
+            "reason": "catalog_does_not_report:delivery_presentations",
+            "statement": "This catalog does not report delivery presentations (it predates the block). That is unknown to this office, not \"none\". Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "total": null
+          }
+        ],
         "notices": [],
         "minPollIntervalSeconds": 5,
         "refreshStatement": "Refreshed with the office feed (no polling of its own); the backend asks for at most one read every 5 s.",
@@ -2145,23 +2152,17 @@
           {
             "category": "delivery_decision",
             "label": "Delivery awaiting a separate decision",
-            "statement": "Not reported: no record of a delivery awaiting a separate decision exists to project. A delivery proposal is presented for the decision but not stored; PR delivery stores only authorizations made after approval; and the catalog delivery facts (contract version 1 or 2) describe receipts already recorded.",
-            "backing": "none at contract versions 1 and 2, and no stored producer record of a pending delivery decision",
+            "statement": "Delivery proposals that were presented through the Grok Bot route and have no recorded authorization yet. Read only from the catalog's delivery_presentations block (contract version 2), joined to the registered PR delivery store. Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "backing": "contract v2: response.delivery_presentations (proposal digest, presented_at, expires_at, mode, repository URL, the named Mission workflow id, state, link); Grok Bot delivery_presentations map and PR delivery store, both read-only and explicitly registered",
             "outcome": "unsupported",
-            "reason": "not_in_catalog_contract:v1_and_v2",
+            "reason": "catalog_does_not_report:delivery_presentations",
             "counts": {
               "present": 0,
               "knownEmpty": 0,
-              "unsupported": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "not_in_catalog_contract:v1_and_v2",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 0
           }
         ],
@@ -2301,6 +2302,19 @@
         ],
         "entriesTotal": 2,
         "entriesCap": 24,
+        "sourceEntries": [],
+        "sourceEntriesTotal": 0,
+        "sourceEntriesCap": 16,
+        "sourceCoverage": [
+          {
+            "sourceId": "grok_delivery_presentations",
+            "label": "Delivery proposals presented through the Grok Bot",
+            "outcome": "unsupported",
+            "reason": "catalog_does_not_report:delivery_presentations",
+            "statement": "This catalog does not report delivery presentations (it predates the block). That is unknown to this office, not \"none\". Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "total": null
+          }
+        ],
         "notices": [
           {
             "reason": "envelope_not_fresh:expired_locally:response_expired",
@@ -3402,23 +3416,17 @@
           {
             "category": "delivery_decision",
             "label": "Delivery awaiting a separate decision",
-            "statement": "Not reported: no record of a delivery awaiting a separate decision exists to project. A delivery proposal is presented for the decision but not stored; PR delivery stores only authorizations made after approval; and the catalog delivery facts (contract version 1 or 2) describe receipts already recorded.",
-            "backing": "none at contract versions 1 and 2, and no stored producer record of a pending delivery decision",
+            "statement": "Delivery proposals that were presented through the Grok Bot route and have no recorded authorization yet. Read only from the catalog's delivery_presentations block (contract version 2), joined to the registered PR delivery store. Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "backing": "contract v2: response.delivery_presentations (proposal digest, presented_at, expires_at, mode, repository URL, the named Mission workflow id, state, link); Grok Bot delivery_presentations map and PR delivery store, both read-only and explicitly registered",
             "outcome": "unsupported",
-            "reason": "not_in_catalog_contract:v1_and_v2",
+            "reason": "catalog_does_not_report:delivery_presentations",
             "counts": {
               "present": 0,
               "knownEmpty": 0,
-              "unsupported": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "not_in_catalog_contract:v1_and_v2",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 0
           }
         ],
@@ -3554,6 +3562,19 @@
         ],
         "entriesTotal": 2,
         "entriesCap": 24,
+        "sourceEntries": [],
+        "sourceEntriesTotal": 0,
+        "sourceEntriesCap": 16,
+        "sourceCoverage": [
+          {
+            "sourceId": "grok_delivery_presentations",
+            "label": "Delivery proposals presented through the Grok Bot",
+            "outcome": "unsupported",
+            "reason": "catalog_does_not_report:delivery_presentations",
+            "statement": "This catalog does not report delivery presentations (it predates the block). That is unknown to this office, not \"none\". Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "total": null
+          }
+        ],
         "notices": [],
         "minPollIntervalSeconds": 5,
         "refreshStatement": "Refreshed with the office feed (no polling of its own); the backend asks for at most one read every 5 s.",
@@ -4650,23 +4671,17 @@
           {
             "category": "delivery_decision",
             "label": "Delivery awaiting a separate decision",
-            "statement": "Not reported: no record of a delivery awaiting a separate decision exists to project. A delivery proposal is presented for the decision but not stored; PR delivery stores only authorizations made after approval; and the catalog delivery facts (contract version 1 or 2) describe receipts already recorded.",
-            "backing": "none at contract versions 1 and 2, and no stored producer record of a pending delivery decision",
+            "statement": "Delivery proposals that were presented through the Grok Bot route and have no recorded authorization yet. Read only from the catalog's delivery_presentations block (contract version 2), joined to the registered PR delivery store. Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "backing": "contract v2: response.delivery_presentations (proposal digest, presented_at, expires_at, mode, repository URL, the named Mission workflow id, state, link); Grok Bot delivery_presentations map and PR delivery store, both read-only and explicitly registered",
             "outcome": "unsupported",
-            "reason": "not_in_catalog_contract:v1_and_v2",
+            "reason": "catalog_does_not_report:delivery_presentations",
             "counts": {
               "present": 0,
               "knownEmpty": 0,
-              "unsupported": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "not_in_catalog_contract:v1_and_v2",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 0
           }
         ],
@@ -4802,6 +4817,19 @@
         ],
         "entriesTotal": 2,
         "entriesCap": 24,
+        "sourceEntries": [],
+        "sourceEntriesTotal": 0,
+        "sourceEntriesCap": 16,
+        "sourceCoverage": [
+          {
+            "sourceId": "grok_delivery_presentations",
+            "label": "Delivery proposals presented through the Grok Bot",
+            "outcome": "unsupported",
+            "reason": "catalog_does_not_report:delivery_presentations",
+            "statement": "This catalog does not report delivery presentations (it predates the block). That is unknown to this office, not \"none\". Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+            "total": null
+          }
+        ],
         "notices": [],
         "minPollIntervalSeconds": 5,
         "refreshStatement": "Refreshed with the office feed (no polling of its own); the backend asks for at most one read every 5 s.",

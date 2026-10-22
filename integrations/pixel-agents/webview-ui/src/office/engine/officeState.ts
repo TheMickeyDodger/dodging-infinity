@@ -12,6 +12,8 @@ import {
   CHARACTER_SITTING_OFFSET_PX,
   CITY_LIGHT_AGENT_LIFT_PX,
   CITY_LIGHT_VISIBLE_EPSILON,
+  DI_RECEPTIONIST_ID,
+  DI_RECEPTIONIST_PALETTE,
   DISMISS_BUBBLE_FAST_FADE_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
   GREETER_ID,
@@ -36,14 +38,25 @@ import type { CityRenderInput } from '../city/cityRender.js';
 import { weatherVeil } from '../city/cityWeather.js';
 import { getColorizedSprite } from '../colorize.js';
 import { haloEligibleCharacterIds } from '../halo.js';
+import type { DiOfficeDetection } from '../layout/diOffices.js';
+import { detectOffices } from '../layout/diOffices.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
   createDefaultLayout,
   getBlockedTiles,
+  getDeskTiles,
   layoutToFurnitureInstances,
   layoutToSeats,
   layoutToTileMap,
 } from '../layout/layoutSerializer.js';
+import type { ReceptionPost } from '../layout/receptionPost.js';
+import {
+  findReceptionPost,
+  isReceptionHit,
+  keepsNeighboursConnected,
+  receptionReservedSeatIds,
+} from '../layout/receptionPost.js';
+import { electronicsTileSet, seatFacesElectronics } from '../layout/seatElectronics.js';
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
 import type { FootprintOf } from '../layout/worldViews.js';
 import { inRegions, livingRegions, livingTiles as confineLiving } from '../layout/worldViews.js';
@@ -78,14 +91,6 @@ import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 
-/** Internal helper: facing-tile coords for a seat. Returns null for invalid direction. */
-function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } {
-  if (direction === Direction.RIGHT) return { dCol: 1, dRow: 0 };
-  if (direction === Direction.LEFT) return { dCol: -1, dRow: 0 };
-  if (direction === Direction.DOWN) return { dCol: 0, dRow: 1 };
-  return { dCol: 0, dRow: -1 };
-}
-
 const footprintOf: FootprintOf = (type) => {
   const entry = getCatalogEntry(type);
   return entry
@@ -104,10 +109,17 @@ function livingTiles(
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
   seats: Map<string, Seat>,
+  detection: DiOfficeDetection | null = null,
 ): Array<{ col: number; row: number }> {
+  const regions = livingRegions(layout, footprintOf);
+  // the detected satellite offices are places agents live and wander too (P2-C); the home and deck stay as they were
+  const living =
+    regions && detection
+      ? [...regions, ...detection.offices.filter((o) => o.kind === 'district').map((o) => o.box)]
+      : regions;
   return confineLiving(
     getWalkableTiles(tileMap, blockedTiles),
-    livingRegions(layout, footprintOf),
+    living,
     [...seats.values()].map((s) => ({ col: s.seatCol, row: s.seatRow })),
   );
 }
@@ -148,6 +160,10 @@ export class OfficeState {
   ambientClock = 0;
   /** A saved ambient snapshot from the handshake, applied once to the next ambient build. */
   private pendingAmbientSnapshot: unknown = null;
+  /** A restore attempt has run against the held handshake snapshot (its outcome is in `lastAmbientRestore`). */
+  private ambientAttemptRecorded = false;
+  /** Set when the held snapshot's migration was refused as unsupported: nothing is saved over that file this session. */
+  private ambientSaveWithheld: string | null = null;
   /** What the last snapshot application did (evidence; null if none was attempted). */
   lastAmbientRestore: AmbientRestoreResult | null = null;
   private ambientEnabled = false;
@@ -222,6 +238,27 @@ export class OfficeState {
    *  overlay's per-frame updates stop re-centering. Reset on spawn/despawn. */
   private greeterCameraCancelled = false;
 
+  /**
+   * The DI reception desk's decorative receptionist, deliberately NOT in `characters` (the greeter's
+   * reasoning, applied again): every agent loop — seat assignment, selection, the working glow, seat
+   * persistence, counts, the wander FSM — is an agent question it has no answer to, so holding it
+   * here makes each of them correct by default. It joins the others only in `getCharacters()` (drawn)
+   * and as a tile residents give way to. Present whenever the loaded layout has a reception desk
+   * (zero real agents included), rebuilt with the layout, never moved, never selectable.
+   */
+  receptionist: Character | null = null;
+  /** The reception desk and the receptionist's tile, or null (no desk in this layout, or not DI). */
+  receptionPost: ReceptionPost | null = null;
+  private receptionistEnabled = false;
+  /** P2-C evidence (read-only): the detected working offices with their seats and workstations, or null (legacy seating). */
+  officeDetection: DiOfficeDetection | null = null;
+  /** The receptionist's reserved workstation seat ids: never a seat a real agent can hold (empty without a post). */
+  reservedSeatIds: ReadonlySet<string> = new Set();
+  /** `col,row` of the stand tile while it is blocked for agents, pets and the walk mask the real characters use (else null). */
+  private standTileKey: string | null = null;
+  /** The PREVIOUS build's seat list (every home seat, the reception bench included): the residents' predecessor derivation and sizing use it. */
+  private legacySeatList: Seat[] = [];
+
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
   }
@@ -229,54 +266,75 @@ export class OfficeState {
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout();
     this.tileMap = layoutToTileMap(this.layout);
-    this.seats = homeSeats(this.layout, layoutToSeats(this.layout.furniture));
-    this.blockedTiles = getBlockedTiles(this.layout.furniture);
+    this.seats = new Map();
+    this.blockedTiles = new Set();
+    this.deriveSeating(this.layout);
     this.furniture = layoutToFurnitureInstances(this.layout.furniture);
-    this.walkableTiles = livingTiles(this.layout, this.tileMap, this.blockedTiles, this.seats);
+    this.walkableTiles = livingTiles(
+      this.layout,
+      this.tileMap,
+      this.blockedTiles,
+      this.seats,
+      this.officeDetection,
+    );
     // Pets are built last because they need walkableTiles populated for spawn.
     this.rebuildPetsFromLayout(this.layout);
   }
 
-  /** Rebuild all derived state from a new layout. Reassigns existing characters.
-   *  @param shift Optional pixel shift to apply when grid expands left/up */
-  rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
-    // the render-cache bound across edits, at this safe point BEFORE the instances are rebuilt
-    boundRenderCaches();
-    this.layout = layout;
-    this.tileMap = layoutToTileMap(layout);
-    this.seats = homeSeats(layout, layoutToSeats(layout.furniture));
-    this.blockedTiles = getBlockedTiles(layout.furniture);
-    this.traffic = null; // its lanes came from the old layout
-    this.rebuildFurnitureInstances();
-    this.walkableTiles = livingTiles(layout, this.tileMap, this.blockedTiles, this.seats);
-    this.syncTraffic();
-
-    // Shift character positions when grid expands left/up
-    if (shift && (shift.col !== 0 || shift.row !== 0)) {
-      for (const ch of this.characters.values()) {
-        ch.tileCol += shift.col;
-        ch.tileRow += shift.row;
-        ch.x += shift.col * TILE_SIZE;
-        ch.y += shift.row * TILE_SIZE;
-        // Clear path since tile coords changed
-        ch.path = [];
-        ch.moveProgress = 0;
-      }
+  /**
+   * Derive everything that decides WHERE real characters may stand and sit, from the layout (and, in the DI office, the reception post):
+   *   1. the reception post (DI office only) and the receptionist's reserved workstation — never a seat a real agent can hold;
+   *   2. the stand tile, blocked for agents, pets and spawning only when blocking it cuts nothing in two (`keepsNeighboursConnected`, once per layout);
+   *   3. the three-office detection (DI office only; explicit-home large worlds with office districts) → `seats` = the workstations/chairs of the
+   *      detected offices; no detection → `homeSeats` exactly as before. The reserved seats are withheld in both cases.
+   * A layout with no post, and every layout outside the DI office, keeps its seats and blocked tiles exactly.
+   */
+  private deriveSeating(layout: OfficeLayout): void {
+    const blocked = getBlockedTiles(layout.furniture);
+    const allSeats = layoutToSeats(layout.furniture);
+    const walk = (c: number, r: number): boolean => isWalkable(c, r, this.tileMap, blocked);
+    const post = this.receptionistEnabled
+      ? findReceptionPost(layout, footprintOf, walk, (c, r) =>
+          keepsNeighboursConnected(c, r, walk, layout.cols, layout.rows),
+        )
+      : null;
+    const reserved = receptionReservedSeatIds(post, allSeats);
+    this.legacySeatList = [...homeSeats(layout, allSeats).values()];
+    this.receptionPost = post;
+    this.reservedSeatIds = reserved;
+    this.standTileKey = null;
+    if (post?.tileBlocked) {
+      this.standTileKey = `${post.standCol},${post.standRow}`;
+      blocked.add(this.standTileKey);
     }
-
-    // Shift pet positions when grid expands left/up
-    if (shift && (shift.col !== 0 || shift.row !== 0)) {
-      for (const pet of this.pets) {
-        pet.tileCol += shift.col;
-        pet.tileRow += shift.row;
-        pet.x += shift.col * TILE_SIZE;
-        pet.y += shift.row * TILE_SIZE;
-        pet.path = [];
-        pet.moveProgress = 0;
-      }
+    this.blockedTiles = blocked;
+    const detection = this.receptionistEnabled
+      ? detectOffices({
+          layout,
+          seats: allSeats,
+          footprintOf,
+          deskTiles: getDeskTiles(layout.furniture),
+          electronicsTiles: electronicsTileSet(layout.furniture),
+          isWalkable: walk,
+          reservedSeatIds: reserved,
+        })
+      : null;
+    this.officeDetection = detection;
+    if (detection) {
+      this.seats = new Map([...allSeats].filter(([uid]) => detection.officeIndexBySeat.has(uid)));
+    } else {
+      const home = homeSeats(layout, allSeats);
+      this.seats =
+        reserved.size === 0 ? home : new Map([...home].filter(([uid]) => !reserved.has(uid)));
     }
+  }
 
-    // Reassign characters to new seats, preserving existing assignments when possible
+  /**
+   * Reassign every character to the CURRENT seats, keeping each one's existing seat whenever that seat is still a seat and free; a
+   * character whose seat is gone (removed, reserved for the receptionist, outside the detected offices) takes a free one, else stands.
+   * The first half of what `rebuildFromLayout` always did, shared with the switches that change which seats exist.
+   */
+  private reseatCharacters(): void {
     for (const seat of this.seats.values()) {
       seat.assigned = false;
     }
@@ -316,6 +374,53 @@ export class OfficeState {
         ch.dir = seat.facingDir;
       }
     }
+  }
+
+  /** Rebuild all derived state from a new layout. Reassigns existing characters.
+   *  @param shift Optional pixel shift to apply when grid expands left/up */
+  rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
+    // the render-cache bound across edits, at this safe point BEFORE the instances are rebuilt
+    boundRenderCaches();
+    this.layout = layout;
+    this.tileMap = layoutToTileMap(layout);
+    this.deriveSeating(layout);
+    this.traffic = null; // its lanes came from the old layout
+    this.rebuildFurnitureInstances();
+    this.walkableTiles = livingTiles(
+      layout,
+      this.tileMap,
+      this.blockedTiles,
+      this.seats,
+      this.officeDetection,
+    );
+    this.syncTraffic();
+
+    // Shift character positions when grid expands left/up
+    if (shift && (shift.col !== 0 || shift.row !== 0)) {
+      for (const ch of this.characters.values()) {
+        ch.tileCol += shift.col;
+        ch.tileRow += shift.row;
+        ch.x += shift.col * TILE_SIZE;
+        ch.y += shift.row * TILE_SIZE;
+        // Clear path since tile coords changed
+        ch.path = [];
+        ch.moveProgress = 0;
+      }
+    }
+
+    // Shift pet positions when grid expands left/up
+    if (shift && (shift.col !== 0 || shift.row !== 0)) {
+      for (const pet of this.pets) {
+        pet.tileCol += shift.col;
+        pet.tileRow += shift.row;
+        pet.x += shift.col * TILE_SIZE;
+        pet.y += shift.row * TILE_SIZE;
+        pet.path = [];
+        pet.moveProgress = 0;
+      }
+    }
+
+    this.reseatCharacters();
 
     // Relocate any characters that ended up outside bounds or on non-walkable tiles
     for (const ch of this.characters.values()) {
@@ -359,6 +464,7 @@ export class OfficeState {
     this.rebuildPetsFromLayout(layout);
     // Ambient residents are derived from the world: rebuilt (deterministically) with it.
     this.rebuildAmbient();
+    this.rebuildReceptionist();
   }
 
   /** Move a character to a random walkable tile */
@@ -396,17 +502,7 @@ export class OfficeState {
 
   /** Collect every tile occupied by electronics furniture (PCs, monitors, etc.). */
   private buildElectronicsTileSet(): Set<string> {
-    const out = new Set<string>();
-    for (const item of this.layout.furniture) {
-      const entry = getCatalogEntry(item.type);
-      if (!entry || entry.category !== 'electronics') continue;
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          out.add(`${item.col + dc},${item.row + dr}`);
-        }
-      }
-    }
-    return out;
+    return electronicsTileSet(this.layout.furniture);
   }
 
   /** Find the area label assigned to a seat's tile, or null. Public for e2e
@@ -421,31 +517,9 @@ export class OfficeState {
     return tiles[idx] ?? null;
   }
 
-  /**
-   * Does this seat face an electronics tile (PC, monitor)? Mirrors the
-   * forward-and-flanking scan used by furniture auto-state.
-   */
-  private isSeatFacingElectronics(seat: Seat, electronicsTiles: Set<string>): boolean {
-    const { dCol, dRow } = seatFacingOffset(seat.facingDir);
-    for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
-      const tileCol = seat.seatCol + dCol * d;
-      const tileRow = seat.seatRow + dRow * d;
-      if (electronicsTiles.has(`${tileCol},${tileRow}`)) return true;
-      if (dCol !== 0) {
-        if (
-          electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
-          electronicsTiles.has(`${tileCol},${tileRow + 1}`)
-        ) {
-          return true;
-        }
-      } else if (
-        electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
-        electronicsTiles.has(`${tileCol + 1},${tileRow}`)
-      ) {
-        return true;
-      }
-    }
-    return false;
+  /** Does this seat face an electronics tile (PC, monitor)? The shared auto-on rule (office/layout/seatElectronics.ts). */
+  private isSeatFacingElectronics(seat: Seat, electronicsTiles: ReadonlySet<string>): boolean {
+    return seatFacesElectronics(seat, electronicsTiles);
   }
 
   /**
@@ -783,6 +857,29 @@ export class OfficeState {
     return uid;
   }
 
+  /** A free workstation of any detected office (office order, then the usual PC-bias pick), or null: no detection, or none is free. */
+  private freeWorkstationPick(): string | null {
+    const detection = this.officeDetection;
+    if (!detection) return null;
+    const electronics = this.buildElectronicsTileSet();
+    for (const office of detection.offices) {
+      const free = office.workstationIds.filter((uid) => this.seats.get(uid)?.assigned === false);
+      if (free.length > 0) return this.pickFromSeats(free, electronics);
+    }
+    return null;
+  }
+
+  /** The first free table seat (desk-facing, no electronics) in office order then seat order, or null: no detection, or none is free. */
+  private freeTablePick(): string | null {
+    const detection = this.officeDetection;
+    if (!detection) return null;
+    for (const office of detection.offices) {
+      const free = office.tableIds.find((uid) => this.seats.get(uid)?.assigned === false);
+      if (free !== undefined) return free;
+    }
+    return null;
+  }
+
   /**
    * DI seating: seat a character that holds none in a FREE seat (its zone, then an unzoned seat, then any, as
    * `findFreeSeat` orders them) and walk it there. False when it already has a seat or none is free.
@@ -790,7 +887,10 @@ export class OfficeState {
   seatIfFree(agentId: number): boolean {
     const ch = this.characters.get(agentId);
     if (!ch || ch.isSubagent || ch.seatId) return false;
-    const seatId = this.findFreeSeat(ch.folderName);
+    // with the three offices detected a deskless character takes a free WORKSTATION first, then a free table seat (no monitor), and an other chair
+    // only when none of those is free anywhere
+    const seatId =
+      this.freeWorkstationPick() ?? this.freeTablePick() ?? this.findFreeSeat(ch.folderName);
     if (!seatId) return false;
     this.reassignSeat(agentId, seatId);
     return ch.seatId === seatId;
@@ -1431,6 +1531,55 @@ export class OfficeState {
     }
   }
 
+  /** Turn the reception desk's receptionist on (DI mode) or off. Idempotent. */
+  setReceptionistEnabled(enabled: boolean): void {
+    if (this.receptionistEnabled === enabled) return;
+    this.receptionistEnabled = enabled;
+    // the post, its reserved workstation, the occupied tile and the three-office detection are all derived from the layout while the DI
+    // office is on: re-derive them (a layout with none of them changes nothing here), and keep characters on valid seats
+    const before = this.seatingKey();
+    this.deriveSeating(this.layout);
+    this.walkableTiles = livingTiles(
+      this.layout,
+      this.tileMap,
+      this.blockedTiles,
+      this.seats,
+      this.officeDetection,
+    );
+    this.reseatCharacters();
+    this.rebuildReceptionist();
+    // the residents' plan reads the post and the offices: rebuild them only if those changed
+    if (this.ambient && before !== this.seatingKey()) this.rebuildAmbient();
+  }
+
+  /** What the ambient plan reads from the seating derivation (a change means the residents are rebuilt). */
+  private seatingKey(): string {
+    const post = this.receptionPost;
+    return JSON.stringify([
+      post ? [post.standCol, post.standRow, post.tileBlocked] : null,
+      this.officeDetection?.offices.map((o) => [o.label, o.seatIds.length, o.workstationIds.length + o.tableIds.length]) ?? null,
+    ]);
+  }
+
+  /** Derive the receptionist from the loaded layout: standing at its post, facing the desk, present
+   *  at once (no spawn effect: reduced motion and a reload see the same thing). Null when disabled
+   *  or when the layout has no reception desk. */
+  private rebuildReceptionist(): void {
+    this.receptionist = null;
+    const post = this.receptionPost; // derived with the seating (deriveSeating)
+    if (!post) return;
+    const ch = createCharacter(DI_RECEPTIONIST_ID, DI_RECEPTIONIST_PALETTE, null, null, 0);
+    ch.isReceptionist = true;
+    ch.state = CharacterState.IDLE;
+    ch.isActive = false;
+    ch.dir = Direction.DOWN;
+    ch.x = post.standCol * TILE_SIZE + TILE_SIZE / 2;
+    ch.y = post.standRow * TILE_SIZE + TILE_SIZE / 2;
+    ch.tileCol = post.standCol;
+    ch.tileRow = post.standRow;
+    this.receptionist = ch;
+  }
+
   /** Turn the ambient population on (DI mode) or off. Idempotent. */
   setAmbientEnabled(enabled: boolean): void {
     if (this.ambientEnabled === enabled && (enabled ? this.ambient !== null : this.ambient === null))
@@ -1442,24 +1591,94 @@ export class OfficeState {
 
   private rebuildAmbient(): void {
     this.hoveredAmbientId = null;
+    // The residents' mask never blocks the receptionist's stand tile: residents already give way to it like to an agent's, and no plan
+    // targets it (`postTile`). That keeps every remote resident's plan identical to the previous build.
+    const walkBlocked = this.ambientBlockedTiles();
     const line = this.ambientEnabled
-      ? deriveTransitLine(this.layout, (c, r) => isWalkable(c, r, this.tileMap, this.blockedTiles))
+      ? deriveTransitLine(this.layout, (c, r) => isWalkable(c, r, this.tileMap, walkBlocked))
       : null;
     this.ambient = this.ambientEnabled
-      ? buildAmbientWorld({
-          layout: this.layout,
-          tileMap: this.tileMap,
-          blockedTiles: this.blockedTiles,
-          homeRegions: livingRegions(this.layout, footprintOf),
-          seats: [...this.seats.values()],
-          transit: line,
-        })
+      ? buildAmbientWorld(this.ambientBuildInput(walkBlocked, line))
       : null;
     this.transit = this.ambient && line ? new TransitWorld(line, this.ambient) : null;
     // a saved snapshot applies ONCE, to the first world built after it arrived, and only if its world
     // fingerprint matches (another layout or an import discards it): never a duplicate, never a
     // second application
     if (this.ambient && this.pendingAmbientSnapshot !== null) this.tryPendingSnapshot();
+  }
+
+  /** `blockedTiles` as the residents' walk mask sees them: the furniture, without the receptionist's stand tile. */
+  private ambientBlockedTiles(): Set<string> {
+    if (!this.standTileKey) return this.blockedTiles;
+    const blocked = new Set(this.blockedTiles);
+    blocked.delete(this.standTileKey);
+    return blocked;
+  }
+
+  /** The ambient world's inputs for THIS layout (the new plan). Without a reception post and without detected offices they are the previous build's. */
+  private ambientBuildInput(
+    walkBlocked: Set<string>,
+    line: ReturnType<typeof deriveTransitLine>,
+  ): Parameters<typeof buildAmbientWorld>[0] {
+    const post = this.receptionPost;
+    const detection = this.officeDetection;
+    const cols = this.layout.cols;
+    // seat zones: the eligible seats, plus the receptionist's own workstation (residents keep clear of it as they always did)
+    const zoneSeats = detection
+      ? [...this.seats.values(), ...this.legacySeatList.filter((s) => this.reservedSeatIds.has(s.uid))]
+      : this.legacySeatList;
+    const input: Parameters<typeof buildAmbientWorld>[0] = {
+      layout: this.layout,
+      tileMap: this.tileMap,
+      blockedTiles: walkBlocked,
+      homeRegions: livingRegions(this.layout, footprintOf),
+      seats: zoneSeats,
+      transit: line,
+    };
+    if (post) {
+      input.postedReceptionist = true;
+      // The fixed-post route block exists only while the tile really is blocked. In the corridor fallback (`tileBlocked` false: blocking it would cut a
+      // sole passage) it stays passable — residents may walk through and briefly overlap the decorative receptionist — so no plan or route avoids it.
+      if (post.tileBlocked) input.postTile = post.standRow * cols + post.standCol;
+    }
+    if (detection) {
+      const seatOf = (uid: string) => this.allSeatsByUid().get(uid);
+      input.offices = {
+        labels: detection.offices.map((o) => o.label),
+        legacySeats: this.legacySeatList,
+        // the residents' WORK rooms are the rooms holding a desk-facing seat — a workstation or a table seat — exactly the input they always had
+        workSeats: detection.offices
+          .flatMap((o) => [...o.workstationIds, ...o.tableIds])
+          .map(seatOf)
+          .filter((s): s is Seat => s !== undefined),
+      };
+    }
+    return input;
+  }
+
+  /** Every eligible seat by uid (the seats the offices were detected over): a small helper for the residents' plan inputs. */
+  private allSeatsByUid(): ReadonlyMap<string, Seat> {
+    return this.seats;
+  }
+
+  /**
+   * The PREDECESSOR residents (the previous build's plan for this exact layout): the same builder with the previous inputs — furniture-only
+   * blocked tiles, the home seats, no post, no offices. Built only on demand, to recognise a snapshot saved by the previous build
+   * (applyAmbientSnapshot's migration); null when the residents are off.
+   */
+  predecessorAmbient(): { world: AmbientWorld; transit: TransitWorld | null } | null {
+    if (!this.ambientEnabled) return null;
+    const blocked = getBlockedTiles(this.layout.furniture);
+    const line = deriveTransitLine(this.layout, (c, r) => isWalkable(c, r, this.tileMap, blocked));
+    const world = buildAmbientWorld({
+      layout: this.layout,
+      tileMap: this.tileMap,
+      blockedTiles: blocked,
+      homeRegions: livingRegions(this.layout, footprintOf),
+      seats: this.legacySeatList,
+      transit: line,
+    });
+    return { world, transit: line ? new TransitWorld(line, world) : null };
   }
 
   /** What residents must give way to this tick: every real agent's tile (and the tile it is about
@@ -1473,6 +1692,10 @@ export class OfficeState {
       const next = ch.path[0];
       if (next) agentTiles.add(next.row * cols + next.col);
     }
+    // the receptionist holds its post: residents give way to its tile like to an agent's — only while the tile is really blocked; in the corridor
+    // fallback (`tileBlocked` false) it is a passage, so residents (and agents) may walk through and briefly overlap the decorative receptionist
+    if (this.receptionist && this.receptionPost?.tileBlocked)
+      agentTiles.add(this.receptionist.tileRow * cols + this.receptionist.tileCol);
     const assignedSeats: string[] = [];
     for (const [uid, seat] of this.seats) if (seat.assigned) assignedSeats.push(uid);
     return { agentTiles, assignedSeats };
@@ -1483,6 +1706,8 @@ export class OfficeState {
   setAmbientSnapshot(snapshot: unknown): void {
     if (snapshot === null || snapshot === undefined) return;
     this.pendingAmbientSnapshot = snapshot;
+    this.ambientAttemptRecorded = false;
+    this.ambientSaveWithheld = null;
     if (this.ambient) this.tryPendingSnapshot();
   }
 
@@ -1490,7 +1715,9 @@ export class OfficeState {
    *  never held for a later world (unlike the handshake snapshot, which may arrive before its world). */
   importAmbientSnapshot(snapshot: unknown): AmbientRestoreResult {
     const result: AmbientRestoreResult = this.ambient
-      ? applyAmbientSnapshot(this.layout, this.ambient, this.transit, snapshot)
+      ? applyAmbientSnapshot(this.layout, this.ambient, this.transit, snapshot, () =>
+          this.predecessorAmbient(),
+        )
       : { outcome: 'refused', reason: 'the residents are not running in this view', residentsRestored: 0, aboardRestored: 0, waitingRestored: 0, trainsRestored: 0 };
     this.lastAmbientRestore = result;
     return result;
@@ -1500,14 +1727,142 @@ export class OfficeState {
    *  stays held. The fingerprint guarantees it can only ever apply to the world it was saved from. */
   private tryPendingSnapshot(): void {
     if (!this.ambient || this.pendingAmbientSnapshot === null) return;
-    const result = applyAmbientSnapshot(this.layout, this.ambient, this.transit, this.pendingAmbientSnapshot);
+    const result = applyAmbientSnapshot(
+      this.layout,
+      this.ambient,
+      this.transit,
+      this.pendingAmbientSnapshot,
+      () => this.predecessorAmbient(),
+    );
     this.lastAmbientRestore = result;
+    this.ambientAttemptRecorded = true;
+    // a snapshot of the previous build's plan that cannot be migrated safely is left exactly as it is: nothing is saved over it this session
+    if (result.outcome === 'refused' && result.reason?.startsWith('migration_unsupported:'))
+      this.ambientSaveWithheld = result.reason;
     if (result.outcome !== 'other-world') this.pendingAmbientSnapshot = null;
   }
 
-  /** The current snapshot to save (null while the residents are off). */
+  /** The current snapshot (null while the residents are off). Pure: it does not decide whether it may be SAVED (see `serializeAmbientForSave`). */
   serializeAmbient(savedAt: number): AmbientSaveState | null {
     return this.ambient ? serializeAmbient(this.layout, this.ambient, this.transit, savedAt) : null;
+  }
+
+  /**
+   * The snapshot to SAVE, or null when saving now could destroy a file nobody has read yet: a handshake snapshot is held and no restore attempt has
+   * been recorded against it (`lastAmbientRestore`), or its migration was refused as unsupported (the file stays exactly as it is, for this session).
+   * Once the attempt is recorded — applied, migrated, refused for any other reason, or a snapshot of another world — saving proceeds as always.
+   */
+  serializeAmbientForSave(savedAt: number): AmbientSaveState | null {
+    if (!this.ambient || this.ambientSaveWithheld !== null) return null;
+    if (this.pendingAmbientSnapshot !== null && !this.ambientAttemptRecorded) return null;
+    return this.serializeAmbient(savedAt);
+  }
+
+  /** DI office only: the canonical identity key and how each real character was placed (set by the DI reconciliation; evidence, never state). */
+  private readonly diPlacementNotes = new Map<
+    number,
+    { identityKey: string; placement: 'preserved' | 'fresh' | 'fallback' | 'unplanned' }
+  >();
+
+  /** Record who a DI character is and how its seat was decided. Read-only evidence for `officeAssignment`; it drives nothing. */
+  noteDiPlacement(
+    id: number,
+    identityKey: string,
+    placement: 'preserved' | 'fresh' | 'fallback' | 'unplanned',
+  ): void {
+    this.diPlacementNotes.set(id, { identityKey, placement });
+  }
+
+  /** How many identities sitting now did NOT fit the seat-preference record budget at the last reconcile (ordinarily 0). Evidence only. */
+  private seatPreferencesOverBudget = 0;
+
+  /** Record the over-budget count of the identity-keyed seat preferences (a counted condition surfaced in `officeAssignment`). */
+  noteSeatPreferenceOverBudget(count: number): void {
+    this.seatPreferencesOverBudget = count;
+  }
+
+  /** Forget the notes of characters that are no longer drawn. */
+  pruneDiPlacementNotes(): void {
+    for (const id of this.diPlacementNotes.keys()) if (!this.characters.has(id)) this.diPlacementNotes.delete(id);
+  }
+
+  /**
+   * READ-ONLY EVIDENCE of the three-office seating: the detected offices (seats vs workstations, the seat lists), the receptionist's reserved seats,
+   * and for every real character its identity, seat, office and what kind of seat it holds — a desk-facing seat with no electronics is reported as
+   * 'table, not workstation', any other non-workstation seat as 'chair, not workstation'. Null while no offices are detected (legacy seating).
+   */
+  officeAssignment(): {
+    offices: Array<{
+      index: number;
+      label: string;
+      kind: 'home' | 'district';
+      seats: number;
+      workstations: number;
+      tables: number;
+      otherChairs: number;
+      seatIds: string[];
+      workstationIds: string[];
+      tableIds: string[];
+    }>;
+    reservedSeatIds: string[];
+    /** Identities sitting now that did not fit the seat-preference record budget (ordinarily 0; never dropped silently). */
+    seatPreferencesOverBudget: number;
+    characters: Array<{
+      id: number;
+      identityKey: string | null;
+      seatId: string | null;
+      office: string | null;
+      seatKind: 'workstation' | 'table, not workstation' | 'chair, not workstation' | null;
+      placement: 'preserved' | 'fresh' | 'fallback' | 'unplanned' | null;
+    }>;
+  } | null {
+    const detection = this.officeDetection;
+    if (!detection) return null;
+    const characters = [...this.characters.values()]
+      .filter((ch) => !ch.isSubagent)
+      .map((ch) => {
+        const seat = ch.seatId;
+        const officeIndex = seat ? detection.officeIndexBySeat.get(seat) : undefined;
+        const office = officeIndex === undefined ? undefined : detection.offices[officeIndex];
+        const note = this.diPlacementNotes.get(ch.id);
+        return {
+          id: ch.id,
+          identityKey: note?.identityKey ?? null,
+          seatId: seat,
+          office: office?.label ?? null,
+          seatKind: !seat || !office
+            ? null
+            : office.workstationIds.includes(seat)
+              ? ('workstation' as const)
+              : office.tableIds.includes(seat)
+                ? ('table, not workstation' as const)
+                : ('chair, not workstation' as const),
+          placement: note?.placement ?? null,
+        };
+      })
+      .sort((a, b) => a.id - b.id);
+    return {
+      offices: detection.offices.map((o) => ({
+        index: o.index,
+        label: o.label,
+        kind: o.kind,
+        seats: o.seatIds.length,
+        workstations: o.workstationIds.length,
+        tables: o.tableIds.length,
+        otherChairs: o.chairIds.length,
+        seatIds: [...o.seatIds],
+        workstationIds: [...o.workstationIds],
+        tableIds: [...o.tableIds],
+      })),
+      reservedSeatIds: [...detection.reservedSeatIds],
+      seatPreferencesOverBudget: this.seatPreferencesOverBudget,
+      characters,
+    };
+  }
+
+  /** Why saving is withheld for the whole session (a refused migration), or null. Evidence for the UI and tests. */
+  get ambientSaveWithheldReason(): string | null {
+    return this.ambientSaveWithheld;
   }
 
   /**
@@ -1670,6 +2025,20 @@ export class OfficeState {
     return this.ambient?.residentAt(worldX, worldY) ?? null;
   }
 
+  /** Whether a world-pixel point is on the reception desk or its receptionist (always false without
+   *  a reception post). Callers check real agents, pets and residents FIRST. */
+  getReceptionAt(worldX: number, worldY: number): boolean {
+    return this.receptionPost
+      ? isReceptionHit(
+          this.receptionPost,
+          worldX,
+          worldY,
+          TILE_SIZE,
+          CHARACTER_HIT_HEIGHT - TILE_SIZE,
+        )
+      : false;
+  }
+
   /** The `saveAgentSeats` payload: palette, hue and seat for every agent worth
    *  restoring. Sub-agents are excluded because they are derived state the
    *  runtime re-materializes, and the greeter never reaches here at all —
@@ -1692,6 +2061,7 @@ export class OfficeState {
   getCharacters(): Character[] {
     const chars = Array.from(this.characters.values());
     if (this.greeter) chars.push(this.greeter);
+    if (this.receptionist) chars.push(this.receptionist);
     return chars;
   }
 

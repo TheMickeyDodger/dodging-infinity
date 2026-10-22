@@ -3190,7 +3190,8 @@ assert [ast.literal_eval(_catalog_http_literals[_name.id])
 #           writes, removes, renames or links;
 #       (b) target_runtime/mission_state.py, the read-only Mission State
 #           composer: exactly these imports; from pr_delivery it CALLS only
-#           validated_receipt and names only AuthorizationError (never an
+#           validated_receipt and validated_attestation (D1) and names only
+#           AuthorizationError and delivery_proposal_digest (D1) (never an
 #           attest_* path, a store, a transport or a machine); from Mission
 #           Core it constructs MissionService once and calls only observe;
 #           it calls no save / lock / record_* / mint_* / apply_* /
@@ -3270,9 +3271,19 @@ _ms_attributes = {}
 for _node in ast.walk(_ms_tree):
     if isinstance(_node, ast.Attribute) and isinstance(_node.value, ast.Name):
         _ms_attributes.setdefault(_node.value.id, set()).add(_node.attr)
-assert _ms_attributes.get('mission_parent') == {'validated_receipt'}, (
+# D1 (deliberate, exact; Lead and Root, BOUNDARY-DECISIONS.md "D1 exact contract
+# inventory"): the delivery-presentations reader that lives in this module may
+# also call ONE more pure, read-only name of the seam, validated_attestation
+# (the unchanged validator over a private copy, returning only the delivery id
+# and the proposal digest its attestation names; pinned whole-program in
+# tests/test_mission_core.py), and the delivery layer's pure
+# delivery_proposal_digest (the content-address check of a presented proposal).
+# Nothing else is added: the import rows and the importer set above are unchanged.
+assert _ms_attributes.get('mission_parent') == {
+    'validated_receipt', 'validated_attestation'}, (
     _ms_attributes.get('mission_parent'))
-assert _ms_attributes.get('authorization') == {'AuthorizationError'}, (
+assert _ms_attributes.get('authorization') == {
+    'AuthorizationError', 'delivery_proposal_digest'}, (
     _ms_attributes.get('authorization'))
 assert _ms_attributes.get('service') == {'MissionService'}, (
     _ms_attributes.get('service'))
@@ -3285,7 +3296,10 @@ _ms_read_calls = sorted(
     if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
     and isinstance(n.func.value, ast.Name)
     and n.func.value.id in ('mission_parent', 'missions'))
-assert _ms_read_calls == [('mission_parent', 'validated_receipt'),
+# D1 (deliberate, exact): the reader adds exactly ONE validated_attestation call
+# (never with a step); the validated_receipt and observe calls are unchanged.
+assert _ms_read_calls == [('mission_parent', 'validated_attestation'),
+                          ('mission_parent', 'validated_receipt'),
                           ('missions', 'observe')], _ms_read_calls
 _ms_service_builds = [
     n for n in ast.walk(_ms_tree) if isinstance(n, ast.Call)

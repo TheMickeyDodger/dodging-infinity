@@ -628,14 +628,15 @@
   align-self: flex-start;
 }
 
-/* the compact reception desk */
-.di-op-theme [data-testid='di-reception-entry'] {
+/* the compact reception desk, in the SIDEBAR's scrolling region only: the full-size reception inbox
+   (a dialog, outside .di-op-main) has its own cards and is never capped or a nested scroller */
+.di-op-theme .di-op-main [data-testid='di-reception-entry'] {
   padding: 10px 12px;
   background: var(--op-surface);
   border: 1px solid var(--op-line);
   border-radius: 10px;
 }
-.di-op-theme [data-testid='di-reception-entries'] {
+.di-op-theme .di-op-main [data-testid='di-reception-entries'] {
   max-height: 220px;
 }
 
@@ -981,4 +982,62 @@
 }
 details.di-op-inspector-section {
   gap: 6px;
+}
+
+/* ---------- reception inbox (the full-size dialog) ----------
+   The dialog body is the ONE scroll region: the entry list is never capped (no max-height) and never
+   a nested scroller. Cards say what happened, why it needs a person and what they can do next. */
+
+.di-rc-section {
+  max-width: 760px;
+  /* never shrink inside the dialog's scrolling column: .di-op-find carries min-height:0 for the sidebar,
+     and a shrunk section lets the one below it overlap its controls */
+  flex: 0 0 auto;
+  min-height: auto;
+}
+.di-rc-unknowns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-rc-list {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.di-rc-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+.di-rc-facts dt {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-rc-facts dd {
+  margin: 0;
+  color: var(--op-text);
+  overflow-wrap: anywhere;
+}
+.di-rc-line {
+  display: block;
+}
+.di-rc-reason {
+  padding-left: 12px;
+  color: var(--op-muted);
+  font-size: 12px;
+}
+@media (max-width: 560px) {
+  .di-rc-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

@@ -71,6 +71,7 @@ describe('the stylesheet’s colour tokens are solid and complete', () => {
       'danger-bg',
       'danger-border',
       'tab-on-bg',
+      'selected-edge',
       'info-bg',
       'warn-bg',
       'block-bg',
@@ -143,6 +144,11 @@ describe('boundaries and focus are visible (3:1)', () => {
       expect(ratio('border', surface), `border on ${surface}`).toBeGreaterThanOrEqual(BOUNDARY);
     }
     expect(ratio('danger-border', 'danger-bg')).toBeGreaterThanOrEqual(BOUNDARY);
+  });
+  it('the selected tab, the selected row and the primary action edge stand out from the surfaces behind them', () => {
+    for (const surface of ['bg', 'surface', 'surface-2']) {
+      expect(ratio('selected-edge', surface), `selected-edge on ${surface}`).toBeGreaterThanOrEqual(BOUNDARY);
+    }
   });
   it('the always-drawn scrollbar thumb stands out from its track', () => {
     expect(ratio('scroll-thumb', 'scroll-track')).toBeGreaterThanOrEqual(BOUNDARY);

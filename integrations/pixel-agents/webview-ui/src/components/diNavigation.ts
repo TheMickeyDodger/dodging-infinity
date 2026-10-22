@@ -19,8 +19,8 @@ import type {
 import { formatEpoch, formatReviewPreamble, missionHeadline } from './diOfficeFormat.js';
 
 /**
- * The keyboard focus indicator: the SAME classes as a reception desk entry (`DiReceptionDesk`'s
- * proven mechanism), drawn inside the element so a scrolling list never clips it.
+ * The keyboard focus indicator: the reception inbox's proven mechanism (the one the compact
+ * reception desk used before it), drawn inside the element so a scrolling list never clips it.
  */
 export const DI_FOCUS_RING =
   'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent';

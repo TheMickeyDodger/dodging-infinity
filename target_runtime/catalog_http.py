@@ -4,6 +4,7 @@
     dicatalog_http.py --registry DIR --discovery-file PATH [--port N]
                       [--herd-root PATH ...] [--discover-roots]
                       [--contract-version {1,2}] [--delivery-store DIR]
+                      [--delivery-presentations DIR]
 
 What it is: ``dicatalog.py serve`` carried over HTTP instead of JSON lines,
 for a SERVER-SIDE consumer. ONE long-lived ``CatalogService`` is built at
@@ -710,6 +711,11 @@ def _parser():
     parser.add_argument("--delivery-store", metavar="DIR",
                         help="version 2 only: the explicitly registered"
                         " delivery store directory")
+    parser.add_argument("--delivery-presentations", metavar="DIR",
+                        help="version 2 only: the explicitly registered Grok"
+                        " Bot state directory whose delivery presentations"
+                        " are read (read-only; only the"
+                        " delivery_presentations map)")
     return parser
 
 
@@ -723,7 +729,9 @@ def main(argv=None, clock=None, listing_argv=None):
     clock = clock or snapshot_module.production_clock
     paths = [args.registry, args.discovery_file] + list(
         args.herd_root or []) + ([args.delivery_store]
-                                 if args.delivery_store else [])
+                                 if args.delivery_store else []) + (
+            [args.delivery_presentations]
+            if args.delivery_presentations else [])
     for path in paths:
         if not os.path.isabs(path):
             print("dicatalog_http: paths must be absolute: %s" % path,
@@ -735,6 +743,10 @@ def main(argv=None, clock=None, listing_argv=None):
     if args.delivery_store and args.contract_version == 1:
         print("dicatalog_http: --delivery-store needs --contract-version 2",
               file=sys.stderr)
+        return EXIT_USAGE
+    if args.delivery_presentations and args.contract_version == 1:
+        print("dicatalog_http: --delivery-presentations needs"
+              " --contract-version 2", file=sys.stderr)
         return EXIT_USAGE
     roots = args.herd_root or None
     discover = bool(args.discover_roots)
@@ -757,7 +769,8 @@ def main(argv=None, clock=None, listing_argv=None):
     try:
         options = {} if args.contract_version == 1 else {
             "contract_version": args.contract_version,
-            "delivery_store": args.delivery_store}
+            "delivery_store": args.delivery_store,
+            "delivery_presentations": args.delivery_presentations}
         owner = catalog_module.CatalogService(args.registry, clock, roots,
                                               argv_for_listing,
                                               discover=discover, **options)

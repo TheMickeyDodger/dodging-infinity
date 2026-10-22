@@ -1,7 +1,18 @@
 import { HALO_AURA_ALPHAS, HALO_AURA_CACHE_MAX_ENTRIES, HALO_AURA_RADIUS_PX, HALO_AURA_RGB } from '../../constants.js';
+import { registerRenderCache } from '../renderCaches.js';
 import type { SpriteData } from '../types.js';
 
 const zoomCaches = new Map<number, WeakMap<SpriteData, HTMLCanvasElement>>();
+
+/** The render-cache lifecycle (renderCaches.ts): forget every cached bitmap, so the next draw rebuilds it. The canvases key on the
+ *  sprite data, which a colorize reset does not replace (characters, uncolored furniture), so they need their own clear. The outline
+ *  and aura caches below hold sprite DATA, not bitmaps: their canvases are among these. */
+export function clearSpriteCaches(): void {
+  zoomCaches.clear();
+}
+
+// joins the lifecycle (renderCaches.ts does not import this DOM module); it holds no carpet-layer pixels, so it reports none
+registerRenderCache({ reset: clearSpriteCaches, pixels: () => 0 });
 
 // ── Outline sprite generation ─────────────────────────────────
 

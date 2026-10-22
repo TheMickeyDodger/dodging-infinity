@@ -332,6 +332,27 @@ def validated_receipt(delivery_document, step):
     )
 
 
+def validated_attestation(delivery_document):
+    """Validate FIRST, through the unchanged contract, over a private
+    structural copy of the caller's document, and return the identity of
+    the delivery and the proposal digest its operator attestation names,
+    or None for that digest when the record holds no attestation (a
+    ``local_terminal`` authorization is a valid record that attests no
+    presented proposal). Read-only and pinned by whole-program AST
+    equality: ``copied`` is bound exactly once from ``_plain_copy``, the
+    only calls are ``_plain_copy`` and the unchanged ``validate_authorization``,
+    and both returned values are reads of ``copied``. Raises the contract's
+    ``AuthorizationError`` on any validation failure, so a record that is
+    malformed or tampered can never name a digest. It reads no receipt and
+    takes no step."""
+    copied = _plain_copy(delivery_document)
+    delivery_authorization.validate_authorization(copied)
+    if "attestation" not in copied["human_authorization"]:
+        return (copied["delivery_id"], None)
+    return (copied["delivery_id"],
+            copied["human_authorization"]["attestation"]["proposal_digest_sha256"])
+
+
 def attest_validated_receipt(delivery_document, step, mission_service,
                              operation_id, expected_sequence, context):
     """Preflight, validate through ``validated_receipt``, check the Mission

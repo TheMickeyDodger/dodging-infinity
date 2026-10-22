@@ -7,7 +7,9 @@
  *   - engine/carpetPlan.ts the carpet junction plan, and renderer.ts the pre-composed carpet layer
  *     (one entry each; the renderer REGISTERS its layer here, so this module stays DOM-free).
  * spriteCache.ts keeps a canvas per zoom in WeakMaps KEYED by those sprites, so its canvases are
- * released with them: bounding the strong caches is what bounds the canvases.
+ * released with them: bounding the strong caches is what bounds the canvases. It registers a clear of
+ * its own (clearSpriteCaches), as does city/cityRender.ts for its two light sprites; neither reports
+ * pixels, so renderCacheStats().carpetLayerPixels stays the carpet layer's.
  *
  * LIFECYCLE (both are clears at a safe point between frames, never mid-frame; whatever the next
  * frame needs is recomputed lazily on first use):
@@ -17,6 +19,12 @@
  *   - boundRenderCaches(): on every layout REBUILD (editor edits, undo/redo, DI reshapes), a clear
  *     only when the caches together exceed RENDER_CACHE_MAX_ENTRIES — so edits that keep bringing
  *     NEW palettes cannot grow them without bound, while ordinary edits keep their warm caches;
+ *   - a canvas context that is lost and RESTORED comes back EMPTY, and every bitmap drawn once and kept
+ *     (the sprite canvases, the carpet layer, the city's light sprites) is blank with it. The supported
+ *     condition, exactly: a `contextlost` or `contextrestored` event on the office canvas
+ *     (engine/gameLoop.ts) or on the carpet layer's canvas (engine/renderer.ts) calls resetRenderCaches().
+ *     A loss that reaches neither (the small cached canvases carry no listeners of their own) is not
+ *     detected, nor is one on the World Map's own canvases;
  *   - EDITOR PREVIEWS (brush swatches for floor, wall and carpet, catalogue thumbnails, the
  *     placement ghost) never enter the layout caches: they use the PREVIEW caches
  *     (colorize.getPreviewColorizedSprite, carpetTiles.getCarpetPreviewJunctionSprite), bounded AT

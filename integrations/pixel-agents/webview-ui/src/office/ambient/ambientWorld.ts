@@ -28,6 +28,7 @@ import {
   AMBIENT_IDLE_FRAME_SEC,
   AMBIENT_LEG_CACHE_PER_RESIDENT,
   AMBIENT_LOCAL_ROUTE_RADIUS,
+  AMBIENT_OFFICE_VISIT_EVERY,
   AMBIENT_PALACE_MIN,
   AMBIENT_PATH_MAX_EXPANSIONS,
   AMBIENT_PATH_MAX_LENGTH,
@@ -36,6 +37,9 @@ import {
   AMBIENT_PATROL_RADIUS_TILES,
   AMBIENT_POPULATION_CAP,
   AMBIENT_POPULATION_ORDINARY,
+  AMBIENT_POST_DETOUR_MAX_CROSSINGS,
+  AMBIENT_POST_DETOUR_MAX_EXPANSIONS,
+  AMBIENT_POST_DETOUR_MAX_LENGTH,
   AMBIENT_POST_DWELL_FACTOR,
   AMBIENT_RIDE_WAIT_MAX_SEC,
   AMBIENT_RIDER_KIND_WEIGHTS,
@@ -174,6 +178,28 @@ export interface AmbientBuildInput {
   onDutyCap?: number;
   /** A working office shows at most ceil(T / this) on duty, T being its pool's resident-eligible tiles (`pool.tiles.length`); 0 or less: no density bound, only the cap. Default AMBIENT_WORKING_OFFICE_TILES_PER_RESIDENT. */
   onDutyTilesPerResident?: number;
+  /**
+   * P2-B: the layout has the DI reception post, so the Palace gives up its ambient receptionist slots (see PALACE_JOBS_WITH_POST).
+   * Absent or false: the plan is byte-identical to the previous build (the predecessor derivation relies on it).
+   */
+  postedReceptionist?: boolean;
+  /**
+   * The receptionist's stand tile (index), when the post exists: no resident's own post or stop is ever that tile (residents already
+   * give way to it at run time; this keeps every plan off it too). Absent: byte-identical to the previous build.
+   */
+  postTile?: number | null;
+  /**
+   * P2-C: the detected WORKING OFFICES. Their residents stop in the COMMON rooms (lobby, corridor, courtyard), not in the work rooms; every
+   * other place — and every count, job and cross-world stop — is computed exactly as before. Absent: byte-identical to the previous build.
+   */
+  offices?: {
+    /** The place labels that are working offices ('Palace' and the detected office districts). */
+    labels: readonly string[];
+    /** The seats of the PREVIOUS build (home seats, reserved bench included): pool sizing and cross-world stops keep using them, so no count moves. */
+    legacySeats: readonly AmbientSeat[];
+    /** The offices' WORKSTATIONS: a room holding one is a work room. */
+    workSeats: readonly AmbientSeat[];
+  };
 }
 
 /** One resident's validated restore step (AmbientWorld.planRestore / commitRestore). */
@@ -268,7 +294,16 @@ interface Pool {
   rooms: number[][];
   /** The legacy whole-floor pool of a layout without places. */
   fallback?: boolean;
+  /** A working office (P2-C): `tiles`/`contains` stay the previous build's (sizing and cross-world stops); the residents' OWN posts and stops use `stopTiles`/`stopContains`, in `rooms` = the common rooms. */
+  office?: boolean;
+  stopTiles?: number[];
+  stopContains?: (idx: number) => boolean;
+  /** An office's room count as the previous build counted it: the sizing minimum, "many-roomed" and rider rules keep using it. */
+  legacyRoomCount?: number;
 }
+
+/** A pool's room count for the sizing, many-roomed and rider rules (an office keeps the previous build's number). */
+const roomCountOf = (p: Pool): number => p.legacyRoomCount ?? p.rooms.length;
 
 /**
  * One WORKING OFFICE's duty roster (derived from the world and the clock; NEVER saved). `order` is the
@@ -733,7 +768,70 @@ export class AmbientWorld {
   }
 
   /** Bounded A* for short legs, the whole-world graph otherwise. */
+  /**
+   * The receptionist's fixed stand tile (an index) or -1. No route ever crosses it: residents give way to it like to an agent, but unlike an agent it
+   * never moves on, so a leg through it could only be retried forever. Set by the builder; the journey plan never depends on it.
+   */
+  postTile = -1;
+  /**
+   * READ-ONLY OBSERVER (evidence and tests; null in production): called at every give-way replan with the tile that blocked the resident and what blocked it —
+   * a real agent's tile (or the tile it is about to step onto, or the receptionist's while it is blocked) or an assigned seat's zone. It changes nothing.
+   */
+  blockObserver: ((tile: number, cause: 'agent' | 'seat-zone') => void) | null = null;
+  /** Legs detoured around the post, and legs that could not be (their resident moves on to its next stop). Evidence only. */
+  postDetours = 0;
+  postDetourFailures = 0;
+
+  /** A route from `from` to `to` that never crosses the post tile; `ok: false` when no bounded detour exists. */
   findRoute(from: number, to: number): { path: Int32Array; ok: boolean; same: boolean } {
+    const found = this.findRouteUnrestricted(from, to);
+    if (this.postTile < 0 || !found.ok || found.same || !found.path.includes(this.postTile)) return found;
+    const detoured = this.detourAroundPost(from, found.path);
+    if (detoured === null) {
+      this.postDetourFailures++;
+      return { path: new Int32Array(0), ok: false, same: false };
+    }
+    this.postDetours++;
+    return { path: detoured, ok: true, same: false };
+  }
+
+  /**
+   * Replace the segment of `path` around the post tile with a bounded local detour between the tiles before and after it (A* with the post avoided).
+   * Only this resident's own leg changes (it is cached per resident); the shared graph and every other plan are untouched. Null when the post is
+   * the destination, a detour needs more than the pinned bounds, or the leg crosses it too many times.
+   */
+  private detourAroundPost(from: number, path: Int32Array): Int32Array | null {
+    const cols = this.cols;
+    let out = path;
+    for (let crossing = 0; crossing < AMBIENT_POST_DETOUR_MAX_CROSSINGS; crossing++) {
+      const k = out.indexOf(this.postTile);
+      if (k < 0) return out;
+      if (k === out.length - 1) return null; // the post is never a leg's end
+      const a = k === 0 ? from : out[k - 1];
+      const b = out[k + 1];
+      const ac = a % cols;
+      const bc = b % cols;
+      const around = this.pathfinder.search(
+        ac,
+        (a - ac) / cols,
+        bc,
+        (b - bc) / cols,
+        AMBIENT_POST_DETOUR_MAX_EXPANSIONS,
+        AMBIENT_POST_DETOUR_MAX_LENGTH,
+        this.postTile,
+      );
+      if (around.status !== 'found') return null;
+      const detour = Int32Array.from(around.path, (p) => p.row * cols + p.col); // excludes a, includes b
+      const next = new Int32Array(k + detour.length + (out.length - (k + 2)));
+      next.set(out.subarray(0, k), 0);
+      next.set(detour, k);
+      next.set(out.subarray(k + 2), k + detour.length);
+      out = next;
+    }
+    return out.includes(this.postTile) ? null : out;
+  }
+
+  private findRouteUnrestricted(from: number, to: number): { path: Int32Array; ok: boolean; same: boolean } {
     const cols = this.cols;
     const fc = from % cols;
     const fr = (from - fc) / cols;
@@ -826,6 +924,7 @@ export class AmbientWorld {
         if (r.blocked >= AMBIENT_AGENT_BLOCK_REPLAN_SEC) {
           // Never through a real agent or onto an assigned seat's zone: re-plan instead.
           this.stats.agentBlockReplans++;
+          this.blockObserver?.(next, agentTiles.has(next) ? 'agent' : 'seat-zone');
           r.blocked = 0;
           r.state = 'need-path';
         }
@@ -902,33 +1001,68 @@ export class AmbientWorld {
       return `the snapshot holds ${entries.length} residents; this world has ${this.residents.length}`;
     const plan: RestorePlan[] = [];
     const seen = new Set<string>();
-    for (const [id, ri, col, row, code, timer] of entries) {
+    for (const entry of entries) {
+      const id = entry[0];
       const r = this.byId(id);
       if (!r || seen.has(id)) return `resident ${id} is not in this world`;
       seen.add(id);
-      if (ri < 0 || ri >= r.routine.length)
-        return `resident ${id}: routine index ${ri} outside its routine`;
-      const tile = row * this.cols + col;
-      if (code === 3) {
-        if (!r.rides || r.rides[ri] < 0)
-          return `resident ${id} is aboard with no ride pending at its leg`;
-        plan.push({ r, routineIndex: ri, tile, state: 'riding', timer: 0 });
-        continue;
-      }
-      if (!this.pathfinder.isWalkable(col, row) || !this.graph.connected(r.routine[0], tile))
-        return `resident ${id}: saved tile ${col},${row} is not reachable in this world`;
-      if (code === 2) {
-        if (!r.rides || r.rides[ri] < 0)
-          return `resident ${id} is waiting with no ride pending at its leg`;
-        if (!this.stationTiles.some((st) => st.has(tile)))
-          return `resident ${id} is waiting off any platform`;
-        plan.push({ r, routineIndex: ri, tile, state: 'waiting', timer });
-        continue;
-      }
-      const state: AmbientState = code === 1 ? 'need-path' : code === 4 ? 'retry' : 'dwell';
-      plan.push({ r, routineIndex: ri, tile, state, timer: code === 1 ? 0 : timer });
+      const one = this.planEntry(r, entry);
+      if (typeof one === 'string') return one;
+      plan.push(one);
     }
     return plan;
+  }
+
+  /** ONE saved resident's validation, exactly as `planRestore` always did it: its plan step, or the reason the snapshot does not fit. */
+  private planEntry(
+    r: AmbientResident,
+    entry: readonly [string, number, number, number, number, number],
+  ): RestorePlan | string {
+    const [id, ri, col, row, code, timer] = entry;
+    if (ri < 0 || ri >= r.routine.length)
+      return `resident ${id}: routine index ${ri} outside its routine`;
+    const tile = row * this.cols + col;
+    if (code === 3) {
+      if (!r.rides || r.rides[ri] < 0)
+        return `resident ${id} is aboard with no ride pending at its leg`;
+      return { r, routineIndex: ri, tile, state: 'riding', timer: 0 };
+    }
+    if (!this.pathfinder.isWalkable(col, row) || !this.graph.connected(r.routine[0], tile))
+      return `resident ${id}: saved tile ${col},${row} is not reachable in this world`;
+    if (code === 2) {
+      if (!r.rides || r.rides[ri] < 0)
+        return `resident ${id} is waiting with no ride pending at its leg`;
+      if (!this.stationTiles.some((st) => st.has(tile)))
+        return `resident ${id} is waiting off any platform`;
+      return { r, routineIndex: ri, tile, state: 'waiting', timer };
+    }
+    const state: AmbientState = code === 1 ? 'need-path' : code === 4 ? 'retry' : 'dwell';
+    return { r, routineIndex: ri, tile, state, timer: code === 1 ? 0 : timer };
+  }
+
+  /**
+   * The PARTIAL restore the predecessor migration uses: only the saved residents in `include` are planned, each through the SAME per-entry
+   * validation as `planRestore`; one that does not fit THIS world is reported in `invalid` (it starts fresh) instead of refusing the snapshot.
+   * Plans nothing about residents outside `include`; commit with `commitRestore`.
+   */
+  planPartialRestore(
+    entries: ReadonlyArray<readonly [string, number, number, number, number, number]>,
+    include: ReadonlySet<string>,
+  ): { plan: RestorePlan[]; invalid: Map<string, string> } {
+    const plan: RestorePlan[] = [];
+    const invalid = new Map<string, string>();
+    for (const entry of entries) {
+      if (!include.has(entry[0])) continue;
+      const r = this.byId(entry[0]);
+      if (!r) {
+        invalid.set(entry[0], 'not in this world');
+        continue;
+      }
+      const one = this.planEntry(r, entry);
+      if (typeof one === 'string') invalid.set(entry[0], one);
+      else plan.push(one);
+    }
+    return { plan, invalid };
   }
 
   /** The station a planned resident is riding to (its ride plan at its saved leg), or -1. */
@@ -1082,6 +1216,23 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     seatNeighbours.set(s.uid, zone);
     for (const t of zone) seatZone.add(t);
   }
+  // P2-C: the PREVIOUS build's seat zone (home seats, reserved bench included). An office pool's sizing tiles and cross-world stops keep
+  // using it, so no count and no remote resident moves when satellite chairs become seats. Without `offices` it IS the seat zone.
+  const officeLabels = new Set(input.offices?.labels ?? []);
+  const legacyZone = new Set<number>();
+  if (input.offices) {
+    for (const s of input.offices.legacySeats) {
+      legacyZone.add(s.seatRow * cols + s.seatCol);
+      for (const [dc, dr] of NEIGHBOURS) {
+        const c = s.seatCol + dc;
+        const r = s.seatRow + dr;
+        if (c >= 0 && r >= 0 && c < cols && r < rows && walk(r * cols + c)) legacyZone.add(r * cols + c);
+      }
+    }
+  }
+  const workSeatTiles = new Set((input.offices?.workSeats ?? []).map((s) => s.seatRow * cols + s.seatCol));
+  const postedReceptionist = input.postedReceptionist === true;
+  const postTile = input.postTile ?? -1;
 
   // Places: the home office (Palace) and deck (C1), then the layout's own districts, then the
   // original forest quadrant's unlabelled floor. Each tile belongs to at most one place.
@@ -1111,8 +1262,10 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
   const onNetwork = (i: number): boolean => graph.componentOf(i) === main;
   const pools: Pool[] = [];
   const addPool = (label: string, min: number): void => {
+    const isOffice = officeLabels.has(label);
+    // `contains` / `tiles`: the previous build's definition (sizing, cross-world stops). For an office that means the LEGACY seat zone.
     const contains = (i: number): boolean =>
-      walk(i) && onNetwork(i) && !seatZone.has(i) && placeOf(i) === label;
+      walk(i) && onNetwork(i) && !(isOffice ? legacyZone : seatZone).has(i) && placeOf(i) === label;
     const tiles: number[] = [];
     for (let i = 0; i < cols * rows; i++) if (contains(i)) tiles.push(i);
     if (tiles.length < MIN_POOL_TILES) return;
@@ -1131,13 +1284,35 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
       )
         floor.push(i);
     }
-    const rooms = roomsOf(floor, cols, rows, tileMap)
-      .map((room) => room.filter(contains))
-      .filter((room) => room.length > 0);
+    const allRooms = roomsOf(floor, cols, rows, tileMap);
+    const rooms = allRooms.map((room) => room.filter(contains)).filter((room) => room.length > 0);
     if (rooms.length === 0) rooms.push(tiles);
     // a building of many rooms needs enough residents for its routines to reach every room
     const roomMin = rooms.length > 1 ? Math.ceil(rooms.length / AMBIENT_ROUTINE_STOPS) + 1 : 0;
-    pools.push({ label, tiles, contains, min: Math.max(min, roomMin), rooms });
+    const pool: Pool = { label, tiles, contains, min: Math.max(min, roomMin), rooms };
+    if (isOffice) {
+      // P2-C: the residents' OWN posts and stops: tiles outside every seat's zone, in the COMMON rooms (a room with no workstation).
+      const stopContains = (i: number): boolean =>
+        walk(i) && onNetwork(i) && !seatZone.has(i) && placeOf(i) === label && i !== postTile;
+      const stopTiles: number[] = [];
+      for (let i = 0; i < cols * rows; i++) if (stopContains(i)) stopTiles.push(i);
+      const common = allRooms
+        .filter((room) => !room.some((t) => workSeatTiles.has(t)))
+        .map((room) => room.filter(stopContains))
+        .filter((room) => room.length > 0);
+      const work = allRooms
+        .filter((room) => room.some((t) => workSeatTiles.has(t)))
+        .map((room) => room.filter(stopContains))
+        .filter((room) => room.length > 0);
+      // never leave an office without a place to stand: common rooms, else every room, else every tile
+      const own = common.length > 0 ? common : work.length > 0 ? work : [stopTiles.length > 0 ? stopTiles : tiles];
+      pool.office = true;
+      pool.stopTiles = stopTiles.length > 0 ? stopTiles : tiles;
+      pool.stopContains = stopContains;
+      pool.legacyRoomCount = rooms.length;
+      pool.rooms = own;
+    }
+    pools.push(pool);
   };
   if (office) addPool('Palace', AMBIENT_PALACE_MIN);
   if (deck) addPool('Deck', AMBIENT_DECK_MIN);
@@ -1162,12 +1337,12 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
 
   const plan: Array<{ pool: number; job: AmbientJobId }> = [];
   pools.forEach((p, i) => {
-    const jobs = jobsForDistrict(p.label);
+    const jobs = jobsForDistrict(p.label, postedReceptionist);
     for (let k = 0; k < counts[i]; k++) plan.push({ pool: i, job: jobs[k % jobs.length] });
   });
   for (const required of REQUIRED_AMBIENT_JOBS) {
     if (plan.some((p) => p.job === required) || plan.length === 0) continue;
-    let poolIndex = pools.findIndex((p) => jobsForDistrict(p.label).includes(required));
+    let poolIndex = pools.findIndex((p) => jobsForDistrict(p.label, postedReceptionist).includes(required));
     if (poolIndex < 0) poolIndex = counts.indexOf(Math.max(...counts));
     const inPool = plan.filter((p) => p.pool === poolIndex);
     const tally = new Map<AmbientJobId, number>();
@@ -1217,25 +1392,39 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
   const roomTile = (rng: SeededRng, room: number[]): number => {
     for (let tries = 0; tries < 16; tries++) {
       const t = room[rng.int(room.length)];
+      if (t === postTile) continue; // never the receptionist's tile
       const c = t % cols;
       const r = (t - c) / cols;
       if (NEIGHBOURS.every(([dc, dr]) => pathfinder.isWalkable(c + dc, r + dr))) return t;
     }
-    return room[rng.int(room.length)];
+    const last = room[rng.int(room.length)];
+    return last === postTile && room.length > 1 ? room[(room.indexOf(last) + 1) % room.length] : last;
   };
   const serial = new Map<string, number>();
+  /** How many ROAMING residents of each office pool have been dealt so far (roster order): they take turns at the cross-world visit. */
+  const roamersDealt = new Map<number, number>();
   const residents: AmbientResident[] = plan.map(({ pool, job }) => {
     const home = pools[pool];
+    // an office's residents pick their OWN post and stops from its common rooms (P2-C); every other pool: exactly as before
+    const own: Pool = home.office
+      ? { ...home, tiles: home.stopTiles ?? home.tiles, contains: home.stopContains ?? home.contains }
+      : home;
     const stem = `amb-${slug(home.label)}-${job}`;
     const k = (serial.get(stem) ?? 0) + 1;
     serial.set(stem, k);
     const id = `${stem}-${k}`;
     const rng = new SeededRng(hashString(id, seed));
-    const manyRooms = home.rooms.length > 1;
+    const manyRooms = roomCountOf(home) > 1;
     const post = manyRooms
-      ? pickPost(rng, { ...home, tiles: nextRoom(pool) }, pathfinder, cols)
-      : pickPost(rng, home, pathfinder, cols);
+      ? pickPost(rng, { ...own, tiles: nextRoom(pool) }, pathfinder, cols, postTile)
+      : pickPost(rng, own, pathfinder, cols, postTile);
     const roaming = AMBIENT_JOBS[job].style === 'roaming';
+    // C5: in a detected office only every AMBIENT_OFFICE_VISIT_EVERY-th roamer (roster order, deterministic) makes the one cross-world visit, so the office
+    // keeps its people; every other place visits exactly as before. A resident that does not visit still runs the SAME far-stop search below (same tries,
+    // same draws, same break) and only leaves the stop out, so the generator's later draws (look, start timer) are not shifted by this rule.
+    const rosterNo = roaming && home.office ? (roamersDealt.get(pool) ?? 0) : 0;
+    if (roaming && home.office) roamersDealt.set(pool, rosterNo + 1);
+    const visits = !home.office || rosterNo % AMBIENT_OFFICE_VISIT_EVERY === 0;
     const radius = roaming
       ? Math.round(AMBIENT_PATROL_RADIUS_TILES * 1.6)
       : AMBIENT_PATROL_RADIUS_TILES;
@@ -1243,20 +1432,23 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     for (let s = 1; s < AMBIENT_ROUTINE_STOPS; s++) {
       if (manyRooms) {
         routine.push(roomTile(rng, nextRoom(pool)));
-      } else routine.push(pickStop(rng, post, radius, home, cols));
+      } else routine.push(pickStop(rng, post, radius, own, cols, postTile));
     }
     if (siblings[pool].length > 0) {
       const sib = pools[siblings[pool][rng.int(siblings[pool].length)]];
       const t = roomTile(rng, sib.rooms[rng.int(sib.rooms.length)]);
       if (graph.connected(post, t)) routine.splice(2, 0, t);
     }
-    // Cross-world walking: roaming jobs visit one stop in another place, reachable on the graph.
+    // Cross-world walking: roaming jobs visit one stop in another place, reachable on the graph (an office's roamers take turns, above).
     if (roaming && pools.length > 1) {
       for (let tries = 0; tries < 8; tries++) {
         const other = pools[(pool + 1 + rng.int(pools.length - 1)) % pools.length];
-        const far = other.tiles[rng.int(other.tiles.length)];
+        // an office resident visiting another OFFICE stops in its common rooms too; every other pairing draws from the previous build's list
+        const far = (home.office && other.stopTiles ? other.stopTiles : other.tiles)[
+          rng.int(home.office && other.stopTiles ? other.stopTiles.length : other.tiles.length)
+        ];
         if (graph.connected(post, far)) {
-          routine.push(far);
+          if (visits) routine.push(far);
           break;
         }
       }
@@ -1294,7 +1486,7 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
   // on the routine of that place's resident with the fewest stops (deterministic).
   const coverage = { rooms: 0, covered: 0, uncoveredByCap: 0, longestRoutine: 0 };
   pools.forEach((p, i) => {
-    if (p.rooms.length <= 1) return;
+    if (roomCountOf(p) <= 1) return;
     const mine = residents.filter((_, k) => plan[k].pool === i);
     if (mine.length === 0) return;
     for (const room of p.rooms) {
@@ -1378,7 +1570,7 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
       .filter(
         ({ r, k }) =>
           /Station$|^Grand Boulevard$|^Market Boulevard$/.test(r.district) ||
-          (pools[plan[k].pool].rooms.length <= 1 && nearLine(r.routine[0])),
+          (roomCountOf(pools[plan[k].pool]) <= 1 && nearLine(r.routine[0])),
       )
       .sort((a, b) => hashString(a.r.id, seed) - hashString(b.r.id, seed));
     const stationCount = transit.stations.length;
@@ -1458,6 +1650,7 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
     seatNeighbours,
     placeOf,
   );
+  built.postTile = postTile;
   built.coverage = coverage;
   built.riders = riderIds;
   built.journeys = journeys;
@@ -1490,10 +1683,17 @@ export function buildAmbientWorld(input: AmbientBuildInput): AmbientWorld {
 }
 
 /** A post with open space around it (at least two walkable neighbours), seeded. */
-function pickPost(rng: SeededRng, pool: Pool, pathfinder: AmbientPathfinder, cols: number): number {
+function pickPost(
+  rng: SeededRng,
+  pool: Pool,
+  pathfinder: AmbientPathfinder,
+  cols: number,
+  avoid = -1,
+): number {
   let best = pool.tiles[rng.int(pool.tiles.length)];
   for (let tries = 0; tries < 12; tries++) {
     const t = pool.tiles[rng.int(pool.tiles.length)];
+    if (t === avoid) continue; // never the receptionist's tile (a draw is consumed only when it would have been chosen)
     const c = t % cols;
     const r = (t - c) / cols;
     let open = 0;
@@ -1501,12 +1701,21 @@ function pickPost(rng: SeededRng, pool: Pool, pathfinder: AmbientPathfinder, col
     if (open >= 2) return t;
     best = t;
   }
-  return best;
+  return best === avoid && pool.tiles.length > 1
+    ? pool.tiles[(pool.tiles.indexOf(best) + 1) % pool.tiles.length]
+    : best;
 }
 
 /** A patrol stop within `radius` (Manhattan) of the post, in the same place, seeded. Falls back to
  *  the post itself (a stay-put leg) rather than an arbitrarily distant tile. */
-function pickStop(rng: SeededRng, post: number, radius: number, pool: Pool, cols: number): number {
+function pickStop(
+  rng: SeededRng,
+  post: number,
+  radius: number,
+  pool: Pool,
+  cols: number,
+  avoid = -1,
+): number {
   const pc = post % cols;
   const pr = (post - pc) / cols;
   for (let tries = 0; tries < 40; tries++) {
@@ -1517,7 +1726,7 @@ function pickStop(rng: SeededRng, post: number, radius: number, pool: Pool, cols
     const r = pr + dr;
     if (c < 0 || r < 0 || c >= cols) continue;
     const i = r * cols + c;
-    if (pool.contains(i)) return i;
+    if (i !== avoid && pool.contains(i)) return i;
   }
   return post;
 }

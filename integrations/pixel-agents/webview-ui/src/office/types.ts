@@ -263,6 +263,10 @@ export interface Character {
    *  per-consumer guard reads this flag. It exists for the render/e2e snapshot
    *  (testHooks.getCharacters) to tell the greeter from agents. */
   isGreeter?: boolean;
+  /** The DI reception desk's decorative receptionist. Like the greeter, a MARKER only: it lives in
+   *  OfficeState.receptionist, outside the agent map, so no agent loop (seats, selection, glow,
+   *  persistence, counts) ever sees it. It never wanders, is no agent and grants no authority. */
+  isReceptionist?: boolean;
 
   // -- Agent Teams --
   /** Team name this agent belongs to */

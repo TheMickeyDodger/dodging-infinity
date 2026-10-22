@@ -893,7 +893,8 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     for (const tone of missionsStateTones) expect(tone).not.toMatch(/danger|warning/);
     // EVERY element that carries the reason — the reception desk's separate staleness notice
     // included — never takes the ERROR tone. (That notice uses the product's CAUTION tone by design
-    // since the desk was added, DiReceptionDesk.tsx, which postdates this spec's single revision; the
+    // since the desk was added (it is now the reception inbox, DiReceptionInbox.tsx; the earlier inline
+    // DiReceptionDesk.tsx was removed), which postdates this spec's single revision; the
     // old blanket "no warning" assertion on all reason-bearing elements was therefore already
     // unsatisfiable at HEAD, independent of feature13.)
     const allTones = await tonesOf(

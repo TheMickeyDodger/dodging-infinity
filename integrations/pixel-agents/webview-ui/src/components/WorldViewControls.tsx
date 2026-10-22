@@ -36,6 +36,11 @@ interface WorldViewControlsProps {
   onSelectDistrict: (label: string) => void;
   /** What the last district jump did (announced politely), or null. */
   districtStatus: string | null;
+  /**
+   * The detected working offices besides the home (the Atrium, the Observatory): a quick view each, the same camera jump as choosing the district
+   * from the list. Absent or empty: no such buttons (a world without detected offices).
+   */
+  offices?: ReadonlyArray<{ label: string; short: string }>;
 }
 
 /**
@@ -54,6 +59,7 @@ export function WorldViewControls({
   districts,
   onSelectDistrict,
   districtStatus,
+  offices = [],
 }: WorldViewControlsProps) {
   const [listOpen, setListOpen] = useState(false);
   return (
@@ -79,6 +85,19 @@ export function WorldViewControls({
           data-testid={`world-view-${view}`}
         >
           {LABELS[view].label}
+        </Button>
+      ))}
+      {offices.map((office) => (
+        <Button
+          key={office.label}
+          size="sm"
+          variant="default"
+          onClick={() => onSelectDistrict(office.label)}
+          title={`Camera: go to the ${office.label} (view only)`}
+          className="shadow-pixel"
+          data-testid={`world-view-office-${office.short.toLowerCase()}`}
+        >
+          {office.short}
         </Button>
       ))}
       {mapAvailable && (
