@@ -18,10 +18,16 @@ import { DI_PANEL_WIDTH_PX, DI_SELECTION_POLL_MS } from '../constants.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import type { DiCodeReviewAccess } from './DiCodeReviewEntry.js';
 import { DiCodeReviewEntry } from './DiCodeReviewEntry.js';
+import {
+  reviewNotOfferedConsequence,
+  statesReviewNotOffered,
+  unavailableWords,
+} from './diCodeReviewModel.js';
 import type { DiEvidenceAccess } from './DiEvidenceLibrary.js';
 import { DiEvidenceLibrary } from './DiEvidenceLibrary.js';
 import type { DiMissionRequestAccess } from './DiMissionRequestEntry.js';
 import { DiMissionRequestEntry } from './DiMissionRequestEntry.js';
+import { requestsUnavailable } from './diMissionRequestModel.js';
 import { useDiModal } from './diModal.js';
 import type { DiFreshness, DiRecord, DiRecordTarget, DiSelectionMemory } from './diNavigation.js';
 import {
@@ -43,9 +49,9 @@ import {
 } from './diNavigation.js';
 import {
   DI_UNCONFIRMED_LABEL,
+  diZoneLabel,
   filterMissions,
   formatActivity,
-  formatActivityShort,
   formatBoundedList,
   formatEpoch,
   formatFactState,
@@ -55,7 +61,6 @@ import {
   formatLivePlain,
   formatMaybe,
   formatMemberChain,
-  formatMemberCount,
   formatObserved,
   formatReviewPreamble,
   formatRuntimeAgentsStatement,
@@ -77,9 +82,23 @@ import {
   missionLabel,
   missionObjective,
   missionStatus,
-  shortMemberIdentity,
-  teamRoles,
 } from './diOperationalStatus.js';
+import type { DiAgentPhrase, DiRuntimeGroup } from './diPlainSummary.js';
+import {
+  agentNow,
+  agentPhrase,
+  attentionSummary,
+  firstLayerName,
+  missionResults,
+  missionTitle,
+  navigationOrientation,
+  plainObserved,
+  runtimeAgentMeaning,
+  runtimeGroups,
+  shortMissionRefs,
+  teamSummary,
+  viewLimits,
+} from './diPlainSummary.js';
 import { DiReceptionDesk } from './DiReceptionDesk.js';
 import { useRovingFocus } from './diRovingFocus.js';
 
@@ -193,6 +212,42 @@ function Freshness({ freshness }: { freshness: DiFreshness }) {
   );
 }
 
+/**
+ * The first layer's freshness: a plain age on the office clock and, when not current, why. The
+ * exact ISO time and epoch are the element's title, and in full in the evidence and the inspector.
+ */
+function PlainFreshness({
+  freshness,
+  observedAt,
+  now,
+}: {
+  freshness: DiFreshness;
+  observedAt: number | null;
+  now: number;
+}) {
+  return (
+    <div
+      className={freshness.current ? 'di-op-muted' : 'text-warning'}
+      data-testid="di-observation-freshness"
+      title={freshness.statement}
+    >
+      {plainObserved(freshness, observedAt, now)}
+    </div>
+  );
+}
+
+/** One short, true phrase for an agent, with a shape so it never rests on colour alone. */
+function AgentPhraseView({ phrase }: { phrase: DiAgentPhrase }) {
+  return (
+    <span className="di-op-phrase" data-tone={phrase.tone} data-testid="di-agent-phrase">
+      <span className="di-op-status-glyph" aria-hidden="true">
+        {phrase.glyph}
+      </span>
+      {phrase.text}
+    </span>
+  );
+}
+
 /** item 09: where a record is on the map — a view-only route there, or why it is not drawn. */
 function OnTheMap({
   characterId,
@@ -247,10 +302,14 @@ export function SelectedRuntimeAgent({
       <div className="di-op-selected-title">
         {agent.role ?? agent.logical} · {agent.logical} · {rootLabel(agent)}
       </div>
+      <div className="di-op-card-meta">
+        <AgentPhraseView phrase={agentPhrase(agent)} />
+      </div>
+      <div>{runtimeAgentMeaning(agent)}</div>
       <div data-testid="di-selected-runtime-plain">{agent.plainText}</div>
       <div className="text-text-muted">
-        Not a team member: no Mission or team roster includes this agent, and nothing here shows it
-        working on a task.
+        No Mission or team roster includes this agent: what it does is not shown as any Mission's
+        work.
       </div>
       {agent.assignmentState === 'unverified_reference' && (
         <div data-testid="di-selected-runtime-reference">
@@ -357,7 +416,7 @@ function UnverifiedObserved({
   );
 }
 
-/** feature13: the dock's "Open inspector" — one obvious, labelled entry to the full record. */
+/** feature13: the dock's "Show details" — one obvious, labelled entry to the full record. */
 function OpenInspectorButton({
   onOpen,
   testid,
@@ -376,7 +435,7 @@ function OpenInspectorButton({
       aria-haspopup="dialog"
       onClick={(event) => onOpen(event.currentTarget)}
     >
-      Open inspector
+      Show details
     </button>
   );
 }
@@ -387,26 +446,33 @@ function OpenInspectorButton({
  */
 function DockRuntimeAgent({
   agent,
+  name,
   freshness,
+  observedAt,
+  now,
   onShow,
   onOpenInspector,
 }: {
   agent: DiRuntimeAgent;
+  /** Its first-layer name (firstLayerName): the same on the list, here and in its details. */
+  name: string;
   freshness: DiFreshness;
+  observedAt: number | null;
+  now: number;
   onShow: (id: number) => void;
   onOpenInspector: (opener: HTMLElement) => void;
 }) {
   return (
     <div className="di-op-selected-body" data-testid="di-selected-runtime-agent">
-      <div className="di-op-selected-title">
-        {agent.logical}{' '}
-        <span className="di-op-muted">
-          · {agent.agent} · {rootLabel(agent)}
-        </span>
+      <div className="di-op-row-line">
+        <div className="di-op-selected-title" data-testid="di-selected-name">
+          {name}
+        </div>
+        <AgentPhraseView phrase={agentPhrase(agent)} />
       </div>
-      <div className="di-op-card-meta">
-        <span data-testid="di-selected-runtime-plain">{agent.plainText}</span>
-        <PlainLiveBadge live={agent.live} />
+      {/* The agent's own name (its terminal's), exactly: which agent this record is. */}
+      <div className="di-op-ref di-op-muted" data-testid="di-selected-agent-name">
+        {agent.agent}
       </div>
       {/* The doorways come BEFORE the descriptive lines: the dock scrolls on its own and never grows past a
           share of the panel, so an action placed last can be out of sight on initial selection. */}
@@ -419,56 +485,69 @@ function DockRuntimeAgent({
         />
         <OpenInspectorButton onOpen={onOpenInspector} testid="di-open-inspector-selection" />
       </div>
-      <div className="text-text-muted">Not a team member.</div>
-      <Freshness freshness={freshness} />
+      <div className="di-op-muted" data-testid="di-selected-runtime-plain">
+        {runtimeAgentMeaning(agent)}
+      </div>
+      <PlainFreshness freshness={freshness} observedAt={observedAt} now={now} />
     </div>
   );
 }
 
-/** feature13 — the Selected dock's CONCISE not-verified record (full in the inspector). */
+/** feature13 — the Selected dock's CONCISE record that cannot be linked to its role (full in the inspector). */
 function DockUnverified({
   agent,
+  name,
   freshness,
+  observedAt,
+  now,
   onOpenInspector,
 }: {
   agent: DiRuntimeAgent;
+  /** Its first-layer name (firstLayerName): the same on the list, here and in its details. */
+  name: string;
   freshness: DiFreshness;
+  observedAt: number | null;
+  now: number;
   onOpenInspector: (opener: HTMLElement) => void;
 }) {
-  const provider = agent.provider ? `provider ${agent.provider}` : 'provider not recorded';
   return (
     <div className="di-op-selected-body" data-testid="di-selected-unverified">
-      <div className="di-op-selected-title">
-        {agent.logical}{' '}
-        <span className="di-op-muted">
-          · {agent.agent} · {rootLabel(agent)}
-        </span>
+      <div className="di-op-selected-title" data-testid="di-selected-name">
+        {name}
+      </div>
+      {/* The agent's own name (its terminal's), exactly: which agent this record is. */}
+      <div className="di-op-ref di-op-muted" data-testid="di-selected-agent-name">
+        {agent.agent}
       </div>
       <div className="text-warning">
-        Runtime identity {plainIdentityState(agent.identityState)}. Not drawn; not a team member.
+        {freshness.current
+          ? 'An agent with this name is running'
+          : 'An agent with this name was running at the last observation'}
+        , but it can’t be safely linked to its recorded role. Not drawn; not a team member.
       </div>
-      {/* The doorway comes right after the caveat and BEFORE the observed details: the dock scrolls on its
+      {/* The doorway comes right after the caveat and BEFORE the details: the dock scrolls on its
           own, so an action placed last can be out of sight on initial selection. */}
       <div className="di-op-actions">
         <OpenInspectorButton onOpen={onOpenInspector} testid="di-open-inspector-selection" />
       </div>
-      <UnverifiedObserved agent={agent} provider={provider} freshness={freshness} />
       <div data-testid="di-unverified-not-established">
-        Not established: {plainIdentityReason(agent.identityReason)}.
+        Why: {plainIdentityReason(agent.identityReason)}.
       </div>
       {/* The observation's time and whether it is current, always (as for every dock record). */}
-      <Freshness freshness={freshness} />
+      <PlainFreshness freshness={freshness} observedAt={observedAt} now={now} />
     </div>
   );
 }
 
+/**
+ * A runtime record's raw identifiers and reasons. Rendered open: it only ever appears inside the
+ * inspector's "Everything recorded" disclosure, so one deliberate step reaches all of it.
+ */
 function RuntimeAgentProvenance({ agent }: { agent: DiRuntimeAgent }) {
   return (
-    <details data-testid="di-runtime-provenance">
-      <summary className={DI_FOCUS_RING}>
-        Runtime identity provenance (raw identifiers and reasons)
-      </summary>
-      <div className="di-op-detail-body">
+    <section className="di-op-selected-body" data-testid="di-runtime-provenance">
+      <h4 className="di-op-subhead">Runtime identity provenance (raw identifiers and reasons)</h4>
+      <div className="di-op-detail-body di-op-detail-open">
         <Row label="agent">{agent.agent}</Row>
         <Row label="drawn">
           {agent.live ? 'yes' : `no (${agent.notLiveReason ?? 'reason not given'})`}
@@ -497,7 +576,63 @@ function RuntimeAgentProvenance({ agent }: { agent: DiRuntimeAgent }) {
             : `${formatActivity(agent.activity)} (the agent's own activity; not task work)`}
         </Row>
       </div>
-    </details>
+    </section>
+  );
+}
+
+/**
+ * One runtime group's rows: ONE keyboard list (arrow keys, Home and End move within the group, as
+ * the verified and not-verified lists always did). Each row: its first-layer name (logical and
+ * herd), its activity only where it differs from the group's, and its own reason only where it
+ * differs.
+ */
+function RuntimeGroupRows({
+  group,
+  selectedKey,
+  onSelect,
+}: {
+  group: DiRuntimeGroup;
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+}) {
+  const rows = useRovingFocus<HTMLButtonElement>();
+  return (
+    <ul className="di-op-members" aria-label={`${group.heading} (arrow keys move between agents)`}>
+      {group.rows.map((row, i) => {
+        const a = row.agent;
+        const key = `runtime:${a.agentRef}`;
+        return (
+          <ListRow
+            key={a.agentRef}
+            testid={a.identityVerified ? 'di-runtime-row' : 'di-unverified-row'}
+            selected={selectedKey === key}
+            onSelect={() => onSelect(key)}
+            refAt={rows.refAt(i)}
+            onKeyDown={rows.onKeyDown(i, group.rows.length)}
+            title={
+              !a.identityVerified
+                ? 'Select: see its details (it is never drawn)'
+                : a.characterId !== null
+                  ? 'Select: show it in the office and see its details'
+                  : 'Select: see its details (not drawn now)'
+            }
+          >
+            <span className="di-op-row-line">
+              <span>
+                {a.logical}
+                <span className="di-op-sub" title={a.rootRef}>
+                  {' '}
+                  · {row.herd}
+                </span>
+                {row.disambiguator && <span className="di-op-sub"> · {row.disambiguator}</span>}
+              </span>
+              {row.phrase && <AgentPhraseView phrase={row.phrase} />}
+            </span>
+            {row.exception && <span className="di-op-row-exception">{row.exception}</span>}
+          </ListRow>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -549,14 +684,15 @@ export function RuntimeAgentsSection({
   selectedKey,
   onSelect,
   freshness = FRESHNESS_NOT_GIVEN,
+  now = null,
 }: {
   runtime: DiRuntimeAgents | undefined;
   selectedKey: string | null;
   onSelect: (key: string) => void;
   freshness?: DiFreshness;
+  /** The office clock (`times.evaluatedAt`): with it, time reads as a plain age. */
+  now?: number | null;
 }) {
-  const verifiedRows = useRovingFocus<HTMLButtonElement>();
-  const unverifiedRows = useRovingFocus<HTMLButtonElement>();
   if (!runtime) {
     return (
       <section className="di-op-secondary text-text-muted" data-testid="di-runtime-absent">
@@ -565,89 +701,74 @@ export function RuntimeAgentsSection({
     );
   }
   const capture = runtime.capture;
-  const verified = runtime.agents.filter((a) => a.identityVerified);
-  const unverified = runtime.agents.filter((a) => !a.identityVerified);
+  const groups = runtimeGroups(runtime);
+  const omitted = runtime.agentsTotal - runtime.agents.length;
+  const unverifiedListed = runtime.agents.filter((a) => !a.identityVerified).length;
   const unverifiedCount = runtime.counts
     .filter((c) => c.name === 'unverified' || c.name === 'ambiguous' || c.name === 'unavailable')
     .reduce((n, c) => n + c.value, 0);
   return (
-    <section className="di-op-secondary" data-testid="di-runtime-agents">
-      <div className="di-op-section-title">Runtime agents (not team members)</div>
-      <div className="di-op-muted" data-testid="di-runtime-statement">
-        {formatRuntimeAgentsStatement(runtime)}
+    <section
+      className="di-op-secondary"
+      data-testid="di-runtime-agents"
+      aria-labelledby="di-runtime-title"
+    >
+      <div className="di-op-section-title" id="di-runtime-title">
+        Other agents
       </div>
-      {verified.length > 0 && (
-        <ul
-          className="di-op-members"
-          aria-label="Runtime agents with a verified identity (arrow keys move between them)"
-          data-testid="di-runtime-rows"
+      <div className="di-op-muted" data-testid="di-runtime-statement">
+        {runtime.agents.length === 0
+          ? formatRuntimeAgentsStatement(runtime)
+          : 'Agents found running that no Mission lists as a team member.'}
+        {omitted > 0 ? ` ${omitted} more counted, not listed (display cap).` : ''}
+      </div>
+      {runtime.agents.length > 0 &&
+        // When everything below was observed, said ONCE for the section.
+        (now === null ? (
+          <Freshness freshness={freshness} />
+        ) : (
+          <PlainFreshness freshness={freshness} observedAt={runtime.observedAt} now={now} />
+        ))}
+      {groups.map((group) => (
+        <section
+          key={group.key}
+          className="di-op-runtime-group"
+          data-testid={group.key === 'not-linked' ? 'di-unverified' : 'di-runtime-group'}
+          data-group={group.key}
         >
-          {verified.map((agent, i) => (
-            <ListRow
-              key={agent.agentRef}
-              testid="di-runtime-row"
-              selected={selectedKey === `runtime:${agent.agentRef}`}
-              onSelect={() => onSelect(`runtime:${agent.agentRef}`)}
-              refAt={verifiedRows.refAt(i)}
-              onKeyDown={verifiedRows.onKeyDown(i, verified.length)}
-              title={
-                agent.characterId !== null
-                  ? 'Select: show this agent in the office and the inspector (view only)'
-                  : 'Select: inspect it (not drawn now)'
-              }
-            >
-              {agent.logical} · {agent.agent} · {rootLabel(agent)}: {agent.plainText}{' '}
-              <PlainLiveBadge live={agent.live} />
-            </ListRow>
-          ))}
-        </ul>
-      )}
-      <section className="di-op-selected-body" data-testid="di-unverified">
-        <div className="di-op-section-title">Not verified (not drawn): {unverified.length}</div>
-        <div className="text-text-muted">
-          {unverified.length === 0
-            ? 'Every listed runtime record has a verified identity.'
-            : `${
-                freshness.current
-                  ? 'A live native agent named in each row is running (current observation)'
-                  : 'In the last observation a native agent named in each row was running; that observation is NOT current'
-              }, but its link to the recorded role binding is not established, so no role or task membership is established and it is not drawn as a verified character. A name, pane, workspace or timestamp does not establish that link.`}
-          {unverifiedCount > unverified.length
-            ? ` ${unverifiedCount - unverified.length} more not-verified record(s) are counted but not listed (display cap).`
-            : ''}
-        </div>
-        {unverified.length > 0 && <Freshness freshness={freshness} />}
-        {unverified.length > 0 && (
-          <ul
-            className="di-op-members"
-            aria-label="Runtime records whose identity is not verified (arrow keys move between them)"
-          >
-            {unverified.map((agent, i) => (
-              <ListRow
-                key={agent.agentRef}
-                testid="di-unverified-row"
-                selected={selectedKey === `runtime:${agent.agentRef}`}
-                onSelect={() => onSelect(`runtime:${agent.agentRef}`)}
-                refAt={unverifiedRows.refAt(i)}
-                onKeyDown={unverifiedRows.onKeyDown(i, unverified.length)}
-                title="Select: inspect this record (it is never drawn)"
-              >
-                {agent.logical} · {agent.agent} · {rootLabel(agent)}: {agent.plainText}.{' '}
-                {freshness.current
-                  ? 'Observed, current: a live native agent with this name is running.'
-                  : 'Last observed: a native agent with this name was running (NOT current).'}{' '}
-                Not established: {plainIdentityReason(agent.identityReason)}.{' '}
-                <PlainLiveBadge live={agent.live} />
-              </ListRow>
-            ))}
-          </ul>
-        )}
-      </section>
+          <div className="di-op-group-title">
+            {group.heading} <span className="di-op-muted">· {group.count}</span>
+          </div>
+          <div className="di-op-group-sentence">
+            {group.sentence}
+            {group.key === 'not-linked' && unverifiedCount > unverifiedListed
+              ? ` ${unverifiedCount - unverifiedListed} more counted, not listed (display cap).`
+              : ''}
+          </div>
+          {!freshness.current && (
+            // A material caveat stays WITH what it qualifies: while the observation is not current,
+            // every group says so itself (when current, the time is said once for the section).
+            <div className="text-warning" data-testid="di-runtime-group-not-current">
+              Not current: {plainNotLive(freshness.reason)}.
+            </div>
+          )}
+          {(group.activity !== null || group.notes.length > 0) && (
+            <ul className="di-op-group-notes" data-testid="di-runtime-group-notes">
+              {group.activity !== null && <li>{group.activity}</li>}
+              {group.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
+          <RuntimeGroupRows group={group} selectedKey={selectedKey} onSelect={onSelect} />
+        </section>
+      ))}
       <details data-testid="di-runtime-detail">
         <summary className={DI_FOCUS_RING}>
-          Runtime evidence: counts, capture capacity, registry account and limits
+          Full evidence: counts, capture, registry account, limits and every agent
         </summary>
         <div className="di-op-detail-body">
+          <Row label="statement">{formatRuntimeAgentsStatement(runtime)}</Row>
           <Row label="state">
             {runtime.state ?? 'not reported'}
             {runtime.problem ? ` (${runtime.problem})` : ''}
@@ -686,8 +807,8 @@ export function RuntimeAgentsSection({
           )}
           {runtime.agents.map((a) => (
             <Row key={a.agentRef} label={a.agentRef}>
-              identity {a.identityState} ({a.identityReason}) · assignment {a.assignmentState} (
-              {a.assignmentReason})
+              {a.agent} · {rootLabel(a)} · {a.plainText} · identity {a.identityState} (
+              {a.identityReason}) · assignment {a.assignmentState} ({a.assignmentReason})
               {a.live ? '' : ` · not drawn: ${a.notLiveReason ?? 'reason not given'}`}
             </Row>
           ))}
@@ -713,15 +834,13 @@ function MemberDetail({
   member: DiMember;
   mission: DiMission;
   freshness: DiFreshness;
-  onShow: (id: number) => void;
+  /** Absent inside the record disclosure: the first layer already offers the locate action. */
+  onShow?: (id: number) => void;
   review: DiCodeReviewAccess | null;
 }) {
   const outcomes = plainMissionOutcomes(mission);
   return (
     <div className="di-op-selected-body" data-testid="di-inspector-member">
-      <div className="di-op-selected-title">
-        {member.logical} <span className="di-op-muted">· {member.role}</span>
-      </div>
       <div>Team member of this Mission.</div>
       <Row label="identity">{plainMemberIdentity(member.classification)}</Row>
       <OnTheMap
@@ -804,6 +923,15 @@ function MemberDetail({
                 : ''}
             </Row>
           )}
+          <Row label="code review (exact)">
+            {member.codeReview === undefined
+              ? 'not reported by this office'
+              : `${member.codeReview.state}${member.codeReview.reason ? ` (${member.codeReview.reason})` : ''}${
+                  member.codeReview.state === 'offered'
+                    ? ''
+                    : `: ${unavailableWords(member.codeReview.reason)}`
+                }`}
+          </Row>
           <Row label="model / cost / tokens / progress (raw)">
             {formatObserved(member.model)} / {formatObserved(member.cost)} /{' '}
             {formatObserved(member.tokens)} / {formatObserved(member.progress)}
@@ -817,7 +945,7 @@ function MemberDetail({
 /**
  * feature13 — the Selected dock's CONCISE team member: who it is and its role; one line of
  * identity and observed state; THEN the doorways (the view-only routes Show in the office and Show
- * this Mission in the list, the code review entry, and one obvious "Open inspector"); THEN the
+ * this Mission in the list, the code review entry, and one obvious "Show details"); THEN the
  * freshness of that observation and ONE short line naming its Mission by its complete
  * source-qualified ref (the objective is on the card). The doorways come before the descriptive
  * lines on purpose: the dock scrolls on its own, so an action placed last was below its visible
@@ -826,16 +954,25 @@ function MemberDetail({
  */
 function DockMember({
   member,
+  name,
   mission,
+  shortRef,
   freshness,
+  observedAt,
+  now,
   onShow,
   onShowMission,
   onOpenInspector,
   review,
 }: {
   member: DiMember;
+  /** Its first-layer name (firstLayerName): qualified by its chain only where a name repeats. */
+  name: string;
   mission: DiMission;
+  shortRef: string;
   freshness: DiFreshness;
+  observedAt: number | null;
+  now: number;
   onShow: (id: number) => void;
   onShowMission: (missionRef: string) => void;
   onOpenInspector: (opener: HTMLElement) => void;
@@ -843,24 +980,30 @@ function DockMember({
 }) {
   return (
     <div className="di-op-selected-body" data-testid="di-selected-member">
-      <div className="di-op-selected-title">
-        {member.logical} <span className="di-op-muted">· {member.role}</span>
-      </div>
-      <div className="di-op-card-meta">
-        <span>{shortMemberIdentity(member.classification)}</span>
-        <span className="di-op-muted">terminal {formatActivityShort(member.activity)}</span>
-        <LiveBadge live={member.live} reason={null} />
+      {/* Its name and its one phrase on ONE line (as the list's rows): the dock is tight. */}
+      <div className="di-op-row-line">
+        <div className="di-op-selected-title" data-testid="di-selected-name">
+          {name}
+        </div>
+        <AgentPhraseView phrase={agentPhrase(member)} />
       </div>
       {/* The doorways come BEFORE the descriptive lines. The dock scrolls on its own and never grows past a
           share of the panel; at a constrained window an action placed after the freshness sentence and the
           Mission ref was below the dock's visible area on initial selection. */}
+      {/* The primary action FIRST ("Show details"), then the view-only routes, then the code review
+          entry: the dock scrolls on its own and never grows past a share of the panel, so an action
+          placed later can sit in its bottom fade when the panel is tight (a constrained window with
+          Find's results open). */}
       <div className="di-op-actions">
+        <OpenInspectorButton onOpen={onOpenInspector} testid="di-open-inspector-selection" />
         <OnTheMap
           characterId={member.characterId}
           live={member.live}
           notLiveReason={member.notLiveReason}
           onShow={onShow}
         />
+      </div>
+      <div className="di-op-actions">
         <button
           type="button"
           className={`di-op-link ${DI_FOCUS_RING}`}
@@ -870,19 +1013,17 @@ function DockMember({
         >
           Show this Mission in the list
         </button>
-      </div>
-      <div className="di-op-actions">
         <DiCodeReviewEntry
           member={member}
           missionRef={mission.missionRef}
           access={review}
           variant="dock"
         />
-        <OpenInspectorButton onOpen={onOpenInspector} testid="di-open-inspector-selection" />
       </div>
-      <Freshness freshness={freshness} />
-      <div>
-        Team member of Mission <span className="di-op-ref">{mission.missionRef}</span>
+      <PlainFreshness freshness={freshness} observedAt={observedAt} now={now} />
+      <div data-testid="di-selected-member-mission" title={mission.missionRef}>
+        Team member of “{missionTitle(mission).text}”{' '}
+        <span className="di-op-ref di-op-muted">{shortRef}</span>
       </div>
     </div>
   );
@@ -925,16 +1066,22 @@ export function HerdrTaskNote({ herdrTask }: { herdrTask: DiHerdrTask }) {
 function MissionCard({
   mission,
   status,
+  shortRef,
   zone,
   selectedKey,
   onSelect,
+  onLocate,
   onOpenInspector,
 }: {
   mission: DiMission;
   status: DiOpStatusResult;
+  /** The short source-qualified ref (shortMissionRefs): lookalike objectives stay apart. */
+  shortRef: string;
   zone: { label: string; color: string } | null;
   selectedKey: string | null;
   onSelect: (key: string) => void;
+  /** View only: select a drawn character and move the camera to it. */
+  onLocate: (id: number) => void;
   onOpenInspector: (missionRef: string, opener: HTMLElement, section?: InspectorSection) => void;
 }) {
   const holdsSelection = mission.members.members.some(
@@ -971,9 +1118,11 @@ function MissionCard({
     : [{ heading: null as string | null, members: mission.members.members }];
   const flat = groups.flatMap((g) => g.members);
   const objective = missionObjective(mission);
-  const roles = teamRoles(mission);
+  const title = missionTitle(mission);
+  const team = teamSummary(mission);
   const members = mission.members.members;
   const objectiveId = `di-op-objective-${mission.missionRef}`;
+  const firstDrawn = members.find((m) => m.characterId !== null)?.characterId ?? null;
   return (
     <article
       ref={cardRef}
@@ -982,26 +1131,34 @@ function MissionCard({
       data-mission-ref={mission.missionRef}
       aria-labelledby={objectiveId}
     >
-      {/* What is running: the objective, in plain words — or, when the source gives no goal, that
-          limitation said plainly and source-qualified (nothing is ever substituted for a goal). */}
+      {/* What it is for, in plain words: the objective's own first meaningful sentence, an honest
+          placeholder when it opens with boilerplate only, or — when the source gives no goal — that
+          limitation, source-qualified. The complete objective is the title tooltip and in the
+          inspector, unaltered. */}
       <p
         id={objectiveId}
         className="di-op-objective di-op-clamp-2"
         data-goal={objective.kind === 'goal' ? 'goal' : 'none'}
+        data-title={title.kind}
         data-testid="di-mission-objective"
         title={objective.text}
       >
-        {objective.text}
+        {title.text}
       </p>
-      {/* Its observed status and who is working on it: one line each. */}
+      {/* Its observed status, and how many of its team are observed running — process observation,
+          never work; "working" only where a terminal reports busy now. */}
       <div className="di-op-card-meta">
         <StatusBadge result={status} withSentence={false} />
         <span className="di-op-team" data-testid="di-mission-team">
           {mission.members.state === 'observed' ? (
-            <>
-              Team {members.length} · {members.filter((m) => m.live).length} live
-              {roles.length > 0 && <span className="di-op-team-roles"> · {roles.join(', ')}</span>}
-            </>
+            members.length === 0 ? (
+              'No team members listed'
+            ) : (
+              <>
+                {team.running}
+                {team.activity && <span className="di-op-team-roles"> · {team.activity}</span>}
+              </>
+            )
           ) : (
             // No roster is observed: said in words on the face; the projected code is in the
             // inspector's provenance.
@@ -1012,6 +1169,13 @@ function MissionCard({
             </span>
           )}
         </span>
+        {/* Which record this is, last in reading order: short and source-qualified (the complete ref
+            is its tooltip and in the details) — it tells lookalikes apart without outranking the
+            goal. Shown at the end of the status line, where that line has room. */}
+        <div className="di-op-ref-line" data-testid="di-mission-ref" title={mission.missionRef}>
+          <span className="di-op-ref">{shortRef}</span>
+          {mission.herdrTask && <span data-testid="di-herdr-task-face"> · Herdr task record</span>}
+        </div>
       </div>
       {status.status !== 'running' && (
         // Why it is not running is uncertainty that changes the reading: on the face.
@@ -1024,24 +1188,37 @@ function MissionCard({
           {note}
         </div>
       ))}
-      {mission.herdrTask && (
-        <div className="di-op-status-sentence" data-testid="di-herdr-task-face">
-          Herdr task: a plain Herdr task record, not a Mission Core Mission.
-        </div>
-      )}
+      {/* What the user can do, named by what they will see: the Mission's people on the map (where
+          any are drawn), its evidence, and its full details. */}
       <div className="di-op-card-foot">
-        {zone ? (
-          // Ties this Mission to its labelled zone on the office floor (Areas overlay).
-          <span className="di-op-zone" data-testid="di-mission-zone">
-            <span className="di-op-swatch" style={{ background: zone.color }} />
-            <span>office zone {zone.label}</span>
-          </span>
-        ) : (
-          <span />
-        )}
         <span className="di-op-actions">
+          {firstDrawn !== null && (
+            <button
+              type="button"
+              className={`di-op-link ${DI_FOCUS_RING}`}
+              data-testid="di-mission-locate"
+              aria-describedby={objectiveId}
+              onClick={() => onLocate(firstDrawn)}
+              title="View only: selects its first agent on the map and moves the camera there"
+            >
+              {zone && (
+                <span
+                  className="di-op-swatch"
+                  style={{ background: zone.color }}
+                  aria-hidden="true"
+                />
+              )}
+              Show in the office
+              {zone && (
+                // Its office zone, for assistive tech (the label itself is in the details).
+                <span className="sr-only" data-testid="di-mission-zone">
+                  office zone {zone.label}
+                </span>
+              )}
+            </button>
+          )}
           {mission.evidence && (
-            // The evidence library is in the inspector; this is its direct, labelled doorway.
+            // The evidence library is in the details; this is its direct, labelled doorway.
             <button
               type="button"
               className={`di-op-link ${DI_FOCUS_RING}`}
@@ -1052,20 +1229,20 @@ function MissionCard({
                 onOpenInspector(mission.missionRef, event.currentTarget, 'evidence')
               }
             >
-              Evidence library
+              Show evidence
             </button>
           )}
-          <button
-            type="button"
-            className={`di-op-button ${DI_FOCUS_RING}`}
-            data-testid="di-open-inspector-mission"
-            aria-describedby={objectiveId}
-            aria-haspopup="dialog"
-            onClick={(event) => onOpenInspector(mission.missionRef, event.currentTarget)}
-          >
-            Open inspector
-          </button>
         </span>
+        <button
+          type="button"
+          className={`di-op-button ${DI_FOCUS_RING}`}
+          data-testid="di-open-inspector-mission"
+          aria-describedby={objectiveId}
+          aria-haspopup="dialog"
+          onClick={(event) => onOpenInspector(mission.missionRef, event.currentTarget)}
+        >
+          Show details
+        </button>
       </div>
       {members.length > 0 && (
         <details
@@ -1074,7 +1251,9 @@ function MissionCard({
           open={teamOpen}
           onToggle={(event) => setTeamOpen(event.currentTarget.open)}
         >
-          <summary className={DI_FOCUS_RING}>Team members ({members.length})</summary>
+          <summary className={DI_FOCUS_RING}>
+            Team ({members.length}): {team.roles.join(', ')}
+          </summary>
           {groups.map((group, gi) => (
             <div key={gi} data-testid="di-member-group">
               {group.heading !== null && (
@@ -1102,21 +1281,21 @@ function MissionCard({
                           : 'Select: inspect it (not drawn now)'
                       }
                     >
-                      {member.logical} <span className="di-op-sub">({member.role})</span>
-                      {mission.v2.projected && (
-                        <span className="di-op-sub">
-                          {' '}
-                          · {member.chain}
-                          {member.chain === 'child' && member.chainTaskId
-                            ? ` ${member.chainTaskId}`
-                            : ''}
+                      <span className="di-op-row-line">
+                        <span>
+                          {member.logical} <span className="di-op-sub">· {member.role}</span>
+                          {mission.v2.projected && (
+                            <span className="di-op-sub">
+                              {' '}
+                              · {member.chain}
+                              {member.chain === 'child' && member.chainTaskId
+                                ? ` ${member.chainTaskId}`
+                                : ''}
+                            </span>
+                          )}
                         </span>
-                      )}{' '}
-                      <span className="di-op-sub">
-                        · {shortMemberIdentity(member.classification)} · terminal{' '}
-                        {formatActivityShort(member.activity)} ·{' '}
+                        <AgentPhraseView phrase={agentPhrase(member)} />
                       </span>
-                      <PlainLiveBadge live={member.live} />
                     </ListRow>
                   );
                 })}
@@ -1138,19 +1317,23 @@ function MissionCard({
 function MissionInspectorSections({
   mission,
   status,
-  state,
   evidence,
   review,
   onShow,
+  reviewStatedFor,
 }: {
   mission: DiMission;
   status: DiOpStatusResult;
-  state: DiOfficeState;
   evidence: DiEvidenceAccess | null;
   review: DiCodeReviewAccess | null;
   onShow: (id: number) => void;
+  /** The member whose not-offered code review this popup's summary already states: its own card
+   *  does not repeat it (said once per popup). */
+  reviewStatedFor?: string;
 }) {
   const objective = missionObjective(mission);
+  const team = teamSummary(mission);
+  const sharedReviewReason = sharedReviewUnavailable(mission);
   const groups = mission.v2.projected
     ? groupMembersByChain(mission.members.members)
     : [{ heading: null as string | null, members: mission.members.members }];
@@ -1168,13 +1351,9 @@ function MissionInspectorSections({
           <Row label="objective as exported">“{objective.raw}”</Row>
         )}
         <div className="di-op-card-meta">
-          <StatusBadge result={status} />
+          <StatusBadge result={status} withSentence={status.status !== 'running'} />
         </div>
-        <div data-testid="di-mission-plain">
-          {plainStanding(mission.standing, mission.lifecycleState)} ·{' '}
-          {plainBinding(mission.bindingState, mission.bindingReason)} · source {mission.sourceId}
-        </div>
-        <PlainLiveBadge live={mission.live} />
+        <div data-testid="di-mission-results">{missionResults(mission)}</div>
         {memberTerminalNotes(mission).map((note) => (
           <div key={note} className="di-op-status-sentence">
             {note}
@@ -1186,12 +1365,9 @@ function MissionInspectorSections({
         <h3>
           Team{' '}
           <span className="di-op-muted">
-            {mission.v2.projected
-              ? '(direct + linked child tasks, depth 1)'
-              : '(the direct task only)'}
-            {' · '}
+            ·{' '}
             {mission.members.state === 'observed'
-              ? formatMemberCount(mission.members.members)
+              ? [team.running, team.activity].filter(Boolean).join(' · ')
               : formatListState(
                   mission.members.state,
                   mission.members.reason,
@@ -1201,6 +1377,18 @@ function MissionInspectorSections({
         </h3>
         {mission.members.members.length === 0 && (
           <div className="di-op-muted">No team member is listed for this Mission record.</div>
+        )}
+        {sharedReviewReason !== undefined && (
+          <div className="di-op-muted" data-testid="di-team-code-review-unavailable">
+            {reviewNotOfferedConsequence(sharedReviewReason)}
+          </div>
+        )}
+        {mission.members.members.some((m) => m.codeReview?.state === 'offered') && (
+          // What every offered review route does, said ONCE for the team (each card keeps its button).
+          <div className="di-op-muted" data-testid="di-team-code-review-hint">
+            &ldquo;Open code review&rdquo; shows what is changed in that member&rsquo;s assignment
+            worktree, in a large window. View only: it changes nothing.
+          </div>
         )}
         {groups.map((group, gi) => (
           <div key={gi} className="di-op-selected-body">
@@ -1216,15 +1404,11 @@ function MissionInspectorSections({
                 data-testid="di-inspector-team-member"
                 data-member-ref={member.memberRef}
               >
-                <div className="di-op-selected-title">
-                  {member.logical} <span className="di-op-muted">· {member.role}</span>
-                </div>
-                <div>{plainMemberIdentity(member.classification)}</div>
-                <div className="di-op-card-meta">
-                  <span className="di-op-muted">
-                    terminal {formatActivity(member.activity)} (the terminal&apos;s own report)
+                <div className="di-op-row-line">
+                  <span className="di-op-selected-title">
+                    {member.logical} <span className="di-op-muted">· {member.role}</span>
                   </span>
-                  <PlainLiveBadge live={member.live} />
+                  <AgentPhraseView phrase={agentPhrase(member)} />
                 </div>
                 <OnTheMap
                   characterId={member.characterId}
@@ -1232,11 +1416,14 @@ function MissionInspectorSections({
                   notLiveReason={member.notLiveReason}
                   onShow={onShow}
                 />
-                <DiCodeReviewEntry
-                  member={member}
-                  missionRef={mission.missionRef}
-                  access={review}
-                />
+                {sharedReviewReason === undefined && member.memberRef !== reviewStatedFor && (
+                  <DiCodeReviewEntry
+                    member={member}
+                    missionRef={mission.missionRef}
+                    access={review}
+                    variant="row"
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -1247,9 +1434,9 @@ function MissionInspectorSections({
         {mission.v2.projected ? (
           <MissionV2Blocks v2={mission.v2} />
         ) : (
-          <div className="di-op-muted">
-            Not reported at contract version {state.contractVersion}: task chains, the children
-            record, the Mission State and canonical review are contract v2 blocks.
+          <div className="di-op-muted" data-testid="di-checkpoints-not-reported">
+            This office doesn&apos;t report checkpoints or dependencies for its Missions. Why is in
+            &ldquo;What this office does not report&rdquo; below.
           </div>
         )}
       </section>
@@ -1268,16 +1455,30 @@ function MissionInspectorSections({
             No evidence library is projected for this Mission record.
           </div>
         )}
-        <div className="di-op-muted">
-          Code review is offered per team member, in the Team section above.
+        <div className="di-op-muted" data-testid="di-evidence-review-note">
+          {mission.members.members.some((m) => m.codeReview?.state === 'offered')
+            ? 'Code review, where it is offered, is with each team member in the Team section above.'
+            : mission.members.members.some((m) => m.codeReview !== undefined)
+              ? 'Code review is not offered for any member of this team: the Team section above says why.'
+              : 'This office says nothing about code review for this Mission.'}
         </div>
       </section>
-      <section className="di-op-inspector-section" data-testid="di-inspector-provenance">
-        <h3>Provenance and raw codes</h3>
+      <details className="di-op-inspector-section" data-testid="di-inspector-provenance">
+        <summary className={DI_FOCUS_RING}>Exact identity, provenance and raw codes</summary>
         <div className="di-op-detail-body di-op-detail-open">
           <Row label="mission_ref">
-            <span className="di-op-ref">{mission.missionRef}</span>
+            <span className="di-op-ref" data-testid="di-mission-qualifier">
+              {mission.missionRef}
+            </span>
           </Row>
+          <Row label="in words">
+            <span data-testid="di-mission-plain">
+              {plainStanding(mission.standing, mission.lifecycleState)} ·{' '}
+              {plainBinding(mission.bindingState, mission.bindingReason)} · source{' '}
+              {mission.sourceId}
+            </span>
+          </Row>
+          <Row label="office zone (Areas overlay)">{diZoneLabel(mission)}</Row>
           <Row label="source">
             {mission.sourceId} ({mission.sourceKind}) · native {mission.nativeId}
           </Row>
@@ -1305,9 +1506,23 @@ function MissionInspectorSections({
             </Row>
           ))}
         </div>
-      </section>
+      </details>
     </>
   );
+}
+
+/**
+ * Code review not offered to ANY member of a Mission, for ONE reason (e.g. the office's older query
+ * contract): that reason, said ONCE for the team in its details; undefined when members differ or a
+ * review is offered. Never implies a review is available.
+ */
+function sharedReviewUnavailable(mission: DiMission): string | null | undefined {
+  const offers = mission.members.members.map((m) => m.codeReview);
+  return offers.length > 1 &&
+    offers.every((o) => o !== undefined && o.state !== 'offered') &&
+    new Set(offers.map((o) => o?.reason ?? null)).size === 1
+    ? (offers[0]?.reason ?? null)
+    : undefined;
 }
 
 /** The office data rows: the two freshness verdicts and the coverage statement. */
@@ -1443,15 +1658,40 @@ function OfficeInspector({
     },
   };
   const record = target.kind === 'selection' ? keyed : null;
+  // A member's summary shows its code review entry when offered, or not offered for a reason of its
+  // OWN (a reason the whole team shares is said once, in the Team section).
+  const summaryShowsReview =
+    record?.target.kind === 'member' &&
+    (record.target.member.codeReview?.state === 'offered' ||
+      sharedReviewUnavailable(record.target.mission) === undefined);
+  const reviewStatedFor =
+    summaryShowsReview &&
+    record?.target.kind === 'member' &&
+    statesReviewNotOffered(record.target.member)
+      ? record.target.member.memberRef
+      : undefined;
   const heading =
     record?.target.kind === 'member'
-      ? `${record.target.member.logical} · ${record.target.member.role}`
+      ? firstLayerName(state, {
+          kind: 'member',
+          mission: record.target.mission,
+          member: record.target.member,
+        })
       : record?.target.kind === 'runtime' || record?.target.kind === 'unverified'
-        ? `${record.target.agent.logical} · ${record.target.agent.agent}`
+        ? firstLayerName(state, { kind: 'runtime', agent: record.target.agent })
         : mission
-          ? missionLabel(mission)
+          ? missionTitle(mission).kind === 'no-goal'
+            ? missionLabel(mission)
+            : missionTitle(mission).text
           : 'This record is no longer in the office state';
-  // Which record this is, by its complete source-qualified ref: two lookalikes never share a heading.
+  /** A Mission's short source-qualified ref: lookalikes never share a heading. */
+  const missionShortRef =
+    record === null && mission
+      ? (shortMissionRefs(state.missions.missions).get(mission.missionRef) ?? mission.missionRef)
+      : null;
+  // The complete source-qualified ref, for the details. Lookalikes are told apart on the FIRST layer
+  // by the heading itself (firstLayerName: herd and source, or chain, wherever a name collides), the
+  // agent's own name under it, or a Mission's short ref under its title.
   const qualifier =
     record?.target.kind === 'member'
       ? record.target.member.memberRef
@@ -1462,10 +1702,31 @@ function OfficeInspector({
     record?.target.kind === 'member'
       ? 'Team member'
       : record?.target.kind === 'runtime'
-        ? 'Runtime agent (not a team member)'
+        ? 'Agent, not a team member'
         : record?.target.kind === 'unverified'
-          ? 'Runtime record, not verified'
+          ? 'Agent that can’t be linked to a role'
           : 'Mission';
+  const agent =
+    record?.target.kind === 'member'
+      ? record.target.member
+      : record?.target.kind === 'runtime' || record?.target.kind === 'unverified'
+        ? record.target.agent
+        : null;
+  const now = state.times.evaluatedAt;
+  /** Everything recorded about the selected agent, unshortened, one deliberate step away. */
+  const recordDetails = (children: React.ReactNode) => (
+    <details className="di-op-record" data-testid="di-inspector-record">
+      <summary className={DI_FOCUS_RING}>
+        Everything recorded about this agent: identity, exact times and codes
+      </summary>
+      <div className="di-op-selected-body">
+        <div className="di-op-ref di-op-muted" data-testid="di-inspector-qualifier">
+          {qualifier}
+        </div>
+        {children}
+      </div>
+    </details>
+  );
   return createPortal(
     <div
       className="di-op-theme di-op-inspector-backdrop"
@@ -1486,11 +1747,11 @@ function OfficeInspector({
         <header className="di-op-inspector-head">
           <div className="di-op-inspector-heading">
             <div className="di-op-muted" data-testid="di-inspector-kind">
-              {kindLabel} · inspector (view only)
+              {kindLabel} · details (view only)
               {state.fixtureMode ? ' · FIXTURE DATA' : ''}
             </div>
-            {/* A COMPACT, BOUNDED, VERBATIM heading (missionHeadline's rule; at most two lines),
-                then the complete ref. The full objective appears ONCE, in the body. */}
+            {/* Who or what this is, once: a short name (the agent and its role or herd, or the
+                Mission's title); the complete source-qualified ref is in the details below. */}
             <h2
               id="di-inspector-title"
               className="di-op-inspector-title di-op-clamp-2"
@@ -1498,17 +1759,27 @@ function OfficeInspector({
             >
               {heading}
             </h2>
-            {qualifier !== null && (
-              <div className="di-op-ref di-op-muted" data-testid="di-inspector-qualifier">
-                {qualifier}
+            {(record?.target.kind === 'runtime' || record?.target.kind === 'unverified') && (
+              <div className="di-op-ref di-op-muted" data-testid="di-inspector-agent-name">
+                {record.target.agent.agent}
               </div>
             )}
-            {status && (
-              <div className="di-op-card-meta">
-                <StatusBadge result={status} withSentence={false} />
-                <LiveBadge live={state.live} reason={state.notLiveReason} />
+            {missionShortRef !== null && (
+              <div
+                className="di-op-ref di-op-muted"
+                data-testid="di-inspector-short-ref"
+                title={mission?.missionRef}
+              >
+                {missionShortRef}
               </div>
             )}
+            <div className="di-op-card-meta">
+              {agent ? (
+                <AgentPhraseView phrase={agentPhrase(agent)} />
+              ) : (
+                status && <StatusBadge result={status} withSentence={false} />
+              )}
+            </div>
           </div>
           <button
             type="button"
@@ -1521,36 +1792,106 @@ function OfficeInspector({
         </header>
         <div className="di-op-inspector-body">
           {record?.target.kind === 'member' && (
+            // The first layer: what it is doing, its Mission, the obvious actions; then the record.
             <section className="di-op-inspector-section" data-testid="di-inspector-selected">
-              <h3>Selected team member</h3>
-              <MemberDetail
-                member={record.target.member}
-                mission={record.target.mission}
+              <p className="di-op-now" data-testid="di-inspector-now">
+                {agentNow(record.target.member)}
+              </p>
+              <div className="di-op-card-meta">
+                <span
+                  data-testid="di-inspector-member-mission"
+                  title={record.target.mission.missionRef}
+                >
+                  Team member of “{missionTitle(record.target.mission).text}”{' '}
+                  <span className="di-op-ref di-op-muted">
+                    {shortMissionRefs(state.missions.missions).get(
+                      record.target.mission.missionRef,
+                    ) ?? record.target.mission.missionRef}
+                  </span>
+                </span>
+                {status && <StatusBadge result={status} withSentence={false} />}
+              </div>
+              <PlainFreshness
                 freshness={snapshotFreshness}
-                onShow={onShow}
-                review={reviewHere}
+                observedAt={state.times.snapshotObservedAt}
+                now={now}
               />
+              <div className="di-op-actions">
+                <OnTheMap
+                  characterId={record.target.member.characterId}
+                  live={record.target.member.live}
+                  notLiveReason={record.target.member.notLiveReason}
+                  onShow={onShow}
+                />
+                {/* Offered, or not offered for a reason of ITS OWN: said here. A reason the whole team
+                    shares is said once, in the Team section below. */}
+                {summaryShowsReview && (
+                  <DiCodeReviewEntry
+                    member={record.target.member}
+                    missionRef={record.target.mission.missionRef}
+                    access={reviewHere}
+                  />
+                )}
+              </div>
+              {recordDetails(
+                <MemberDetail
+                  member={record.target.member}
+                  mission={record.target.mission}
+                  freshness={snapshotFreshness}
+                  review={null}
+                />,
+              )}
             </section>
           )}
           {record?.target.kind === 'runtime' && (
             <section className="di-op-inspector-section" data-testid="di-inspector-selected">
-              <h3>Selected runtime agent</h3>
-              <SelectedRuntimeAgent
-                agent={record.target.agent}
+              <p className="di-op-now" data-testid="di-inspector-now">
+                {agentNow(record.target.agent)}
+              </p>
+              <div>{runtimeAgentMeaning(record.target.agent)}</div>
+              <PlainFreshness
                 freshness={runtimeFreshness}
-                onShow={onShow}
-                testid="di-inspector-runtime-agent"
+                observedAt={state.runtimeAgents?.observedAt ?? null}
+                now={now}
               />
+              <div className="di-op-actions">
+                <OnTheMap
+                  characterId={record.target.agent.characterId}
+                  live={record.target.agent.live}
+                  notLiveReason={record.target.agent.notLiveReason}
+                  onShow={onShow}
+                />
+              </div>
+              {recordDetails(
+                <SelectedRuntimeAgent
+                  agent={record.target.agent}
+                  freshness={runtimeFreshness}
+                  testid="di-inspector-runtime-agent"
+                />,
+              )}
             </section>
           )}
           {record?.target.kind === 'unverified' && (
             <section className="di-op-inspector-section" data-testid="di-inspector-selected">
-              <h3>Selected runtime record (identity not verified)</h3>
-              <SelectedUnverified
-                agent={record.target.agent}
+              <p className="di-op-now" data-testid="di-inspector-now">
+                {agentNow(record.target.agent)}
+              </p>
+              <div>
+                Why: {plainIdentityReason(record.target.agent.identityReason)}. Not drawn; not a
+                team member.
+              </div>
+              <PlainFreshness
                 freshness={runtimeFreshness}
-                testid="di-inspector-unverified"
+                observedAt={state.runtimeAgents?.observedAt ?? null}
+                now={now}
               />
+              {recordDetails(
+                <SelectedUnverified
+                  agent={record.target.agent}
+                  freshness={runtimeFreshness}
+                  testid="di-inspector-unverified"
+                />,
+              )}
             </section>
           )}
           {target.kind === 'selection' && record === null && (
@@ -1565,21 +1906,26 @@ function OfficeInspector({
             <MissionInspectorSections
               mission={mission}
               status={status}
-              state={state}
               evidence={evidence}
               review={reviewHere}
               onShow={onShow}
+              reviewStatedFor={reviewStatedFor}
             />
           )}
-          <section className="di-op-inspector-section" data-testid="di-inspector-freshness">
-            <h3>Freshness and times</h3>
+          <details className="di-op-inspector-section" data-testid="di-inspector-freshness">
+            <summary className={DI_FOCUS_RING}>
+              Exact times and freshness ·{' '}
+              {plainObserved(snapshotFreshness, state.times.snapshotObservedAt, now)}
+            </summary>
             <div className="di-op-detail-body di-op-detail-open">
               <OfficeDataRows state={state} />
               <FreshnessDetailRows state={state} />
             </div>
-          </section>
-          <section className="di-op-inspector-section" data-testid="di-inspector-limitations">
-            <h3>Limitations: what is not reported or not supported</h3>
+          </details>
+          <details className="di-op-inspector-section" data-testid="di-inspector-limitations">
+            <summary className={DI_FOCUS_RING}>
+              What this office does not report (model, usage, cost, progress, ETA and more)
+            </summary>
             <div className="di-op-detail-body di-op-detail-open">
               <Row label="coverage">{state.coverage.statement}</Row>
               <Row label="linked child-task roles">
@@ -1589,12 +1935,18 @@ function OfficeInspector({
                 model requested / configured, model confirmed running, usage, cost, progress and ETA
                 — {RUNTIME_UNREPORTED} for every agent here
               </Row>
+              <Row label="query contract">
+                version {state.contractVersion}
+                {state.contractVersion < 2
+                  ? ': task chains, the children record, the Mission State (completion, verification) and canonical review are contract version 2 blocks, so they are not reported here.'
+                  : ''}
+              </Row>
               <Row label="runtime agents">{formatRuntimeAgentsStatement(state.runtimeAgents)}</Row>
               <Row label="this view">
                 Read-only. Nothing here approves, starts, stops, retries or delivers anything.
               </Row>
             </div>
-          </section>
+          </details>
         </div>
       </div>
     </div>,
@@ -1779,11 +2131,20 @@ function SelectionGone({
         selected in its place.
       </div>
       <div data-testid="di-selection-gone-why">Why: {why.plain}.</div>
-      <Freshness freshness={freshness} />
+      <PlainFreshness
+        freshness={freshness}
+        observedAt={
+          memory.kind === 'member' || memory.kind === 'mission'
+            ? state.times.snapshotObservedAt
+            : (state.runtimeAgents?.observedAt ?? null)
+        }
+        now={state.times.evaluatedAt}
+      />
       <details>
         <summary className={DI_FOCUS_RING}>Canonical reason and the last selection (raw)</summary>
         <div className="di-op-detail-body">
           <Row label="canonical reason">{why.canonical ?? 'none recorded by the office state'}</Row>
+          <Row label="observation (exact)">{freshness.statement}</Row>
           <Row label="office not-live reason">{freshness.reason ?? 'none (live)'}</Row>
           <Row label="selected record">{memory.key}</Row>
           <Row label="kind">{memory.kind}</Row>
@@ -1997,7 +2358,7 @@ function DiOfficePanelBody({
   const inspectorOpener = useRef<HTMLElement | null>(null);
   /**
    * A locate ("Show in the office") from inside the inspector closes it so the located agent and the
-   * world are actually SEEN; focus then lands, predictably, on the Selected dock's "Open inspector"
+   * world are actually SEEN; focus then lands, predictably, on the Selected dock's "Show details"
    * for that same record (the dialog's own return-focus runs first and is superseded here).
    */
   const focusDockAfterLocate = useRef(false);
@@ -2071,9 +2432,20 @@ function DiOfficePanelBody({
     );
   }
 
-  const receptionEntries = state.reception
-    ? state.reception.entries.filter((e) => !hiddenReception.has(e.key)).length
-    : 0;
+  /** The ONE attention entry's words (null: this office provides no reception desk). */
+  const attention = state.reception ? attentionSummary(state.reception, hiddenReception) : null;
+  const goToDesk = () => {
+    const desk = receptionRef.current;
+    desk?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    desk?.querySelector<HTMLElement>('#di-reception-heading')?.focus({ preventScroll: true });
+  };
+  /** Each Mission's short source-qualified ref, unique across the whole list. */
+  const shortRefs = shortMissionRefs(missions.missions);
+  const shown = filterMissions(missions.missions, focusMission, liveOnly);
+  /** The office clock: ages are measured on it, never on this browser's. */
+  const now = times.evaluatedAt;
+  /** What this view may not show, said once (null: nothing is limited). */
+  const limits = viewLimits(state);
   /** Open the inspector; focus returns to `opener` when it closes. */
   const openInspector = (target: InspectorTarget, opener: HTMLElement) => {
     inspectorOpener.current = opener;
@@ -2131,34 +2503,59 @@ function DiOfficePanelBody({
         </button>
       </header>
 
-      <div className="di-op-entries">
-        {/* item 4: the entry to the Mission request workspace (compact). It opens a pane BESIDE
-            this panel, so the world stays visible and usable while a request is followed. */}
-        <DiMissionRequestEntry access={mission} />
-        {state.reception && (
-          // The reception desk lives below the Missions; its attention count stays on the face.
-          <div className="di-op-card-meta" data-testid="di-reception-summary">
-            <span className={receptionEntries > 0 ? 'text-warning' : 'text-text-muted'}>
-              Reception desk:{' '}
-              {receptionEntries > 0
-                ? `${receptionEntries} ${receptionEntries === 1 ? 'entry needs' : 'entries need'} attention`
-                : 'no entries listed (read its categories)'}
-            </span>
-            <button
-              type="button"
-              className={`di-op-link ${DI_FOCUS_RING}`}
-              onClick={() =>
-                receptionRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' })
-              }
-              title="View only: scrolls to the reception desk in this panel"
-            >
-              Go to the desk
-            </button>
-          </div>
+      {/* The orientation strip, in a FIXED order whatever the counts: the ONE attention entry, then
+          the Mission request entry, then Find. Starting a Mission never depends on, or sits inside,
+          the attention entry; an unavailable request capability is quieter, never removed. */}
+      <div className="di-op-entries" data-testid="di-orientation">
+        <section
+          className="di-op-attention"
+          data-testid="di-attention"
+          aria-label="Needs attention"
+        >
+          {attention ? (
+            <>
+              <div className="di-op-attention-line" data-testid="di-reception-summary">
+                <span className={attention.count > 0 ? 'di-op-attention-count' : 'di-op-muted'}>
+                  {attention.count > 0 && (
+                    <span className="di-op-status-glyph" aria-hidden="true">
+                      ▲{' '}
+                    </span>
+                  )}
+                  {attention.text}
+                </span>
+                <button
+                  type="button"
+                  className={`di-op-link ${DI_FOCUS_RING}`}
+                  onClick={goToDesk}
+                  title="View only: scrolls to the list of what needs attention, in this panel"
+                >
+                  Show the list
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="di-op-muted">Attention: this office provides no reception desk.</div>
+          )}
+          {limits && (
+            // The view's material limits: ONE plain sentence with its consequence; the exact limits
+            // one step away (the categories' outcomes and the coverage statement stay in full below).
+            <div className="di-op-limits" data-testid="di-view-limits">
+              {limits.summary}
+            </div>
+          )}
+        </section>
+        {/* item 4: the entry to the Mission request workspace, CONFIGURED: always here, right after
+            the attention entry. It opens a pane BESIDE this panel, so the world stays usable. */}
+        {!(mission !== null && requestsUnavailable(mission.state)) && (
+          <DiMissionRequestEntry access={mission} />
         )}
       </div>
 
       <FindSection state={state} query={query} onQuery={setQuery} onSelect={selectRecord} />
+      {/* Not available in this office: demoted to one quiet line below Find, never removed. */}
+      {mission !== null && requestsUnavailable(mission.state) && (
+        <DiMissionRequestEntry access={mission} />
+      )}
 
       {announced.length > 0 && (
         // The office canvas draws ONLY snapshot-confirmed members; an announcement the office
@@ -2224,7 +2621,9 @@ function DiOfficePanelBody({
                   <option value="">All Missions ({missions.missions.length})</option>
                   {missions.missions.map((m) => (
                     <option key={m.missionRef} value={m.missionRef}>
-                      {missionLabel(m)}
+                      {missionTitle(m).kind === 'no-goal'
+                        ? missionLabel(m)
+                        : `${missionTitle(m).text} — ${shortRefs.get(m.missionRef)}`}
                     </option>
                   ))}
                 </select>
@@ -2235,28 +2634,56 @@ function DiOfficePanelBody({
                   aria-pressed={liveOnly}
                   onClick={() => setLiveOnly((v) => !v)}
                 >
-                  {liveOnly ? '[x]' : '[ ]'} live only
+                  <span aria-hidden="true">{liveOnly ? '☑' : '☐'}</span> Live only
                 </button>
               </div>
             )}
           </div>
-          {(() => {
-            // A coverage limit changes how a team is read: kept on the face, in one line.
-            const linked = formatLinkedChildCoverage(coverage);
-            return (
-              <div
-                className={linked.warning ? 'di-op-caveat' : 'di-op-muted'}
-                data-testid="di-coverage"
+          {shown.length < missions.missions.length && (
+            // Nothing silently disappears: a view filter says what it leaves out, and how to undo it.
+            <div className="di-op-filter-note" data-testid="di-mission-filter-note" role="status">
+              Showing {shown.length} of {missions.missions.length}:{' '}
+              {missions.missions.length - shown.length} not shown by{' '}
+              {focusMission !== null ? 'the Mission picker' : '“Live only”'}.{' '}
+              <button
+                type="button"
+                className={`di-op-link ${DI_FOCUS_RING}`}
+                onClick={() => {
+                  setFocusMission(null);
+                  setLiveOnly(false);
+                }}
               >
-                {linked.text}
-              </div>
+                Show all
+              </button>
+            </div>
+          )}
+          {(() => {
+            // A coverage limit changes how a team is read: a gap stays on the face; the ordinary
+            // statement (and what a Herdr task record is) is said once, one step away.
+            const linked = formatLinkedChildCoverage(coverage);
+            const herdr = missions.missions.some((m) => m.herdrTask);
+            return (
+              <details className="di-op-about" data-testid="di-missions-about">
+                <summary className={DI_FOCUS_RING}>About this list</summary>
+                <div className="di-op-detail-body">
+                  <div data-testid="di-coverage">{linked.text}</div>
+                  {herdr && (
+                    <div data-testid="di-herdr-task-about">
+                      A Herdr task record is a plain Herdr task, not a Mission Core Mission:
+                      proposal, authorization, revision and proof are not supported for it.
+                    </div>
+                  )}
+                </div>
+              </details>
             );
           })()}
-          {filterMissions(missions.missions, focusMission, liveOnly).map((m) => (
+          {shown.map((m) => (
             <MissionCard
               key={m.missionRef}
               mission={m}
               status={missionStatus(m, state)}
+              shortRef={shortRefs.get(m.missionRef) ?? m.missionRef}
+              onLocate={navigateTo}
               selectedKey={selectedKey}
               onSelect={selectKey}
               onOpenInspector={(missionRef, opener, section) =>
@@ -2272,6 +2699,18 @@ function DiOfficePanelBody({
         </section>
 
         <div ref={receptionRef} className="di-op-secondary">
+          {limits && (
+            // The exact limits of this view, beside the attention list they qualify (the face says
+            // them once, in one plain sentence; "Show the list" leads here).
+            <details className="di-op-limits-detail" data-testid="di-view-limits-detail">
+              <summary className={DI_FOCUS_RING}>What this view may not show</summary>
+              <ul className="di-op-detail-body">
+                {limits.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </details>
+          )}
           {state.reception ? (
             <DiReceptionDesk
               reception={state.reception}
@@ -2295,6 +2734,7 @@ function DiOfficePanelBody({
           selectedKey={selectedKey}
           onSelect={selectKey}
           freshness={runtimeFreshness}
+          now={now}
         />
 
         <section className="di-op-secondary" aria-label="Office data">
@@ -2313,7 +2753,7 @@ function DiOfficePanelBody({
 
       {/* The Selected dock: always in view; its own scroll when a selection holds more. It is
           concise — who, its identity and observed state, its Mission, the view-only routes, the
-          code review entry and one obvious "Open inspector" — and the inspector holds the rest. */}
+          code review entry and one obvious "Show details" — and the inspector holds the rest. */}
       <section
         className={`di-op-selected${
           keyed?.target.kind === 'member' ||
@@ -2324,48 +2764,83 @@ function DiOfficePanelBody({
         }`}
         data-testid="di-selected-agent"
       >
+        {/* Where the selection is, in words, then the view-only stepping: each pair has a visible
+            label and visible words; each button's accessible name begins with those words. */}
         <div className="di-op-section-head">
-          <div className="di-op-section-title">Selected</div>
-          <div
-            className="di-op-nav"
-            data-testid="di-navigation"
-            title="View only: moves the selection and camera; it controls nothing"
+          <div className="di-op-section-title">
+            Selected{' '}
+            <span className="di-op-muted di-op-nav-position" data-testid="di-navigation-position">
+              · {navigationOrientation(state, selectedId)}
+            </span>
+          </div>
+        </div>
+        <div
+          className="di-op-nav"
+          data-testid="di-navigation"
+          title="View only: moves the selection and camera; it controls nothing"
+        >
+          <span
+            className="di-op-nav-group"
+            role="group"
+            aria-label="Step through agents on the map"
           >
+            <span className="di-op-nav-label" aria-hidden="true">
+              Agents
+            </span>
             <button
               type="button"
               className={DI_FOCUS_RING}
-              onClick={() => navigateTo(nextMissionCharacter(state, selectedId, -1))}
-            >
-              ◂ Mission
-            </button>
-            <button
-              type="button"
-              className={DI_FOCUS_RING}
+              aria-label="Previous agent"
               onClick={() => navigateTo(navigateStep(navigationOrder(state), selectedId, -1))}
             >
-              ◂ agent
+              ‹ Previous
             </button>
             <button
               type="button"
               className={DI_FOCUS_RING}
+              aria-label="Next agent"
               onClick={() => navigateTo(navigateStep(navigationOrder(state), selectedId, 1))}
             >
-              agent ▸
+              Next ›
+            </button>
+          </span>
+          <span className="di-op-nav-group" role="group" aria-label="Step through Missions">
+            <span className="di-op-nav-label" aria-hidden="true">
+              Missions
+            </span>
+            <button
+              type="button"
+              className={DI_FOCUS_RING}
+              aria-label="Previous Mission"
+              onClick={() => navigateTo(nextMissionCharacter(state, selectedId, -1))}
+            >
+              ‹ Previous
             </button>
             <button
               type="button"
               className={DI_FOCUS_RING}
+              aria-label="Next Mission"
               onClick={() => navigateTo(nextMissionCharacter(state, selectedId, 1))}
             >
-              Mission ▸
+              Next ›
             </button>
-          </div>
+          </span>
         </div>
         {keyed?.target.kind === 'member' ? (
           <DockMember
             member={keyed.target.member}
+            name={firstLayerName(state, {
+              kind: 'member',
+              mission: keyed.target.mission,
+              member: keyed.target.member,
+            })}
             mission={keyed.target.mission}
+            shortRef={
+              shortRefs.get(keyed.target.mission.missionRef) ?? keyed.target.mission.missionRef
+            }
             freshness={snapshotFreshness}
+            observedAt={times.snapshotObservedAt}
+            now={now}
             onShow={navigateTo}
             onShowMission={showMission}
             onOpenInspector={openSelectionInspector}
@@ -2374,14 +2849,20 @@ function DiOfficePanelBody({
         ) : keyed?.target.kind === 'runtime' ? (
           <DockRuntimeAgent
             agent={keyed.target.agent}
+            name={firstLayerName(state, { kind: 'runtime', agent: keyed.target.agent })}
             freshness={runtimeFreshness}
+            observedAt={state.runtimeAgents?.observedAt ?? null}
+            now={now}
             onShow={navigateTo}
             onOpenInspector={openSelectionInspector}
           />
         ) : keyed?.target.kind === 'unverified' ? (
           <DockUnverified
             agent={keyed.target.agent}
+            name={firstLayerName(state, { kind: 'runtime', agent: keyed.target.agent })}
             freshness={runtimeFreshness}
+            observedAt={state.runtimeAgents?.observedAt ?? null}
+            now={now}
             onOpenInspector={openSelectionInspector}
           />
         ) : memory !== null ? (

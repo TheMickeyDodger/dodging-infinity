@@ -1418,6 +1418,15 @@ export function countsOf(overview: MrOverview | null): MrSummaryCounts {
   };
 }
 
+/**
+ * True when the request capability is NOT available in this office (as opposed to configured, or
+ * not vouched for by this window). Only this case is demoted — to a quiet one-line notice the panel
+ * places below Find; a configured entry keeps its fixed place right after the attention entry.
+ */
+export function requestsUnavailable(state: MrState): boolean {
+  return state.unvouched === null && state.availability.kind === 'unavailable';
+}
+
 /** The sentence the entry shows. */
 export function entryWords(state: MrState): string {
   if (state.unvouched !== null)

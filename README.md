@@ -196,7 +196,7 @@ A busy working office used to bury its real agents under decorative residents. T
 ### See the work behind the characters
 
 - **Select an agent** to inspect its role, source, and associated Mission.
-- **Switch Missions** in the side panel, and open the inspector to follow available task chains and review records.
+- **Switch Missions** in the side panel, and use **Show details** to follow available task chains and review records.
 - **Recognize current activity** through the working-agent glow and visible freshness information.
 - **Explore the world** with the map, district navigation, and camera controls.
 - **Return to the office** and reconstruct the current recorded Mission observations.
@@ -205,15 +205,20 @@ Real agents come from DI’s Mission catalog. Ambient residents give the world i
 
 The screenshots above show the running local world. The living metropolis is an optional preset that can be imported into the office.
 
-### A calm overview and a full-size inspector
+### A calm overview and a full-size details view
 
-The side panel answers three questions at a glance: **what is running, what is its observed status, and who is on it.** Each Mission shows its objective, one status (Running, Waiting, Blocked, Failed where the source reports a failure, Ended, Stale, Disconnected or Unknown) written as a word and a shape rather than colour alone, and its team. What could mislead you stays on the face: a stale or not-live view, a team that is not bound, an identity that is not verified.
+The side panel answers four questions at a glance: **what each Mission is for, how it is doing, who is on it, and what needs you.**
 
-![The side panel's overview under its “LIVE - FIXTURE DATA” header: two Missions, each with its objective, observed status and team, and an Open inspector button](assets/pixel-world/operational-panel-overview.png)
+- **Needs attention comes first.** One line says how many items the reception desk lists, with **Show the list** to go to them. Under it, one plain sentence says what this view may not show (for example, kinds of attention this office does not report, or team members working in linked child tasks); the exact limits are listed with the attention items themselves. A configured **Codex Orchestrator** entry always sits right after it, in the same place whether nothing or twenty things need attention. Where the request panel is not set up, it is a single quiet notice with the reason and the setup steps behind it.
+- **Each Mission card leads with its goal**: the objective's own first meaningful sentence, never a made-up summary. When an objective opens with only an id or a heading, the card says the objective text is there to read instead. Then comes its status, as a word and a shape rather than colour alone, and its team as observed: "4 of 4 members observed running · 4 terminals busy". *Observed running* is about the agents' processes; *terminal busy* is what each agent's own terminal reports. Neither is progress on the task. The card's actions say what you will see: **Show in the office**, **Show details**, and **Show evidence** where the office reports an evidence library for that Mission. A short source-qualified reference at the end of its status line tells look-alike Missions apart.
+- **Other agents**, found running but listed by no Mission as a team member, are grouped by what the source establishes: *No current Mission* (an assignment record, not a sign that they are idle or free), *Task not confirmed*, *Assignment not recognised* (whether they have a task is unknown) and *Can't be linked to a role* (an agent with that name is running, but it cannot be safely linked to its recorded role, so it is not drawn). What a group shares, its reason and its activity, is said once. A row says only what differs, and every row names its root, so two agents with the same name stay apart.
+- **The Selected dock** says where you are ("Agent 5 of 16 · Mission 2 of 2") and steps through agents or Missions with **Previous** and **Next**.
 
-**Open inspector**, on a Mission or on the selected agent, opens a full-size inspector over the office: the objective as its source reports it (not the whole original task prompt), the status and the source fields it was derived from, the team, task chains and checkpoints where the source reports them, evidence and review records, and the freshness and limits of what was observed. It behaves as a dialog: focus moves in, Tab stays inside, and Escape or Close returns you to where you were. **Show in the office** takes you from a team member to that agent on the map. Evidence, code review and Mission requests stay reachable from the panel and inspector wherever your office offers them.
+![The side panel under its “LIVE - FIXTURE DATA” header: the attention line and what this view may not show, then Mission cards that lead with their goals, each with its status, its observed team and its actions](assets/pixel-world/operational-panel-overview.png)
 
-![The full-size inspector for a Mission: heading and status, objective, and the team with each member's identity and observed state](assets/pixel-world/operational-panel-inspector.png)
+**Show details** opens a full-size, read-only view. It says first who or what this is, what its terminal reports right now, and which Mission it belongs to, with the actions that apply. Then comes the Mission's complete objective, exactly as its source exported it, followed by its team, checkpoints, evidence and review. Exact identities, reason codes, ISO times and epochs, and what the office does not report (model, usage, cost, progress, ETA) sit behind clearly labelled disclosures: one deliberate click away, never removed. It behaves as a dialog: focus moves in, Tab stays inside, and Escape or Close returns you to where you were.
+
+![The full-size details view of a Mission: its title and status, its complete objective and results, and its team with each member's observed state](assets/pixel-world/operational-panel-inspector.png)
 
 Both screenshots use synthetic test data, and the product says so in the frame (“LIVE - FIXTURE DATA”); how they were made is noted in [assets/pixel-world/operational-panel.md](assets/pixel-world/operational-panel.md). Status is what was observed, never assumed: unknown stays unknown rather than zero, a reported result is not shown as a verified one, and where a Mission's source exported no goal, such as a task row whose objective is only a section header, the panel says no goal was reported instead of inventing one. This is still a read-only view; it adds no new authority.
 

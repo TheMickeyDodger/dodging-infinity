@@ -442,6 +442,12 @@ export const DI_PANEL_WIDTH_PX = 420;
 export const DI_SELECTION_POLL_MS = 250;
 /** How often the client re-checks its own invalidation (transport, valid_until) for the DI office. */
 export const DI_CLIENT_CHECK_MS = 1000;
+/** Longest Mission title (characters, ellipsis included); the full objective stays in the inspector. */
+export const DI_MISSION_TITLE_MAX_CHARS = 90;
+/** A Mission's native id is shown whole up to this length, else as its shortest unique prefix. */
+export const DI_SHORT_REF_FULL_MAX_CHARS = 24;
+/** The shortest prefix a shortened native id keeps (the office zone label's length). */
+export const DI_SHORT_REF_MIN_CHARS = 11;
 /** Browser tab title of the DI office (DI mode only; the ordinary surfaces keep theirs). */
 export const DI_DOCUMENT_TITLE = 'Pixel Agents · DI office';
 /** DI office favicon: an ORIGINAL code-native 16x16 pixel mark ("DI" on the panel colour),

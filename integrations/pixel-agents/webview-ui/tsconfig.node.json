@@ -44,6 +44,7 @@
     "test/diEvidenceLibrary.test.ts",
     "test/diCodeReview.test.ts",
     "test/diMissionRequest.test.ts",
+    "test/diPlainSummary.test.ts",
     "test/harness/diAppProbe.ts"
   ]
 }

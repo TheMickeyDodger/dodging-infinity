@@ -111,10 +111,10 @@ test('a panel that scrolls itself fails; a missing panel fails', () => {
   ]);
 });
 
-test('a Mission card WITHOUT its "Open inspector" fails, and so does a list with no cards', () => {
+test('a Mission card WITHOUT its "Show details" fails, and so does a list with no cards', () => {
   const one = { ...GOOD, missionCards: { ...GOOD.missionCards, withOpenInspector: 10 } };
   expect(failing(one, '1440x900', 'a-loaded-nothing-selected')).toEqual([
-    'every Mission card carries its "Open inspector"',
+    'every Mission card carries its "Show details"',
   ]);
   const empty = {
     ...GOOD,
@@ -123,7 +123,7 @@ test('a Mission card WITHOUT its "Open inspector" fails, and so does a list with
   };
   const names = failing(empty, '1440x900', 'a-loaded-nothing-selected');
   expect(names).toContain('Mission cards exist');
-  expect(names).toContain('every Mission card carries its "Open inspector"');
+  expect(names).toContain('every Mission card carries its "Show details"');
   expect(names).toContain('first Mission objective in view');
 });
 
@@ -163,7 +163,7 @@ const HIDDEN: DockActionMeasure = {
 test("an action hidden inside the dock's own scroll area FAILS, though the dock's bounding box is in the viewport", () => {
   const m: PanelMeasure = {
     ...GOOD,
-    dock: { ...GOOD_DOCK, actions: { ...GOOD_DOCK.actions, 'Open inspector': HIDDEN } },
+    dock: { ...GOOD_DOCK, actions: { ...GOOD_DOCK.actions, 'Show details': HIDDEN } },
   };
   // The existing bbox invariant is satisfied (this is what the old suite checked)...
   expect(failing(m, '1100x680', STATE_B)).not.toContain(
@@ -171,9 +171,9 @@ test("an action hidden inside the dock's own scroll area FAILS, though the dock'
   );
   // ...and the new invariant is what catches the hidden doorway.
   expect(failing(m, '1100x680', STATE_B)).toEqual([
-    'dock action "Open inspector" is whole inside the dock\'s visible area',
-    'dock action "Open inspector" is clear of the dock\'s bottom fade',
-    'dock action "Open inspector" is what is hit at its centre',
+    'dock action "Show details" is whole inside the dock\'s visible area',
+    'dock action "Show details" is clear of the dock\'s bottom fade',
+    'dock action "Show details" is what is hit at its centre',
   ]);
 });
 

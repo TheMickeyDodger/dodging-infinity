@@ -223,8 +223,12 @@ test('the runtime section: plain outcome first, raw evidence behind a labelled d
   const details = html.indexOf('<details');
   assert.ok(details > 0);
   // The plain outcome precedes the disclosure; the reasons and counts live inside it.
-  assert.ok(html.indexOf('Runtime identity verified · unassigned DI runtime') < details);
-  assert.ok(html.indexOf('Runtime agents (not team members)') < details);
+  assert.ok(
+    html.indexOf('No current Mission') >= 0 && html.indexOf('No current Mission') < details,
+  );
+  assert.ok(html.indexOf('Identity confirmed, but no Mission is on record') < details);
+  assert.ok(html.indexOf('Other agents') >= 0 && html.indexOf('Other agents') < details);
+  assert.ok(html.indexOf('Runtime identity verified · unassigned DI runtime') > details);
   assert.ok(html.indexOf('registered_root_absent') > details);
   assert.ok(html.indexOf('over capacity, not observed') > details);
   assert.ok(html.indexOf('not atomic') > details);
@@ -252,7 +256,11 @@ test('the selected runtime agent: identity, then NOT a team member; refs only be
       }),
     }),
   );
-  const details = html.indexOf('<details');
+  // The record renders only inside the inspector's "Everything recorded" disclosure: nothing in it is
+  // a second, nested disclosure; its raw provenance follows the plain outcome.
+  assert.equal(html.indexOf('<details'), -1, 'no disclosure nested inside the record');
+  const details = html.indexOf('data-testid="di-runtime-provenance"');
+  assert.ok(details > 0);
   assert.ok(html.indexOf('task membership not verified (root not captured / capacity)') < details);
   assert.ok(html.indexOf('Not a team member') < details);
   assert.ok(html.indexOf('Recorded task reference (not verified; not membership): t-1') < details);
@@ -281,8 +289,9 @@ test('an unverified row says so in plain words; its reason code appears only in 
   );
   const details = html.indexOf('<details');
   const plain = html.slice(0, details);
-  assert.match(plain, /Runtime identity not verified; not drawn/);
-  assert.match(plain, /NOT LIVE/);
+  assert.match(plain, /Can’t be linked to a role/);
+  assert.match(plain, /it is not drawn and is not counted as a team member/);
+  assert.ok(html.indexOf('Runtime identity not verified; not drawn') > details);
   assert.doesNotMatch(plain, /native_identity|runtime_identity_|stable_identity/);
   assert.ok(html.indexOf('native_identity_degraded:identity_stable_identity_mismatch') > details);
 });

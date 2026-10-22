@@ -72,8 +72,8 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 16px 20px;
+  gap: 10px;
+  padding: 12px 16px 20px;
   color: var(--op-text);
   background: var(--op-bg);
   border-left: 1px solid var(--op-line);
@@ -393,7 +393,7 @@
 .di-op-missions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .di-op-missions:focus-visible {
   outline-offset: 0;
@@ -432,12 +432,16 @@
 .di-op-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 12px 10px;
+  gap: 6px;
+  padding: 10px 12px 8px;
   background: var(--op-surface);
   border: 1px solid var(--op-line);
   border-radius: 12px;
   flex-shrink: 0;
+  /* The containing block of its screen-reader-only parts (the zone name in "Show in the office"
+     is position:absolute): without it they escape the Missions region's scroll clip and stretch
+     the whole panel's scroll area. */
+  position: relative;
 }
 .di-op-card[data-selected-mission='true'] {
   background: var(--op-selected-bg);
@@ -467,6 +471,16 @@
 .di-op-team {
   color: var(--op-text);
   font-size: 12px;
+}
+/* A card's status line carries its short ref at its end (DOM order keeps the ref last); its team
+   line always takes the next line of its own. */
+.di-op-card-meta > .di-op-ref-line {
+  order: 1;
+  margin: 0 0 0 auto;
+}
+.di-op-card-meta > .di-op-team {
+  order: 2;
+  flex-basis: 100%;
 }
 .di-op-team-roles {
   color: var(--op-muted);
@@ -784,6 +798,8 @@
 }
 .di-op-inspector-objective {
   margin: 0;
+  /* The objective exactly as exported: its own line breaks kept (headings, lists). */
+  white-space: pre-line;
   font-size: 15px;
   line-height: 1.5;
   color: var(--op-text);
@@ -809,4 +825,160 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ---------- product experience: the plain first layer ---------- */
+
+/* The ONE attention entry: a quiet line, then the request entry, then Find (fixed order). */
+.di-op-attention {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.di-op-attention-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.di-op-attention-count {
+  color: var(--op-warn);
+  font-weight: 600;
+}
+
+/* A Mission's short, source-qualified ref under its title. */
+.di-op-ref-line {
+  margin-top: -4px;
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-ref-line .di-op-ref {
+  font-size: 11px;
+}
+
+/* A view filter's statement of what it leaves out. */
+.di-op-filter-note {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-about > summary {
+  padding: 2px 0;
+}
+
+/* One row: the name, then ONE short phrase with its shape; a differing reason on its own line. */
+.di-op-row-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.di-op-row-exception {
+  display: block;
+  color: var(--op-muted);
+}
+.di-op-phrase {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-phrase[data-tone='busy'] {
+  color: var(--op-running);
+}
+.di-op-phrase[data-tone='blocked'] {
+  color: var(--op-blocked);
+}
+.di-op-phrase[data-tone='stale'] {
+  color: var(--op-stale);
+}
+
+/* Runtime agents: a group (its meaning said once), then one block per root (one herd each). */
+.di-op-runtime-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.di-op-group-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-op-group-sentence {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-runtime-root {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.di-op-root-label {
+  font-family: var(--op-font-code);
+  color: var(--op-text);
+}
+
+/* Selected dock stepping: one row, a visible label per pair and visible words on every button. */
+.di-op-nav {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: -4px;
+}
+.di-op-nav-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.di-op-nav-label {
+  color: var(--op-muted);
+  font-size: 12px;
+  margin-right: 4px;
+}
+.di-op-nav .di-op-nav-group button {
+  color: var(--op-link);
+  padding: 2px 6px;
+}
+.di-op-nav-position {
+  font-weight: 400;
+}
+
+/* Runtime groups: what rows share, said once, as a short list under the group's sentence. */
+.di-op-group-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--op-text);
+  font-size: 12px;
+}
+
+/* The view's limits: one plain line on the face; the exact limits beside the attention list. */
+.di-op-limits {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.di-op-limits-detail ul {
+  margin: 0;
+  padding-left: 12px;
+  list-style: none;
+}
+
+/* The Codex Orchestrator where it is not available: one quiet line, never a card. */
+.di-op-mr-quiet {
+  flex-shrink: 0;
+}
+
+/* Details: the first layer reads first; everything recorded is one deliberate step below. */
+.di-op-now {
+  margin: 0;
+  font-size: 14px;
+  color: var(--op-text);
+}
+.di-op-record > summary,
+.di-op-inspector-section > summary {
+  font-size: 13px;
+}
+details.di-op-inspector-section {
+  gap: 6px;
 }
