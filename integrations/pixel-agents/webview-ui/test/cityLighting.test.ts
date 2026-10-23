@@ -572,7 +572,7 @@ test('STRUCTURAL: the city layers are drawn after the scene and BEFORE bubbles, 
   const order = [
     at('renderScene('),
     at('renderCityLighting('),
-    at('renderCityWeather('),
+    at('renderRegionalWeather('),
     at('renderBubbles('),
     at('renderAreaLabels('),
     at('renderGridOverlay('),

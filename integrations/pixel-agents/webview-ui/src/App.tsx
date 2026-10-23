@@ -1279,6 +1279,8 @@ function App() {
         <CityControls
           presentation={city.presentation}
           onChoose={city.choose}
+          onAtmosphere={city.chooseAtmosphere}
+          atmosphere={() => officeState.cityAtmosphere()}
           onClose={() => setIsCityOpen(false)}
           lightingStatus={() => officeState.city.lightingStatus(Date.now())}
           reducedMotion={officeState.reducedMotion}

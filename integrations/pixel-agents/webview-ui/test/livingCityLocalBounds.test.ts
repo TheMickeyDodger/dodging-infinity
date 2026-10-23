@@ -18,6 +18,8 @@ import { test } from 'vitest';
 import * as presentationCore from '../../core/src/cityPresentation.ts';
 import * as C from '../src/constants.ts';
 import * as cityMask from '../src/office/city/cityMask.ts';
+import * as cityRegions from '../src/office/city/cityRegions.ts';
+import * as cityRegionWeather from '../src/office/city/cityRegionWeather.ts';
 import * as cityWeather from '../src/office/city/cityWeather.ts';
 import * as trafficBuild from '../src/office/traffic/trafficBuild.ts';
 import { MAX_PASSES, planTraffic } from '../src/office/traffic/trafficBuild.ts';
@@ -97,6 +99,29 @@ const PINNED: Array<{
   },
   { file: 'office/city/cityLight.ts', root: SRC, ns: null, pins: {} },
   { file: 'office/city/cityEffects.ts', root: SRC, ns: null, pins: {} },
+  // item 18 (seasons and regional weather): the module-level numeric constants of its modules
+  { file: 'office/city/citySeason.ts', root: SRC, ns: null, pins: {} },
+  { file: 'office/city/cityPersist.ts', root: SRC, ns: null, pins: {} },
+  { file: 'office/city/citySeasonArt.ts', root: SRC, ns: null, pins: {} },
+  {
+    file: 'office/city/cityRegions.ts',
+    root: SRC,
+    ns: cityRegions,
+    pins: {
+      REGION_CITY: 0,
+      REGION_COAST: 1,
+      REGION_WOODLAND: 2,
+      REGION_HIGHLANDS: 3,
+      REGION_FARMLAND: 4,
+      REGION_NONE: 255,
+    },
+  },
+  {
+    file: 'office/city/cityRegionWeather.ts',
+    root: SRC,
+    ns: cityRegionWeather,
+    pins: { WEATHER_DRAW_WARMUP: 3 },
+  },
   { file: 'office/city/cityRender.ts', root: SRC, ns: null, pins: {} },
   { file: 'office/livingLayer.ts', root: SRC, ns: null, pins: {} },
   { file: 'components/CityControls.tsx', root: SRC, ns: null, pins: {} },
@@ -105,7 +130,20 @@ const PINNED: Array<{
     file: 'cityPresentation.ts',
     root: CORE,
     ns: presentationCore,
-    pins: { CITY_PRESENTATION_VERSION: 1, CITY_PRESENTATION_MAX_BYTES: 256 },
+    pins: {
+      CITY_PRESENTATION_VERSION: 1,
+      CITY_PRESENTATION_MAX_BYTES: 256,
+      // contract v2 (item 18)
+      CITY_PRESENTATION_V2_VERSION: 2,
+      CITY_PRESENTATION_V2_MAX_BYTES: 256,
+      CITY_PRESENTATION_REGION_SLOTS: 5,
+      CITY_PRESENTATION_SEASON_REMAINING_MAX_MS: 1_800_000,
+      CITY_PRESENTATION_REGION_REMAINING_MAX_MS: 300_000,
+      CITY_PRESENTATION_WET_STREAK_MAX: 2,
+      CITY_PRESENTATION_STEP_MAX: 999_999,
+      CITY_PRESENTATION_SEED_MAX: 4_294_967_295,
+      CITY_PRESENTATION_DEFAULT_SEED: 0x51a7,
+    },
   },
   { file: 'di/cityPresentationPersistence.ts', root: SERVER, ns: null, pins: {} },
 ];
@@ -141,6 +179,59 @@ test('SWEEP: every module-level numeric constant in the living-city modules is p
 
 test('the City panel keeps its refresh cadence in constants.ts, by exact value', () => {
   assert.equal(C.CITY_STATUS_REFRESH_MS, 1000);
+});
+
+/** ITEM 18: every numeric bound the seasons and the regional weather added to constants.ts, by exact value. */
+const ITEM18_CONSTANTS: Record<string, number> = {
+  CITY_SEASON_INTERVAL_MS: 1_800_000,
+  CITY_CLOCK_MAX_STEP_SEC: 0.25,
+  CITY_SEASON_FADE_MS: 3_000,
+  CITY_SEASON_CACHE_MAX_ENTRIES: 2_048,
+  CITY_REGION_SLOTS: 5,
+  CITY_REGION_FALLBACK_BANDS: 3,
+  CITY_REGION_BAND_MIN_COLS: 96,
+  CITY_WEATHER_INTERVAL_MIN_MS: 120_000,
+  CITY_WEATHER_INTERVAL_MAX_MS: 300_000,
+  CITY_WEATHER_FADE_MS: 4_000,
+  CITY_WEATHER_SCHEDULE_SEED: 0x51a7,
+  CITY_WEATHER_MAX_WET_DRAWS: 2,
+  CITY_WEATHER_STEP_LIMIT: 1_000_000,
+  CITY_SAVE_POLL_MS: 1_000,
+  CITY_SAVE_MIN_GAP_MS: 2_000,
+  CITY_SAVE_CHECKPOINT_MS: 60_000,
+  CITY_HEAVY_SNOW_PARTICLES: 520,
+  CITY_WEATHER_PARTICLE_TOTAL: 520,
+  CITY_WEATHER_BALANCE_RATE: 200,
+  CITY_REGION_EDGE_TILES: 4,
+  CITY_SNOW_HALO_PX: 1,
+  CITY_SNOW_FLAKE_SCALE: 3,
+  CITY_HEAVY_SNOW_SPEED: 0.16,
+  CITY_HEAVY_SNOW_SWAY: 0.03,
+  CITY_HEAVY_SNOW_SIZE_PX: 2,
+  CITY_HEAVY_SNOW_NEAR_DEPTH: 0.75,
+  CITY_TEST_CLOCK_MAX_SECONDS: 14_400,
+  CITY_SEASON_GREEN_HUE_MIN: 60,
+  CITY_SEASON_GREEN_HUE_MAX: 175,
+  CITY_SEASON_GREY_SATURATION: 0.1,
+  CITY_SEASON_TRUNK_LIGHTNESS: 0.32,
+};
+
+test('SWEEP (item 18): every numeric constant of the seasons and regional weather section of constants.ts is pinned here, exactly, and every pin still exists', () => {
+  const source = fs.readFileSync(path.join(SRC, 'constants.ts'), 'utf-8');
+  const start = source.indexOf('// ── Living city: seasons and regional weather');
+  assert.ok(start >= 0, 'the section is present');
+  const end = source.indexOf('// ── ', start + 10);
+  const section = source.slice(start, end < 0 ? undefined : end);
+  const found = new Map<string, number>();
+  for (const m of section.matchAll(NUMERIC_CONST)) found.set(m[1], Number(m[2].replace(/_/g, '')));
+  assert.deepEqual([...found.keys()].sort(), Object.keys(ITEM18_CONSTANTS).sort(), 'declared against pinned');
+  for (const [name, value] of Object.entries(ITEM18_CONSTANTS)) {
+    assert.equal(found.get(name), value, `${name} is declared as ${value}`);
+    assert.equal((C as Record<string, unknown>)[name], value, `${name} exports ${value}`);
+  }
+  console.log(
+    `MEASURED sweep (item 18): ${found.size} numeric constants in constants.ts, each pinned: ${[...found].map(([n, v]) => `${n}=${v}`).join(' ')}`,
+  );
 });
 
 // ── MAX_PASSES: the convergence cap is honoured ───────────────────────────────────────────────────

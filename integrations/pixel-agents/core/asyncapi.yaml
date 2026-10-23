@@ -825,11 +825,16 @@ components:
 
     CityPresentationLoaded:
       description: |
-        DI office only: the viewer's last SAVED city presentation preferences (lighting, weather,
-        traffic), or `null` when none was saved. Sent in the handshake. The webview validates it
-        against the shared contract (core/src/cityPresentation.ts) before applying it and falls
-        back to the defaults when it is refused. Local decoration only: it has no Mission, agent
-        or canonical meaning, and no value in it comes from a location or a weather service.
+        DI office only: the viewer's last SAVED city presentation (lighting, traffic, and the season
+        and regional-weather state that lets a reload continue where the city was; contract v2), or
+        `null` when none was saved or the saved one was refused. Sent in the handshake as the NAMED
+        v2 record. A stored v2 record (the server keeps it in a compact form, see SaveCityPresentation)
+        is unpacked, and a saved v1 record (lighting, weather, traffic) is MIGRATED to v2 by the server
+        before it is sent (the one shared function, core/src/cityPresentation.ts
+        migrateCityPresentation); a record that is neither is ignored whole. The webview validates it against the same contract before
+        applying it and falls back to the defaults when it is refused. Local decoration only: it
+        has no Mission, agent or canonical meaning, and no value in it comes from a location, a
+        calendar or a weather service.
       type: object
       additionalProperties: false
       required: [type, state]
@@ -839,7 +844,7 @@ components:
         state:
           oneOf:
             - type: object
-              description: Opaque bounded record; format owned by core/src/cityPresentation.ts and checked by the server on save and on read.
+              description: Opaque bounded record (v2); format owned by core/src/cityPresentation.ts and checked by the server on save and on read.
             - type: 'null'
 
     DiSeatPreferencesLoaded:
@@ -896,10 +901,15 @@ components:
 
     SaveCityPresentation:
       description: |
-        DI office only: persist the viewer's city presentation preferences under the DI state root
-        (city-presentation.json). Refused unless it matches the contract (at most
-        CITY_PRESENTATION_MAX_BYTES). Local presentation state only: no Mission, agent or
-        canonical meaning.
+        DI office only: persist the viewer's city presentation (lighting, traffic, season and
+        regional-weather state) under the DI state root (city-presentation.json). Refused unless it
+        matches the strict named v2 contract. The server stores it in the contract's COMPACT form (small
+        integer codes and packed per-region arrays; core/src/cityPresentation.ts
+        encodeStoredCityPresentationV2), which is at most CITY_PRESENTATION_V2_MAX_BYTES (256) bytes:
+        the saved city choices keep their 256-byte budget with every field kept. The webview sends
+        it on every choice, on every season or weather transition, at a bounded checkpoint rate and
+        when the view is hidden: never per frame. Local presentation state only: no Mission, agent
+        or canonical meaning.
       type: object
       additionalProperties: false
       required: [type, state]
@@ -908,7 +918,7 @@ components:
           const: saveCityPresentation
         state:
           type: object
-          description: Opaque bounded record; format owned by core/src/cityPresentation.ts.
+          description: Opaque bounded record (v2); format owned by core/src/cityPresentation.ts.
 
     SaveDiSeatPreferences:
       description: |

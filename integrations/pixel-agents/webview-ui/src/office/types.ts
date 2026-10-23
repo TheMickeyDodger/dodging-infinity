@@ -90,6 +90,8 @@ export interface FurnitureInstance {
   zY: number;
   /** Render-time horizontal flip flag (for mirrored side variants) */
   mirrored?: boolean;
+  /** Outdoor foliage the seasons recolour (item 18): set from the furniture TYPE when the instance is built; absent for everything else. */
+  foliage?: 'canopy' | 'conifer' | 'crop';
 }
 
 export interface ToolActivity {

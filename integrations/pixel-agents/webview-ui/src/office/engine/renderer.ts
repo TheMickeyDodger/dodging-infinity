@@ -56,7 +56,14 @@ import { ambientLabel } from '../ambient/ambientJobs.js';
 import { ambientFrame, ambientSheetFor } from '../ambient/ambientSprites.js';
 import type { AmbientResident } from '../ambient/ambientWorld.js';
 import type { CityFrame, CityRenderInput } from '../city/cityRender.js';
-import { renderCityLighting, renderCityWeather } from '../city/cityRender.js';
+import { renderCityLighting, renderRegionalWeather } from '../city/cityRender.js';
+import type { Season, SeasonFrame } from '../city/citySeason.js';
+import {
+  groundKindOf,
+  seasonalSprite,
+  winterAreaWash,
+  winterWeight,
+} from '../city/citySeasonArt.js';
 import { getColorizedFloorSprite, hasFloorSprites, WALL_COLOR } from '../floorTiles.js';
 import { getCatalogEntry } from '../layout/furnitureCatalog.js';
 import type { VisibleTiles } from '../projection.js';
@@ -319,6 +326,8 @@ export function renderAreaOverlay(
   zoom: number,
   activeAreaLabel?: string | null,
   view?: VisibleTiles,
+  season?: SeasonFrame | null,
+  tileMap?: TileTypeVal[][],
 ): void {
   if (!areaTiles || areaTiles.length === 0) return;
   if (!areas || areas.length === 0) return;
@@ -326,14 +335,20 @@ export function renderAreaOverlay(
   const s = TILE_SIZE * zoom;
   const colorMap = new Map<string, string>();
   for (const a of areas) colorMap.set(a.label, a.color);
+  // item 18: while winter shows, a warm wash over ground tiles is drawn cool and neutral (snow), per district, once per pass
+  const winter = tileMap ? winterWeight(season ?? null) : 0;
+  const winterMap = new Map<string, string>();
+  if (winter > 0) for (const a of areas) winterMap.set(a.label, winterAreaWash(a.color, winter));
 
   ctx.save();
   for (let r = view ? view.r0 : 0; r < (view ? view.r1 : rows); r++) {
     for (let c = view ? view.c0 : 0; c < (view ? view.c1 : cols); c++) {
       const label = areaTiles[r * cols + c];
       if (!label) continue;
-      const color = colorMap.get(label);
+      let color = colorMap.get(label);
       if (!color) continue;
+      if (winter > 0 && groundKindOf(tileMap![r]?.[c]) === 'ground')
+        color = winterMap.get(label) ?? color;
       ctx.globalAlpha =
         activeAreaLabel === label
           ? AREA_OVERLAY_ALPHA * AREA_ACTIVE_ALPHA_MULTIPLIER
@@ -412,6 +427,13 @@ export function renderAreaLabels(
   ctx.restore();
 }
 
+/** Which season's ground to draw (item 18). With `overlayOf`, ONLY the tiles whose ground differs between the two seasons are drawn
+ *  (the cross-fade's second pass, laid over the first at partial alpha). Plain summer passes none: the world as it has always looked. */
+export interface TileSeasonLayer {
+  season: Season;
+  overlayOf: Season | null;
+}
+
 /** @internal */
 export function renderTileGrid(
   ctx: CanvasRenderingContext2D,
@@ -422,6 +444,7 @@ export function renderTileGrid(
   tileColors?: Array<ColorValue | null>,
   cols?: number,
   view?: VisibleTiles,
+  seasonLayer?: TileSeasonLayer | null,
 ): void {
   const s = TILE_SIZE * zoom;
   const useSpriteFloors = hasFloorSprites();
@@ -441,6 +464,7 @@ export function renderTileGrid(
       // Skip VOID tiles entirely (transparent)
       if (tile === TileType.VOID) continue;
 
+      if (seasonLayer?.overlayOf && (tile === TileType.WALL || !useSpriteFloors)) continue;
       if (tile === TileType.WALL || !useSpriteFloors) {
         // Wall tiles or fallback: solid color
         if (tile === TileType.WALL) {
@@ -457,7 +481,22 @@ export function renderTileGrid(
       // Floor tile: get colorized sprite
       const colorIdx = r * layoutCols + c;
       const color = tileColors?.[colorIdx] ?? { h: 0, s: 0, b: 0, c: 0 };
-      const sprite = getColorizedFloorSprite(tile, color);
+      let sprite = getColorizedFloorSprite(tile, color);
+      if (seasonLayer) {
+        // outdoor ground only (item 18): meadow, forest floor, crops, soil, and a winter frost on hard ground
+        const ground = groundKindOf(tile);
+        if (!ground) {
+          if (seasonLayer.overlayOf) continue;
+        } else {
+          const seasonal = seasonalSprite(seasonLayer.season, ground, sprite);
+          if (
+            seasonLayer.overlayOf &&
+            seasonal === seasonalSprite(seasonLayer.overlayOf, ground, sprite)
+          )
+            continue;
+          sprite = seasonal;
+        }
+      }
       const cached = getCachedSprite(sprite, zoom);
       ctx.drawImage(cached, offsetX + c * s, offsetY + r * s);
     }
@@ -484,6 +523,7 @@ export function renderScene(
   trains: readonly Train[] = [],
   halo: { ids: ReadonlySet<number>; intensity: number } | null = null,
   vehicles: readonly Vehicle[] = [],
+  season: SeasonFrame | null = null,
 ): void {
   const drawables: ZDrawable[] = [];
 
@@ -497,7 +537,19 @@ export function renderScene(
     const spriteW = (f.sprite[0]?.length ?? 0) * zoom;
     const spriteH = f.sprite.length * zoom;
     if (fx + spriteW < 0 || fy + spriteH < 0 || fx > canvasW || fy > canvasH) continue;
-    const cached = getCachedSprite(f.sprite, zoom);
+    // Outdoor foliage takes the season's tone (item 18); summer, and everything that is not foliage, draws f.sprite itself.
+    let baseSprite = f.sprite;
+    let overSprite: SpriteData | null = null;
+    if (season && f.foliage) {
+      baseSprite = seasonalSprite(season.from ?? season.season, f.foliage, f.sprite);
+      if (season.from !== null) {
+        const incoming = seasonalSprite(season.season, f.foliage, f.sprite);
+        if (incoming !== baseSprite) overSprite = incoming;
+      }
+    }
+    const cached = getCachedSprite(baseSprite, zoom);
+    const over = overSprite ? getCachedSprite(overSprite, zoom) : null;
+    const overAlpha = season?.t ?? 1;
     if (f.mirrored) {
       drawables.push({
         zY: f.zY,
@@ -506,6 +558,10 @@ export function renderScene(
           c.translate(fx + cached.width, fy);
           c.scale(-1, 1);
           c.drawImage(cached, 0, 0);
+          if (over) {
+            c.globalAlpha = overAlpha;
+            c.drawImage(over, 0, 0);
+          }
           c.restore();
         },
       });
@@ -514,6 +570,12 @@ export function renderScene(
         zY: f.zY,
         draw: (c) => {
           c.drawImage(cached, fx, fy);
+          if (over) {
+            c.save();
+            c.globalAlpha = overAlpha;
+            c.drawImage(over, fx, fy);
+            c.restore();
+          }
         },
       });
     }
@@ -1207,8 +1269,29 @@ export function renderFrame(
   const { offsetX, offsetY } = mapOffset(canvasWidth, canvasHeight, cols, rows, zoom, panX, panY);
   const view = visibleTiles(canvasWidth, canvasHeight, offsetX, offsetY, zoom, cols, rows);
 
-  // Draw tiles (floor + wall base color)
-  renderTileGrid(ctx, tileMap, offsetX, offsetY, zoom, tileColors, layoutCols, view);
+  // Draw tiles (floor + wall base color). Plain summer passes no season layer: the world exactly as it has always looked.
+  const seasonFrame = city?.season ?? null;
+  renderTileGrid(
+    ctx,
+    tileMap,
+    offsetX,
+    offsetY,
+    zoom,
+    tileColors,
+    layoutCols,
+    view,
+    seasonFrame ? { season: seasonFrame.from ?? seasonFrame.season, overlayOf: null } : null,
+  );
+  if (seasonFrame && seasonFrame.from !== null && seasonFrame.t > 0) {
+    // the cross-fade: the incoming season's ground laid over the outgoing one's, where they differ
+    ctx.save();
+    ctx.globalAlpha = seasonFrame.t;
+    renderTileGrid(ctx, tileMap, offsetX, offsetY, zoom, tileColors, layoutCols, view, {
+      season: seasonFrame.season,
+      overlayOf: seasonFrame.from,
+    });
+    ctx.restore();
+  }
 
   // Carpet layer (above floor, below seat indicators / furniture / characters)
   if (carpetTiles && carpetTiles.length > 0) {
@@ -1228,6 +1311,8 @@ export function renderFrame(
       zoom,
       activeAreaLabel,
       view,
+      seasonFrame,
+      tileMap,
     );
   }
 
@@ -1266,16 +1351,27 @@ export function renderFrame(
     trains ?? [],
     halo ?? null,
     vehicles ?? [],
+    seasonFrame,
   );
 
   // The city's light and weather (living city 6-9): over the scene, UNDER the bubbles, labels, selection
   // chrome and every DOM overlay, so none of those is ever darkened. A clear day draws nothing.
   if (city) {
     const frame: CityFrame = { canvasWidth, canvasHeight, offsetX, offsetY, zoom, view };
-    if (city.level > 0 || city.veil) {
-      renderCityLighting(ctx, { level: city.level, veil: city.veil, mask: city.mask, lamps: city.lamps, agents: city.agents }, frame);
+    if (city.level > 0 || city.weather) {
+      renderCityLighting(
+        ctx,
+        {
+          level: city.level,
+          regional: city.weather,
+          mask: city.mask,
+          lamps: city.lamps,
+          agents: city.agents,
+        },
+        frame,
+      );
     }
-    if (city.weather) renderCityWeather(ctx, city.weather, city.mask, frame);
+    if (city.weather) renderRegionalWeather(ctx, city.weather, city.mask, frame);
   }
 
   // Speech bubbles (always on top of characters)

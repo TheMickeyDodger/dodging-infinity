@@ -5,6 +5,7 @@ import {
   migrateLayout as migrateLayoutCore,
 } from '../../../../core/src/layoutMigration.js';
 import type { ColorValue } from '../../components/ui/types.js';
+import { foliageKindOf } from '../city/citySeasonArt.js';
 import { getColorizedSprite } from '../colorize.js';
 import type {
   FurnitureInstance,
@@ -100,7 +101,16 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
       }
     }
 
-    instances.push({ sprite, x, y, zY, ...(mirrored ? { mirrored: true } : {}) });
+    // outdoor foliage the seasons recolour (item 18); every other piece carries no flag
+    const foliage = foliageKindOf(item.type);
+    instances.push({
+      sprite,
+      x,
+      y,
+      zY,
+      ...(mirrored ? { mirrored: true } : {}),
+      ...(foliage ? { foliage } : {}),
+    });
   }
   return instances;
 }

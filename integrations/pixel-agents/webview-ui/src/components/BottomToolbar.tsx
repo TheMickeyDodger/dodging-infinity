@@ -136,6 +136,13 @@ export function BottomToolbar({
           aria-expanded={city.open}
           aria-controls="city-controls"
           onClick={city.onToggle}
+          onKeyDown={(e) => {
+            // Escape closes the open City panel from the button that opened it too (focus stays on the button)
+            if (city.open && e.key === 'Escape') {
+              e.stopPropagation();
+              city.onToggle();
+            }
+          }}
           title="City lighting and weather (decoration only)"
           data-testid="city-button"
         >

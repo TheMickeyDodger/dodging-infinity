@@ -1401,9 +1401,9 @@ An artifact that is a directory is hashed whole, with nothing excluded. `verify`
 if the checkout is no longer the frozen source or an artifact is not the one recorded. It is a
 name for bytes and a tamper check, not a signature.
 
-## The living city: lighting, weather, traffic, residents and the subway
+## The living city: lighting, seasons, weather, traffic, residents and the subway
 
-The City button in the bottom toolbar opens a small panel with three choices: lighting, weather and traffic (the last is described in "Moving traffic", below). The residents and the subway (described above, under the living metropolis) are the fourth part of the same city and have no switch of their own. All are **decoration**: they are
+The City button in the bottom toolbar opens a panel with four choices: lighting, seasons, weather and traffic (traffic is described in "Moving traffic", below). The panel never grows taller than the window: its heading and a Close button stay put and the choices scroll inside it; Escape closes it, from the City button that opened it as well as from inside it, and focus goes back to the button. The residents and the subway (described above, under the living metropolis) are a fifth part of the same city, beside the four choices, and have no switch of their own. All are **decoration**: they are
 drawn on your screen and change nothing about Missions, agents, their activity, an assignment, an approval or a
 delivery. No weather service, location or credential is used, and the office never reads or sends anything to
 make them work.
@@ -1420,18 +1420,66 @@ make them work.
 At dusk and night the outdoors darkens, but offices stay lit, real agents carry a soft light, and street lamps and
 lanterns glow. Labels, bubbles, the selection and every panel are drawn after the lighting and are never darkened.
 
-**Weather** is **Clear**, **Rain** or **Snow**. It is a fixed, seeded set of particles drawn over the *outdoors only*:
-a particle over an indoor tile is not drawn, so offices stay dry. While it rains or snows a faint cool veil also lies
-over the outdoors, so even a still frame reads as weather. It is not a forecast.
+**Seasons** are **Automatic** (the default), **Spring**, **Summer**, **Autumn** or **Winter**, with **Pause** and **Resume** for the automatic turn.
+Summer is the city exactly as it always looked, so a new city starts in summer. Automatic turns the seasons on their own, summer, autumn, winter, spring,
+**thirty minutes of the view being open, visible and running each** (two hours for the year). **Pause stops only the season clock** and keeps its time left; Automatic weather keeps running. Choosing a season holds it until you
+choose Automatic, which starts a **fresh thirty minutes from the season showing at that moment** (it does not go back to summer). A change is a three-second cross-fade (at once under reduced motion). A season recolours the
+*outdoors only*: fresher greens in spring, golden and browner foliage and ground in autumn, snow-covered ground and frosted foliage in winter, and crops that turn pale olive in winter. Offices look
+the same in every season. Where a district is mostly water, sand or paving (the Coast, the Harbour, much of the Metropolis) there is little foliage to change, so **spring and summer look much alike there** (only the greens differ); autumn and winter differ clearly everywhere. In winter a **warm** district tint that lies over meadows and forest floors (the Autumn Wildwood's orange, the Metropolis's tan) is drawn cool and neutral, so snow reads as snow there. A cool, green or grey tint is left as it is, so **River Valley Farmland keeps an olive-cream winter ground, and a mild warm/cool seam remains where it meets the Highlands**.
 
-**Reduced motion.** With the operating system's reduced-motion preference on, lighting jumps to its stage instead of
-fading (the Clock shows the nearest still stage rather than a gradual ramp), and weather is held as one still frame.
-Turning the preference on while the view is open holds the rain where it is.
+**Weather** is **Automatic** (the default) or one manual choice for the whole world: **Clear**, **Rain**, **Light snow** or **Heavy snow**. **A manual choice overrides
+the automatic rules in every region and every season** (Heavy snow in summer is allowed; Automatic never draws it there). Under Automatic the world has
+five weather regions (City, Coast, Woodland, Highlands and Farmland by district; a world with no districts is split into three bands, west, middle and east, when it is at
+least 96 columns wide, and is one region otherwise, which uses the City row). Each region draws its own next weather every **two to five minutes** from a seeded schedule. What a region may
+draw depends on the season and its kind of region, with these weights (a draw picks a kind with probability weight / total):
 
-**What is saved.** Only your choices, as a tiny record in `city-presentation.json` under the DI state root (exactly
-four keys: a version and the three modes). Nothing else is saved: no time, no stage, no particle, no position. A
-saved record that does not match the contract is ignored whole and the defaults stand. The record is checked before
-it is written and again when it is read.
+| Season | City, Coast, Woodland, Farmland | Highlands |
+| --- | --- | --- |
+| Spring | clear 5, rain 3 | clear 4, rain 3, light snow 2 |
+| Summer | clear 5, rain 2 | clear 5, rain 2 |
+| Autumn | clear 4, rain 3 | clear 4, rain 3, light snow 2 |
+| Winter | City and Farmland: clear 5, light snow 3. Coast: clear 5, light snow 2, **rain 2**. Woodland: clear 4, light snow 3, heavy snow 2 | clear 3, light snow 3, heavy snow 3 |
+
+So a winter Coast can still rain, and **Automatic heavy snow happens only in winter, in the Woodland and the Highlands**. A region never has more than **two non-clear draws in a row**: the next draw is then
+clear, so every region returns to clear. The seed is a fixed constant of the product (not random per install), so the same history gives the same weather.
+Where two regions meet, the weather's **strength** (its veil and its particles) blends over about **four tiles into each side** of the border, so a clear region beside a wet one shows some of the neighbour's weather
+within four tiles of the border, and its interior (beyond four tiles) has no particles and no veil. That ramp softens the strength; **the border itself can still run in a straight line**, because
+the regions are whole districts or bands. Weather is a set of particles drawn over the *outdoors only*, **one pool of at most 520 particles for rain, light snow and heavy snow together**
+(shared in proportion to the regions showing each kind, each share rounded down, so three kinds shown equally are 173 + 173 + 173 = 519, and one kind alone gets its whole capacity: rain 520, light snow 300, heavy snow 520).
+A particle over an indoor tile or over empty ground is not drawn (a rain streak that would run into one is cut at its edge), so offices stay dry. Particles move with the world when you
+pan; when you zoom, which particles are drawn is still decided by the world tile under each one, but the pattern is re-seated. A light-snow flake sits on a small cool shadow so it reads on pale
+ground; heavy snow has larger flakes and a denser veil. While it rains or snows a faint cool veil also lies over the outdoors, so even a still frame reads as weather. Seasons and
+weather are decoration: never a forecast, and never a sign of what an agent or a Mission is doing.
+
+**What it looks like.** Four pictures of the built office, over a synthetic fixture office state (not a live provider); each caption bar is the state the page itself reported. Capture details, hashes, the clock of each picture and the limits are in [the provenance note](../assets/pixel-world/seasons-and-weather.md).
+
+| Autumn Wildwood in the four seasons | River Valley Farmland in the four seasons |
+|---|---|
+| ![The Autumn Wildwood in spring, summer, autumn and winter](../assets/pixel-world/seasons-autumn-wildwood.png) | ![River Valley Farmland in spring, summer, autumn and winter, with pale-olive crops in winter](../assets/pixel-world/seasons-river-valley-farmland.png) |
+| Season held on each, weather Clear. Captions are the state the page reported. Built app, synthetic fixture office state, real time. | The same four seasons over crops, barns and fences. Built app, synthetic fixture office state, real time. |
+
+| Light and heavy snow | Regional weather changing on its own |
+|---|---|
+| ![Silver Pine Highlands in winter: clear, light snow, heavy snow, and autumn rain](../assets/pixel-world/weather-light-and-heavy-snow-highlands.png) | ![The Highlands go from light snow to heavy snow and back to clear while other regions change](../assets/pixel-world/weather-regional-transition-highlands.png) |
+| Manual weather choices over the same ground. Built app, synthetic fixture office state, real time. | Automatic weather in a held winter, driven by the real scheduler on an **accelerated test clock**: +335 s of scheduler time in 2 s of wall time; each frame states its own elapsed time. Built app, synthetic fixture office state. |
+
+| Two regions, two different weathers at once |
+|---|
+| ![Silver Pine Highlands in heavy snow beside clear River Valley Farmland, in one frame with the border in view](../assets/pixel-world/weather-two-regions-at-once-highlands-farmland.png) |
+| Real time, no test clock: Automatic weather in a held winter on a fresh profile; the real seeded scheduler drew heavy snow for the Highlands and clear sky for Farmland at the same moment. Built app, synthetic fixture office state. A mild warm/cool seam remains at this border (Farmland keeps an olive-cream winter ground). |
+
+**Reduced motion.** With the operating system's reduced-motion preference on, what moves stops and what fades is instant: weather particles are held as one still frame, and lighting,
+seasons and weather change **at once** instead of cross-fading (the Clock shows the nearest still stage rather than a gradual ramp). **The clocks do not stop**: a scheduled season or weather change still
+happens on its schedule, and is simply shown at once.
+Turning the preference on while the view is open holds the rain where it is and finishes, at once, any season or weather fade that is already running; turning it off again restarts nothing.
+
+**What is saved.** Only your choices and where the two schedules stand, as a compact record of whole numbers in `city-presentation.json` under the DI state root, **at most 256 bytes**
+(about 130 measured): a version, the lighting and traffic modes, the season (mode, season, paused, time left) and the weather (mode, the fixed seed and, for each of the five regions, its
+kind, its step in the schedule, its wet-draw streak and its time left). Nothing else is saved: no time of day, no particle, no position, nothing about a Mission or an agent. A saved record from
+before seasons existed is migrated on load (lighting, traffic and weather are kept; the seasons start Automatic from summer) and reading it writes nothing; the next choice writes the new form. A saved
+record that does not match the contract is ignored whole and the defaults stand. The record is checked before it is written and again when it is read. A choice is saved at once; a change the
+schedules make is saved after at most one save every two seconds; a running clock is checkpointed at most once a minute and only if it actually advanced; a hidden view writes nothing,
+and hiding it saves once more.
 
 **How this is tested, and what that does and does not show.** The engine (lighting level math, the indoor/outdoor
 mask, the lamp lights, the particle field, the per-frame caps) is tested directly, including on the shipped
@@ -1439,7 +1487,8 @@ metropolis world, with exact assertions of every bound. A real-browser check mou
 headless Chrome over the shipped world with a labelled *fixture* office state: it opens the panel by keyboard,
 compares canvas pixels (day is pixel-for-pixel the original look; night is darker while the lit things stay lit;
 weather adds pixels and leaves none behind when cleared), saves through the real persistence module under a temp
-store and reloads. That is integration over source, **not** production-package proof, and not evidence of a live
+store and reloads. Seasons and regional weather add exact tests of every bound (also pinned from Python), independent per-tile checks of the region edge written from its definition rather than from the
+code under test, deliberately wrong versions of the code that those checks must fail, and combined loads (a held winter, Automatic regional weather with rain, light snow and heavy snow at once, night and traffic). That is integration over source, **not** production-package proof, and not evidence of a live
 provider. The weather's veil and the indoor lighting depend on the world's tile types, so a world that colours its
 floors differently will light differently.
 
@@ -1499,8 +1548,8 @@ the Map, of the 106 vehicle pieces the world places, so the other 13 of the 68 d
 box. With traffic Off the Map is exactly the parked street. The boxes are not coloured by kind, so nothing on the Map looks like an emergency vehicle.
 
 **Hidden, closed, paused and reduced.** While the tab is hidden nothing advances. When it is shown again the residents and the subway are
-caught up by **at most 20 seconds, in at most 200 steps**, however long it was hidden; the traffic and the weather are **not** caught up
-(a street that was hidden is simply where it was). **Nothing runs while the page is closed, the computer is asleep or it is rebooted:** no
+caught up by **at most 20 seconds, in at most 200 steps**, however long it was hidden; the traffic, the seasons and the weather are **not** caught up
+(a street that was hidden is simply where it was, and the seasons and weather count only visible running time). **Nothing runs while the page is closed, the computer is asleep or it is rebooted:** no
 simulation time passes, and nothing is claimed about what the city did meanwhile. Opening the Map covers the canvas and the canvas stops
 drawing; the world underneath keeps advancing, and the Map shows it. With reduced motion everything is held still (night shown at once,
 the rain on one frame, the vehicles where they are parked, the residents and trains where they stand); a resident, a vehicle or a train
@@ -1509,7 +1558,7 @@ still gives way to a real agent.
 **Reload and restart.** The residents and trains are saved while the office is open (see above) and a reload restores each resident once and
 each rider aboard its own train, and the journeys carry on: a restored rider alights where it was going, and is recorded as having boarded in
 an earlier run. The traffic is **not** saved: it is rebuilt from its seed, the same vehicles with the same ids at the places they were parked,
-and never continues what it was doing. Only your lighting, weather and traffic choices are saved. A snapshot that does not belong to this
+and never continues what it was doing. Only your city choices are saved: lighting, traffic, the season and the weather, with where each schedule stands. A snapshot that does not belong to this
 world, these residents or these journeys is refused whole and the city starts fresh.
 
 **What it costs, as measured.** These were measured in the real App in the installed Chrome on one Mac, over the source with Vite's
@@ -1524,14 +1573,14 @@ Figures are rounded; the run's logs have the exact ones.
 | Riders (and aboard at once) | 24 (32) | 24 (up to 16 seen) | 24 |
 | Trains | 4 (2 on this line) | 2 | 2 |
 | Vehicles | 96 (68 slots in this world) | about 52 on the street, of 68 | about 52 of 68 |
-| Rain particles | 520 | 520 | 520 |
+| Weather particles (rain, light snow and heavy snow together, one pool) | 520 | measured: 519 with all three kinds shown (173 + 173 + 173); 520 with heavy snow alone | the same: 519 and 520 |
 | Lights lit per frame | 96 | at most 49 at any of twelve camera positions of a normal viewport (39 in an earlier run: it depends where the agents stand) | the same twelve positions; 96 only on a synthetic frame no camera reaches (the whole world at a quarter of the scale) |
 | Path searches per tick | 4 | 4 | 4 |
 | Saved snapshot | 65,536 bytes | about 7 KB | about 10 KB |
-| Saved city choices | 256 bytes | 62 bytes | 62 bytes |
+| Saved city choices | 256 bytes | 130 bytes | 130 bytes |
 | Timed `requestAnimationFrame` callbacks, **per callback** (first labelled "Game-loop frame (simulation plus issuing every draw call)": the timing wrapper times every callback registered by anyone, so it cannot show which is the game loop, and two callbacks share each requestAnimationFrame timestamp; see below) | 50 ms at the 95th percentile (declared for this per-callback sample) | mean 3.5 ms, 95th percentile 5.6 ms | mean 3.6 ms, 95th percentile 5.6 to 5.9 ms |
 | One ordinary simulation tick | 8 ms at the 95th percentile | mean 0.1 ms | mean 0.2 ms |
-| Elements added to the page | 120 | 25 (the open City panel) | 25 |
+| Elements added to the page | 120 | 44 (the open City panel) | not measured with the panel open |
 | Catch-up of a long absence (20 s, 200 steps) | 600 ms | about 5 ms | about 5 ms |
 
 Night, rain and traffic together add nothing measurable to the **per-callback** figures: with lighting Day, weather Off and traffic Off the same world's

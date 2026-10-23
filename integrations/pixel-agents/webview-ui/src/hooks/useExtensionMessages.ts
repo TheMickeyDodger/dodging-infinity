@@ -572,7 +572,8 @@ export function useExtensionMessages(
           os.rebuildFromLayout(layout);
           onLayoutLoaded?.(layout);
         } else {
-          // Default layout — snapshot whatever OfficeState built
+          // Default layout — snapshot whatever OfficeState built. It is FINAL (no other is coming): its region classes are the real ones.
+          os.adoptLayout();
           onLayoutLoaded?.(os.getLayout());
         }
         // Add buffered agents now that layout (and seats) are correct

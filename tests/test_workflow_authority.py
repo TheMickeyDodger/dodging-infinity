@@ -4592,5 +4592,294 @@ class WidenedStrategyGuardTests(unittest.TestCase):
             )
 
 
+# ── Item 18 (seasons and regional weather): the Pixel bounds, pinned from Python ──────────────────────────────────
+#
+# A NEW, SEPARATE class (BoundConstantPinTests and derive_product_python_files are untouched, and no scanner scope is widened). It reads the
+# TypeScript sources of the Pixel Agents office with the standard library only, so a bound that changes in TypeScript trips a pin here even
+# if nobody touched the TypeScript pins. There is no exclusion and no allowlist: every numeric constant the sweep finds must be pinned by
+# exact value, and every pin must still exist.
+import re as _item18_re
+from pathlib import Path as _Item18Path
+
+_ITEM18_NUMERIC = _item18_re.compile(
+    r"^(?:export )?const ([A-Z][A-Z0-9_]*)(?:: [^=\n]+)? = "
+    r"(-?(?:0x[0-9a-fA-F]+|[0-9][0-9_]*(?:\.[0-9]+)?(?:e-?[0-9]+)?));",
+    _item18_re.M,
+)
+
+
+def _item18_number(text):
+    """A TypeScript numeric literal as a Python number: hex and numeric separators are understood, a fraction stays exact (float)."""
+    plain = text.replace("_", "")
+    if plain.lower().lstrip("-").startswith("0x"):
+        return int(plain, 16)
+    if "." in plain or "e" in plain.lower():
+        return float(plain)
+    return int(plain)
+
+
+def _item18_constants(source):
+    """{name: value} of every module-level numeric constant in `source`. A name declared twice is an error (it could hide a change)."""
+    found = {}
+    for match in _ITEM18_NUMERIC.finditer(source):
+        name = match.group(1)
+        if name in found:
+            raise AssertionError("constant declared twice: " + name)
+        found[name] = _item18_number(match.group(2))
+    return found
+
+
+def _item18_problems(found, pinned):
+    """What disagrees: an unpinned constant, a stale pin (no longer declared), a changed value. An empty list means exact agreement."""
+    problems = []
+    for name in sorted(set(found) - set(pinned)):
+        problems.append("UNPINNED: %s = %r is declared but not pinned" % (name, found[name]))
+    for name in sorted(set(pinned) - set(found)):
+        problems.append("STALE: %s is pinned (%r) but no longer declared" % (name, pinned[name]))
+    for name in sorted(set(found) & set(pinned)):
+        if found[name] != pinned[name] or type(found[name]) is bool:
+            problems.append("VALUE: %s is declared as %r, pinned as %r" % (name, found[name], pinned[name]))
+    return problems
+
+
+class Item18PixelBoundPinTests(unittest.TestCase):
+    """Every Item 18 bound of the Pixel Agents office, pinned by exact value, from Python.
+
+    WHAT IS SWEPT (derived, not enumerated):
+      - webview-ui/src/constants.ts: every numeric constant of the 'Living city: seasons and regional weather' section, AND every numeric
+        constant ANYWHERE in the file whose name starts with one of ITEM18_PREFIXES (the documented naming convention for what this item
+        adds), so a bound declared outside the section cannot escape;
+      - core/src/cityPresentation.ts: every numeric constant of the module;
+      - every module in webview-ui/src/office/city/ (found by globbing the directory): every module-level numeric constant, so a new
+        module's constants are inside the sweep the moment the file exists.
+    There is NO exclusion table: a swept constant that is not pinned fails, and a pin that names a constant that no longer exists fails.
+    STATED RESIDUAL LIMIT: a bound added to constants.ts outside the section under a name that matches none of ITEM18_PREFIXES escapes this
+    net (the season clock's CITY_CLOCK_MAX_STEP_SEC is inside the section, so it is swept; the CITY_CLOCK_ prefix is not used because it also
+    names the four pre-existing lighting hours, which are not Item 18 bounds); adding it to the section, or extending the prefixes, is the remedy (the TypeScript sweep in livingCityLocalBounds.test.ts covers
+    the section from its own side).
+    """
+
+    PIXEL = _Item18PixelRoot = None  # set in setUpClass
+
+    SECTION_START = "// ── Living city: seasons and regional weather"
+    ITEM18_PREFIXES = (
+        "CITY_SEASON_",
+        "CITY_REGION_",
+        "CITY_WEATHER_",
+        "CITY_SAVE_",
+        "CITY_HEAVY_SNOW_",
+        "CITY_SNOW_HALO_",
+        "CITY_SNOW_FLAKE_",
+        "CITY_TEST_CLOCK_",
+    )
+
+    # webview-ui/src/constants.ts
+    CONSTANTS_TS = {
+        # seasons: 30 minutes of VISIBLE running time each, a 3 s cross-fade, a capped recolour cache, the clock's step cap
+        "CITY_SEASON_INTERVAL_MS": 1_800_000,
+        "CITY_CLOCK_MAX_STEP_SEC": 0.25,
+        "CITY_SEASON_FADE_MS": 3_000,
+        "CITY_SEASON_CACHE_MAX_ENTRIES": 2_048,
+        # regions: five slots, three fallback bands for a world at least 96 columns wide, a soft edge 4 tiles wide
+        "CITY_REGION_SLOTS": 5,
+        "CITY_REGION_FALLBACK_BANDS": 3,
+        "CITY_REGION_BAND_MIN_COLS": 96,
+        "CITY_REGION_EDGE_TILES": 4,
+        # automatic weather: a seeded 2 to 5 minute interval, a 4 s fade, at most 2 consecutive non-clear draws (so weather always returns to clear)
+        "CITY_WEATHER_INTERVAL_MIN_MS": 120_000,
+        "CITY_WEATHER_INTERVAL_MAX_MS": 300_000,
+        "CITY_WEATHER_FADE_MS": 4_000,
+        "CITY_WEATHER_MAX_WET_DRAWS": 2,
+        "CITY_WEATHER_SCHEDULE_SEED": 0x51A7,
+        "CITY_WEATHER_STEP_LIMIT": 1_000_000,
+        # declared before Item 18 (the per-particle seed of the weather fields), in the same CITY_WEATHER_ family: pinned, not excluded
+        "CITY_WEATHER_SEED": 0x2C17,
+        # particles: ONE pool of 520 for all three fields, easing at 200 a second; heavy snow's own field; light snow's shadow and flake size
+        "CITY_WEATHER_PARTICLE_TOTAL": 520,
+        "CITY_WEATHER_BALANCE_RATE": 200,
+        "CITY_HEAVY_SNOW_PARTICLES": 520,
+        "CITY_HEAVY_SNOW_SPEED": 0.16,
+        "CITY_HEAVY_SNOW_SWAY": 0.03,
+        "CITY_HEAVY_SNOW_SIZE_PX": 2,
+        "CITY_HEAVY_SNOW_NEAR_DEPTH": 0.75,
+        "CITY_SNOW_HALO_PX": 1,
+        "CITY_SNOW_FLAKE_SCALE": 3,
+        # saving: a poll once a second (never per frame), no two saves closer than 2 s, a running clock checkpointed at most once a minute
+        "CITY_SAVE_POLL_MS": 1_000,
+        "CITY_SAVE_MIN_GAP_MS": 2_000,
+        "CITY_SAVE_CHECKPOINT_MS": 60_000,
+        # the test seam only (never a control): at most four hours of accelerated clock per call
+        "CITY_TEST_CLOCK_MAX_SECONDS": 14_400,
+        # season art: the green band, what counts as grey and as a trunk
+        "CITY_SEASON_GREEN_HUE_MIN": 60,
+        "CITY_SEASON_GREEN_HUE_MAX": 175,
+        "CITY_SEASON_GREY_SATURATION": 0.1,
+        "CITY_SEASON_TRUNK_LIGHTNESS": 0.32,
+    }
+
+    # core/src/cityPresentation.ts (the persisted record: the v1 contract it migrates from, and the v2 bounds)
+    CORE_TS = {
+        "CITY_PRESENTATION_VERSION": 1,
+        "CITY_PRESENTATION_MAX_BYTES": 256,
+        "CITY_PRESENTATION_V2_VERSION": 2,
+        "CITY_PRESENTATION_V2_MAX_BYTES": 256,
+        "CITY_PRESENTATION_REGION_SLOTS": 5,
+        "CITY_PRESENTATION_SEASON_REMAINING_MAX_MS": 1_800_000,
+        "CITY_PRESENTATION_REGION_REMAINING_MAX_MS": 300_000,
+        "CITY_PRESENTATION_WET_STREAK_MAX": 2,
+        "CITY_PRESENTATION_STEP_MAX": 999_999,
+        "CITY_PRESENTATION_SEED_MAX": 4_294_967_295,
+        "CITY_PRESENTATION_DEFAULT_SEED": 0x51A7,
+    }
+
+    # webview-ui/src/office/city/<module>.ts: every module-level numeric constant of every module in the directory
+    CITY_MODULES_TS = {
+        "cityMask.ts": {"MASK_NONE": 0, "MASK_OUTDOOR": 1, "MASK_INDOOR": 2},
+        "cityRegionWeather.ts": {"WEATHER_DRAW_WARMUP": 3},
+        "cityRegions.ts": {
+            "REGION_CITY": 0,
+            "REGION_COAST": 1,
+            "REGION_WOODLAND": 2,
+            "REGION_HIGHLANDS": 3,
+            "REGION_FARMLAND": 4,
+            "REGION_NONE": 255,
+        },
+        "cityWeather.ts": {"SNOW_PHASE_RATE": 1.7},
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        root = _Item18Path(store.__file__).resolve().parent.parent
+        cls.PIXEL = root / "integrations" / "pixel-agents"
+        cls.REPO = root
+
+    def read(self, *parts):
+        return self.PIXEL.joinpath(*parts).read_text(encoding="utf-8")
+
+    def constants_ts_swept(self, source):
+        """The constants.ts names the sweep covers: the item-18 section, and every name with an item-18 prefix anywhere in the file."""
+        everywhere = _item18_constants(source)
+        start = source.index(self.SECTION_START)
+        end = source.find("// ── ", start + 10)
+        in_section = _item18_constants(source[start:] if end < 0 else source[start:end])
+        swept = dict(in_section)
+        for name, value in everywhere.items():
+            if name.startswith(self.ITEM18_PREFIXES):
+                swept[name] = value
+        return swept
+
+    def city_modules(self):
+        directory = self.PIXEL / "webview-ui" / "src" / "office" / "city"
+        return {path.name: _item18_constants(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*.ts"))}
+
+    # ── the sweeps ───────────────────────────────────────────────────────────────────────────────────
+
+    def test_constants_ts_item18_bounds_are_pinned_exactly(self):
+        swept = self.constants_ts_swept(self.read("webview-ui", "src", "constants.ts"))
+        self.assertEqual(_item18_problems(swept, self.CONSTANTS_TS), [])
+        self.assertEqual(len(swept), len(self.CONSTANTS_TS))
+
+    def test_core_city_presentation_bounds_are_pinned_exactly(self):
+        found = _item18_constants(self.read("core", "src", "cityPresentation.ts"))
+        self.assertEqual(_item18_problems(found, self.CORE_TS), [])
+
+    def test_every_city_module_constant_is_pinned_exactly_and_new_modules_are_in_the_sweep(self):
+        modules = self.city_modules()
+        # every module in the directory is either pinned or declares no numeric constant at all: a new module with a constant fails here
+        for name, found in modules.items():
+            self.assertEqual(_item18_problems(found, self.CITY_MODULES_TS.get(name, {})), [], name)
+        # and a pinned module must still exist
+        self.assertEqual(sorted(set(self.CITY_MODULES_TS) - set(modules)), [], "a pinned module no longer exists")
+        # the Item 18 modules are really there (a vanished module could not hide as an empty sweep)
+        for name in ("cityRegions.ts", "cityRegionWeather.ts", "citySeason.ts", "citySeasonArt.ts", "cityPersist.ts"):
+            self.assertIn(name, modules)
+
+    def test_the_pin_tables_have_no_exclusion_mechanism(self):
+        # only exact numbers: no None, no strings, no sentinels that could mean 'skip'
+        tables = [self.CONSTANTS_TS, self.CORE_TS] + list(self.CITY_MODULES_TS.values())
+        for table in tables:
+            for name, value in table.items():
+                self.assertTrue(isinstance(value, (int, float)) and not isinstance(value, bool), name)
+        self.assertEqual(len(set(self.CONSTANTS_TS) & set(self.CORE_TS)), 0)
+
+    # ── the semantics the numbers carry (a value that merely changed together with its pin is not enough) ──────
+
+    def test_the_numbers_mean_what_the_design_says(self):
+        c, k = self.CONSTANTS_TS, self.CORE_TS
+        self.assertEqual(c["CITY_SEASON_INTERVAL_MS"], 30 * 60 * 1000, "a season is 30 minutes of visible running time")
+        self.assertEqual((c["CITY_WEATHER_INTERVAL_MIN_MS"], c["CITY_WEATHER_INTERVAL_MAX_MS"]), (2 * 60 * 1000, 5 * 60 * 1000), "2 to 5 minutes")
+        self.assertEqual(c["CITY_WEATHER_MAX_WET_DRAWS"], 2, "at most two consecutive non-clear draws: weather always returns to clear")
+        self.assertEqual(c["CITY_REGION_SLOTS"], 5)
+        # the persisted record's bounds are the engine's bounds (two layers that must never drift)
+        self.assertEqual(k["CITY_PRESENTATION_SEASON_REMAINING_MAX_MS"], c["CITY_SEASON_INTERVAL_MS"])
+        self.assertEqual(k["CITY_PRESENTATION_REGION_REMAINING_MAX_MS"], c["CITY_WEATHER_INTERVAL_MAX_MS"])
+        self.assertEqual(k["CITY_PRESENTATION_WET_STREAK_MAX"], c["CITY_WEATHER_MAX_WET_DRAWS"])
+        self.assertEqual(k["CITY_PRESENTATION_STEP_MAX"] + 1, c["CITY_WEATHER_STEP_LIMIT"])
+        self.assertEqual(k["CITY_PRESENTATION_DEFAULT_SEED"], c["CITY_WEATHER_SCHEDULE_SEED"])
+        self.assertEqual(k["CITY_PRESENTATION_REGION_SLOTS"], c["CITY_REGION_SLOTS"])
+        self.assertEqual(k["CITY_PRESENTATION_SEED_MAX"], 2**32 - 1, "an unsigned 32-bit seed")
+        # saving is bounded and never per frame: a poll a second, a minimum gap between saves, a checkpoint at most once a minute
+        self.assertGreaterEqual(c["CITY_SAVE_POLL_MS"], 1_000)
+        self.assertGreaterEqual(c["CITY_SAVE_MIN_GAP_MS"], c["CITY_SAVE_POLL_MS"])
+        self.assertGreaterEqual(c["CITY_SAVE_CHECKPOINT_MS"], 60_000)
+        self.assertLessEqual(c["CITY_TEST_CLOCK_MAX_SECONDS"], 4 * 3600, "the test seam is bounded to four hours a call")
+
+    def test_the_particle_pool_and_the_saved_record_stay_inside_the_original_budgets(self):
+        constants_source = self.read("webview-ui", "src", "constants.ts")
+        baseline = _item18_constants(constants_source)
+        total = self.CONSTANTS_TS["CITY_WEATHER_PARTICLE_TOTAL"]
+        # the load budget's own particle bound is the rain field's size, and the pool's cap IS that bound
+        self.assertEqual(total, baseline["CITY_RAIN_PARTICLES"])
+        for capacity in (baseline["CITY_RAIN_PARTICLES"], baseline["CITY_SNOW_PARTICLES"], self.CONSTANTS_TS["CITY_HEAVY_SNOW_PARTICLES"]):
+            self.assertLessEqual(capacity, total, "no field is larger than the pool")
+        # the saved record stays inside its documented 256-byte budget: v1 cap, v2 cap, the load test's budget and the docs agree
+        core = self.CORE_TS
+        self.assertEqual(core["CITY_PRESENTATION_V2_MAX_BYTES"], core["CITY_PRESENTATION_MAX_BYTES"])
+        load = (self.PIXEL / "webview-ui" / "test" / "livingCityLoad.test.ts").read_text(encoding="utf-8")
+        self.assertEqual(_item18_re.findall(r"^  presentationBytes: (\d+),$", load, _item18_re.M), [str(core["CITY_PRESENTATION_V2_MAX_BYTES"])])
+        docs = (self.REPO / "docs" / "pixel-agents-office.md").read_text(encoding="utf-8")
+        self.assertIn("Saved city choices | %d bytes" % core["CITY_PRESENTATION_V2_MAX_BYTES"], docs)
+
+    # ── the test of the test: the sweep really catches what it claims to ───────────────────────────────
+
+    def test_the_sweep_catches_a_new_unpinned_bound_in_the_section(self):
+        source = self.read("webview-ui", "src", "constants.ts")
+        injected = source.replace(self.SECTION_START, "export const CITY_WEATHER_NEW_BOUND = 7;\n" + self.SECTION_START, 1)
+        self.assertNotEqual(injected, source)
+        problems = _item18_problems(self.constants_ts_swept(injected), self.CONSTANTS_TS)
+        self.assertEqual(problems, ["UNPINNED: CITY_WEATHER_NEW_BOUND = 7 is declared but not pinned"])
+
+    def test_the_sweep_catches_a_bound_added_outside_the_section_by_its_prefix(self):
+        source = self.read("webview-ui", "src", "constants.ts")
+        injected = source + "\nexport const CITY_SNOW_FLAKE_EXTRA = 9;\n"
+        problems = _item18_problems(self.constants_ts_swept(injected), self.CONSTANTS_TS)
+        self.assertEqual(problems, ["UNPINNED: CITY_SNOW_FLAKE_EXTRA = 9 is declared but not pinned"])
+
+    def test_the_sweep_catches_a_changed_value_and_a_stale_pin(self):
+        source = self.read("webview-ui", "src", "constants.ts")
+        changed = source.replace("export const CITY_WEATHER_PARTICLE_TOTAL = 520;", "export const CITY_WEATHER_PARTICLE_TOTAL = 521;", 1)
+        self.assertNotEqual(changed, source)
+        self.assertEqual(
+            _item18_problems(self.constants_ts_swept(changed), self.CONSTANTS_TS),
+            ["VALUE: CITY_WEATHER_PARTICLE_TOTAL is declared as 521, pinned as 520"],
+        )
+        removed = source.replace("export const CITY_SAVE_POLL_MS = 1_000;", "", 1)
+        self.assertNotEqual(removed, source)
+        self.assertEqual(
+            _item18_problems(self.constants_ts_swept(removed), self.CONSTANTS_TS),
+            ["STALE: CITY_SAVE_POLL_MS is pinned (1000) but no longer declared"],
+        )
+
+    def test_the_sweep_catches_a_new_module_constant_and_a_hex_and_separator_literal_is_read_exactly(self):
+        module = "export const REGION_FARMLAND = 4;\nexport const REGION_EXTRA = 5;\n"
+        problems = _item18_problems(_item18_constants(module), self.CITY_MODULES_TS["cityRegions.ts"])
+        self.assertIn("UNPINNED: REGION_EXTRA = 5 is declared but not pinned", problems)
+        self.assertEqual(_item18_number("0x51a7"), 20903)
+        self.assertEqual(_item18_number("1_800_000"), 1800000)
+        self.assertEqual(_item18_number("0.25"), 0.25)
+        with self.assertRaises(AssertionError):
+            _item18_constants("const A = 1;\nconst A = 2;\n")
+
+
 if __name__ == "__main__":
     unittest.main()
