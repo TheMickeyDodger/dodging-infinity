@@ -805,6 +805,262 @@ export const CITY_OVERCAST_SNOW = { r: 120, g: 134, b: 160, a: 0.14 } as const;
 export const cityRgba = (r: number, g: number, b: number, a: number): string =>
   `rgba(${r}, ${g}, ${b}, ${a})`;
 
+// ── Living city: seasons and regional weather (decorative only; item 18, milestone 1) ──────────────────────
+// Every value below is a presentation constant of the DECORATIVE city. None of it reaches a Mission, an agent, an
+// observation or anything canonical, and none of it is a forecast, a location or a calendar.
+
+/** Automatic seasons: visible running time per season, in milliseconds (30 minutes; two hours for the year). */
+export const CITY_SEASON_INTERVAL_MS = 1_800_000;
+/** The longest game-loop step, in seconds, the season and weather clocks will take. A longer gap (a stalled frame, a tab that
+ *  was hidden) is clipped to this: it is never turned into catch-up. */
+export const CITY_CLOCK_MAX_STEP_SEC = 0.25;
+/** The calm cross-fade between two seasons, in milliseconds (reduced motion swaps at once). */
+export const CITY_SEASON_FADE_MS = 3_000;
+/** Cap on each season recolour cache (recoloured sprites, and the per-colour memos): cleared whole when full, rebuilt on use. */
+export const CITY_SEASON_CACHE_MAX_ENTRIES = 2_048;
+
+/** Weather regions: the fixed number of region slots, and how a layout WITHOUT district labels is divided: a world at least
+ *  CITY_REGION_BAND_MIN_COLS wide is split into CITY_REGION_FALLBACK_BANDS equal bands west to east; a narrower one is one region. */
+export const CITY_REGION_SLOTS = 5;
+export const CITY_REGION_FALLBACK_BANDS = 3;
+export const CITY_REGION_BAND_MIN_COLS = 96;
+/** The width, in tiles, of the soft edge between two regions: a tile within this many tiles of a foreign region blends its weather veil and
+ *  its particle strength with that region's, by distance. World-anchored and deterministic (a function of the region map alone). */
+export const CITY_REGION_EDGE_TILES = 4;
+
+/** Automatic regional weather: each region re-draws its weather after a seeded interval drawn uniformly from this closed range
+ *  (milliseconds of visible running time: two to five minutes), and fades between two kinds over CITY_WEATHER_FADE_MS. */
+export const CITY_WEATHER_INTERVAL_MIN_MS = 120_000;
+export const CITY_WEATHER_INTERVAL_MAX_MS = 300_000;
+export const CITY_WEATHER_FADE_MS = 4_000;
+/** The most CONSECUTIVE non-clear automatic draws one region may make. The draw after that many is clear whatever the roll, so continuous
+ *  weather in a region lasts at most CITY_WEATHER_MAX_WET_DRAWS intervals: 2 x 5 minutes = 10 minutes, a third of one season. */
+export const CITY_WEATHER_MAX_WET_DRAWS = 2;
+/** The default seed of the automatic schedule (a draw is a pure function of seed, region slot and that slot's step count). */
+export const CITY_WEATHER_SCHEDULE_SEED = 0x51a7;
+
+/** Heavy snow: its own, denser field (two depth layers, larger flakes, faster and wider-swaying fall) and a stronger cool veil. */
+export const CITY_HEAVY_SNOW_PARTICLES = 520;
+/**
+ * THE PARTICLE POOL. The live particles of ALL three fields together (rain, light snow, heavy snow) never exceed this, which is the
+ * load budget's own bound (CITY_RAIN_PARTICLES): each kind has a capacity no larger than it, and when several kinds are shown at once they
+ * share the pool in proportion to the regions showing them. A share moves at most CITY_WEATHER_BALANCE_RATE particles a second, and a
+ * field only grows into the room the others have left, so the total is within the cap at every moment, a transition included.
+ * THE REMAINDER RULE: each share is floor(cap x regions showing the kind / regions showing any kind), limited to the kind's own capacity,
+ * and nothing is redistributed. So with n kinds shown and no capacity binding, cap - (n - 1) <= total <= cap: 520 for one kind, 260 + 260
+ * for two equal kinds, 173 x 3 = 519 for three equal kinds. (cityRegionWeather.ts `entitlements` implements it; the tests pin it by hand.)
+ */
+export const CITY_WEATHER_PARTICLE_TOTAL = 520;
+export const CITY_WEATHER_BALANCE_RATE = 200;
+/** A light-snow flake is laid on a small cool shadow, one SCREEN pixel wider on every side, so it reads on white ground and on dark forest alike
+ *  (heavy snow has larger flakes and a denser veil). The shadow is laid only where all of it is over open ground. */
+export const CITY_SNOW_HALO_COLOR = 'rgba(70, 92, 138, 0.5)';
+export const CITY_SNOW_HALO_PX = 1;
+/** A light-snow flake is drawn this many times its sprite-pixel size at full depth, times the zoom and its depth (it was 1.4 before the shadow was added, which left a flake
+ *  a single white pixel in a ring at ordinary zoom); heavy snow keeps its own, larger flakes. */
+export const CITY_SNOW_FLAKE_SCALE = 3;
+export const CITY_HEAVY_SNOW_SPEED = 0.16;
+export const CITY_HEAVY_SNOW_SWAY = 0.03;
+export const CITY_HEAVY_SNOW_SIZE_PX = 2;
+/** Depth at or above which a heavy-snow flake is on the NEAR layer and is drawn half as large again. */
+export const CITY_HEAVY_SNOW_NEAR_DEPTH = 0.75;
+export const CITY_OVERCAST_HEAVY_SNOW = { r: 150, g: 164, b: 190, a: 0.26 } as const;
+
+/** Saving the city (contract v2): the poll that decides whether a save is due, the least gap between two saves that were NOT a viewer's own
+ *  choice, and the bounded checkpoint rate (time left moves every frame, so a running clock is saved at most this often). A choice saves at
+ *  once; a transition is saved at the next poll after the gap; a hidden view is saved once. NEVER per frame. */
+export const CITY_SAVE_POLL_MS = 1_000;
+export const CITY_SAVE_MIN_GAP_MS = 2_000;
+export const CITY_SAVE_CHECKPOINT_MS = 60_000;
+/** A region's automatic draw index wraps to 0 at this value (the saved record bounds it at one less; see core/src/cityPresentation.ts). */
+export const CITY_WEATHER_STEP_LIMIT = 1_000_000;
+
+/** TEST SEAM ONLY (testHooks.ts `advanceCityClock`, never a control and never a default): the most seconds of visible running time one
+ *  accelerated call may move the city's season and weather clocks by (four hours). Captures that use it say "accelerated test clock". */
+export const CITY_TEST_CLOCK_MAX_SECONDS = 14_400;
+
+/** Season recolours (first pass; code-native, applied to outdoor ground and outdoor foliage only). A tone moves a pixel's hue
+ *  toward `hueTo` by `hueBlend`, multiplies its saturation by `satMul` (never above `satMax`), and its lightness by `lightMul`
+ *  then adds `lightAdd`. Foliage pixels are split into a GREEN band (hue 60-175) and a WARM band (the rest, trunks excluded). */
+export interface CitySeasonTone {
+  hueTo: number;
+  hueBlend: number;
+  satMul: number;
+  satMax: number;
+  lightMul: number;
+  lightAdd: number;
+}
+export const CITY_SEASON_GREEN_HUE_MIN = 60;
+export const CITY_SEASON_GREEN_HUE_MAX = 175;
+/** A pixel at or below this saturation is a grey (rock, shadow, trunk shade) and is left alone by the foliage tones. */
+export const CITY_SEASON_GREY_SATURATION = 0.1;
+/**
+ * Winter snow covers the ground, and a WARM district wash (the Areas overlay: the Autumn Wildwood's orange, the Metropolis's tan) lying over it would
+ * turn it rose-beige and leave a warm/cool seam beside the cool Highlands. In winter that wash, over meadow and forest-floor tiles only, is drawn in
+ * this cool neutral instead (see winterAreaWash). Cool, green and grey washes, paving, roads and every other season are left exactly as they are.
+ */
+export const CITY_WINTER_AREA_WASH_COLOR = '#B8C4D2';
+/** A dark, brown-ish pixel (lightness below this, hue 10-50) is a trunk or soil and is left alone by the foliage tones. */
+export const CITY_SEASON_TRUNK_LIGHTNESS = 0.32;
+const SAME = { hueTo: 0, hueBlend: 0, satMul: 1, satMax: 1, lightMul: 1, lightAdd: 0 } as const;
+export const CITY_SEASON_TONES = {
+  // meadow, forest floor. WINTER keeps hueBlend at 1 (the frost hue exactly): a PARTIAL blend of a warm hue toward blue runs the short way
+  // round the wheel, through magenta, and paints brown ground mauve (the first pass did). The same rule holds for every winter tone below:
+  // hueBlend is 0 (keep the source hue, only desaturate and frost it) or 1 (impose the hue), never in between.
+  ground: {
+    spring: {
+      green: {
+        hueTo: 108,
+        hueBlend: 0.5,
+        satMul: 1.12,
+        satMax: 0.8,
+        lightMul: 1.1,
+        lightAdd: 0.07,
+      },
+      warm: SAME,
+    },
+    // later autumn on warm ground (leaf litter: darker, redder brown; an olive clearing turns tan)
+    autumn: {
+      green: { hueTo: 38, hueBlend: 0.8, satMul: 1.05, satMax: 0.62, lightMul: 1, lightAdd: 0.03 },
+      warm: { hueTo: 32, hueBlend: 0.45, satMul: 1.12, satMax: 0.6, lightMul: 0.9, lightAdd: 0 },
+    },
+    winter: {
+      green: { hueTo: 212, hueBlend: 1, satMul: 0.3, satMax: 0.12, lightMul: 0.42, lightAdd: 0.66 },
+      warm: { hueTo: 212, hueBlend: 1, satMul: 0.3, satMax: 0.12, lightMul: 0.42, lightAdd: 0.66 },
+    },
+  },
+  // dirt trail, ploughed soil, sand. In winter a trail is beaten, frosted earth: it keeps its warm hue, greyed, darker than the snow beside it.
+  soil: {
+    spring: {
+      green: SAME,
+      warm: { hueTo: 28, hueBlend: 0.1, satMul: 1.05, satMax: 0.6, lightMul: 0.96, lightAdd: 0 },
+    },
+    autumn: {
+      green: SAME,
+      warm: { hueTo: 24, hueBlend: 0.2, satMul: 1.1, satMax: 0.6, lightMul: 0.97, lightAdd: 0 },
+    },
+    winter: {
+      green: { hueTo: 30, hueBlend: 0, satMul: 0.3, satMax: 0.16, lightMul: 0.55, lightAdd: 0.36 },
+      warm: { hueTo: 30, hueBlend: 0, satMul: 0.3, satMax: 0.16, lightMul: 0.55, lightAdd: 0.36 },
+    },
+  },
+  // pavement, cobbles, planks: a light autumn warmth, and only a light frost in winter (the hue is kept: brown planks stay brown, not lilac)
+  hard: {
+    spring: { green: SAME, warm: SAME },
+    autumn: {
+      green: { hueTo: 30, hueBlend: 0.12, satMul: 1.1, satMax: 0.5, lightMul: 0.98, lightAdd: 0 },
+      warm: { hueTo: 30, hueBlend: 0.12, satMul: 1.1, satMax: 0.5, lightMul: 0.98, lightAdd: 0 },
+    },
+    winter: {
+      green: { hueTo: 30, hueBlend: 0, satMul: 0.5, satMax: 0.3, lightMul: 1, lightAdd: 0.12 },
+      warm: { hueTo: 30, hueBlend: 0, satMul: 0.5, satMax: 0.3, lightMul: 1, lightAdd: 0.12 },
+    },
+  },
+  // deciduous trees, bushes, ferns, flowers, reeds, apple trees
+  canopy: {
+    spring: {
+      green: {
+        hueTo: 112,
+        hueBlend: 0.3,
+        satMul: 1.12,
+        satMax: 0.85,
+        lightMul: 1.06,
+        lightAdd: 0.05,
+      },
+      warm: {
+        hueTo: 104,
+        hueBlend: 0.85,
+        satMul: 0.85,
+        satMax: 0.7,
+        lightMul: 1.1,
+        lightAdd: 0.08,
+      },
+    },
+    // already-autumn foliage (the Autumn Wildwood's authored palette) turns later-autumn: browner and duller
+    autumn: {
+      green: {
+        hueTo: 30,
+        hueBlend: 0.85,
+        satMul: 1.1,
+        satMax: 0.78,
+        lightMul: 1.05,
+        lightAdd: 0.02,
+      },
+      warm: { hueTo: 28, hueBlend: 0.45, satMul: 0.62, satMax: 0.7, lightMul: 0.86, lightAdd: 0 },
+    },
+    // bare, frosted trees: a green canopy goes dusty blue-green (darker than the snow so it reads), warm foliage goes taupe, never lilac
+    winter: {
+      green: {
+        hueTo: 204,
+        hueBlend: 0.7,
+        satMul: 0.3,
+        satMax: 0.22,
+        lightMul: 0.72,
+        lightAdd: 0.2,
+      },
+      warm: { hueTo: 30, hueBlend: 0, satMul: 0.32, satMax: 0.28, lightMul: 0.92, lightAdd: 0.05 },
+    },
+  },
+  // evergreens: a fresher green in spring, dulled in autumn, snow-frosted in winter
+  conifer: {
+    spring: {
+      green: {
+        hueTo: 112,
+        hueBlend: 0.25,
+        satMul: 1.12,
+        satMax: 0.8,
+        lightMul: 1.1,
+        lightAdd: 0.05,
+      },
+      warm: SAME,
+    },
+    autumn: {
+      green: { hueTo: 80, hueBlend: 0.2, satMul: 0.92, satMax: 0.7, lightMul: 0.94, lightAdd: 0 },
+      warm: SAME,
+    },
+    winter: {
+      green: {
+        hueTo: 192,
+        hueBlend: 0.4,
+        satMul: 0.45,
+        satMax: 0.3,
+        lightMul: 0.75,
+        lightAdd: 0.2,
+      },
+      warm: SAME,
+    },
+  },
+  // crop rows and standing crops (the field floor and the wheat, corn and pumpkins on it): fresh shoots, harvest gold, pale olive stubble
+  crop: {
+    spring: {
+      green: {
+        hueTo: 100,
+        hueBlend: 0.45,
+        satMul: 1.1,
+        satMax: 0.75,
+        lightMul: 1.06,
+        lightAdd: 0.04,
+      },
+      warm: {
+        hueTo: 100,
+        hueBlend: 0.45,
+        satMul: 1.1,
+        satMax: 0.75,
+        lightMul: 1.06,
+        lightAdd: 0.04,
+      },
+    },
+    autumn: {
+      green: { hueTo: 40, hueBlend: 0.3, satMul: 1.1, satMax: 0.75, lightMul: 1, lightAdd: 0 },
+      warm: { hueTo: 40, hueBlend: 0.3, satMul: 1.1, satMax: 0.75, lightMul: 1, lightAdd: 0 },
+    },
+    winter: {
+      green: { hueTo: 66, hueBlend: 1, satMul: 0.5, satMax: 0.26, lightMul: 0.5, lightAdd: 0.42 },
+      warm: { hueTo: 66, hueBlend: 1, satMul: 0.5, satMax: 0.26, lightMul: 0.5, lightAdd: 0.42 },
+    },
+  },
+} as const;
+
 // ── Living city: traffic (decorative only; living city 6–9, row 16) ───────────
 // The moving traffic is the world's OWN lane-aligned vehicle furniture brought to life. Every value below is a
 // presentation constant of the DECORATIVE city: none of it reaches a Mission, an agent, an observation or

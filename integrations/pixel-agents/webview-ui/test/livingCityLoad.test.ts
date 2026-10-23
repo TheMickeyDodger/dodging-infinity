@@ -47,9 +47,14 @@ import {
   AMBIENT_SAVE_MAX_BYTES,
   AMBIENT_SAVE_MAX_TRAINS,
 } from '../../core/src/ambientSave.ts';
+import {
+  CITY_PRESENTATION_DEFAULT_SEED,
+  CITY_PRESENTATION_SEASON_REMAINING_MAX_MS,
+  encodeStoredCityPresentationV2,
+} from '../../core/src/cityPresentation.ts';
 import type { DiOfficeState } from '../../core/src/messages.ts';
 import { AgentStateStore } from '../../server/src/agentStateStore.ts';
-import { AMBIENT_STATE_FILE_NAME } from '../../server/src/constants.ts';
+import { AMBIENT_STATE_FILE_NAME, CITY_PRESENTATION_FILE_NAME } from '../../server/src/constants.ts';
 import { readAmbientState } from '../../server/src/di/ambientStatePersistence.ts';
 import { readCityPresentation } from '../../server/src/di/cityPresentationPersistence.ts';
 import { handleDiClientMessage } from '../../server/src/di/diClientMessages.ts';
@@ -120,6 +125,8 @@ let connected: Promise<WebSocket> = Promise.resolve(null as unknown as WebSocket
 let resolveConnected: (ws: WebSocket) => void = () => undefined;
 let sandbox = '';
 let ambientSaves = 0;
+/** The city-presentation writes the page has asked for (each is one real, atomic write through the server's own persistence). */
+let citySaves = 0;
 const ctxBase = { store: new AgentStateStore(), cache: {} as never, extensionVersion: 'test' };
 
 function serve(ws: WebSocket) {
@@ -133,6 +140,7 @@ function serve(ws: WebSocket) {
       socket = ws;
       resolveConnected(ws);
     } else if (msg.type === 'saveCityPresentation') {
+      citySaves++;
       handleDiClientMessage(msg, send, ctxBase);
     } else if (msg.type === 'saveAmbientState') {
       ambientSaves++;
@@ -199,6 +207,8 @@ type Reduced = 'reduce' | 'no-preference';
 /** The page-side view of the App's OfficeState: only what these measurements read or change. */
 interface Office {
   update(dt: number): void;
+  /** The city record the App would save (the named v2 record). */
+  cityRecord(): unknown;
   furnitureAnimTimer: number;
   ambientClock: number;
   characters: Map<number, unknown>;
@@ -224,7 +234,16 @@ interface Office {
     trains: Array<{ id: string; passengers: string[]; x: number; state: string }>;
     totals: Record<string, number>;
   } | null;
-  city: { level: number; weather: { kind: string; count: number; ys: Float32Array } };
+  city: {
+    level: number;
+    /** item 18: the regional weather. A field has live particles only while some region shows its kind. */
+    regional: {
+      mode: string;
+      rain: { count: number; ys: Float32Array };
+      lightSnow: { count: number; ys: Float32Array };
+      heavySnow: { count: number; ys: Float32Array };
+    };
+  };
   lastAmbientRestore: { outcome: string; aboardRestored?: number; exact?: boolean } | null;
   getAmbientResidents(): Array<{ id: string; state: string }>;
   getTrains(): Array<{ passengers: string[] }>;
@@ -358,6 +377,14 @@ interface Counts {
   vehicleSlots: number;
   agents: number;
   particles: number;
+  /** Live particles per field: rain, light snow, heavy snow (their sum is `particles`, which the one pool keeps within the budget). */
+  fields: [number, number, number];
+  /** The seasons' and regions' caches (item 18): season recolour caches, and the region map's tiles and soft-edge bytes. */
+  cache: {
+    season: { sprites: number; pixels: number; types: number };
+    regionTiles: number;
+    regionEdgeBytes: number;
+  } | null;
   lamps: number;
   dom: number;
   heapMb: number | null;
@@ -494,7 +521,17 @@ async function measureWindow(seconds: number): Promise<Window10> {
   await p().waitForTimeout(seconds * 1000);
   return p().evaluate(() => (window as unknown as { __load: { stop(): Window10 } }).__load.stop());
 }
+/** The bytes the server would write for this record: the REAL stored v2 form, not a hand-built object. */
+const storedBytes = (record: unknown): number => {
+  const encoded = encodeStoredCityPresentationV2(record);
+  assert.ok(encoded.ok, encoded.ok ? '' : `the App's own record is refused: ${encoded.reason}`);
+  return encoded.text.length;
+};
 async function counts(): Promise<Counts> {
+  const { presentationRecord, ...rest } = await countsInPage();
+  return { ...rest, presentationBytes: storedBytes(presentationRecord) };
+}
+async function countsInPage() {
   return p().evaluate(() => {
     const o = (window as unknown as { __diHarnessOffice: Office }).__diHarnessOffice;
     const residents = o.getAmbientResidents();
@@ -511,17 +548,25 @@ async function counts(): Promise<Counts> {
       vehiclesVisible: o.getVehicles().length,
       vehicleSlots: o.getTraffic()?.vehicles.length ?? 0,
       agents: o.getCharacters().length,
-      particles: o.city.weather.count,
+      particles: o.city.regional.rain.count + o.city.regional.lightSnow.count + o.city.regional.heavySnow.count,
+      fields: [o.city.regional.rain.count, o.city.regional.lightSnow.count, o.city.regional.heavySnow.count] as [number, number, number],
+      cache:
+        (
+          window as unknown as {
+            __pixelAgentsTestHooks?: {
+              getCityCacheStats?: () => {
+                season: { sprites: number; pixels: number; types: number };
+                regionTiles: number;
+                regionEdgeBytes: number;
+              } | null;
+            };
+          }
+        ).__pixelAgentsTestHooks?.getCityCacheStats?.() ?? null,
       lamps,
       dom: document.querySelectorAll('*').length,
       heapMb: heap === undefined ? null : Math.round((heap / 1048576) * 10) / 10,
       snapshotBytes: JSON.stringify(o.serializeAmbient(Date.now())).length,
-      presentationBytes: JSON.stringify({
-        v: 1,
-        lighting: 'night',
-        weather: 'rain',
-        traffic: 'normal',
-      }).length,
+      presentationRecord: o.cityRecord(),
       searches: o.ambient?.stats.searches ?? 0,
     };
   });
@@ -805,7 +850,7 @@ test(
     // What the baseline already costs is not those effects' cost.
     await openCity();
     await choose('city-lighting-day');
-    await choose('city-weather-off');
+    await choose('city-weather-clear'); // the control arm: no weather at all
     await choose('city-traffic-off');
     await closeCity();
     await settle(20);
@@ -879,6 +924,184 @@ test(
       audit.maxVehicleSec <= BUDGET.vehicleYieldSec,
       `a vehicle held an agent's tile for ${audit.maxVehicleSec} s`,
     );
+  },
+  STEPS_MS,
+);
+
+// ── ITEM 18: the combined feature under load ────────────────────────────────────────────────────────────
+// A NON-SUMMER season (held winter), Automatic regional weather (on this world in winter it shows rain, light snow AND heavy snow at once: the
+// three fields share the one 520-particle pool), night and normal traffic, on the shipped world, at the ordinary and the crowded load. The
+// ORIGINAL budgets are unchanged and asserted by the same `judge` as every other scenario; what is added here is measured and asserted too:
+// the live particles per field and in total, the cache sizes, the bytes of the record the server actually wrote, and the writes per minute.
+
+/** Winter held, Automatic regional weather, night, normal traffic. */
+async function combinedOn() {
+  await openCity();
+  await choose('city-season-winter');
+  await choose('city-weather-auto');
+  await choose('city-lighting-night');
+  await choose('city-traffic-normal');
+  await closeCity();
+}
+/** The control arm of the combined load: the same world with the seasons and the weather OFF (summer, clear), day and no traffic. */
+async function combinedControl() {
+  await openCity();
+  await choose('city-season-summer');
+  await choose('city-weather-clear');
+  await choose('city-lighting-day');
+  await choose('city-traffic-off');
+  await closeCity();
+}
+const jumpTo = (col: number, row: number) =>
+  p().evaluate(
+    ([c, r]) =>
+      (
+        window as unknown as {
+          __pixelAgentsTestHooks: { jumpToWorldPoint: (x: number, y: number) => void };
+        }
+      ).__pixelAgentsTestHooks.jumpToWorldPoint(c * 16 + 8, r * 16 + 8),
+    [col, row],
+  );
+const cityFileBytes = () => fs.statSync(path.join(sandbox, 'di-root', CITY_PRESENTATION_FILE_NAME)).size;
+
+/** What the combined feature adds to a counts reading, asserted: the pool, the caches and the saved record. */
+function judgeCombined(label: string, c: Counts, expectFields: 'mixed' | 'heavy-only') {
+  const [rain, light, heavy] = c.fields;
+  console.log(`MEASURED [${label}] live particles rain ${rain}, light snow ${light}, heavy snow ${heavy}: total ${c.particles} (the one pool's cap ${C.CITY_WEATHER_PARTICLE_TOTAL}; the load budget ${BUDGET.weatherParticles})`);
+  assert.equal(rain + light + heavy, c.particles);
+  assert.ok(c.particles <= C.CITY_WEATHER_PARTICLE_TOTAL && c.particles <= BUDGET.weatherParticles, `${label}: ${c.particles} live particles`);
+  assert.ok(rain <= C.CITY_RAIN_PARTICLES && light <= C.CITY_SNOW_PARTICLES && heavy <= C.CITY_HEAVY_SNOW_PARTICLES, `${label}: a field above its capacity`);
+  if (expectFields === 'mixed') {
+    // winter on this world: rain on the Coast, light snow on the Woodland, heavy snow on the Highlands, all at once (the seeded start)
+    assert.ok(rain > 0 && light > 0 && heavy > 0, `${label}: all three kinds are live at once (${rain}/${light}/${heavy})`);
+    // each share is floored on its own and nothing is redistributed, so with n live fields and no capacity binding the total is at least
+    // cap - (n - 1) (three equal shares of 520 are 173 each: 519). Here no field is at its capacity (rain 520, light 300, heavy 520).
+    const live = c.fields.filter((n) => n > 0).length;
+    assert.ok(rain < C.CITY_RAIN_PARTICLES && light < C.CITY_SNOW_PARTICLES && heavy < C.CITY_HEAVY_SNOW_PARTICLES, `${label}: no capacity binds`);
+    assert.ok(
+      c.particles <= C.CITY_WEATHER_PARTICLE_TOTAL && c.particles >= C.CITY_WEATHER_PARTICLE_TOTAL - (live - 1),
+      `${label}: ${c.particles} is outside cap - (${live} - 1) .. cap`,
+    );
+  } else {
+    assert.deepEqual(c.fields, [0, 0, C.CITY_HEAVY_SNOW_PARTICLES], `${label}: heavy snow everywhere is the one field, at its whole capacity`);
+  }
+  assert.ok(c.cache, `${label}: the cache stats are readable`);
+  const cache = c.cache!;
+  console.log(`MEASURED [${label}] caches ${JSON.stringify(cache)} (cap ${C.CITY_SEASON_CACHE_MAX_ENTRIES} entries each)`);
+  assert.ok(cache.season.sprites <= C.CITY_SEASON_CACHE_MAX_ENTRIES && cache.season.pixels <= C.CITY_SEASON_CACHE_MAX_ENTRIES && cache.season.types <= C.CITY_SEASON_CACHE_MAX_ENTRIES);
+  assert.ok(cache.season.sprites > 0, `${label}: the winter art was really built`);
+  assert.equal(cache.regionEdgeBytes, 2 * cache.regionTiles, 'the soft-edge field is two bytes a tile, once per layout');
+  // the record the server really wrote (through its own persistence module): inside the unchanged 256-byte budget
+  const onDisk = cityFileBytes();
+  console.log(`MEASURED [${label}] the saved record on disk: ${onDisk} bytes (budget ${BUDGET.presentationBytes})`);
+  assert.ok(onDisk <= BUDGET.presentationBytes && c.presentationBytes <= BUDGET.presentationBytes);
+}
+
+/** A measured window, with the real writes the page made during it. */
+async function measureWithSaves(seconds: number) {
+  const before = citySaves;
+  const window10 = await measureWindow(seconds);
+  const saves = citySaves - before;
+  return { window10, saves, perMinute: f1((saves * 60) / seconds) };
+}
+
+test(
+  'COMBINED ORDINARY LOAD: winter held, Automatic regional weather (rain, light snow and heavy snow at once), night and traffic: the original budgets hold, the pool holds, the saved record fits, and it writes at a bounded rate',
+  async () => {
+    await boot();
+    const domBase = await domNodes();
+    await combinedOn();
+    await waitForLife();
+    await goToDistrict('Metropolis');
+    await installProbe();
+    await settle(30);
+    // 1. Automatic regional weather: the three kinds share the pool (the Metropolis is the City region, which is clear: the weather is still live everywhere else)
+    const steady = await measureWithSaves(12);
+    const c = await counts();
+    judge('combined ordinary', c, steady.window10, domBase);
+    judgeCombined('combined ordinary', c, 'mixed');
+    console.log(`MEASURED [combined ordinary] writes in the steady window: ${steady.saves} in 12 s (${steady.perMinute} a minute)`);
+    assert.ok(steady.saves <= 2, `${steady.saves} writes in 12 s with no choice made`);
+    // 2. a camera over the Woodland beside the Highlands: light snow and heavy snow really drawn
+    await jumpTo(88, 190);
+    await settle(30);
+    const woods = await measureWithSaves(12);
+    const c2 = await counts();
+    judge('combined ordinary, Woodland beside the Highlands', c2, woods.window10, domBase);
+    judgeCombined('combined ordinary, Woodland beside the Highlands', c2, 'mixed');
+    // 3. HEAVY SNOW everywhere (the most flakes drawn from ONE field): the whole 520 of one field
+    await goToDistrict('Metropolis');
+    await openCity();
+    await choose('city-weather-heavy-snow');
+    await closeCity();
+    await p().waitForTimeout(8000); // the four-second fade, and the pool share easing in at 200 a second
+    await settle(30);
+    const heavy = await measureWithSaves(12);
+    const c3 = await counts();
+    judge('combined ordinary, heavy snow everywhere', c3, heavy.window10, domBase);
+    judgeCombined('combined ordinary, heavy snow everywhere', c3, 'heavy-only');
+    // CONTROL: the same world with seasons and weather off, day, no traffic: what the combined feature adds to the frame and the tick
+    await combinedControl();
+    await settle(20);
+    const control = await measureWindow(10);
+    const on = summarize(steady.window10);
+    const off = summarize(control);
+    console.log(
+      `MEASURED [combined ordinary] the combined feature adds, per frame: mean ${f1(on.frameMs.mean - off.frameMs.mean)} ms, p95 ${f1(on.frameMs.p95 - off.frameMs.p95)} ms; per tick: mean ${f1(on.tickMs.mean - off.tickMs.mean)} ms (budgets: p95 ${BUDGET.featuresAddFrameP95Ms} ms, tick ${BUDGET.featuresAddTickMs} ms)`,
+    );
+    assert.ok(on.frameMs.p95 - off.frameMs.p95 <= BUDGET.featuresAddFrameP95Ms, 'the combined feature adds little to the frame');
+    assert.ok(on.tickMs.mean - off.tickMs.mean <= BUDGET.featuresAddTickMs);
+  },
+  STEPS_MS,
+);
+
+test(
+  'COMBINED CROWDED LOAD: the population at its cap, twenty-four more agents, winter held, Automatic regional weather, night and traffic: the original budgets hold',
+  async () => {
+    await boot();
+    const domBase = await domNodes();
+    await combinedOn();
+    await waitForLife();
+    await goToDistrict('Metropolis');
+    await loadWorld(C.AMBIENT_POPULATION_CAP);
+    await addAgents(24);
+    await installProbe();
+    await settle(60);
+    const steady = await measureWithSaves(12);
+    const c = await counts();
+    judge('combined crowded', c, steady.window10, domBase, { fullCaps: true });
+    judgeCombined('combined crowded', c, 'mixed');
+    assert.ok(c.agents >= 28, `${c.agents} agents`);
+    console.log(`MEASURED [combined crowded] writes in the steady window: ${steady.saves} in 12 s (${steady.perMinute} a minute)`);
+    assert.ok(steady.saves <= 2, `${steady.saves} writes in 12 s with no choice made`);
+    // the agents' own legibility under the combined feature: every real agent is lit (a light pool each) and drawn
+    const lit = await p().evaluate(() => {
+      const o = (window as unknown as { __diHarnessOffice: Office }).__diHarnessOffice;
+      return { agents: o.getCharacters().length, pools: o.cityRenderInput()?.agents.length ?? 0 };
+    });
+    console.log(`MEASURED [combined crowded] real agents ${lit.agents}, light pools for them ${lit.pools}`);
+    assert.ok(lit.pools > 0 && lit.pools <= C.CITY_LIGHT_MAX_LIGHTS);
+    // HEAVY SNOW everywhere under the crowd
+    await openCity();
+    await choose('city-weather-heavy-snow');
+    await closeCity();
+    await p().waitForTimeout(8000);
+    await settle(30);
+    const heavy = await measureWithSaves(12);
+    const c2 = await counts();
+    judge('combined crowded, heavy snow everywhere', c2, heavy.window10, domBase, { fullCaps: true });
+    judgeCombined('combined crowded, heavy snow everywhere', c2, 'heavy-only');
+    // CONTROL
+    await combinedControl();
+    await settle(20);
+    const control = await measureWindow(10);
+    const on = summarize(steady.window10);
+    const off = summarize(control);
+    console.log(
+      `MEASURED [combined crowded] the combined feature adds, per frame: mean ${f1(on.frameMs.mean - off.frameMs.mean)} ms, p95 ${f1(on.frameMs.p95 - off.frameMs.p95)} ms; per tick: mean ${f1(on.tickMs.mean - off.tickMs.mean)} ms`,
+    );
+    assert.ok(on.frameMs.p95 - off.frameMs.p95 <= BUDGET.featuresAddFrameP95Ms);
+    assert.ok(on.tickMs.mean - off.tickMs.mean <= BUDGET.featuresAddTickMs);
   },
   STEPS_MS,
 );
@@ -1040,7 +1263,7 @@ const cityState = (hideFirst = false): Promise<CityState> =>
             ],
         ),
       tilesDriven: o.getTraffic()!.counters.tilesDriven,
-      rainY: o.city.weather.ys[0],
+      rainY: o.city.regional.rain.ys[0],
     };
   }, hideFirst);
 
@@ -1198,7 +1421,7 @@ test(
         const out = {
           ...w.__catch!,
           tilesDriven: o.getTraffic()!.counters.tilesDriven,
-          rainY: o.city.weather.ys[0],
+          rainY: o.city.regional.rain.ys[0],
           clock: o.ambientClock,
         };
         o.catchUpAmbient = catchUp;
@@ -1309,10 +1532,10 @@ test(
     const sequence = [
       'city-lighting-dusk',
       'city-lighting-clock',
-      'city-weather-snow',
+      'city-weather-light-snow',
       'city-traffic-low',
       'city-lighting-day',
-      'city-weather-off',
+      'city-weather-clear',
       'city-traffic-off',
       'city-traffic-normal',
       'city-lighting-night',
@@ -1347,10 +1570,34 @@ test(
     );
     console.log(`MEASURED [twelve settings changes in a row] ${JSON.stringify(summarize(churn))}`);
     assert.deepEqual(errors, [], 'the page raised no error');
-    // each choice went to the real persistence module; the last one stands and fits its byte bound
-    const saved = readCityPresentation();
-    assert.deepEqual(saved, { v: 1, lighting: 'night', weather: 'rain', traffic: 'normal' });
-    assert.ok(JSON.stringify(saved).length <= BUDGET.presentationBytes);
+    // each choice went to the real persistence module; the last one stands, as the strict v2 record (item 18), and the bytes ON DISK fit
+    // the unchanged 256-byte budget of the saved city choices
+    const saved = readCityPresentation() as unknown as {
+      v: number;
+      lighting: string;
+      traffic: string;
+      season: { mode: string; season: string; paused: boolean; remaining: number };
+      weather: { mode: string; seed: number; regions: Array<{ kind: string }> };
+    };
+    assert.deepEqual(Object.keys(saved).sort(), ['lighting', 'season', 'traffic', 'v', 'weather']);
+    assert.deepEqual(
+      [saved.v, saved.lighting, saved.traffic, saved.season.mode, saved.season.season, saved.season.paused],
+      [2, 'night', 'normal', 'auto', 'summer', false],
+    );
+    assert.ok(saved.season.remaining > 0 && saved.season.remaining <= CITY_PRESENTATION_SEASON_REMAINING_MAX_MS);
+    assert.equal(saved.weather.mode, 'rain', 'the last weather choice (a manual Rain) stands');
+    assert.equal(saved.weather.seed, CITY_PRESENTATION_DEFAULT_SEED);
+    assert.deepEqual(
+      saved.weather.regions.map((r) => r.kind),
+      ['rain', 'rain', 'rain', 'rain', 'rain'],
+      'a manual Rain is Rain in every region',
+    );
+    const onDisk = fs.statSync(path.join(sandbox, 'di-root', CITY_PRESENTATION_FILE_NAME)).size;
+    console.log(
+      `MEASURED [persisted v2 record after twelve settings changes] ${onDisk} bytes on disk, budget ${BUDGET.presentationBytes}`,
+    );
+    assert.ok(onDisk <= BUDGET.presentationBytes);
+    assert.equal(onDisk, storedBytes(saved), 'the file is exactly the stored form of the record');
     // a settings change is one frame's work, not a stall: the longest frame in the churn
     assert.ok(
       Math.max(...churn.frames) < 250,
@@ -1415,7 +1662,7 @@ test(
           .sort(),
         lighting: (o.city as unknown as { presentation: { lighting: string } }).presentation
           .lighting,
-        rain: o.city.weather.kind,
+        rain: o.city.regional.mode, // manual Rain everywhere restores as the mode 'rain'
         cap: o.getTraffic()?.activeCap ?? null,
       };
     });

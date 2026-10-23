@@ -11,9 +11,11 @@ import path from 'node:path';
 import { beforeAll, test } from 'vitest';
 
 import type { CityPresentation } from '../../core/src/cityPresentation.ts';
-import { cityRgba } from '../src/constants.ts';
+import * as C from '../src/constants.ts';
+import { CITY_SNOW_HALO_COLOR, cityRgba } from '../src/constants.ts';
 import { CityEffects } from '../src/office/city/cityEffects.ts';
 import * as M from '../src/office/city/cityMask.ts';
+import { regionMapFor } from '../src/office/city/cityRegions.ts';
 import * as R from '../src/office/city/cityRender.ts';
 import { WeatherField, weatherVeil } from '../src/office/city/cityWeather.ts';
 import { OfficeState } from '../src/office/engine/officeState.ts';
@@ -113,14 +115,19 @@ test('the effects state fades to its target, jumps under reduced motion, and mov
   assert.equal(e.level, 0.5);
   e.update(0.4, noon, false);
   assert.equal(e.level, 1);
-  assert.equal(e.weather.kind, 'rain');
+  // a changed legacy weather field is a manual choice: every region shows rain, and the rain field is live
+  assert.equal(e.regional.mode, 'rain');
+  assert.equal(e.regional.rain.kind, 'rain');
+  const before = [...e.regional.rain.ys];
+  e.update(0.1, noon, false);
+  assert.notDeepEqual([...e.regional.rain.ys], before); // motion allowed: the rain falls
 
   const still = new CityEffects();
   still.setPresentation(present({ lighting: 'night', weather: 'rain' }), noon, true);
   assert.equal(still.level, 1); // reduced motion: at once
-  const frozen = [...still.weather.ys];
+  const frozen = [...still.regional.rain.ys];
   still.update(1, noon, true);
-  assert.deepEqual([...still.weather.ys], frozen); // reduced motion: one still frame
+  assert.deepEqual([...still.regional.rain.ys], frozen); // reduced motion: one still frame
   assert.equal(still.level, 1);
 });
 
@@ -235,9 +242,16 @@ test('snow draws its own, smaller field in the snow colour', () => {
     ),
     300,
   );
-  assert.ok(
-    ctx.rects.every((r) => r.fill === cityRgba(245, 248, 255, 0.9) && r.w === r.h && r.w >= 1),
-  );
+  // the flakes: exactly 300 squares, every one in the snow colour. (Light snow also lays a cool shadow under each flake, in its own colour, so a
+  // flake reads on white ground: those rects are identified by that colour, never counted as flakes.)
+  const flakes = ctx.rects.filter((r) => r.fill === cityRgba(245, 248, 255, 0.9));
+  const shadows = ctx.rects.filter((r) => r.fill === CITY_SNOW_HALO_COLOR);
+  assert.equal(flakes.length, 300);
+  assert.ok(flakes.every((r) => r.w === r.h && r.w >= 1));
+  assert.equal(flakes.length + shadows.length, ctx.rects.length, 'every rect is a flake or a shadow, nothing else');
+  assert.ok(shadows.length > 0 && shadows.length <= flakes.length);
+  // each shadow is its flake plus one screen pixel on every side
+  assert.ok(shadows.every((r) => r.w === r.h && r.w >= 3));
 });
 
 test('each kind lays its own veil over the outdoors, and clear skies lay none', () => {
@@ -308,25 +322,55 @@ const newOffice = () => {
   return os;
 };
 
-test('a clear day costs nothing: there is no render input at all', () => {
+/** Run `seconds` of visible game-loop time in the loop's own 0.1 s steps. */
+const runFor = (os: OfficeState, seconds: number) => {
+  for (let k = 0; k < Math.round(seconds * 10); k++) os.update(0.1);
+};
+/** A CLEAR sky, as the premise of a clear-day test: choose Clear and let its four-second fade-out finish. (A manual change fades; only
+ *  reduced motion swaps at once, so a bare chooseCityWeather('clear') still has a region fading out and the render input is not yet null.) */
+const clearSky = (os: OfficeState) => {
+  os.chooseCityWeather('clear');
+  runFor(os, 4.5);
+};
+
+test('the DEFAULT office is Automatic seasons (summer) and Automatic regional weather, so it is not "a clear day" until Clear is chosen', () => {
   const os = newOffice();
-  assert.equal(os.cityRenderInput(), null);
+  assert.equal(os.city.seasons.mode, 'auto');
+  assert.equal(os.city.seasons.season, 'summer');
+  assert.equal(os.city.regional.mode, 'auto');
+  // the seeded start has rain in two regions, so a default office has weather and therefore a render input
+  assert.ok(os.cityRenderInput() !== null, 'the default office shows some weather: it is no longer the clear day');
+  // a manual Clear fades out over four seconds: the input goes on existing until it has finished, and then is exactly null
+  os.chooseCityWeather('clear');
+  assert.ok(os.cityRenderInput() !== null, 'mid-fade: the regions that were raining are still fading out');
+  runFor(os, 4.5);
+  assert.ok(os.cityRenderInput() === null, 'faded out: no render input at all');
+}, 60_000);
+
+test('a clear summer day costs nothing: there is no render input at all', () => {
+  const os = newOffice();
+  // the default is Automatic regional weather, which shows some rain: an explicit Clear, settled, is the clear day
+  clearSky(os);
+  assert.ok(os.cityRenderInput() === null, 'clear day: no render input');
   os.setCityPresentation(present({ lighting: 'day', weather: 'off' }));
   os.update(1);
-  assert.equal(os.cityRenderInput(), null);
+  assert.ok(os.cityRenderInput() === null, 'clear day, still: no render input');
 }, 60_000);
 
 test("night gives the renderer the mask, the world's lamps and a light for every real agent", () => {
   const os = newOffice();
   os.addAgent(1, undefined, undefined, undefined, true);
   os.addAgent(2, undefined, undefined, undefined, true);
+  clearSky(os);
   os.setCityPresentation(present({ lighting: 'night' }));
   os.update(1); // fades in over 0.8 s
   const input = os.cityRenderInput()!;
   assert.equal(input.level, 1);
-  assert.equal(input.weather, null);
-  assert.equal(input.veil, null); // night without weather has no veil
-  assert.equal(input.mask, M.cityMaskFor(os.getLayout()));
+  // night without weather has no weather and so no veil: the veil is per region now (a region's veil is read from the regional
+  // input), so "no regional input" IS "no veil". Compared by identity: a failure must not print the 109,824-cell region map.
+  assert.ok(input.weather === null, 'no regional weather, hence no veil');
+  assert.ok(input.season === null, 'plain summer');
+  assert.ok(input.mask === M.cityMaskFor(os.getLayout()), 'the very same cached mask');
   assert.equal(input.lamps.length, 110 + 32 + 6);
   const chars = os.getCharacters();
   assert.equal(input.agents.length, chars.length);
@@ -343,17 +387,28 @@ test('rain alone gives weather and its veil but no night: agents keep their ligh
   os.update(0.1);
   const input = os.cityRenderInput()!;
   assert.equal(input.level, 0); // daytime
-  assert.equal(input.weather, os.city.weather);
-  assert.equal(input.weather!.count, 520);
-  assert.deepEqual(input.veil, { r: 62, g: 78, b: 104, a: 0.2 });
+  // identities and plain fields only: a failure must never print the regional input (it holds the 109,824-cell region map)
+  assert.ok(input.weather!.weather === os.city.regional, 'the input carries the live regional weather');
+  assert.ok(input.weather!.regions === regionMapFor(os.getLayout()), 'and the layout\'s cached region map');
+  // rain was already the only kind shown in this summer start, so its field already holds the whole pool: 520, as before
+  assert.equal(os.city.regional.rain.count, 520);
+  // a manual choice reaches every region, at full strength once its four-second fade-in has run (in the loop's own 0.1 s steps)
+  runFor(os, 4.5);
+  for (let slot = 0; slot < 5; slot++) assert.equal(os.city.regional.alpha('rain', slot), 1);
+  assert.equal(os.city.regional.rain.count, 520);
   assert.equal(input.agents.length, 1); // a real agent is never dimmed by the veil
   assert.deepEqual([...input.lamps], []); // lamps are a night thing, never a daytime shower
   // clear skies at day: nothing at all, and no veil
   os.setCityPresentation(present({ weather: 'off' }));
-  assert.equal(os.cityRenderInput(), null);
-  // snow lays the snow veil
+  runFor(os, 4.5);
+  assert.ok(os.cityRenderInput() === null, 'clear again: no render input');
+  // snow is light snow in every region
   os.setCityPresentation(present({ weather: 'snow' }));
-  assert.deepEqual(os.cityRenderInput()!.veil, { r: 120, g: 134, b: 160, a: 0.14 });
+  assert.equal(os.city.regional.mode, 'light-snow');
+  // light snow was not live before, so its pool share eases in (200 a second) alongside the four-second fade: its whole 300 once the fade has run
+  assert.ok(os.city.regional.lightSnow.count < 300);
+  runFor(os, 4.5);
+  assert.equal(os.city.regional.lightSnow.count, 300);
 }, 60_000);
 
 test('reduced motion: the stage shows at once and the rain is one still frame', () => {
@@ -361,9 +416,24 @@ test('reduced motion: the stage shows at once and the rain is one still frame', 
   os.reducedMotion = true;
   os.setCityPresentation(present({ lighting: 'dusk', weather: 'snow' }));
   assert.equal(os.city.level, 0.5); // no fade
-  const frozen = [...os.city.weather.ys];
+  const fields = () => [os.city.regional.rain, os.city.regional.lightSnow, os.city.regional.heavySnow];
+  const frozen = fields().map((f) => [...f.ys]);
   os.update(2);
-  assert.deepEqual([...os.city.weather.ys], frozen);
+  assert.deepEqual(
+    fields().map((f) => [...f.ys]),
+    frozen,
+  ); // one still frame for the live field...
+  // ...and for every other field too, whichever kind is chosen
+  for (const kind of ['rain', 'heavy-snow'] as const) {
+    os.chooseCityWeather(kind);
+    const still = fields().map((f) => [...f.ys]);
+    os.update(2);
+    assert.deepEqual(
+      fields().map((f) => [...f.ys]),
+      still,
+      `${kind}: held still under reduced motion`,
+    );
+  }
   assert.equal(os.cityRenderInput()!.level, 0.5);
 }, 60_000);
 
@@ -374,6 +444,7 @@ test('lighting and weather are decoration: identical worlds stay identical whate
   // between any two worlds, city or no city
   const seat = [...plain.seats.keys()][0];
   for (const o of [plain, styled]) o.addAgent(1, 2, 0, seat, true);
+  plain.chooseCityWeather('clear'); // the default is Automatic weather; the plain world is the clear one (settled by the 600 steps below)
   styled.setCityPresentation(present({ lighting: 'night', weather: 'rain', traffic: 'low' }));
   const DT = 0.1;
   for (let k = 0; k < 600; k++) {
@@ -407,6 +478,39 @@ test('lighting and weather are decoration: identical worlds stay identical whate
   assert.equal(key(styled), key(plain));
   assert.equal(styled.getCharacters().length, 1);
   // and the city really was different: the styled world draws night and rain, the plain one nothing
-  assert.equal(plain.cityRenderInput(), null);
+  assert.ok(plain.cityRenderInput() === null, 'the plain world draws nothing');
   assert.equal(styled.cityRenderInput()!.level, 1);
+}, 120_000);
+
+test('TEST SEAM (accelerated test clock): it moves ONLY the city clocks, in clock-capped steps, at most CITY_TEST_CLOCK_MAX_SECONDS per call', async () => {
+  const { installTestHooks } = await import('../src/testHooks.ts');
+  const g = globalThis as unknown as { window?: unknown };
+  const had = g.window;
+  g.window = {};
+  try {
+    const os = newOffice();
+    installTestHooks({ current: os });
+    const hooks = (g.window as { __pixelAgentsTestHooks: { advanceCityClock: (s: number) => void } })
+      .__pixelAgentsTestHooks;
+    let calls = 0;
+    const original = os.city.update.bind(os.city);
+    os.city.update = (dt, now, reduced) => {
+      calls++;
+      original(dt, now, reduced);
+    };
+    const residentsBefore = JSON.stringify(os.serializeAmbient(0));
+    hooks.advanceCityClock(10);
+    assert.equal(calls, 10 / C.CITY_CLOCK_MAX_STEP_SEC, '10 s is 40 capped steps of 0.25 s');
+    calls = 0;
+    hooks.advanceCityClock(1e9); // far past the bound: clipped
+    assert.equal(calls, C.CITY_TEST_CLOCK_MAX_SECONDS / C.CITY_CLOCK_MAX_STEP_SEC);
+    assert.equal(calls, 57_600);
+    calls = 0;
+    for (const seconds of [0, -5, Number.NaN]) hooks.advanceCityClock(seconds);
+    assert.equal(calls, 0, 'a non-positive or non-numeric request does nothing');
+    // nothing but the city clocks moved: the residents and trains are exactly as they were
+    assert.equal(JSON.stringify(os.serializeAmbient(0)), residentsBefore);
+  } finally {
+    g.window = had;
+  }
 }, 120_000);

@@ -34,9 +34,11 @@ import { WebSocketServer } from 'ws';
 
 import type { DiOfficeState } from '../../core/src/messages.ts';
 import { AgentStateStore } from '../../server/src/agentStateStore.ts';
+import { CITY_PRESENTATION_FILE_NAME } from '../../server/src/constants.ts';
 import { readCityPresentation } from '../../server/src/di/cityPresentationPersistence.ts';
 import { handleDiClientMessage } from '../../server/src/di/diClientMessages.ts';
 import { resetStateRootForTests, setStateRoot } from '../../server/src/stateRoot.ts';
+import { CITY_OVERCAST_RAIN } from '../src/constants.ts';
 
 const STEPS_MS = 180_000;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -227,6 +229,20 @@ async function openCity() {
 async function choose(testid: string) {
   await p().focus(`[data-testid="${testid}"]`);
   await p().keyboard.press('Enter');
+  await settle(6);
+}
+/**
+ * A sky with no weather over the street. These scenarios find the vehicles by matching their real sprite files pixel for pixel, which a
+ * weather veil or a falling particle over them would defeat. The default is now Automatic regional weather (the seeded start has rain
+ * over the City, where the Metropolis is), so the premise is made explicit here: choose Clear and let its four-second fade finish
+ * (reduced motion swaps at once). The panel is left as it was found, so nothing covers the street.
+ */
+async function clearSky(): Promise<void> {
+  const wasOpen = (await p().$('[data-testid="city-controls"]')) !== null;
+  await openCity();
+  await choose('city-weather-clear');
+  await p().waitForTimeout(4600);
+  if (!wasOpen) await p().click('[data-testid="city-button"]');
   await settle(6);
 }
 const pressed = (testid: string) =>
@@ -464,6 +480,7 @@ test(
   "REAL MOTION: the world's own vehicle art is found on the canvas where each pose says, and found somewhere else a moment later",
   async () => {
     await boot();
+    await clearSky();
     const dims = spriteDims();
     await waitForDriving();
     let best: { district: string; cal: Calibration; first: Seen[] } | null = null;
@@ -548,12 +565,19 @@ test(
       ['off', 'low', 'normal'],
     );
     await choose('city-traffic-off');
-    assert.deepEqual(readCityPresentation(), {
-      v: 1,
-      lighting: 'day',
-      weather: 'off',
-      traffic: 'off',
-    });
+    // the saved record is the strict v2 record (item 18): the same lighting and traffic choice, and the season and weather state beside it
+    const saved = readCityPresentation() as unknown as {
+      v: number;
+      lighting: string;
+      traffic: string;
+      season: { mode: string; season: string };
+      weather: { mode: string };
+    };
+    assert.deepEqual(Object.keys(saved).sort(), ['lighting', 'season', 'traffic', 'v', 'weather']);
+    assert.deepEqual(
+      [saved.v, saved.lighting, saved.traffic, saved.season.mode, saved.season.season, saved.weather.mode],
+      [2, 'day', 'off', 'auto', 'summer', 'auto'],
+    );
     await boot();
     await openCity();
     assert.equal(await pressed('city-traffic-off'), 'true');
@@ -570,6 +594,57 @@ test(
     );
     assert.equal(hiddenAfterReload, 0, 'a saved off is applied before anything is drawn');
     assert.equal(saves.length, 4, 'loading a saved choice does not save it again');
+  },
+  STEPS_MS,
+);
+
+test(
+  'THE TRAFFIC CHOICE round-trips EXACTLY through the v2 record, and a saved v1 record carrying that choice migrates to the SAME level, for every level',
+  async () => {
+    const stateDir = path.join(sandbox, 'di-root');
+    const file = path.join(stateDir, CITY_PRESENTATION_FILE_NAME);
+    // the traffic engine's own count of hidden static copies, the values the Traffic control test above pins: a saved Off never builds the
+    // traffic (0), Low hides 24 copies (TRAFFIC_CAP_LOW), Normal hides 68
+    const hidden = () =>
+      p().evaluate(
+        () =>
+          (
+            window as unknown as {
+              __diHarnessOffice: { getTraffic(): { hiddenUids(): Set<string> } | null };
+            }
+          ).__diHarnessOffice.getTraffic()?.hiddenUids().size ?? 0,
+      );
+    const expectedHidden = { off: 0, low: 24, normal: 68 } as const;
+    for (const level of ['off', 'low', 'normal'] as const) {
+      // (a) a saved v1 record with this traffic choice: migrated on load to the same level; reading writes nothing
+      const old = JSON.stringify({ v: 1, lighting: 'day', weather: 'off', traffic: level });
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(file, old);
+      saves = [];
+      await boot();
+      await openCity();
+      for (const other of ['off', 'low', 'normal'])
+        assert.equal(await pressed(`city-traffic-${other}`), String(other === level), `v1 ${level}: ${other}`);
+      assert.equal(await hidden(), expectedHidden[level], `v1 ${level}: the traffic engine got the same level`);
+      assert.equal(fs.readFileSync(file, 'utf-8'), old, 'migration is a read: the v1 file is untouched');
+      assert.equal(saves.length, 0);
+      // (b) the v2 round trip: choose another level, then this one; the saved record holds exactly this level, and a reload restores it
+      const other = level === 'off' ? 'low' : 'off';
+      await choose(`city-traffic-${other}`);
+      await choose(`city-traffic-${level}`);
+      const record = readCityPresentation() as unknown as { v: number; traffic: string };
+      assert.deepEqual([record.v, record.traffic], [2, level]);
+      assert.deepEqual(
+        saves.map((m) => (m.state as { traffic: string }).traffic),
+        [other, level],
+        'each choice was saved, with its exact level',
+      );
+      await boot();
+      await openCity();
+      for (const o of ['off', 'low', 'normal'])
+        assert.equal(await pressed(`city-traffic-${o}`), String(o === level), `v2 ${level}: ${o}`);
+      assert.equal(await hidden(), expectedHidden[level], `v2 ${level}: the traffic engine got the same level`);
+    }
   },
   STEPS_MS,
 );
@@ -757,6 +832,7 @@ test(
   'HOVER: pointing at a vehicle hits that vehicle and draws its "decorative" label above it',
   async () => {
     await boot();
+    await clearSky();
     await goToDistrict('Metropolis');
     await waitForDriving();
     const cal = await calibrate();
@@ -816,6 +892,7 @@ test(
   async () => {
     await boot('reduce');
     await waitForBuilt();
+    await clearSky();
     await goToDistrict('Metropolis');
     await openCity();
     const sig = () =>
@@ -891,6 +968,106 @@ test(
       rows.filter((r) => r[3] === 'drive').map((r) => `${r[0]}@${r[1]},${r[2]}`);
     assert.deepEqual(shown(second), shown(first));
     assert.ok(shown(second).length >= 60);
+  },
+  STEPS_MS,
+);
+
+/** How much of a sprite's opaque art is found at its predicted place AFTER the rain veil has tinted it: each channel within `tol` of
+ *  sprite * (1 - a) + veil * a (0..1). The exact matcher above asks for the untinted sprite; this asks for the tinted one. */
+function tintMatchOf(seen: Seen, zoom: number, tol: number): number {
+  const sprite = loadSprite(`VEHICLE_${seen.kind}_${FACING[seen.heading]}`);
+  if (!sprite || !seen.crop) return 0;
+  const { r, g, b, a } = CITY_OVERCAST_RAIN;
+  const veil = [r, g, b];
+  let opaque = 0;
+  let near = 0;
+  for (let sy = 0; sy < sprite.h; sy++) {
+    for (let sx = 0; sx < sprite.w; sx++) {
+      const k = (sy * sprite.w + sx) * 4;
+      if (sprite.px[k + 3] !== 255) continue;
+      opaque++;
+      const i = (Math.floor((sy + 0.5) * zoom) * seen.w + Math.floor((sx + 0.5) * zoom)) * 4;
+      let ok = true;
+      for (let c = 0; c < 3; c++) {
+        const expected = sprite.px[k + c] * (1 - a) + veil[c] * a;
+        if (Math.abs(seen.crop[i + c] - expected) > tol) ok = false;
+      }
+      if (ok) near++;
+    }
+  }
+  return opaque === 0 ? 0 : near / opaque;
+}
+
+test(
+  'UNDER AUTOMATIC REGIONAL WEATHER (the default: rain over the Metropolis, with its veil) the vehicles are still DRAWN at their poses, tinted by the veil, and still hit-testable',
+  async () => {
+    await boot(); // the default: Automatic regional weather. NO Clear premise here: this is the combined-effect check
+    await waitForDriving();
+    await goToDistrict('Metropolis');
+    const cal = await calibrate();
+    const dims = spriteDims();
+    const zoom = cal.size / 16;
+    // hold everything still: reduced motion holds every vehicle and every weather particle on one frame
+    await p().emulateMedia({ reducedMotion: 'reduce' });
+    await p().waitForTimeout(600);
+    interface Probe {
+      cityKind: string;
+      rainAlpha: number;
+      renderInputWeather: boolean;
+      renderInputSeason: boolean;
+    }
+    const probe = await p().evaluate((): Probe => {
+      const o = (
+        window as unknown as {
+          __diHarnessOffice: {
+            city: { regional: { kindAt(slot: number): string; alpha(k: string, slot: number): number } };
+            cityRenderInput(): { weather: object | null; season: object | null } | null;
+          };
+        }
+      ).__diHarnessOffice;
+      const input = o.cityRenderInput();
+      return {
+        cityKind: o.city.regional.kindAt(0),
+        rainAlpha: o.city.regional.alpha('rain', 0),
+        renderInputWeather: input?.weather != null,
+        renderInputSeason: input?.season != null,
+      };
+    });
+    // the premise, measured: the City region (where the Metropolis is) is in rain at full strength, so its veil is laid
+    assert.deepEqual(probe, {
+      cityKind: 'rain',
+      rainAlpha: 1,
+      renderInputWeather: true,
+      renderInputSeason: false,
+    });
+    const seen = (await capture(cal, dims)).filter((s) => s.crop);
+    assert.ok(seen.length >= 4, `${seen.length} vehicles in view`);
+    const exact = seen.map((s) => matchOf(s, zoom));
+    const tinted = seen.map((s) => tintMatchOf(s, zoom, 8));
+    console.log(
+      `MEASURED [vehicles under the default Automatic rain veil] ${seen.length} vehicles in view; exact (untinted) match ${JSON.stringify(exact.map((v) => Math.round(v * 100) / 100))}; veil-tinted match (tolerance 8/255) ${JSON.stringify(tinted.map((v) => Math.round(v * 100) / 100))}`,
+    );
+    // DRAWN: the vehicle's own art is on the canvas at its pose, tinted by the veil (about 2% of any crop is a rain streak)
+    const drawn = tinted.filter((v) => v >= 0.9).length;
+    assert.ok(drawn >= Math.ceil(seen.length * 0.75), `${drawn} of ${seen.length} vehicles are found, veil-tinted, at their poses`);
+    // and the veil really is what separates the two matchers: it is a tint, not a loss of the vehicle
+    assert.ok(Math.max(...exact) < 0.95, 'the veil tint is what the exact (untinted) matcher cannot see through');
+    // HIT-TESTABLE: pointing at the centre of each drawn vehicle's rectangle finds that vehicle (pose based, not pixel based)
+    for (const s of seen.filter((_, i) => tinted[i] >= 0.9)) {
+      const wx = (s.x + s.w / 2 - cal.ox) / zoom;
+      const wy = (s.y + s.h / 2 - cal.oy) / zoom;
+      const hit = await p().evaluate(
+        ([x, y]) =>
+          (
+            window as unknown as {
+              __diHarnessOffice: { getVehicleAt(x: number, y: number): { id: string } | null };
+            }
+          ).__diHarnessOffice.getVehicleAt(x, y)?.id ?? null,
+        [wx, wy],
+      );
+      assert.equal(hit, s.id, `pointing at ${s.id} finds it`);
+    }
+    await shot('living-city-traffic-under-automatic-rain');
   },
   STEPS_MS,
 );

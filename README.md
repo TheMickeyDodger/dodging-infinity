@@ -176,6 +176,26 @@ The original palace opens into forests, mountain lakes, farms, a harbour, and a 
 
 The included living-metropolis preset spans **352 × 312 tiles**, with **145 decorative residents**, **four subway stations**, and **two trains**.
 
+The **City** panel adds decoration only: day and night lighting, **seasons** (Automatic from summer, thirty minutes of the view running each, or one you hold) and **regional weather** (each region of the world changes its own weather every two to five minutes, or one choice for all of it). Offices stay lit and dry, labels and agents stay readable, and none of it says anything about what a Mission or an agent is doing. Reduced motion stops the weather particles and makes every change instant (the season and weather clocks keep running); a manual weather choice overrides the automatic rules everywhere. See [the living city](docs/pixel-agents-office.md#the-living-city-lighting-seasons-weather-traffic-residents-and-the-subway).
+
+
+| Autumn Wildwood in the four seasons | River Valley Farmland in the four seasons |
+|---|---|
+| ![The Autumn Wildwood in spring, summer, autumn and winter](assets/pixel-world/seasons-autumn-wildwood.png) | ![River Valley Farmland in spring, summer, autumn and winter, with pale-olive crops in winter](assets/pixel-world/seasons-river-valley-farmland.png) |
+| Season held on each, weather Clear. Captions are the state the page reported. Built app, synthetic fixture office state, real time. | The same four seasons over crops, barns and fences. Built app, synthetic fixture office state, real time. |
+
+| Light and heavy snow | Regional weather changing on its own |
+|---|---|
+| ![Silver Pine Highlands in winter: clear, light snow, heavy snow, and autumn rain](assets/pixel-world/weather-light-and-heavy-snow-highlands.png) | ![The Highlands go from light snow to heavy snow and back to clear while other regions change](assets/pixel-world/weather-regional-transition-highlands.png) |
+| Manual weather choices over the same ground. Built app, synthetic fixture office state, real time. | Automatic weather in a held winter, driven by the real scheduler on an **accelerated test clock**: +335 s of scheduler time in 2 s of wall time; each frame states its own elapsed time. Built app, synthetic fixture office state. |
+
+| Two regions, two different weathers at once |
+|---|
+| ![Silver Pine Highlands in heavy snow beside clear River Valley Farmland, in one frame with the border in view](assets/pixel-world/weather-two-regions-at-once-highlands-farmland.png) |
+| Real time, no test clock: Automatic weather in a held winter on a fresh profile; the real seeded scheduler drew heavy snow for the Highlands and clear sky for Farmland at the same moment. Built app, synthetic fixture office state. A mild warm/cool seam remains at this border (Farmland keeps an olive-cream winter ground). |
+
+These pictures are of a synthetic fixture and say nothing about live Missions or agents. Capture details, hashes and limits are in [`assets/pixel-world/seasons-and-weather.md`](assets/pixel-world/seasons-and-weather.md). Spring and summer look much alike where a district is mostly water, sand or paving (the Coast, the Harbour, much of the Metropolis).
+
 ### One Reception inbox, a receptionist, and agents in all three grand offices
 
 The side panel's **Open reception** entry and the reception desk in the Palace lobby open the **same Reception inbox**: what needs you, in plain words, with the exact record one disclosure away. It draws on the catalog's source-qualified Mission observations, on delivery proposals if you opt in, and on the Mission request panel if you configure it. It says what each source covers, and a source it could not read is labelled as such, not shown as "none". The inbox is view only: nothing in it approves, starts or delivers anything, and a card that points to the request panel only opens it.
@@ -656,7 +676,7 @@ The world should help you answer three practical questions: **What is happening?
 | **Distinct Mission headquarters** | Give concurrent teams identifiable homes, readable labels, simple Mission switching, and a “find this team” camera action. Follow observed team membership and activity. |
 | **Evidence library and Mission inspector** | Open artifacts and inspect assignments, dependencies, review findings, independent verification, and delivery receipts. See the source and freshness of the records. |
 | **Visible model choices and handoffs** | Inspect recorded role selections, confirmed model identities where available, and the reasons for an escalation. |
-| **Richer atmosphere** | Add day/night lighting, weather, and moving traffic while preserving responsive navigation, readable labels, reduced-motion support, and persistent preferences. |
+| **Richer atmosphere** | Add day/night lighting, seasons, regional weather, and moving traffic while preserving responsive navigation, readable labels, reduced-motion support, and persistent preferences. |
 
 The office remains a view over DI’s records. Future Mission controls use the same action and approval contracts as the other interfaces. Decorative residents and atmospheric effects retain their presentation role.
 

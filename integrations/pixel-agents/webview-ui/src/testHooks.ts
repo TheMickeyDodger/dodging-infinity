@@ -1,4 +1,7 @@
 import type { ColorValue } from './components/ui/types.js';
+import { CITY_CLOCK_MAX_STEP_SEC, CITY_TEST_CLOCK_MAX_SECONDS } from './constants.js';
+import { regionEdges, regionMapFor } from './office/city/cityRegions.js';
+import { seasonCacheEntries } from './office/city/citySeasonArt.js';
 import {
   eraseCarpet,
   expandLayout,
@@ -185,6 +188,19 @@ declare global {
         parentToolId?: string;
       }>;
       selectAgent?: (id: number) => void;
+      /** TEST ONLY (item 18): move ONLY the city's season and weather clocks forward by `seconds` of visible running time (at most
+       *  CITY_TEST_CLOCK_MAX_SECONDS per call), in steps of the clock's own cap. It is not a control and no shipped default uses it;
+       *  every capture made with it must be labelled "accelerated test clock". Nothing else in the office advances. */
+      advanceCityClock?: (seconds: number) => void;
+      /** READ ONLY (item 18): the season and the weather as the City panel describes them (copies). */
+      getCityAtmosphere?: () => ReturnType<OfficeState['cityAtmosphere']>;
+      /** READ ONLY (item 18): the sizes of what the seasons and the regional weather cache: the season recolour caches (against
+       *  CITY_SEASON_CACHE_MAX_ENTRIES), and the region map and its soft-edge field for the layout (one pair per layout). */
+      getCityCacheStats?: () => {
+        season: { sprites: number; pixels: number; types: number };
+        regionTiles: number;
+        regionEdgeBytes: number;
+      } | null;
     };
   }
 }
@@ -258,6 +274,31 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   hooks.selectAgent = (id) => {
     const os = officeStateRef.current;
     if (os) os.selectedAgentId = id;
+  };
+
+  // Item 18: the accelerated test clock and its read-only observation (see the type docs above).
+  hooks.advanceCityClock = (seconds) => {
+    const os = officeStateRef.current;
+    if (!os || !(seconds > 0)) return;
+    os.cityAtmosphere(); // bring the schedule's region classes in line with the layout before stepping
+    const steps = Math.ceil(
+      Math.min(seconds, CITY_TEST_CLOCK_MAX_SECONDS) / CITY_CLOCK_MAX_STEP_SEC,
+    );
+    for (let i = 0; i < steps; i++)
+      os.city.update(CITY_CLOCK_MAX_STEP_SEC, Date.now(), os.reducedMotion);
+  };
+  hooks.getCityAtmosphere = () =>
+    officeStateRef.current?.cityAtmosphere() as ReturnType<OfficeState['cityAtmosphere']>;
+  hooks.getCityCacheStats = () => {
+    const os = officeStateRef.current;
+    if (!os) return null;
+    const map = regionMapFor(os.getLayout());
+    const edges = regionEdges(map);
+    return {
+      season: seasonCacheEntries(),
+      regionTiles: map.cells.length,
+      regionEdgeBytes: edges.dist.byteLength + edges.foreign.byteLength,
+    };
   };
 
   // Point-in-time snapshot of every live pet. Pets render only on the canvas

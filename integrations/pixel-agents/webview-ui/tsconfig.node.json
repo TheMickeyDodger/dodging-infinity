@@ -28,9 +28,13 @@
     "noUncheckedSideEffectImports": true
   },
   "include": ["vite.config.ts", "../core/src/assets/**/*.ts", "test/**/*.ts"],
-  /* type-checked by tsconfig.test-dom.json, which adds the DOM lib (and JSX) for the renderers; the two living-city
-     browser tests are type-checked by tsconfig.test-city.json (DOM lib, and the real server handler they import) */
+  /* type-checked by tsconfig.test-dom.json, which adds the DOM lib (and JSX) for the renderers (item 18: cityWeather and cityPersistence
+     drive the real OfficeState and the test hooks, which import the renderer; they are listed in BOTH places on purpose, excluded here and
+     included there, so none is left unchecked); the two living-city browser tests are type-checked by tsconfig.test-city.json (DOM lib, and
+     the real server handler they import) */
   "exclude": [
+    "test/cityWeather.test.ts",
+    "test/cityPersistence.test.ts",
     "test/livingCityApp.test.ts",
     "test/livingCityTraffic.test.ts",
     "test/livingCityLoad.test.ts",

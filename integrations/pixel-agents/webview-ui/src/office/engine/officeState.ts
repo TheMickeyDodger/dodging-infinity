@@ -1,5 +1,8 @@
 import type { AmbientSaveState } from '../../../../core/src/ambientSave.js';
-import type { CityPresentation } from '../../../../core/src/cityPresentation.js';
+import type {
+  CityPresentation,
+  CityPresentationV2,
+} from '../../../../core/src/cityPresentation.js';
 import type { DiOfficeState } from '../../../../core/src/messages.js';
 import { pickDiversePalette } from '../../../../core/src/paletteUtils.js';
 import {
@@ -32,10 +35,13 @@ import type { AmbientRestoreResult } from '../ambient/ambientSave.js';
 import { applyAmbientSnapshot, serializeAmbient } from '../ambient/ambientSave.js';
 import type { AmbientResident, AmbientWorld } from '../ambient/ambientWorld.js';
 import { buildAmbientWorld } from '../ambient/ambientWorld.js';
+import type { CityAtmosphere } from '../city/cityEffects.js';
 import { CityEffects } from '../city/cityEffects.js';
 import { cityMaskFor, lampLights } from '../city/cityMask.js';
+import { regionMapFor } from '../city/cityRegions.js';
+import type { WeatherMode } from '../city/cityRegionWeather.js';
 import type { CityRenderInput } from '../city/cityRender.js';
-import { weatherVeil } from '../city/cityWeather.js';
+import type { Season } from '../city/citySeason.js';
 import { getColorizedSprite } from '../colorize.js';
 import { haloEligibleCharacterIds } from '../halo.js';
 import type { DiOfficeDetection } from '../layout/diOffices.js';
@@ -264,7 +270,11 @@ export class OfficeState {
   }
 
   constructor(layout?: OfficeLayout) {
+    // a layout handed in is the real one; the default layout is only a placeholder until `rebuildFromLayout` brings the real one
+    this.layoutIsReal = layout !== undefined;
     this.layout = layout || createDefaultLayout();
+    // tell the weather schedule where its classes stand BEFORE anything is restored into it: the placeholder's are not acted on
+    this.syncCityRegions();
     this.tileMap = layoutToTileMap(this.layout);
     this.seats = new Map();
     this.blockedTiles = new Set();
@@ -381,6 +391,7 @@ export class OfficeState {
   rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
     // the render-cache bound across edits, at this safe point BEFORE the instances are rebuilt
     boundRenderCaches();
+    this.layoutIsReal = true;
     this.layout = layout;
     this.tileMap = layoutToTileMap(layout);
     this.deriveSeating(layout);
@@ -1434,6 +1445,7 @@ export class OfficeState {
   update(dt: number): void {
     // The city's lighting follows its target; weather moves unless motion is reduced. The game loop's
     // hidden guard means neither advances while the view is hidden.
+    this.syncCityRegions();
     this.city.update(dt, Date.now(), this.reducedMotion);
 
     // Furniture animation cycling (held on one frame under reduced motion; ON/OFF auto-state
@@ -1905,6 +1917,58 @@ export class OfficeState {
     this.syncTraffic();
   }
 
+  /** Take a SAVED city record (contract v2; the caller has checked it and migrated a v1 record): see CityEffects.loadRecord. */
+  loadCityRecord(record: CityPresentationV2): void {
+    this.city.loadRecord(record, Date.now(), this.reducedMotion);
+    this.syncTraffic();
+  }
+
+  /** Everything a reload needs of the city, as plain values (contract v2). */
+  cityRecord(): CityPresentationV2 {
+    return this.city.record();
+  }
+
+  /** Item 18: the season and weather choices of the City panel (decoration only; held in memory in milestone 1). */
+  chooseCitySeason(season: Season): void {
+    this.city.chooseSeason(season, this.reducedMotion);
+  }
+  chooseCityAutomaticSeasons(): void {
+    this.city.chooseAutomaticSeasons();
+  }
+  pauseCitySeasons(): void {
+    this.city.pauseSeasons();
+  }
+  resumeCitySeasons(): void {
+    this.city.resumeSeasons();
+  }
+  chooseCityWeather(mode: WeatherMode): void {
+    this.city.chooseWeather(mode, this.reducedMotion);
+  }
+
+  /** The season and weather as the City panel describes them (plain values). */
+  cityAtmosphere(): CityAtmosphere {
+    this.syncCityRegions();
+    return this.city.atmosphere(regionMapFor(this.layout));
+  }
+
+  /** Whether `layout` is the real layout (handed in, adopted, or brought by `rebuildFromLayout`) and not the default placeholder. */
+  private layoutIsReal: boolean;
+
+  /**
+   * The layout the office was built with is FINAL: no other is coming (the App adopts the default layout when no saved one exists). Its
+   * region classes become the real ones, so a restored or season-changed weather state is verified against them at once.
+   */
+  adoptLayout(): void {
+    this.layoutIsReal = true;
+    this.syncCityRegions();
+  }
+
+  /** Keep the weather schedule's region classes in line with the layout's region map (a no-op unless the layout changed). The
+   *  placeholder layout's classes are adopted but never acted on (see RegionalWeather.setClasses). */
+  private syncCityRegions(): void {
+    this.city.regional.setClasses(regionMapFor(this.layout).classes, this.layoutIsReal);
+  }
+
   /** The furniture to draw as furniture: the layout's, less the pieces a driving vehicle stands in for. The filtered
    *  list is kept while neither the layout's furniture nor the hidden set has changed (animation frames rebuild the
    *  instances several times a second and must not refilter ten thousand pieces each time). */
@@ -1982,15 +2046,16 @@ export class OfficeState {
     return vehicleAt(this.getVehicles(), worldX, worldY);
   }
 
-  /** What the renderer draws for the city this frame, or null when there is nothing to draw (day, no
-   *  weather): a day with clear skies costs nothing. */
+  /** What the renderer draws for the city this frame, or null when there is nothing to draw (day, plain summer, clear skies
+   *  everywhere): that case costs nothing and is the world exactly as it has always looked. */
   cityRenderInput(): CityRenderInput | null {
+    this.syncCityRegions();
     const lit = this.city.level >= CITY_LIGHT_VISIBLE_EPSILON;
-    const wet = this.city.weather.count > 0;
-    if (!lit && !wet) return null;
-    const veil = wet ? weatherVeil(this.city.weather.kind) : null;
+    const wet = this.city.regional.anyWeather();
+    const season = this.city.seasons.frame();
+    if (!lit && !wet && !season) return null;
     const agents: { x: number; y: number }[] = [];
-    if (lit || veil) {
+    if (lit || wet) {
       for (const ch of this.getCharacters()) {
         if (ch.matrixEffect === 'despawn') continue;
         agents.push({ x: ch.x, y: ch.y - CITY_LIGHT_AGENT_LIFT_PX });
@@ -2001,8 +2066,8 @@ export class OfficeState {
       mask: cityMaskFor(this.layout),
       lamps: lit ? lampLights(this.layout, footprintOf) : [],
       agents,
-      weather: wet ? this.city.weather : null,
-      veil,
+      weather: wet ? { weather: this.city.regional, regions: regionMapFor(this.layout) } : null,
+      season,
     };
   }
 

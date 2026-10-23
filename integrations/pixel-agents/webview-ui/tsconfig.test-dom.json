@@ -13,6 +13,8 @@
     "resolveJsonModule": true
   },
   "include": [
+    "test/cityWeather.test.ts",
+    "test/cityPersistence.test.ts",
     "test/haloAura.test.ts",
     "test/renderContextRestore.test.ts",
     "test/diReceptionDesk.test.ts",
