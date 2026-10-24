@@ -12,9 +12,22 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { contrastRatio } from '../src/components/diCodeReviewModel.ts';
+import {
+  ALPHA,
+  resolveShared,
+  sharedTokensAliasedBy,
+  sharedValue,
+  SOLID,
+} from './diChromeTokens.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const css = fs.readFileSync(path.join(root, 'src/components/diOperationalPanel.css'), 'utf-8');
+/** The stylesheet as written: its palette names the shared DI chrome tokens (index.css :root). */
+const written = fs.readFileSync(path.join(root, 'src/components/diOperationalPanel.css'), 'utf-8');
+/**
+ * The stylesheet with every `var(--di-*)` resolved through the ONE shared reader (diChromeTokens.ts), so every
+ * reader and pin below runs on the values the browser uses. Resolution throws on any token it cannot resolve.
+ */
+const css = resolveShared(written);
 /** The stylesheet without its comments (what the browser acts on). */
 const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
@@ -78,6 +91,21 @@ describe('the colour tokens are solid and complete', () => {
     expect(rule).not.toMatch(/--op-[a-z0-9-]+:\s*(rgba?|hsla?)\(/);
     expect(rule).not.toMatch(/--op-[a-z0-9-]+:\s*#[0-9a-fA-F]{8}\b/);
   });
+  it('every shared token the palette resolves through is solid in index.css :root (the check follows the tokens there)', () => {
+    const aliased = sharedTokensAliasedBy(written, '.di-op-theme');
+    expect(aliased.length, 'the palette names the shared tokens').toBeGreaterThan(10);
+    for (const name of aliased) {
+      const value = sharedValue(name);
+      expect(value, `--di-${name} carries no alpha colour`).not.toMatch(ALPHA);
+      if (value.startsWith('#')) expect(value, `--di-${name}`).toMatch(SOLID);
+    }
+    // Every colour token this file checks is a solid colour at its source, not only once resolved here.
+    const colourAliases = [
+      ...written.matchAll(/--op-([a-z0-9-]+):\s*var\(--di-([a-z0-9-]+)\)\s*;/g),
+    ].filter((m) => m[1] in T);
+    expect(colourAliases.length).toBe(Object.keys(T).length);
+    for (const [, op, di] of colourAliases) expect(sharedValue(di), `--op-${op} -> --di-${di}`).toMatch(SOLID);
+  });
 });
 
 describe('text is readable on every surface it appears on (WCAG AA, 4.5:1)', () => {
@@ -94,6 +122,27 @@ describe('text is readable on every surface it appears on (WCAG AA, 4.5:1)', () 
     for (const status of STATUS)
       for (const s of SURFACES)
         expect(ratio(status, s), `${status} on ${s}`).toBeGreaterThanOrEqual(AA);
+  });
+  it('every status pill: its words and shape on its own tint (the pill background)', () => {
+    const pillBg: Record<string, string> = {
+      running: 'run-tint',
+      waiting: 'surface-2',
+      blocked: 'warn-tint',
+      failed: 'bad-tint',
+      ended: 'surface-2',
+      disconnected: 'warn-tint',
+      stale: 'perm-tint',
+      unknown: 'surface-2',
+    };
+    for (const [status, bg] of Object.entries(pillBg)) {
+      expect(code, `pill ${status} uses ${bg}`).toMatch(
+        bg === 'surface-2'
+          ? new RegExp(`\\.di-op-status\\[data-status='${status}'\\] \\{\\s*color: var\\(--op-${status}\\);\\s*\\}`)
+          : new RegExp(`\\.di-op-status\\[data-status='${status}'\\] \\{\\s*color: var\\(--op-${status}\\);\\s*--op-pill-bg: var\\(--op-${bg}\\);`),
+      );
+      expect(ratio(status, bg), `${status} on its pill ${bg}`).toBeGreaterThanOrEqual(AA);
+    }
+    expect(code).toMatch(/\.di-op-status \{[\s\S]*?background: var\(--op-pill-bg, var\(--op-surface-2\)\);/);
   });
   it('the inspector reads on the same bg/surface pairs (it reuses the panel tokens)', () => {
     expect(ratio('text', 'bg')).toBeGreaterThanOrEqual(AA);

@@ -1,0 +1,13 @@
+
+/* a comment mentioning #123456 is not a declaration */
+.a { background: #30304f; }
+.b { color: #FFF; border-color: #11223344; }
+.c { background: rgba(0, 0, 0, 0.5); outline-color: hsl(10 20% 30%); fill: oklch(0.7 0.1 200); }
+.d { background: var(--rv-surface-2); color: currentColor; border-color: transparent; box-shadow: var(--rv-shadow); }
+.e { background-image: url("data:image/svg+xml;utf8,<svg fill='#abcdef'/>"); }
+.f { --rv-new: #123456; --rv-ref: var(--di-bg); }
+.g { mask-image: linear-gradient(to bottom, #000 80%, transparent); -webkit-mask-image: linear-gradient(#000, transparent); }
+@media (max-width: 480px) {
+  .h { background: #34346a; }
+}
+.i { box-shadow: 0 1px 0 rgb(1 2 3); transition: color 0.2s; }

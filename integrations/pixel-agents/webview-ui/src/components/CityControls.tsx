@@ -5,13 +5,21 @@ import type {
   CityPresentation,
   CityTraffic,
 } from '../../../core/src/cityPresentation.js';
-import { CITY_STATUS_REFRESH_MS, TRAFFIC_CAP_LOW, TRAFFIC_MAX_VEHICLES } from '../constants.js';
+import {
+  CITY_STATUS_REFRESH_MS,
+  DI_WORLD_COLUMN_LEFT_PX,
+  DI_WORLD_COLUMN_MAX_PX,
+  TRAFFIC_CAP_LOW,
+  TRAFFIC_MAX_VEHICLES,
+} from '../constants.js';
 import type { AtmosphereChoice, CityChoice } from '../hooks/useCityPresentation.js';
 import type { CityAtmosphere } from '../office/city/cityEffects.js';
 import type { WeatherMode } from '../office/city/cityRegionWeather.js';
 import { weatherStatus } from '../office/city/cityRegionWeather.js';
 import type { Season } from '../office/city/citySeason.js';
 import { seasonName, SEASONS, seasonStatus } from '../office/city/citySeason.js';
+import { canTakeFocus } from './diMinimize.js';
+import { CLOSE_FOCUS_FALLBACKS } from './diModalStack.js';
 import { Button } from './ui/Button.js';
 
 const LIGHTING: ReadonlyArray<{ id: CityLighting; label: string; title: string }> = [
@@ -127,23 +135,70 @@ export function CityControls({
   const opener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const active = document.activeElement;
+    // Saved ONCE per opening: the app renders under StrictMode, which runs a mount effect twice, and the reveal below can move focus to Close in between, so a second capture would
+    // record Close itself as the opener and closing would hand focus to a control that is about to unmount (the page body).
+    if (opener.current !== null) return;
     opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
   }, []);
+  // REVEALED WHEN OPENED. In a window too short for the whole strip (320 x 225: the first row's floor, the column and the gap are taller than the window) the strip scrolls and the panel
+  // rests above the viewport, so pressing City showed nothing until a later Tab happened to scroll it into view. Opening scrolls the strip, and only the strip (the world's container
+  // clips, so nothing else can move), just far enough that the opened panel, header and Close included, is on screen; where it is already on screen this does nothing, so the
+  // windows the strip fits are untouched. THE COST, MEASURED: the opener (the City button, in the strip's second row) is carried the other way, down and out of the strip's visible
+  // area, and focus is still on it: an invisible panel would be traded for an invisible active focus. So, and only when the reveal has carried the saved opener out of view, focus moves
+  // to the panel's Close (the first control of the panel, on screen). The opener stays SAVED above (the effect before this one), so closing, by Close or Escape, restores focus to the
+  // control that held it before, which the browser then scrolls into view; it is never left on the page body. Where the opener is still visible nothing about focus changes. It acts once,
+  // on open: the strip is not re-scrolled if its content later changes height. No control is added.
+  const panel = useRef<HTMLDivElement | null>(null);
+  const header = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = panel.current;
+    if (el === null) return;
+    el.scrollIntoView({ block: 'nearest' });
+    const from = opener.current;
+    if (from === null) return;
+    const clip = el.closest('.di-world-rail')?.getBoundingClientRect();
+    const top = Math.max(0, clip?.top ?? 0);
+    const bottom = Math.min(window.innerHeight, clip?.bottom ?? window.innerHeight);
+    const at = from.getBoundingClientRect();
+    if (at.top < top || at.bottom > bottom) header.current?.querySelector('button')?.focus();
+  }, []);
+  // The established close-time pattern (diModalStack.ts: the opener, then named fallbacks, never the page body), checked with canTakeFocus so an opener
+  // that can no longer take focus (gone, hidden, or inert because the popover suspended it) is skipped. The City button is the named target in practice.
   const close = () => {
     onClose();
-    const back = opener.current?.isConnected
-      ? opener.current
-      : document.querySelector<HTMLElement>('[aria-controls="city-controls"]');
-    back?.focus();
+    const candidates = [
+      opener.current,
+      document.querySelector<HTMLElement>('[aria-controls="city-controls"]'),
+      ...CLOSE_FOCUS_FALLBACKS.map((selector) => document.querySelector<HTMLElement>(selector)),
+    ];
+    for (const target of candidates) {
+      if (!canTakeFocus(target)) continue;
+      target.focus();
+      if (document.activeElement === target) return;
+    }
   };
 
   return (
     <div
       id="city-controls"
-      // sits ABOVE the always-visible Ambient legend (fixed bottom-56 left-10), which would otherwise cover its last line. It grows
-      // upward from there, so its height is BOUNDED by the viewport: the heading and the close button stay in view and the controls
-      // scroll inside (the panel's own scroll region), at any window height.
-      className="absolute bottom-[104px] left-10 z-30 pixel-panel flex flex-col max-w-320 max-h-[calc(100vh-120px)]"
+      ref={panel}
+      // ROW 1 of the world's left rail (WorldLeftRail), and ONLY row 1: absolutely positioned in the rail's grid with explicit start AND end lines (rows 1 to 2, columns 1 to 2), so its
+      // containing block is exactly that area. That is what bounds it: max-h-full is the first row's height (what the column leaves), bottom-0 seats it on the column's top edge, so it
+      // grows upward over the camera controls and zoom buttons and never into the column; and because an absolutely positioned box takes no part in the grid's track sizing, its own
+      // content (891 px) no longer sets the first row (it did, inflating the grid past the strip and putting the panel above the window). It is positioned and comes after the first-row
+      // cell in the document, so it PAINTS ABOVE what is drawn in that cell (the camera controls are drawn but suspended while it is open). It is the one item that gives way when the
+      // window is short (min-h-0: its own scroll region scrolls). WHAT THAT ESTABLISHES, AND WHAT IT DOES NOT: in the tested windows (1600 x 1000, 1440 x 900, 1100 x 300, 720 x 450 at 2x,
+      // 640 x 360 and 320 x 568, the last three at 300 or 450 high and up) the heading and the close button are inside the viewport while the panel's own contents scroll. It is NOT true at
+      // any height: the strip's first row is never less than the zoom buttons plus one camera stop (132 px), so where that plus the column and the gap is taller than the window (132 + 214
+      // + 6 = 352 px with the fixture label against a 225 px window at 320 x 225, 400% zoom on a 1280 x 900 window) the strip itself scrolls and the panel would rest partly or wholly above
+      // the viewport; there OPENING scrolls the strip to reveal it (the effect below), and the rest is reachable by scrolling the strip and by keyboard focus. That height is a
+      // constrained-height RECOVERY case of its own and is not covered by the City contract's windows. Its width is the column's (DI_WORLD_COLUMN_MAX_PX, which the request workspace reserves) at its own left offset: the margin is the only offset (left-0),
+      // so there is no double offset.
+      className="di-city-popover absolute row-start-1 row-end-2 col-start-1 col-end-2 left-0 bottom-0 min-h-0 max-h-full pointer-events-auto pixel-panel flex flex-col"
+      style={{
+        marginLeft: DI_WORLD_COLUMN_LEFT_PX,
+        maxWidth: `min(calc(100% - ${DI_WORLD_COLUMN_LEFT_PX}px), ${DI_WORLD_COLUMN_MAX_PX}px)`,
+      }}
       role="group"
       aria-label="City lighting and weather"
       data-testid="city-controls"
@@ -155,10 +210,14 @@ export function CityControls({
       }}
     >
       <div
+        ref={header}
         className="flex items-center justify-between gap-6 p-6 pb-2 shrink-0"
         data-testid="city-controls-header"
       >
-        <h2 className="text-sm font-normal m-0" data-testid="city-controls-heading">
+        {/* one theme step down (text-xs, 18 px) from the usual heading (text-sm, 20 px): at the column's width the 20 px heading wrapped to two lines beside the Close button, a
+            68 px header, and in a short window (1100 x 300) that left the scroll region 98 px, shorter than the intro paragraph (108 px), so the intro could not be read at the
+            top. One line is a 44 px header and a 122 px scroll region (measured in the real popover). It costs neither the column's reserved width nor any option. */}
+        <h2 className="text-xs font-normal m-0" data-testid="city-controls-heading">
           City: lighting, seasons and weather
         </h2>
         <Button

@@ -319,7 +319,7 @@ test('a plain Herdr task says so first; Mission Core facts unsupported; provenan
   const html = markup(createElement(HerdrTaskNote, { herdrTask }));
   const details = html.indexOf('<details');
   assert.ok(
-    html.indexOf('Herdr task — a plain Herdr task record, not a Mission Core Mission') < details,
+    html.indexOf('Herdr task: a plain Herdr task record, not a Mission Core Mission') < details,
   );
   assert.ok(html.indexOf('not supported for it') < details);
   assert.ok(html.indexOf('derived_from_current_task_record') > details);

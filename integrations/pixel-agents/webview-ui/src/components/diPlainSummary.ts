@@ -36,7 +36,7 @@ import { visibleEntries } from './diReceptionFormat.js';
 // ── titles ─────────────────────────────────────────────────────────────────────────────────────
 
 /** Said instead of a title when the objective's opening is only boilerplate (ids, headers). */
-export const MISSION_TITLE_PLACEHOLDER = 'Objective text available — open to read';
+export const MISSION_TITLE_PLACEHOLDER = 'Objective text available: open to read';
 
 export interface DiMissionTitle {
   /** sentence: a verbatim slice of the objective; placeholder: nothing meaningful opens it; no-goal: the source gave none. */

@@ -177,11 +177,16 @@ export const WORLD_MAP_LABEL_FONT_CSS_PX = 13;
 export const WORLD_MAP_LABEL_COLOR = '#fff4d6';
 export const WORLD_MAP_LABEL_SHADOW_COLOR = '#10121a';
 export const WORLD_MAP_HOME_LABEL = 'Palace (home)';
-/** The camera-view controls (Districts list included) sit this far from the top of the office and
- *  stop this far short of its bottom, clear of the bottom toolbar (bottom 10 px, ~40 px tall) and
- *  the residents legend (bottom 56 px, ~26 px tall); the list scrolls inside that box. */
+/** The camera-view controls (Districts list included) start this far from the top of the world. They SHARE the left strip's height with the bottom-left column
+ *  (WorldLeftRail): they are given what the column leaves, scroll inside it, and their stops scroll into view when focused. */
 export const WORLD_VIEW_CONTROLS_TOP_PX = 104;
-export const WORLD_VIEW_CONTROLS_BOTTOM_GAP_PX = 104;
+/** The left strip (WorldLeftRail) runs from this far below the top of the world to this far above its bottom. */
+export const WORLD_RAIL_TOP_PX = 8;
+export const WORLD_RAIL_BOTTOM_PX = 10;
+/** One camera-view button (36 px): the least the rail's first row is ever given (the controls' own offset plus this), so at least one stop is always shown. Where that plus the
+ *  bottom column is taller than the window, the strip itself scrolls (anchored so the column stays in view) and a stop scrolls into view when focused: the controls are NEVER removed
+ *  for want of height (navigation is not lost at 400% zoom), and nothing is left as a stop that cannot be reached and seen. */
+export const WORLD_VIEW_CONTROL_MIN_PX = 36;
 export const WORLD_MAP_REFRESH_MS = 500;
 export const WORLD_MAP_REFRESH_REDUCED_MS = 2000;
 /** The Map's living layer markers (C3): resident dot and train bar sizes, canvas pixels. */
@@ -498,6 +503,46 @@ export const AMBIENT_OFFICE_VISIT_EVERY = 4;
 export const DI_PANEL_WIDTH_PX = 420;
 /** How often the DI panel re-reads the canvas selection (a local UI read only). */
 export const DI_SELECTION_POLL_MS = 250;
+/**
+ * Width of the edge strip that holds the restore control of every minimized surface (AC3), from the approved
+ * prototype's collapsed-panel strip (44px). The world yields this width while the strip shows, so nothing is
+ * covered by it.
+ */
+export const DI_MINIMIZED_STRIP_WIDTH_PX = 44;
+
+/**
+ * The smallest world width at which the world's controls are offered. It is the toolbar's right edge as MEASURED in the rendered App (the
+ * toolbar occupies 10 to 276 px of the world, so a narrower world would clip it). It is also exactly the world that exists at 320 after the
+ * office is minimized (320 minus the 44 px strip, which the office's own restore control occupies), the narrowest supported case: a larger value
+ * would make the controls unreachable there by construction (diPanelLayout.test.ts guards that structurally). That the controls really are drawn
+ * whole and reachable by the real keyboard at this width is proved by the rendered tests in diWorldYield.test.ts, not by this comment. Below it
+ * the controls are removed from the tab order, the pointer and the screen together (WorldControlsGate).
+ */
+export const DI_WORLD_CONTROLS_MIN_PX = 276;
+
+/** The bottom-left column's distance from the world's left edge (WorldStack). */
+export const DI_WORLD_COLUMN_LEFT_PX = 10;
+/**
+ * The widest the bottom-left column (toolbar, fixture label, ambient legend, City popover) may be. It ends where the world's controls end
+ * (DI_WORLD_CONTROLS_MIN_PX, the toolbar's right edge), so the toolbar, which is as wide as this, sets it and nothing in the column can reach further:
+ * the legend's text depends on live counts and WRAPS rather than growing past it. The request workspace keeps exactly this much world beside it
+ * (MR_WORLD_KEEP_PX), so the column is never painted over the workspace's content (a composer label cut, Send's edge covered: measured at 1600 wide in
+ * wider reading before this, in the Ask tab with a draft scrolled to the end).
+ */
+export const DI_WORLD_COLUMN_MAX_PX = DI_WORLD_CONTROLS_MIN_PX - DI_WORLD_COLUMN_LEFT_PX;
+
+/**
+ * Below this world width the corner furniture on the RIGHT cannot keep its usual bottom-right places without meeting the bottom-left column (WorldStack: the
+ * toolbar runs to 276 px, the fixture label, legend and popover are up to 220 to 320 px wide, and the update notice and version label sit 28 px in from the right
+ * edge): the version label (34 px wide) would sit on the toolbar's right end below 338 px, and the update notice (about 171 px wide) would meet the label and the
+ * legend below about 475 px. In a world this narrow both move into the TOP-RIGHT band (index.css), which nothing else in the world uses there (the docked request
+ * workspace needs a world of at least 636 px beside the office: MR_MIN_BESIDE_PX plus MR_WORLD_KEEP_PX, so it never coexists with a world this narrow); wider worlds are unchanged. Measured, and held by the rendered checks
+ * in diWorldYield.test.ts and diFixtureLabel.test.ts.
+ */
+export const DI_WORLD_ROOMY_PX = 480;
+
+/** A first-frame estimate of the reception target's box (it measures about 72 x 30), used until its own size has been measured: slightly generous. */
+export const DI_RECEPTION_TARGET_ESTIMATE_PX = { w: 96, h: 34 };
 /** How often the client re-checks its own invalidation (transport, valid_until) for the DI office. */
 export const DI_CLIENT_CHECK_MS = 1000;
 /** Longest Mission title (characters, ellipsis included); the full objective stays in the inspector. */

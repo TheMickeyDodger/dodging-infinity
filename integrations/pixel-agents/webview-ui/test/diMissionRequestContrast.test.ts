@@ -11,9 +11,22 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { contrastRatio } from '../src/components/diCodeReviewModel.ts';
+import {
+  ALPHA,
+  resolveShared,
+  sharedTokensAliasedBy,
+  sharedValue,
+  SOLID,
+} from './diChromeTokens.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const css = fs.readFileSync(path.join(root, 'src/components/diMissionRequest.css'), 'utf-8');
+/** The stylesheet as written: its palette names the shared DI chrome tokens (index.css :root). */
+const written = fs.readFileSync(path.join(root, 'src/components/diMissionRequest.css'), 'utf-8');
+/**
+ * The stylesheet with every `var(--di-*)` resolved through the ONE shared reader (diChromeTokens.ts), so every
+ * reader and pin below runs on the values the browser uses. Resolution throws on any token it cannot resolve.
+ */
+const css = resolveShared(written);
 
 /** The `--mr-*` tokens of the first `.di-mr { ... }` rule, solid `#rrggbb` only. */
 function tokens(): Record<string, string> {
@@ -93,6 +106,22 @@ describe('the stylesheet’s colour tokens are solid and complete', () => {
       .replace(/box-shadow:[^;]*;/g, '')
       .match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g);
     expect(outside ?? []).toEqual([]);
+  });
+
+  it('every shared token the palette resolves through is solid in index.css :root (the check follows the tokens there)', () => {
+    const aliased = sharedTokensAliasedBy(written, '.di-mr');
+    expect(aliased.length, 'the palette names the shared tokens').toBeGreaterThan(10);
+    for (const name of aliased) {
+      const value = sharedValue(name);
+      expect(value, `--di-${name} carries no alpha colour`).not.toMatch(ALPHA);
+      if (value.startsWith('#')) expect(value, `--di-${name}`).toMatch(SOLID);
+    }
+    // Every colour token this file checks is a solid colour at its source, not only once resolved here.
+    const colourAliases = [
+      ...written.matchAll(/--mr-([a-z0-9-]+):\s*var\(--di-([a-z0-9-]+)\)\s*;/g),
+    ].filter((m) => m[1] in T);
+    expect(colourAliases.length).toBe(Object.keys(T).length);
+    for (const [, mr, di] of colourAliases) expect(sharedValue(di), `--mr-${mr} -> --di-${di}`).toMatch(SOLID);
   });
 });
 

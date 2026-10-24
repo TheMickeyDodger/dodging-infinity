@@ -27,7 +27,7 @@ export function AmbientLegend({ officeState }: { officeState: OfficeState }) {
       : '');
   return (
     <div
-      className="fixed bottom-56 left-10 z-40 pixel-panel px-8 py-4 text-xs pointer-events-none select-none"
+      className="order-2 shrink-0 max-w-full pixel-panel px-8 py-4 text-xs pointer-events-none select-none"
       role="note"
       data-testid="ambient-legend"
       title={jobs}

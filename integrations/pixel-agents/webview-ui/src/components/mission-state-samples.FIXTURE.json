@@ -1,0 +1,69 @@
+{
+  "fixture": true,
+  "fixture_id": "mission-state-samples-v1",
+  "label": "FIXTURE / VISUAL TEST - sample Mission states for design review, not real Missions",
+  "description": "The ONE file of sample Mission states (Mission 1 UI alignment). Rendered only in an explicit fixture preview (fixtureMode), inside the existing office panel, each card labelled FIXTURE. These are not Mission records: nothing reads them as status, nothing acts on them, and no real Mission status is wired from them.",
+  "phases": ["Plan", "Build", "Review", "Delivery"],
+  "samples": [
+    {
+      "id": "sample-proposal-ready",
+      "state": "Proposal ready",
+      "glyph": "P",
+      "tone": "attention",
+      "needsYou": true,
+      "objective": "Group the reception list by Mission",
+      "step": "A proposal is waiting for your decision",
+      "phase": "Plan"
+    },
+    {
+      "id": "sample-building",
+      "state": "Building",
+      "glyph": "●",
+      "tone": "running",
+      "needsYou": false,
+      "objective": "Add a short guide for new users",
+      "step": "The executor is working",
+      "phase": "Build"
+    },
+    {
+      "id": "sample-question-for-you",
+      "state": "Question for you",
+      "glyph": "?",
+      "tone": "attention",
+      "needsYou": true,
+      "objective": "Make the readiness check steadier",
+      "step": "The lead asked you a question",
+      "phase": "Review"
+    },
+    {
+      "id": "sample-stalled",
+      "state": "Stalled",
+      "glyph": "!",
+      "tone": "failed",
+      "needsYou": true,
+      "objective": "Tidy the settings screen copy",
+      "step": "The executor stopped responding",
+      "phase": "Build"
+    },
+    {
+      "id": "sample-ready-to-deliver",
+      "state": "Ready to deliver",
+      "glyph": "↗",
+      "tone": "good",
+      "needsYou": true,
+      "objective": "Clean up the theme picker",
+      "step": "Review passed and delivery waits for you",
+      "phase": "Delivery"
+    },
+    {
+      "id": "sample-merged",
+      "state": "Merged",
+      "glyph": "✓",
+      "tone": "good",
+      "needsYou": false,
+      "objective": "Fix the search box focus",
+      "step": "Merged",
+      "phase": "Delivery"
+    }
+  ]
+}

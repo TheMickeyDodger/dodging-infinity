@@ -159,6 +159,10 @@ export function OfficeCanvas({
         // Canvas dimensions are in device pixels
         const w = canvas.width;
         const h = canvas.height;
+        // A canvas with no pixels has nothing to draw into. The world is 0 px wide where the open office leaves it no room (diPanelLayout.ts, a window as
+        // narrow as 320), and drawing then throws (drawImage of a zero-size canvas). An exception out of this callback ends the game loop for good, because the next
+        // frame is only scheduled after render returns, so the canvas would stay blank when the world came back (Minimize, or a wider window).
+        if (w === 0 || h === 0) return;
 
         // Build editor render state
         let editorRender: EditorRenderState | undefined;

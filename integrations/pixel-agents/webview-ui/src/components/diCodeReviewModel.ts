@@ -869,37 +869,37 @@ export function clearedWords(reason: ClearedReason): { title: string; body: stri
   switch (reason) {
     case 'connection_lost':
       return {
-        title: 'Connection lost \u2014 the review was cleared',
+        title: 'Connection lost: the review was cleared',
         body: 'The link to the office is not confirmed, so nothing here can be called current. Reopen the review when the connection returns.',
       };
     case 'reconnected_awaiting_state':
       return {
-        title: 'Reconnected, but no fresh office state yet \u2014 the review was cleared',
+        title: 'Reconnected, but no fresh office state yet: the review was cleared',
         body: 'A reconnected link restores nothing by itself. Reopen the review once the office has sent a new state.',
       };
     case 'office_expired':
       return {
-        title: 'The office state expired \u2014 the review was cleared',
+        title: 'The office state expired: the review was cleared',
         body: 'The office has said nothing new past the time its last state was valid, so what the review stood on can no longer be vouched for.',
       };
     case 'office_not_live':
       return {
-        title: 'The office is not live \u2014 the review was cleared',
+        title: 'The office is not live: the review was cleared',
         body: 'The office reports that it is not live (its backend or its runtime observation is not current), so the listing this review stood on is not vouched for.',
       };
     case 'assignment_changed':
       return {
-        title: 'The assignment changed \u2014 the review was cleared',
+        title: 'The assignment changed: the review was cleared',
         body: 'The assignment or the agent is no longer what you opened this review for (it is no longer active work in a bound workspace, or its task or session changed). Select the agent again.',
       };
     case 'agent_not_live':
       return {
-        title: 'The agent is not confirmed running \u2014 the review was cleared',
+        title: 'The agent is not confirmed running: the review was cleared',
         body: 'The agent this review was opened from is no longer confirmed running, so the workspace it works in is no longer vouched for.',
       };
     case 'agent_gone':
       return {
-        title: 'The agent is gone \u2014 the review was cleared',
+        title: 'The agent is gone: the review was cleared',
         body: 'The agent this review was opened from is no longer listed.',
       };
   }

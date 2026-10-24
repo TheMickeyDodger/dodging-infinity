@@ -43,6 +43,89 @@
   /* Non-utility values */
   --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
   --btn-disabled-opacity: 0.35;
+
+  /*
+   * DI chrome tokens: the ONE definition of the reading surfaces (side panels, dialogs, cards, pills,
+   * tables, navigation, composer). The pixel world keeps the tokens above: FS Pixel Sans, square
+   * borders and the hard offset shadow. Each chrome stylesheet names its palette as aliases of these.
+   *
+   * From the approved prototype (DI World Prototype/app.css): every alpha text colour there is given
+   * here as the SOLID colour it shows on --di-bg, and two values are corrected for WCAG 2.2 AA. Faint
+   * text is #9a9aa6 (the prototype's #7d7d86 is 4.0:1 on --di-bg), and controls get a 3:1 edge
+   * (--di-edge), which the prototype's 12% white border does not give. Colours are solid #rrggbb so the
+   * contrast tests can compute every pairing; shadows and the glow mix solid tokens, never an alpha
+   * literal.
+   */
+  /* surfaces */
+  --di-bg: #1e1e2e;
+  --di-surface: #181828;
+  --di-surface-deep: #13131f;
+  --di-control: #353445;
+  --di-control-hover: #4e4b68;
+  --di-selected: #2c2b6d;
+  --di-line: #2d2d45;
+  --di-line-soft: #252539;
+  --di-edge: #8484ac;
+  --di-black: #000000;
+  /* text */
+  --di-text: #ededee;
+  --di-muted: #aaaab0;
+  --di-faint: #9a9aa6;
+  --di-neutral: #c6c6cf;
+  --di-link: #a9a6ff;
+  --di-on-accent: #ffffff;
+  /* accent and focus */
+  --di-accent: #6030ff;
+  --di-accent-b: #746fff;
+  --di-accent-hover: #6d42ff;
+  --di-focus: #9d99ff;
+  /* status words and dots (each always paired with a word and a shape) */
+  --di-ok: #89d185;
+  --di-run: #6fb2ff;
+  --di-perm: #e6c22e;
+  --di-warn: #ffa94d;
+  --di-bad: #ff8a8a;
+  /* status tints for pills and notices: the status hue at low strength over --di-surface */
+  --di-ok-tint: #21272f;
+  --di-run-tint: #1b243e;
+  --di-perm-tint: #2a2624;
+  --di-warn-tint: #2f2426;
+  --di-bad-tint: #2e1d2c;
+  /* type: the system reading faces (no web font is bundled) */
+  --di-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --di-font-code:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --di-text-label: 11px;
+  --di-text-sm: 12px;
+  --di-text-base: 13px;
+  --di-text-read: 14px;
+  --di-text-title: 18px;
+  --di-label-tracking: 0.08em;
+  /* spacing */
+  --di-space-1: 4px;
+  --di-space-2: 6px;
+  --di-space-3: 8px;
+  --di-space-4: 10px;
+  --di-space-5: 12px;
+  --di-space-6: 14px;
+  --di-space-7: 18px;
+  /* radius */
+  --di-radius-sm: 6px;
+  --di-radius: 8px;
+  --di-radius-box: 10px;
+  --di-radius-card: 12px;
+  --di-radius-pill: 999px;
+  /* elevation (chrome only) and the scrim behind a dialog */
+  --di-scrim: color-mix(in srgb, var(--di-surface-deep) 80%, transparent);
+  --di-shadow-pop: 0 20px 50px color-mix(in srgb, var(--di-black) 64%, transparent);
+  --di-shadow-primary:
+    0 0 0 1px color-mix(in srgb, var(--di-accent-b) 25%, transparent),
+    0 6px 16px color-mix(in srgb, var(--di-accent) 28%, transparent);
+  /* owner attention: a glow, ALWAYS paired in the markup with a word or glyph that needs no colour */
+  --di-glow:
+    0 0 0 2px var(--di-focus), 0 0 14px 4px color-mix(in srgb, var(--di-accent-b) 55%, transparent);
+  --di-glow-peak:
+    0 0 0 2px var(--di-focus), 0 0 20px 7px color-mix(in srgb, var(--di-accent-b) 72%, transparent);
 }
 
 @theme inline {
@@ -196,4 +279,36 @@
   50% {
     opacity: 0.3;
   }
+}
+
+/* The world's controls while the world is too narrow to hold them (WorldControlsGate): inert removes them from the tab order and the pointer,
+   this removes them from sight, so nothing is left drawn or focusable. A SUSPENDED gate (a popover is open over it) is inert but stays drawn. */
+.di-world-controls[data-di-world-controls='yielded'] {
+  visibility: hidden;
+}
+
+/* THE LEFT RAIL (WorldLeftRail.tsx) scrolls as a whole only where the window is shorter than the bottom column plus one camera-view stop and the controls' offset (320 x 225 is
+   400% zoom on a 1280 x 900 window). It scrolls by wheel (over any control in it), by keyboard (a focused stop scrolls into view) and by touch; its own scroll bar is not drawn
+   (it would sit on the world and take width from the 266 px column), and a scroll inside it never chains out to move the world's camera. The camera controls are never removed
+   for want of height. */
+.di-world-rail {
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+.di-world-rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* A NARROW world (DI_WORLD_ROOMY_PX): the right-hand corner furniture would meet the bottom-left column (WorldStack), so it moves into the TOP-RIGHT band: the version
+   label at the corner, the update notice just below it (its width stops short of the view buttons on the left). Neither is a control in the tab order except the
+   notice's dismiss button, which stays reachable. Wider worlds keep them at the bottom-right. */
+.di-world-controls[data-di-world-width='narrow'] .di-version-label {
+  top: 8px;
+  bottom: auto;
+}
+.di-world-controls[data-di-world-width='narrow'] .di-version-notice {
+  top: 56px;
+  right: 10px;
+  bottom: auto;
+  max-width: min(288px, calc(100% - 126px));
 }

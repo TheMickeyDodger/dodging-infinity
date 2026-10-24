@@ -3,15 +3,21 @@
  *
  * A reading surface first: a large dialog (full screen on request) with a file tree and a diff, in
  * a plain reading typeface, high contrast, a focus ring that cannot be missed, and no horizontal
- * overflow of the page — every scroll is INSIDE the dialog. The product's pixel look is kept where
- * it costs no readability: hard 2px borders, square corners, a hard offset shadow.
+ * overflow of the page — every scroll is INSIDE the dialog. Its frame is the chrome dialog frame the
+ * Reception and inspector dialogs use: a 1px line, rounded corners and a soft shadow (square in full
+ * screen). Minimized, it stays mounted and hidden, and the app behind it is usable (AC3).
  *
- * Colours are SOLID tokens on .di-rv (no alpha), so test/diCodeReviewContrast.test.ts can compute
- * the contrast of every text/background pairing from this very file. Change a token and that test
- * checks it.
+ * Colours are SOLID tokens: the chrome ones (surfaces, borders, text, links, focus, notices, the pressed
+ * control) are the shared DI chrome tokens of index.css :root named here as aliases; the review's own
+ * diff, syntax, hidden-character and file-status colours are defined here once. test/diCodeReviewContrast.test.ts computes
+ * every text/background pairing through the one shared reader (test/diChromeTokens.ts).
  */
 
 .di-rv-backdrop {
+  /* defined HERE, on the element that consumes it: a custom property reaches an element's descendants only, and the
+     backdrop is the PARENT of .di-rv, so an alias kept in the .di-rv palette never reaches the backdrop (it would
+     compute transparent) */
+  --rv-scrim: var(--di-scrim);
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -19,23 +25,35 @@
   align-items: center;
   justify-content: center;
   padding: clamp(6px, 1.6vw, 22px);
-  background: #05050ab8;
+  background: var(--rv-scrim);
   overscroll-behavior: contain;
+}
+/* AC3: minimized, the dialog stays mounted and hidden; its restore control sits in the minimized tray */
+.di-rv-backdrop[hidden] {
+  display: none;
+}
+/* the reading content's own box: it only marks where the content is (focus returns there on restore), no layout */
+.di-rv-content {
+  display: contents;
 }
 
 .di-rv {
   /* surfaces */
-  --rv-bg: #12121c;
-  --rv-surface: #1a1a29;
-  --rv-surface-2: #23233a;
-  --rv-border: #7373a6;
-  --rv-border-soft: #34344f;
+  --rv-bg: var(--di-bg);
+  --rv-surface: var(--di-surface);
+  --rv-surface-2: var(--di-control);
+  --rv-border: var(--di-edge);
+  --rv-border-soft: var(--di-line);
   /* text */
-  --rv-text: #eef0f8;
-  --rv-muted: #b6b9d0;
-  --rv-link: #a9b4ff;
+  --rv-text: var(--di-text);
+  --rv-muted: var(--di-muted);
+  --rv-link: var(--di-link);
+  /* chrome controls: the shared control states, the same tokens the office panel's buttons use */
+  --rv-control-hover: var(--di-control-hover);
+  --rv-selected-bg: var(--di-selected);
+  --rv-radius: var(--di-radius);
   /* focus: unmistakable on every surface above */
-  --rv-focus: #ffd84d;
+  --rv-focus: var(--di-focus);
   /* diff */
   --rv-add-bg: #123524;
   --rv-add-gutter: #19482f;
@@ -56,10 +74,10 @@
   --rv-st-new: #cdb8ff;
   --rv-st-conflict: #ff9494;
   /* notices */
-  --rv-info-bg: #1d2a44;
-  --rv-warn-bg: #3d3216;
-  --rv-block-bg: #3e1b25;
-  --rv-ok-bg: #123524;
+  --rv-info-bg: var(--di-run-tint);
+  --rv-warn-bg: var(--di-perm-tint);
+  --rv-block-bg: var(--di-bad-tint);
+  --rv-ok-bg: var(--di-ok-tint);
   /* syntax (each readable on --rv-ctx-bg, --rv-add-bg and --rv-del-bg) */
   --rv-tok-keyword: #ff9bd1;
   --rv-tok-string: #ffe08a;
@@ -78,11 +96,13 @@
   --rv-scroll-thumb: #9a9ad0;
   --rv-scroll-track: #23233a;
 
-  --rv-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --rv-font-code: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono',
-    monospace;
+  --rv-font-ui: var(--di-font-ui);
+  --rv-font-code: var(--di-font-code);
   --rv-code-size: 14px;
   --rv-row: 22px;
+  /* the chrome dialog frame, shared with the Reception and inspector dialogs (shadows carry no text); the scrim is
+     the backdrop's own alias, above */
+  --rv-shadow-pop: var(--di-shadow-pop);
 
   position: relative;
   display: flex;
@@ -93,8 +113,9 @@
   min-height: 0;
   color: var(--rv-text);
   background: var(--rv-bg);
-  border: 2px solid var(--rv-border);
-  box-shadow: 4px 4px 0 #05050a;
+  border: 1px solid var(--rv-border-soft);
+  border-radius: 16px;
+  box-shadow: var(--rv-shadow-pop);
   font-family: var(--rv-font-ui);
   font-size: 15px;
   line-height: 1.45;
@@ -105,6 +126,7 @@
   width: 100%;
   height: 100%;
   max-width: none;
+  border-radius: 0;
 }
 
 .di-rv *,
@@ -153,15 +175,15 @@
   font: inherit;
   color: var(--rv-text);
   background: var(--rv-surface-2);
-  border: 2px solid var(--rv-border);
+  border: 1px solid var(--rv-border);
   padding: 4px 10px;
   min-height: 32px;
   cursor: pointer;
-  border-radius: 0;
+  border-radius: var(--rv-radius);
 }
 .di-rv button:hover:not(:disabled) {
-  background: #30304f;
-  border-color: var(--rv-link);
+  background: var(--rv-control-hover);
+  border-color: var(--rv-muted);
 }
 .di-rv button:disabled {
   color: var(--rv-muted);
@@ -169,19 +191,22 @@
   opacity: 0.7;
 }
 .di-rv button[aria-pressed='true'],
-.di-rv button[aria-expanded='true'].di-rv-toggle {
-  background: #34346a;
+.di-rv button[aria-expanded='true'].di-rv-toggle,
+.di-rv button[aria-pressed='true']:hover:not(:disabled),
+.di-rv button[aria-expanded='true'].di-rv-toggle:hover:not(:disabled) {
+  background: var(--rv-selected-bg);
+  /* the lighter edge the pressed state always had: the selected fill alone is 1.03:1 against a resting control */
   border-color: var(--rv-link);
 }
 .di-rv input[type='search'] {
   font: inherit;
   color: var(--rv-text);
   background: var(--rv-bg);
-  border: 2px solid var(--rv-border);
+  border: 1px solid var(--rv-border);
   padding: 5px 8px;
   min-height: 34px;
   width: 100%;
-  border-radius: 0;
+  border-radius: var(--rv-radius);
 }
 .di-rv input[type='search']::placeholder {
   color: var(--rv-muted);
@@ -360,6 +385,7 @@
   background: transparent;
   border: 0;
   border-left: 4px solid transparent;
+  border-radius: 0; /* a list row with an accent bar, not a free-standing control: its square geometry stays */
   min-height: 30px;
   padding: 2px 8px 2px calc(8px + var(--rv-depth, 0) * 14px);
 }
@@ -369,7 +395,7 @@
   border-left-color: var(--rv-border);
 }
 .di-rv .di-rv-row[aria-selected='true'] {
-  background: #2c2c55;
+  background: var(--rv-selected-bg);
   border-left-color: var(--rv-focus);
 }
 .di-rv-name {
@@ -500,7 +526,25 @@
   display: inline-flex;
 }
 .di-rv-seg button + button {
-  margin-left: -2px;
+  margin-left: -1px;
+}
+/* a joined group of controls is rounded only at its two outer ends, and the segment that is hovered, pressed or focused sits above its neighbour */
+.di-rv-seg button:not(:first-child) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.di-rv-seg button:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.di-rv-seg button:hover:not(:disabled),
+.di-rv-seg button[aria-pressed='true'] {
+  position: relative;
+  z-index: 1;
+}
+.di-rv-seg button:focus-visible {
+  position: relative;
+  z-index: 2;
 }
 .di-rv-size {
   min-width: 46px;
@@ -660,6 +704,7 @@
 .di-rv .di-rv-hunk-button {
   display: flex;
   align-items: center;
+  border-radius: 0; /* a full-width bar between code rows, not a free-standing control: its square geometry stays */
   gap: 10px;
   width: 100%;
   min-height: var(--rv-row);
@@ -678,13 +723,53 @@
   left: 0;
 }
 .di-rv .di-rv-hunk-button:hover:not(:disabled) {
-  background: #30306a;
+  background: var(--rv-selected-bg);
   border-color: var(--rv-border-soft);
 }
 .di-rv-hunk-section {
   color: var(--rv-text);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* A narrow window draws each section's name in full on rows of its own under the bar (DiCodeReview.tsx wraps it, every character kept), so the name
+   inside the bar is taken out of sight, not out of the button's accessible name: assistive technology reads it once, from the button. */
+.di-rv-code-scroll[data-section-names='rows'] .di-rv-hunk-section {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+/* One line of a section's name: one row high like every row, so the windowed scroll arithmetic is unchanged; as wide as what is visible of the pane */
+.di-rv-hunk-name {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: var(--rv-view-w, 100%);
+  height: var(--rv-row);
+  padding: 0 10px;
+  overflow: hidden;
+  color: var(--rv-text);
+  background: var(--rv-hunk-bg);
+  font-family: var(--rv-font-code);
+  line-height: calc(var(--rv-row) - 1px);
+  white-space: pre;
+}
+.di-rv-hunk-name[data-last='true'] {
+  border-bottom: 1px solid var(--rv-border-soft);
+}
+/* the probe row the component measures a monospace cell with: same font and padding as a name row, never seen */
+.di-rv-chprobe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  visibility: hidden;
+  pointer-events: none;
 }
 .di-rv-hunk-counts {
   margin-left: auto;
@@ -998,11 +1083,51 @@
   padding: 2px 8px;
   font-size: 13px;
 }
+/* the section bar is one row high in every window: the rule above made its button 30 px tall in a 22 px row, over the rows beside it */
+.di-rv[data-narrow='true'] .di-rv-hunk-button {
+  min-height: var(--rv-row);
+  padding: 0 10px;
+  font-size: inherit;
+}
 .di-rv[data-narrow='true'] .di-rv-banner {
   padding: 4px 8px;
 }
 .di-rv[data-narrow='true'] .di-rv-notice {
   margin: 8px;
+}
+
+/* ---------- narrow windows: a usable reading area (AC-UX-13) ----------
+   The chrome above the reading area (title, overview, comparison notice, tabs, the file's own bar) is about 500 px at a phone's height and used to
+   take the reading area's height with it: at 320 x 568 the code region was 12 px of visible code, no whole row. Now everything under the title bar
+   scrolls as a WHOLE (the title bar, with Minimize and Close, stays in place and nothing is sticky) and each reading region keeps a minimum of its
+   own: 8 whole code rows, 5 file rows. Where there is room the regions still fill it exactly as before, so a tall phone window does not scroll.
+   The wrapper is invisible to layout above the narrow threshold. The windowed rows are untouched: they measure the region they are in. */
+.di-rv-scroll {
+  display: contents;
+}
+.di-rv[data-narrow='true'] .di-rv-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.di-rv[data-narrow='true'] .di-rv-scroll > * {
+  flex-shrink: 0;
+}
+.di-rv[data-narrow='true'] .di-rv-body {
+  flex: 1 0 auto;
+}
+.di-rv[data-narrow='true'] .di-rv-code-scroll {
+  flex: 1 1 0;
+  min-height: calc(var(--rv-row) * 8 + 16px);
+  overscroll-behavior-y: auto;
+  scroll-margin-bottom: 16px; /* focusing the region scrolls its horizontal scrollbar into view too, not only its rows */
+}
+.di-rv[data-narrow='true'] .di-rv-tree {
+  flex: 1 1 0;
+  min-height: calc(30px * 5);
 }
 
 @media (max-width: 820px) {

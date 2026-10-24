@@ -78,6 +78,11 @@ import {
   START_CAUSE_NOTE,
   startCauseWords,
 } from '../src/components/diMissionRequestStartCause.ts';
+import {
+  DI_WORLD_COLUMN_LEFT_PX,
+  DI_WORLD_COLUMN_MAX_PX,
+  DI_WORLD_CONTROLS_MIN_PX,
+} from '../src/constants.ts';
 
 type Loose = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -2163,26 +2168,58 @@ describe('panel polish: the open request leads with its plain title, status and 
 });
 
 describe('wider reading is never worse than ordinary reading at the same pane width', () => {
-  // the sidebar is 420px (DI_PANEL_WIDTH_PX); the pane is min(600 | 960, viewport - sidebar - 240) and covers the window below 360
+  // the sidebar is 420px (DI_PANEL_WIDTH_PX); the pane is min(600 | 960, viewport - sidebar - MR_WORLD_KEEP_PX) and covers the window below 360.
+  // Every viewport below is the PANE WIDTH the case is about plus what sits beside it (the sidebar, when expanded, and the world's reserve), so each case is
+  // still the same pane (360, 440, 601, 639, 640, 649, 960 px). They were literals that held when the reserve was 240 (1019, 1020, 1100, 1261, 1299, 1300,
+  // 1309, 1620; collapsed 599, 600, 879, 880) and described a different pane once it became 276.
+  const SIDEBAR = 420;
+  const KEEP = MR_WORLD_KEEP_PX;
   const at = (viewport: number, collapsed: boolean, wide: boolean) =>
-    twoColumnReading(layoutFor(viewport, collapsed, wide, 420), wide);
+    twoColumnReading(layoutFor(viewport, collapsed, wide, SIDEBAR), wide);
 
   it('puts the list beside the request only where the pane has the room for both (MR_SPLIT_MIN_PX)', () => {
     expect(MR_SPLIT_MIN_PX).toBe(640);
-    // sidebar expanded: covering below 1020, a 360px pane at 1020, 640px at 1300
-    expect(at(1019, false, true)).toBe(false); // covers the window
-    expect(at(1020, false, true)).toBe(false); // 360px: this once left the open request a 23px sliver and the pane scrolled sideways
-    expect(at(1100, false, true)).toBe(false); // 440px
-    expect(at(1261, false, true)).toBe(false); // 601px: wider than ordinary, but the open request would have 264px
-    expect(at(1299, false, true)).toBe(false); // 639px
-    expect(at(1300, false, true)).toBe(true); // 640px: the open request keeps 304px
-    expect(at(1309, false, true)).toBe(true); // 649px (an ordinary laptop window)
-    expect(at(1620, false, true)).toBe(true); // 960px
-    // sidebar collapsed: covering below 600, a 360px pane at 600, 640px at 880
-    expect(at(599, true, true)).toBe(false);
-    expect(at(600, true, true)).toBe(false);
-    expect(at(879, true, true)).toBe(false);
-    expect(at(880, true, true)).toBe(true);
+    // sidebar expanded: covering below the sidebar + the reserve + 360, a 360px pane there, 640px at the sidebar + the reserve + 640
+    expect(at(SIDEBAR + KEEP + 359, false, true)).toBe(false); // covers the window
+    expect(at(SIDEBAR + KEEP + 360, false, true)).toBe(false); // 360px: this once left the open request a 23px sliver and the pane scrolled sideways
+    expect(at(SIDEBAR + KEEP + 440, false, true)).toBe(false); // 440px
+    expect(at(SIDEBAR + KEEP + 601, false, true)).toBe(false); // 601px: wider than ordinary, but the open request would have 264px
+    expect(at(SIDEBAR + KEEP + 639, false, true)).toBe(false); // 639px
+    expect(at(SIDEBAR + KEEP + 640, false, true)).toBe(true); // 640px: the open request keeps 304px
+    expect(at(SIDEBAR + KEEP + 649, false, true)).toBe(true); // 649px (an ordinary laptop window)
+    expect(at(SIDEBAR + KEEP + 960, false, true)).toBe(true); // 960px
+    // sidebar collapsed: covering below the reserve + 360, a 360px pane there, 640px at the reserve + 640
+    expect(at(KEEP + 359, true, true)).toBe(false);
+    expect(at(KEEP + 360, true, true)).toBe(false);
+    expect(at(KEEP + 639, true, true)).toBe(false);
+    expect(at(KEEP + 640, true, true)).toBe(true);
+  });
+
+  it('THE RESERVE: beside the workspace the world keeps what its own toolbar and column need (276 px), derived from one figure, and the boundaries it moved are pinned by literals', () => {
+    // derived, not independent: the reserve IS the toolbar's right edge, and the column ends there (WorldStack), so a change to the toolbar's extent propagates
+    expect(MR_WORLD_KEEP_PX).toBe(DI_WORLD_CONTROLS_MIN_PX);
+    expect(DI_WORLD_COLUMN_LEFT_PX + DI_WORLD_COLUMN_MAX_PX).toBe(MR_WORLD_KEEP_PX);
+    // THE BOUNDARIES, as literals at the documented 276 (these fail if the reserve falls back to 240 or any other value, and are not derived from it).
+    // Office open: the workspace COVERS below 420 + 276 + 360 = 1056 px and docks 360 px beside from 1056. At 240 it docked at 1020.
+    expect(layoutFor(1019, false, true, 420).covering).toBe(true);
+    expect(layoutFor(1020, false, true, 420).covering).toBe(true); // docked 360 px beside under the old reserve of 240
+    expect(layoutFor(1055, false, true, 420).covering).toBe(true);
+    expect(layoutFor(1056, false, true, 420)).toEqual({ covering: false, widthPx: 360, rightPx: 420 });
+    // Office minimized: below 276 + 360 = 636 px (it was 600).
+    expect(layoutFor(600, true, true, 420).covering).toBe(true); // docked 360 px beside under the old reserve
+    expect(layoutFor(635, true, true, 420).covering).toBe(true);
+    expect(layoutFor(636, true, true, 420)).toEqual({ covering: false, widthPx: 360, rightPx: 0 });
+    // the invariant itself, over every width: wherever the workspace docks beside, the world keeps at least 276 px of it
+    for (const collapsed of [false, true])
+      for (const wide of [false, true])
+        for (let viewport = 300; viewport <= 2600; viewport += 1) {
+          const lay = layoutFor(viewport, collapsed, wide, 420);
+          if (!lay.covering)
+            expect(
+              viewport - lay.rightPx - lay.widthPx,
+              `${viewport}px, ${collapsed ? 'office hidden' : 'office open'}, ${wide ? 'wider' : 'ordinary'}: the world left beside the workspace`,
+            ).toBeGreaterThanOrEqual(276);
+        }
   });
 
   it('never splits in ordinary reading, whatever the width', () => {

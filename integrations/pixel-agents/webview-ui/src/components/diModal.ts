@@ -15,6 +15,8 @@
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 
+import { claimFront, isForemost, releaseFront, returnFocusOnClose } from './diModalStack.js';
+
 /** The dialog's TAB ORDER: what Tab actually visits, in order (as DiCodeReview's tabStops). */
 export function dialogTabStops(root: HTMLElement): HTMLElement[] {
   const selector =
@@ -35,22 +37,40 @@ type KeyLike = Pick<
 /**
  * Owns focus and keys for an open modal. `returnFocusTo` is read once, when the dialog mounts.
  * Returns the dialog's own onKeyDown handler.
+ *
+ * AC3: `active` is false while the dialog is MINIMIZED (still mounted, hidden): #root is not inert and the
+ * two hardening guards stand down, so the world and the panel are usable; when it is restored, #root is
+ * made inert again. The caller moves focus on minimize and restore (diMinimize.ts). Default: active.
  */
 export function useDiModal(
   dialogRef: RefObject<HTMLElement | null>,
   onClose: () => void,
   returnFocusTo: RefObject<HTMLElement | null>,
+  active = true,
 ): (event: ReactKeyboardEvent<HTMLElement>) => void {
+  // The guard on #root is OWNED (diModalStack.ts): this dialog claims it while in front and releases only its own
+  // claim. On close it gives focus back to its opener only if it was the foremost dialog; a hidden (minimized) or
+  // background dialog closing moves no focus and leaves another dialog's guard in place.
+  const owner = useRef<object>({});
   useLayoutEffect(() => {
-    const root = document.getElementById('root');
+    const me = owner.current;
     const back = returnFocusTo.current;
-    root?.setAttribute('inert', '');
+    claimFront(me);
     dialogRef.current?.focus();
     return () => {
-      root?.removeAttribute('inert');
-      if (back && back.isConnected) back.focus();
+      returnFocusOnClose(releaseFront(me), back);
     };
   }, [dialogRef, returnFocusTo]);
+
+  // Minimized: this dialog leaves the front (the app is usable unless another dialog is in front); restored: it
+  // comes to the front again.
+  const shownActive = useRef(active);
+  useLayoutEffect(() => {
+    if (shownActive.current === active) return;
+    shownActive.current = active;
+    if (active) claimFront(owner.current);
+    else releaseFront(owner.current);
+  }, [active]);
 
   const handleKey = (event: KeyLike) => {
     event.stopPropagation();
@@ -89,14 +109,16 @@ export function useDiModal(
   });
   useEffect(() => {
     const root = dialogRef.current;
-    if (!root) return;
+    if (!root || !active) return;
     const retake = () => {
+      if (!isForemost(owner.current)) return; // only the dialog in front takes focus back
       if (!root.contains(document.activeElement)) root.focus({ preventScroll: true });
     };
     const onFocusOut = (event: FocusEvent) => {
       if (event.relatedTarget === null) queueMicrotask(retake);
     };
     const onWindowKey = (event: KeyboardEvent) => {
+      if (!isForemost(owner.current)) return; // only the dialog in front guards keys
       if (event.target instanceof Node && root.contains(event.target)) return; // inside: onKeyDown has it
       retake();
       handleKeyRef.current(event);
@@ -107,7 +129,7 @@ export function useDiModal(
       root.removeEventListener('focusout', onFocusOut);
       window.removeEventListener('keydown', onWindowKey, true);
     };
-  }, [dialogRef]);
+  }, [dialogRef, active]);
 
   return (event) => handleKey(event);
 }

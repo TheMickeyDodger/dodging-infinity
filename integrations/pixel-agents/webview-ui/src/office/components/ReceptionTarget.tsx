@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   CHARACTER_HIT_HEIGHT,
   DI_RECEPTION_LABEL,
+  DI_RECEPTION_TARGET_ESTIMATE_PX,
   DI_RECEPTION_TARGET_Z_INDEX,
 } from '../../constants.js';
 import type { OfficeState } from '../engine/officeState.js';
@@ -65,14 +66,24 @@ export function ReceptionTarget({
   // Above the receptionist's head when there is one, else above the desk.
   const anchorX = ch ? ch.x : (post.deskCol + post.deskW / 2) * TILE_SIZE;
   const anchorY = ch ? ch.y - CHARACTER_HIT_HEIGHT : post.deskRow * TILE_SIZE;
+  const x = project.toScreenX(anchorX);
+  const y = project.toScreenY(anchorY) - 4;
+  // The button is drawn centred on x and ending at y (translate(-50%, -100%)). Where the desk is outside the world's box (a large world, a narrow
+  // world, a panned camera) it would be a focusable control that nobody can see, so it is NOT rendered then: the sidebar entry opens the same inbox.
+  // Its own size comes from the last frame once it has been drawn (an estimate before that).
+  const world = el.getBoundingClientRect();
+  const drawn = buttonRef.current?.getBoundingClientRect();
+  const w = drawn?.width ?? DI_RECEPTION_TARGET_ESTIMATE_PX.w;
+  const h = drawn?.height ?? DI_RECEPTION_TARGET_ESTIMATE_PX.h;
+  if (x - w / 2 < 0 || x + w / 2 > world.width || y - h < 0 || y > world.height) return null;
   return (
     <button
       ref={buttonRef}
       type="button"
       className="absolute cursor-pointer whitespace-nowrap border border-border bg-bg/80 px-6 py-2 text-2xs text-text-muted hover:bg-active-bg hover:text-text focus-visible:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       style={{
-        left: project.toScreenX(anchorX),
-        top: project.toScreenY(anchorY) - 4,
+        left: x,
+        top: y,
         transform: 'translate(-50%, -100%)',
         zIndex: DI_RECEPTION_TARGET_Z_INDEX,
       }}

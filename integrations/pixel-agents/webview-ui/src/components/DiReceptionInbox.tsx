@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type {
   DiOfficeState,
@@ -8,6 +8,15 @@ import type {
   DiReceptionOutcome,
   DiReceptionSourceEntry,
 } from '../../../core/src/messages.js';
+import type { DiKeptView } from './diMinimize.js';
+import {
+  focusExposed,
+  keepView,
+  restoreFocus,
+  restoreScroll,
+  useLastContentFocus,
+} from './diMinimize.js';
+import { DiMinimizedChip } from './DiMinimizedTray.js';
 import { useDiModal } from './diModal.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 import { viewLimits } from './diPlainSummary.js';
@@ -42,6 +51,7 @@ import {
   firstLayerWhy,
   notReportedLabels,
   plainReasons,
+  plainServerWording,
   uncertaintyHeadline,
   uncertaintyLines,
 } from './diReceptionPlain.js';
@@ -88,6 +98,10 @@ interface DiReceptionInboxProps {
   missionActions?: DiReceptionMissionActions;
   onClose: () => void;
   returnFocusTo: { current: HTMLElement | null };
+  /** AC3: minimized, the dialog stays mounted and hidden and the app is usable; Restore brings it back as it was. */
+  minimized?: boolean;
+  onMinimize?: () => void;
+  onRestore?: () => void;
 }
 
 /** What each category covers: the old status stack, now one disclosure behind the entries. */
@@ -98,11 +112,11 @@ function Coverage({ reception }: { reception: DiReception }) {
         <li key={c.category} data-category={c.category} data-outcome={c.outcome}>
           <details>
             <summary className={`cursor-pointer break-words ${DI_FOCUS_RING}`}>
-              {`${c.label}: `}
+              {`${plainServerWording(c.label)}: `}
               <span className={outcomeClass(c.outcome)}>{plainCategoryHeadline(c)}</span>
             </summary>
             <div className="pl-8 text-text-muted break-all">{formatCategoryHeadline(c)}</div>
-            <div className="pl-8 text-text-muted break-words">{c.statement}</div>
+            <div className="pl-8 text-text-muted break-words">{plainServerWording(c.statement)}</div>
             <div className="pl-8 text-text-muted break-words">{`canonical backing: ${c.backing}`}</div>
             {c.gaps.map((g) => (
               <div key={`${g.outcome}:${g.reason}`} className="pl-8 text-text-muted break-all">
@@ -586,9 +600,36 @@ export function DiReceptionInbox({
   missionActions,
   onClose,
   returnFocusTo,
+  minimized = false,
+  onMinimize,
+  onRestore,
 }: DiReceptionInboxProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const onKeyDown = useDiModal(dialogRef, onClose, returnFocusTo);
+  const onKeyDown = useDiModal(dialogRef, onClose, returnFocusTo, !minimized);
+  // AC3: what hiding loses (the body's scroll) is kept on minimize and given back on restore, and focus returns to
+  // the last control in the dialog that had it (never the toggles; diMinimize.ts); the search, the category
+  // filter, the hidden entries and the open disclosures stay as they are.
+  const minimizeRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+  const keptView = useRef<DiKeptView | null>(null);
+  const lastContentFocus = useLastContentFocus(dialogRef, minimizeRef);
+  const minimizeInbox = () => {
+    if (dialogRef.current) keptView.current = keepView(dialogRef.current, lastContentFocus.current);
+    onMinimize?.();
+  };
+  const shownMinimized = useRef(minimized);
+  useLayoutEffect(() => {
+    if (shownMinimized.current === minimized) return;
+    shownMinimized.current = minimized;
+    if (minimized) {
+      focusExposed(restoreRef.current);
+      return;
+    }
+    const kept = keptView.current;
+    keptView.current = null;
+    restoreScroll(kept);
+    restoreFocus(kept, minimizeRef.current, dialogRef.current);
+  }, [minimized]);
   const rows = useRovingFocus<HTMLLIElement>();
   const [localFilter, setLocalFilter] = useState<InboxFilter>(EMPTY_FILTER);
   const filter = controlledFilter ?? localFilter;
@@ -598,7 +639,7 @@ export function DiReceptionInbox({
   const model = buildInbox(reception, panel, state.missions?.missions ?? [], hidden);
   const limits = viewLimits(state);
   const labelOf = (id: DiReceptionCategoryId) =>
-    reception?.categories.find((c) => c.category === id)?.label ?? id;
+    plainServerWording(reception?.categories.find((c) => c.category === id)?.label ?? id);
   const shown = filterItems(model.visible, filter, labelOf);
   const chips = chipsOf(reception, model.visible);
   const filtering = filter.query.trim() !== '' || filter.category !== null;
@@ -635,308 +676,359 @@ export function DiReceptionInbox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const remember = (key: string) => onFocusedKey?.(key);
+  const waitingOnYou = reception ? model.attention : 0;
   return (
-    <div
-      className="di-op-theme di-op-inspector-backdrop"
-      data-testid="di-reception-inbox-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        className="di-op-inspector"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="di-reception-inbox-title"
-        tabIndex={-1}
-        onKeyDown={onKeyDown}
-        data-testid="di-reception-inbox"
-      >
-        <header className="di-op-inspector-head">
-          <div className="di-op-inspector-heading">
-            <div className="di-op-muted">Reception{fixture ? ' · FIXTURE DATA' : ''}</div>
-            <h2 id="di-reception-inbox-title" className="di-op-inspector-title">
-              Reception
-            </h2>
-            <div className="di-op-now" data-testid="di-reception-inbox-summary">
-              {reception
-                ? attentionLine(model.attention)
-                : 'This office provides no reception desk.'}
-            </div>
-            <div className="di-op-muted" data-testid="di-reception-inbox-quiet">
-              View only: nothing here approves, starts or delivers anything.
-            </div>
-          </div>
+    <>
+      {minimized && onRestore && (
+        <DiMinimizedChip>
           <button
             type="button"
-            className={`di-op-button ${DI_FOCUS_RING}`}
-            data-testid="di-reception-inbox-close"
-            onClick={onClose}
+            ref={restoreRef}
+            // AC4 when entries wait: a still glow, the ▲ shape and the count in words
+            className={`di-op-theme di-op-collapsed${waitingOnYou > 0 ? ' di-op-attn' : ''} ${DI_FOCUS_RING}`}
+            data-testid="di-reception-restore"
+            data-attention={waitingOnYou > 0 ? 'true' : undefined}
+            onClick={onRestore}
+            title="Restore reception as you left it"
+            aria-label={`Restore reception, ${reception ? attentionLine(model.attention) : 'no reception desk'}`}
+            data-focus-at-hide={keptView.current?.focusAtHide}
+            data-focus-return={keptView.current?.focusReturn}
           >
-            Close
+            {waitingOnYou > 0 && (
+              <span className="di-op-attn-glyph" aria-hidden="true">
+                ▲
+              </span>
+            )}
+            <span className="di-op-collapsed-label">Restore reception</span>
+            <span className="di-op-collapsed-state">
+              {reception ? attentionLine(model.attention) : 'no reception desk'}
+            </span>
           </button>
-        </header>
-        <div className="di-op-inspector-body" data-testid="di-reception-inbox-body">
-          {reception ? (
-            <>
-              <section
-                className="di-op-find di-rc-section"
-                aria-label="Search and filter"
-                data-testid="di-reception-filter"
+        </DiMinimizedChip>
+      )}
+      <div
+        className="di-op-theme di-op-inspector-backdrop"
+        data-testid="di-reception-inbox-backdrop"
+        hidden={minimized}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
+        <div
+          ref={dialogRef}
+          className="di-op-inspector"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="di-reception-inbox-title"
+          tabIndex={-1}
+          onKeyDown={onKeyDown}
+          data-testid="di-reception-inbox"
+        >
+          <header className="di-op-inspector-head">
+            <div className="di-op-inspector-heading">
+              <div className="di-op-muted">Reception{fixture ? ' · FIXTURE DATA' : ''}</div>
+              <h2 id="di-reception-inbox-title" className="di-op-inspector-title">
+                Reception
+              </h2>
+              <div className="di-op-now" data-testid="di-reception-inbox-summary">
+                {reception
+                  ? attentionLine(model.attention)
+                  : 'This office provides no reception desk.'}
+              </div>
+              <div className="di-op-muted" data-testid="di-reception-inbox-quiet">
+                View only: nothing here approves, starts or delivers anything.
+              </div>
+            </div>
+            <div className="di-op-actions di-op-inspector-tools">
+              {onMinimize && (
+                <button
+                  type="button"
+                  ref={minimizeRef}
+                  className={`di-op-button ${DI_FOCUS_RING}`}
+                  data-testid="di-reception-minimize"
+                  onClick={minimizeInbox}
+                  title="Minimize reception; Restore brings it back as you left it"
+                >
+                  Minimize
+                </button>
+              )}
+              <button
+                type="button"
+                className={`di-op-button ${DI_FOCUS_RING}`}
+                data-testid="di-reception-inbox-close"
+                onClick={onClose}
               >
-                <label htmlFor="di-reception-search" className="sr-only">
-                  Search what needs you
-                </label>
-                <input
-                  id="di-reception-search"
-                  type="search"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="Search by Mission, category or id"
-                  className={DI_FOCUS_RING}
-                  data-testid="di-reception-search"
-                  aria-controls="di-reception-entries"
-                  aria-keyshortcuts="ArrowDown"
-                  value={filter.query}
-                  onChange={(e) => setFilter({ ...filter, query: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown' && shown.length > 0) {
-                      e.preventDefault();
-                      rows.focusFirst();
-                    }
-                  }}
-                />
-                {chips.length > 1 && (
+                Close
+              </button>
+            </div>
+          </header>
+          <div className="di-op-inspector-body" data-testid="di-reception-inbox-body">
+            {reception ? (
+              <>
+                <section
+                  className="di-op-find di-rc-section"
+                  aria-label="Search and filter"
+                  data-testid="di-reception-filter"
+                >
+                  <label htmlFor="di-reception-search" className="sr-only">
+                    Search what needs you
+                  </label>
+                  <input
+                    id="di-reception-search"
+                    type="search"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="Search by Mission, category or id"
+                    className={DI_FOCUS_RING}
+                    data-testid="di-reception-search"
+                    aria-controls="di-reception-entries"
+                    aria-keyshortcuts="ArrowDown"
+                    value={filter.query}
+                    onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowDown' && shown.length > 0) {
+                        e.preventDefault();
+                        rows.focusFirst();
+                      }
+                    }}
+                  />
+                  {chips.length > 1 && (
+                    <div
+                      className="di-op-actions"
+                      role="group"
+                      aria-label="Filter by category"
+                      data-testid="di-reception-chips"
+                    >
+                      <button
+                        type="button"
+                        className={`di-op-button ${filter.category === null ? 'di-op-button-primary' : ''} ${DI_FOCUS_RING}`}
+                        aria-pressed={filter.category === null}
+                        onClick={() => setFilter({ ...filter, category: null })}
+                      >{`All (${model.visible.length})`}</button>
+                      {chips.map((c) => (
+                        <button
+                          key={c.category}
+                          type="button"
+                          className={`di-op-button ${filter.category === c.category ? 'di-op-button-primary' : ''} ${DI_FOCUS_RING}`}
+                          aria-pressed={filter.category === c.category}
+                          data-category={c.category}
+                          onClick={() =>
+                            setFilter({
+                              ...filter,
+                              category: filter.category === c.category ? null : c.category,
+                            })
+                          }
+                        >{`${plainServerWording(c.label)} (${c.count})`}</button>
+                      ))}
+                    </div>
+                  )}
                   <div
-                    className="di-op-actions"
-                    role="group"
-                    aria-label="Filter by category"
-                    data-testid="di-reception-chips"
+                    className="di-op-find-outcome"
+                    role="status"
+                    data-testid="di-reception-filter-status"
                   >
+                    {filtering ? `Showing ${shown.length} of ${model.visible.length} entries.` : ''}
+                  </div>
+                </section>
+
+                {/* ONE or TWO plain lines above the cards — what could not be fully checked and what each source says — with ALL the detail behind ONE
+                  disclosure. Material uncertainty stays visible in plain words; a source that was not read is never reported as "none". */}
+                <section
+                  className="di-rc-section di-rc-unknowns"
+                  aria-label="What was checked"
+                  data-testid="di-reception-unknowns"
+                >
+                  {reception.notices.map((n) => (
+                    <div key={n.reason} className="text-warning" data-testid="di-reception-notice">
+                      {`${RECEPTION_GLYPH.unavailable} ${plainServerWording(n.statement)}`}
+                    </div>
+                  ))}
+                  {uncertainty !== null && (
+                    <div className="text-warning" data-testid="di-reception-uncertainty">
+                      {`${RECEPTION_GLYPH.unavailable} ${uncertainty}`}
+                    </div>
+                  )}
+                  <div className="di-op-muted" data-testid="di-reception-source-summary">
+                    {model.sources.map((src) => `${src.shortLabel}: ${src.headline}`).join(' · ')}
+                  </div>
+                  <details data-testid="di-reception-coverage">
+                    <summary className={`cursor-pointer text-text-muted ${DI_FOCUS_RING}`}>
+                      What was checked, and what each category covers
+                    </summary>
+                    <div className="di-op-detail-body">
+                      <h3 className="di-op-muted">What was checked</h3>
+                      <ul className="flex flex-col gap-1" data-testid="di-reception-sources">
+                        {model.sources.map((src) => (
+                          <li
+                            key={src.sourceId}
+                            data-source={src.sourceId}
+                            data-outcome={src.outcome}
+                          >
+                            <span className={outcomeClass(src.outcome as DiReceptionOutcome)}>
+                              {`${RECEPTION_GLYPH[src.outcome]} ${plainServerWording(src.label)}: ${src.summary}`}
+                            </span>
+                            <div className="pl-8 text-text-muted break-words">
+                              {plainServerWording(src.statement)}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                      {(unknowns.length > 0 || notReported.length > 0) && (
+                        <>
+                          <h3 className="di-op-muted">What could not be checked</h3>
+                          {unknowns.map((line) => (
+                            <div key={line} data-testid="di-reception-unknown">
+                              {`${RECEPTION_GLYPH.unavailable} ${line}`}
+                            </div>
+                          ))}
+                          {notReported.length > 0 && (
+                            <div data-testid="di-reception-not-reported">
+                              {`${RECEPTION_GLYPH.unsupported} Not reported by the catalog: ${notReported.join('; ')}.`}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <h3 className="di-op-muted">{`What each category covers (${reception.categories.length})`}</h3>
+                      <Coverage reception={reception} />
+                    </div>
+                  </details>
+                </section>
+
+                {shown.length === 0 ? (
+                  <div className="di-op-muted di-rc-section" data-testid="di-reception-no-entries">
+                    {model.visible.length > 0 ? (
+                      <>
+                        No entries match this search or filter.{' '}
+                        <button
+                          type="button"
+                          className={`di-op-link ${DI_FOCUS_RING}`}
+                          onClick={clearFilter}
+                        >
+                          Clear the filter
+                        </button>
+                      </>
+                    ) : model.all.length === 0 ? (
+                      emptyStateLines(model, reception, unknowns.length > 0).map((line) => (
+                        <p key={line}>{line}</p>
+                      ))
+                    ) : (
+                      'Every entry is hidden in this view.'
+                    )}
+                  </div>
+                ) : (
+                  <ul
+                    id="di-reception-entries"
+                    className="di-rc-list"
+                    aria-label="What needs you (arrow keys move between entries)"
+                    data-testid="di-reception-entries"
+                  >
+                    {shown.map((item, i) => (
+                      <InboxRow
+                        key={item.hideKey}
+                        item={item}
+                        label={labelOf(item.category)}
+                        fixture={fixture}
+                        index={i}
+                        count={shown.length}
+                        rows={rows}
+                        onJump={onJump}
+                        onHide={onHide}
+                        onFocusKey={remember}
+                        actions={missionActions}
+                        panel={panel}
+                        panelActions={panelActions}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {truncation && (
+                  <div className="text-warning" data-testid="di-reception-truncated">
+                    {truncation}
+                  </div>
+                )}
+                {model.hiddenCount > 0 && (
+                  <div className="di-op-card-foot di-rc-section" data-testid="di-reception-hidden">
+                    <span className="di-op-muted">{`${model.hiddenCount} hidden in this view only`}</span>
                     <button
                       type="button"
-                      className={`di-op-button ${filter.category === null ? 'di-op-button-primary' : ''} ${DI_FOCUS_RING}`}
-                      aria-pressed={filter.category === null}
-                      onClick={() => setFilter({ ...filter, category: null })}
-                    >{`All (${model.visible.length})`}</button>
-                    {chips.map((c) => (
-                      <button
-                        key={c.category}
-                        type="button"
-                        className={`di-op-button ${filter.category === c.category ? 'di-op-button-primary' : ''} ${DI_FOCUS_RING}`}
-                        aria-pressed={filter.category === c.category}
-                        data-category={c.category}
-                        onClick={() =>
-                          setFilter({
-                            ...filter,
-                            category: filter.category === c.category ? null : c.category,
-                          })
-                        }
-                      >{`${c.label} (${c.count})`}</button>
-                    ))}
+                      className={`di-op-link ${DI_FOCUS_RING}`}
+                      onClick={onShowHidden}
+                    >
+                      {`Show ${model.hiddenCount} hidden`}
+                    </button>
                   </div>
                 )}
-                <div
-                  className="di-op-find-outcome"
-                  role="status"
-                  data-testid="di-reception-filter-status"
-                >
-                  {filtering ? `Showing ${shown.length} of ${model.visible.length} entries.` : ''}
-                </div>
-              </section>
 
-              {/* ONE or TWO plain lines above the cards — what could not be fully checked and what each source says — with ALL the detail behind ONE
-                  disclosure. Material uncertainty stays visible in plain words; a source that was not read is never reported as "none". */}
-              <section
-                className="di-rc-section di-rc-unknowns"
-                aria-label="What was checked"
-                data-testid="di-reception-unknowns"
-              >
-                {reception.notices.map((n) => (
-                  <div key={n.reason} className="text-warning" data-testid="di-reception-notice">
-                    {`${RECEPTION_GLYPH.unavailable} ${n.statement}`}
-                  </div>
-                ))}
-                {uncertainty !== null && (
-                  <div className="text-warning" data-testid="di-reception-uncertainty">
-                    {`${RECEPTION_GLYPH.unavailable} ${uncertainty}`}
-                  </div>
+                {information.length > 0 && (
+                  <details className="di-rc-section" data-testid="di-reception-information">
+                    <summary className={DI_FOCUS_RING}>
+                      {`Delivery proposals not listed as waiting on you (${information.length})`}
+                    </summary>
+                    <div className="di-op-detail-body">
+                      <p className="di-op-muted">
+                        Information only: each was presented through the Grok Bot route. Where it
+                        says the status was not determined, this view could not check whether an
+                        authorization is recorded, so it may still be waiting for a decision.
+                        Nothing here says an approval is usable.
+                      </p>
+                      <ul className="flex flex-col gap-1">
+                        {information.map((e) => {
+                          const plain = plainDelivery(e);
+                          return (
+                            <li
+                              key={e.key}
+                              data-testid="di-reception-information-entry"
+                              data-state={e.state}
+                            >
+                              <div>{plain.what}</div>
+                              <div className="text-text-muted">{`Delivery ${plain.when}.`}</div>
+                              <div className="text-text-muted">{plain.link}</div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </details>
                 )}
-                <div className="di-op-muted" data-testid="di-reception-source-summary">
-                  {model.sources.map((src) => `${src.shortLabel}: ${src.headline}`).join(' · ')}
-                </div>
-                <details data-testid="di-reception-coverage">
-                  <summary className={`cursor-pointer text-text-muted ${DI_FOCUS_RING}`}>
-                    What was checked, and what each category covers
-                  </summary>
-                  <div className="di-op-detail-body">
-                    <h3 className="di-op-muted">What was checked</h3>
-                    <ul className="flex flex-col gap-1" data-testid="di-reception-sources">
-                      {model.sources.map((src) => (
-                        <li key={src.sourceId} data-source={src.sourceId} data-outcome={src.outcome}>
-                          <span className={outcomeClass(src.outcome as DiReceptionOutcome)}>
-                            {`${RECEPTION_GLYPH[src.outcome]} ${src.label}: ${src.summary}`}
-                          </span>
-                          <div className="pl-8 text-text-muted break-words">{src.statement}</div>
-                        </li>
-                      ))}
-                    </ul>
-                    {(unknowns.length > 0 || notReported.length > 0) && (
-                      <>
-                        <h3 className="di-op-muted">What could not be checked</h3>
-                        {unknowns.map((line) => (
-                          <div key={line} data-testid="di-reception-unknown">
-                            {`${RECEPTION_GLYPH.unavailable} ${line}`}
-                          </div>
-                        ))}
-                        {notReported.length > 0 && (
-                          <div data-testid="di-reception-not-reported">
-                            {`${RECEPTION_GLYPH.unsupported} Not reported by the catalog: ${notReported.join('; ')}.`}
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <h3 className="di-op-muted">{`What each category covers (${reception.categories.length})`}</h3>
-                    <Coverage reception={reception} />
-                  </div>
-                </details>
-              </section>
 
-              {shown.length === 0 ? (
-                <div className="di-op-muted di-rc-section" data-testid="di-reception-no-entries">
-                  {model.visible.length > 0 ? (
-                    <>
-                      No entries match this search or filter.{' '}
-                      <button
-                        type="button"
-                        className={`di-op-link ${DI_FOCUS_RING}`}
-                        onClick={clearFilter}
-                      >
-                        Clear the filter
-                      </button>
-                    </>
-                  ) : model.all.length === 0 ? (
-                    emptyStateLines(model, reception, unknowns.length > 0).map((line) => (
-                      <p key={line}>{line}</p>
-                    ))
-                  ) : (
-                    'Every entry is hidden in this view.'
-                  )}
-                </div>
-              ) : (
-                <ul
-                  id="di-reception-entries"
-                  className="di-rc-list"
-                  aria-label="What needs you (arrow keys move between entries)"
-                  data-testid="di-reception-entries"
-                >
-                  {shown.map((item, i) => (
-                    <InboxRow
-                      key={item.hideKey}
-                      item={item}
-                      label={labelOf(item.category)}
-                      fixture={fixture}
-                      index={i}
-                      count={shown.length}
-                      rows={rows}
-                      onJump={onJump}
-                      onHide={onHide}
-                      onFocusKey={remember}
-                      actions={missionActions}
-                      panel={panel}
-                      panelActions={panelActions}
-                    />
-                  ))}
-                </ul>
-              )}
-              {truncation && (
-                <div className="text-warning" data-testid="di-reception-truncated">
-                  {truncation}
-                </div>
-              )}
-              {model.hiddenCount > 0 && (
-                <div className="di-op-card-foot di-rc-section" data-testid="di-reception-hidden">
-                  <span className="di-op-muted">{`${model.hiddenCount} hidden in this view only`}</span>
-                  <button
-                    type="button"
-                    className={`di-op-link ${DI_FOCUS_RING}`}
-                    onClick={onShowHidden}
-                  >
-                    {`Show ${model.hiddenCount} hidden`}
-                  </button>
-                </div>
-              )}
-
-              {information.length > 0 && (
-                <details className="di-rc-section" data-testid="di-reception-information">
+                <details className="di-rc-section" data-testid="di-reception-about">
                   <summary className={DI_FOCUS_RING}>
-                    {`Delivery proposals not listed as waiting on you (${information.length})`}
+                    About reception: what it is, how it refreshes and what hiding does
                   </summary>
                   <div className="di-op-detail-body">
-                    <p className="di-op-muted">
-                      Information only: each was presented through the Grok Bot route. Where it says
-                      the status was not determined, this view could not check whether an
-                      authorization is recorded, so it may still be waiting for a decision. Nothing
-                      here says an approval is usable.
+                    <p>
+                      Reception lists what your Missions, delivery proposals and the request panel
+                      report that needs a person. It cannot approve, start, retry or deliver
+                      anything: each entry says where you act, and hiding an entry here is a
+                      preference of this view that resolves nothing.
                     </p>
-                    <ul className="flex flex-col gap-1">
-                      {information.map((e) => {
-                        const plain = plainDelivery(e);
-                        return (
-                          <li
-                            key={e.key}
-                            data-testid="di-reception-information-entry"
-                            data-state={e.state}
-                          >
-                            <div>{plain.what}</div>
-                            <div className="text-text-muted">{`Delivery ${plain.when}.`}</div>
-                            <div className="text-text-muted">{plain.link}</div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    <p>{`Read-only · contract version ${reception.contractVersion} · ${reception.refreshStatement}`}</p>
+                    <p>{reception.dismissalStatement}</p>
                   </div>
                 </details>
-              )}
-
-              <details className="di-rc-section" data-testid="di-reception-about">
-                <summary className={DI_FOCUS_RING}>
-                  About reception: what it is, how it refreshes and what hiding does
-                </summary>
-                <div className="di-op-detail-body">
-                  <p>
-                    Reception lists what your Missions, delivery proposals and the request panel
-                    report that needs a person. It cannot approve, start, retry or deliver anything:
-                    each entry says where you act, and hiding an entry here is a preference of this
-                    view that resolves nothing.
-                  </p>
-                  <p>{`Read-only · contract version ${reception.contractVersion} · ${reception.refreshStatement}`}</p>
-                  <p>{reception.dismissalStatement}</p>
-                </div>
-              </details>
-              {limits && (
-                <details className="di-rc-section" data-testid="di-reception-inbox-limits">
-                  <summary className={DI_FOCUS_RING}>What this view may not show</summary>
-                  <div className="di-op-detail-body">
-                    <p>{limits.summary}</p>
-                    <ul>
-                      {limits.items.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </details>
-              )}
-            </>
-          ) : (
-            <section className="di-op-muted" data-testid="di-reception-absent">
-              Reception desk: not provided by this office.
-            </section>
-          )}
+                {limits && (
+                  <details className="di-rc-section" data-testid="di-reception-inbox-limits">
+                    <summary className={DI_FOCUS_RING}>What this view may not show</summary>
+                    <div className="di-op-detail-body">
+                      <p>{limits.summary}</p>
+                      <ul>
+                        {limits.items.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </details>
+                )}
+              </>
+            ) : (
+              <section className="di-op-muted" data-testid="di-reception-absent">
+                Reception desk: not provided by this office.
+              </section>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

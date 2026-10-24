@@ -78,7 +78,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   mission_listed_more_than_once: 'the Mission is listed more than once',
   evidence_not_projected: 'this office projects no evidence library',
   content_reads_unavailable: 'content reads are closed for this Mission now',
-  listing_moved: 'the Mission moved since this listing — select it again',
+  listing_moved: 'the Mission moved since this listing; select it again',
   reference_not_listed: 'the artifact is not listed now',
   reference_has_no_content: 'this artifact has no content to read',
   read_in_progress: 'another content read is in progress',
@@ -105,7 +105,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   source_not_registered: 'the source is not registered now',
   mission_store_unavailable: 'the Mission store could not be read',
   mission_absent_from_store: 'the Mission is not in its store now',
-  mission_moved_since_listing: 'the Mission moved since this listing — select it again',
+  mission_moved_since_listing: 'the Mission moved since this listing; select it again',
   mission_task_or_workspace_changed: 'the Mission task or workspace changed',
   workspace_not_one_resolved_root: 'the workspace is not one resolved root',
   artifact_not_recorded: 'the artifact is not recorded',
@@ -137,7 +137,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   historical_identity_conflict: 'another listed Mission claims the same task or workspace',
   source_registration_changed: 'the source registration changed since this listing',
   historical_identity_changed:
-    "the completed Mission's recorded execution changed since this listing — select it again",
+    "the completed Mission's recorded execution changed since this listing; select it again",
   historical_identity_changed_during_read:
     "the completed Mission's recorded execution changed while it was read; discarded",
 };
@@ -241,7 +241,7 @@ export function contentStillCurrent(
     return { current: false, why: 'the listing is stale; content reads are closed' };
   }
   if (library.cursor !== content.cursor) {
-    return { current: false, why: 'the Mission moved after this was read — select it again' };
+    return { current: false, why: 'the Mission moved after this was read; select it again' };
   }
   return { current: true };
 }
@@ -254,7 +254,7 @@ export function contentStillCurrent(
 export function plainLinkCount(shown: number, total: number): string {
   const noun = total === 1 ? 'recorded link' : 'recorded links';
   if (total <= shown) return `names ${total} ${noun}:`;
-  return `names ${total} ${noun} — showing the first ${shown}, ${total - shown} not shown (display cap):`;
+  return `names ${total} ${noun}, showing the first ${shown}; ${total - shown} not shown (display cap):`;
 }
 
 /** The text the viewer renders: bounded, and said so when bounded. */

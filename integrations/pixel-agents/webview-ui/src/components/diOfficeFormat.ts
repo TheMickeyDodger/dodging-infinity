@@ -351,7 +351,7 @@ export function groupMembersByChain<M extends Pick<DiMember, 'chain' | 'chainTas
       m.chain === 'direct'
         ? 'Direct task'
         : m.chain === 'child'
-          ? `Linked child task ${m.chainTaskId ?? '(task not recorded)'} — recorded roles of this Mission's linked child task`
+          ? `Linked child task ${m.chainTaskId ?? '(task not recorded)'}: recorded roles of this Mission's linked child task`
           : `Unrecognized chain ${m.chain}`;
     if (!groups.has(key)) groups.set(key, { heading, members: [] });
     groups.get(key)!.members.push(m);
@@ -761,7 +761,7 @@ export function missionHeadline(
   if (!objective) return `Mission ${id} (objective not recorded)`;
   const short =
     objective.length > HEADLINE_MAX ? `${objective.slice(0, HEADLINE_MAX - 1)}…` : objective;
-  return `${short} — ${id}`;
+  return `${short} (${id})`;
 }
 
 /** The Missions the panel lists: one picked Mission, or all (optionally live only). */

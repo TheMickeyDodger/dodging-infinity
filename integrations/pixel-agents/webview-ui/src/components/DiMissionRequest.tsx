@@ -30,6 +30,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { DI_PANEL_WIDTH_PX } from '../constants.js';
 import type { DiMissionRequestControl } from '../hooks/useDiMissionRequest.js';
+import type { DiKeptView } from './diMinimize.js';
+import {
+  focusExposed,
+  keepView,
+  restoreFocus,
+  restoreScroll,
+  useLastContentFocus,
+} from './diMinimize.js';
+import { DiMinimizedChip } from './DiMinimizedTray.js';
 import type { MrTab, MrTurn, MrView } from './diMissionRequestModel.js';
 import {
   actionPending,
@@ -61,6 +70,7 @@ import {
   technicalBlockNote,
   turnStateWords,
   twoColumnReading,
+  waitingOf,
 } from './diMissionRequestModel.js';
 import {
   Digest,
@@ -74,6 +84,8 @@ import {
   StartCauseView,
   Untrusted,
 } from './DiMissionRequestParts.js';
+import { DI_FOCUS_RING } from './diNavigation.js';
+import { useStickyScrollPad } from './diStickyPad.js';
 
 // ---------------------------------------------------------------------------------------------
 // small hooks
@@ -166,6 +178,7 @@ function Act({
   held = false,
   primary = false,
   danger = false,
+  attention = false,
   children,
   describedBy,
 }: {
@@ -175,22 +188,31 @@ function Act({
   held?: boolean;
   primary?: boolean;
   danger?: boolean;
+  /** AC4: this control waits for the owner now: a still glow and a ▲ shape (presentation only). */
+  attention?: boolean;
   children: React.ReactNode;
   describedBy?: string;
 }) {
   const off = !available || held;
+  const attn = attention && !off;
   return (
     <button
       type="button"
       data-testid={testId}
       data-primary={primary && !off ? 'true' : undefined}
       data-danger={danger ? 'true' : undefined}
+      data-attention={attn ? 'true' : undefined}
       aria-disabled={off ? 'true' : undefined}
       aria-describedby={describedBy}
       onClick={() => {
         if (!off) onAct();
       }}
     >
+      {attn && (
+        <span className="di-mr-attn-glyph" aria-hidden="true">
+          ▲{' '}
+        </span>
+      )}
       {held ? `${children} (waiting for the answer…)` : children}
     </button>
   );
@@ -345,7 +367,7 @@ export function TurnView({
     <li className="di-mr-turn" data-testid={`di-mr-turn-${turn.sequence}`}>
       <div className="di-mr-said" data-who="you">
         <span className="di-mr-who">You</span>
-        <Untrusted text={turn.userText} />
+        <Untrusted text={turn.userText} content />
       </div>
       {turn.assistantText !== null && (
         <div
@@ -358,7 +380,7 @@ export function TurnView({
           <span className="di-mr-who">Assistant</span>
           {prose === null && earlier !== null ? (
             <>
-              {earlier.prose !== '' && <Untrusted text={earlier.prose} />}
+              {earlier.prose !== '' && <Untrusted text={earlier.prose} content />}
               <p
                 className="di-mr-technical-note"
                 data-testid={`di-mr-technical-note-${turn.sequence}`}
@@ -367,14 +389,14 @@ export function TurnView({
               </p>
               <details data-testid={`di-mr-earlier-reply-${turn.sequence}`}>
                 <summary>The exact original reply</summary>
-                <Untrusted text={turn.assistantText} />
+                <Untrusted text={turn.assistantText} content />
               </details>
             </>
           ) : prose === null ? (
-            <Untrusted text={turn.assistantText} />
+            <Untrusted text={turn.assistantText} content />
           ) : (
             <>
-              {prose !== '' && <Untrusted text={prose} />}
+              {prose !== '' && <Untrusted text={prose} content />}
               <div data-testid={`di-mr-questions-${turn.sequence}`}>
                 <p>
                   {turn.declaredQuestions.length === 1
@@ -384,14 +406,14 @@ export function TurnView({
                 <ol className="di-mr-questions">
                   {turn.declaredQuestions.map((q) => (
                     <li key={q} data-testid="di-mr-question">
-                      <Untrusted text={q} />
+                      <Untrusted text={q} content />
                     </li>
                   ))}
                 </ol>
               </div>
               <details data-testid={`di-mr-raw-reply-${turn.sequence}`}>
                 <summary>The assistant’s exact reply (technical detail)</summary>
-                <Untrusted text={turn.assistantText} />
+                <Untrusted text={turn.assistantText} content />
               </details>
             </>
           )}
@@ -406,7 +428,7 @@ export function TurnView({
           <p>{stateWords}</p>
           {turn.outcomeDetail !== null && turn.state !== 'RESERVED' && (
             <p className="di-mr-hint">
-              <Untrusted text={turn.outcomeDetail} />
+              <Untrusted text={turn.outcomeDetail} content />
             </p>
           )}
         </div>
@@ -417,7 +439,7 @@ export function TurnView({
             <strong>The assistant tried to propose a Mission, but it was not valid.</strong> Nothing
             was recorded.
           </p>
-          <Untrusted text={turn.draftProblem} />
+          <Untrusted text={turn.draftProblem} content />
         </div>
       )}
       {turn.draft !== null && (
@@ -779,6 +801,7 @@ function DecisionBlock({
           available={exact && status === 'live' && blocked === null}
           held={held}
           primary
+          attention
           describedBy={hintId}
         >
           Approve
@@ -989,7 +1012,7 @@ function RunBlock({
             )}
             {run.blockers.map((b) => (
               <li key={b.code}>
-                Waiting on proof ({b.code}): <Untrusted text={b.detail} />
+                Waiting on proof ({b.code}): <Untrusted text={b.detail} content />
               </li>
             ))}
             {run.progressNote !== null && <li>{run.progressNote}</li>}
@@ -1042,7 +1065,13 @@ function Detail({
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
     >
       <h3 ref={headingRef} tabIndex={-1} data-testid="di-mr-detail-heading">
-        {title === null ? 'This request' : <Line text={title} />}
+        {title === null ? (
+          'This request'
+        ) : (
+          <span data-copy="content">
+            <Line text={title} />
+          </span>
+        )}
       </h3>
       {view.stale && (
         <div className="di-mr-box" data-tone="block" role="alert" data-testid="di-mr-stale">
@@ -1270,6 +1299,11 @@ export interface DiMissionRequestProps {
   returnFocusTo: RefObject<HTMLElement | null>;
   /** The office is an explicit fixture preview: the workspace says so at its top. */
   fixture?: boolean;
+  /**
+   * The whole width taken at the window's right (the docked panel when open, plus the minimized-surfaces strip when
+   * it shows). Given, it replaces the panel width alone, so the workspace never lies under either. Absent: as before.
+   */
+  rightInsetPx?: number;
 }
 
 function Workspace({
@@ -1277,6 +1311,7 @@ function Workspace({
   panelCollapsed,
   returnFocusTo,
   fixture = false,
+  rightInsetPx,
 }: DiMissionRequestProps) {
   const { state } = control;
   const rootRef = useRef<HTMLElement | null>(null);
@@ -1286,24 +1321,57 @@ function Workspace({
   const tabRefs = useRef<Record<MrTab, HTMLButtonElement | null>>({ ask: null, requests: null });
   const viewport = useViewportWidth();
   const nowMs = useNowMs();
-  const layout = layoutFor(viewport, panelCollapsed, state.wide, DI_PANEL_WIDTH_PX);
+  const layout =
+    rightInsetPx === undefined
+      ? layoutFor(viewport, panelCollapsed, state.wide, DI_PANEL_WIDTH_PX)
+      : layoutFor(viewport, false, state.wide, rightInsetPx);
 
   useFocusRescue(rootRef, headingRef);
+  // In a short window the synthetic notice is PINNED at the top of the one scroller (diMissionRequest.css), so its height is reserved as scroll-padding: a focused control is never left under it
+  // (diStickyPad.ts). Not pinned (a tall window): nothing is reserved.
+  const fixtureRef = useRef<HTMLDivElement | null>(null);
+  useStickyScrollPad(fixtureRef, rootRef, fixture);
 
   // The workspace takes focus when it opens, and gives it back when it closes.
   useLayoutEffect(() => {
     const back = returnFocusTo.current;
     headingRef.current?.focus();
     return () => {
-      // The opener can be gone: the sidebar was hidden while the workspace was open. The control that brings the sidebar back is
-      // then the sensible, visible place for focus, never <body>.
+      // The opener can be gone, or hidden: the sidebar was hidden (minimized, so still in the page) while the workspace
+      // was open. The control that brings the sidebar back is then the sensible, visible place for focus, never <body>.
       const target =
-        back && back.isConnected
+        back && back.isConnected && back.getClientRects().length > 0
           ? back
           : document.querySelector<HTMLElement>('[data-testid="di-office-panel-collapsed"]');
       target?.focus();
     };
   }, [returnFocusTo]);
+
+  // AC3: minimize KEEPS the workspace. It stays mounted and is only hidden, so its tab, the open request, the typed
+  // words and the open disclosures are kept; what hiding loses (each region's scroll, focus) is taken on minimize and
+  // given back on restore. Focus moves to the restore control, and comes back to the last CONTENT control the person
+  // used (never the Minimize toggle unless there was none; diMinimize.ts). Presentation only: nothing is sent.
+  const minimizeRef = useRef<HTMLButtonElement | null>(null);
+  const restoreRef = useRef<HTMLButtonElement | null>(null);
+  const keptView = useRef<DiKeptView | null>(null);
+  const lastContent = useLastContentFocus(rootRef, minimizeRef);
+  const minimizeWorkspace = () => {
+    if (rootRef.current) keptView.current = keepView(rootRef.current, lastContent.current);
+    control.minimize();
+  };
+  const shownMinimized = useRef(control.minimized);
+  useLayoutEffect(() => {
+    if (shownMinimized.current === control.minimized) return;
+    shownMinimized.current = control.minimized;
+    if (control.minimized) {
+      focusExposed(restoreRef.current);
+      return;
+    }
+    const kept = keptView.current;
+    keptView.current = null;
+    restoreScroll(kept);
+    restoreFocus(kept, minimizeRef.current, headingRef.current);
+  }, [control.minimized]);
 
   // A transition that removes what had focus hands it to a named place:
   //  - submitting a draft moves to the new request's heading;
@@ -1373,9 +1441,43 @@ function Workspace({
   const style = layout.covering
     ? { right: 0, left: 0 }
     : { right: layout.rightPx, width: layout.widthPx };
-  return (
+  const conversationsWaiting = waitingOf(state.overview).conversations;
+  const waitsForOwner = needing > 0 || conversationsWaiting > 0;
+  const waitingWords =
+    needing > 0
+      ? `${needing} ${needing === 1 ? 'request needs' : 'requests need'} you`
+      : conversationsWaiting > 0
+        ? `${conversationsWaiting} ${conversationsWaiting === 1 ? 'conversation waits' : 'conversations wait'} for your answer`
+        : null;
+  const restoreChip = control.minimized ? (
+    <DiMinimizedChip>
+      <button
+        type="button"
+        ref={restoreRef}
+        // AC4 when a request or a conversation waits for the person: a still glow, the ▲ shape and the words
+        className={`di-op-theme di-op-collapsed${waitsForOwner ? ' di-op-attn' : ''} ${DI_FOCUS_RING}`}
+        data-testid="di-mr-restore"
+        data-attention={waitsForOwner ? 'true' : undefined}
+        onClick={control.restore}
+        // The visible words are in the name; what waits is said too (AC4: never by colour alone).
+        aria-label={
+          waitingWords === null ? 'Restore requests' : `Restore requests, ${waitingWords}`
+        }
+        title="Restore the requests as you left them"
+      >
+        {waitsForOwner && (
+          <span className="di-op-attn-glyph" aria-hidden="true">
+            ▲
+          </span>
+        )}
+        <span className="di-op-collapsed-label">Restore requests</span>
+      </button>
+    </DiMinimizedChip>
+  ) : null;
+  const workspace = (
     <section
       ref={rootRef}
+      hidden={control.minimized}
       className="di-mr"
       role="complementary"
       aria-label={`${MR_NAME} requests`}
@@ -1385,6 +1487,13 @@ function Workspace({
       data-split={twoColumnReading(layout, state.wide) ? 'true' : 'false'}
       style={style}
       // Keys typed in the workspace belong to it: none reaches the office behind.
+      // A text field that takes focus is scrolled into view AS A WHOLE: the browser's own focus scroll reveals the caret, not the field, and does nothing while the caret is visible, so the composer was left
+      // 6 to 28 px clipped after a Tab (measured, candidate 6 and 7 at 320 x 225 and 568). 'nearest' is a no-op where the field is already fully in view.
+      onFocus={(event) => {
+        const field = event.target;
+        if (field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement)
+          field.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === 'Escape' && !event.defaultPrevented) {
@@ -1411,6 +1520,15 @@ function Workspace({
             data-testid="di-mr-wide"
           >
             {state.wide ? 'Narrower reading' : 'Wider reading'}
+          </button>
+          <button
+            type="button"
+            ref={minimizeRef}
+            onClick={minimizeWorkspace}
+            data-testid="di-mr-minimize"
+            title="Minimize the requests; Restore brings them back as you left them"
+          >
+            Minimize
           </button>
           <button type="button" onClick={control.close} data-testid="di-mr-close">
             Close requests
@@ -1467,7 +1585,10 @@ function Workspace({
         >
           Requests
           {needing > 0 && (
-            <span className="di-mr-badge" data-testid="di-mr-needs-you">
+            <span className="di-mr-badge" data-testid="di-mr-needs-you" data-attention="true">
+              <span className="di-mr-attn-glyph" aria-hidden="true">
+                ▲{' '}
+              </span>
               {needing} {needing === 1 ? 'request needs' : 'requests need'} you
             </span>
           )}
@@ -1483,7 +1604,13 @@ function Workspace({
           data-testid="di-mr-context"
         >
           {fixture && (
-            <div className="di-mr-ctx" data-tone="warn" role="note" data-testid="di-mr-fixture-banner">
+            <div
+              ref={fixtureRef}
+              className="di-mr-ctx di-mr-ctx-fixture"
+              data-tone="warn"
+              role="note"
+              data-testid="di-mr-fixture-banner"
+            >
               <span className="di-mr-chip">Synthetic</span>
               <p data-testid="di-mr-fixture-line">{MR_FIXTURE_SHORT}</p>
               <details data-testid="di-mr-fixture-details">
@@ -1569,6 +1696,12 @@ function Workspace({
           : ''}
       </div>
     </section>
+  );
+  return (
+    <>
+      {restoreChip}
+      {workspace}
+    </>
   );
 }
 

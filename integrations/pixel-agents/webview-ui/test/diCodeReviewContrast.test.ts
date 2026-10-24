@@ -11,9 +11,16 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { contrastRatio } from '../src/components/diCodeReviewModel.ts';
+import { ALPHA, resolveShared, sharedTokensAliasedBy, sharedValue, SOLID } from './diChromeTokens.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const css = fs.readFileSync(path.join(root, 'src/components/diCodeReview.css'), 'utf-8');
+/** The stylesheet as written: its chrome palette names the shared DI chrome tokens (index.css :root). */
+const written = fs.readFileSync(path.join(root, 'src/components/diCodeReview.css'), 'utf-8');
+/**
+ * The stylesheet with every `var(--di-*)` resolved through the ONE shared reader (diChromeTokens.ts), so every
+ * reader and pin below runs on the values the browser uses. Resolution throws on any token it cannot resolve.
+ */
+const css = resolveShared(written);
 
 /** The `--rv-*` tokens of the first `.di-rv { ... }` rule, solid `#rrggbb` only. */
 function tokens(): Record<string, string> {
@@ -39,6 +46,7 @@ describe('the stylesheet’s colour tokens are solid and complete', () => {
   it('every token the component relies on is defined as #rrggbb', () => {
     for (const name of [
       'bg', 'surface', 'surface-2', 'border', 'border-soft', 'text', 'muted', 'link', 'focus',
+      'control-hover', 'selected-bg',
       'add-bg', 'add-gutter', 'add-mark', 'del-bg', 'del-gutter', 'del-mark', 'ctx-bg',
       'ctx-gutter', 'hunk-bg', 'hunk-text', 'empty-bg', 'st-added', 'st-removed', 'st-changed',
       'st-renamed', 'st-new', 'st-conflict', 'info-bg', 'warn-bg', 'block-bg', 'ok-bg',
@@ -52,7 +60,7 @@ describe('the stylesheet’s colour tokens are solid and complete', () => {
 });
 
 describe('text is readable on every surface it appears on (WCAG AA, 4.5:1)', () => {
-  const surfaces = ['bg', 'surface', 'surface-2', 'ctx-bg', 'add-bg', 'del-bg', 'hunk-bg', 'info-bg', 'warn-bg', 'block-bg', 'ok-bg'];
+  const surfaces = ['bg', 'surface', 'surface-2', 'ctx-bg', 'add-bg', 'del-bg', 'hunk-bg', 'info-bg', 'warn-bg', 'block-bg', 'ok-bg', 'control-hover', 'selected-bg'];
   it('primary text on every surface', () => {
     for (const surface of surfaces) expect(ratio('text', surface), `text on ${surface}`).toBeGreaterThanOrEqual(AA);
   });
@@ -118,9 +126,57 @@ describe('syntax colours are readable on plain, added and removed lines', () => 
   });
 });
 
+describe('the shared control states (hover, pressed, expanded, selected) are readable and visible', () => {
+  it('muted text and the +/- counts on the selected colour (a selected file row, a hovered section bar)', () => {
+    expect(ratio('muted', 'selected-bg')).toBeGreaterThanOrEqual(AA);
+    expect(ratio('hunk-text', 'selected-bg')).toBeGreaterThanOrEqual(AA);
+    expect(ratio('add-mark', 'selected-bg')).toBeGreaterThanOrEqual(AA);
+    expect(ratio('del-mark', 'selected-bg')).toBeGreaterThanOrEqual(AA);
+  });
+  it('the border a hovered control takes (muted) and the border a pressed or expanded one takes (link) against their own fill', () => {
+    expect(ratio('muted', 'control-hover')).toBeGreaterThanOrEqual(BOUNDARY);
+    expect(ratio('link', 'selected-bg')).toBeGreaterThanOrEqual(BOUNDARY);
+  });
+  it('a hovered control is lighter than a resting one; a pressed or expanded one is told apart by a lighter border as well as by its fill', () => {
+    expect(contrastRatio(T['control-hover'], T['surface-2'])).toBeGreaterThan(1.2);
+    // the selected fill is only 1.03:1 against a resting control (it is a hue, not a lightness), so the border carries the rest of the difference
+    expect(T['selected-bg'].toLowerCase()).not.toBe(T['surface-2'].toLowerCase());
+    expect(contrastRatio(T['link'], T['border'])).toBeGreaterThanOrEqual(1.5);
+  });
+  it('the chrome controls consume the shared control tokens: 1px token border, the shared radius, token hover, pressed and expanded colours', () => {
+    expect(written).toMatch(/--rv-radius: var\(--di-radius\);/);
+    expect(written).toMatch(/--rv-control-hover: var\(--di-control-hover\);/);
+    expect(written).toMatch(/--rv-selected-bg: var\(--di-selected\);/);
+    expect(css).toMatch(/\.di-rv button \{[^}]*border: 1px solid var\(--rv-border\);[^}]*border-radius: var\(--rv-radius\);/);
+    expect(css).toMatch(/\.di-rv button:hover:not\(:disabled\) \{\s*background: var\(--rv-control-hover\);\s*border-color: var\(--rv-muted\);/);
+    expect(css).toMatch(/\.di-rv button\[aria-pressed='true'\],[\s\S]*?\{\s*background: var\(--rv-selected-bg\);\s*(?:\/\*[\s\S]*?\*\/\s*)?border-color: var\(--rv-link\);/);
+    expect(css).toMatch(/\.di-rv input\[type='search'\] \{[^}]*border: 1px solid var\(--rv-border\);[^}]*border-radius: var\(--rv-radius\);/);
+    // (a notice box and the dividers between regions keep their own borders: they are not controls)
+    expect(/\.di-rv button \{[^}]*\}/.exec(css)![0]).not.toMatch(/border:\s*2px/);
+    expect(/\.di-rv input\[type='search'\] \{[^}]*\}/.exec(css)![0]).not.toMatch(/border:\s*2px/);
+  });
+  it('no raw colour literal outside the palette: every hover, pressed and selected colour is a token', () => {
+    const code = written.replace(/\/\*[\s\S]*?\*\//g, '');
+    const literal = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/;
+    const outside = code.split('\n').filter((line) => literal.test(line) && !/^\s*--rv-[a-z0-9-]+:/.test(line));
+    expect(outside).toEqual([]);
+    // The custom properties that DO carry a literal are the review's own palette, with no shared token that means the same: the diff colours, the
+    // file-status letters, the syntax colours, the hidden-character placeholder and the scrollbar pair. Each is a token defined once and checked above.
+    const carriers = [...code.matchAll(/^\s*--rv-([a-z0-9-]+):\s*(?:#[0-9a-fA-F]{3,8}|rgba?\()/gm)].map((m) => m[1]).sort();
+    expect(carriers).toEqual(
+      [
+        'add-bg', 'add-gutter', 'add-mark', 'del-bg', 'del-gutter', 'del-mark', 'ctx-bg', 'ctx-gutter', 'hunk-bg', 'hunk-text', 'empty-bg',
+        'st-added', 'st-removed', 'st-changed', 'st-renamed', 'st-new', 'st-conflict',
+        'tok-keyword', 'tok-string', 'tok-comment', 'tok-number', 'tok-type', 'tok-function', 'tok-punct', 'tok-property', 'tok-tag', 'tok-attr',
+        'ctl-bg', 'ctl-text', 'scroll-thumb', 'scroll-track',
+      ].sort(),
+    );
+  });
+});
+
 describe('the focus ring and the boundaries are visible (3:1)', () => {
   it('the focus ring against every surface a focused control sits on', () => {
-    for (const surface of ['bg', 'surface', 'surface-2', 'ctx-bg', 'add-bg', 'del-bg', 'hunk-bg', 'info-bg', 'warn-bg', 'block-bg']) {
+    for (const surface of ['bg', 'surface', 'surface-2', 'ctx-bg', 'add-bg', 'del-bg', 'hunk-bg', 'info-bg', 'warn-bg', 'block-bg', 'control-hover', 'selected-bg']) {
       expect(ratio('focus', surface), `focus ring on ${surface}`).toBeGreaterThanOrEqual(BOUNDARY);
     }
   });
@@ -181,8 +237,29 @@ describe('the stylesheet keeps its promises', () => {
     expect(removals).toHaveLength(1);
     expect(css).toMatch(/\.di-rv :focus \{\s*outline: none;\s*\}\s*\.di-rv :focus-visible \{/);
   });
+  it('the frame is the chrome dialog frame (scrim, 1px line, rounded, soft shadow; square in full screen), and a minimized dialog is hidden', () => {
+    expect(css).toMatch(/\.di-rv-backdrop \{[\s\S]*?background: var\(--rv-scrim\);/);
+    expect(css).toMatch(/\.di-rv-backdrop\[hidden\] \{\s*display: none;\s*\}/);
+    expect(css).toMatch(/\n\.di-rv \{[\s\S]*?border: 1px solid var\(--rv-border-soft\);\s*border-radius: 16px;\s*box-shadow: var\(--rv-shadow-pop\);/);
+    expect(css).toMatch(/\.di-rv\[data-fullscreen='true'\] \{[\s\S]*?border-radius: 0;/);
+    expect(written).toMatch(/--rv-scrim: var\(--di-scrim\);/);
+    expect(written).toMatch(/--rv-shadow-pop: var\(--di-shadow-pop\);/);
+  });
   it('honours reduced motion', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+  it('every shared token the palette resolves through is solid in index.css :root (the check follows the tokens there)', () => {
+    const aliased = sharedTokensAliasedBy(written, '.di-rv');
+    expect(aliased.length, 'the palette names the shared tokens').toBeGreaterThan(10);
+    for (const name of aliased) {
+      const value = sharedValue(name);
+      expect(value, `--di-${name} carries no alpha colour`).not.toMatch(ALPHA);
+      if (value.startsWith('#')) expect(value, `--di-${name}`).toMatch(SOLID);
+    }
+    // Every colour token this file checks that is an alias is a solid colour at its source, not only once resolved here.
+    const colourAliases = [...written.matchAll(/--rv-([a-z0-9-]+):\s*var\(--di-([a-z0-9-]+)\)\s*;/g)].filter((m) => m[1] in T);
+    expect(colourAliases.length).toBeGreaterThan(10);
+    for (const [, rv, di] of colourAliases) expect(sharedValue(di), `--rv-${rv} -> --di-${di}`).toMatch(SOLID);
   });
   it('uses solid tokens for text and diff backgrounds (no alpha that a test could not check)', () => {
     const rule = /\n\.di-rv \{([\s\S]*?)\n\}/.exec(css)![1];

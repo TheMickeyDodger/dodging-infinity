@@ -1,0 +1,11 @@
+[
+ "direct|.a|background|#30304f|line 3",
+ "direct|.b|color|#FFF|line 4",
+ "direct|.b|border-color|#11223344|line 4",
+ "direct|.c|background|rgba(|line 5",
+ "direct|.c|outline-color|hsl(|line 5",
+ "direct|.c|fill|oklch(|line 5",
+ "definition|.f|--rv-new|#123456|line 8",
+ "direct|.h|background|#34346a|line 11",
+ "direct|.i|box-shadow|rgb(|line 13"
+]

@@ -27,6 +27,7 @@ import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 
 import type { DiOfficeState, DiRuntimeAgent } from '../../core/src/messages.ts';
+import { renderedCopy } from './diRenderedCopy.ts';
 
 /** Each test walks several transitions with real polls: its own budget. */
 const STEPS_MS = 90_000;
@@ -511,6 +512,8 @@ test(
     count = await linkCount();
     assert.match(count, /showing the first 64/);
     assert.match(count, /6 not shown/);
+    // AC7: the library's own words carry no em or en dash (artifact text and reviewer findings are content, outside the rule)
+    assert.deepEqual((await renderedCopy(p(), '[data-testid="di-evidence-library"]')).authored, []);
     entries = await linkEntries();
     assert.equal(entries.length, 64);
   },
@@ -572,6 +575,7 @@ test(
     await textGone();
     let banner = await staleBanner();
     assert.match(banner, /as last received/);
+    assert.doesNotMatch(banner, /[\u2013\u2014]/, 'AC7: no em or en dash in the stale banner');
     assert.match(banner, /transport_/);
     assert.match(await readsLine(), /closed/);
     await connected; // a bare reconnect: no office state yet

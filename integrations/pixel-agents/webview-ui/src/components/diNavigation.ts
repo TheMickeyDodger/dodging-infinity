@@ -473,9 +473,9 @@ export function findRecords(state: DiOfficeState, query: string): DiFindOutcome 
     const sources = new Set(matches.map((r) => r.sourceId)).size;
     statement =
       `${total} records match “${shown}”: they are different records ` +
-      `(${sources > 1 ? `${sources} sources, ` : ''}separate roots, Missions or roles), never merged — choose one.`;
+      `(${sources > 1 ? `${sources} sources, ` : ''}separate roots, Missions or roles), never merged. Choose one.`;
   }
   if (total > results.length)
-    statement += ` Showing the first ${results.length}; ${total - results.length} more match — refine the search.`;
+    statement += ` Showing the first ${results.length}; ${total - results.length} more match. Refine the search.`;
   return { query: shown, total, results, ambiguous: total > 1, statement };
 }

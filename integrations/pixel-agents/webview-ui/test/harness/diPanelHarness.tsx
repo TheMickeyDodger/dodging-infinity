@@ -14,11 +14,15 @@ import type { DiEvidenceArtifact, DiEvidenceContent, DiOfficeState } from '../..
 import type { DiCodeReviewAccess } from '../../src/components/DiCodeReviewEntry.tsx';
 import type { EvidenceSelection } from '../../src/components/diEvidenceFormat.ts';
 import type { DiEvidenceAccess } from '../../src/components/DiEvidenceLibrary.tsx';
+import { DiMinimizedTrayContext } from '../../src/components/diMinimizedTrayContext.ts';
 import type { DiMissionRequestAccess } from '../../src/components/DiMissionRequestEntry.tsx';
 import type { MrOverview } from '../../src/components/diMissionRequestModel.ts';
 import { INITIAL_STATE } from '../../src/components/diMissionRequestModel.ts';
 import { DiOfficePanel } from '../../src/components/DiOfficePanel.tsx';
 import { useDiReceptionInbox } from '../../src/components/diReceptionInboxState.ts';
+import { DI_MINIMIZED_STRIP_WIDTH_PX } from '../../src/constants.ts';
+import { diDockFor } from '../../src/diPanelLayout.ts';
+import { useViewportWidth } from '../../src/hooks/useViewportWidth.ts';
 import type { OfficeState } from '../../src/office/engine/officeState.ts';
 import fixture from '../fixtures/di-office-state-session-mismatch-v2.FIXTURE.json';
 
@@ -333,9 +337,19 @@ const missionAccess: DiMissionRequestAccess = {
     calls.panel.push({ route: 'request', id, openerTestId: opener.getAttribute('data-testid') }),
 };
 
+/**
+ * OPT-IN (`?strip=1`; every other page load is unchanged): the edge strip of minimized surfaces, mounted and
+ * provided exactly as App does (AC3), so a test can minimize several surfaces into it at once.
+ */
+const WITH_STRIP = new URLSearchParams(window.location.search).get('strip') === '1';
+
 const listeners = new Set<(next: DiOfficeState) => void>();
 /** The reception inbox seam of the mounted harness, so a test can open it where no entry is drawn (a collapsed sidebar). */
-const inbox: { open: (() => void) | null; collapsed: boolean } = { open: null, collapsed: false };
+const inbox: { open: (() => void) | null; close: (() => void) | null; collapsed: boolean } = {
+  open: null,
+  close: null,
+  collapsed: false,
+};
 
 export function Harness() {
   const [state, setState] = useState(initial);
@@ -359,6 +373,19 @@ export function Harness() {
     : null;
   const receptionInbox = useDiReceptionInbox();
   inbox.open = () => receptionInbox.openFrom(null);
+  inbox.close = receptionInbox.close;
+  const [strip, setStrip] = useState<HTMLDivElement | null>(null);
+  // the same docked layout as the App (diPanelLayout.ts): the strip counts only while it holds a restore control
+  const [stripCount, setStripCount] = useState(0);
+  useEffect(() => {
+    if (strip === null) return;
+    const count = () => setStripCount(strip.childElementCount);
+    count();
+    const observer = new MutationObserver(count);
+    observer.observe(strip, { childList: true });
+    return () => observer.disconnect();
+  }, [strip]);
+  const dock = diDockFor(useViewportWidth(), collapsed, stripCount > 0);
   useEffect(() => {
     listeners.add(setState);
     return () => {
@@ -366,16 +393,29 @@ export function Harness() {
     };
   }, []);
   return (
-    <DiOfficePanel
-      state={state}
-      officeState={office as unknown as OfficeState}
-      collapsed={collapsed}
-      onCollapsedChange={setCollapsed}
-      review={review}
-      mission={missionAccess}
-      evidence={evidenceAccess}
-      receptionInbox={receptionInbox}
-    />
+    <DiMinimizedTrayContext.Provider value={WITH_STRIP ? strip : null}>
+      <DiOfficePanel
+        state={state}
+        officeState={office as unknown as OfficeState}
+        collapsed={collapsed}
+        onCollapsedChange={setCollapsed}
+        widthPx={dock.panelPx}
+        review={review}
+        mission={missionAccess}
+        evidence={evidenceAccess}
+        receptionInbox={receptionInbox}
+      />
+      {WITH_STRIP && (
+        <div
+          ref={setStrip}
+          className="di-op-theme di-min-tray"
+          role="group"
+          aria-label="Minimized panels"
+          data-testid="di-minimized-tray"
+          style={{ width: DI_MINIMIZED_STRIP_WIDTH_PX, right: dock.trayRightPx }}
+        />
+      )}
+    </DiMinimizedTrayContext.Provider>
   );
 }
 
@@ -390,6 +430,12 @@ declare global {
       current: () => DiOfficeState;
       /** Open the reception inbox (as the in-world desk does, with no opener to restore focus to). */
       openReception: () => void;
+      /**
+       * Close the reception inbox through the SAME `close()` the panel's own routes call (a route into the request
+       * panel, "Show this Mission", details and evidence), whatever its state, including minimized. A lifecycle
+       * seam: it lets a test close a HIDDEN inbox while another dialog is in front.
+       */
+      closeReception: () => void;
       /** Whether the sidebar is collapsed right now. */
       isCollapsed: () => boolean;
       /** With `?p2a=1`: the labelled synthetic ids the seam added (null otherwise). */
@@ -415,6 +461,7 @@ window.__diHarness = {
   },
   current: () => latest,
   openReception: () => inbox.open?.(),
+  closeReception: () => inbox.close?.(),
   isCollapsed: () => inbox.collapsed,
   p2a: P2A,
   evidence: { missions: synthetic, requests: () => evidenceRequests.map((r) => ({ ...r })) },

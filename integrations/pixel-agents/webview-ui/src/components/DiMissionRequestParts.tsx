@@ -76,18 +76,32 @@ export function KeyedText({ parts }: { parts: MrRulePart[] }) {
 /** A permitted action in words, with its exact key after it and muted: "read the repository (repository_read)". */
 export function ScopeLine({ scope, meanings }: { scope: string; meanings: Record<string, string> }) {
   const meaning = meanings[scope];
-  if (!meaning) return <>{scope}</>;
+  // AC7: the scope key is a record value (content, kept as received). The meaning beside it is explanatory wording
+  // the panel sends; it is OUR copy even though it arrives over the wire, so it is NOT marked and the guard reads it.
+  if (!meaning) return <span data-copy="content">{scope}</span>;
   return (
     <>
-      {meaning} <span className="di-mr-key">({scope})</span>
+      {meaning}{' '}
+      <span className="di-mr-key" data-copy="content">
+        ({scope})
+      </span>
     </>
   );
 }
 
 /** Untrusted text, all of it, inert. */
-export function Untrusted({ text, testId }: { text: string; testId?: string }) {
+export function Untrusted({
+  text,
+  testId,
+  content = false,
+}: {
+  text: string;
+  testId?: string;
+  /** AC7: words this project does not author (what a person wrote, the assistant, a record): kept as received. */
+  content?: boolean;
+}) {
   return (
-    <div className="di-mr-text" data-testid={testId}>
+    <div className="di-mr-text" data-testid={testId} data-copy={content ? 'content' : undefined}>
       {linesOf(text).map((line, index) => (
         <Line key={index} text={line} />
       ))}
@@ -127,7 +141,7 @@ export function ReadingBlock({
         role="region"
         aria-label={label}
       >
-        <div className="di-mr-text">
+        <div className="di-mr-text" data-copy="content">
           {shown.map((line, index) => (
             <Line key={index} text={line} />
           ))}
@@ -156,7 +170,7 @@ export function Digest({ digest }: { digest: string }) {
   const id = useId();
   return (
     <span>
-      <code>{shortDigest(digest)}</code>{' '}
+      <code data-copy="content">{shortDigest(digest)}</code>{' '}
       <button
         type="button"
         aria-expanded={open}
@@ -167,7 +181,12 @@ export function Digest({ digest }: { digest: string }) {
         {open ? 'Hide the whole digest' : 'Show the whole digest'}
       </button>
       {open && (
-        <code id={id} className="di-mr-digest-full" data-testid="di-mr-digest-full">
+        <code
+          id={id}
+          className="di-mr-digest-full"
+          data-testid="di-mr-digest-full"
+          data-copy="content"
+        >
           {digest}
         </code>
       )}
@@ -190,8 +209,8 @@ export function SourceFacts({ source }: { source: SourceIdentity }) {
         <p>A draft in this conversation. It is not a proposal of record yet.</p>
       ) : (
         <p>
-          Request <code>{source.requestRef}</code>, Mission <code>{source.missionId}</code>,
-          revision {source.revision}
+          Request <code data-copy="content">{source.requestRef}</code>, Mission{' '}
+          <code data-copy="content">{source.missionId}</code>, revision {source.revision}
         </p>
       )}
       <p>
@@ -228,21 +247,21 @@ export function ProposalView({
         <div>
           <dt>What you asked for</dt>
           <dd>
-            <Untrusted text={proposal.objective} testId={`${testId}-objective`} />
+            <Untrusted text={proposal.objective} testId={`${testId}-objective`} content />
           </dd>
         </div>
         {proposal.targetContext !== '' && (
           <div>
             <dt>Where it applies</dt>
             <dd>
-              <Untrusted text={proposal.targetContext} />
+              <Untrusted text={proposal.targetContext} content />
             </dd>
           </div>
         )}
         <div>
           <dt>What is in scope, and what is not</dt>
           <dd>
-            <Untrusted text={proposal.requestedScope} testId={`${testId}-scope`} />
+            <Untrusted text={proposal.requestedScope} testId={`${testId}-scope`} content />
           </dd>
         </div>
         <div>

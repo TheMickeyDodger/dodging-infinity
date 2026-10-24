@@ -184,6 +184,7 @@ function Viewer({
           tabIndex={0}
           className={`whitespace-pre-wrap break-words max-h-260 overflow-auto border-2 border-border p-4 ${DI_FOCUS_RING}`}
           data-testid="di-evidence-text"
+          data-copy="content"
           aria-label="Artifact text (untrusted; scroll with the arrow keys)"
         >
           {shown.text}
@@ -254,7 +255,7 @@ export function DiEvidenceLibrary({
       <div>Evidence library (view only)</div>
       {library.currency === 'stale' && (
         <div className="text-warning" role="status" data-testid="di-evidence-stale">
-          STALE — this listing is as last received, not current (
+          STALE: this listing is as last received, not current (
           {library.currencyReason ?? 'not live'}); content reads are closed
         </div>
       )}
@@ -365,8 +366,9 @@ export function DiEvidenceLibrary({
         {reviewed.map((r, i) => (
           <div key={i} className="pl-8 flex flex-col gap-1" data-testid="di-evidence-review">
             <div>
-              round {r.round ?? '—'} · {r.reviewerLogical ?? '—'} ({r.reviewerAgent ?? '—'}) ·
-              verdict {r.verdict ?? 'none parsed'} · gate {r.gate ?? '—'}
+              round {r.round ?? 'not recorded'} · {r.reviewerLogical ?? 'reviewer not recorded'} (
+              {r.reviewerAgent ?? 'agent not recorded'}) · verdict {r.verdict ?? 'none parsed'} ·
+              gate {r.gate ?? 'not recorded'}
               <span className="text-text-muted">
                 {' '}
                 · currency {r.currency ?? 'not recorded'} ·{' '}
@@ -409,7 +411,7 @@ export function DiEvidenceLibrary({
             {library.receipts.items.map((r) => (
               <li key={r.artifactId} data-testid="di-evidence-receipt">
                 {r.attested
-                  ? `ATTESTED receipt · delivery ${r.deliveryId ?? '—'} · step ${r.step ?? '—'} · state ${r.receiptState ?? '—'} · effect completed ${yesNo(r.effectCompleted)}`
+                  ? `ATTESTED receipt · delivery ${r.deliveryId ?? 'not recorded'} · step ${r.step ?? 'not recorded'} · state ${r.receiptState ?? 'not recorded'} · effect completed ${yesNo(r.effectCompleted)}`
                   : 'UNATTESTED reference: an unverified claim, not a receipt'}
                 <span className="text-text-muted"> · sha256 {short(r.contentDigest)}</span>
               </li>

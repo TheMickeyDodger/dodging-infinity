@@ -176,7 +176,20 @@ export const storedState = <T>(page: Page): Promise<T> =>
 export async function characterPoint(
   page: Page,
   id: number,
-): Promise<{ x: number; y: number; onCanvas: boolean; topElement: string }> {
+): Promise<{
+  x: number;
+  y: number;
+  onCanvas: boolean;
+  topElement: string;
+  /** The elements under the point, topmost first, read in the SAME evaluate (the same synchronous turn) as `topElement`: what covered the point when `onCanvas` was decided. Observation only. */
+  stack: Array<{
+    tag: string;
+    id: string | null;
+    testid: string | null;
+    label: string;
+    rect: number[];
+  }>;
+}> {
   return await page.evaluate(
     ({ id, tile, sit, hit }) => {
       const hooks = (window as unknown as HooksWindow).__pixelAgentsTestHooks;
@@ -199,11 +212,31 @@ export async function characterPoint(
       const x = rect.left + (offX + ch.x * view.zoom) / dpr;
       const y = rect.top + (offY + worldY * view.zoom) / dpr;
       const top = document.elementFromPoint(x, y);
+      // the stack under the point, read in this same synchronous turn as `top`: the identity and rectangle of whatever covers the point when `onCanvas` is decided
+      const stack = document
+        .elementsFromPoint(x, y)
+        .slice(0, 6)
+        .map((el) => {
+          const box = el.getBoundingClientRect();
+          return {
+            tag: el.tagName,
+            id: el.id || null,
+            testid: el.getAttribute('data-testid'),
+            label: el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 40),
+            rect: [
+              Math.round(box.left),
+              Math.round(box.top),
+              Math.round(box.right),
+              Math.round(box.bottom),
+            ],
+          };
+        });
       return {
         x,
         y,
         onCanvas: top === canvas,
         topElement: top ? `${top.tagName}${top.id ? `#${top.id}` : ''}` : 'none',
+        stack,
       };
     },
     { id, tile: TILE_SIZE, sit: SITTING_OFFSET, hit: HIT_HEIGHT },

@@ -13,6 +13,7 @@ import { DiCodeReview } from './components/DiCodeReview.js';
 import type { DiCodeReviewAccess } from './components/DiCodeReviewEntry.js';
 import type { EvidenceSelection } from './components/diEvidenceFormat.js';
 import type { DiEvidenceAccess } from './components/DiEvidenceLibrary.js';
+import { DiMinimizedTrayContext } from './components/diMinimizedTrayContext.js';
 import { DiMissionRequest } from './components/DiMissionRequest.js';
 import type { DiMissionRequestAccess } from './components/DiMissionRequestEntry.js';
 import {
@@ -31,20 +32,24 @@ import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
+import { WorldControlsGate } from './components/WorldControlsGate.js';
+import { WorldLeftRail } from './components/WorldLeftRail.js';
 import { WorldMap } from './components/WorldMap.js';
+import { WorldStack } from './components/WorldStack.js';
 import { WorldViewControls } from './components/WorldViewControls.js';
-import { ZoomControls } from './components/ZoomControls.js';
+import { ZoomButtons, ZoomControls } from './components/ZoomControls.js';
 import {
   AMBIENT_SAVE_INTERVAL_MS,
   DI_DOCUMENT_TITLE,
   DI_FAVICON_DATA_URI,
+  DI_MINIMIZED_STRIP_WIDTH_PX,
   DI_OFFICE_DISTRICT_PATTERNS,
-  DI_PANEL_WIDTH_PX,
   DI_WORLD_REFLOW_MS,
   WORLD_KEY_PAN_FRACTION,
   ZOOM_MAX,
   ZOOM_MIN,
 } from './constants.js';
+import { diDockFor } from './diPanelLayout.js';
 import { useCityPresentation } from './hooks/useCityPresentation.js';
 import { useDiCodeReview } from './hooks/useDiCodeReview.js';
 import { useDiMissionRequest } from './hooks/useDiMissionRequest.js';
@@ -52,6 +57,7 @@ import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
+import { useViewportWidth } from './hooks/useViewportWidth.js';
 import { prepareAmbientText } from './office/ambient/ambientIntake.js';
 import {
   snapshotAgents,
@@ -184,6 +190,34 @@ function App() {
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [diPanelCollapsed, setDiPanelCollapsed] = useState(false);
+  /** AC3: the one strip where each minimized surface draws its restore control (DiMinimizedTray.tsx). */
+  const [minimizedTray, setMinimizedTray] = useState<HTMLDivElement | null>(null);
+  // the world strip's pinned footer (WorldLeftRail): the fixture label sits in it, and the version label is drawn into it in a narrow world
+  const [railFooter, setRailFooter] = useState<HTMLDivElement | null>(null);
+  /** How many restore controls the strip holds: it shows, and the world yields its width, only when there are some. */
+  const [minimizedCount, setMinimizedCount] = useState(0);
+  useEffect(() => {
+    if (minimizedTray === null) return;
+    const count = () => setMinimizedCount(minimizedTray.childElementCount);
+    count();
+    const observer = new MutationObserver(count);
+    observer.observe(minimizedTray, { childList: true });
+    return () => observer.disconnect();
+  }, [minimizedTray]);
+  /**
+   * The docked layout: the panel (its design width, or what the window leaves it), the strip beside it and the width the world yields
+   * (see diPanelLayout.ts: responsive width, and the recorded behaviour that the world yields entirely where nothing is left).
+   */
+  const viewportWidthPx = useViewportWidth();
+  const dock = diDockFor(viewportWidthPx, diPanelCollapsed, minimizedCount > 0);
+  /** The width taken at the right of the world: the docked panel while open, and the strip while it shows. */
+  const diRightInsetPx = dock.insetPx;
+  /**
+   * The world's CONTROLS (zoom, views, Map, reception target, toolbar, city controls, update notice, tooltip) are offered only where diDockFor says the world holds them
+   * whole (DI_WORLD_CONTROLS_MIN_PX). Elsewhere they are not clipped but REMOVED: inert and hidden, so no invisible tab stop is left. Whether minimizing the office brings them
+   * back depends on the arithmetic and is checked per window size in diWorldYield.test.ts, not assumed here. Outside DI mode there is no panel: always offered.
+   */
+  const worldControlsAvailable = !diOfficeState || dock.worldControls;
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -531,6 +565,14 @@ function App() {
   useEffect(() => {
     if (editor.isEditMode) setMapOpen(false);
   }, [editor.isEditMode]);
+  /**
+   * The Map is DRAWN only while the world's controls are offered, but yielding never CLOSES it: `mapOpen` is the person's state and a
+   * transient resize must not destroy it, so it is left alone and the Map is back when the controls are (tested across the real sequence
+   * in diWorldYield.test.ts). It is deliberately not mounted while the controls are removed, because an open Map installs a window-level
+   * capture handler that swallows every key (mapKeyGuard.ts), and `inert` does not reach window listeners: a Map left mounted but invisible
+   * would silently disable the whole keyboard. Not mounting it also lets the canvas draw again and shows the reception target.
+   */
+  const mapShown = mapOpen && worldControlsAvailable;
   const closeMap = useCallback(() => setMapOpen(false), []);
   const getCameraCanvas = useCallback(() => {
     const el = containerRef.current;
@@ -960,7 +1002,7 @@ function App() {
         {diOfficeState ? (
           <span data-testid="di-canvas-unready">
             DI office data received (
-            {diOfficeState.live ? 'LIVE' : `NOT LIVE: ${diOfficeState.notLiveReason ?? ''}`}) —
+            {diOfficeState.live ? 'LIVE' : `NOT LIVE: ${diOfficeState.notLiveReason ?? ''}`}):
             office canvas NOT READY, awaiting layout
           </span>
         ) : (
@@ -971,413 +1013,497 @@ function App() {
   }
 
   return (
-    <div
-      ref={containerRef}
-      // overflow CLIP, not hidden: a hidden box is still programmatically scrollable (focus,
-      // scrollIntoView), and scrolling it lifted the office canvas off the bottom of the view
-      className="h-full relative overflow-clip"
-      // DI mode: the office yields the docked panel's width, so it re-centres beside it
-      // and no character can sit under the panel.
-      style={{
-        width: diOfficeState && !diPanelCollapsed ? `calc(100% - ${DI_PANEL_WIDTH_PX}px)` : '100%',
-      }}
-    >
-      <OfficeCanvas
-        officeState={officeState}
-        onClick={handleClick}
-        isEditMode={editor.isEditMode}
-        editorState={editorState}
-        onEditorTileAction={editor.handleEditorTileAction}
-        onEditorEraseAction={editor.handleEditorEraseAction}
-        onEditorSelectionChange={editor.handleEditorSelectionChange}
-        onDeleteSelected={editor.handleDeleteSelected}
-        onRotateSelected={editor.handleRotateSelected}
-        onDragMove={editor.handleDragMove}
-        editorTick={editor.editorTick}
-        zoom={editor.zoom}
-        onZoomChange={handleUserZoom}
-        panRef={editor.panRef}
-        showAreas={effectiveShowAreas}
-        activeAreaLabel={activeAreaLabel}
-        centerWhenWorldFits={isDiMode}
-        onUserPan={handleUserPan}
-        renderPaused={isDiMode && largeWorld && mapOpen && !editor.isEditMode}
-        onReceptionClick={
-          isDiMode && !editor.isEditMode && !(largeWorld && mapOpen)
-            ? openReceptionFromWorld
-            : undefined
-        }
-      />
+    <DiMinimizedTrayContext.Provider value={minimizedTray}>
+      <div
+        ref={containerRef}
+        // overflow CLIP, not hidden: a hidden box is still programmatically scrollable (focus,
+        // scrollIntoView), and scrolling it lifted the office canvas off the bottom of the view
+        className="h-full relative overflow-clip"
+        // DI mode: the office yields the docked panel's width, so it re-centres beside it
+        // and no character can sit under the panel.
+        style={{
+          // ...and the strip of minimized surfaces, while it holds any, so it covers nothing of the world.
+          width: diOfficeState ? `calc(100% - ${diRightInsetPx}px)` : '100%',
+        }}
+      >
+        <OfficeCanvas
+          officeState={officeState}
+          onClick={handleClick}
+          isEditMode={editor.isEditMode}
+          editorState={editorState}
+          onEditorTileAction={editor.handleEditorTileAction}
+          onEditorEraseAction={editor.handleEditorEraseAction}
+          onEditorSelectionChange={editor.handleEditorSelectionChange}
+          onDeleteSelected={editor.handleDeleteSelected}
+          onRotateSelected={editor.handleRotateSelected}
+          onDragMove={editor.handleDragMove}
+          editorTick={editor.editorTick}
+          zoom={editor.zoom}
+          onZoomChange={handleUserZoom}
+          panRef={editor.panRef}
+          showAreas={effectiveShowAreas}
+          activeAreaLabel={activeAreaLabel}
+          centerWhenWorldFits={isDiMode}
+          onUserPan={handleUserPan}
+          renderPaused={isDiMode && largeWorld && mapShown && !editor.isEditMode}
+          onReceptionClick={
+            isDiMode && !editor.isEditMode && !(largeWorld && mapShown)
+              ? openReceptionFromWorld
+              : undefined
+          }
+        />
 
-      {!isDebugMode ? (
-        <>
-          <ZoomControls zoom={editor.zoom} onZoomChange={handleUserZoom} />
-          {isDiMode && largeWorld && (
-            <WorldViewControls
-              views={WORLD_VIEW_KINDS.filter(
-                (v) =>
-                  v !== 'deck' || frameWorldView('deck', liveLayout, footprintOf, 1, 1, 1) !== null,
-              )}
-              active={worldViewHeld && !mapOpen ? worldView : null}
-              onSelect={handleSelectWorldView}
-              mapOpen={mapOpen}
-              mapAvailable={!editor.isEditMode}
-              onToggleMap={toggleMap}
-              districts={districts.map((d) => d.label)}
-              onSelectDistrict={goToDistrict}
-              districtStatus={districtStatus}
-              offices={(getOfficeState().officeDetection?.offices ?? [])
-                .filter((o) => o.kind === 'district')
-                .map((o) => ({
-                  label: o.label,
-                  short: DI_OFFICE_DISTRICT_PATTERNS.find((p) => p.match.test(o.label))?.short ?? o.label,
-                }))}
-            />
-          )}
-          {isDiMode && largeWorld && mapOpen && !editor.isEditMode && (
-            <WorldMap
-              officeState={officeState}
-              zoom={editor.zoom}
-              panRef={editor.panRef}
-              getCameraCanvas={getCameraCanvas}
-              onJump={jumpToWorldPoint}
-              onClose={closeMap}
-            />
-          )}
-
-          {/* Vignette overlay */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{ background: 'var(--vignette)' }}
-          />
-
-          {editor.isEditMode && editor.isDirty && (
-            <EditActionBar editor={editor} editorState={editorState} />
-          )}
-
-          {showRotateHint && (
-            <div
-              className="absolute left-1/2 -translate-x-1/2 z-11 bg-accent-bright text-white text-sm py-3 px-8 rounded-none border-2 border-accent shadow-pixel pointer-events-none whitespace-nowrap"
-              style={{ top: editor.isDirty ? 64 : 8 }}
+        {!isDebugMode ? (
+          <>
+            <WorldControlsGate
+              available={worldControlsAvailable}
+              narrow={dock.worldNarrow}
+              suspended={isCityOpen}
             >
-              Rotate (R)
-            </div>
-          )}
-
-          {editor.isEditMode &&
-            (() => {
-              const selUid = editorState.selectedFurnitureUid;
-              const selColor = selUid
-                ? (officeState.getLayout().furniture.find((f) => f.uid === selUid)?.color ?? null)
-                : null;
-              return (
-                <EditorToolbar
-                  activeTool={editorState.activeTool}
-                  selectedTileType={editorState.selectedTileType}
-                  selectedFurnitureType={editorState.selectedFurnitureType}
-                  selectedFurnitureUid={selUid}
-                  selectedFurnitureColor={selColor}
-                  floorColor={editorState.floorColor}
-                  wallColor={editorState.wallColor}
-                  selectedWallSet={editorState.selectedWallSet}
-                  onToolChange={editor.handleToolChange}
-                  onTileTypeChange={editor.handleTileTypeChange}
-                  onFloorColorChange={editor.handleFloorColorChange}
-                  onWallColorChange={editor.handleWallColorChange}
-                  onWallSetChange={editor.handleWallSetChange}
-                  onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
-                  pickedFurnitureColor={editorState.pickedFurnitureColor}
-                  onPickedFurnitureColorChange={editor.handlePickedFurnitureColorChange}
-                  onFurnitureTypeChange={editor.handleFurnitureTypeChange}
-                  loadedAssets={loadedAssets}
-                  activePetTypes={officeState.getActivePetTypes()}
-                  petCount={getPetCount()}
-                  onPetToggle={editor.handlePetToggle}
-                  carpetVariant={editor.carpetVariant}
-                  carpetColor={editor.carpetColor}
-                  carpetAccentColor={editor.carpetAccentColor}
-                  onCarpetVariantChange={editor.handleCarpetVariantChange}
-                  onCarpetColorChange={editor.handleCarpetColorChange}
-                  onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
-                  areas={officeState.getLayout().areas ?? []}
-                  selectedAreaLabel={editor.selectedAreaLabel}
-                  workspaceFolders={areaFolders}
-                  areasAvailable={areasAvailable}
-                  areaMappings={areaMappings}
-                  onSelectArea={editor.handleSelectArea}
-                  onAddArea={editor.handleAddArea}
-                  onRemoveArea={editor.handleRemoveArea}
-                  onRenameArea={editor.handleRenameArea}
-                  onAreaColorChange={editor.handleAreaColorChange}
-                  onAreaMappingChange={handleAreaMappingChange}
+              <ZoomControls zoom={editor.zoom} onZoomChange={handleUserZoom} buttons={false} />
+              {isDiMode && largeWorld && mapShown && !editor.isEditMode && (
+                <WorldMap
+                  officeState={officeState}
+                  zoom={editor.zoom}
+                  panRef={editor.panRef}
+                  getCameraCanvas={getCameraCanvas}
+                  onJump={jumpToWorldPoint}
+                  onClose={closeMap}
                 />
-              );
-            })()}
+              )}
+            </WorldControlsGate>
 
-          {isDiMode && (
-            <ReceptionTarget
+            {/* Vignette overlay */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ background: 'var(--vignette)' }}
+            />
+
+            <WorldControlsGate
+              available={worldControlsAvailable}
+              narrow={dock.worldNarrow}
+              suspended={isCityOpen}
+            >
+              {editor.isEditMode && editor.isDirty && (
+                <EditActionBar editor={editor} editorState={editorState} />
+              )}
+
+              {showRotateHint && (
+                <div
+                  className="absolute left-1/2 -translate-x-1/2 z-11 bg-accent-bright text-white text-sm py-3 px-8 rounded-none border-2 border-accent shadow-pixel pointer-events-none whitespace-nowrap"
+                  style={{ top: editor.isDirty ? 64 : 8 }}
+                >
+                  Rotate (R)
+                </div>
+              )}
+
+              {editor.isEditMode &&
+                (() => {
+                  const selUid = editorState.selectedFurnitureUid;
+                  const selColor = selUid
+                    ? (officeState.getLayout().furniture.find((f) => f.uid === selUid)?.color ??
+                      null)
+                    : null;
+                  return (
+                    <EditorToolbar
+                      activeTool={editorState.activeTool}
+                      selectedTileType={editorState.selectedTileType}
+                      selectedFurnitureType={editorState.selectedFurnitureType}
+                      selectedFurnitureUid={selUid}
+                      selectedFurnitureColor={selColor}
+                      floorColor={editorState.floorColor}
+                      wallColor={editorState.wallColor}
+                      selectedWallSet={editorState.selectedWallSet}
+                      onToolChange={editor.handleToolChange}
+                      onTileTypeChange={editor.handleTileTypeChange}
+                      onFloorColorChange={editor.handleFloorColorChange}
+                      onWallColorChange={editor.handleWallColorChange}
+                      onWallSetChange={editor.handleWallSetChange}
+                      onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
+                      pickedFurnitureColor={editorState.pickedFurnitureColor}
+                      onPickedFurnitureColorChange={editor.handlePickedFurnitureColorChange}
+                      onFurnitureTypeChange={editor.handleFurnitureTypeChange}
+                      loadedAssets={loadedAssets}
+                      activePetTypes={officeState.getActivePetTypes()}
+                      petCount={getPetCount()}
+                      onPetToggle={editor.handlePetToggle}
+                      carpetVariant={editor.carpetVariant}
+                      carpetColor={editor.carpetColor}
+                      carpetAccentColor={editor.carpetAccentColor}
+                      onCarpetVariantChange={editor.handleCarpetVariantChange}
+                      onCarpetColorChange={editor.handleCarpetColorChange}
+                      onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
+                      areas={officeState.getLayout().areas ?? []}
+                      selectedAreaLabel={editor.selectedAreaLabel}
+                      workspaceFolders={areaFolders}
+                      areasAvailable={areasAvailable}
+                      areaMappings={areaMappings}
+                      onSelectArea={editor.handleSelectArea}
+                      onAddArea={editor.handleAddArea}
+                      onRemoveArea={editor.handleRemoveArea}
+                      onRenameArea={editor.handleRenameArea}
+                      onAreaColorChange={editor.handleAreaColorChange}
+                      onAreaMappingChange={handleAreaMappingChange}
+                    />
+                  );
+                })()}
+
+              {isDiMode && (
+                <ReceptionTarget
+                  officeState={officeState}
+                  containerRef={containerRef}
+                  zoom={editor.zoom}
+                  panRef={editor.panRef}
+                  buttonRef={receptionTargetRef}
+                  onOpen={(opener) => receptionInbox.openFrom(opener)}
+                  // never over (or through) the Map, which is opaque and owns the screen while open
+                  hidden={editor.isEditMode || (largeWorld && mapShown)}
+                />
+              )}
+            </WorldControlsGate>
+
+            <ToolOverlay
               officeState={officeState}
+              agents={agents}
+              agentTools={agentTools}
+              subagentTools={subagentTools}
+              subagentCharacters={subagentCharacters}
               containerRef={containerRef}
               zoom={editor.zoom}
               panRef={editor.panRef}
-              buttonRef={receptionTargetRef}
-              onOpen={(opener) => receptionInbox.openFrom(opener)}
-              // never over (or through) the Map, which is opaque and owns the screen while open
-              hidden={editor.isEditMode || (largeWorld && mapOpen)}
+              onCloseAgent={handleCloseAgent}
+              alwaysShowOverlay={alwaysShowOverlay}
+              // DI mode: every character gets a DI label (unconfirmed when no office state lists
+              // it) and no Pixel controls; undefined = ordinary Pixel.
+              diLabelFor={
+                diOfficeState
+                  ? (id) =>
+                      `${diOfficeState.fixtureMode ? 'FIXTURE · ' : ''}${diCharacterLabel(diOfficeState, id)}`
+                  : undefined
+              }
+              diTitleFor={diOfficeState ? (id) => diCharacterTitle(diOfficeState, id) : undefined}
             />
-          )}
-
-          <ToolOverlay
-            officeState={officeState}
+            {diOfficeState && (
+              <DiOfficePanel
+                state={diOfficeState}
+                officeState={officeState}
+                collapsed={diPanelCollapsed}
+                onCollapsedChange={setDiPanelCollapsed}
+                widthPx={dock.panelPx}
+                fixtureNote={diOfficeState.fixtureMode === true && dock.fixtureWords === 'in-panel'}
+                announced={diAnnounced}
+                evidence={diEvidence}
+                review={reviewAccess}
+                mission={missionAccess}
+                receptionInbox={receptionInbox}
+              />
+            )}
+            {diOfficeState && (
+              <DiMissionRequest
+                control={mission}
+                panelCollapsed={diPanelCollapsed}
+                rightInsetPx={diRightInsetPx}
+                returnFocusTo={missionOpener}
+                fixture={isFixturePreview}
+              />
+            )}
+            <DiCodeReview
+              session={review.session}
+              onClose={review.close}
+              onRefresh={review.refresh}
+              onSelect={review.select}
+              returnFocusTo={reviewOpener}
+            />
+          </>
+        ) : (
+          <DebugView
             agents={agents}
+            selectedAgent={selectedAgent}
             agentTools={agentTools}
+            agentStatuses={agentStatuses}
             subagentTools={subagentTools}
-            subagentCharacters={subagentCharacters}
-            containerRef={containerRef}
-            zoom={editor.zoom}
-            panRef={editor.panRef}
-            onCloseAgent={handleCloseAgent}
-            alwaysShowOverlay={alwaysShowOverlay}
-            // DI mode: every character gets a DI label (unconfirmed when no office state lists
-            // it) and no Pixel controls; undefined = ordinary Pixel.
-            diLabelFor={
-              diOfficeState
-                ? (id) =>
-                    `${diOfficeState.fixtureMode ? 'FIXTURE · ' : ''}${diCharacterLabel(diOfficeState, id)}`
-                : undefined
-            }
-            diTitleFor={diOfficeState ? (id) => diCharacterTitle(diOfficeState, id) : undefined}
+            officeState={officeState}
+            onSelectAgent={handleSelectAgent}
           />
-          {diOfficeState?.fixtureMode && (
-            // EXPLICIT fixture preview only: fixed, above every overlay (Map included), never
-            // inside the panel, so it cannot scroll away or be hidden with it. It sits at the bottom
-            // of the WORLD column, narrower than the world's guaranteed width, so it covers no
-            // heading and no control of any panel or workspace (it is preview furniture and must not
-            // shape the product's layout). Where a workspace covers the whole window it hides this
-            // one, and carries its own FIXTURE label.
-            <div
-              className="di-fixture-banner fixed left-[12px] bottom-[104px] z-50 max-w-[220px] pixel-panel px-8 py-4 text-sm text-warning pointer-events-none select-none"
-              role="status"
-              data-testid="di-fixture-banner"
-            >
-              {DI_FIXTURE_BANNER}
-            </div>
-          )}
-          {diOfficeState && <AmbientLegend officeState={officeState} />}
-          {diOfficeState && (
-            <DiOfficePanel
-              state={diOfficeState}
-              officeState={officeState}
-              collapsed={diPanelCollapsed}
-              onCollapsedChange={setDiPanelCollapsed}
-              announced={diAnnounced}
-              evidence={diEvidence}
-              review={reviewAccess}
-              mission={missionAccess}
-              receptionInbox={receptionInbox}
-            />
-          )}
-          {diOfficeState && (
-            <DiMissionRequest
-              control={mission}
-              panelCollapsed={diPanelCollapsed}
-              returnFocusTo={missionOpener}
-              fixture={isFixturePreview}
-            />
-          )}
-          <DiCodeReview
-            session={review.session}
-            onClose={review.close}
-            onRefresh={review.refresh}
-            onSelect={review.select}
-            returnFocusTo={reviewOpener}
-          />
-        </>
-      ) : (
-        <DebugView
-          agents={agents}
-          selectedAgent={selectedAgent}
-          agentTools={agentTools}
-          agentStatuses={agentStatuses}
-          subagentTools={subagentTools}
-          officeState={officeState}
-          onSelectAgent={handleSelectAgent}
-        />
-      )}
+        )}
 
-      {/* Hooks first-run tooltip. Gated on hooksInstalled (the hooksStatus
+        {/* Hooks first-run tooltip. Gated on hooksInstalled (the hooksStatus
           message), NOT the hooksEnabled preference: hooksEnabled defaults true
           while first-run consent is still pending, and announcing "Instant
           Detection Active" before anything is installed would be a lie. */}
-      {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
-        <Tooltip
-          title="Instant Detection Active"
-          position="top-right"
-          onDismiss={() => {
-            setHooksTooltipDismissed(true);
-            transport.send({ type: 'setHooksInfoShown' });
-          }}
+        <WorldControlsGate
+          available={worldControlsAvailable}
+          narrow={dock.worldNarrow}
+          suspended={isCityOpen}
         >
-          <span className="text-sm text-text leading-none">
-            Your agents now respond in real-time.{' '}
-            <span
-              className="text-accent cursor-pointer underline"
-              onClick={() => {
-                setIsHooksInfoOpen(true);
+          {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
+            <Tooltip
+              title="Instant Detection Active"
+              position="top-right"
+              onDismiss={() => {
                 setHooksTooltipDismissed(true);
                 transport.send({ type: 'setHooksInfoShown' });
               }}
             >
-              View more
-            </span>
-          </span>
-        </Tooltip>
-      )}
+              <span className="text-sm text-text leading-none">
+                Your agents now respond in real-time.{' '}
+                <span
+                  className="text-accent cursor-pointer underline"
+                  onClick={() => {
+                    setIsHooksInfoOpen(true);
+                    setHooksTooltipDismissed(true);
+                    transport.send({ type: 'setHooksInfoShown' });
+                  }}
+                >
+                  View more
+                </span>
+              </span>
+            </Tooltip>
+          )}
+        </WorldControlsGate>
 
-      {/* Hooks info modal */}
-      <Modal
-        isOpen={isHooksInfoOpen}
-        onClose={() => setIsHooksInfoOpen(false)}
-        title="Instant Detection is ON"
-        zIndex={52}
-      >
-        <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
-          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
-          <ul className="mb-8 pl-18 list-disc m-0">
-            <li className="text-sm mb-2">Permission prompts appear instantly</li>
-            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
-            <li className="text-sm mb-2">Sound notifications play immediately</li>
-          </ul>
-          <p className="mb-12 text-text-muted">
-            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-            whenever something happens in your Claude sessions.
-          </p>
-          <div className="text-center">
-            <button
-              onClick={() => setIsHooksInfoOpen(false)}
-              className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
-            >
-              Got it
-            </button>
+        {/* Hooks info modal */}
+        <Modal
+          isOpen={isHooksInfoOpen}
+          onClose={() => setIsHooksInfoOpen(false)}
+          title="Instant Detection is ON"
+          zIndex={52}
+        >
+          <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
+            <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
+            <ul className="mb-8 pl-18 list-disc m-0">
+              <li className="text-sm mb-2">Permission prompts appear instantly</li>
+              <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
+              <li className="text-sm mb-2">Sound notifications play immediately</li>
+            </ul>
+            <p className="mb-12 text-text-muted">
+              This works through Claude Code Hooks, small event listeners that notify Pixel Agents
+              whenever something happens in your Claude sessions.
+            </p>
+            <div className="text-center">
+              <button
+                onClick={() => setIsHooksInfoOpen(false)}
+                className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
+              >
+                Got it
+              </button>
+            </div>
+            <p className="mt-8 text-xs text-text-muted text-center">
+              To disable, go to Settings {'>'} Instant Detection
+            </p>
           </div>
-          <p className="mt-8 text-xs text-text-muted text-center">
-            To disable, go to Settings {'>'} Instant Detection
-          </p>
-        </div>
-      </Modal>
+        </Modal>
 
-      <BottomToolbar
-        isEditMode={editor.isEditMode}
-        onOpenClaude={editor.handleOpenClaude}
-        onToggleEditMode={editor.handleToggleEditMode}
-        isSettingsOpen={isSettingsOpen}
-        onToggleSettings={() => setIsSettingsOpen((v) => !v)}
-        workspaceFolders={workspaceFolders}
-        city={isDiMode ? { open: isCityOpen, onToggle: () => setIsCityOpen((v) => !v) } : undefined}
-      />
-      {isDiMode && isCityOpen && (
-        <CityControls
-          presentation={city.presentation}
-          onChoose={city.choose}
-          onAtmosphere={city.chooseAtmosphere}
-          atmosphere={() => officeState.cityAtmosphere()}
-          onClose={() => setIsCityOpen(false)}
-          lightingStatus={() => officeState.city.lightingStatus(Date.now())}
-          reducedMotion={officeState.reducedMotion}
-        />
-      )}
-
-      <VersionIndicator
-        currentVersion={extensionVersion}
-        lastSeenVersion={lastSeenVersion}
-        onDismiss={handleWhatsNewDismiss}
-        onOpenChangelog={handleOpenChangelog}
-      />
-
-      <ConnectionIndicator reducedMotion={officeState.reducedMotion} />
-
-      <ChangelogModal
-        isOpen={isChangelogOpen}
-        onClose={() => setIsChangelogOpen(false)}
-        currentVersion={extensionVersion}
-      />
-
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        isDebugMode={isDebugMode}
-        onToggleDebugMode={handleToggleDebugMode}
-        alwaysShowOverlay={alwaysShowOverlay}
-        onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
-        ghostHeadlessAgents={ghostHeadlessAgents}
-        onToggleGhostHeadlessAgents={handleToggleGhostHeadlessAgents}
-        externalAssetDirectories={externalAssetDirectories}
-        watchAllSessions={watchAllSessions}
-        onToggleWatchAllSessions={() => {
-          const newVal = !watchAllSessions;
-          setWatchAllSessions(newVal);
-          transport.send({ type: 'setWatchAllSessions', enabled: newVal });
-        }}
-        hooksInstalled={claudeHooksInstalled}
-        onToggleHooksEnabled={() => {
-          // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
-          // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
-          // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
-          // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
-          // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
-          const [rowProviderId] =
-            Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
-          if (rowProviderId !== undefined) {
-            transport.send({
-              type: 'setHooksEnabled',
-              providerId: rowProviderId,
-              enabled: !claudeHooksInstalled,
-            });
+        {/*
+          THE WORLD'S LEFT STRIP (WorldLeftRail), in ONE flow so nothing in it can paint over anything else: ROW 2 is the bottom-left column (WorldStack: toolbar, the
+          fixture label, the ambient legend), as tall as it is; ROW 1 is what it leaves, holding the camera-view controls (which scroll inside it) and the City popover
+          (over them, as it always was). The label is NOT a floating banner any more, and (candidate 7) NOT in the scrolling column either: it is PINNED in the strip's footer, outside the strip that scrolls (WorldLeftRail), so no scroll position can carry it out of the window; it shows in an EXPLICIT fixture preview where
+          the world has room for the controls (or the office is minimized); where the open office leaves the world no room the same words are INSIDE the panel
+          (dock.fixtureWords). Only where the request workspace COVERS the window AND IS SHOWING does it carry its own label while this one stands down
+          (diMissionRequest.css: the workspace covering and not hidden). A workspace that is showing but NOT covering (docked beside the office, as in a wide
+          window) does not trigger it, and both labels are drawn. The label is outside the controls gate so it still shows where the controls are removed
+          (a minimized office in a window too narrow for them).
+        */}
+        <WorldLeftRail
+          onFooter={setRailFooter}
+          notice={
+            diOfficeState?.fixtureMode && dock.fixtureWords === 'floating' ? (
+              <div
+                className="di-fixture-banner shrink-0 max-w-[220px] pixel-panel px-8 py-4 text-sm text-warning pointer-events-none select-none"
+                role="status"
+                data-testid="di-fixture-banner"
+              >
+                {DI_FIXTURE_BANNER}
+              </div>
+            ) : null
           }
-        }}
-        showAreas={showAreas}
-        onToggleShowAreas={onToggleShowAreas}
-        showAreasAvailable={areasAvailable}
-        onExportLayout={handleExportLayout}
-        onImportLayout={handleImportLayout}
-        onExportAmbient={handleExportAmbient}
-        onPasteImport={setPasteKind}
-        diMode={diOfficeState !== null}
-      />
-
-      <PasteImportModal
-        kind={pasteKind}
-        maxBytes={pasteKind === 'ambient' ? AMBIENT_SAVE_MAX_BYTES : LAYOUT_MAX_FILE_BYTES}
-        onImport={handlePasteImport}
-        onClose={() => setPasteKind(null)}
-      />
-
-      {showMigrationNotice && (
-        <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
-      )}
-
-      {intro && (
-        <IntroBubble
-          officeState={officeState}
-          headline={intro.headline}
-          disclosure={intro.disclosure}
-          containerRef={containerRef}
-          zoom={editor.zoom}
-          panRef={editor.panRef}
-          installFailed={installFailed}
-          installPending={installPending}
-          onChoice={handleConsentChoice}
-          onClose={handleIntroClose}
-          escapeSuppressed={
-            isSettingsOpen ||
-            isChangelogOpen ||
-            isHooksInfoOpen ||
-            showMigrationNotice ||
-            editor.isEditMode
+          top={
+            !isDebugMode ? (
+              <WorldControlsGate
+                available={worldControlsAvailable}
+                narrow={dock.worldNarrow}
+                suspended={isCityOpen}
+              >
+                <ZoomButtons
+                  zoom={editor.zoom}
+                  onZoomChange={handleUserZoom}
+                  className="ml-8 flex w-fit flex-col gap-4 pointer-events-auto"
+                />
+                {isDiMode && largeWorld && (
+                  <WorldViewControls
+                    views={WORLD_VIEW_KINDS.filter(
+                      (v) =>
+                        v !== 'deck' ||
+                        frameWorldView('deck', liveLayout, footprintOf, 1, 1, 1) !== null,
+                    )}
+                    active={worldViewHeld && !mapOpen ? worldView : null}
+                    onSelect={handleSelectWorldView}
+                    mapOpen={mapOpen}
+                    mapAvailable={!editor.isEditMode}
+                    onToggleMap={toggleMap}
+                    districts={districts.map((d) => d.label)}
+                    onSelectDistrict={goToDistrict}
+                    districtStatus={districtStatus}
+                    offices={(getOfficeState().officeDetection?.offices ?? [])
+                      .filter((o) => o.kind === 'district')
+                      .map((o) => ({
+                        label: o.label,
+                        short: DI_OFFICE_DISTRICT_PATTERNS.find((p) => p.match.test(o.label))?.short ?? o.label,
+                      }))}
+                  />
+                )}
+              </WorldControlsGate>
+            ) : null
           }
+          popover={
+            isDiMode && isCityOpen ? (
+              <WorldControlsGate available={worldControlsAvailable} narrow={dock.worldNarrow}>
+                <CityControls
+                  presentation={city.presentation}
+                  onChoose={city.choose}
+                  onAtmosphere={city.chooseAtmosphere}
+                  atmosphere={() => officeState.cityAtmosphere()}
+                  onClose={() => setIsCityOpen(false)}
+                  lightingStatus={() => officeState.city.lightingStatus(Date.now())}
+                  reducedMotion={officeState.reducedMotion}
+                />
+              </WorldControlsGate>
+            ) : null
+          }
+        >
+          <WorldStack>
+            <WorldControlsGate available={worldControlsAvailable} narrow={dock.worldNarrow}>
+              <BottomToolbar
+                isEditMode={editor.isEditMode}
+                onOpenClaude={editor.handleOpenClaude}
+                onToggleEditMode={editor.handleToggleEditMode}
+                isSettingsOpen={isSettingsOpen}
+                onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+                workspaceFolders={workspaceFolders}
+                city={
+                  isDiMode
+                    ? { open: isCityOpen, onToggle: () => setIsCityOpen((v) => !v) }
+                    : undefined
+                }
+              />
+              {diOfficeState && <AmbientLegend officeState={officeState} />}
+            </WorldControlsGate>
+          </WorldStack>
+        </WorldLeftRail>
+        {/* the update notice can sit under the City popover: suspended (inert, still drawn) while it is open */}
+        <WorldControlsGate
+          available={worldControlsAvailable}
+          narrow={dock.worldNarrow}
+          suspended={isCityOpen}
+        >
+          <VersionIndicator
+            currentVersion={extensionVersion}
+            lastSeenVersion={lastSeenVersion}
+            onDismiss={handleWhatsNewDismiss}
+            onOpenChangelog={handleOpenChangelog}
+            labelHost={dock.worldNarrow && worldControlsAvailable ? railFooter : null}
+            suspended={isCityOpen}
+          />
+
+          <ConnectionIndicator reducedMotion={officeState.reducedMotion} />
+        </WorldControlsGate>
+
+        <ChangelogModal
+          isOpen={isChangelogOpen}
+          onClose={() => setIsChangelogOpen(false)}
+          currentVersion={extensionVersion}
         />
-      )}
-    </div>
+
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          isDebugMode={isDebugMode}
+          onToggleDebugMode={handleToggleDebugMode}
+          alwaysShowOverlay={alwaysShowOverlay}
+          onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
+          ghostHeadlessAgents={ghostHeadlessAgents}
+          onToggleGhostHeadlessAgents={handleToggleGhostHeadlessAgents}
+          externalAssetDirectories={externalAssetDirectories}
+          watchAllSessions={watchAllSessions}
+          onToggleWatchAllSessions={() => {
+            const newVal = !watchAllSessions;
+            setWatchAllSessions(newVal);
+            transport.send({ type: 'setWatchAllSessions', enabled: newVal });
+          }}
+          hooksInstalled={claudeHooksInstalled}
+          onToggleHooksEnabled={() => {
+            // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
+            // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
+            // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
+            // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
+            // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
+            const [rowProviderId] =
+              Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
+            if (rowProviderId !== undefined) {
+              transport.send({
+                type: 'setHooksEnabled',
+                providerId: rowProviderId,
+                enabled: !claudeHooksInstalled,
+              });
+            }
+          }}
+          showAreas={showAreas}
+          onToggleShowAreas={onToggleShowAreas}
+          showAreasAvailable={areasAvailable}
+          onExportLayout={handleExportLayout}
+          onImportLayout={handleImportLayout}
+          onExportAmbient={handleExportAmbient}
+          onPasteImport={setPasteKind}
+          diMode={diOfficeState !== null}
+        />
+
+        <PasteImportModal
+          kind={pasteKind}
+          maxBytes={pasteKind === 'ambient' ? AMBIENT_SAVE_MAX_BYTES : LAYOUT_MAX_FILE_BYTES}
+          onImport={handlePasteImport}
+          onClose={() => setPasteKind(null)}
+        />
+
+        {showMigrationNotice && (
+          <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
+        )}
+
+        {intro && (
+          <IntroBubble
+            officeState={officeState}
+            headline={intro.headline}
+            disclosure={intro.disclosure}
+            containerRef={containerRef}
+            zoom={editor.zoom}
+            panRef={editor.panRef}
+            installFailed={installFailed}
+            installPending={installPending}
+            onChoice={handleConsentChoice}
+            onClose={handleIntroClose}
+            escapeSuppressed={
+              isSettingsOpen ||
+              isChangelogOpen ||
+              isHooksInfoOpen ||
+              showMigrationNotice ||
+              editor.isEditMode
+            }
+          />
+        )}
+        {diOfficeState && (
+          <div
+            ref={setMinimizedTray}
+            className="di-op-theme di-min-tray"
+            role="group"
+            aria-label="Minimized panels"
+            data-testid="di-minimized-tray"
+            style={{
+              width: DI_MINIMIZED_STRIP_WIDTH_PX,
+              right: dock.trayRightPx,
+            }}
+          />
+        )}
+      </div>
+    </DiMinimizedTrayContext.Provider>
   );
 }
 

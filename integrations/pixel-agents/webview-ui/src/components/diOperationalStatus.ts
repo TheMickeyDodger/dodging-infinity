@@ -293,7 +293,7 @@ export function memberTerminalNotes(mission: DiMission): string[] {
     .filter((m) => m.activity === 'blocked' && !isConfirmedLive(m))
     .map(
       (m) =>
-        `${m.logical}: its terminal last reported blocked (the terminal's own report; last known, not current — ${
+        `${m.logical}: its terminal last reported blocked (the terminal's own report; last known, not current; ${
           m.live ? `identity ${m.classification}` : 'not live'
         }).`,
     );
@@ -372,5 +372,5 @@ export function teamRoles(mission: DiMission): string[] {
 export function missionLabel(mission: DiMission): string {
   return missionObjective(mission).kind === 'goal'
     ? missionHeadline(mission)
-    : `No goal reported — ${diZoneLabel(mission)}`;
+    : `No goal reported: ${diZoneLabel(mission)}`;
 }

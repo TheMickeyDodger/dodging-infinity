@@ -1,6 +1,6 @@
 import './diOperationalPanel.css';
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type {
@@ -25,9 +25,19 @@ import {
 } from './diCodeReviewModel.js';
 import type { DiEvidenceAccess } from './DiEvidenceLibrary.js';
 import { DiEvidenceLibrary } from './DiEvidenceLibrary.js';
+import type { DiKeptView } from './diMinimize.js';
+import {
+  focusExposed,
+  keepView,
+  restoreFocus,
+  restoreScroll,
+  useLastContentFocus,
+} from './diMinimize.js';
+import { DiMinimizedChip } from './DiMinimizedTray.js';
 import type { DiMissionRequestAccess } from './DiMissionRequestEntry.js';
 import { DiMissionRequestEntry } from './DiMissionRequestEntry.js';
 import { requestsUnavailable } from './diMissionRequestModel.js';
+import { DiMissionStateSamples } from './DiMissionStateSamples.js';
 import { useDiModal } from './diModal.js';
 import type { DiFreshness, DiRecord, DiRecordTarget, DiSelectionMemory } from './diNavigation.js';
 import {
@@ -48,6 +58,7 @@ import {
   rootLabel,
 } from './diNavigation.js';
 import {
+  DI_FIXTURE_BANNER,
   DI_UNCONFIRMED_LABEL,
   diZoneLabel,
   filterMissions,
@@ -102,6 +113,7 @@ import { DiReceptionInbox } from './DiReceptionInbox.js';
 import type { DiReceptionInboxAccess } from './diReceptionInboxState.js';
 import { attentionLine, buildInbox, panelSourceOf } from './diReceptionItems.js';
 import { useRovingFocus } from './diRovingFocus.js';
+import { useStickyScrollPad } from './diStickyPad.js';
 
 interface DiOfficePanelProps {
   state: DiOfficeState;
@@ -109,6 +121,16 @@ interface DiOfficePanelProps {
   /** Owned by App, which narrows the office canvas while the panel is docked open. */
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  /**
+   * The panel's width while open (App owns the docked layout, diPanelLayout.ts: its design width, or what the window leaves it
+   * beside the strip, so its content is never pushed off the window). Absent: the design width.
+   */
+  widthPx?: number;
+  /**
+   * Show the fixture preview's words INSIDE the panel (App decides, diPanelLayout.ts): used where the world has no room for the floating
+   * banner with the panel open, so fixture labelling stays visible and nothing floats over the panel. Absent: not shown here.
+   */
+  fixtureNote?: boolean;
   /** Server-announced characters no office snapshot has confirmed: reported, never drawn. */
   announced?: ReadonlyArray<{ id: number; missionRef: string | null }>;
   /** item 2: the evidence library's content seam (absent: the library lists, never reads). */
@@ -335,7 +357,7 @@ export function SelectedRuntimeAgent({
       <Row label="terminal state">
         {agent.activity === null
           ? 'not recorded'
-          : `${formatActivity(agent.activity)} — the terminal's own report; not task progress, completion, review, verification or delivery`}
+          : `${formatActivity(agent.activity)}: the terminal's own report; not task progress, completion, review, verification or delivery`}
       </Row>
       <UnreportedFacts
         model={RUNTIME_UNREPORTED}
@@ -377,7 +399,7 @@ export function SelectedUnverified({
       </div>
       <UnverifiedObserved agent={agent} provider={provider} freshness={freshness} />
       <div data-testid="di-unverified-not-established">
-        Not established: its link to the recorded role binding, and so any role or task membership —{' '}
+        Not established: its link to the recorded role binding, and so any role or task membership.{' '}
         {plainIdentityReason(agent.identityReason)}.
       </div>
       <div className="text-text-muted">
@@ -863,7 +885,7 @@ function MemberDetail({
         {mission.v2.projected ? ` · ${formatMemberChain(member)}` : ''}
       </Row>
       <Row label="terminal state">
-        {formatActivity(member.activity)} — the terminal&apos;s own report; not task progress,
+        {formatActivity(member.activity)}: the terminal&apos;s own report; not task progress,
         completion, review, verification or delivery
       </Row>
       <Row label="Mission completion (reported)">{outcomes.completion}</Row>
@@ -1040,7 +1062,7 @@ export function HerdrTaskNote({ herdrTask }: { herdrTask: DiHerdrTask }) {
   return (
     <div className="flex flex-col gap-1" data-testid="di-herdr-task">
       <div>
-        Herdr task — a plain Herdr task record, not a Mission Core Mission. Mission Core facts
+        Herdr task: a plain Herdr task record, not a Mission Core Mission. Mission Core facts
         (proposal, authorization, revision, proof) are not supported for it.
       </div>
       <details>
@@ -1111,7 +1133,20 @@ function MissionCard({
     const region = card?.closest<HTMLElement>('[data-testid="di-op-main"]');
     if (!card || !region) return;
     let height = region.clientHeight;
+    let hidden = false;
     const observer = new ResizeObserver(() => {
+      // A minimized panel is hidden (height 0), and its first height after that is a RESTORE, not a change of
+      // the list's own height: restoring gives back the scroll position the person left (AC3) instead of
+      // jumping to this card.
+      if (region.clientHeight === 0) {
+        hidden = true;
+        return;
+      }
+      if (hidden) {
+        hidden = false;
+        height = region.clientHeight;
+        return;
+      }
       if (region.clientHeight === height) return;
       height = region.clientHeight;
       card.scrollIntoView({ block: 'start' });
@@ -1938,8 +1973,8 @@ function OfficeInspector({
                 {formatLinkedChildCoverage(state.coverage).text}
               </Row>
               <Row label="not reported by any supported source">
-                model requested / configured, model confirmed running, usage, cost, progress and ETA
-                — {RUNTIME_UNREPORTED} for every agent here
+                model requested / configured, model confirmed running, usage, cost, progress and
+                ETA: {RUNTIME_UNREPORTED} for every agent here
               </Row>
               <Row label="query contract">
                 version {state.contractVersion}
@@ -2052,7 +2087,7 @@ function MissionV2Blocks({ v2 }: { v2: DiMissionV2 }) {
         <div className="pl-8 break-all text-text-muted" data-testid="di-provenance">
           provenance:{' '}
           {p.state === 'observed'
-            ? `${p.recordSource ?? 'source not recorded'} · collection ${p.collectionStatus ?? 'not recorded'} · position ${p.position ?? '—'} (head ${p.headPosition ?? '—'}, cursor ${p.cursorPosition ?? '—'}) · drift ${formatBoundedList(p.drift, p.driftTotal)}`
+            ? `${p.recordSource ?? 'source not recorded'} · collection ${p.collectionStatus ?? 'not recorded'} · position ${p.position ?? 'not recorded'} (head ${p.headPosition ?? 'not recorded'}, cursor ${p.cursorPosition ?? 'not recorded'}) · drift ${formatBoundedList(p.drift, p.driftTotal)}`
             : `${p.state}${p.reason ? ` (${p.reason})` : ''}`}
         </div>
       </details>
@@ -2061,8 +2096,9 @@ function MissionV2Blocks({ v2 }: { v2: DiMissionV2 }) {
         {preamble.admitted ? (
           <div className="pl-8 flex flex-col gap-1">
             <div>
-              round {review.round ?? '—'} · reviewer {review.reviewerLogical ?? '—'} (
-              {review.reviewerAgent ?? '—'}) · protocol token {review.protocolToken ?? '—'}
+              round {review.round ?? 'not recorded'} · reviewer{' '}
+              {review.reviewerLogical ?? 'not recorded'} ({review.reviewerAgent ?? 'not recorded'})
+              · protocol token {review.protocolToken ?? 'not recorded'}
             </div>
             <div>gate: {preamble.gate}</div>
             <div>verdict: {preamble.verdict}</div>
@@ -2289,7 +2325,7 @@ function FindSection({
               onKeyDown={rows.onKeyDown(i, outcome.results.length)}
               title="Select: view only"
             >
-              {KIND_LABEL[r.target.kind]}: {r.title} <span className="di-op-sub">— {r.detail}</span>
+              {KIND_LABEL[r.target.kind]}: {r.title} <span className="di-op-sub">· {r.detail}</span>
             </ListRow>
           ))}
         </ul>
@@ -2303,6 +2339,8 @@ function DiOfficePanelBody({
   officeState,
   collapsed,
   onCollapsedChange,
+  widthPx,
+  fixtureNote = false,
   announced = [],
   evidence = null,
   review = null,
@@ -2409,6 +2447,40 @@ function DiOfficePanelBody({
     afterExpand.current = action;
     onCollapsedChange(false);
   };
+  /**
+   * AC3: minimize KEEPS the panel. It stays mounted and is only hidden, so its selection, filters, typed text
+   * and open disclosures are kept as they were; what hiding loses (each region's scroll) is taken when it
+   * minimizes and given back when it is restored. Focus moves to the control that restores the panel, and on
+   * restore comes back to the last panel control that had it (never the toggles; diMinimize.ts), falling back to
+   * Minimize; a deferred action, above, decides for itself.
+   */
+  const asideRef = useRef<HTMLElement>(null);
+  // the sticky fixture note covers the top of the panel's scrollport: its height is reserved as scroll-padding so a focused control is never scrolled under it (diStickyPad.ts)
+  const noteRef = useRef<HTMLDivElement>(null);
+  useStickyScrollPad(noteRef, asideRef, fixtureNote);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+  const minimizeRef = useRef<HTMLButtonElement>(null);
+  const keptView = useRef<DiKeptView | null>(null);
+  const lastContentFocus = useLastContentFocus(asideRef, minimizeRef);
+  const minimizePanel = () => {
+    if (asideRef.current) keptView.current = keepView(asideRef.current, lastContentFocus.current);
+    onCollapsedChange(true);
+  };
+  const shownCollapsed = useRef(collapsed);
+  useLayoutEffect(() => {
+    if (shownCollapsed.current === collapsed) return;
+    shownCollapsed.current = collapsed;
+    if (collapsed) {
+      const active = document.activeElement;
+      if (active === null || active === document.body || asideRef.current?.contains(active))
+        focusExposed(restoreRef.current);
+      return;
+    }
+    const kept = keptView.current;
+    keptView.current = null;
+    restoreScroll(kept);
+    if (afterExpand.current === null) restoreFocus(kept, minimizeRef.current, asideRef.current);
+  });
   /** VIEW-ONLY navigation: moves the office selection and camera, nothing else. */
   const navigateTo = (id: number | null) => {
     if (id === null || !officeState.characters.has(id)) return;
@@ -2548,26 +2620,35 @@ function DiOfficePanelBody({
             }}
             onClose={receptionInbox.close}
             returnFocusTo={receptionInbox.returnFocusTo}
+            minimized={receptionInbox.minimized}
+            onMinimize={receptionInbox.minimize}
+            onRestore={receptionInbox.restore}
           />,
           document.body,
         )
       : null;
 
-  if (collapsed) {
-    return (
-      <>
-        <button
-          type="button"
-          className={`di-op-theme di-op-collapsed ${DI_FOCUS_RING}`}
-          onClick={() => onCollapsedChange(false)}
-          data-testid="di-office-panel-collapsed"
-        >
-          DI office: <LiveBadge live={state.live} reason={state.notLiveReason} /> ▸ show
-        </button>
-        {receptionDialog}
-      </>
-    );
-  }
+  const restoreControl = collapsed ? (
+    <DiMinimizedChip>
+      <button
+        type="button"
+        ref={restoreRef}
+        className={`di-op-theme di-op-collapsed ${DI_FOCUS_RING}`}
+        onClick={() => onCollapsedChange(false)}
+        title="Restore the office panel as you left it"
+        aria-label={`Restore office panel, ${state.live ? 'live' : 'not live'}${state.fixtureMode ? ', fixture data' : ''}`}
+        data-testid="di-office-panel-collapsed"
+        data-focus-at-hide={keptView.current?.focusAtHide}
+        data-focus-return={keptView.current?.focusReturn}
+      >
+        <span aria-hidden="true">◂</span>{' '}
+        <span className="di-op-collapsed-label">Restore office panel</span>{' '}
+        <span className="di-op-collapsed-state">
+          <LiveBadge live={state.live} reason={state.notLiveReason} />
+        </span>
+      </button>
+    </DiMinimizedChip>
+  ) : null;
 
   /** The ONE attention entry's words (null: this office provides no reception desk). */
   const inboxModel = buildInbox(
@@ -2606,417 +2687,448 @@ function DiOfficePanelBody({
   };
 
   return (
-    <aside
-      // feature13: a calm operational list (diOperationalPanel.css). The Missions lead; the
-      // ancillary entries above them are compact; detail is in the full-size inspector. The panel
-      // still scrolls when a short window cannot hold it, so everything stays REACHABLE.
-      className={`di-op di-op-theme${
-        keyed?.target.kind === 'member' ||
-        keyed?.target.kind === 'runtime' ||
-        keyed?.target.kind === 'unverified'
-          ? ' di-op-has-selection'
-          : ''
-      }`}
-      style={{ width: DI_PANEL_WIDTH_PX }}
-      data-testid="di-office-panel"
-    >
-      <header className="di-op-header">
-        <div className="di-op-title">
-          DI Mission office:{' '}
-          <span className="di-op-title-status">
-            {!state.live && waiting ? (
-              <span className={WAITING_CLASS}>
-                NOT LIVE{state.fixtureMode ? ' (FIXTURE DATA)' : ''},{' '}
-                {formatWaiting(waiting, envelope.retryAfterSeconds)}
-              </span>
-            ) : (
-              <LiveBadge live={state.live} reason={state.notLiveReason} />
-            )}
-          </span>
-        </div>
-        <button
-          type="button"
-          className={`di-op-quiet-button ${DI_FOCUS_RING}`}
-          onClick={() => onCollapsedChange(true)}
-        >
-          ◂ hide
-        </button>
-      </header>
-
-      {/* The orientation strip, in a FIXED order whatever the counts: the ONE attention entry, then
-          the Mission request entry, then Find. Starting a Mission never depends on, or sits inside,
-          the attention entry; an unavailable request capability is quieter, never removed. */}
-      <div className="di-op-entries" data-testid="di-orientation">
-        <section
-          className="di-op-attention"
-          data-testid="di-attention"
-          aria-label="Needs attention"
-        >
-          {attention ? (
-            <>
-              <div className="di-op-attention-line" data-testid="di-reception-summary">
-                <span className={attention.count > 0 ? 'di-op-attention-count' : 'di-op-muted'}>
-                  {attention.count > 0 && (
-                    <span className="di-op-status-glyph" aria-hidden="true">
-                      ▲{' '}
-                    </span>
-                  )}
-                  {attention.text}
-                </span>
-                {receptionInbox && (
-                  <button
-                    type="button"
-                    className={`di-op-link ${DI_FOCUS_RING}`}
-                    data-testid="di-open-reception"
-                    onClick={(event) => receptionInbox.openFrom(event.currentTarget)}
-                    title="View only: opens the reception inbox, the same one as the reception desk in the office"
-                  >
-                    Open reception
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="di-op-muted">Attention: this office provides no reception desk.</div>
-          )}
-          {limits && (
-            // The view's material limits: ONE plain sentence with its consequence; the exact limits
-            // one step away (the categories' outcomes and the coverage statement stay in full below).
-            <div className="di-op-limits" data-testid="di-view-limits">
-              {limits.summary}
-            </div>
-          )}
-        </section>
-        {/* item 4: the entry to the Mission request workspace, CONFIGURED: always here, right after
-            the attention entry. It opens a pane BESIDE this panel, so the world stays usable. */}
-        {!(mission !== null && requestsUnavailable(mission.state)) && (
-          <DiMissionRequestEntry access={mission} />
-        )}
-      </div>
-
-      <FindSection state={state} query={query} onQuery={setQuery} onSelect={selectRecord} />
-      {/* Not available in this office: demoted to one quiet line below Find, never removed. */}
-      {mission !== null && requestsUnavailable(mission.state) && (
-        <DiMissionRequestEntry access={mission} />
-      )}
-
-      {announced.length > 0 && (
-        // The office canvas draws ONLY snapshot-confirmed members; an announcement the office
-        // state has not confirmed is reported here, as exactly that.
-        <section className="di-op-entry" data-testid="di-unconfirmed">
-          <div className="text-warning">
-            Announced, not confirmed by an office snapshot (not drawn): {announced.length}
-          </div>
-          {announced.map((a) => (
-            <div key={a.id} className="di-op-muted">
-              character #{a.id} · {a.missionRef ?? 'Mission unknown'} · unbound until the office
-              state lists it
-            </div>
-          ))}
-        </section>
-      )}
-
-      {/* ONE scrolling region — the Missions first, then the reception desk, the runtime agents
-          and the office data. The compact top and the Selected dock stay put. */}
-      <div className="di-op-main" data-testid="di-op-main">
-        <section
-          // The PRIMARY list: what is running, its observed status and who works on it.
-          className="di-op-missions"
-          data-testid="di-missions"
-          ref={missionsRef}
-          // Focus target for "Show this Mission" (keyboard users land here).
-          tabIndex={-1}
-          aria-label="Missions"
-        >
-          <div className="di-op-section-head">
-            <div className="di-op-section-title">
-              Missions:{' '}
-              <span
-                className={
-                  missions.state === 'observed'
-                    ? ''
-                    : waiting
-                      ? WAITING_CLASS
-                      : observedClass({ ...missions, value: null })
-                }
-              >
-                {formatListState(missions.state, missions.reason, missions.missions.length)}
-              </span>
-            </div>
-            {missions.missions.length > 1 && (
-              <div className="di-op-filter" data-testid="di-mission-filter">
-                <select
-                  className={DI_FOCUS_RING}
-                  data-testid="di-mission-select"
-                  aria-label="Show one Mission, or all"
-                  value={focusMission ?? ''}
-                  onChange={(e) => {
-                    const ref = e.target.value === '' ? null : e.target.value;
-                    setFocusMission(ref);
-                    // View only: bring the picked Mission's first drawn agent into focus.
-                    const picked = missions.missions.find((m) => m.missionRef === ref);
-                    navigateTo(
-                      picked?.members.members.find((m) => m.characterId !== null)?.characterId ??
-                        null,
-                    );
-                  }}
-                >
-                  <option value="">All Missions ({missions.missions.length})</option>
-                  {missions.missions.map((m) => (
-                    <option key={m.missionRef} value={m.missionRef}>
-                      {missionTitle(m).kind === 'no-goal'
-                        ? missionLabel(m)
-                        : `${missionTitle(m).text} — ${shortRefs.get(m.missionRef)}`}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className={`di-op-button ${DI_FOCUS_RING}`}
-                  data-testid="di-live-only"
-                  aria-pressed={liveOnly}
-                  onClick={() => setLiveOnly((v) => !v)}
-                >
-                  <span aria-hidden="true">{liveOnly ? '☑' : '☐'}</span> Live only
-                </button>
-              </div>
-            )}
-          </div>
-          {shown.length < missions.missions.length && (
-            // Nothing silently disappears: a view filter says what it leaves out, and how to undo it.
-            <div className="di-op-filter-note" data-testid="di-mission-filter-note" role="status">
-              Showing {shown.length} of {missions.missions.length}:{' '}
-              {missions.missions.length - shown.length} not shown by{' '}
-              {focusMission !== null ? 'the Mission picker' : '“Live only”'}.{' '}
-              <button
-                type="button"
-                className={`di-op-link ${DI_FOCUS_RING}`}
-                onClick={() => {
-                  setFocusMission(null);
-                  setLiveOnly(false);
-                }}
-              >
-                Show all
-              </button>
-            </div>
-          )}
-          {(() => {
-            // A coverage limit changes how a team is read: a gap stays on the face; the ordinary
-            // statement (and what a Herdr task record is) is said once, one step away.
-            const linked = formatLinkedChildCoverage(coverage);
-            const herdr = missions.missions.some((m) => m.herdrTask);
-            return (
-              <details className="di-op-about" data-testid="di-missions-about">
-                <summary className={DI_FOCUS_RING}>About this list</summary>
-                <div className="di-op-detail-body">
-                  <div data-testid="di-coverage">{linked.text}</div>
-                  {herdr && (
-                    <div data-testid="di-herdr-task-about">
-                      A Herdr task record is a plain Herdr task, not a Mission Core Mission:
-                      proposal, authorization, revision and proof are not supported for it.
-                    </div>
-                  )}
-                </div>
-              </details>
-            );
-          })()}
-          {shown.map((m) => (
-            <MissionCard
-              key={m.missionRef}
-              mission={m}
-              status={missionStatus(m, state)}
-              shortRef={shortRefs.get(m.missionRef) ?? m.missionRef}
-              onLocate={navigateTo}
-              selectedKey={selectedKey}
-              onSelect={selectKey}
-              onOpenInspector={(missionRef, opener, section) =>
-                openInspector({ kind: 'mission', missionRef, section }, opener)
-              }
-              zone={missionZone(
-                m.missionRef,
-                officeState.areaMappings,
-                officeState.getLayout().areas ?? [],
-              )}
-            />
-          ))}
-        </section>
-
-        <RuntimeAgentsSection
-          runtime={state.runtimeAgents}
-          selectedKey={selectedKey}
-          onSelect={selectKey}
-          freshness={runtimeFreshness}
-          now={now}
-        />
-
-        <section className="di-op-secondary" aria-label="Office data">
-          <div className="di-op-section-title">Office data</div>
-          <section className="di-op-selected-body" data-testid="di-freshness-summary">
-            <OfficeDataRows state={state} />
-          </section>
-          <details data-testid="di-freshness-detail">
-            <summary className={DI_FOCUS_RING}>Freshness detail and times</summary>
-            <div className="di-op-detail-body">
-              <FreshnessDetailRows state={state} />
-            </div>
-          </details>
-        </section>
-      </div>
-
-      {/* The Selected dock: always in view; its own scroll when a selection holds more. It is
-          concise — who, its identity and observed state, its Mission, the view-only routes, the
-          code review entry and one obvious "Show details" — and the inspector holds the rest. */}
-      <section
-        className={`di-op-selected${
+    <>
+      {restoreControl}
+      <aside
+        // feature13: a calm operational list (diOperationalPanel.css). The Missions lead; the
+        // ancillary entries above them are compact; detail is in the full-size inspector. The panel
+        // still scrolls when a short window cannot hold it, so everything stays REACHABLE.
+        ref={asideRef}
+        hidden={collapsed}
+        // the last-resort focus target on restore (not in the Tab order)
+        tabIndex={-1}
+        className={`di-op di-op-theme${
           keyed?.target.kind === 'member' ||
           keyed?.target.kind === 'runtime' ||
           keyed?.target.kind === 'unverified'
-            ? ' di-op-selected-actions'
+            ? ' di-op-has-selection'
             : ''
         }`}
-        data-testid="di-selected-agent"
+        style={{ width: widthPx ?? DI_PANEL_WIDTH_PX }}
+        data-testid="di-office-panel"
+        data-minimized={collapsed ? 'true' : 'false'}
       >
-        {/* Where the selection is, in words, then the view-only stepping: each pair has a visible
-            label and visible words; each button's accessible name begins with those words. */}
-        <div className="di-op-section-head">
-          <div className="di-op-section-title">
-            Selected{' '}
-            <span className="di-op-muted di-op-nav-position" data-testid="di-navigation-position">
-              · {navigationOrientation(state, selectedId)}
-            </span>
-          </div>
-        </div>
-        <div
-          className="di-op-nav"
-          data-testid="di-navigation"
-          title="View only: moves the selection and camera; it controls nothing"
-        >
-          <span
-            className="di-op-nav-group"
-            role="group"
-            aria-label="Step through agents on the map"
+        {fixtureNote && (
+          <div
+            ref={noteRef}
+            className="di-op-fixture-note"
+            role="status"
+            data-testid="di-fixture-banner-in-panel"
           >
-            <span className="di-op-nav-label" aria-hidden="true">
-              Agents
-            </span>
-            <button
-              type="button"
-              className={DI_FOCUS_RING}
-              aria-label="Previous agent"
-              onClick={() => navigateTo(navigateStep(navigationOrder(state), selectedId, -1))}
-            >
-              ‹ Previous
-            </button>
-            <button
-              type="button"
-              className={DI_FOCUS_RING}
-              aria-label="Next agent"
-              onClick={() => navigateTo(navigateStep(navigationOrder(state), selectedId, 1))}
-            >
-              Next ›
-            </button>
-          </span>
-          <span className="di-op-nav-group" role="group" aria-label="Step through Missions">
-            <span className="di-op-nav-label" aria-hidden="true">
-              Missions
-            </span>
-            <button
-              type="button"
-              className={DI_FOCUS_RING}
-              aria-label="Previous Mission"
-              onClick={() => navigateTo(nextMissionCharacter(state, selectedId, -1))}
-            >
-              ‹ Previous
-            </button>
-            <button
-              type="button"
-              className={DI_FOCUS_RING}
-              aria-label="Next Mission"
-              onClick={() => navigateTo(nextMissionCharacter(state, selectedId, 1))}
-            >
-              Next ›
-            </button>
-          </span>
-        </div>
-        {keyed?.target.kind === 'member' ? (
-          <DockMember
-            member={keyed.target.member}
-            name={firstLayerName(state, {
-              kind: 'member',
-              mission: keyed.target.mission,
-              member: keyed.target.member,
-            })}
-            mission={keyed.target.mission}
-            shortRef={
-              shortRefs.get(keyed.target.mission.missionRef) ?? keyed.target.mission.missionRef
-            }
-            freshness={snapshotFreshness}
-            observedAt={times.snapshotObservedAt}
-            now={now}
-            onShow={navigateTo}
-            onShowMission={showMission}
-            onOpenInspector={openSelectionInspector}
-            review={review}
-          />
-        ) : keyed?.target.kind === 'runtime' ? (
-          <DockRuntimeAgent
-            agent={keyed.target.agent}
-            name={firstLayerName(state, { kind: 'runtime', agent: keyed.target.agent })}
-            freshness={runtimeFreshness}
-            observedAt={state.runtimeAgents?.observedAt ?? null}
-            now={now}
-            onShow={navigateTo}
-            onOpenInspector={openSelectionInspector}
-          />
-        ) : keyed?.target.kind === 'unverified' ? (
-          <DockUnverified
-            agent={keyed.target.agent}
-            name={firstLayerName(state, { kind: 'runtime', agent: keyed.target.agent })}
-            freshness={runtimeFreshness}
-            observedAt={state.runtimeAgents?.observedAt ?? null}
-            now={now}
-            onOpenInspector={openSelectionInspector}
-          />
-        ) : memory !== null ? (
-          // The selected record left the office state: said so, with why; nothing replaces it.
-          <SelectionGone
-            memory={memory}
-            state={state}
-            freshness={
-              memory.kind === 'member' || memory.kind === 'mission'
-                ? snapshotFreshness
-                : runtimeFreshness
-            }
-            onClear={() => setMemory(null)}
-          />
-        ) : selectedId !== null ? (
-          // A drawn character NO office state lists: say exactly that, invent nothing.
-          <div className="text-warning" data-testid="di-selected-unconfirmed">
-            {DI_UNCONFIRMED_LABEL}. No canonical identity or activity is shown for it.
-          </div>
-        ) : (
-          <div className="di-op-muted">
-            Select a character in the office, or a row in the lists (Enter or Space).
+            {DI_FIXTURE_BANNER}
           </div>
         )}
-      </section>
+        <header className="di-op-header">
+          <div className="di-op-title">
+            DI Mission office:{' '}
+            <span className="di-op-title-status">
+              {!state.live && waiting ? (
+                <span className={WAITING_CLASS}>
+                  NOT LIVE{state.fixtureMode ? ' (FIXTURE DATA)' : ''},{' '}
+                  {formatWaiting(waiting, envelope.retryAfterSeconds)}
+                </span>
+              ) : (
+                <LiveBadge live={state.live} reason={state.notLiveReason} />
+              )}
+            </span>
+          </div>
+          <button
+            type="button"
+            ref={minimizeRef}
+            className={`di-op-quiet-button ${DI_FOCUS_RING}`}
+            onClick={minimizePanel}
+            title="Minimize the office panel; Restore brings it back as you left it"
+            data-testid="di-office-panel-minimize"
+          >
+            Minimize <span aria-hidden="true">▸</span>
+          </button>
+        </header>
 
-      {receptionDialog}
+        {/* The orientation strip, in a FIXED order whatever the counts: the ONE attention entry, then
+          the Mission request entry, then Find. Starting a Mission never depends on, or sits inside,
+          the attention entry; an unavailable request capability is quieter, never removed. */}
+        <div className="di-op-entries" data-testid="di-orientation">
+          <section
+            className="di-op-attention"
+            data-testid="di-attention"
+            aria-label="Needs attention"
+          >
+            {attention ? (
+              <>
+                <div className="di-op-attention-line" data-testid="di-reception-summary">
+                  <span className={attention.count > 0 ? 'di-op-attention-count' : 'di-op-muted'}>
+                    {attention.count > 0 && (
+                      <span className="di-op-status-glyph" aria-hidden="true">
+                        ▲{' '}
+                      </span>
+                    )}
+                    {attention.text}
+                  </span>
+                  {receptionInbox && (
+                    <button
+                      type="button"
+                      // AC4: entries wait for the person: a still glow, the ▲ shape and the count's words beside it
+                      className={`di-op-link ${attention.count > 0 ? 'di-op-attn ' : ''}${DI_FOCUS_RING}`}
+                      data-testid="di-open-reception"
+                      data-attention={attention.count > 0 ? 'true' : undefined}
+                      onClick={(event) => receptionInbox.openFrom(event.currentTarget)}
+                      title="View only: opens the reception inbox, the same one as the reception desk in the office"
+                    >
+                      {attention.count > 0 && (
+                        <span className="di-op-attn-glyph" aria-hidden="true">
+                          ▲{' '}
+                        </span>
+                      )}
+                      Open reception
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="di-op-muted">Attention: this office provides no reception desk.</div>
+            )}
+            {limits && (
+              // The view's material limits: ONE plain sentence with its consequence; the exact limits
+              // one step away (the categories' outcomes and the coverage statement stay in full below).
+              <div className="di-op-limits" data-testid="di-view-limits">
+                {limits.summary}
+              </div>
+            )}
+          </section>
+          {/* item 4: the entry to the Mission request workspace, CONFIGURED: always here, right after
+            the attention entry. It opens a pane BESIDE this panel, so the world stays usable. */}
+          {!(mission !== null && requestsUnavailable(mission.state)) && (
+            <DiMissionRequestEntry access={mission} />
+          )}
+        </div>
 
-      {inspector && (
-        <OfficeInspector
-          target={inspector}
-          state={state}
-          keyed={keyed}
-          snapshotFreshness={snapshotFreshness}
-          runtimeFreshness={runtimeFreshness}
-          evidence={evidence ?? null}
-          review={review ?? null}
-          onShow={locateFromInspector}
-          onClose={() => setInspector(null)}
-          returnFocusTo={inspectorOpener}
-        />
-      )}
-    </aside>
+        <FindSection state={state} query={query} onQuery={setQuery} onSelect={selectRecord} />
+        {/* Not available in this office: demoted to one quiet line below Find, never removed. */}
+        {mission !== null && requestsUnavailable(mission.state) && (
+          <DiMissionRequestEntry access={mission} />
+        )}
+
+        {announced.length > 0 && (
+          // The office canvas draws ONLY snapshot-confirmed members; an announcement the office
+          // state has not confirmed is reported here, as exactly that.
+          <section className="di-op-entry" data-testid="di-unconfirmed">
+            <div className="text-warning">
+              Announced, not confirmed by an office snapshot (not drawn): {announced.length}
+            </div>
+            {announced.map((a) => (
+              <div key={a.id} className="di-op-muted">
+                character #{a.id} · {a.missionRef ?? 'Mission unknown'} · unbound until the office
+                state lists it
+              </div>
+            ))}
+          </section>
+        )}
+
+        {/* ONE scrolling region — the Missions first, then the reception desk, the runtime agents
+          and the office data. The compact top and the Selected dock stay put. */}
+        <div className="di-op-main" data-testid="di-op-main">
+          <section
+            // The PRIMARY list: what is running, its observed status and who works on it.
+            className="di-op-missions"
+            data-testid="di-missions"
+            ref={missionsRef}
+            // Focus target for "Show this Mission" (keyboard users land here).
+            tabIndex={-1}
+            aria-label="Missions"
+          >
+            <div className="di-op-section-head">
+              <div className="di-op-section-title">
+                Missions:{' '}
+                <span
+                  className={
+                    missions.state === 'observed'
+                      ? ''
+                      : waiting
+                        ? WAITING_CLASS
+                        : observedClass({ ...missions, value: null })
+                  }
+                >
+                  {formatListState(missions.state, missions.reason, missions.missions.length)}
+                </span>
+              </div>
+              {missions.missions.length > 1 && (
+                <div className="di-op-filter" data-testid="di-mission-filter">
+                  <select
+                    className={DI_FOCUS_RING}
+                    data-testid="di-mission-select"
+                    aria-label="Show one Mission, or all"
+                    value={focusMission ?? ''}
+                    onChange={(e) => {
+                      const ref = e.target.value === '' ? null : e.target.value;
+                      setFocusMission(ref);
+                      // View only: bring the picked Mission's first drawn agent into focus.
+                      const picked = missions.missions.find((m) => m.missionRef === ref);
+                      navigateTo(
+                        picked?.members.members.find((m) => m.characterId !== null)?.characterId ??
+                          null,
+                      );
+                    }}
+                  >
+                    <option value="">All Missions ({missions.missions.length})</option>
+                    {missions.missions.map((m) => (
+                      <option key={m.missionRef} value={m.missionRef}>
+                        {missionTitle(m).kind === 'no-goal'
+                          ? missionLabel(m)
+                          : `${missionTitle(m).text} (${shortRefs.get(m.missionRef)})`}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={`di-op-button ${DI_FOCUS_RING}`}
+                    data-testid="di-live-only"
+                    aria-pressed={liveOnly}
+                    onClick={() => setLiveOnly((v) => !v)}
+                  >
+                    <span aria-hidden="true">{liveOnly ? '☑' : '☐'}</span> Live only
+                  </button>
+                </div>
+              )}
+            </div>
+            {shown.length < missions.missions.length && (
+              // Nothing silently disappears: a view filter says what it leaves out, and how to undo it.
+              <div className="di-op-filter-note" data-testid="di-mission-filter-note" role="status">
+                Showing {shown.length} of {missions.missions.length}:{' '}
+                {missions.missions.length - shown.length} not shown by{' '}
+                {focusMission !== null ? 'the Mission picker' : '“Live only”'}.{' '}
+                <button
+                  type="button"
+                  className={`di-op-link ${DI_FOCUS_RING}`}
+                  onClick={() => {
+                    setFocusMission(null);
+                    setLiveOnly(false);
+                  }}
+                >
+                  Show all
+                </button>
+              </div>
+            )}
+            {(() => {
+              // A coverage limit changes how a team is read: a gap stays on the face; the ordinary
+              // statement (and what a Herdr task record is) is said once, one step away.
+              const linked = formatLinkedChildCoverage(coverage);
+              const herdr = missions.missions.some((m) => m.herdrTask);
+              return (
+                <details className="di-op-about" data-testid="di-missions-about">
+                  <summary className={DI_FOCUS_RING}>About this list</summary>
+                  <div className="di-op-detail-body">
+                    <div data-testid="di-coverage">{linked.text}</div>
+                    {herdr && (
+                      <div data-testid="di-herdr-task-about">
+                        A Herdr task record is a plain Herdr task, not a Mission Core Mission:
+                        proposal, authorization, revision and proof are not supported for it.
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })()}
+            {shown.map((m) => (
+              <MissionCard
+                key={m.missionRef}
+                mission={m}
+                status={missionStatus(m, state)}
+                shortRef={shortRefs.get(m.missionRef) ?? m.missionRef}
+                onLocate={navigateTo}
+                selectedKey={selectedKey}
+                onSelect={selectKey}
+                onOpenInspector={(missionRef, opener, section) =>
+                  openInspector({ kind: 'mission', missionRef, section }, opener)
+                }
+                zone={missionZone(
+                  m.missionRef,
+                  officeState.areaMappings,
+                  officeState.getLayout().areas ?? [],
+                )}
+              />
+            ))}
+          </section>
+
+          {/* AC5: design samples from the one labelled fixture file, in a fixture preview only (FIXTURE labelled) */}
+          <DiMissionStateSamples fixtureMode={state.fixtureMode === true} />
+
+          <RuntimeAgentsSection
+            runtime={state.runtimeAgents}
+            selectedKey={selectedKey}
+            onSelect={selectKey}
+            freshness={runtimeFreshness}
+            now={now}
+          />
+
+          <section className="di-op-secondary" aria-label="Office data">
+            <div className="di-op-section-title">Office data</div>
+            <section className="di-op-selected-body" data-testid="di-freshness-summary">
+              <OfficeDataRows state={state} />
+            </section>
+            <details data-testid="di-freshness-detail">
+              <summary className={DI_FOCUS_RING}>Freshness detail and times</summary>
+              <div className="di-op-detail-body">
+                <FreshnessDetailRows state={state} />
+              </div>
+            </details>
+          </section>
+        </div>
+
+        {/* The Selected dock: always in view; its own scroll when a selection holds more. It is
+          concise — who, its identity and observed state, its Mission, the view-only routes, the
+          code review entry and one obvious "Show details" — and the inspector holds the rest. */}
+        <section
+          className={`di-op-selected${
+            keyed?.target.kind === 'member' ||
+            keyed?.target.kind === 'runtime' ||
+            keyed?.target.kind === 'unverified'
+              ? ' di-op-selected-actions'
+              : ''
+          }`}
+          data-testid="di-selected-agent"
+        >
+          {/* Where the selection is, in words, then the view-only stepping: each pair has a visible
+            label and visible words; each button's accessible name begins with those words. */}
+          <div className="di-op-section-head">
+            <div className="di-op-section-title">
+              Selected{' '}
+              <span className="di-op-muted di-op-nav-position" data-testid="di-navigation-position">
+                · {navigationOrientation(state, selectedId)}
+              </span>
+            </div>
+          </div>
+          <div
+            className="di-op-nav"
+            data-testid="di-navigation"
+            title="View only: moves the selection and camera; it controls nothing"
+          >
+            <span
+              className="di-op-nav-group"
+              role="group"
+              aria-label="Step through agents on the map"
+            >
+              <span className="di-op-nav-label" aria-hidden="true">
+                Agents
+              </span>
+              <button
+                type="button"
+                className={DI_FOCUS_RING}
+                aria-label="Previous agent"
+                onClick={() => navigateTo(navigateStep(navigationOrder(state), selectedId, -1))}
+              >
+                ‹ Previous
+              </button>
+              <button
+                type="button"
+                className={DI_FOCUS_RING}
+                aria-label="Next agent"
+                onClick={() => navigateTo(navigateStep(navigationOrder(state), selectedId, 1))}
+              >
+                Next ›
+              </button>
+            </span>
+            <span className="di-op-nav-group" role="group" aria-label="Step through Missions">
+              <span className="di-op-nav-label" aria-hidden="true">
+                Missions
+              </span>
+              <button
+                type="button"
+                className={DI_FOCUS_RING}
+                aria-label="Previous Mission"
+                onClick={() => navigateTo(nextMissionCharacter(state, selectedId, -1))}
+              >
+                ‹ Previous
+              </button>
+              <button
+                type="button"
+                className={DI_FOCUS_RING}
+                aria-label="Next Mission"
+                onClick={() => navigateTo(nextMissionCharacter(state, selectedId, 1))}
+              >
+                Next ›
+              </button>
+            </span>
+          </div>
+          {keyed?.target.kind === 'member' ? (
+            <DockMember
+              member={keyed.target.member}
+              name={firstLayerName(state, {
+                kind: 'member',
+                mission: keyed.target.mission,
+                member: keyed.target.member,
+              })}
+              mission={keyed.target.mission}
+              shortRef={
+                shortRefs.get(keyed.target.mission.missionRef) ?? keyed.target.mission.missionRef
+              }
+              freshness={snapshotFreshness}
+              observedAt={times.snapshotObservedAt}
+              now={now}
+              onShow={navigateTo}
+              onShowMission={showMission}
+              onOpenInspector={openSelectionInspector}
+              review={review}
+            />
+          ) : keyed?.target.kind === 'runtime' ? (
+            <DockRuntimeAgent
+              agent={keyed.target.agent}
+              name={firstLayerName(state, { kind: 'runtime', agent: keyed.target.agent })}
+              freshness={runtimeFreshness}
+              observedAt={state.runtimeAgents?.observedAt ?? null}
+              now={now}
+              onShow={navigateTo}
+              onOpenInspector={openSelectionInspector}
+            />
+          ) : keyed?.target.kind === 'unverified' ? (
+            <DockUnverified
+              agent={keyed.target.agent}
+              name={firstLayerName(state, { kind: 'runtime', agent: keyed.target.agent })}
+              freshness={runtimeFreshness}
+              observedAt={state.runtimeAgents?.observedAt ?? null}
+              now={now}
+              onOpenInspector={openSelectionInspector}
+            />
+          ) : memory !== null ? (
+            // The selected record left the office state: said so, with why; nothing replaces it.
+            <SelectionGone
+              memory={memory}
+              state={state}
+              freshness={
+                memory.kind === 'member' || memory.kind === 'mission'
+                  ? snapshotFreshness
+                  : runtimeFreshness
+              }
+              onClear={() => setMemory(null)}
+            />
+          ) : selectedId !== null ? (
+            // A drawn character NO office state lists: say exactly that, invent nothing.
+            <div className="text-warning" data-testid="di-selected-unconfirmed">
+              {DI_UNCONFIRMED_LABEL}. No canonical identity or activity is shown for it.
+            </div>
+          ) : (
+            <div className="di-op-muted">
+              Select a character in the office, or a row in the lists (Enter or Space).
+            </div>
+          )}
+        </section>
+
+        {receptionDialog}
+
+        {inspector && (
+          <OfficeInspector
+            target={inspector}
+            state={state}
+            keyed={keyed}
+            snapshotFreshness={snapshotFreshness}
+            runtimeFreshness={runtimeFreshness}
+            evidence={evidence ?? null}
+            review={review ?? null}
+            onShow={locateFromInspector}
+            onClose={() => setInspector(null)}
+            returnFocusTo={inspectorOpener}
+          />
+        )}
+      </aside>
+    </>
   );
 }
