@@ -1177,8 +1177,12 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
     roster = 'base';
     await expect.poll(typingCount, { timeout: 30_000 }).toBe(liveMemberCount);
 
-    await page.getByText('◂ hide').click();
+    await page.getByTestId('di-office-panel-minimize').click();
     await expect(page.getByTestId('di-office-panel-collapsed')).toBeVisible();
+    // Minimizing the office leaves the owner-approved minimized edge strip (the office's restore control lives in it) at the window's edge, so the world takes the window LESS that strip.
+    // Its width is pinned HERE from the approved design (DI_MINIMIZED_STRIP_WIDTH_PX, 44, pinned in the unit tests), never read back from the page it is checked against.
+    const STRIP_PX = 44;
+    const viewportWidth = page.viewportSize()!.width;
     // The canvas resizes on its ResizeObserver, a frame or so after the container widens.
     await expect
       .poll(
@@ -1190,9 +1194,47 @@ test('DI office production build: usable with eleven realistic-length FIXTURE Mi
               ),
             ),
           ),
-        { timeout: 5_000, message: 'collapsed: the office takes the full width' },
+        {
+          timeout: 5_000,
+          message: 'collapsed: the office takes the whole window less the approved minimized strip',
+        },
       )
-      .toBe(page.viewportSize()!.width);
+      .toBe(viewportWidth - STRIP_PX);
+    // ...and the world and the strip are DISJOINT: the strip is its approved width at the window's right edge, and the widest canvas runs from the window's left edge to the strip's left edge
+    // (no overlap, and no gap).
+    const collapsedBounds = await page.evaluate(() => {
+      const strip = document
+        .querySelector('[data-testid="di-minimized-tray"]')
+        ?.getBoundingClientRect();
+      const canvases = Array.from(document.querySelectorAll('canvas')).map((c) =>
+        c.getBoundingClientRect(),
+      );
+      const widest = canvases.reduce((a, b) => (b.width > a.width ? b : a), canvases[0]);
+      return {
+        strip: strip ? { left: strip.left, right: strip.right, width: strip.width } : null,
+        canvas: widest ? { left: widest.left, right: widest.right } : null,
+      };
+    });
+    expect(collapsedBounds.strip, 'collapsed: the minimized strip is on the page').not.toBeNull();
+    expect(collapsedBounds.canvas, 'collapsed: a canvas is on the page').not.toBeNull();
+    expect(collapsedBounds.strip!.width, 'collapsed: the strip is its approved width').toBe(
+      STRIP_PX,
+    );
+    expect(collapsedBounds.strip!.right, "collapsed: the strip is at the window's right edge").toBe(
+      viewportWidth,
+    );
+    expect(
+      collapsedBounds.canvas!.left,
+      "collapsed: the world starts at the window's left edge",
+    ).toBe(0);
+    expect(
+      collapsedBounds.canvas!.right <= collapsedBounds.strip!.left,
+      'collapsed: the world and the strip do not overlap',
+    ).toBe(true);
+    expect(
+      collapsedBounds.canvas!.right,
+      'collapsed: the world ends exactly where the strip begins (no gap)',
+    ).toBe(collapsedBounds.strip!.left);
     await delay(400);
     await shot(page, '10-panel-collapsed-full-office-FIXTURE.png');
 

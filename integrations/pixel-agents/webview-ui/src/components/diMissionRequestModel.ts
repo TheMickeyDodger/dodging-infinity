@@ -47,8 +47,12 @@ export const MR_DECISION_WORDS: readonly string[] = ['approve', 'approved'];
 export const MR_MIN_BESIDE_PX = 360;
 export const MR_PANE_PX = 600;
 export const MR_PANE_WIDE_PX = 960;
-/** The width of the world to keep visible beside the workspace, where the window allows it. */
-export const MR_WORLD_KEEP_PX = 240;
+/**
+ * The width of the world to keep visible beside the workspace, where the window allows it: what the world's own bottom-left column and controls
+ * need (DI_WORLD_CONTROLS_MIN_PX, the toolbar's right edge). It was 240, which predates the column: the toolbar and legend then ran over the
+ * workspace's bottom-left corner and covered content a person must read and reach (measured: the Ask tab with a draft at the end of scroll).
+ */
+export const MR_WORLD_KEEP_PX = DI_WORLD_CONTROLS_MIN_PX;
 /**
  * The narrowest pane that puts the request list BESIDE the open request in wider reading: the 300px list, the 12px gap, the 24px of
  * padding, and at least 300px left for the open request. Below it the list stacks above the request, as in ordinary reading.
@@ -58,6 +62,7 @@ export const MR_SPLIT_MIN_PX = 640;
 // ---------------------------------------------------------------------------------------------
 // The adapter's answers, as untrusted JSON, parsed into the shapes the panel uses.
 
+import { DI_WORLD_CONTROLS_MIN_PX } from '../constants.js';
 import type { MrProofRules } from './diMissionRequestContract.js';
 import { proofRulesAbsentWords, readProofRules } from './diMissionRequestContract.js';
 import type { MrStartCause } from './diMissionRequestStartCause.js';

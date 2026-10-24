@@ -67,6 +67,74 @@ async function inMissionInspector<T>(
   }
 }
 
+/**
+ * OBSERVATION ONLY (never an assertion, never a substitute for one): a SECOND SAMPLE of the page at a character's click point. The first check below fails with only the covering element's
+ * TAG ("top BUTTON"). The body's `finally` awaits `office.stop()`, so the error context Playwright saves MAY reflect a torn-down page; reading the source does not fix when that snapshot is
+ * captured, so it is not used as the state at the check.
+ *
+ * ORDER, stated because two samples are not one instant: sample 1 is the real `characterPoint` call (its `onCanvas` is what the assertion tests); sample 2 is this function, a SEPARATE
+ * `page.evaluate` made afterwards and before the assertion. Between them the page can change (an animation frame, a character moving, the transport). So this reports what was under the point
+ * at sample 2, NOT at the instant of sample 1. Both are logged and neither overwrites the other; a disagreement between them is information (the page changed between the samples), and the
+ * first sample stands as what the assertion saw. It records the stack under the point (identity, test id, label, rectangle), the canvas and panel rectangles, the camera, the character,
+ * the update notice and the reception button, the time since the page began, and whether the connection indicator shows.
+ */
+async function observeCoverage(page: Page, id: number, at: { x: number; y: number }) {
+  return page.evaluate(
+    ({ id, x, y }) => {
+      const rect = (el: Element | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)];
+      };
+      const hooks = (
+        window as unknown as {
+          __pixelAgentsTestHooks?: {
+            getCharacters?: () => Array<{ id: number; x: number; y: number; state: string }>;
+            getView?: () => unknown;
+          };
+        }
+      ).__pixelAgentsTestHooks;
+      const canvas = Array.from(document.querySelectorAll('canvas')).sort(
+        (a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight,
+      )[0];
+      const ch = hooks?.getCharacters?.().find((c) => c.id === id);
+      return {
+        msSincePageBegan: Math.round(performance.now()),
+        viewport: [innerWidth, innerHeight],
+        point: [Math.round(x * 10) / 10, Math.round(y * 10) / 10],
+        canvasRect: rect(canvas ?? null),
+        panelRect: rect(document.querySelector('[data-testid="di-office-panel"]')),
+        insideCanvasRect: canvas
+          ? x >= canvas.getBoundingClientRect().left &&
+            x < canvas.getBoundingClientRect().right &&
+            y >= canvas.getBoundingClientRect().top &&
+            y < canvas.getBoundingClientRect().bottom
+          : null,
+        character: ch ? { x: Math.round(ch.x), y: Math.round(ch.y), state: ch.state } : null,
+        view: hooks?.getView?.() ?? null,
+        updateNotice: rect(document.querySelector('.di-version-notice')),
+        receptionButton: rect(document.querySelector('[data-testid="di-reception-target"]')),
+        connectionIndicatorShown: /Reconnecting/.test(document.body.innerText),
+        stack: document
+          .elementsFromPoint(x, y)
+          .slice(0, 6)
+          .map((el) => ({
+            tag: el.tagName,
+            id: el.id || null,
+            testid: el.getAttribute('data-testid'),
+            label: el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 40),
+            cls: String(el.getAttribute('class') ?? '')
+              .split(' ')
+              .slice(0, 3)
+              .join(' '),
+            rect: rect(el),
+          })),
+      };
+    },
+    { id, x: at.x, y: at.y },
+  );
+}
+
 test('built app, contract v1: duplicate names, blocked and a header-only objective (FIXTURE, not live)', async ({
   page,
 }) => {
@@ -96,7 +164,7 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
     );
     await inMissionInspector(page, cases.refs.header, async (dialog) => {
       const title = page.locator('#di-inspector-title');
-      await expect(title).toHaveText(/^No goal reported — mn-[0-9a-f]{8,}/);
+      await expect(title).toHaveText(/^No goal reported: mn-[0-9a-f]{8,}/);
       await dialog.getByTestId('di-inspector-provenance').locator('summary').click();
       await expect(dialog.getByTestId('di-mission-qualifier')).toHaveText(cases.refs.header);
       // The heading is BOUNDED (at most two lines) however long the export is.
@@ -138,7 +206,17 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
     await page.getByTestId('di-find-input').fill('');
     for (const e of executors) {
       const point = await characterPoint(page, e.characterId!);
-      expect(point.onCanvas, `${e.memberRef} clickable (top ${point.topElement})`).toBe(true);
+      // observation only. SAMPLE 1 is the real characterPoint call: its `stack` was read in the SAME evaluate as the `onCanvas` that is asserted, so it is what covered the point when the check was
+      // decided. SAMPLE 2 (observeCoverage, see its comment) is a LATER evaluate that adds context. Both are logged for every executor, passing or not, with the ordering named, and neither overwrites
+      // the other; the assertion's own message carries sample 1's stack.
+      const observed = await observeCoverage(page, e.characterId!, point);
+      console.log(
+        `[executor click point] ${e.memberRef}: SAMPLE 1 (characterPoint, one evaluate with its stack; asserted) ${JSON.stringify({ x: point.x, y: point.y, onCanvas: point.onCanvas, top: point.topElement, stack: point.stack })}; SAMPLE 2 (observeCoverage, a LATER evaluate) ${JSON.stringify(observed)}; samples agree on the top element: ${observed.stack[0]?.tag === point.topElement.replace(/#.*/, '')}`,
+      );
+      expect(
+        point.onCanvas,
+        `${e.memberRef} clickable (top ${point.topElement}; stack at the asserted instant ${JSON.stringify(point.stack.slice(0, 3))})`,
+      ).toBe(true);
       await page.mouse.click(point.x, point.y);
       const dock = page.getByTestId('di-selected-agent');
       await expectDockNamesMission(
@@ -214,7 +292,7 @@ test('built app, contract v1: duplicate names, blocked and a header-only objecti
     await expect(
       card(page, cases.refs.replacedBlocked).getByTestId('di-op-terminal-note'),
     ).toHaveText(
-      "reviewer2: its terminal last reported blocked (the terminal's own report; last known, not current — not live).",
+      "reviewer2: its terminal last reported blocked (the terminal's own report; last known, not current; not live).",
     );
     await inMissionInspector(page, cases.refs.replacedBlocked, async (dialog) => {
       await dialog.getByTestId('di-inspector-provenance').locator('summary').click();

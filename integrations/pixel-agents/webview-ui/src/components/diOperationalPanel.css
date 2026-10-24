@@ -5,47 +5,71 @@
  * running, its observed status and who is working on it, in a plain reading typeface, aligned rows,
  * generous spacing and restrained colour. Detail lives one step behind labelled disclosures.
  *
- * Colours are SOLID tokens on .di-op-theme (no alpha), so test/diOperationalPanelContrast.test.ts can
- * compute every text/surface pairing from this very file. The Tailwind colour variables the shared
- * helpers emit (text-text, text-text-muted, text-warning, text-status-success, border-border,
- * outline-accent, ...) are redefined here for this subtree only, so every existing helper renders in
- * the panel's palette. Status is never carried by colour alone: every status has a shape and words.
+ * Colours are the shared DI chrome tokens (index.css :root, all SOLID), named here as this panel's
+ * palette, so test/diOperationalPanelContrast.test.ts computes every text/surface pairing through the
+ * one shared reader (test/diChromeTokens.ts). The Tailwind colour variables the shared helpers emit
+ * (text-text, text-text-muted, text-warning, text-status-success, border-border, outline-accent, ...)
+ * are redefined here for this subtree only, so every existing helper renders in the panel's palette.
+ * Status is never carried by colour alone: every status has a shape and words.
  *
- * No animation here except state changes a person caused; nothing pulses or moves on its own.
+ * No animation here except state changes a person caused; nothing pulses or moves on its own. The
+ * owner-attention glow is drawn still, always beside a glyph and words that need no colour.
  */
 
 .di-op-theme {
   /* surfaces */
-  --op-bg: #151824;
-  --op-surface: #1c2030;
-  --op-surface-2: #242a3d;
-  --op-line: #2c3245;
+  --op-bg: var(--di-bg);
+  --op-surface: var(--di-surface);
+  --op-surface-2: var(--di-control);
+  --op-line: var(--di-line);
   /* boundaries a control needs to be seen (3:1 against the surfaces above) */
-  --op-edge: #7a82a3;
+  --op-edge: var(--di-edge);
   /* text */
-  --op-text: #eceef5;
-  --op-muted: #a7acc0;
-  --op-link: #aab4ff;
+  --op-text: var(--di-text);
+  --op-muted: var(--di-muted);
+  --op-link: var(--di-link);
   /* focus: unmistakable on every surface above */
-  --op-focus: #ffd166;
+  --op-focus: var(--di-focus);
   /* status words and shapes */
-  --op-running: #74d6a0;
-  --op-waiting: #a9bdd6;
-  --op-blocked: #f4b860;
-  --op-failed: #ff9a9a;
-  --op-ended: #c3c7d6;
-  --op-disconnected: #f4b860;
-  --op-stale: #e9c97a;
-  --op-unknown: #b4b9cb;
-  --op-warn: #f4c06e;
-  --op-good: #7fd8a3;
+  --op-running: var(--di-run);
+  --op-waiting: var(--di-muted);
+  --op-blocked: var(--di-warn);
+  --op-failed: var(--di-bad);
+  --op-ended: var(--di-neutral);
+  --op-disconnected: var(--di-warn);
+  --op-stale: var(--di-perm);
+  --op-unknown: var(--di-muted);
+  --op-warn: var(--di-warn);
+  --op-good: var(--di-ok);
+  --op-attention: var(--di-perm);
   /* selection */
-  --op-selected-bg: #262d4a;
-  --op-selected-edge: #8c97ff;
+  --op-selected-bg: var(--di-selected);
+  --op-selected-edge: var(--di-accent-b);
+  /* the primary action and status tints */
+  --op-accent: var(--di-accent);
+  --op-accent-hover: var(--di-accent-hover);
+  --op-on-accent: var(--di-on-accent);
+  --op-control-hover: var(--di-control-hover);
+  --op-perm-tint: var(--di-perm-tint);
+  --op-run-tint: var(--di-run-tint);
+  --op-ok-tint: var(--di-ok-tint);
+  --op-bad-tint: var(--di-bad-tint);
+  --op-warn-tint: var(--di-warn-tint);
+  /* elevation and owner attention (shadows; carry no text) */
+  --op-shadow-pop: var(--di-shadow-pop);
+  --op-shadow-primary: var(--di-shadow-primary);
+  --op-glow: var(--di-glow);
+  --op-glow-peak: var(--di-glow-peak);
+  --op-scrim: var(--di-scrim);
+  /* type, radius */
+  --op-label-size: var(--di-text-label);
+  --op-label-tracking: var(--di-label-tracking);
+  --op-radius: var(--di-radius);
+  --op-radius-card: var(--di-radius-card);
+  --op-radius-pill: var(--di-radius-pill);
 
-  --op-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --op-font-code:
-    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --op-font-ui: var(--di-font-ui);
+  --op-font-code: var(--di-font-code);
 
   /* the shared helpers' Tailwind colours, in this panel's palette */
   --color-text: var(--op-text);
@@ -174,7 +198,7 @@
   padding: 10px 12px;
   background: var(--op-surface);
   border: 1px solid var(--op-line);
-  border-radius: 10px;
+  border-radius: var(--op-radius-card);
 }
 .di-op-entry-head {
   display: flex;
@@ -214,7 +238,7 @@
   gap: 6px;
   padding: 5px 10px;
   border: 1px solid var(--op-edge);
-  border-radius: 7px;
+  border-radius: var(--op-radius);
   background: var(--op-surface-2);
   color: var(--op-text);
   font-size: 12px;
@@ -225,6 +249,7 @@
 }
 .di-op-button:hover {
   border-color: var(--op-muted);
+  background: var(--op-control-hover);
 }
 .di-op-button:disabled {
   cursor: default;
@@ -242,6 +267,23 @@
 }
 .di-op-link:hover {
   text-decoration: underline;
+}
+
+/* ---------- owner attention (AC4): a still glow, ALWAYS with a glyph and words in the markup ---------- */
+
+.di-op-attn {
+  box-shadow: var(--op-glow);
+}
+.di-op-link.di-op-attn {
+  padding: 3px 9px;
+  border: 1px solid var(--op-selected-edge);
+  border-radius: var(--op-radius);
+  background: var(--op-selected-bg);
+  color: var(--op-text);
+  font-weight: 600;
+}
+.di-op-attn-glyph {
+  color: var(--op-attention);
 }
 
 /* ---------- disclosures ---------- */
@@ -341,6 +383,17 @@
   overflow-y: auto;
 }
 
+/* A NARROW or SHORT window (SC 1.4.10 Reflow at 320 CSS px; the zoom-equivalent size): the text wraps onto more lines or the window leaves less height, so
+   the panel is taller than the window. Find may NOT give way here: shrunk to nothing, its input is painted over by the sections after it. Measured: the
+   input's own share of 25 hit-test points was 5 at 320 and 360 wide, and by height (identical at 640 and 1440 wide) 5 up to 450 tall, 10 at 500, 20 at 550 and
+   25 from 600 up. The panel itself scrolls instead (.di-op is overflow-y:auto), as it already does inside the dialog column below. Taller and wider windows are unchanged. */
+@media (max-width: 480px), (max-height: 620px) {
+  .di-op-find {
+    flex: 0 0 auto;
+    min-height: auto;
+  }
+}
+
 /* A SHORT window: descriptive text gives way before the Missions do. The request entry's tagline is the
    product's own description of the Orchestrator (it stays in the element's title and in the "why"
    disclosure of an unavailable entry); its name, status and both actions stay. */
@@ -407,6 +460,9 @@
 .di-op-section-title {
   font-size: 13px;
   font-weight: 600;
+  font-variant-caps: all-small-caps;
+  letter-spacing: var(--op-label-tracking);
+  color: var(--op-muted);
 }
 .di-op-caveat {
   color: var(--op-warn);
@@ -423,7 +479,7 @@
   min-width: 0;
   padding: 5px 8px;
   border: 1px solid var(--op-edge);
-  border-radius: 7px;
+  border-radius: var(--op-radius);
   background: var(--op-surface);
   color: var(--op-text);
   font-size: 12px;
@@ -498,37 +554,48 @@
   flex-shrink: 0;
 }
 
-/* status badge: shape + words, then the sentence */
+/* status pill: a shape and words on the status tint, then the sentence (never colour alone) */
 .di-op-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: var(--op-radius-pill);
+  background: var(--op-pill-bg, var(--op-surface-2));
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 .di-op-status-glyph {
   font-size: 11px;
 }
 .di-op-status[data-status='running'] {
   color: var(--op-running);
+  --op-pill-bg: var(--op-run-tint);
 }
 .di-op-status[data-status='waiting'] {
   color: var(--op-waiting);
 }
 .di-op-status[data-status='blocked'] {
   color: var(--op-blocked);
+  --op-pill-bg: var(--op-warn-tint);
 }
 .di-op-status[data-status='failed'] {
   color: var(--op-failed);
+  --op-pill-bg: var(--op-bad-tint);
 }
 .di-op-status[data-status='ended'] {
   color: var(--op-ended);
 }
 .di-op-status[data-status='disconnected'] {
   color: var(--op-disconnected);
+  --op-pill-bg: var(--op-warn-tint);
 }
 .di-op-status[data-status='stale'] {
   color: var(--op-stale);
+  --op-pill-bg: var(--op-perm-tint);
 }
 .di-op-status[data-status='unknown'] {
   color: var(--op-unknown);
@@ -550,6 +617,9 @@
 .di-op-member-group-head {
   color: var(--op-muted);
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--op-label-tracking);
+  font-variant-caps: all-small-caps;
   padding: 2px 0;
 }
 .di-op-list-row {
@@ -651,20 +721,97 @@
   border-top: 1px solid var(--op-line);
 }
 
-/* collapsed: one small, quiet button */
+/* minimized: the panel stays mounted and hidden (AC3); one small control restores it as it was */
+.di-op[hidden],
+.di-op-inspector-backdrop[hidden] {
+  display: none;
+}
+/*
+ * The ONE edge strip of restore controls (App; the approved prototype's collapsed-panel strip, .pstrip/.sx):
+ * a slim column at the right edge, or beside the docked panel while it is open, with one stacked slot per
+ * minimized surface, so none covers another. Shown only while it holds a slot; drawn still (no slide).
+ * Each slot keeps a visible "Restore ..." label (set vertically) and an explicit accessible name that contains it.
+ * AXIS RULE: the vertical writing mode sits on the LABEL span only (.di-op-collapsed-label), never on the slot, which stays a
+ * normal horizontal-writing flex column. Under writing-mode: vertical-rl the BLOCK axis is horizontal, so a flex-direction: column
+ * container would lay the glyph and the label side by side and push the label out of the 32 px slot, where overflow hides it.
+ */
+.di-min-tray {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  background: var(--op-bg);
+  border-left: 1px solid var(--op-line);
+  overflow-y: auto;
+}
+.di-min-tray:empty {
+  display: none;
+}
+.di-min-tray .di-op-collapsed {
+  position: static;
+  width: 32px;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 0;
+  border: 0;
+  border-radius: var(--op-radius);
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  max-height: 280px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.di-min-tray .di-op-collapsed-label {
+  writing-mode: vertical-rl;
+}
+.di-min-tray .di-op-collapsed:hover {
+  background: var(--op-surface-2);
+}
+.di-min-tray .di-op-collapsed.di-op-attn {
+  box-shadow: var(--op-glow);
+}
+.di-min-tray .di-op-collapsed-state {
+  display: none;
+}
+.di-op-inspector-tools {
+  flex-wrap: nowrap;
+  align-self: flex-start;
+}
 .di-op-collapsed {
   position: fixed;
   top: 8px;
   right: 8px;
   z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
   border: 1px solid var(--op-edge);
-  border-radius: 8px;
+  border-radius: var(--op-radius);
   background: var(--op-bg);
   color: var(--op-text);
   font-family: var(--op-font-ui);
   font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--op-shadow-pop);
   cursor: pointer;
+}
+.di-op-collapsed:hover {
+  background: var(--op-surface-2);
+}
+.di-op-collapsed-state {
+  color: var(--op-muted);
+  font-weight: 400;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -730,7 +877,7 @@
   align-items: center;
   justify-content: center;
   padding: clamp(8px, 2.4vw, 32px);
-  background: #05060acc;
+  background: var(--op-scrim);
   overscroll-behavior: contain;
 }
 .di-op-inspector {
@@ -743,7 +890,7 @@
   background: var(--op-bg);
   border: 1px solid var(--op-line);
   border-radius: 16px;
-  box-shadow: 0 28px 80px #000000b3;
+  box-shadow: var(--op-shadow-pop);
   overflow: hidden;
 }
 .di-op-inspector:focus {
@@ -782,6 +929,21 @@
   flex-direction: column;
   gap: 26px;
   padding: 20px 24px 32px;
+}
+/* A narrow window (SC 1.4.10 Reflow, 320 CSS px): the dialog header gives its title the whole row and puts the actions on a row of their own, so the
+   title is not squeezed into a column beside two buttons, and the dialog gives back some padding. Wider windows are unchanged. */
+@media (max-width: 480px) {
+  .di-op-inspector-head {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 16px 16px 12px;
+  }
+  .di-op-inspector-heading {
+    flex: 1 1 100%;
+  }
+  .di-op-inspector-body {
+    padding: 16px 16px 24px;
+  }
 }
 .di-op-inspector-section {
   display: flex;
@@ -1040,4 +1202,145 @@ details.di-op-inspector-section {
   .di-rc-facts {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ---------- AC5: sample Mission states (fixture preview only; FIXTURE labelled) ---------- */
+
+.di-op-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--op-edge);
+  border-radius: var(--op-radius-card);
+}
+.di-op-samples > summary {
+  display: flex;
+  align-items: center;
+  min-height: 24px; /* a target of at least 24 by 24 CSS px */
+  cursor: pointer;
+}
+.di-op-sample-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.di-op-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--op-surface);
+  border: 1px solid var(--op-line);
+  border-radius: var(--op-radius-card);
+  --op-sample-ink: var(--op-text);
+  --op-sample-tint: var(--op-surface-2);
+}
+.di-op-sample[data-tone='attention'] {
+  --op-sample-ink: var(--op-attention);
+  --op-sample-tint: var(--op-perm-tint);
+}
+.di-op-sample[data-tone='running'] {
+  --op-sample-ink: var(--op-running);
+  --op-sample-tint: var(--op-run-tint);
+}
+.di-op-sample[data-tone='failed'] {
+  --op-sample-ink: var(--op-failed);
+  --op-sample-tint: var(--op-bad-tint);
+  border-color: var(--op-failed);
+}
+.di-op-sample[data-tone='good'] {
+  --op-sample-ink: var(--op-good);
+  --op-sample-tint: var(--op-ok-tint);
+}
+.di-op-sample-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.di-op-sample-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--op-sample-ink);
+  border-radius: var(--op-radius);
+  background: var(--op-sample-tint);
+  color: var(--op-sample-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.di-op-sample-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.di-op-sample-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.di-op-sample-pill,
+.di-op-sample-needs {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border: 1px solid var(--op-sample-ink);
+  border-radius: var(--op-radius-pill);
+  background: var(--op-sample-tint);
+  color: var(--op-sample-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.di-op-sample-needs {
+  border-color: var(--op-attention);
+  background: var(--op-perm-tint);
+  color: var(--op-attention);
+}
+.di-op-sample-phases {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.di-op-sample-phase {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--op-muted);
+  font-size: 11px;
+}
+.di-op-sample-seg {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--op-surface-2);
+}
+.di-op-sample-phase[data-reached='true'] .di-op-sample-seg {
+  background: var(--op-sample-ink);
+}
+.di-op-sample-phase[data-reached='true'] {
+  color: var(--op-text);
+}
+
+/* ---------- the fixture preview's words inside the panel (a narrow window: the world has no room for the floating banner) ---------- */
+
+.di-op-fixture-note {
+  /* the label stays in the window whatever the panel's scroll position (the aside scrolls: focus restore, a long list, a short window), so it is STICKY, over a SOLID
+     token background so content scrolling beneath it does not show through (--op-warn-tint resolves to a solid colour; measured on the rendered note in
+     diFixtureLabel.test.ts, inside its rounded shape, with a transparent control) */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--op-warn);
+  border-radius: var(--op-radius);
+  background: var(--op-warn-tint);
+  color: var(--op-warn);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
 }

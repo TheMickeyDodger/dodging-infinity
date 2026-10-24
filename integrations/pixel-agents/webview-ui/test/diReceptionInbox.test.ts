@@ -444,7 +444,8 @@ test('the inbox carries no control that approves, resolves, starts or delivers a
   for (const l of labels)
     assert.match(
       l,
-      /^(Close|Show this Mission|Show details|Show evidence|Hide in this view|Show \d+ hidden|Clear the filter|All \(\d+\)|[A-Za-z /]+ \(\d+\))$/,
+      // Minimize (AC3) hides the inbox and acts on nothing; the deny list below still applies to every label
+      /^(Close|Minimize|Show this Mission|Show details|Show evidence|Hide in this view|Show \d+ hidden|Clear the filter|All \(\d+\)|[A-Za-z /]+ \(\d+\))$/,
     );
   assert.doesNotMatch(labels.join(' '), /approve|resolve|retry|dispatch|deliver|authori[sz]e|start/i);
   assert.equal(await p().locator(`${INBOX} a[href]`).count(), 0, 'nothing links out');
@@ -693,7 +694,7 @@ for (const collapsedStart of [false, true]) {
     const before = await selectAnotherMissionsAgent();
     assert.notEqual(before.dockMissionRef, undrawn.missionRef, 'the previous agent belongs to a different Mission');
     if (collapsedStart) {
-      await p().click('text=◂ hide');
+      await p().click('[data-testid="di-office-panel-minimize"]');
       await p().waitForSelector('[data-testid="di-office-panel-collapsed"]');
       await openFromHarness();
     } else {

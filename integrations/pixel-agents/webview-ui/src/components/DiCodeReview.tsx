@@ -81,6 +81,17 @@ import {
   visibleSegments,
   windowRows,
 } from './diCodeReviewModel.js';
+import type { DiKeptView } from './diMinimize.js';
+import {
+  focusExposed,
+  keepView,
+  restoreFocus,
+  restoreScroll,
+  useLastContentFocus,
+} from './diMinimize.js';
+import { DiMinimizedChip } from './DiMinimizedTray.js';
+import { claimFront, isForemost, releaseFront, returnFocusOnClose } from './diModalStack.js';
+import { DI_FOCUS_RING } from './diNavigation.js';
 import { nextEntryIndex } from './diReceptionFormat.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -161,9 +172,16 @@ function Notice({
   );
 }
 
-/** Visible form of a run of text: control characters become placeholders, nothing is dropped. */
+/**
+ * Visible form of a run of text: control characters become placeholders, nothing is dropped. The runs are the
+ * repository's own text (code, a section's name), marked `data-copy="content"`: preserved byte for byte and never
+ * subject to the copy rule. The placeholders and their titles are this dialog's own words.
+ */
 function Visible({ text }: { text: string }) {
-  const segments: TextSegment[] = visibleSegments(text);
+  return <Segments segments={visibleSegments(text)} />;
+}
+
+function Segments({ segments }: { segments: TextSegment[] }) {
   return (
     <>
       {segments.map((s, i) =>
@@ -172,7 +190,9 @@ function Visible({ text }: { text: string }) {
             {s.text}
           </span>
         ) : (
-          <span key={i}>{s.text}</span>
+          <span key={i} data-copy="content">
+            {s.text}
+          </span>
         ),
       )}
     </>
@@ -264,7 +284,9 @@ function TreeRow({
           <span className="di-rv-twisty" aria-hidden="true">
             {row.expanded ? '▾' : '▸'}
           </span>
-          <span className="di-rv-name di-rv-folder-name">{node.name}</span>
+          <span className="di-rv-name di-rv-folder-name" data-copy="content">
+            {node.name}
+          </span>
           {node.additions + node.deletions > 0 ? (
             <Stat additions={node.additions} deletions={node.deletions} />
           ) : null}
@@ -292,13 +314,15 @@ function TreeRow({
         data-state={entry.state}
         onClick={() => onChoose(entry.path)}
         onKeyDown={onKeyDown}
-        title={`${entry.path} — ${changeGlyph(entry.change).label}, ${stagingWords(entry.staging)}${
+        title={`${entry.path}: ${changeGlyph(entry.change).label}, ${stagingWords(entry.staging)}${
           words.badge ? `, ${words.badge}` : ''
         }`}
       >
         <span className="di-rv-twisty" aria-hidden="true" />
         <Glyph change={entry.change} />
-        <span className="di-rv-name">{node.name}</span>
+        <span className="di-rv-name" data-copy="content">
+          {node.name}
+        </span>
         {words.badge ? (
           <span className="di-rv-chip" data-tone={words.tone}>
             {words.badge}
@@ -429,6 +453,139 @@ function diffModel(file: DiCodeReviewFile): DiffModel {
   };
 }
 
+/** The width of a character in the columns of a monospace line: a wide (East Asian) character takes two, so a line is never counted short. */
+const cellsOf = (ch: string): number => ((ch.codePointAt(0) ?? 0) > 0x2e7f ? 2 : 1);
+
+/**
+ * A section's name wrapped into lines of at most `perLine` cells, every character of it kept: at a blank where there is one, and inside
+ * a word only when the word alone is longer than a line. Control characters stay the visible placeholders they are on every other line
+ * and are never split. A blank that would start a line is left out (the line break stands in for it).
+ */
+function wrapSectionName(section: string, perLine: number): TextSegment[][] {
+  const lines: TextSegment[][] = [[]];
+  let used = 0;
+  const breakLine = () => {
+    lines.push([]);
+    used = 0;
+  };
+  const put = (text: string, control: boolean, title: string | null) => {
+    const row = lines[lines.length - 1];
+    const last = row[row.length - 1];
+    if (last && !control && !last.control)
+      row[row.length - 1] = { ...last, text: last.text + text };
+    else row.push({ text, control, title });
+  };
+  const cells = (text: string) => Array.from(text).reduce((n, ch) => n + cellsOf(ch), 0);
+  for (const segment of visibleSegments(section)) {
+    if (segment.control) {
+      const width = cells(segment.text);
+      if (used > 0 && used + width > perLine) breakLine();
+      put(segment.text, true, segment.title);
+      used += width;
+      continue;
+    }
+    for (const atom of segment.text.match(/\s+|\S+/gu) ?? []) {
+      const width = cells(atom);
+      if (/^\s/u.test(atom)) {
+        if (used === 0) continue;
+        if (used + width > perLine) breakLine();
+        else {
+          put(atom, false, null);
+          used += width;
+        }
+        continue;
+      }
+      if (used > 0 && used + width > perLine && width <= perLine) breakLine();
+      for (const ch of atom) {
+        if (used + cellsOf(ch) > perLine) breakLine();
+        put(ch, false, null);
+        used += cellsOf(ch);
+      }
+    }
+  }
+  return lines.filter((line) => line.length > 0);
+}
+
+/** A unified diff's rows, plus (in a narrow window only) the rows that carry each section's name in full. */
+type BodyRow =
+  UnifiedRow | { kind: 'hunkname'; hunkIndex: number; segments: TextSegment[]; last: boolean };
+
+function withNameRows(rows: readonly UnifiedRow[], perLine: number): BodyRow[] {
+  const out: BodyRow[] = [];
+  for (const row of rows) {
+    out.push(row);
+    if (row.kind !== 'hunk' || !row.hunk.section) continue;
+    const lines = wrapSectionName(row.hunk.section, perLine);
+    lines.forEach((segments, i) =>
+      out.push({
+        kind: 'hunkname',
+        hunkIndex: row.hunkIndex,
+        segments,
+        last: i === lines.length - 1,
+      }),
+    );
+  }
+  return out;
+}
+
+/**
+ * How many monospace cells fit on one name row of this pane, measured with a probe row in the pane's own font (so it follows the
+ * text size and the window), or null while it is not wanted. A name row is the same height as every other row, so the windowed
+ * scroll arithmetic (row index times row height) holds unchanged.
+ */
+function useNameCells(
+  pane: RefObject<HTMLDivElement | null>,
+  textSizeIndex: number,
+  wanted: boolean,
+  report: (perLine: number | null) => void,
+) {
+  useLayoutEffect(() => {
+    const el = pane.current;
+    if (!wanted || !el) {
+      report(null);
+      return;
+    }
+    const measure = () => {
+      const probe = document.createElement('div');
+      probe.className = 'di-rv-hunk-name di-rv-chprobe';
+      probe.textContent = '0'.repeat(100);
+      el.appendChild(probe);
+      const style = getComputedStyle(probe);
+      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const ch = (probe.getBoundingClientRect().width - padding) / 100;
+      probe.remove();
+      if (ch > 0) report(Math.max(8, Math.floor((el.clientWidth - padding) / ch) - 1));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pane, textSizeIndex, wanted, report]);
+}
+
+/** One line of a section's name, under its bar: the same text the bar's button names, drawn where it can be read in full. */
+function HunkNameRow({
+  hunkIndex,
+  segments,
+  last,
+}: {
+  hunkIndex: number;
+  segments: TextSegment[];
+  last: boolean;
+}) {
+  return (
+    <div
+      className="di-rv-hunk-name"
+      data-testid="di-review-hunk-name"
+      data-hunk={hunkIndex}
+      data-last={last ? 'true' : undefined}
+      aria-hidden="true"
+    >
+      <Segments segments={segments} />
+    </div>
+  );
+}
+
 function HunkHeader({
   hunk,
   collapsed,
@@ -552,6 +709,8 @@ interface DiffBodyProps {
   /** The commit the comparison's left side is, and when the right side (the working tree) was observed. */
   baseOid: string;
   observedAt: number | null;
+  /** A narrow window: a section's name is drawn in full on rows of its own (unified view). */
+  narrow: boolean;
 }
 
 /**
@@ -657,9 +816,17 @@ function UnifiedBody({
   textSizeIndex,
   filePath,
   registerJump,
+  narrow,
 }: DiffBodyProps) {
-  const rows: UnifiedRow[] = useMemo(() => unifiedRows(model.file.hunks, collapsedHunks), [model, collapsedHunks]);
+  const [nameCells, setNameCells] = useState<number | null>(null);
+  const base: UnifiedRow[] = useMemo(() => unifiedRows(model.file.hunks, collapsedHunks), [model, collapsedHunks]);
+  const nameRows = narrow && nameCells !== null;
+  const rows: BodyRow[] = useMemo(
+    () => (narrow && nameCells !== null ? withNameRows(base, nameCells) : base),
+    [base, narrow, nameCells],
+  );
   const { px, scroller, onScroll, jump, win } = useWindowedRows(rows.length, filePath, textSizeIndex);
+  useNameCells(scroller, textSizeIndex, narrow, setNameCells);
   useEffect(() => {
     registerJump?.((direction) => jump(direction, rows));
     return () => registerJump?.(null);
@@ -677,6 +844,7 @@ function UnifiedBody({
       data-testid="di-review-code"
       data-layout="unified"
       data-rows={rows.length}
+      data-section-names={nameRows ? 'rows' : undefined}
     >
       <div
         className="di-rv-code-window"
@@ -693,6 +861,16 @@ function UnifiedBody({
                   collapsed={row.collapsed}
                   onToggle={onToggleHunk}
                   index={row.hunkIndex}
+                />
+              );
+            }
+            if (row.kind === 'hunkname') {
+              return (
+                <HunkNameRow
+                  key={`n${absolute}`}
+                  hunkIndex={row.hunkIndex}
+                  segments={row.segments}
+                  last={row.last}
                 />
               );
             }
@@ -907,8 +1085,12 @@ function FilePane({
     <div className="di-rv-diff-pane" data-stale={stale ? 'true' : undefined}>
       <div className="di-rv-diff-head">
         <h2 className="di-rv-path" data-testid="di-review-path">
-          {entry.path}
-          {entry.oldPath ? <small>renamed from {entry.oldPath}</small> : null}
+          <span data-copy="content">{entry.path}</span>
+          {entry.oldPath ? (
+            <small>
+              renamed from <span data-copy="content">{entry.oldPath}</span>
+            </small>
+          ) : null}
         </h2>
         <div className="di-rv-toolbar">
           <span className="di-rv-chip" data-tone="info">
@@ -1068,6 +1250,7 @@ function FilePane({
           }}
           baseOid={answer?.comparison?.baseOid ?? ''}
           observedAt={answer?.observedAt ?? null}
+          narrow={narrow}
         />
       ) : null}
       {file && showsDiff(file.state) ? (
@@ -1132,29 +1315,74 @@ function Dialog({ session, onClose, onRefresh, onSelect, returnFocusTo }: DiCode
       : DEFAULT_TEXT_SIZE_INDEX;
   });
   const [layout, setLayout] = useState<Layout>(() => (readPref(PREF_LAYOUT) === 'split' ? 'split' : 'unified'));
+  // AC3: minimized, the dialog stays MOUNTED and hidden, so every choice above (search, folders, layout, text
+  // size, full screen) and the selected file are kept; #root is not inert and the guards below stand down, so the
+  // office is usable. What hiding loses (each pane's scroll, the focused control) is kept here and given back.
+  const [minimized, setMinimized] = useState(false);
+  const minimizeRef = useRef<HTMLButtonElement>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+  const keptView = useRef<DiKeptView | null>(null);
+  // The reading content (file list, diff, and whatever notice stands in their place): restore gives focus back to
+  // the last control used there, never to the Minimize toggle (diMinimize.ts focus contract).
+  const contentRef = useRef<HTMLDivElement>(null);
+  const lastContent = useLastContentFocus(contentRef, minimizeRef);
+  const minimize = () => {
+    if (dialogRef.current) keptView.current = keepView(dialogRef.current, lastContent.current);
+    setMinimized(true);
+  };
 
   const narrow = width < NARROW_VIEWPORT_PX;
   const splitAllowed = width >= SPLIT_MIN_VIEWPORT_PX;
   const effectiveLayout: Layout = layout === 'split' && splitAllowed ? 'split' : 'unified';
 
   // -- the dialog owns focus while open, and gives it back ------------------------------------
+  // The guard on #root is OWNED (diModalStack.ts, shared with every dialog): this dialog claims it while in front
+  // and releases only its own claim; on close it gives focus back to its opener only if it was the foremost
+  // dialog. A hidden (minimized) review closing moves no focus and leaves another dialog's guard in place.
+  const owner = useRef<object>({});
   useLayoutEffect(() => {
-    const root = document.getElementById('root');
+    const me = owner.current;
     // The entry that opened the review set this before the dialog existed; it is read once.
     const back = returnFocusTo.current;
-    root?.setAttribute('inert', '');
+    claimFront(me);
     dialogRef.current?.focus();
     return () => {
-      root?.removeAttribute('inert');
-      if (back && back.isConnected) back.focus();
+      returnFocusOnClose(releaseFront(me), back);
     };
   }, [returnFocusTo]);
+
+  // A review opened again (each entry click names its target afresh) while minimized brings the dialog back.
+  const shownTarget = useRef(target);
+  useEffect(() => {
+    if (shownTarget.current === target) return;
+    shownTarget.current = target;
+    setMinimized(false);
+  }, [target]);
+  const shownMinimized = useRef(minimized);
+  useLayoutEffect(() => {
+    if (shownMinimized.current === minimized) return;
+    shownMinimized.current = minimized;
+    if (minimized) {
+      releaseFront(owner.current);
+      focusExposed(restoreRef.current);
+      return;
+    }
+    claimFront(owner.current);
+    const kept = keptView.current;
+    keptView.current = null;
+    restoreScroll(kept);
+    restoreFocus(kept, minimizeRef.current, dialogRef.current);
+  }, [minimized]);
 
   useLayoutEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
     setWidth(el.clientWidth);
-    const observer = new ResizeObserver(() => setWidth(el.clientWidth));
+    // A minimized dialog is hidden (width 0): that is not a narrow window, and taking it as one would switch to the
+    // one-pane layout and unmount the file list and its search while minimized (AC3 keeps them as they were).
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth > 0) setWidth(el.clientWidth);
+    });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -1259,14 +1487,16 @@ function Dialog({ session, onClose, onRefresh, onSelect, returnFocusTo }: DiCode
   });
   useEffect(() => {
     const root = dialogRef.current;
-    if (!root) return;
+    if (!root || minimized) return;
     const retake = () => {
+      if (!isForemost(owner.current)) return; // only the dialog in front takes focus back
       if (!root.contains(document.activeElement)) root.focus({ preventScroll: true });
     };
     const onFocusOut = (event: FocusEvent) => {
       if (event.relatedTarget === null) queueMicrotask(retake);
     };
     const onWindowKey = (event: KeyboardEvent) => {
+      if (!isForemost(owner.current)) return; // only the dialog in front guards keys
       if (event.target instanceof Node && root.contains(event.target)) return; // inside: onKeyDown has it
       retake();
       handleKeyRef.current(event);
@@ -1277,7 +1507,7 @@ function Dialog({ session, onClose, onRefresh, onSelect, returnFocusTo }: DiCode
       root.removeEventListener('focusout', onFocusOut);
       window.removeEventListener('keydown', onWindowKey, true);
     };
-  }, []);
+  }, [minimized]);
 
   // -- what the overview says ------------------------------------------------------------------
   const cleared = session.cleared;
@@ -1391,7 +1621,7 @@ function Dialog({ session, onClose, onRefresh, onSelect, returnFocusTo }: DiCode
     );
   }
 
-  const title = `Code review — ${target.agentName}`;
+  const title = `Code review: ${target.agentName}`;
   const compare = comparison && info
     ? `${info.detached ? 'detached HEAD' : `branch ${info.branch}`} · compared with commit ${shortOid(comparison.baseOid)} · staged, unstaged and new files`
     : null;
@@ -1400,6 +1630,7 @@ function Dialog({ session, onClose, onRefresh, onSelect, returnFocusTo }: DiCode
       className="di-rv-backdrop"
       data-testid="di-review-backdrop"
       data-fullscreen={fullscreen ? 'true' : 'false'}
+      hidden={minimized}
     >
       <div
         ref={dialogRef}
@@ -1443,162 +1674,200 @@ function Dialog({ session, onClose, onRefresh, onSelect, returnFocusTo }: DiCode
                 {fullscreen ? 'Exit full screen' : 'Full screen'}
               </button>
             )}
+            <button
+              type="button"
+              ref={minimizeRef}
+              onClick={minimize}
+              data-testid="di-review-minimize"
+              title="Minimize the code review; Restore brings it back as you left it"
+            >
+              Minimize
+            </button>
             <button type="button" onClick={onClose} data-testid="di-review-close" aria-label="Close code review">
               Close
             </button>
           </div>
         </div>
 
-        {answer && info && comparison ? (
-          <section className="di-rv-overview" aria-label="Assignment, repository and comparison" data-testid="di-review-overview">
-            <div className="di-rv-overview-head">
-              <dl className="di-rv-facts">
-                <div className="di-rv-fact">
-                  <dt>Worktree</dt>
-                  <dd data-testid="di-review-worktree">{info.worktree}</dd>
-                </div>
-                <div className="di-rv-fact">
-                  <dt>{info.detached ? 'HEAD' : 'Branch'}</dt>
-                  <dd data-testid="di-review-branch">{info.detached ? 'detached' : info.branch}</dd>
-                </div>
-                <div className="di-rv-fact">
-                  <dt>Base commit</dt>
-                  <dd>
-                    <code data-testid="di-review-base">{shortOid(comparison.baseOid)}</code>
-                  </dd>
-                </div>
-                <div className="di-rv-fact">
-                  <dt>Observed</dt>
-                  <dd data-testid="di-review-observed">
-                    {clockWords(observedAt)} ({ageWords(nowMs, observedAt)})
-                  </dd>
-                </div>
-                {totals ? (
+        <div className="di-rv-scroll">
+          {answer && info && comparison ? (
+            <section className="di-rv-overview" aria-label="Assignment, repository and comparison" data-testid="di-review-overview">
+              <div className="di-rv-overview-head">
+                <dl className="di-rv-facts">
                   <div className="di-rv-fact">
-                    <dt>Changes</dt>
-                    <dd data-testid="di-review-totals">{totalsWords(totals)}</dd>
+                    <dt>Worktree</dt>
+                    <dd data-testid="di-review-worktree" data-copy="content">
+                      {info.worktree}
+                    </dd>
                   </div>
-                ) : null}
-              </dl>
-              <button
-                type="button"
-                className="di-rv-toggle"
-                aria-expanded={detailsOpen}
-                aria-controls="di-rv-details"
-                onClick={() => setDetailsOpen((o) => !o)}
-                data-testid="di-review-details"
-              >
-                {detailsOpen ? 'Hide details' : 'What is compared?'}
+                  <div className="di-rv-fact">
+                    <dt>{info.detached ? 'HEAD' : 'Branch'}</dt>
+                    <dd data-testid="di-review-branch">
+                      {info.detached ? 'detached' : <span data-copy="content">{info.branch}</span>}
+                    </dd>
+                  </div>
+                  <div className="di-rv-fact">
+                    <dt>Base commit</dt>
+                    <dd>
+                      <code data-testid="di-review-base" data-copy="content">
+                        {shortOid(comparison.baseOid)}
+                      </code>
+                    </dd>
+                  </div>
+                  <div className="di-rv-fact">
+                    <dt>Observed</dt>
+                    <dd data-testid="di-review-observed">
+                      {clockWords(observedAt)} ({ageWords(nowMs, observedAt)})
+                    </dd>
+                  </div>
+                  {totals ? (
+                    <div className="di-rv-fact">
+                      <dt>Changes</dt>
+                      <dd data-testid="di-review-totals">{totalsWords(totals)}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+                <button
+                  type="button"
+                  className="di-rv-toggle"
+                  aria-expanded={detailsOpen}
+                  aria-controls="di-rv-details"
+                  onClick={() => setDetailsOpen((o) => !o)}
+                  data-testid="di-review-details"
+                >
+                  {detailsOpen ? 'Hide details' : 'What is compared?'}
+                </button>
+              </div>
+              <p id="di-rv-compare" className="di-rv-attribution" data-testid="di-review-compare-line">
+                {narrow ? (
+                  <>
+                    Compared with commit {shortOid(comparison.baseOid)} (staged, unstaged and new files).
+                    A shared worktree: the team&rsquo;s changes, not any one agent&rsquo;s.
+                  </>
+                ) : (
+                  <>
+                    {compare} &middot; {ATTRIBUTION_WORDS}
+                  </>
+                )}
+              </p>
+              {detailsOpen ? (
+                <div className="di-rv-overview-body" id="di-rv-details" data-testid="di-review-details-body">
+                  {comparisonSentences(info, comparison).map((sentence) => (
+                    <p key={sentence}>{sentence}</p>
+                  ))}
+                  <p>
+                    Opened from the agent <strong>{target.agentName}</strong>; the assignment is
+                    task <code>{target.taskId}</code>.
+                  </p>
+                </div>
+              ) : null}
+            </section>
+          ) : (
+            <p id="di-rv-compare" className="di-rv-visually-hidden">
+              {target.agentName}
+            </p>
+          )}
+
+          {session.stale && !cleared ? (
+            <div className="di-rv-banner" data-tone="blocked" data-testid="di-review-stale" role="alert">
+              <span>
+                <strong>Out of date.</strong> The workspace changed after the overview you are looking at
+                (observed {clockWords(observedAt)}). What is shown is the old state, not the current one.
+              </span>
+              <button type="button" onClick={onRefresh} disabled={session.pending !== null}>
+                Refresh
               </button>
             </div>
-            <p id="di-rv-compare" className="di-rv-attribution" data-testid="di-review-compare-line">
-              {narrow ? (
-                <>
-                  Compared with commit {shortOid(comparison.baseOid)} (staged, unstaged and new files).
-                  A shared worktree: the team&rsquo;s changes, not any one agent&rsquo;s.
-                </>
-              ) : (
-                <>
-                  {compare} &middot; {ATTRIBUTION_WORDS}
-                </>
-              )}
-            </p>
-            {detailsOpen ? (
-              <div className="di-rv-overview-body" id="di-rv-details" data-testid="di-review-details-body">
-                {comparisonSentences(info, comparison).map((sentence) => (
-                  <p key={sentence}>{sentence}</p>
-                ))}
-                <p>
-                  Opened from the agent <strong>{target.agentName}</strong>; the assignment is task{' '}
-                  <code>{target.taskId}</code>.
-                </p>
-              </div>
-            ) : null}
-          </section>
-        ) : (
-          <p id="di-rv-compare" className="di-rv-visually-hidden">
-            {target.agentName}
+          ) : null}
+          {aging ? (
+            <div className="di-rv-banner" data-tone="info" data-testid="di-review-aging" role="status">
+              <span>
+                Observed {ageWords(nowMs, observedAt)}. The workspace may have changed since; refresh to
+                read it again.
+              </span>
+              <button type="button" onClick={onRefresh} disabled={session.pending !== null}>
+                Refresh
+              </button>
+            </div>
+          ) : null}
+          {overviewRefusal && answer !== null && !cleared ? (
+            <div className="di-rv-banner" data-tone="blocked" data-testid="di-review-refusal" role="alert">
+              <span>
+                <strong>{overviewRefusal.title}.</strong> {overviewRefusal.body} (code: {refusal?.problem})
+                {session.overview ? ' The overview below is from the earlier read.' : ''}
+              </span>
+            </div>
+          ) : null}
+
+          {narrow && answer !== null && files.length > 0 && !cleared ? (
+            <div className="di-rv-tabs" role="group" aria-label="Show the file list or the diff">
+              <button
+                type="button"
+                aria-pressed={narrowPane === 'files'}
+                onClick={() => setNarrowPane('files')}
+                data-testid="di-review-tab-files"
+              >
+                Files ({files.length})
+              </button>
+              <button
+                type="button"
+                aria-pressed={narrowPane === 'diff'}
+                onClick={() => setNarrowPane('diff')}
+                data-testid="di-review-tab-diff"
+              >
+                Diff
+              </button>
+            </div>
+          ) : null}
+
+          <div className="di-rv-content" ref={contentRef}>
+            {content}
+          </div>
+
+          <p className="di-rv-visually-hidden" role="status" aria-live="polite" data-testid="di-review-live">
+            {loading
+              ? 'Reading the workspace'
+              : cleared
+                ? (clearedText?.title ?? '')
+                : entry && session.file?.answer.file
+                  ? `Showing ${entry.path}`
+                  : answer
+                    ? `${files.length} changed files`
+                    : ''}
           </p>
-        )}
-
-        {session.stale && !cleared ? (
-          <div className="di-rv-banner" data-tone="blocked" data-testid="di-review-stale" role="alert">
-            <span>
-              <strong>Out of date.</strong> The workspace changed after the overview you are looking at
-              (observed {clockWords(observedAt)}). What is shown is the old state, not the current one.
-            </span>
-            <button type="button" onClick={onRefresh} disabled={session.pending !== null}>
-              Refresh
-            </button>
-          </div>
-        ) : null}
-        {aging ? (
-          <div className="di-rv-banner" data-tone="info" data-testid="di-review-aging" role="status">
-            <span>
-              Observed {ageWords(nowMs, observedAt)}. The workspace may have changed since; refresh to
-              read it again.
-            </span>
-            <button type="button" onClick={onRefresh} disabled={session.pending !== null}>
-              Refresh
-            </button>
-          </div>
-        ) : null}
-        {overviewRefusal && answer !== null && !cleared ? (
-          <div className="di-rv-banner" data-tone="blocked" data-testid="di-review-refusal" role="alert">
-            <span>
-              <strong>{overviewRefusal.title}.</strong> {overviewRefusal.body} (code: {refusal?.problem})
-              {session.overview ? ' The overview below is from the earlier read.' : ''}
-            </span>
-          </div>
-        ) : null}
-
-        {narrow && answer !== null && files.length > 0 && !cleared ? (
-          <div className="di-rv-tabs" role="group" aria-label="Show the file list or the diff">
-            <button
-              type="button"
-              aria-pressed={narrowPane === 'files'}
-              onClick={() => setNarrowPane('files')}
-              data-testid="di-review-tab-files"
-            >
-              Files ({files.length})
-            </button>
-            <button
-              type="button"
-              aria-pressed={narrowPane === 'diff'}
-              onClick={() => setNarrowPane('diff')}
-              data-testid="di-review-tab-diff"
-            >
-              Diff
-            </button>
-          </div>
-        ) : null}
-
-        {content}
-
-        <p className="di-rv-visually-hidden" role="status" aria-live="polite" data-testid="di-review-live">
-          {loading
-            ? 'Reading the workspace'
-            : cleared
-              ? (clearedText?.title ?? '')
-              : entry && session.file?.answer.file
-                ? `Showing ${entry.path}`
-                : answer
-                  ? `${files.length} changed files`
-                  : ''}
-        </p>
-        {narrow || cleared !== null || files.length === 0 ? null : (
-          <div className="di-rv-hints" data-testid="di-review-hints">
-            <span>
-              <kbd>&uarr;</kbd> <kbd>&darr;</kbd> move &middot; <kbd>Enter</kbd> open &middot; <kbd>[</kbd>{' '}
-              <kbd>]</kbd> previous / next file &middot; <kbd>Esc</kbd> close
-              {stale ? ' \u00b7 content is not current' : ''}
-            </span>
-          </div>
-        )}
+          {narrow || cleared !== null || files.length === 0 ? null : (
+            <div className="di-rv-hints" data-testid="di-review-hints">
+              <span>
+                <kbd>&uarr;</kbd> <kbd>&darr;</kbd> move &middot; <kbd>Enter</kbd> open &middot; <kbd>[</kbd>{' '}
+                <kbd>]</kbd> previous / next file &middot; <kbd>Esc</kbd> close
+                {stale ? ' \u00b7 content is not current' : ''}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
-  return createPortal(dialog, document.body);
+  return (
+    <>
+      {createPortal(dialog, document.body)}
+      {minimized && (
+        <DiMinimizedChip>
+          <button
+            type="button"
+            ref={restoreRef}
+            className={`di-op-theme di-op-collapsed ${DI_FOCUS_RING}`}
+            onClick={() => setMinimized(false)}
+            data-testid="di-review-restore"
+            aria-label="Restore code review"
+            title="Restore the code review as you left it"
+          >
+            <span className="di-op-collapsed-label">Restore code review</span>
+          </button>
+        </DiMinimizedChip>
+      )}
+    </>
+  );
 }
 
 /** The modal. Renders nothing while no review is open. */

@@ -682,7 +682,8 @@ test('READABLE: a Mission headline leads with its objective; the picker filters 
   });
   assert.equal(
     missionHeadline(m('a', true, 'Ship the office') as never),
-    'Ship the office — mn-a0000000',
+    // AC7: our own wording carries no em or en dash, so the short reference follows the objective in parentheses
+    'Ship the office (mn-a0000000)',
   );
   assert.match(missionHeadline(m('b', true, null) as never), /objective not recorded/);
   const list = [m('a', true, 'x'), m('b', false, 'y'), m('c', true, 'z')];
@@ -724,7 +725,7 @@ test('LIVE SHAPE (S5): direct and linked-child members are grouped apart; a chil
   // never labelled NOT COVERED (a v1-only limitation).
   assert.match(
     groups[1].heading,
-    /Linked child task T-child — recorded roles of this Mission's linked child task/,
+    /Linked child task T-child: recorded roles of this Mission's linked child task/,
   );
   assert.doesNotMatch(groups[1].heading, /NOT COVERED|not this Mission/);
   assert.match(

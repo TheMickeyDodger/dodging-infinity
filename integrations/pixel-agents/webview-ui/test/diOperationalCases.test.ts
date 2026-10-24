@@ -174,7 +174,7 @@ test('a header-only objective is said plainly and source-qualified; status and t
     `${T('di-mission-select')} option[value="${B_REF}"]`,
     (el) => (el as HTMLOptionElement).text,
   );
-  assert.match(option, /^No goal reported — /);
+  assert.match(option, /^No goal reported: /);
   // Still selectable and inspectable: the inspector shows the export verbatim and the COMPLETE ref.
   await c.locator(T('di-open-inspector-mission')).click();
   await p().waitForSelector('[role="dialog"]');

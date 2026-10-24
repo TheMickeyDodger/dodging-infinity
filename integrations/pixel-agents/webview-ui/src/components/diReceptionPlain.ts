@@ -90,6 +90,29 @@ export const PLAIN_CAUSES: Readonly<Record<string, PlainCause>> = {
 const GENERIC_WHY = 'The source reports something here that a person should look at.';
 
 /**
+ * The office server's own explanatory wording (reception category statements and labels, cause labels) is this
+ * project's copy, so the copy rule applies to it as SHOWN: no em or en dash (AC7). The wire and the state keep the
+ * office's wording exactly as sent; only what is displayed is put in plain punctuation, each known sentence in a
+ * reviewed wording that keeps every term. Record values, identifiers and anything a person wrote never pass
+ * through this.
+ */
+export const PLAIN_SERVER_WORDING: Readonly<Record<string, string>> = {
+  'DI progression paused (Mission Core pause flag) — not external work suspended':
+    'DI progression paused (Mission Core pause flag), which does not mean external work is suspended',
+  'The task source reports COMPLETE — a report, not a verification; Mission Core has not verified success':
+    'The task source reports COMPLETE. That is a report, not a verification; Mission Core has not verified success',
+  'Mission Core reports a contradiction or a withdrawn verified success, or holds contradicted or drifted evidence (evidence_contradicted, candidate_drifted, baseline_drifted — read directly, since Mission Core flags those as contradicted only once a Mission is verified or reported complete), or the canonical review record was refused, is not linkage-corroborated, or carries a parsed REJECT. Not yet verified is not a failure; an unparsed review gate is not a rejection.':
+    'Mission Core reports a contradiction or a withdrawn verified success, or holds contradicted or drifted evidence (evidence_contradicted, candidate_drifted, baseline_drifted; these are read directly, since Mission Core flags them as contradicted only once a Mission is verified or reported complete), or the canonical review record was refused, is not linkage-corroborated, or carries a parsed REJECT. Not yet verified is not a failure; an unparsed review gate is not a rejection.',
+  'The task source reports COMPLETE while Mission Core has not verified success. That is a report — not task, Mission, verification or delivery completion.':
+    'The task source reports COMPLETE while Mission Core has not verified success. That is a report, not task, Mission, verification or delivery completion.',
+};
+
+/** The office's explanatory wording as shown: its reviewed plain wording, else the same words with any long dash made a colon. */
+export function plainServerWording(text: string): string {
+  return PLAIN_SERVER_WORDING[text] ?? text.replace(/\s*[\u2013\u2014]\s*/g, ': ');
+}
+
+/**
  * Every hold code Mission Core defines (`mission/observation.py` HOLD_*; a test keeps this in step with
  * it), in plain words taken from the code's own name and Mission Core's comments. A code NOT in this
  * table is shown as "reported reason: <code>" — never guessed.
@@ -127,7 +150,9 @@ function plainMember(value: string): string {
 
 /** Each cause of an entry in plain words, in the projection's order, each cause once. */
 export function plainCauses(entry: DiReceptionEntry): PlainCause[] {
-  return entry.causes.map((c) => PLAIN_CAUSES[c.cause] ?? { happened: c.label, why: GENERIC_WHY });
+  return entry.causes.map(
+    (c) => PLAIN_CAUSES[c.cause] ?? { happened: plainServerWording(c.label), why: GENERIC_WHY },
+  );
 }
 
 /**
@@ -276,7 +301,7 @@ export function firstLayerHappened(entry: DiReceptionEntry): { lines: string[]; 
         (c) =>
           (c.cause === 'mission_core_blockers' ? blockerSentence(entry) : null) ??
           PLAIN_CAUSES[c.cause]?.happened ??
-          c.label,
+          plainServerWording(c.label),
       ),
     ),
   ];
@@ -374,9 +399,9 @@ export function uncertaintyLines(reception: DiReception): string[] {
       const parts = c.gaps.map(
         (g) => `${missions(g.missions)} couldn’t be checked (${plainReason(g.reason)})`,
       );
-      lines.push(`${c.label}: ${parts.join('; ')}.`);
+      lines.push(`${plainServerWording(c.label)}: ${parts.join('; ')}.`);
     } else if (c.outcome === 'unavailable' || c.outcome === 'unsupported') {
-      lines.push(`${c.label}: couldn’t be checked (${plainReason(c.reason ?? '')}).`);
+      lines.push(`${plainServerWording(c.label)}: couldn’t be checked (${plainReason(c.reason ?? '')}).`);
     }
   }
   return lines;

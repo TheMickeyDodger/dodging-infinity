@@ -28,6 +28,13 @@ export interface DiReceptionInboxAccess {
   /** The entry that last had focus: focus returns to it when the inbox is opened again. */
   lastKey: string | null;
   setLastKey: (key: string) => void;
+  /**
+   * AC3: minimized, the inbox stays open and mounted but hidden, and the rest of the app is usable; Restore (or
+   * either entrance) brings it back as it was. Presentation only.
+   */
+  minimized: boolean;
+  minimize: () => void;
+  restore: () => void;
 }
 
 export function useDiReceptionInbox(): DiReceptionInboxAccess {
@@ -35,13 +42,42 @@ export function useDiReceptionInbox(): DiReceptionInboxAccess {
   const returnFocusTo = useRef<HTMLElement | null>(null);
   const [filter, setFilter] = useState<InboxFilter>(EMPTY_FILTER);
   const [lastKey, setLastKey] = useState<string | null>(null);
-  const openFrom = useCallback((opener: HTMLElement | null) => {
-    returnFocusTo.current = opener;
-    setOpen(true);
+  const [minimized, setMinimized] = useState(false);
+  const minimizedNow = useRef(false);
+  const setMinimizedNow = useCallback((value: boolean) => {
+    minimizedNow.current = value;
+    setMinimized(value);
   }, []);
-  const close = useCallback(() => setOpen(false), []);
+  const openFrom = useCallback(
+    (opener: HTMLElement | null) => {
+      // An entrance used while the inbox is minimized restores it as it was; focus still returns, on close, to
+      // the control that first opened it.
+      if (!minimizedNow.current) returnFocusTo.current = opener;
+      setMinimizedNow(false);
+      setOpen(true);
+    },
+    [setMinimizedNow],
+  );
+  const close = useCallback(() => {
+    setMinimizedNow(false);
+    setOpen(false);
+  }, [setMinimizedNow]);
+  const minimize = useCallback(() => setMinimizedNow(true), [setMinimizedNow]);
+  const restore = useCallback(() => setMinimizedNow(false), [setMinimizedNow]);
   return useMemo(
-    () => ({ open, openFrom, close, returnFocusTo, filter, setFilter, lastKey, setLastKey }),
-    [open, openFrom, close, filter, lastKey],
+    () => ({
+      open,
+      openFrom,
+      close,
+      returnFocusTo,
+      filter,
+      setFilter,
+      lastKey,
+      setLastKey,
+      minimized: open && minimized,
+      minimize,
+      restore,
+    }),
+    [open, openFrom, close, filter, lastKey, minimized, minimize, restore],
   );
 }

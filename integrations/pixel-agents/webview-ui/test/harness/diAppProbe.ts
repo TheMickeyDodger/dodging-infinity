@@ -18,3 +18,14 @@ OfficeState.prototype.getCharacters = function (this: OfficeState) {
   window.__diHarnessOffice = this;
   return original.call(this);
 };
+
+// ALSO exposed through update(dt), which the game loop calls every frame whether or not anything is painted. The renderer returns before its work (and so never calls
+// getCharacters) while the world has no size (OfficeCanvas.tsx: a zero-width or zero-height world is not drawn), so at a fresh narrow page with the office open the
+// instance was never exposed and tests waiting for it timed out. Observed there (clone-only diagnostic): getCharacters called 0 times, update advancing about 60 times a
+// second, the OfficeState healthy (the character present, its spawn finished). Delegates to the original engine method unchanged.
+const originalUpdate = OfficeState.prototype.update;
+OfficeState.prototype.update = function (this: OfficeState, ...args: Parameters<OfficeState['update']>) {
+  window.__diHarnessOffice = this;
+  // every argument, the return value and anything the engine throws pass through untouched: no try/catch, nothing re-wrapped
+  return originalUpdate.apply(this, args);
+};

@@ -12,17 +12,84 @@ import { Button } from './ui/Button.js';
 interface ZoomControlsProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
+  /** Draw the +/- buttons here, at the top-left (the default). The world's left strip passes false and renders ZoomButtons in its own flow (WorldLeftRail). */
+  buttons?: boolean;
 }
 
-export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
+/**
+ * The two round zoom buttons, stacked. Position-free: the caller places them (ZoomControls at the top-left on its own, or the world's left strip in its flow, where they share
+ * the strip's height with the camera-view controls and the bottom-left column instead of being a separate group that the rest has to avoid).
+ */
+export function ZoomButtons({
+  zoom,
+  onZoomChange,
+  className,
+}: {
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
+  className?: string;
+}) {
+  const minDisabled = zoom <= ZOOM_MIN;
+  const maxDisabled = zoom >= ZOOM_MAX;
+  return (
+    <div className={className} data-testid="world-zoom-buttons">
+      <Button
+        size="icon_lg"
+        onClick={() => onZoomChange(zoom + 1)}
+        disabled={maxDisabled}
+        className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
+        title="Zoom in (Ctrl+Scroll)"
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <line
+            x1="9"
+            y1="3"
+            x2="9"
+            y2="15"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <line
+            x1="3"
+            y1="9"
+            x2="15"
+            y2="9"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </Button>
+      <Button
+        size="icon_lg"
+        onClick={() => onZoomChange(zoom - 1)}
+        disabled={minDisabled}
+        className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
+        title="Zoom out (Ctrl+Scroll)"
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <line
+            x1="3"
+            y1="9"
+            x2="15"
+            y2="9"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </Button>
+    </div>
+  );
+}
+
+export function ZoomControls({ zoom, onZoomChange, buttons = true }: ZoomControlsProps) {
   const [showLevel, setShowLevel] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevZoomRef = useRef(zoom);
-
-  const minDisabled = zoom <= ZOOM_MIN;
-  const maxDisabled = zoom >= ZOOM_MAX;
 
   // Show zoom level briefly when zoom changes
   useEffect(() => {
@@ -68,56 +135,13 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
         </div>
       )}
 
-      {/* Vertically stacked round buttons — top-left */}
-      <div className="absolute top-8 left-8 z-10 flex flex-col gap-4">
-        <Button
-          size="icon_lg"
-          onClick={() => onZoomChange(zoom + 1)}
-          disabled={maxDisabled}
-          className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
-          title="Zoom in (Ctrl+Scroll)"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <line
-              x1="9"
-              y1="3"
-              x2="9"
-              y2="15"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <line
-              x1="3"
-              y1="9"
-              x2="15"
-              y2="9"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </Button>
-        <Button
-          size="icon_lg"
-          onClick={() => onZoomChange(zoom - 1)}
-          disabled={minDisabled}
-          className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
-          title="Zoom out (Ctrl+Scroll)"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <line
-              x1="3"
-              y1="9"
-              x2="15"
-              y2="9"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </Button>
-      </div>
+      {buttons && (
+        <ZoomButtons
+          zoom={zoom}
+          onZoomChange={onZoomChange}
+          className="absolute top-8 left-8 z-10 flex flex-col gap-4"
+        />
+      )}
     </>
   );
 }

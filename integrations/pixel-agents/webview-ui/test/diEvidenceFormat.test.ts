@@ -122,8 +122,21 @@ test('round 15 F4: a link count leads with the TRUE total and never hides a cap'
   assert.equal(plainLinkCount(64, 64), 'names 64 recorded links:');
   assert.equal(
     plainLinkCount(64, 70),
-    'names 70 recorded links — showing the first 64, 6 not shown (display cap):',
+    'names 70 recorded links, showing the first 64; 6 not shown (display cap):',
   );
+});
+
+test('AC7: the evidence library says its own words without an em or en dash', () => {
+  const codes = ['listing_moved', 'mission_moved_since_listing', 'historical_identity_changed', 'mission_not_listed'];
+  for (const code of codes) assert.doesNotMatch(plainRefusal(code), /[\u2013\u2014]/, code);
+  assert.match(plainRefusal('listing_moved'), /select it again/);
+  assert.doesNotMatch(plainLinkCount(64, 70), /[\u2013\u2014]/);
+  const moved = contentStillCurrent(
+    { cursor: 'read-at' } as unknown as Parameters<typeof contentStillCurrent>[0],
+    { currency: 'current', cursor: 'listed-now' } as unknown as Parameters<typeof contentStillCurrent>[1],
+  );
+  assert.equal(moved.current, false);
+  assert.doesNotMatch(moved.current ? '' : moved.why, /[\u2013\u2014]/);
 });
 
 test('item 2: the recorded execution has distinct words, apart from freshness', () => {

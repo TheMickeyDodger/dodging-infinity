@@ -342,6 +342,9 @@ describe('the session reducer: a diff is only ever current while it can be vouch
       expect(cleared.target, reason).toEqual(TARGET);
       expect(model.nextRequest(cleared), reason).toBeNull();
       expect(model.clearedWords(reason).title).toContain('cleared');
+      // AC7: our copy carries no em or en dash, in the title or the explanation
+      expect(model.clearedWords(reason).title, reason).not.toMatch(/[\u2013\u2014]/);
+      expect(model.clearedWords(reason).body, reason).not.toMatch(/[\u2013\u2014]/);
     }
     const closed = model.reduceSession(s, { type: 'close' });
     expect(closed).toEqual(model.CLOSED_SESSION);

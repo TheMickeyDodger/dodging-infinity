@@ -805,7 +805,25 @@ for (const [width, height] of [
     async () => {
       await boot();
       await p().setViewportSize({ width, height });
+      // READINESS: the ambient legend mounts about 410 ms after the page is ready (measured: 417, 411 and 412 ms over three fresh boots) and takes height from the City panel, so the
+      // panel's fit is measured only once it is there, in the steady state a person sees. BEFORE this the test waited 300 ms and measured at about the moment the legend mounted, so
+      // its outcome depended on that race (22 of 22 in one run, 21 of 22 in the next). This only fixes WHICH state is measured; no assertion below changed.
+      await p().waitForSelector('[data-testid="ambient-legend"]', { state: 'attached', timeout: 30_000 });
       await p().waitForTimeout(300);
+      // With the office open it takes 420 px of the window. Where that leaves a world narrower than the toolbar (640 wide leaves 220 px) the world's
+      // controls, the City button among them, are REMOVED until the office is minimized (WorldControlsGate, diPanelLayout.ts), so the City panel is
+      // reached after Minimize. Only that precondition is added: the viewport and every assertion below are unchanged. The condition is the rendered
+      // fact (the City button is not available), never a hardcoded width.
+      if (!(await p().locator('[data-testid="city-button"]').isVisible())) {
+        assert.equal(
+          await p().evaluate(() => document.querySelector('[data-di-world-controls]')?.getAttribute('data-di-world-controls')),
+          'yielded',
+          'the City button is unavailable because the world yielded its controls, not for any other reason',
+        );
+        await p().click('[data-testid="di-office-panel-minimize"]');
+        await p().waitForSelector('[data-testid="di-office-panel-collapsed"]');
+        await p().waitForTimeout(300);
+      }
       await openCity();
       const inside = (r: { top: number; left: number; bottom: number; right: number }, box: { top: number; left: number; bottom: number; right: number }) =>
         r.top >= box.top - 0.5 && r.left >= box.left - 0.5 && r.bottom <= box.bottom + 0.5 && r.right <= box.right + 0.5;

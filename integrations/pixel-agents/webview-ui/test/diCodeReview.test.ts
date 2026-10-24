@@ -37,6 +37,13 @@ import { WebSocketServer } from 'ws';
 import { checkDiSeatPreferences } from '../../core/src/diSeatPreferences.ts';
 import type { DiCodeReview, DiOfficeState } from '../../core/src/messages.ts';
 import { reviewNotOfferedConsequence } from '../src/components/diCodeReviewModel.ts';
+import type { A11ySweep } from './diChromeA11y.ts';
+import { a11ySweep } from './diChromeA11y.ts';
+import { renderedCopy } from './diRenderedCopy.ts';
+import type { TextFitControl } from './diTextFit.ts';
+import { textFit } from './diTextFit.ts';
+import type { TokenScopeAudit } from './diTokenScope.ts';
+import { tokenScopeAudit } from './diTokenScope.ts';
 
 const STEPS_MS = 90_000;
 
@@ -1425,11 +1432,11 @@ test(
   'when the client cannot vouch for what it shows, the content is CLEARED and stays cleared',
   async () => {
     const cases: Array<[string, () => Promise<void> | void, RegExp]> = [
-      ['expired office', () => send(S.stale), /The office is not live — the review was cleared/],
-      ['assignment inactive', () => send(S.inactive), /The assignment changed — the review was cleared/],
-      ['task replaced', () => send(S.moved), /The assignment changed — the review was cleared/],
-      ['agent gone', () => send(S.agentGone), /The agent is gone — the review was cleared/],
-      ['backend down', () => send(S.unavailable), /The office is not live — the review was cleared/],
+      ['expired office', () => send(S.stale), /The office is not live: the review was cleared/],
+      ['assignment inactive', () => send(S.inactive), /The assignment changed: the review was cleared/],
+      ['task replaced', () => send(S.moved), /The assignment changed: the review was cleared/],
+      ['agent gone', () => send(S.agentGone), /The agent is gone: the review was cleared/],
+      ['backend down', () => send(S.unavailable), /The office is not live: the review was cleared/],
     ];
     for (const [label, cause, pattern] of cases) {
       await p().close();
@@ -1447,6 +1454,8 @@ test(
       assert.match(dialog, /cleared/i, label);
       assert.match(dialog, pattern, label);
       assert.doesNotMatch(dialog, /src\/app\.py|return 3|di-fixture-root|compared with commit/, `${label}: nothing of the review remains`);
+      // AC7: the cleared state is all our own copy (nothing of the review remains), so none of it carries an em or en dash
+      assert.deepEqual((await renderedCopy(p(), T('di-review-dialog'))).authored, [], `${label}: em or en dash in the cleared copy`);
       assert.equal(await p().locator(T('di-review-row')).count(), 0, label);
       assert.equal(await exists(T('di-review-code')), false, label);
       assert.equal(await p().$eval(T('di-review-refresh'), (el) => (el as HTMLButtonElement).disabled), true, label);
@@ -1582,6 +1591,1427 @@ test(
     assert.deepEqual(otherMessages, [], `no other message type was sent: ${otherMessages.join()}`);
     // The only other traffic is the entry's read-only overview ping, in exactly its one shape.
     for (const ping of overviewPings) assert.ok(isOverviewPing(ping), JSON.stringify(ping));
+  },
+  STEPS_MS,
+);
+
+test(
+  'the rendered review dialog carries no em or en dash (AC7, AC-UX-16)',
+  async () => {
+    await openReview();
+    await openFile('src/app.py');
+    await p().waitForSelector(T('di-review-line'));
+    const copy = await renderedCopy(p(), T('di-review-dialog'));
+    // the dialog's own words carry no dash; the repository's text (code, paths, names) is content, kept as it is
+    assert.deepEqual(copy.authored, [], 'em or en dash in the rendered review dialog');
+    console.log(`[copy] review dialog: authored dashes ${copy.authored.length}; content lines with a dash, preserved: ${copy.content.length}`);
+    // the repository's text is marked as content, so it is never read as the dialog's copy
+    assert.ok((await p().locator('[data-testid="di-review-dialog"] [data-copy="content"]').count()) > 0);
+  },
+  STEPS_MS,
+);
+
+/** The diff's own scroll region: the nearest element at or above the code that actually scrolls. */
+const diffScroller = () =>
+  p().evaluate(() => {
+    let el = document.querySelector<HTMLElement>('[data-testid="di-review-code"]');
+    while (el && el.scrollHeight <= el.clientHeight) el = el.parentElement;
+    if (!el) return null;
+    el.setAttribute('data-probe-scroller', 'true');
+    return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+  });
+const scrollerTop = () =>
+  p().$eval('[data-probe-scroller="true"]', (el) => (el as HTMLElement).scrollTop);
+const rootInert = () => p().evaluate(() => document.getElementById('root')?.hasAttribute('inert') ?? null);
+
+test(
+  'minimize keeps the review as it was and restore gives it back (AC3)',
+  async () => {
+    await openReview();
+    await openFile('data/large.txt');
+    await p().waitForSelector(T('di-review-line'));
+    // A search that keeps the open file listed, a selected file, and the diff scrolled to a DISTINCT place:
+    // 1234 is neither the top a reset gives (0) nor anything a jump to the file or a section would give.
+    await p().fill(T('di-review-search'), 'data');
+    const scroller = await diffScroller();
+    assert.ok(scroller !== null && scroller.scrollHeight - scroller.clientHeight > 2000, `the diff scrolls: ${JSON.stringify(scroller)}`);
+    await p().$eval('[data-probe-scroller="true"]', (el) => {
+      (el as HTMLElement).scrollTop = 1234;
+    });
+    assert.equal(await scrollerTop(), 1234);
+    assert.equal(await rootInert(), true, 'the open review is modal');
+    assert.ok(await exists(T('di-review-minimize')), 'the review offers Minimize');
+    // The reader works in the content (the search box), then reaches Minimize BY KEYBOARD (Shift+Tab leaves the
+    // content for the dialog's own controls) and presses it. Restore must give focus back to that working
+    // control, not park it on the Minimize toggle.
+    await p().focus(T('di-review-search'));
+    let presses = 0;
+    while ((await activeInfo()) !== 'button[di-review-minimize]' && presses < 40) {
+      await p().keyboard.press('Shift+Tab');
+      presses += 1;
+    }
+    assert.equal(await activeInfo(), 'button[di-review-minimize]', `Minimize reached by keyboard (${presses} Shift+Tab)`);
+    await p().keyboard.press('Enter');
+
+    // minimized: hidden but kept, the office usable, focus on the named control that restores it
+    await p().waitForSelector(T('di-review-restore'));
+    assert.equal(await p().$eval(T('di-review-backdrop'), (el) => (el as HTMLElement).hidden), true, 'hidden while minimized');
+    assert.ok(await exists(T('di-review-dialog')), 'still mounted while minimized');
+    assert.equal(await rootInert(), false, 'the app behind is usable while minimized');
+    assert.equal(await activeInfo(), 'button[di-review-restore]', 'focus is on Restore, never the page');
+    assert.equal(await text(T('di-review-restore')), 'Restore code review');
+    assert.match((await p().getAttribute(T('di-review-restore'), 'aria-label')) ?? '', /Restore code review/, 'its name contains its words');
+    assert.deepEqual((await renderedCopy(p(), T('di-review-restore'))).authored, [], 'em or en dash on the restore control');
+    await p().fill(T('di-find-input'), 'zz');
+    assert.equal(await activeInfo(), 'input[di-find-input]', 'the office panel takes focus and typing');
+    assert.equal(await p().$eval(T('di-find-input'), (el) => (el as HTMLInputElement).value), 'zz');
+    await p().fill(T('di-find-input'), '');
+    // the minimized strip in a NARROW window (Checkpoint 2 evidence), then the window back to its size
+    await p().setViewportSize({ width: 640, height: 800 });
+    await frames(3);
+    await shot('minimized-review-narrow-640');
+    await p().setViewportSize(VIEW);
+    await frames(3);
+
+    // restore by keyboard: exactly as it was, modal again, focus back on the control that had it
+    await p().focus(T('di-review-restore'));
+    await p().keyboard.press('Enter');
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    assert.equal(await p().$eval(T('di-review-backdrop'), (el) => (el as HTMLElement).hidden), false);
+    assert.equal(await scrollerTop(), 1234, 'the diff is where the reader left it');
+    assert.equal(await p().$eval(T('di-review-search'), (el) => (el as HTMLInputElement).value), 'data', 'the search is kept');
+    assert.equal(await p().getAttribute(rowFor('data/large.txt'), 'aria-selected'), 'true', 'the selected file is kept');
+    assert.match(await text(T('di-review-path')), /^data\/large\.txt/);
+    assert.equal(await rootInert(), true, 'modal again once restored');
+    assert.equal(await activeInfo(), 'input[di-review-search]', 'focus is back on the working control, not the Minimize toggle');
+    assert.ok(await focusInsideDialog());
+
+    // Escape clears the search first (as before), then closes, and focus goes back to the entry that opened it
+    await p().keyboard.press('Escape');
+    assert.equal(await p().$eval(T('di-review-search'), (el) => (el as HTMLInputElement).value), '');
+    assert.ok(await exists(T('di-review-dialog')), 'the first Escape cleared the search and closed nothing');
+    await p().keyboard.press('Escape');
+    await p().waitForSelector(T('di-review-dialog'), { state: 'detached' });
+    assert.equal(await activeInfo(), 'button[di-open-code-review]');
+    assert.equal(await rootInert(), false);
+  },
+  STEPS_MS,
+);
+
+test(
+  'minimize and restore by mouse give focus back to the search box with its text (AC3 review, mouse)',
+  async () => {
+    await openReview();
+    // The reader clicks into the search and types; then uses the MOUSE for Minimize and Restore. A click on Minimize
+    // focuses the toggle, so restore must hand focus back to the control the reader was working in.
+    await p().click(T('di-review-search'));
+    await p().keyboard.type('large.txt');
+    assert.equal(await activeInfo(), 'input[di-review-search]');
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    assert.equal(await activeInfo(), 'button[di-review-restore]', 'minimized: focus is on Restore, never the page');
+    await p().click(T('di-review-restore'));
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    assert.equal(
+      await activeInfo(),
+      'input[di-review-search]',
+      'restored: focus is back in the search box, not on Minimize and never the page',
+    );
+    assert.equal(await p().$eval(T('di-review-search'), (el) => (el as HTMLInputElement).value), 'large.txt', 'the typed text is intact');
+    assert.equal(await rootInert(), true);
+  },
+  STEPS_MS,
+);
+
+test(
+  '[reachable runtime path] a review cleared while minimized behind Reception stays mounted, and every guard is owned',
+  async () => {
+    await openReview();
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    assert.equal(await rootInert(), false);
+    // Reception opens in front of the hidden review
+    await p().click(T('di-open-reception'));
+    await p().waitForSelector(T('di-reception-inbox'));
+    assert.equal(await rootInert(), true, 'Reception is modal');
+    // the review is invalidated WHILE HIDDEN: the office no longer vouches for the agent
+    send(S.agentGone);
+    await p().waitForSelector(T('di-review-cleared'), { state: 'attached', timeout: 15_000 });
+    assert.equal(await rootInert(), true, "Reception's guard holds while the hidden review is cleared");
+    assert.ok(
+      await p().evaluate(() => document.querySelector('[data-testid="di-reception-inbox"]')?.contains(document.activeElement) ?? false),
+      'focus stays inside Reception',
+    );
+    assert.ok(await exists(T('di-review-dialog')), 'the review is cleared, not closed: it is still mounted');
+    assert.equal(await p().$eval(T('di-review-backdrop'), (el) => (el as HTMLElement).hidden), true, 'and still hidden');
+    // Escape closes Reception and gives focus back to its opener; the hidden review holds no guard
+    await p().keyboard.press('Escape');
+    await p().waitForSelector(T('di-reception-inbox'), { state: 'detached' });
+    assert.equal(await rootInert(), false, 'nothing in front: nothing is inert');
+    assert.equal(await activeInfo(), 'button[di-open-reception]');
+    // restoring the review shows the cleared state, modal again
+    await p().click(T('di-review-restore'));
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    assert.equal(await rootInert(), true, 'the restored review is modal');
+    await p().waitForSelector(T('di-review-cleared'));
+    await p().click(T('di-review-cleared-close'));
+    await p().waitForSelector(T('di-review-dialog'), { state: 'detached' });
+    assert.equal(await rootInert(), false, 'closed: nothing is inert');
+    // Close-time focus (pre-existing at 109e096c, fixed as the twin of the restore fallback): the opener was the
+    // dock's "Open code review" button, which left with the agent. Focus must not fall to the page body; it goes to
+    // the office Find box, which is labelled and always present with the office panel.
+    assert.equal(await activeInfo(), 'input[di-find-input]', 'the opener is gone: focus goes to the office Find box, never the page');
+  },
+  STEPS_MS,
+);
+
+test(
+  'AC3 review fallbacks: ABSENT, nothing in the content ever had focus, so restore lands on Minimize',
+  async () => {
+    await openReview();
+    // Minimized by mouse before any content control (search, file list, diff) ever had focus.
+    assert.ok(
+      !(await p().evaluate(() => document.querySelector('.di-rv-content')?.contains(document.activeElement) ?? false)),
+      'no content control has focus',
+    );
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    await p().click(T('di-review-restore'));
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    assert.equal(await activeInfo(), 'button[di-review-minimize]', 'the first fallback, never the page or the restore control');
+    assert.equal(await rootInert(), true);
+  },
+  STEPS_MS,
+);
+
+test(
+  'AC3 review fallbacks: REMOVED, the focused file row is gone after a clear while minimized, so restore lands on a named fallback',
+  async () => {
+    await openReview();
+    // The reader works in the file list: a file row has focus.
+    await p().click(rowFor('src/app.py'));
+    assert.match(await activeInfo(), /\[di-review-row\]$/, 'a file row has focus');
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    // Reachable without new code: while hidden the office stops vouching for the agent, the review is CLEARED (not
+    // closed) and the cleared notice takes the file list's place, so the row that had focus is removed.
+    send(S.agentGone);
+    await p().waitForSelector(T('di-review-cleared'), { state: 'attached', timeout: 15_000 });
+    assert.equal(await p().locator(T('di-review-row')).count(), 0, 'the focused row is removed');
+    await p().click(T('di-review-restore'));
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    const focused = await activeInfo();
+    assert.ok(
+      ['button[di-review-minimize]', 'div[di-review-dialog]'].includes(focused),
+      `a named fallback (Minimize, else the dialog), never the page: ${focused}`,
+    );
+    assert.equal(focused, 'button[di-review-minimize]', 'Minimize is there, so it is the one');
+    assert.equal(await rootInert(), true);
+  },
+  STEPS_MS,
+);
+
+/** Where a restore chip is, whether it is in the minimized tray, whether it is inert, and its two names. */
+const chipInfo = (testid: string) =>
+  p().evaluate((id) => {
+    const el = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+    if (el === null) return null;
+    const r = el.getBoundingClientRect();
+    const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      inTray: el.closest('[data-testid="di-minimized-tray"]') !== null,
+      inert: el.closest('[inert]') !== null,
+      visible: el.innerText.replace(/\s+/g, ' ').trim(),
+      name: el.getAttribute('aria-label') ?? el.textContent ?? '',
+      rect: { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height },
+      hitIsChip: mid !== null && el.contains(mid),
+    };
+  }, testid);
+
+test(
+  'AC3 cross-surface, review and Reception: two dialogs minimized at once, a restore inside another modal is impossible, inert and focus stay right',
+  async () => {
+    await openReview();
+    // the reader works in the review (search), then minimizes it by mouse
+    await p().click(T('di-review-search'));
+    await p().keyboard.type('src');
+    assert.equal(await rootInert(), true, 'the open review is modal');
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    assert.equal(await rootInert(), false);
+    await shot('minimized-review-strip');
+
+    // Reception opens in front of the hidden review; the reader works in it, then minimizes it by mouse too
+    await p().click(T('di-open-reception'));
+    await p().waitForSelector(T('di-reception-inbox'));
+    assert.equal(await rootInert(), true, 'Reception is modal');
+    await p().click(T('di-reception-search'));
+    await p().keyboard.type('SYNTHETIC');
+    await p().click(T('di-reception-minimize'));
+    await p().waitForSelector(T('di-reception-restore'));
+
+    // both dialogs minimized: two separate slots in the one tray, the app behind usable
+    const review = (await chipInfo('di-review-restore'))!;
+    const reception = (await chipInfo('di-reception-restore'))!;
+    assert.ok(review.inTray && reception.inTray, 'both restore chips are in the minimized tray');
+    const apart = review.rect.bottom <= reception.rect.top || reception.rect.bottom <= review.rect.top;
+    assert.ok(apart, `two stacked slots, no overlap: ${JSON.stringify([review.rect, reception.rect])}`);
+    assert.ok(review.rect.height > 0 && reception.rect.height > 0, 'each slot has a real size');
+    assert.match(review.name, /Restore code review/);
+    assert.ok(review.name.includes('Restore code review') && review.visible.includes('Restore code review'), `review chip name contains its label: ${review.name} | ${review.visible}`);
+    assert.ok(reception.name.includes('Restore reception') && reception.visible.includes('Restore reception'), `Reception chip name contains its label: ${reception.name} | ${reception.visible}`);
+    assert.equal(review.inert || reception.inert, false, 'neither chip is inert while nothing is in front');
+    assert.equal(await rootInert(), false, 'nothing in front: the app behind is usable');
+    await p().fill(T('di-find-input'), 'zz');
+    assert.equal(await activeInfo(), 'input[di-find-input]', 'the office Find box takes focus');
+    assert.equal(await p().$eval(T('di-find-input'), (el) => (el as HTMLInputElement).value), 'zz', 'and typing');
+    await p().fill(T('di-find-input'), '');
+    await shot('minimized-two-slots-review-reception');
+
+    // a Mission's details open in front of both: everything behind is inert, no chip can be reached
+    await p().locator(T('di-open-inspector-mission')).first().click();
+    await p().waitForSelector(T('di-inspector'));
+    assert.equal(await rootInert(), true, 'the details dialog is modal');
+    const before = await activeInfo();
+    for (const id of ['di-review-restore', 'di-reception-restore']) {
+      const chip = (await chipInfo(id))!;
+      assert.ok(chip.inTray, `${id} stays in the tray`);
+      assert.equal(chip.inert, true, `${id} is inert under the details dialog`);
+      assert.equal(chip.hitIsChip, false, `a click at the centre of ${id} cannot reach it`);
+      await p().evaluate((t) => document.querySelector<HTMLElement>(`[data-testid="${t}"]`)?.focus(), id);
+      assert.equal(await activeInfo(), before, `a focus attempt on ${id} changes nothing`);
+    }
+    assert.ok(await exists(T('di-review-dialog')) && (await p().$eval(T('di-review-backdrop'), (el) => (el as HTMLElement).hidden)), 'the review stays hidden');
+    assert.ok(await exists(T('di-reception-inbox')) && (await p().$eval(T('di-reception-inbox-backdrop'), (el) => (el as HTMLElement).hidden)), 'Reception stays hidden');
+    await shot('minimized-strip-inert-under-details');
+    for (let i = 1; i <= 25; i += 1) {
+      await p().keyboard.press('Tab');
+      assert.ok(
+        await p().evaluate(() => document.querySelector('[data-testid="di-inspector"]')?.contains(document.activeElement) ?? false),
+        `Tab ${i} stays inside the details dialog (${await activeInfo()})`,
+      );
+    }
+    await p().keyboard.press('Escape');
+    await p().waitForSelector(T('di-inspector'), { state: 'detached' });
+    assert.equal(await rootInert(), false, 'details closed with both dialogs still minimized: nothing is inert');
+    assert.equal(await activeInfo(), 'button[di-open-inspector-mission]', 'focus returns to the control that opened details');
+
+    // restore the review by mouse: modal again, the Reception chip is still in the tray and now inert
+    await p().click(T('di-review-restore'));
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    assert.equal(await p().$eval(T('di-review-backdrop'), (el) => (el as HTMLElement).hidden), false);
+    assert.equal(await rootInert(), true, 'the restored review is modal');
+    const rc = (await chipInfo('di-reception-restore'))!;
+    assert.ok(rc.inTray && rc.inert && rc.hitIsChip === false, `the Reception chip stays in the tray, inert and unreachable: ${JSON.stringify(rc)}`);
+    assert.equal(await activeInfo(), 'input[di-review-search]', "focus is in the review's last content control");
+    assert.equal(await p().$eval(T('di-review-search'), (el) => (el as HTMLInputElement).value), 'src', 'its text is intact');
+    await shot('restored-review-after-strip');
+
+    // minimize the review again, then restore Reception: its own state, with the review chip inert behind it
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    assert.equal(await rootInert(), false);
+    await p().click(T('di-reception-restore'));
+    await p().waitForSelector(T('di-reception-restore'), { state: 'detached' });
+    assert.equal(await p().$eval(T('di-reception-inbox-backdrop'), (el) => (el as HTMLElement).hidden), false);
+    assert.equal(await rootInert(), true, 'the restored Reception is modal');
+    assert.equal(await activeInfo(), 'input[di-reception-search]', "focus is in Reception's last content control");
+    assert.equal(await p().$eval(T('di-reception-search'), (el) => (el as HTMLInputElement).value), 'SYNTHETIC', 'its text is intact');
+    const rv = (await chipInfo('di-review-restore'))!;
+    assert.ok(rv.inTray && rv.inert && rv.hitIsChip === false, `the review chip stays in the tray, inert and unreachable: ${JSON.stringify(rv)}`);
+  },
+  STEPS_MS,
+);
+
+/**
+ * What the browser DRAWS for the dialog frame, measured with getComputedStyle (no source matching). The expected values
+ * are resolved by probe elements that use the shared tokens themselves (`var(--di-*)`), so no colour literal is needed
+ * and the comparison is the browser's own.
+ */
+const measureFrame = () =>
+  p().evaluate(() => {
+    const resolve = (property: 'background-color' | 'color' | 'box-shadow', value: string) => {
+      const probe = document.createElement('div');
+      probe.style.setProperty(property === 'background-color' ? 'background' : property, value);
+      document.body.appendChild(probe);
+      const computed = getComputedStyle(probe).getPropertyValue(property);
+      probe.remove();
+      return computed;
+    };
+    const backdrop = getComputedStyle(document.querySelector('[data-testid="di-review-backdrop"]')!);
+    const dialogEl = document.querySelector<HTMLElement>('[data-testid="di-review-dialog"]')!;
+    const dialog = getComputedStyle(dialogEl);
+    return {
+      fullscreen: dialogEl.getAttribute('data-fullscreen'),
+      backdrop: backdrop.backgroundColor,
+      scrim: resolve('background-color', 'var(--di-scrim)'),
+      transparent: resolve('background-color', 'transparent'),
+      borderWidth: dialog.borderTopWidth,
+      borderStyle: dialog.borderTopStyle,
+      borderColor: dialog.borderTopColor,
+      line: resolve('color', 'var(--di-line)'),
+      radius: dialog.borderTopLeftRadius,
+      shadow: dialog.boxShadow,
+      popShadow: resolve('box-shadow', 'var(--di-shadow-pop)'),
+    };
+  });
+
+test(
+  'review dialog frame, COMPUTED: the scrim, the 1px line, the 16px radius and the soft shadow are what the browser draws',
+  async () => {
+    await openReview();
+    await openFile('src/app.py');
+    await shot('review-frame-scrim-after-fix');
+    const f = await measureFrame();
+    // the expected values are real: the shared scrim is a visible colour, not the browser's transparent default
+    assert.notEqual(f.scrim, f.transparent, `the shared scrim token resolves to a visible colour (${f.scrim})`);
+    assert.notEqual(f.popShadow, 'none', 'the shared pop shadow token resolves to a shadow');
+    assert.equal(f.backdrop, f.scrim, `the backdrop is drawn in the shared scrim, not transparent (backdrop ${f.backdrop}, scrim ${f.scrim})`);
+    assert.notEqual(f.backdrop, f.transparent, 'the backdrop is not transparent');
+    assert.equal(f.borderWidth, '1px');
+    assert.equal(f.borderStyle, 'solid');
+    assert.equal(f.borderColor, f.line, 'the dialog line is the shared line colour');
+    assert.equal(f.radius, '16px');
+    assert.equal(f.shadow, f.popShadow, 'the dialog shadow is the shared soft shadow');
+    assert.notEqual(f.shadow, 'none');
+    // full screen is square
+    await p().click(T('di-review-fullscreen'));
+    await p().waitForSelector('[data-testid="di-review-dialog"][data-fullscreen="true"]');
+    const full = await measureFrame();
+    assert.equal(full.fullscreen, 'true');
+    assert.equal(full.radius, '0px', 'full screen keeps square corners');
+    assert.equal(full.backdrop, full.scrim, 'the scrim is the same in full screen');
+  },
+  STEPS_MS,
+);
+
+/** The `.di-rv` consuming rules that matched NO element in any state audited so far (the audit could not check these). */
+let neverRendered: Set<string> | null = null;
+/** One audit, asserted: no token a rule consumes is missing on an element it matches, and the audit really looked. */
+function assertScopeClean(state: string, audit: TokenScopeAudit) {
+  const unmatchedHere = new Set(audit.unmatched.filter((selector) => selector.includes('.di-rv')));
+  neverRendered = neverRendered === null ? unmatchedHere : new Set([...neverRendered].filter((x) => unmatchedHere.has(x)));
+  console.log(
+    `[scope] ${state}: ${audit.matchedRules}/${audit.consumingRules} consuming rules matched, ${audit.pairsChecked} element-token pairs, gaps ${audit.gaps.length}`,
+  );
+  assert.ok(audit.consumingRules > 20, `${state}: the audit saw a real set of consuming rules (${audit.consumingRules})`);
+  assert.ok(audit.pairsChecked > 100, `${state}: the audit checked a real number of element-token pairs (${audit.pairsChecked})`);
+  assert.deepEqual(
+    audit.gaps.map((g) => `${g.selector} consumes ${g.token}: no value on ${g.elements} matched element(s), e.g. ${g.example}`),
+    [],
+    `${state}: every token a rule consumes has a value where the rule applies`,
+  );
+}
+
+test(
+  'review dialog token scope, AUDITED in the rendered states: no rule consumes a custom property that is out of its scope',
+  async () => {
+    // open and settled with a file selected
+    await openReview();
+    await openFile('src/app.py');
+    assertScopeClean('dialog open, settled, file selected', await tokenScopeAudit(p()));
+    // side by side, and full screen
+    await p().click(T('di-review-layout-split'));
+    await p().waitForSelector(T('di-review-code-old'));
+    assertScopeClean('side by side', await tokenScopeAudit(p()));
+    await p().click(T('di-review-fullscreen'));
+    await p().waitForSelector('[data-testid="di-review-dialog"][data-fullscreen="true"]');
+    assertScopeClean('full screen', await tokenScopeAudit(p()));
+    await p().click(T('di-review-fullscreen'));
+    // minimized: the tray holds the restore chip
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    assertScopeClean('minimized, tray shown', await tokenScopeAudit(p()));
+    await p().click(T('di-review-restore'));
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    await p().keyboard.press('Escape');
+    await p().waitForSelector(T('di-review-dialog'), { state: 'detached' });
+    // loading: the overview is answered late (the existing delayed-reply helper), so the loading notice is on screen
+    replyDelayMs = 3000;
+    await p().click(T('di-open-code-review'));
+    await p().waitForSelector(T('di-review-loading'));
+    assertScopeClean('loading', await tokenScopeAudit(p()));
+    await p().keyboard.press('Escape');
+    await p().waitForSelector(T('di-review-dialog'), { state: 'detached' });
+    replyDelayMs = 0;
+    // cleared: the office stops vouching for the agent while the review is open
+    await p().click(T('di-open-code-review'));
+    await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
+    send(S.agentGone);
+    await p().waitForSelector(T('di-review-cleared'), { timeout: 15_000 });
+    assertScopeClean('cleared', await tokenScopeAudit(p()));
+    await p().click(T('di-review-cleared-close'));
+    await p().waitForSelector(T('di-review-dialog'), { state: 'detached' });
+    // for the record: review rules no audited state rendered (not checked here; the structural scan covers them)
+    console.log(`[scope] .di-rv consuming rules rendered in none of the audited states: ${neverRendered?.size ?? 0}: ${JSON.stringify([...(neverRendered ?? [])])}`);
+  },
+  STEPS_MS,
+);
+
+test(
+  'review entry token scope, AUDITED when the review is not offered (the assignment is no longer active)',
+  async () => {
+    // a state of its own: once the assignment is inactive the agent is no longer drawn, so no dialog follows it
+    await selectAgent();
+    send(S.inactive);
+    await p().waitForSelector(T('di-dock-code-review-unavailable'), { timeout: 15_000 });
+    assertScopeClean('entry not offered', await tokenScopeAudit(p()));
+  },
+  STEPS_MS,
+);
+
+/*
+ * The strip's Restore labels, RENDERED. A programmatic pass (name, focus, a bounding box) is not a visual pass: a label can have
+ * a name and a focus order and be laid out OUTSIDE its 32 px button, clipped away. This measures where each visible text node is
+ * DRAWN against the button that carries it (diTextFit.ts), with the review chip alone and with Reception minimized beside it,
+ * at the sizes the owner will use, each on a fresh page after the layout has settled.
+ */
+const STRIP_VIEWS = [
+  { name: '1440 x 900', width: 1440, height: 900, scale: 1 },
+  { name: '900 x 700', width: 900, height: 700, scale: 1 },
+  { name: 'narrow 640 x 800', width: 640, height: 800, scale: 1 },
+  { name: 'zoom-equivalent (720 x 450 at deviceScaleFactor 2; a scaled viewport, NOT a native Command-plus test)', width: 720, height: 450, scale: 2 },
+] as const;
+const STRIP_LABEL: Record<string, string> = {
+  'di-review-restore': 'Restore code review',
+  'di-reception-restore': 'Restore reception',
+};
+
+/** A fresh page at this size, set up exactly as beforeEach does (connection awaited, dialogs dismissed). */
+async function freshPageAt(view: { width: number; height: number; scale: number }) {
+  await page?.close();
+  requests = [];
+  otherMessages = [];
+  overviewPings = [];
+  replyHook = null;
+  replyDelayMs = 0;
+  expectConnection();
+  page = await browser!.newPage({ viewport: { width: view.width, height: view.height }, deviceScaleFactor: view.scale });
+  page.on('dialog', (d) => void d.dismiss());
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await connected;
+}
+
+function assertChipGeometry(at: string, c: TextFitControl) {
+  const full = STRIP_LABEL[c.id];
+  assert.ok(full !== undefined, `${at}: ${c.id} is a restore control this test knows`);
+  const tol = 0.75;
+  const px = (n: number) => Math.round(n * 10) / 10;
+  // rendered text outside the button's VISIBLE, UNCLIPPED region (the button's padding box, narrowed by every ancestor that
+  // really clips it, and the window): pixels per side
+  assert.deepEqual(c.outside, [], `${at}: ${c.id}: rendered text outside the button's visible, unclipped region (pixels per side)`);
+  assert.deepEqual(c.textNotHit, [], `${at}: ${c.id}: text whose centre is not painted by the button (clipped or covered)`);
+  // EVERY drawn piece of text (the label, and a glyph beside it) lies inside the button's own box: pixels outside, per side
+  const escaping = c.texts
+    .map((t) => ({
+      text: t.text,
+      left: px(Math.max(0, c.box.left - t.left)),
+      right: px(Math.max(0, t.right - c.box.right)),
+      top: px(Math.max(0, c.box.top - t.top)),
+      bottom: px(Math.max(0, t.bottom - c.box.bottom)),
+    }))
+    .filter((o) => o.left > tol || o.right > tol || o.top > tol || o.bottom > tol);
+  assert.deepEqual(escaping, [], `${at}: ${c.id}: rendered text outside the button's own box (pixels per side)`);
+  assert.equal(c.clipsContent, false, `${at}: ${c.id}: the button clips its own content`);
+  assert.equal(c.controlWritingMode, 'horizontal-tb', `${at}: ${c.id}: the flex container keeps a horizontal writing mode (only the label is vertical)`);
+  assert.deepEqual(c.controlOffWindow, { left: 0, right: 0, top: 0, bottom: 0 }, `${at}: ${c.id}: the button is inside the window`);
+  assert.equal(c.hitsItself, true, `${at}: ${c.id}: a click at its centre reaches it`);
+  // the FULL words, never shortened to fit
+  const label = c.texts.find((t) => t.text === full);
+  assert.ok(label, `${at}: ${c.id}: the full label "${full}" is drawn (not shortened); drawn text: ${JSON.stringify(c.texts.map((t) => t.text))}`);
+  assert.ok(label.width >= 10 && label.height >= 40, `${at}: ${c.id}: the label is drawn with a readable box (${label.width} x ${label.height})`);
+  assert.ok(
+    label.left >= c.box.left - tol && label.right <= c.box.right + tol,
+    `${at}: ${c.id}: the rendered label text (${label.left} to ${label.right}) lies between the button's left (${c.box.left}) and right (${c.box.right}) edges`,
+  );
+  assert.ok(
+    label.top >= c.box.top - tol && label.bottom <= c.box.bottom + tol,
+    `${at}: ${c.id}: the rendered label text (${label.top} to ${label.bottom}) lies between the button's top (${c.box.top}) and bottom (${c.box.bottom}) edges`,
+  );
+}
+
+test(
+  'AC3 strip label, review chip, RENDERED GEOMETRY: the Restore label is drawn inside its button, unclipped and in full, alone and beside Reception, at normal, narrow and zoom-equivalent sizes (720 x 450 at deviceScaleFactor 2, a scaled viewport, not a native Command-plus test)',
+  async () => {
+    for (const view of STRIP_VIEWS) {
+      await freshPageAt(view);
+      // the review chip ALONE
+      await openReview();
+      await p().click(T('di-review-minimize'));
+      await p().waitForSelector(T('di-review-restore'));
+      await p().waitForTimeout(1200); // settled, as an owner sees it
+      const alone = await textFit(p(), T('di-minimized-tray'));
+      assert.deepEqual(alone.controls.map((c) => c.id), ['di-review-restore'], `${view.name}: the strip holds exactly the review chip`);
+      for (const c of alone.controls) assertChipGeometry(`${view.name}, review alone`, c);
+
+      // Reception minimized beside it: two stacked slots, neither overlapping the other
+      await p().click(T('di-open-reception'));
+      await p().waitForSelector(T('di-reception-inbox'));
+      await p().click(T('di-reception-minimize'));
+      await p().waitForSelector(T('di-reception-restore'));
+      await p().waitForTimeout(1200);
+      const both = await textFit(p(), T('di-minimized-tray'));
+      assert.deepEqual(both.controls.map((c) => c.id).sort(), ['di-reception-restore', 'di-review-restore'], `${view.name}: the strip holds both restore controls`);
+      for (const c of both.controls) assertChipGeometry(`${view.name}, review + Reception`, c);
+      const [a, b] = [...both.controls].sort((x, y) => x.box.top - y.box.top);
+      assert.ok(a.box.bottom <= b.box.top + 0.75, `${view.name}: the two slots are stacked (${a.id} ends ${a.box.bottom}, ${b.id} starts ${b.box.top}), not overlapping`);
+    }
+  },
+  STEPS_MS * 2,
+);
+
+/*
+ * AC-UX-13 / WCAG 2.2 SC 1.4.10 (Reflow): the review dialog at 320 CSS px wide. SOURCE-MOUNTED SEAM, NOT THE PRODUCTION BUNDLE: the real App
+ * mounted from source by the Vite dev server over the test WebSocket office. It is not integrated production proof.
+ *
+ * Reading and control content (header, search, file tree, tabs, notices) must reflow without horizontal scrolling; the code and diff area is
+ * different in nature (a source line is as long as it is), so its horizontal scrolling is reported separately and never merged with the first.
+ */
+const REFLOW_320 = { name: 'SC 1.4.10 reflow, 320 x 568', width: 320, height: 568, scale: 1 } as const;
+
+/** What scrolls, clips or spills sideways under `rootSelector`, split into reading and control content versus the code and diff area. */
+const horizontalReport = (rootSelector: string) =>
+  p().evaluate((selector) => {
+    const root = document.querySelector<HTMLElement>(selector)!;
+    const box = root.getBoundingClientRect();
+    const codeArea = '[data-testid="di-review-code"], [data-testid="di-review-split"], .di-rv-code-scroll';
+    const idOf = (el: Element) =>
+      el.getAttribute('data-testid') ?? `${el.tagName.toLowerCase()}.${String(el.getAttribute('class') ?? '').split(' ')[0]}`;
+    // the screen-reader-only status line is 1 px wide by design (never visible reading content): not part of this report
+    const shown = (el: Element) =>
+      (el as HTMLElement).checkVisibility({ checkVisibilityCSS: true }) && (el as HTMLElement).getClientRects().length > 0 && el.closest('.di-rv-visually-hidden') === null;
+    const round = (n: number) => Math.round(n * 10) / 10;
+    type Row = { id: string; area: 'reading and control' | 'code and diff'; overflowX: string; scrollWidth: number; clientWidth: number; excessPx: number };
+    const containers: Row[] = [];
+    for (const el of [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]) {
+      if (!shown(el)) continue;
+      const overflowX = getComputedStyle(el).overflowX;
+      const excess = el.scrollWidth - el.clientWidth;
+      if (overflowX !== 'visible' && excess > 1)
+        containers.push({
+          id: idOf(el),
+          area: el.closest(codeArea) !== null ? 'code and diff' : 'reading and control',
+          overflowX,
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+          excessPx: excess,
+        });
+    }
+    // reading and control TEXT drawn beyond the dialog's own box (the dialog clips it) or off the window
+    const textOut: Array<{ text: string; id: string; pastDialogRightPx: number; pastDialogLeftPx: number; offWindowRightPx: number; offWindowLeftPx: number }> = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const parent = n.parentElement;
+      const content = (n.textContent ?? '').replace(/\s+/g, ' ').trim();
+      if (!parent || content === '' || !shown(parent) || parent.closest(codeArea) !== null) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of Array.from(range.getClientRects())) {
+        if (r.width === 0) continue;
+        const row = {
+          text: content.slice(0, 50),
+          id: idOf(parent),
+          pastDialogRightPx: round(Math.max(0, r.right - box.right)),
+          pastDialogLeftPx: round(Math.max(0, box.left - r.left)),
+          offWindowRightPx: round(Math.max(0, r.right - window.innerWidth)),
+          offWindowLeftPx: round(Math.max(0, 0 - r.left)),
+        };
+        if (row.pastDialogRightPx > 0.75 || row.pastDialogLeftPx > 0.75 || row.offWindowRightPx > 0.75 || row.offWindowLeftPx > 0.75) textOut.push(row);
+      }
+    }
+    const doc = document.documentElement;
+    return {
+      window: { width: window.innerWidth, height: window.innerHeight },
+      box: { left: round(box.left), right: round(box.right), top: round(box.top), bottom: round(box.bottom), width: round(box.width) },
+      pageHorizontalScrollPx: Math.max(doc.scrollWidth - window.innerWidth, document.body.scrollWidth - window.innerWidth, 0),
+      narrowLayout: document.querySelector('[data-testid="di-review-body"]')?.getAttribute('data-narrow') ?? null,
+      containers,
+      textOut,
+    };
+  }, rootSelector);
+
+type Dialog320 = Awaited<ReturnType<typeof measureDialogAt320>>;
+
+/** One measured state of the dialog at 320: the sideways report, and every control but the sticky diff headers through the bounded helper. */
+async function measureDialogAt320(state: string) {
+  const report = await horizontalReport(T('di-review-dialog'));
+  // The diff's section-header buttons are position: sticky, which the bounded helper REFUSES (textFit UNSUPPORTED geometry: position: sticky on
+  // di-review-hunk). That is a finding, reported: the helper cannot measure them, so they are scoped out here, never measured by a local workaround.
+  const CONTROLS = 'button:not([data-testid="di-review-hunk"]), a[href], summary, [role="button"], [role="treeitem"], input, select, textarea';
+  const fit = await textFit(p(), T('di-review-dialog'), CONTROLS);
+  const hunks = await p().locator(T('di-review-hunk')).count();
+  console.log(
+    `[reflow320] ${state}: dialog ${report.box.left}..${report.box.right} of ${report.window.width}, page sideways scroll ${report.pageHorizontalScrollPx} px, ` +
+      `${fit.controls.length} controls measured (${hunks} sticky section headers not measurable by the helper), ` +
+      `reading and control containers scrolling or clipping sideways: ${JSON.stringify(report.containers.filter((c) => c.area === 'reading and control'))}, ` +
+      `code and diff containers: ${JSON.stringify(report.containers.filter((c) => c.area === 'code and diff'))}, reading text past the dialog or window: ${JSON.stringify(report.textOut)}`,
+  );
+  return { report, fit, hunks };
+}
+
+const TREE_ROWS = ['di-review-row', 'di-review-folder'];
+function assertDialogAt320(state: string, m: Dialog320, window320 = REFLOW_320.width) {
+  const { report, fit } = m;
+  assert.ok(report.box.left >= 0 && report.box.right <= window320 && report.box.width <= window320, `${state}: the dialog box (${report.box.left}..${report.box.right}) is inside 0..${window320}`);
+  assert.equal(report.pageHorizontalScrollPx, 0, `${state}: the page does not scroll sideways (px)`);
+  assert.deepEqual(report.containers.filter((c) => c.area === 'reading and control'), [], `${state}: no reading or control container scrolls or clips sideways (id, px)`);
+  assert.deepEqual(report.textOut, [], `${state}: no reading or control text is drawn past the dialog or off the window`);
+  assert.ok(fit.controls.length > 0, `${state}: controls were measured`);
+  for (const c of fit.controls) {
+    assert.equal(c.clipsContent, false, `${state}: ${c.id}: the control clips its own content`);
+    assert.deepEqual(
+      c.outside.filter((o) => o.left > 0 || o.right > 0),
+      [],
+      `${state}: ${c.id}: rendered text outside the control's visible region, sideways (px)`,
+    );
+    assert.deepEqual([c.controlOffWindow.left, c.controlOffWindow.right], [0, 0], `${state}: ${c.id}: the control is off the window sideways (px left, right)`);
+    if (TREE_ROWS.includes(c.id)) continue; // file rows below the fold are scrolled out of view VERTICALLY by design: reflow is about the sideways axis
+    assert.deepEqual(c.outside, [], `${state}: ${c.id}: rendered text outside the control's visible region (px per side)`);
+    assert.deepEqual(c.textNotHit, [], `${state}: ${c.id}: text whose centre is not painted by the control`);
+    assert.deepEqual(c.controlOffWindow, { left: 0, right: 0, top: 0, bottom: 0 }, `${state}: ${c.id}: the control is inside the window`);
+    assert.equal(c.hitsItself, true, `${state}: ${c.id}: a click at its centre reaches it`);
+  }
+}
+
+test(
+  'AC-UX-13 / SC 1.4.10, review dialog at 320, SOURCE-MOUNTED SEAM (the real App mounted from source over the test WebSocket office, not the production bundle)',
+  async () => {
+    await freshPageAt(REFLOW_320);
+    p().setDefaultTimeout(15_000);
+    await selectAgent();
+    await p().click(T('di-open-code-review'));
+    await p().waitForSelector(T('di-review-dialog'));
+    await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
+    await p().waitForTimeout(1200); // settled
+
+    // A. the Files pane: header, overview with its details open, search, the file tree
+    await p().click(T('di-review-details'));
+    const a = await measureDialogAt320('A files pane, details open');
+    assertDialogAt320('A files pane, details open', a);
+    assert.ok(a.fit.controls.some((c) => c.id === 'di-review-search'), 'A: the search box is measured');
+    assert.ok(a.fit.controls.filter((c) => c.id === 'di-review-row').length >= 20, 'A: the file rows are measured');
+    await p().click(T('di-review-details'));
+
+    // B. the Diff pane of a two-section file; Minimize and Close are reachable by keyboard as well
+    await openFile('src/syntax_sample.ts');
+    await p().waitForSelector(T('di-review-hunk'));
+    const b = await measureDialogAt320('B diff pane, two sections (src/syntax_sample.ts)');
+    assertDialogAt320('B diff pane, two sections', b);
+    for (const id of ['di-review-minimize', 'di-review-close']) {
+      assert.ok(b.fit.controls.some((c) => c.id === id), `B: ${id} is measured`);
+      await p().focus(T(id));
+      assert.equal(await activeInfo(), `button[${id}]`, `B: ${id} takes keyboard focus`);
+    }
+    // The code and diff area scrolls sideways by the nature of its content: it is a real scroll region a person can use.
+    const codeB = b.report.containers.filter((c) => c.area === 'code and diff' && c.id === 'di-review-code');
+    assert.equal(codeB.length, 1, 'B: the code region is the one code container that scrolls sideways');
+    assert.equal(codeB[0].overflowX, 'auto', 'B: it scrolls (it is not clipped)');
+    assert.ok(codeB[0].excessPx > 0, 'B: its content is wider than it');
+    const scrolled = await p().$eval(T('di-review-code'), (el) => {
+      (el as HTMLElement).scrollLeft = 100;
+      return (el as HTMLElement).scrollLeft;
+    });
+    assert.equal(scrolled, 100, 'B: the code region really scrolls sideways');
+    // FINDING (reported, not asserted): in the diff area the sticky section headers show the repository's section name through
+    // `overflow: hidden; text-overflow: ellipsis`, so at 320 the name is cut off with no other way to read it.
+    const clippedNames = b.report.containers.filter((c) => c.id === 'span.di-rv-hunk-section');
+    console.log(`[reflow320] FINDING (not asserted): ${clippedNames.length} section-header names are clipped sideways at 320: ${JSON.stringify(clippedNames)}`);
+
+    // C. the Diff pane of a file with one very long source line
+    await p().click(T('di-review-tab-files'));
+    await openFile('web/long_line.js');
+    const c3 = await measureDialogAt320('C diff pane, a very long source line (web/long_line.js)');
+    assertDialogAt320('C diff pane, a long source line', c3);
+    const codeC = c3.report.containers.filter((c) => c.area === 'code and diff' && c.id === 'di-review-code');
+    assert.equal(codeC.length, 1);
+    assert.ok(codeC[0].excessPx > 1000, `C: a long source line is as long as it is, in a region that scrolls (${codeC[0].excessPx} px more than its width)`);
+
+    // the section names against a wide window, for the record (not asserted)
+    await p().click(T('di-review-tab-files'));
+    await openFile('src/syntax_sample.ts');
+    const hunkNames = () =>
+      p().$$eval('.di-rv-hunk-section', (els) => els.map((e) => ({ scrollWidth: (e as HTMLElement).scrollWidth, clientWidth: (e as HTMLElement).clientWidth })));
+    const names320 = await hunkNames();
+    await p().setViewportSize({ width: 1600, height: 1000 });
+    await frames(3);
+    const names1600 = await hunkNames();
+    await p().setViewportSize({ width: REFLOW_320.width, height: REFLOW_320.height });
+    await frames(3);
+    console.log(`[reflow320] section-header names (scrollWidth, clientWidth): at 320 ${JSON.stringify(names320)}; at 1600 x 1000 ${JSON.stringify(names1600)}`);
+
+    // E. minimized: the review chip alone in the strip
+    await p().click(T('di-review-minimize'));
+    await p().waitForSelector(T('di-review-restore'));
+    await p().waitForTimeout(1200);
+    const strip = async (state: string, expected: string[]) => {
+      const fit = await textFit(p(), T('di-minimized-tray'));
+      const tray = await p().evaluate(() => {
+        const r = document.querySelector<HTMLElement>('[data-testid="di-minimized-tray"]')!.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, scrollPx: Math.max(document.documentElement.scrollWidth - window.innerWidth, 0) };
+      });
+      console.log(`[reflow320] ${state}: tray ${Math.round(tray.left)}..${Math.round(tray.right)} of ${REFLOW_320.width}, chips ${JSON.stringify(fit.controls.map((c) => `${c.id} ${Math.round(c.box.left)}..${Math.round(c.box.right)} x ${Math.round(c.box.top)}..${Math.round(c.box.bottom)}`))}`);
+      assert.ok(tray.left >= 0 && tray.right <= REFLOW_320.width, `${state}: the strip (${tray.left}..${tray.right}) is inside the window`);
+      assert.equal(tray.scrollPx, 0, `${state}: the page does not scroll sideways (px)`);
+      assert.deepEqual(fit.controls.map((c) => c.id).sort(), [...expected].sort(), `${state}: the strip holds exactly these chips`);
+      for (const c of fit.controls) assertChipGeometry(state, c); // the strip contract: outside, textNotHit, clips, writing mode, window, hit, full label
+      return fit;
+    };
+    await strip('E strip at 320, review chip alone', ['di-review-restore']);
+    await shot('reflow320-review-chip-alone');
+
+    // F. Reception minimized beside it: two stacked slots in the window
+    await p().click(T('di-open-reception'));
+    await p().waitForSelector(T('di-reception-inbox'));
+    await p().click(T('di-reception-minimize'));
+    await p().waitForSelector(T('di-reception-restore'));
+    await p().waitForTimeout(1200);
+    const f = await strip('F strip at 320, review chip and Reception chip together', ['di-review-restore', 'di-reception-restore']);
+    const [top, bottom] = [...f.controls].sort((x, y) => x.box.top - y.box.top);
+    assert.ok(top.box.bottom <= bottom.box.top + 0.75, `F: the two chips are stacked (${top.id} ends ${top.box.bottom}, ${bottom.id} starts ${bottom.box.top}), not overlapping`);
+    await shot('reflow320-two-chips');
+
+    // D. restored, then the cleared notice (reading content only): Minimize, Close and the notice's own Close are reachable
+    await p().click(T('di-review-restore'));
+    await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+    send(S.agentGone);
+    await p().waitForSelector(T('di-review-cleared'), { timeout: 15_000 });
+    const d = await measureDialogAt320('D cleared notice');
+    assertDialogAt320('D cleared notice', d);
+    for (const id of ['di-review-minimize', 'di-review-close', 'di-review-cleared-close'])
+      assert.ok(d.fit.controls.some((c) => c.id === id), `D: ${id} is measured and reachable`);
+  },
+  STEPS_MS,
+);
+
+/*
+ * A diff section's NAME (the repository's own context text beside "@@ -a,b +c,d @@") is the only readable identifier of that section. It was
+ * cut off by an ellipsis at 320 with no other way to read it (measured: 81 px visible of 266 and 344). At narrow widths it now wraps onto
+ * rows of its own under the section bar, every character of it, while a wide window keeps the single-line bar. SOURCE-MOUNTED SEAM, NOT THE
+ * PRODUCTION BUNDLE: direct measurements, because the bounded helper refuses position: sticky.
+ */
+const sectionBars = () =>
+  p().evaluate(() => {
+    const code = document.querySelector<HTMLElement>('[data-testid="di-review-code"]')!;
+    const region = code.getBoundingClientRect();
+    return {
+      region: { left: Math.round(region.left * 10) / 10, right: Math.round(region.right * 10) / 10, clientWidth: code.clientWidth },
+      rows: code.getAttribute('data-rows'),
+      bars: [...code.querySelectorAll<HTMLElement>('[data-testid="di-review-hunk"]')].map((btn) => {
+        const index = btn.getAttribute('data-hunk');
+        const span = btn.querySelector<HTMLElement>('.di-rv-hunk-section');
+        const bar = btn.getBoundingClientRect();
+        const rects = (el: Element) => {
+          const out: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const range = document.createRange();
+            range.selectNodeContents(n);
+            for (const r of Array.from(range.getClientRects())) if (r.width > 0) out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+          }
+          return out;
+        };
+        const nameRows = [...code.querySelectorAll<HTMLElement>(`[data-testid="di-review-hunk-name"][data-hunk="${index}"]`)];
+        return {
+          hunk: index,
+          fullText: span?.textContent ?? '',
+          barHeight: Math.round(bar.height * 10) / 10,
+          spanScrollWidth: span?.scrollWidth ?? 0,
+          spanClientWidth: span?.clientWidth ?? 0,
+          spanTextOverflow: span ? getComputedStyle(span).textOverflow : '',
+          spanWidth: span ? Math.round(span.getBoundingClientRect().width * 10) / 10 : 0,
+          nameRows: nameRows.map((row) => ({
+            text: row.textContent ?? '',
+            ariaHidden: row.getAttribute('aria-hidden'),
+            shown: row.checkVisibility({ checkVisibilityCSS: true }),
+            scrollWidth: row.scrollWidth,
+            clientWidth: row.clientWidth,
+            textRects: rects(row),
+          })),
+        };
+      }),
+    };
+  });
+
+test(
+  'AC-UX-13 / SC 1.4.10, diff section names at 320 are READABLE IN FULL and the collapse control works by keyboard; a wide window keeps the single-line bar (SOURCE-MOUNTED SEAM, not the production bundle)',
+  async () => {
+    await freshPageAt({ width: 1600, height: 1000, scale: 1 });
+    p().setDefaultTimeout(15_000);
+    await selectAgent();
+    await p().click(T('di-open-code-review'));
+    await p().waitForSelector(T('di-review-dialog'));
+    await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
+    await openFile('src/syntax_sample.ts');
+    await p().waitForSelector(T('di-review-hunk'));
+    await p().waitForTimeout(1200); // settled
+
+    // 0. a wide window FIRST: the single-line bar with the name on it, no rows of its own (the desktop baseline this correction must not change)
+    const wide = await sectionBars();
+    // measured on the unchanged product: 30 rows, each bar 22 px (one row) with its name on it, 287 and 371 px wide, fully shown
+    assert.equal(wide.rows, '30', '1600: the diff has 30 rows (no rows added for names)');
+    assert.deepEqual(
+      wide.bars.map((b) => [b.hunk, b.barHeight, b.nameRows.length, b.spanScrollWidth === b.spanClientWidth, b.spanWidth > 200]),
+      [['0', 22, 0, true, true], ['1', 22, 0, true, true]],
+      '1600: the bars are one row high, carry the name themselves (it fits) and have no name rows of their own',
+    );
+    assert.deepEqual(wide.bars.map((b) => b.spanClientWidth), [287, 371], '1600: the names are drawn at their full widths (px)');
+    await p().setViewportSize({ width: 320, height: 568 });
+    await frames(3);
+    await p().waitForTimeout(1200);
+
+    // 1. at 320, section by section (each brought to the top of the code region by the review's own "Next section" control)
+    const expectedNames = ["import { readFileSync } from 'fs';", 'export function load(path: string): Config {'];
+    const checkNames = async (label: string, barHeight: number | null) => {
+      await p().click(T('di-review-tab-files'));
+      await openFile('src/syntax_sample.ts');
+      for (let k = 0; k < expectedNames.length; k += 1) {
+        if (k > 0) await p().click(T('di-review-next-section'));
+        await p().waitForTimeout(150);
+        const m = await sectionBars();
+        const region = m.region;
+        const bar = m.bars.find((b) => b.hunk === String(k));
+        assert.ok(bar, `${label}: section ${k} is drawn once it is scrolled to`);
+        const at = `${label}: section ${k}`;
+        assert.equal(bar.fullText, expectedNames[k], `${at}: the section's own name is the one in the diff`);
+        // the name, every character of it, is VISIBLE: its rows carry exactly that text, are shown, are not clipped, and sit inside the region
+        assert.ok(bar.nameRows.length >= 1, `${at}: the name is drawn on rows of its own (${bar.nameRows.length} rows)`);
+        // (a line break stands in for the blank it wraps at, so the comparison ignores blanks: no other character may be missing or added)
+        const unblanked = (t: string) => t.replace(/\s+/g, '');
+        assert.equal(unblanked(bar.nameRows.map((r) => r.text).join('')), unblanked(expectedNames[k]), `${at}: the rows together carry the whole name, nothing dropped`);
+        for (const row of bar.nameRows) {
+          assert.equal(row.shown, true, `${at}: a name row is shown`);
+          assert.equal(row.ariaHidden, 'true', `${at}: the visible copy is hidden from assistive technology (the button's own name already carries the text)`);
+          assert.ok(row.scrollWidth <= row.clientWidth, `${at}: a name row is not clipped (${row.scrollWidth} of ${row.clientWidth} px)`);
+          for (const r of row.textRects)
+            assert.ok(r.left >= region.left - 0.75 && r.right <= region.right + 0.75, `${at}: name text ${Math.round(r.left)}..${Math.round(r.right)} lies inside the code region ${region.left}..${region.right}`);
+        }
+        // and the bar itself fits its row (a narrow-only rule had made its button 30 px tall in a 22 px row, over its neighbours)
+        if (barHeight !== null) assert.equal(bar.barHeight, barHeight, `${at}: the section bar is one row high, as it is in a wide window (px)`);
+        console.log(`[sectionnames] ${at}: ${bar.nameRows.length} name rows ${JSON.stringify(bar.nameRows.map((r) => `${r.text} (${r.scrollWidth}/${r.clientWidth})`))}, bar ${bar.barHeight} px`);
+      }
+    };
+    await checkNames('320', 22);
+
+    // 2. the existing collapse control still works by REAL keyboard: Tab to it, Enter collapses, Space expands
+    await p().click(T('di-review-tab-files'));
+    await openFile('src/syntax_sample.ts');
+    await p().focus(T('di-review-tab-diff'));
+    let reached = false;
+    for (let presses = 0; presses < 40 && !reached; presses += 1) {
+      await p().keyboard.press('Tab');
+      reached = (await activeInfo()) === 'button[di-review-hunk]';
+    }
+    assert.ok(reached, '320: Tab reaches a section button');
+    const rowsOpen = await p().$eval(T('di-review-code'), (el) => Number(el.getAttribute('data-rows')));
+    await p().keyboard.press('Enter');
+    assert.equal(await p().getAttribute(`${T('di-review-hunk')}:focus`, 'aria-expanded'), 'false', '320: Enter collapses the section');
+    const rowsCollapsed = await p().$eval(T('di-review-code'), (el) => Number(el.getAttribute('data-rows')));
+    assert.ok(rowsCollapsed < rowsOpen, `320: collapsing removes the section's lines (${rowsOpen} to ${rowsCollapsed} rows)`);
+    await p().keyboard.press('Space');
+    assert.equal(await p().getAttribute(`${T('di-review-hunk')}:focus`, 'aria-expanded'), 'true', '320: Space expands it again');
+    assert.equal(await p().$eval(T('di-review-code'), (el) => Number(el.getAttribute('data-rows'))), rowsOpen, '320: the rows are back as they were');
+    // the accessible name still carries the section's own text (assistive technology reads it once, from the button)
+    assert.match(await p().locator(T('di-review-hunk')).first().ariaSnapshot(), /import \{ readFileSync \} from ''fs''/, "320: the button's accessible name carries the section name");
+
+    // 3. the largest-but-one text sizes wrap the same names onto more rows and still never clip them (text size 20 px: three steps up)
+    for (let i = 0; i < 3; i += 1) await p().click(T('di-review-size-up'));
+    assert.equal(await text(T('di-review-size')), '20px');
+    await checkNames('320 at text size 20px', null);
+
+  },
+  STEPS_MS,
+);
+
+/*
+ * AC-UX-13 usability (NOT a WCAG height threshold: no such threshold exists): at a phone's height the fixed chrome above the reading area
+ * (title, overview, comparison notice, tabs, the file's own bar) is about 500 px, and the code region used to be left with 12 px of visible code,
+ * no whole row. The bar this holds the review to, at 320 x 568: the dialog scrolls as a WHOLE under its title bar, the code region keeps at least
+ * 8 whole rows (the first section's bar and its name rows among them) and a person gets to them with the keyboard alone, while every piece of
+ * metadata, every notice and every control stays in reach with a visible focus ring. Roomy and wide windows are exactly what they were.
+ * SOURCE-MOUNTED SEAM, NOT THE PRODUCTION BUNDLE: direct measurements (the bounded helper refuses position: sticky).
+ */
+const readingLayout = () =>
+  p().evaluate(() => {
+    const q = (sel: string) => document.querySelector<HTMLElement>(sel);
+    const f = (n: number) => Math.round(n * 10) / 10;
+    const R = (el: Element | null) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: f(r.top), bottom: f(r.bottom), left: f(r.left), right: f(r.right), height: f(r.height), width: f(r.width) };
+    };
+    const dialog = q('[data-testid="di-review-dialog"]')!;
+    // the part that scrolls as a whole: the wrapper under the title bar in a narrow window, the dialog itself (which clips) otherwise
+    const wrap = q('.di-rv-scroll');
+    const scroller = wrap && getComputedStyle(wrap).display !== 'contents' ? wrap : dialog;
+    const code = q('[data-testid="di-review-code"]');
+    const tree = q('[data-testid="di-review-tree"]');
+    const win = window.innerHeight;
+    const titleBottom = q('.di-rv-top')?.getBoundingClientRect().bottom ?? 0;
+    const inside = (r: DOMRect, box: { top: number; bottom: number }) => r.top >= Math.max(box.top, titleBottom) - 0.5 && r.bottom <= Math.min(box.bottom, win) + 0.5;
+    let codeInfo = null;
+    if (code) {
+      const box = code.getBoundingClientRect();
+      const client = { top: box.top, bottom: box.top + code.clientHeight };
+      const rows = [...code.querySelectorAll('.di-rv-line, .di-rv-hunk-button, .di-rv-hunk-name, .di-rv-note-row')];
+      const whole = rows.filter((el) => inside(el.getBoundingClientRect(), client));
+      const bar0 = code.querySelector('[data-testid="di-review-hunk"][data-hunk="0"]');
+      const names0 = [...code.querySelectorAll('[data-testid="di-review-hunk-name"][data-hunk="0"]')];
+      codeInfo = {
+        rect: R(code),
+        clientHeight: code.clientHeight,
+        rowPx: parseFloat(getComputedStyle(code).getPropertyValue('--rv-row')),
+        wholeRows: whole.length,
+        firstSectionWhole: bar0 !== null && inside(bar0.getBoundingClientRect(), client) && names0.every((n) => inside(n.getBoundingClientRect(), client)),
+        firstSectionNameRows: names0.length,
+      };
+    }
+    let treeInfo = null;
+    if (tree) {
+      const box = tree.getBoundingClientRect();
+      const client = { top: box.top, bottom: box.top + tree.clientHeight };
+      treeInfo = {
+        rect: R(tree),
+        clientHeight: tree.clientHeight,
+        wholeRows: [...tree.querySelectorAll('[role="treeitem"]')].filter((el) => inside(el.getBoundingClientRect(), client)).length,
+      };
+    }
+    return {
+      window: { w: window.innerWidth, h: win },
+      dialog: { height: f(dialog.getBoundingClientRect().height) },
+      scroller: { overflowY: getComputedStyle(scroller).overflowY, scrollTop: scroller.scrollTop, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight },
+      top: R(q('.di-rv-top')),
+      overview: R(q('.di-rv-overview')),
+      body: R(q('.di-rv-body')),
+      diffHead: R(q('.di-rv-diff-head')),
+      treeTools: R(q('.di-rv-tree-tools')),
+      hints: R(q('[data-testid="di-review-hints"]')),
+      code: codeInfo,
+      tree: treeInfo,
+    };
+  });
+
+/** What a control shows when it is focused by keyboard, and where it is. */
+const focusedControl = () =>
+  p().evaluate(() => {
+    const el = document.activeElement as HTMLElement;
+    const probe = document.createElement('div');
+    probe.style.color = 'var(--di-focus)';
+    document.body.append(probe);
+    const focusColour = getComputedStyle(probe).color;
+    probe.remove();
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const titleBottom = document.querySelector('.di-rv-top')?.getBoundingClientRect().bottom ?? 0;
+    return {
+      id: el.getAttribute('data-testid'),
+      focusVisible: el.matches(':focus-visible'),
+      outlineStyle: cs.outlineStyle,
+      outlineWidth: cs.outlineWidth,
+      outlineColourIsTheSharedFocus: cs.outlineColor === focusColour,
+      rect: { top: Math.round(r.top * 10) / 10, bottom: Math.round(r.bottom * 10) / 10 },
+      titleBottom: Math.round(titleBottom * 10) / 10,
+      windowHeight: window.innerHeight,
+      inTitleBar: el.closest('.di-rv-top') !== null,
+    };
+  });
+
+test(
+  'AC-UX-13 usability, review reading area at 320 x 568: the dialog scrolls as a whole, the code keeps 8 whole rows, every control stays in reach by keyboard (SOURCE-MOUNTED SEAM, not the production bundle)',
+  async () => {
+    await freshPageAt({ width: 320, height: 568, scale: 1 });
+    p().setDefaultTimeout(15_000);
+    await selectAgent();
+    await p().click(T('di-open-code-review'));
+    await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
+    await openFile('src/syntax_sample.ts');
+    await p().waitForSelector(T('di-review-hunk'));
+    await p().waitForTimeout(1200); // settled
+
+    // 1. at rest: the chrome scrolls with the dialog, and the code region has room for 8 whole rows of its own
+    const rest = await readingLayout();
+    console.log(`[reading320] at rest: dialog ${rest.dialog.height} px, scrolls ${rest.scroller.scrollHeight} of ${rest.scroller.clientHeight} (${rest.scroller.overflowY}); code region ${rest.code?.rect?.height} px, ${rest.code?.clientHeight} px of visible code, ${rest.code?.wholeRows} whole rows in the window at rest`);
+    assert.equal(rest.scroller.overflowY, 'auto', 'everything under the title bar scrolls as a whole in a narrow window');
+    assert.ok(rest.scroller.scrollHeight > rest.scroller.clientHeight, `the chrome and the reading area together are taller than the window (${rest.scroller.scrollHeight} of ${rest.scroller.clientHeight} px)`);
+    assert.ok(rest.code && rest.code.clientHeight >= 8 * rest.code.rowPx, `the code region keeps room for 8 whole rows (${rest.code?.clientHeight} px of visible code, a row is ${rest.code?.rowPx} px)`);
+
+    // 2. by REAL keyboard: Tab from the Diff tab to the code region; the browser scrolls the dialog, not the page
+    await p().focus(T('di-review-tab-diff'));
+    let reached = false;
+    for (let presses = 0; presses < 20 && !reached; presses += 1) {
+      await p().keyboard.press('Tab');
+      reached = (await activeInfo()) === 'div[di-review-code]';
+    }
+    assert.ok(reached, 'Tab reaches the code region');
+    await p().waitForTimeout(300);
+    const reading = await readingLayout();
+    console.log(`[reading320] after Tab to the code region: dialog scrollTop ${reading.scroller.scrollTop}; code region ${reading.code?.rect?.top}..${reading.code?.rect?.bottom} of a ${reading.window.h} px window under a title bar ending at ${reading.top?.bottom}; ${reading.code?.wholeRows} whole rows visible; first section bar and ${reading.code?.firstSectionNameRows} name rows whole: ${reading.code?.firstSectionWhole}`);
+    assert.ok(reading.scroller.scrollTop > 0, 'the dialog scrolled to bring the code region into view');
+    assert.ok(reading.code && reading.code.wholeRows >= 8, `at least 8 whole code rows are visible at once (${reading.code?.wholeRows})`);
+    assert.equal(reading.code?.firstSectionWhole, true, "the first section's bar and its name rows are among them, whole and not under the title bar");
+    assert.ok((reading.code?.firstSectionNameRows ?? 0) >= 1);
+    assert.ok(reading.code!.rect!.top >= reading.top!.bottom - 0.5 && reading.code!.rect!.bottom <= reading.window.h + 0.5, 'the code region lies between the title bar and the bottom of the window');
+
+    // 3. metadata, notices and controls stay in reach: at the top of the dialog they are where they were, each reached by Tab with the shared focus ring
+    await p().$eval('.di-rv-scroll', (el) => {
+      el.scrollTop = 0;
+    });
+    await p().waitForTimeout(150);
+    const wanted = ['di-review-refresh', 'di-review-minimize', 'di-review-close', 'di-review-details', 'di-review-tab-files', 'di-review-tab-diff'];
+    await p().focus(T('di-review-refresh'));
+    const seen = new Map<string, Awaited<ReturnType<typeof focusedControl>>>();
+    for (let presses = 0; presses < 12 && seen.size < wanted.length; presses += 1) {
+      const c = await focusedControl();
+      if (c.id !== null && wanted.includes(c.id)) seen.set(c.id, c);
+      await p().keyboard.press('Tab');
+    }
+    assert.deepEqual([...seen.keys()], wanted, 'Tab reaches Refresh, Minimize, Close, the details toggle and both tabs, in that order');
+    for (const [id, c] of seen) {
+      assert.equal(c.focusVisible, true, `${id}: keyboard focus is focus-visible`);
+      assert.ok(c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) >= 3, `${id}: a visible focus ring (${c.outlineStyle} ${c.outlineWidth})`);
+      assert.equal(c.outlineColourIsTheSharedFocus, true, `${id}: the ring is the shared focus colour`);
+      assert.ok(c.rect.top >= (c.inTitleBar ? 0 : c.titleBottom) - 0.5 && c.rect.bottom <= c.windowHeight + 0.5, `${id}: it is in view (${c.rect.top}..${c.rect.bottom}, title bar ends ${c.titleBottom}, window ${c.windowHeight})`);
+    }
+    // the overview, the comparison notice and the details disclosure are all there, and the disclosure opens
+    for (const id of ['di-review-overview', 'di-review-compare-line', 'di-review-details']) {
+      const hit = await p().$eval(T(id), (el) => {
+        const r = el.getBoundingClientRect();
+        const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { inWindow: r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth, hit: at !== null && (el === at || el.contains(at)) };
+      });
+      assert.deepEqual(hit, { inWindow: true, hit: true }, `${id} is in the window at the top of the dialog and not covered`);
+    }
+    await p().click(T('di-review-details'));
+    assert.equal(await p().getAttribute(T('di-review-details'), 'aria-expanded'), 'true');
+    await p().waitForSelector(T('di-review-details-body'));
+    await p().click(T('di-review-details'));
+  },
+  STEPS_MS,
+);
+
+test(
+  'AC-UX-13 usability, the reading areas of a roomy phone, the Files pane and a wide window are not squeezed or moved by the narrow layout (SOURCE-MOUNTED SEAM, not the production bundle)',
+  async () => {
+    const near = (actual: number | undefined, expected: number, what: string) =>
+      assert.ok(actual !== undefined && Math.abs(actual - expected) <= 1, `${what}: ${actual} px, expected ${expected} px`);
+    // Measured on the product before either change (viewport-BASELINE-metrics log) and after both (viewport-WIP2 log). The narrow-layout rules alone
+    // moved nothing at any of these sizes (viewport-WIP1 log). The chrome controls' 1 px borders (AC1) make a content-sized button 1.75 px shorter
+    // (33.75 px to the 32 px minimum) and the search field 1.8 px: so the overview is 85.5 -> 83.8 px, the search tools 78.6 -> 76.8 px, and the
+    // code region and the file tree of a wide window take that space (669.7 -> 673.2 px and 702 -> 705.5 px).
+    const open = async (size: { width: number; height: number }, file: boolean) => {
+      await freshPageAt({ ...size, scale: 1 });
+      p().setDefaultTimeout(15_000);
+      await selectAgent();
+      await p().click(T('di-open-code-review'));
+      await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
+      await p().waitForTimeout(800);
+      if (file) {
+        await openFile('src/syntax_sample.ts');
+        await p().waitForSelector(T('di-review-hunk'));
+        await p().waitForTimeout(800);
+      }
+      return readingLayout();
+    };
+    // 1600 x 1000, the diff
+    const wide = await open({ width: 1600, height: 1000 }, true);
+    assert.equal(wide.scroller.overflowY, 'hidden', '1600: the dialog does not scroll as a whole');
+    near(wide.dialog.height, 956, '1600: the dialog (was 956)');
+    near(wide.top?.height, 56.5, '1600: the title bar (was 56.5)');
+    near(wide.overview?.height, 83.8, '1600: the overview (was 85.5)');
+    near(wide.body?.height, 782.4, '1600: the body (was 780.6)');
+    near(wide.diffHead?.height, 76.3, '1600: the file bar (was 78)');
+    near(wide.treeTools?.height, 76.8, '1600: the search tools (was 78.6)');
+    near(wide.hints?.height, 31.4, '1600: the key hints (was 31.4)');
+    near(wide.code?.rect?.height, 673.2, '1600: the code region (was 669.7)');
+    assert.equal(wide.code?.clientHeight, 673, '1600: the visible code (was 670)');
+    assert.equal(wide.code?.wholeRows, 30, '1600: the whole rows visible (was 30)');
+    near(wide.tree?.rect?.height, 705.5, '1600: the file tree (was 702)');
+    assert.equal(wide.tree?.wholeRows, 23, '1600: the whole file rows visible (was 23)');
+    // 390 x 844, a roomy phone: the regions fill the window as before and the dialog does not scroll
+    const phone = await open({ width: 390, height: 844 }, true);
+    assert.equal(phone.scroller.scrollHeight, phone.scroller.clientHeight, '390 x 844: the dialog does not scroll');
+    near(phone.code?.rect?.height, 358.2, '390 x 844: the code region (was 358.2)');
+    assert.equal(phone.code?.wholeRows, 15, '390 x 844: the whole code rows visible (was 15)');
+    await p().click(T('di-review-tab-files'));
+    const phoneFiles = await readingLayout();
+    near(phoneFiles.tree?.rect?.height, 478.8, '390 x 844: the file tree (was 477)');
+    assert.equal(phoneFiles.tree?.wholeRows, 15, '390 x 844: the whole file rows visible (was 15)');
+    // 320 x 568, the Files pane: 5 whole file rows and no scroll of the dialog, as before
+    const files = await open({ width: 320, height: 568 }, false);
+    assert.equal(files.scroller.scrollHeight, files.scroller.clientHeight, '320 x 568 Files pane: the dialog does not scroll');
+    near(files.tree?.rect?.height, 165.2, '320 x 568 Files pane: the file tree (was 163.4)');
+    assert.equal(files.tree?.wholeRows, 5, '320 x 568 Files pane: the whole file rows visible (was 5)');
+  },
+  STEPS_MS * 2,
+);
+
+/*
+ * AC1 / brief 2.1: the review's chrome controls (buttons, toggles, tabs, the search field) are the shared control, not a pixel-style one: an 8 px
+ * radius, a 1 px token border, and token colours at rest, on hover, when pressed and when expanded. COMPUTED in the browser, compared with what
+ * the SHARED tokens resolve to (a probe element that uses var(--di-...) itself, so no colour literal is needed here). The code rows keep their
+ * own geometry: the section bars and the file rows stay square. SOURCE-MOUNTED SEAM, NOT THE PRODUCTION BUNDLE.
+ */
+const controlLook = (testid: string) =>
+  p().evaluate((id) => {
+    const el = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
+    const cs = getComputedStyle(el);
+    const resolve = (property: 'background-color' | 'color', value: string) => {
+      const probe = document.createElement('div');
+      probe.style.setProperty(property === 'background-color' ? 'background' : 'color', value);
+      document.body.append(probe);
+      const out = getComputedStyle(probe).getPropertyValue(property);
+      probe.remove();
+      return out;
+    };
+    const tokens = {
+      control: resolve('background-color', 'var(--di-control)'),
+      controlHover: resolve('background-color', 'var(--di-control-hover)'),
+      selected: resolve('background-color', 'var(--di-selected)'),
+      bg: resolve('background-color', 'var(--di-bg)'),
+      edge: resolve('color', 'var(--di-edge)'),
+      muted: resolve('color', 'var(--di-muted)'),
+      link: resolve('color', 'var(--di-link)'),
+      focus: resolve('color', 'var(--di-focus)'),
+      text: resolve('color', 'var(--di-text)'),
+    };
+    return {
+      radius: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius],
+      borderWidths: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth],
+      borderStyle: cs.borderTopStyle,
+      borderColor: cs.borderTopColor,
+      leftBorderColor: cs.borderLeftColor,
+      background: cs.backgroundColor,
+      color: cs.color,
+      tokens,
+    };
+  }, testid);
+
+test(
+  'AC1 review chrome controls, COMPUTED: 8 px radius, a 1 px token border and token colours at rest, hover, pressed and expanded; the code rows keep their geometry (SOURCE-MOUNTED SEAM, not the production bundle)',
+  async () => {
+    await freshPageAt({ width: 1600, height: 1000, scale: 1 });
+    p().setDefaultTimeout(15_000);
+    await selectAgent();
+    await p().click(T('di-open-code-review'));
+    await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
+    await openFile('src/syntax_sample.ts');
+    await p().waitForSelector(T('di-review-hunk'));
+    await p().waitForTimeout(1000);
+    const radius8 = ['8px', '8px', '8px', '8px'];
+    const width1 = ['1px', '1px', '1px', '1px'];
+    const log = (state: string, id: string, c: Awaited<ReturnType<typeof controlLook>>) =>
+      console.log(`[chrome] ${state} ${id}: radius ${c.radius[0]}, border ${c.borderWidths[0]} ${c.borderStyle} ${c.borderColor}, background ${c.background}`);
+
+    // at rest: the shared control look
+    for (const id of ['di-review-refresh', 'di-review-minimize', 'di-review-close', 'di-review-details']) {
+      const c = await controlLook(id);
+      log('rest', id, c);
+      assert.deepEqual(c.radius, radius8, `${id}: an 8 px radius`);
+      assert.deepEqual(c.borderWidths, width1, `${id}: a 1 px border on every side (no 2 px pixel border)`);
+      assert.equal(c.borderStyle, 'solid', `${id}: a solid border`);
+      assert.equal(c.borderColor, c.tokens.edge, `${id}: the border is the shared edge colour`);
+      assert.equal(c.background, c.tokens.control, `${id}: the background is the shared control colour`);
+      assert.equal(c.color, c.tokens.text, `${id}: the text is the shared text colour`);
+    }
+    // a joined group (layout, text size, sections) is rounded only at its two outer ends: first segment [TL, TR, BR, BL] = 8 0 0 8, last = 0 8 8 0, a middle one square
+    const outer: Array<[string, string[]]> = [
+      ['di-review-layout-unified', ['8px', '0px', '0px', '8px']],
+      ['di-review-layout-split', ['0px', '8px', '8px', '0px']],
+      ['di-review-size-down', ['8px', '0px', '0px', '8px']],
+      ['di-review-size-up', ['0px', '8px', '8px', '0px']],
+      ['di-review-prev-section', ['8px', '0px', '0px', '8px']],
+      ['di-review-next-section', ['0px', '0px', '0px', '0px']],
+      ['di-review-expand-all', ['0px', '8px', '8px', '0px']],
+    ];
+    for (const [id, expected] of outer) {
+      const c = await controlLook(id);
+      assert.deepEqual(c.radius, expected, `${id}: rounded at the group's outer ends only`);
+      assert.deepEqual(c.borderWidths, width1, `${id}: a 1 px border`);
+      assert.equal(c.borderColor === c.tokens.edge || c.borderColor === c.tokens.link, true, `${id}: a shared border colour`);
+    }
+    // the search field
+    const search = await controlLook('di-review-search');
+    log('rest', 'di-review-search', search);
+    assert.deepEqual(search.radius, radius8, 'the search field: an 8 px radius');
+    assert.deepEqual(search.borderWidths, width1, 'the search field: a 1 px border');
+    assert.equal(search.borderColor, search.tokens.edge, 'the search field: the shared edge colour');
+    assert.equal(search.background, search.tokens.bg, 'the search field: the shared field background');
+    // hover
+    await p().hover(T('di-review-refresh'));
+    const hover = await controlLook('di-review-refresh');
+    log('hover', 'di-review-refresh', hover);
+    assert.equal(hover.background, hover.tokens.controlHover, 'hover: the shared hover colour');
+    assert.equal(hover.borderColor, hover.tokens.muted, 'hover: the border is the shared muted colour');
+    assert.deepEqual(hover.radius, radius8, 'hover: still an 8 px radius');
+    assert.deepEqual(hover.borderWidths, width1, 'hover: still a 1 px border');
+    await p().mouse.move(0, 0);
+    // pressed: the layout toggle that is on
+    const pressed = await controlLook('di-review-layout-unified');
+    log('pressed', 'di-review-layout-unified', pressed);
+    assert.equal(await p().getAttribute(T('di-review-layout-unified'), 'aria-pressed'), 'true');
+    assert.equal(pressed.background, pressed.tokens.selected, 'pressed: the shared selected colour');
+    assert.equal(pressed.borderColor, pressed.tokens.link, 'pressed: the border is the shared link colour');
+    assert.deepEqual(pressed.radius, ['8px', '0px', '0px', '8px'], 'pressed: the first segment of its group, rounded at its outer end');
+    assert.deepEqual(pressed.borderWidths, width1, 'pressed: a 1 px border');
+    // expanded: the details toggle opened
+    await p().click(T('di-review-details'));
+    await p().mouse.move(0, 0);
+    const expanded = await controlLook('di-review-details');
+    log('expanded', 'di-review-details', expanded);
+    assert.equal(await p().getAttribute(T('di-review-details'), 'aria-expanded'), 'true');
+    assert.equal(expanded.background, expanded.tokens.selected, 'expanded: the shared selected colour');
+    assert.equal(expanded.borderColor, expanded.tokens.link, 'expanded: the border is the shared link colour');
+    assert.deepEqual(expanded.radius, radius8, 'expanded: an 8 px radius');
+    await p().click(T('di-review-details'));
+    // the code rows keep their own geometry: the section bar and a file row stay square; their hover and selected colours are the shared ones
+    const bar = await controlLook('di-review-hunk');
+    assert.deepEqual(bar.radius, ['0px', '0px', '0px', '0px'], 'the section bar stays a square full-width bar');
+    await p().hover(T('di-review-hunk'));
+    const barHover = await controlLook('di-review-hunk');
+    assert.equal(barHover.background, barHover.tokens.selected, 'the section bar on hover: the shared selected colour');
+    await p().mouse.move(0, 0);
+    const row = await controlLook('di-review-row');
+    assert.deepEqual(row.radius, ['0px', '0px', '0px', '0px'], 'a file row stays square (it has an accent bar)');
+    const selectedRow = await p().$eval(`${T('di-review-row')}[aria-selected="true"]`, () => 'present');
+    assert.equal(selectedRow, 'present');
+    const selected = await p().evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="di-review-row"][aria-selected="true"]')!;
+      const probe = document.createElement('div');
+      probe.style.background = 'var(--di-selected)';
+      document.body.append(probe);
+      const want = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { background: getComputedStyle(el).backgroundColor, want };
+    });
+    assert.equal(selected.background, selected.want, 'the selected file row: the shared selected colour');
+
+    // tabs, in a narrow window: the pressed tab and the other one
+    await p().setViewportSize({ width: 320, height: 568 });
+    await frames(3);
+    await p().waitForSelector(T('di-review-tab-diff'));
+    const tabDiff = await controlLook('di-review-tab-diff');
+    const tabFiles = await controlLook('di-review-tab-files');
+    assert.deepEqual([tabDiff.radius, tabFiles.radius], [radius8, radius8], 'the tabs: an 8 px radius');
+    assert.deepEqual([tabDiff.borderWidths, tabFiles.borderWidths], [width1, width1], 'the tabs: a 1 px border');
+    assert.equal(tabDiff.background, tabDiff.tokens.selected, 'the pressed tab: the shared selected colour');
+    assert.equal(tabFiles.background, tabFiles.tokens.control, 'the other tab: the shared control colour');
+  },
+  STEPS_MS,
+);
+
+/** The names, label in name and state-in-words checks of one sweep, each a list that must be empty. */
+function assertNamedAndStated(where: string, sweep: A11ySweep) {
+  assert.ok(sweep.controls.length > 0, `${where}: the sweep read some controls`);
+  assert.deepEqual(sweep.controls.filter((c) => c.source === 'none').map((c) => c.id), [], `${where}: every control has a name`);
+  assert.deepEqual(
+    sweep.controls.filter((c) => c.source === 'title' || c.source === 'placeholder').map((c) => `${c.id} (named by its ${c.source} alone)`),
+    [],
+    `${where}: no control is named by a title or placeholder alone`,
+  );
+  assert.deepEqual(sweep.controls.filter((c) => c.labelInName === false).map((c) => `${c.id}: "${c.name}"`), [], `${where}: the accessible name contains the visible label`);
+  assert.deepEqual(sweep.stateMarks.filter((m) => m.words === '').map((m) => m.id), [], `${where}: every state mark says its state in words`);
+}
+/** Nothing runs by itself: no animated or transitioning element, no running animation. */
+function assertQuiet(where: string, sweep: A11ySweep) {
+  assert.deepEqual(sweep.motion, [], `${where}: no element animates or transitions`);
+  assert.equal(sweep.running, 0, `${where}: no running animation`);
+}
+const undersized = (sweep: A11ySweep, only?: string[]) =>
+  sweep.controls.filter((c) => (only === undefined || only.includes(c.id)) && (c.width < 24 || c.height < 24)).map((c) => `${c.id} ${c.width}x${c.height}`);
+
+test(
+  'AC6 sweep, review dialog: names, label in name, state in words, no motion once settled, 24px targets for the new controls, under both Reduce Motion settings',
+  async () => {
+    const sweep = (selector: string) => a11ySweep(p(), selector);
+    const settle = async () => {
+      await openFile('src/app.py'); // the overview is loaded and a file is selected
+      // the sliding "Reading ..." indicator is gone: nothing is loading
+      await p().waitForFunction(() => document.querySelector('.di-rv-progress') === null, undefined, { timeout: 20_000 });
+      await frames(3);
+    };
+    for (const motionSetting of ['no-preference', 'reduce'] as const) {
+      await p().emulateMedia({ reducedMotion: motionSetting });
+      assert.equal(await p().evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), motionSetting === 'reduce');
+      if (motionSetting === 'no-preference') await openReview();
+      else {
+        await p().click(T('di-open-code-review'));
+        await p().waitForSelector(T('di-review-dialog'));
+        await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
+      }
+      await settle();
+
+      // the dialog, settled
+      const dialog = await sweep(T('di-review-dialog'));
+      const where = `dialog (${motionSetting})`;
+      assert.ok(dialog.controls.length >= 10, `${where}: a real set of controls was read (${dialog.controls.length})`);
+      assertNamedAndStated(where, dialog);
+      assertQuiet(where, dialog);
+      const minimize = dialog.controls.find((c) => c.id === 'di-review-minimize');
+      assert.ok(minimize, `${where}: the Minimize control is in the sweep`);
+      assert.deepEqual(undersized(dialog, ['di-review-minimize']), [], `${where}: the new Minimize control is at least 24 x 24 (${minimize.width}x${minimize.height})`);
+      if (motionSetting === 'no-preference') {
+        // listed once for the report; NOT asserted (these controls pre-date this slice)
+        console.log(`[a11y] review dialog controls under 24px, pre-existing, not asserted: ${JSON.stringify(undersized({ ...dialog, controls: dialog.controls.filter((c) => c.id !== 'di-review-minimize') }))}`);
+        console.log(`[a11y] review dialog: ${dialog.controls.length} controls, ${dialog.stateMarks.length} state marks, new Minimize ${minimize.width}x${minimize.height}`);
+      }
+
+      // minimized: the tray holds the review chip alone
+      await p().click(T('di-review-minimize'));
+      await p().waitForSelector(T('di-review-restore'));
+      await frames(3);
+      const alone = await sweep(T('di-minimized-tray'));
+      assert.deepEqual(alone.controls.map((c) => c.id).sort(), ['di-review-restore'], `tray (${motionSetting}, review alone): exactly the review chip`);
+      assertNamedAndStated(`tray, review alone (${motionSetting})`, alone);
+      assertQuiet(`tray, review alone (${motionSetting})`, alone);
+      assert.deepEqual(undersized(alone), [], `tray, review alone (${motionSetting}): every control is at least 24 x 24`);
+
+      // Reception minimized as well: two controls, by id
+      await p().click(T('di-open-reception'));
+      await p().waitForSelector(T('di-reception-inbox'));
+      await p().click(T('di-reception-minimize'));
+      await p().waitForSelector(T('di-reception-restore'));
+      await frames(3);
+      const both = await sweep(T('di-minimized-tray'));
+      assert.deepEqual(both.controls.map((c) => c.id).sort(), ['di-reception-restore', 'di-review-restore'], `tray (${motionSetting}, both): exactly the two chips`);
+      assertNamedAndStated(`tray, both (${motionSetting})`, both);
+      assertQuiet(`tray, both (${motionSetting})`, both);
+      assert.deepEqual(undersized(both), [], `tray, both (${motionSetting}): every control is at least 24 x 24`);
+      assert.ok(both.stateMarks.length >= 1, 'Reception waits on the person: its chip carries the attention mark, in words');
+
+      // put both away for the next setting: Reception, then the review
+      await p().click(T('di-reception-restore'));
+      await p().waitForSelector(T('di-reception-restore'), { state: 'detached' });
+      await p().keyboard.press('Escape');
+      await p().waitForSelector(T('di-reception-inbox'), { state: 'detached' });
+      await p().click(T('di-review-restore'));
+      await p().waitForSelector(T('di-review-restore'), { state: 'detached' });
+      await p().keyboard.press('Escape');
+      await p().waitForSelector(T('di-review-dialog'), { state: 'detached' });
+    }
+
+    // The loading state, REACHABLE with the existing delayed-reply helper: the overview is answered 3 s late, so
+    // "Reading the workspace" shows its sliding indicator. Read-only: nothing is forced beyond the delay.
+    const loading: Record<string, { running: number; pseudo: string }> = {};
+    for (const motionSetting of ['no-preference', 'reduce'] as const) {
+      await p().emulateMedia({ reducedMotion: motionSetting });
+      replyDelayMs = 3000;
+      await p().click(T('di-open-code-review'));
+      await p().waitForSelector(T('di-review-loading'));
+      const swept = await sweep(T('di-review-loading'));
+      const pseudo = await p().evaluate(() => {
+        const bar = document.querySelector('.di-rv-progress');
+        return bar === null ? 'no indicator' : getComputedStyle(bar, '::after').animationName;
+      });
+      loading[motionSetting] = { running: swept.running, pseudo };
+      await p().keyboard.press('Escape');
+      await p().waitForSelector(T('di-review-dialog'), { state: 'detached' });
+      replyDelayMs = 0;
+    }
+    console.log(`[a11y] loading indicator: ${JSON.stringify(loading)}`);
+    // the detector can see the slide when motion is allowed (so "0" means something), and it is off under Reduce Motion
+    assert.ok(loading['no-preference'].running >= 1, `the loading indicator slides when motion is allowed (${JSON.stringify(loading['no-preference'])})`);
+    assert.equal(loading['no-preference'].pseudo, 'di-rv-slide');
+    assert.equal(loading['reduce'].running, 0, `the loading indicator does not animate under Reduce Motion (${JSON.stringify(loading['reduce'])})`);
+    assert.equal(loading['reduce'].pseudo, 'none');
   },
   STEPS_MS,
 );

@@ -109,11 +109,18 @@ export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAcce
       <div className="di-op-actions">
         <button
           type="button"
-          className={button}
+          // AC4: a conversation waits for the person's answer: a still glow, the ▲ shape and the words below
+          className={waiting.conversations > 0 ? `${button} di-op-attn` : button}
           aria-expanded={state.open && state.tab === 'ask'}
           data-testid="di-mr-open"
+          data-attention={waiting.conversations > 0 ? 'true' : undefined}
           onClick={(event) => access.open('ask', event.currentTarget)}
         >
+          {waiting.conversations > 0 && (
+            <span className="di-op-attn-glyph" aria-hidden="true">
+              ▲{' '}
+            </span>
+          )}
           Ask the {MR_NAME}
           {waiting.conversations > 0
             ? ` (${waiting.conversations} ${waiting.conversations === 1 ? 'conversation' : 'conversations'} waiting for your answer)`
@@ -121,11 +128,18 @@ export function DiMissionRequestEntry({ access }: { access: DiMissionRequestAcce
         </button>
         <button
           type="button"
-          className={button}
+          // AC4: a request waits for the person's decision: a still glow, the ▲ shape and the words below
+          className={counts.needsYou > 0 ? `${button} di-op-attn` : button}
           aria-expanded={state.open && state.tab === 'requests'}
           data-testid="di-mr-open-requests"
+          data-attention={counts.needsYou > 0 ? 'true' : undefined}
           onClick={(event) => access.open('requests', event.currentTarget)}
         >
+          {counts.needsYou > 0 && (
+            <span className="di-op-attn-glyph" aria-hidden="true">
+              ▲{' '}
+            </span>
+          )}
           Review requests
           {counts.needsYou > 0
             ? ` (${counts.needsYou} ${counts.needsYou === 1 ? 'request needs' : 'requests need'} you)`

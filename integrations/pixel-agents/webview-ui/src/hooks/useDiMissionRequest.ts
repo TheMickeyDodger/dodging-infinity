@@ -10,7 +10,7 @@
  * never sends the same write twice by itself. Polling pauses while the page is hidden and stops
  * entirely while the client cannot vouch for the office.
  */
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import type { DiMissionRequestOp, DiMissionRequestReply } from '../../../core/src/messages.js';
 import type { MrFields, MrState, MrTab, MrTurn } from '../components/diMissionRequestModel.js';
@@ -40,6 +40,13 @@ export interface DiMissionRequestControl {
   open: (tab?: MrTab) => void;
   setTab: (tab: MrTab) => void;
   close: () => void;
+  /**
+   * AC3: minimized, the workspace stays open and mounted but hidden, so the world and the office panel are
+   * usable; Restore, or either entrance (`open`), brings it back as it was. Presentation only: nothing is sent.
+   */
+  minimized: boolean;
+  minimize: () => void;
+  restore: () => void;
   setWide: (on: boolean) => void;
   setComposer: (text: string) => void;
   setTyped: (text: string) => void;
@@ -184,12 +191,20 @@ export function useDiMissionRequest(
     read('offer', { requestRef: ref }, ref);
   }, [state.selectedRef, state.views, state.unvouched, read]);
 
+  const [minimized, setMinimized] = useState(false);
   const open = useCallback((tab?: MrTab) => {
+    // An entrance used while the workspace is minimized restores it as it was.
+    setMinimized(false);
     dispatch({ type: 'open', tab });
     lastPoll.current = { overview: 0, selected: 0, conversation: 0 };
   }, []);
   const setTab = useCallback((tab: MrTab) => dispatch({ type: 'tab', tab }), []);
-  const close = useCallback(() => dispatch({ type: 'close' }), []);
+  const close = useCallback(() => {
+    setMinimized(false);
+    dispatch({ type: 'close' });
+  }, []);
+  const minimize = useCallback(() => setMinimized(true), []);
+  const restore = useCallback(() => setMinimized(false), []);
   const setWide = useCallback((on: boolean) => dispatch({ type: 'wide', on }), []);
   const setComposer = useCallback((text: string) => dispatch({ type: 'composer', text }), []);
   const setTyped = useCallback((text: string) => dispatch({ type: 'typed', text }), []);
@@ -334,6 +349,9 @@ export function useDiMissionRequest(
     open,
     setTab,
     close,
+    minimized: state.open && minimized,
+    minimize,
+    restore,
     setWide,
     setComposer,
     setTyped,

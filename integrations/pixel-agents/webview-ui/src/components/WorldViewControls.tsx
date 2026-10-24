@@ -1,8 +1,11 @@
 import { useState } from 'react';
 
-import { WORLD_VIEW_CONTROLS_BOTTOM_GAP_PX, WORLD_VIEW_CONTROLS_TOP_PX } from '../constants.js';
+import { WORLD_RAIL_TOP_PX, WORLD_VIEW_CONTROLS_TOP_PX } from '../constants.js';
 import type { WorldViewKind } from '../office/layout/worldViews.js';
 import { Button } from './ui/Button.js';
+
+/** The controls' own offset inside the rail's first row, below the zoom buttons: they start WORLD_VIEW_CONTROLS_TOP_PX from the top of the world and the rail starts WORLD_RAIL_TOP_PX down. */
+const CLUSTER_OFFSET_PX = WORLD_VIEW_CONTROLS_TOP_PX - WORLD_RAIL_TOP_PX;
 
 /** Subway stations are areas named "... Station": listed apart from the districts. */
 const STATION_LABEL = /Station$/;
@@ -46,8 +49,13 @@ interface WorldViewControlsProps {
 /**
  * CAMERA PRESETS for a large world — presentation only: each button moves the local camera and
  * nothing else (no message is sent, nothing is saved). Below the zoom buttons, top-left, and
- * stacked ABOVE the Map overlay (z-30 over its z-20) so Map can close itself. Arrow
+ * stacked ABOVE the Map overlay (the left rail's layer 30 over its z-20) so Map can close itself. Arrow
  * keys pan (outside the layout editor); manual pan and zoom always win until a view is chosen.
+ *
+ * SHARED SPACE: this sits in the first row of the left rail (WorldLeftRail), below the zoom buttons, in the height the bottom-left column leaves. It is as tall as its buttons where
+ * the row allows and otherwise SCROLLS INSIDE the row (every option stays; a stop scrolls into view when it is focused), so it can never be painted under the column or the zoom
+ * buttons or reach over them. The row is never less than the zoom buttons plus one stop, so the controls are never removed for want of height (where even that does not fit, the
+ * whole strip scrolls: WorldLeftRail).
  */
 export function WorldViewControls({
   views,
@@ -64,11 +72,10 @@ export function WorldViewControls({
   const [listOpen, setListOpen] = useState(false);
   return (
     <div
-      className="absolute left-8 z-30 flex flex-col gap-4"
-      // BOUNDED to the main area: a long district list scrolls INSIDE itself and never overflows the
-      // office wrapper (an overflowing list let focus scroll the wrapper and lift the canvas off the
-      // bottom of the view: the white lower band)
-      style={{ top: WORLD_VIEW_CONTROLS_TOP_PX, maxHeight: `calc(100% - ${WORLD_VIEW_CONTROLS_TOP_PX + WORLD_VIEW_CONTROLS_BOTTOM_GAP_PX}px)` }}
+      className="di-view-cluster absolute left-8 pr-[3px] pb-[3px] flex flex-col gap-4 min-h-0 overflow-y-auto pointer-events-auto"
+      // BOUNDED to the rail's first row (what the column leaves): the buttons and a long district list scroll INSIDE it and never overflow the world (an overflowing list
+      // once let focus scroll the wrapper and lift the canvas off the bottom of the view: the white lower band); the padding keeps the buttons' hard shadows inside the scroll box
+      style={{ top: CLUSTER_OFFSET_PX, maxHeight: `calc(100% - ${CLUSTER_OFFSET_PX}px)` }}
       role="group"
       aria-label="Camera views"
       data-testid="world-view-controls"
@@ -140,7 +147,9 @@ export function WorldViewControls({
               return;
             }
             // KEYBOARD: arrows (and Home/End) move between entries; Enter or Space jumps
-            const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-district]')];
+            const items = [
+              ...e.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-district]'),
+            ];
             const at = items.indexOf(document.activeElement as HTMLButtonElement);
             const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
             let to = -1;

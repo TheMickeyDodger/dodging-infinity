@@ -147,7 +147,7 @@ test('with nothing meaningful left, the title is an honest placeholder — never
       boiler,
     );
   }
-  assert.equal(MISSION_TITLE_PLACEHOLDER, 'Objective text available — open to read');
+  assert.equal(MISSION_TITLE_PLACEHOLDER, 'Objective text available: open to read');
 });
 
 test('a header-only, empty or missing objective keeps its source-qualified "No goal reported" wording', () => {

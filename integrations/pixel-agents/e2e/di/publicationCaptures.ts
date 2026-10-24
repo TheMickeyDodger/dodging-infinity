@@ -268,7 +268,8 @@ async function main(): Promise<void> {
         .waitFor({ state: 'visible', timeout: 30_000 });
       await delay(3500); // characters seated, spawn effects finished
       // The product's own "Updated to vX" notice is unrelated to this feature: dismiss it as a person would.
-      const dismiss = page.getByRole('button', { name: 'x', exact: true });
+      // the notice's dismiss now carries a real accessible name (it was the bare text 'x')
+      const dismiss = page.getByRole('button', { name: 'Dismiss the update notice', exact: true });
       if (await dismiss.isVisible().catch(() => false)) {
         await dismiss.click();
         await delay(600);

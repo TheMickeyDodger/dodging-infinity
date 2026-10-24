@@ -1,11 +1,13 @@
 /**
  * The exact record behind one reception entry, one labelled disclosure away from its plain card:
  * identity, source, lifecycle, every cause with its details, and the route to act as text. Nothing here
- * decides or performs anything; it only shows what the projection carries, verbatim.
+ * decides or performs anything; it shows the record's values and identifiers verbatim. A cause's label is the
+ * office's own explanatory wording, shown in plain punctuation (`plainServerWording`, AC7).
  */
 import type { DiReceptionEntry } from '../../../core/src/messages.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 import { formatLive } from './diOfficeFormat.js';
+import { plainServerWording } from './diReceptionPlain.js';
 
 export function EntryDetail({ entry, fixture }: { entry: DiReceptionEntry; fixture: boolean }) {
   return (
@@ -19,7 +21,7 @@ export function EntryDetail({ entry, fixture }: { entry: DiReceptionEntry; fixtu
       <ul className="flex flex-col gap-1 pl-8">
         {entry.causes.map((cause) => (
           <li key={cause.cause} className="break-words">
-            {cause.label}
+            {plainServerWording(cause.label)}
             {cause.details.map((detail, i) => (
               <div key={i} className="pl-8 text-text-muted break-all">
                 {`${detail.label}: ${detail.value ?? 'not recorded'}`}

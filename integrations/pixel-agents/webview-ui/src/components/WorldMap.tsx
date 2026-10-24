@@ -75,14 +75,20 @@ export function WorldMap({
   }, []);
 
   // While the Map is open it owns the keyboard (installMapKeyGuard): nothing reaches the editor.
-  // A modal dialog opened over it (diModal.ts makes #root inert while one is open) is the foreground
-  // surface and owns the keyboard: the guard yields to it.
+  // Two things in front of it own the keyboard instead, and the guard yields to either:
+  //  - a modal dialog opened over it (diModal.ts makes #root inert while one is open);
+  //  - a non-modal popover over the world (the City panel): the world's controls, this Map's own gate among them, are SUSPENDED while it is open
+  //    (WorldControlsGate, data-di-world-controls="suspended"). `inert` affects elements and never a WINDOW listener, so this listener must ask for
+  //    itself, at the moment of each key, "is something foreground over me"; otherwise Escape pressed in the popover would close the Map (destroying
+  //    its open state) and leave the popover open. The Map stays open and gets the keyboard back when the popover closes.
   useEffect(
     () =>
       installMapKeyGuard(
         window,
         onClose,
-        () => document.getElementById('root')?.hasAttribute('inert') === true,
+        () =>
+          document.getElementById('root')?.hasAttribute('inert') === true ||
+          hostRef.current?.closest('[data-di-world-controls="suspended"]') != null,
       ),
     [onClose],
   );
