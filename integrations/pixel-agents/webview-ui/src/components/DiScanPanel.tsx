@@ -127,43 +127,49 @@ function BackIcon() {
 
 function DiMark() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <g fill="currentColor">
-        <rect x="1" y="3" width="1.4" height="10" />
-        <rect x="2.2" y="3" width="2.4" height="1.4" />
-        <rect x="2.2" y="11.6" width="2.4" height="1.4" />
-        <rect x="4.4" y="4.2" width="1.4" height="7.6" />
-        <rect x="7.4" y="3" width="6.2" height="1.4" />
-        <rect x="9.8" y="4.2" width="1.4" height="7.6" />
-        <rect x="7.4" y="11.6" width="6.2" height="1.4" />
-      </g>
+    <svg viewBox="0 0 45 29" aria-hidden="true" shapeRendering="crispEdges">
+      <path fill="currentColor" d="M0 0h21v1h-21zM32 0h12v1h-12zM0 1h21v1h-21zM32 1h12v1h-12zM0 2h23v1h-23zM32 2h12v1h-12zM0 3h23v1h-23zM32 3h12v1h-12zM0 4h24v1h-24zM32 4h12v1h-12zM0 5h26v1h-26zM32 5h12v1h-12zM0 6h26v1h-26zM34 6h8v1h-8zM0 7h8v1h-8zM19 7h7v1h-7zM35 7h7v1h-7zM0 8h7v1h-7zM19 8h7v1h-7zM35 8h7v1h-7zM0 9h7v1h-7zM19 9h7v1h-7zM35 9h7v1h-7zM0 10h8v1h-8zM19 10h7v1h-7zM35 10h7v1h-7zM0 11h8v1h-8zM19 11h7v1h-7zM35 11h7v1h-7zM0 12h8v1h-8zM19 12h7v1h-7zM35 12h7v1h-7zM0 13h8v1h-8zM19 13h7v1h-7zM35 13h7v1h-7zM0 14h8v1h-8zM19 14h7v1h-7zM35 14h7v1h-7zM0 15h7v1h-7zM19 15h7v1h-7zM35 15h7v1h-7zM0 16h7v1h-7zM19 16h7v1h-7zM35 16h7v1h-7zM0 17h7v1h-7zM19 17h7v1h-7zM35 17h7v1h-7zM0 18h7v1h-7zM19 18h7v1h-7zM35 18h7v1h-7zM0 19h7v1h-7zM19 19h7v1h-7zM35 19h7v1h-7zM0 20h7v1h-7zM19 20h7v1h-7zM35 20h7v1h-7zM0 21h8v1h-8zM19 21h7v1h-7zM35 21h7v1h-7zM0 22h26v1h-26zM34 22h8v1h-8zM0 23h25v1h-25zM32 23h13v1h-13zM0 24h23v1h-23zM32 24h13v1h-13zM0 25h23v1h-23zM32 25h13v1h-13zM0 26h22v1h-22zM32 26h13v1h-13zM0 27h21v1h-21zM32 27h13v1h-13zM0 28h21v1h-21zM32 28h12v1h-12z" />
     </svg>
   );
 }
 
 function GearIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="2.1" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
       <path
-        d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M12.7 3.3l-1.2 1.2M4.5 11.5l-1.2 1.2"
+        fill="currentColor"
+        fillRule="evenodd"
+        d="M9.6 1.8h4.8l.4 2.3c.7.2 1.3.5 1.9.9l2.1-1.1 2.4 2.4-1.1 2.1c.4.6.7 1.2.9 1.9l2.3.4v4.8l-2.3.4c-.2.7-.5 1.3-.9 1.9l1.1 2.1-2.4 2.4-2.1-1.1c-.6.4-1.2.7-1.9.9l-.4 2.3H9.6l-.4-2.3a7 7 0 0 1-1.9-.9l-2.1 1.1-2.4-2.4 1.1-2.1a7 7 0 0 1-.9-1.9l-2.3-.4V9.7l2.3-.4c.2-.7.5-1.3.9-1.9L2.8 5.3 5.2 2.9l2.1 1.1c.6-.4 1.2-.7 1.9-.9l.4-2.3ZM12 8.6a3.4 3.4 0 1 0 .01 0Z"
+      />
+    </svg>
+  );
+}
+
+function SlidersIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.4"
+        strokeWidth="1.7"
         strokeLinecap="round"
       />
+      <circle cx="16.5" cy="6.5" r="2.15" fill="var(--di-scan-bg)" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="7.2" cy="12" r="2.15" fill="var(--di-scan-bg)" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="17.5" r="2.15" fill="var(--di-scan-bg)" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
 }
 
 function FilterIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
       <path
-        d="M2.2 3.2h11.6l-4.3 5.1v3.4L6.5 13V8.3Z"
+        d="M3 4.2h18L14.4 12.4V20h-4.8v-7.6L3 4.2Z"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.4"
+        strokeWidth="1.7"
         strokeLinejoin="round"
       />
     </svg>
@@ -245,6 +251,21 @@ function MoreIcon() {
       <circle cx="8" cy="3.2" r="1.1" fill="currentColor" />
       <circle cx="8" cy="8" r="1.1" fill="currentColor" />
       <circle cx="8" cy="12.8" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TwistIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        d="M2.6 4.2 6 7.8 9.4 4.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -528,8 +549,9 @@ function Stage({
                   <span
                     className="di-scan-tree-row"
                     data-selected={entry.selected ? 'true' : undefined}
-                    style={{ paddingLeft: `${12 + entry.depth * 14}px` }}
+                    style={{ paddingLeft: `${10 + entry.depth * 16}px` }}
                   >
+                    {entry.kind === 'dir' ? <TwistIcon /> : <span className="di-scan-twist" />}
                     {entry.kind === 'dir' ? <FolderIcon /> : <FileIcon />}
                     <span>{entry.name}</span>
                     {entry.mark && <span className="di-scan-mark-badge">{entry.mark}</span>}
@@ -750,17 +772,14 @@ export function DiScanPanel({
               <button
                 type="button"
                 ref={minimizeRef}
-                className="di-scan-chevron"
+                className="di-scan-mark"
                 onClick={onMinimize}
                 title="Minimize the office panel"
                 aria-label="Minimize the office panel"
                 data-testid="di-office-panel-minimize"
               >
-                <ChevronIcon />
-              </button>
-              <span className="di-scan-mark" aria-hidden="true" data-testid="di-scan-mark">
                 <DiMark />
-              </span>
+              </button>
               <button
                 type="button"
                 className="di-scan-new"
@@ -784,7 +803,7 @@ export function DiScanPanel({
                 data-testid="di-scan-settings"
                 onClick={() => onOpenSettings?.()}
               >
-                <GearIcon />
+                <SlidersIcon />
               </button>
               <button
                 type="button"

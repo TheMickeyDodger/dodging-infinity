@@ -49,6 +49,8 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  container-type: inline-size;
+  container-name: scanlist;
 }
 
 /* ---------- header ---------- */
@@ -66,8 +68,11 @@
 .di-scan-header-tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
+}
+.di-scan-header-tools {
+  gap: 18px;
 }
 
 .di-scan-mark,
@@ -83,8 +88,7 @@
   color: var(--di-on-accent);
 }
 
-.di-scan-chevron,
-.di-scan-mark {
+.di-scan-chevron {
   width: 36px;
   height: 36px;
   border-radius: 9px;
@@ -93,9 +97,6 @@
   justify-content: center;
   flex-shrink: 0;
   padding: 0;
-}
-
-.di-scan-chevron {
   background: var(--di-scan-accent);
 }
 .di-scan-chevron:hover {
@@ -103,14 +104,21 @@
 }
 
 .di-scan-mark {
-  background: var(--di-scan-raised);
-  color: var(--di-scan-text);
-  border: 1px solid var(--di-scan-line);
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--di-scan-logo);
 }
 
 .di-scan-mark svg {
-  width: 18px;
-  height: 18px;
+  width: 45px;
+  height: 29px;
   display: block;
 }
 
@@ -134,8 +142,8 @@
 }
 
 .di-scan-icon-button {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
   background: transparent;
   color: var(--di-scan-icon);
@@ -182,7 +190,7 @@
   margin-bottom: -1px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   white-space: nowrap;
 }
 .di-scan-tab[aria-selected='true'] {
@@ -191,15 +199,15 @@
 }
 
 .di-scan-badge {
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 4px;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
   background: var(--di-scan-badge);
   color: var(--di-scan-text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 20px;
   text-align: center;
 }
 
@@ -315,7 +323,7 @@
 .di-scan-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   font-size: 15px;
   font-weight: 650;
   line-height: 1.15;
@@ -366,9 +374,9 @@
 }
 
 .di-scan-dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
   flex-shrink: 0;
 }
 .di-scan-dot[data-tone='needs'] {
@@ -810,9 +818,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
+  min-height: 36px;
   color: var(--di-scan-text);
   font-size: 14px;
+}
+.di-scan-twist {
+  width: 12px;
+  flex-shrink: 0;
 }
 .di-scan-tree-row[data-selected='true'] {
   margin-right: 8px;
@@ -1060,4 +1072,46 @@
   margin: 0;
   color: var(--di-scan-muted);
   font-size: 15px;
+}
+
+/* The product dock is 420px. The lock frame is wider, and those measurements stay. Below that, the list compresses so the header, tabs and rows stay inside the dock. */
+@container scanlist (max-width: 480px) {
+  .di-scan-header {
+    padding: 12px 10px 6px;
+    gap: 8px;
+  }
+  .di-scan-mark svg {
+    width: 36px;
+    height: 23px;
+  }
+  .di-scan-new {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .di-scan-header-tools {
+    gap: 6px;
+  }
+  .di-scan-tab {
+    font-size: 13px;
+    padding: 8px 6px 10px;
+    gap: 4px;
+  }
+  .di-scan-search {
+    flex-basis: 120px;
+  }
+  .di-scan-title,
+  .di-scan-detail .di-scan-title {
+    font-size: 18px;
+  }
+  .di-scan-context {
+    font-size: 14px;
+  }
+  .di-scan-pill {
+    font-size: 13px;
+  }
+  .di-scan-row {
+    padding: 12px 10px 12px 12px;
+  }
 }

@@ -111,11 +111,12 @@
   --di-scan-building-line: #0273da;
   --di-scan-ok-line: #04c348;
   --di-scan-bad-line: #ef5b59;
-  --di-scan-badge: #2a3144;
-  --di-scan-icon: #c8c8d2;
+  --di-scan-badge: #1a1e3b;
+  --di-scan-icon: #ededee;
+  --di-scan-logo: #a84ef0;
   --di-scan-accent: #6127d6;
   --di-scan-accent-hover: #7436e4;
-  --di-scan-underline: #d14bd6;
+  --di-scan-underline: #cc41d8;
   --di-scan-gold: #bb7b1e;
   --di-scan-gold-text: #f6ead6;
   --di-scan-comments: #e05514;
@@ -341,6 +342,15 @@
 }
 .di-world-rail::-webkit-scrollbar {
   display: none;
+}
+
+/* The open office panel owns the bottom-right corner. The version label and the update notice lift above that footer band so they do not sit on it.
+   A narrow world (the rule below) still parks them at the top, and that rule wins because it follows this one. */
+.di-dock-open .di-version-label {
+  bottom: 88px;
+}
+.di-dock-open .di-version-notice {
+  bottom: 148px;
 }
 
 /* A NARROW world (DI_WORLD_ROOMY_PX): the right-hand corner furniture would meet the bottom-left column (WorldStack), so it moves into the TOP-RIGHT band: the version

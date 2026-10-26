@@ -37,11 +37,22 @@ export function VersionIndicator({
   const isUnseen = currentMajorMinor !== lastSeenVersion;
   const showUpdateNotice = isUnseen && !dismissed;
 
-  // Start fade-out after auto-close delay, then fully dismiss after the transition
+  // Start fade-out after the auto-close delay, then fully dismiss after the transition. Tab resets the
+  // delay: a keyboard pass through a wide office is longer than the idle timeout, and the dismiss has to
+  // still be in the tab sequence when the traversal reaches it. Idle time with no Tab still closes it.
   useEffect(() => {
     if (!showUpdateNotice || fading) return;
-    const fadeTimer = setTimeout(() => setFading(true), WHATS_NEW_AUTO_CLOSE_MS);
-    return () => clearTimeout(fadeTimer);
+    let fadeTimer = window.setTimeout(() => setFading(true), WHATS_NEW_AUTO_CLOSE_MS);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      window.clearTimeout(fadeTimer);
+      fadeTimer = window.setTimeout(() => setFading(true), WHATS_NEW_AUTO_CLOSE_MS);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [showUpdateNotice, fading]);
 
   useEffect(() => {

@@ -1019,7 +1019,7 @@ function App() {
         ref={containerRef}
         // overflow CLIP, not hidden: a hidden box is still programmatically scrollable (focus,
         // scrollIntoView), and scrolling it lifted the office canvas off the bottom of the view
-        className="h-full relative overflow-clip"
+        className={`h-full relative overflow-clip${diOfficeState && !diPanelCollapsed ? ' di-dock-open' : ''}`}
         // DI mode: the office yields the docked panel's width, so it re-centres beside it
         // and no character can sit under the panel.
         style={{
