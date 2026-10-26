@@ -39,6 +39,7 @@ const fixtureDir = path.join(root, 'test/fixtures');
 /** Every reception the packaged fixtures carry (each state of every fixture). */
 const receptions: DiReception[] = [];
 for (const f of fs.readdirSync(fixtureDir)) {
+  if (!f.endsWith('.json')) continue;
   const doc = JSON.parse(fs.readFileSync(path.join(fixtureDir, f), 'utf-8')) as {
     state?: DiOfficeState;
     states?: Record<string, DiOfficeState>;
