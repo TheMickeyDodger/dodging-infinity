@@ -95,10 +95,10 @@ test('office rows bucket by standing and never invent a pull request', () => {
     ['Needs you', 'Building'],
   );
   assert.equal(open?.swarm[0]?.role, 'Lead');
-  assert.equal(open?.swarm[0]?.name, 'lead1');
+  assert.equal(open?.swarm[0]?.name, 'Leo');
   assert.equal(open?.swarm[0]?.note, 'In progress.');
   assert.equal(open?.reviewOffered, false);
-  assert.equal(open?.context, 'ACTIVE · herd');
+  assert.equal(open?.context, 'Active · Herdr');
   assert.equal(closed?.tab, 'closed');
   assert.equal(open?.footer.includes('PR #'), false);
   assert.equal(closed?.footer.includes('PR #'), false);
@@ -218,7 +218,9 @@ test('mission details, the code diff, Herdr panes and comments open from the loc
     }),
   );
   assert.equal(herdr.includes('data-testid="di-scan-pane"'), true);
-  assert.equal(herdr.includes('Focus terminal'), true);
+  assert.equal(herdr.includes('Ask Codex to do anything'), true);
+  assert.equal(herdr.includes('Focus terminal'), false);
+  assert.equal(herdr.includes('aria-label="Back to mission details"'), true);
   assert.equal((herdr.match(/data-testid="di-scan-pane"/g) ?? []).length, 4);
 
   const comments = renderToStaticMarkup(
@@ -230,7 +232,78 @@ test('mission details, the code diff, Herdr panes and comments open from the loc
     }),
   );
   assert.ok(comments.includes('No comments are recorded for this mission.'));
+  assert.equal(comments.includes('aria-label="Back to mission details"'), true);
   assert.equal(comments.includes('di-scan-tree'), false);
+
+  assert.equal(diff.includes('aria-label="Back to mission details"'), true);
+});
+
+test('duplicate seats collapse to one pane per role, and a digest never becomes the title', () => {
+  const digest = '3033dab9ca1127b3a8dc907fcbbfbeb522aa461d3035277ff41413fa58820bcb';
+  const seat = (
+    role: string,
+    logical: string,
+    id: string,
+  ): Record<string, unknown> => ({
+    ...member,
+    memberRef: id,
+    logical,
+    role,
+    agent: `w-${logical}`,
+  });
+  const live = mission({
+    missionRef: 'live-digest',
+    nativeId: '20261024-120000-abcdef',
+    sourceId: 'di_herdr_tasks',
+    lifecycleState: 'ACTIVE',
+    objective: {
+      state: 'observed',
+      value: `AUTHORIZED MISSION mn-ba1e47939b4f6b443cd34174b9b1732 (revision 1, proposal digest ${digest}). This is the approved Mission content only, NOT an engineering plan.\n\nOBJECTIVE\nRedesign the core panel system.`,
+      reason: null,
+    },
+    members: {
+      state: 'observed',
+      reason: null,
+      members: [
+        seat('supervisor', 'supervisor', 's1'),
+        seat('supervisor', 'supervisor', 's2'),
+        seat('supervisor', 'supervisor', 's3'),
+        seat('lead', 'lead1', 'l1'),
+        seat('executor', 'executor', 'e1'),
+        seat('reviewer', 'sam', 'r1'),
+      ],
+    },
+  });
+  const row = scanRowsFromOffice(office([live]))[0];
+  assert.ok(row);
+  assert.equal(row.title, 'Redesign the core panel system');
+  assert.equal(row.title.includes(digest.slice(0, 12)), false);
+  assert.equal(row.description.includes(digest.slice(0, 12)), false);
+  assert.equal(row.description.includes('Redesign the core panel system'), true);
+  assert.equal(row.context, 'Active · Herdr');
+  assert.deepEqual(
+    row.swarm.map((avatar) => avatar.role),
+    ['Supervisor', 'Lead', 'Executor', 'Reviewer'],
+  );
+  assert.deepEqual(
+    row.swarm.map((avatar) => avatar.name),
+    ['Ken', 'Leo', 'Mia', 'Sam'],
+  );
+  assert.equal(row.footer.includes(digest), false);
+  assert.equal(row.footer.includes('di_herdr_tasks'), false);
+
+  const html = renderToStaticMarkup(
+    createElement(DiScanPanel, {
+      rows: [row],
+      initialSelectedId: row.id,
+      initialView: 'herdr',
+      onMinimize: () => undefined,
+    }),
+  );
+  assert.equal((html.match(/data-testid="di-scan-pane"/g) ?? []).length, 4);
+  assert.equal(html.includes(digest), false);
+  assert.equal(html.includes('Focus terminal'), false);
+  assert.equal(html.includes('Ask Codex to do anything'), true);
 });
 
 test('the product face is the scan panel unless a harness asks for the operational list', () => {

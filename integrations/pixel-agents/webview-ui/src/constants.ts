@@ -338,10 +338,11 @@ export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
  *  ids (positive) and sub-agent ids (small negatives from -1 down). */
 export const GREETER_ID = -1_000_000_000;
 /** Stacking order for the Intro's bubble. Deliberately BELOW the modal stack
- *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100): the
- *  Intro is diegetic furniture over the office, not a modal, so a modal opened
- *  on top of it must cover it rather than slide underneath. */
-export const INTRO_BUBBLE_Z_INDEX = 45;
+ *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100) and
+ *  ABOVE the covering workspace (44) and the open mission stage (43): the Intro
+ *  is diegetic furniture over the office, not a modal, so a modal opened on top
+ *  of it must cover it rather than slide underneath. */
+export const INTRO_BUBBLE_Z_INDEX = 46;
 /** The greeter stands this many tiles in from the office's bottom-left corner
  *  (target tile (margin, rows-1-margin); nearest walkable tile if blocked). */
 export const GREETER_TILE_MARGIN = 3;

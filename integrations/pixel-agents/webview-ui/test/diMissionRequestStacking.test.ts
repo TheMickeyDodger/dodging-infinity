@@ -100,12 +100,14 @@ const WORLD_OVERLAYS: Layer[] = [
   { file: 'components/diOperationalPanel.css', what: 'the minimized-surface strip', z: [25] },
   // The scan click-in stage (mission, diff, Herdr, comments) covers the world the way the left strip does,
   // and it stays below the covering workspace.
-  { file: 'components/diScanPanel.css', what: 'the scan click-in stage', z: [30] },
+  // 30 is the stage inside the dock. 43 is the dock itself while Mission details (or a nested
+  // screen) is open, so it covers agent labels (41/42) and stays under the covering workspace (44).
+  { file: 'components/diScanPanel.css', what: 'the scan click-in stage', z: [30, 43] },
 ];
 
 /** The intro bubble, modals, notices and dialog backdrops: they must sit ABOVE the covering workspace. */
 const ABOVE_THE_WORKSPACE: Layer[] = [
-  { file: 'constants.ts', what: "the greeter's intro bubble (tour and consent)", z: [45] },
+  { file: 'constants.ts', what: "the greeter's intro bubble (tour and consent)", z: [46] },
   {
     file: 'components/ui/Modal.tsx',
     what: 'the shared modal (Settings and others): backdrop, panel one above',

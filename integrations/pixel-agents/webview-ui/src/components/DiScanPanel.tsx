@@ -1,6 +1,6 @@
 import './diScanPanel.css';
 
-import { type Ref, useEffect, useMemo, useState } from 'react';
+import { type Ref, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { DiScanAvatar, DiScanDiffLine, DiScanPill, DiScanRow, DiScanTab, DiScanView } from './diScanModel.js';
 import {
@@ -97,19 +97,9 @@ function Avatar({ member, large = false }: { member: DiScanAvatar; large?: boole
   );
 }
 
-function ChevronIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M4 3.2 7.6 8 4 12.8M8.4 3.2 12 8 8.4 12.8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+function displayName(member: DiScanAvatar): string {
+  const name = member.name.trim();
+  return name !== '' ? name : member.role;
 }
 
 function BackIcon() {
@@ -401,29 +391,16 @@ function Stage({
     <div className="di-scan-stage" data-testid="di-scan-stage" data-view={view}>
       <header className="di-scan-stage-bar">
         <div className="di-scan-header-lead">
-          {view === 'mission' ? (
-            <button
-              type="button"
-              ref={minimizeRef}
-              className="di-scan-back"
-              onClick={onList}
-              aria-label="Back to missions"
-              data-testid="di-scan-back"
-            >
-              <BackIcon />
-            </button>
-          ) : (
-            <button
-              type="button"
-              ref={minimizeRef}
-              className="di-scan-chevron"
-              onClick={onList}
-              title="Back to the mission list"
-              aria-label="Back to the mission list"
-            >
-              <ChevronIcon />
-            </button>
-          )}
+          <button
+            type="button"
+            ref={minimizeRef}
+            className="di-scan-back"
+            onClick={view === 'mission' ? onList : onMission}
+            aria-label={view === 'mission' ? 'Back to missions' : 'Back to mission details'}
+            data-testid="di-scan-back"
+          >
+            <BackIcon />
+          </button>
           <span className="di-scan-mark" aria-hidden="true">
             <DiMark />
           </span>
@@ -483,11 +460,11 @@ function Stage({
               <section className="di-scan-swarm-box">
                 <ul className="di-scan-cards" data-testid="di-scan-swarm">
                   {row.swarm.map((member) => (
-                    <li key={`${member.role}-${member.name}`} className="di-scan-card-member">
+                    <li key={member.role} className="di-scan-card-member">
                       <Avatar member={member} large />
                       <span className="di-scan-card-copy">
                         <span className="di-scan-role">{member.role}</span>
-                        <span className="di-scan-name">{member.name}</span>
+                        <span className="di-scan-name">{displayName(member)}</span>
                         {member.note !== '' && <span className="di-scan-note">{member.note}</span>}
                       </span>
                     </li>
@@ -636,39 +613,40 @@ function Stage({
       {view === 'herdr' && (
         <div className="di-scan-herdr-view" data-testid="di-scan-herdr-view">
           {row.swarm.length === 0 ? (
-            <p className="di-scan-editor-empty">No Herdr members are recorded for this mission.</p>
+            <p className="di-scan-editor-empty">No Herdr session is recorded for this mission.</p>
           ) : (
-            <ul className="di-scan-panes">
-              {row.swarm.map((member) => (
-                <li key={`${member.role}-${member.name}`} className="di-scan-pane" data-testid="di-scan-pane">
-                  <header>
-                    <Avatar member={member} />
-                    <span>
-                      <strong>{member.name}</strong>
-                      <span className="di-scan-role">{member.role}</span>
-                    </span>
-                  </header>
-                  <pre>
-                    {member.lines.length > 0
-                      ? member.lines.map((line) => `❯ ${line}`).join('\n')
-                      : '❯'}
-                  </pre>
-                  <button
-                    type="button"
-                    disabled={member.characterId === null || onFocusAgent === undefined}
-                    title={
-                      member.characterId === null
-                        ? 'No terminal is recorded for this member'
-                        : `Focus ${member.name}'s terminal`
-                    }
+            <ul className="di-scan-panes" data-count={row.swarm.length}>
+              {row.swarm.map((member) => {
+                const name = displayName(member);
+                return (
+                  <li
+                    key={member.role}
+                    className="di-scan-pane"
+                    data-testid="di-scan-pane"
+                    data-role={member.role}
                     onClick={() => {
                       if (member.characterId !== null) onFocusAgent?.(member.characterId);
                     }}
                   >
-                    Focus terminal
-                  </button>
-                </li>
-              ))}
+                    <div className="di-scan-term-log">
+                      {member.lines.length > 0
+                        ? member.lines.join('\n')
+                        : 'No session text is recorded yet.'}
+                    </div>
+                    <div className="di-scan-term-ask">
+                      <span className="di-scan-term-gt" aria-hidden="true">
+                        &gt;
+                      </span>
+                      <span>Ask Codex to do anything</span>
+                    </div>
+                    <div className="di-scan-term-meta">
+                      <span>{member.role}</span>
+                      <span>{name}</span>
+                      {member.note !== '' && <span>{member.note}</span>}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -676,7 +654,7 @@ function Stage({
 
       {view === 'comments' && (
         <div className="di-scan-comments-view" data-testid="di-scan-comments-view">
-          <h1>{row.title}</h1>
+          <h1 className="di-scan-mission-title">{row.title}</h1>
           <p>No comments are recorded for this mission.</p>
         </div>
       )}
@@ -731,6 +709,15 @@ export function DiScanPanel({
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [view, setView] = useState<DiScanView>(initialView);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const aside = rootRef.current?.closest('.di-scan');
+    if (!(aside instanceof HTMLElement)) return;
+    if (view === 'list') aside.removeAttribute('data-stage');
+    else aside.dataset.stage = 'open';
+    return () => aside.removeAttribute('data-stage');
+  }, [view]);
 
   useEffect(() => {
     if (selectedId !== null && hidden.has(selectedId)) {
@@ -775,7 +762,7 @@ export function DiScanPanel({
   };
 
   return (
-    <div className="di-scan-body" data-testid="di-scan-panel" data-view={view}>
+    <div ref={rootRef} className="di-scan-body" data-testid="di-scan-panel" data-view={view}>
       {view === 'list' && (
         <>
           <header className="di-scan-header">
@@ -911,10 +898,10 @@ export function DiScanPanel({
                 {shownSelected.swarm.length > 0 && (
                   <ul className="di-scan-swarm" data-testid="di-scan-swarm">
                     {shownSelected.swarm.map((member) => (
-                      <li key={`${member.role}-${member.name}`} className="di-scan-member">
+                      <li key={member.role} className="di-scan-member">
                         <span className="di-scan-role">{member.role}</span>
                         <Avatar member={member} />
-                        <span className="di-scan-name">{member.name}</span>
+                        <span className="di-scan-name">{displayName(member)}</span>
                       </li>
                     ))}
                   </ul>
