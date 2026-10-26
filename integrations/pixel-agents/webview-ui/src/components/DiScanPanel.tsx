@@ -76,7 +76,7 @@ function Pills({ pills, fill = false }: { pills: readonly DiScanPill[]; fill?: b
           data-fill={fill ? 'solid' : 'chip'}
           data-testid="di-scan-pill"
         >
-          {fill ? null : <span className="di-scan-dot" data-tone={pill.tone} aria-hidden="true" />}
+          <span className="di-scan-dot" data-tone={pill.tone} aria-hidden="true" />
           {pill.label}
         </span>
       ))}
@@ -480,18 +480,20 @@ function Stage({
           {row.swarm.length > 0 && (
             <>
               <h2 className="di-scan-swarm-heading">Swarm</h2>
-              <ul className="di-scan-cards" data-testid="di-scan-swarm">
-                {row.swarm.map((member) => (
-                  <li key={`${member.role}-${member.name}`} className="di-scan-card-member">
-                    <Avatar member={member} large />
-                    <span className="di-scan-card-copy">
-                      <span className="di-scan-role">{member.role}</span>
-                      <span className="di-scan-name">{member.name}</span>
-                      {member.note !== '' && <span className="di-scan-note">{member.note}</span>}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <section className="di-scan-swarm-box">
+                <ul className="di-scan-cards" data-testid="di-scan-swarm">
+                  {row.swarm.map((member) => (
+                    <li key={`${member.role}-${member.name}`} className="di-scan-card-member">
+                      <Avatar member={member} large />
+                      <span className="di-scan-card-copy">
+                        <span className="di-scan-role">{member.role}</span>
+                        <span className="di-scan-name">{member.name}</span>
+                        {member.note !== '' && <span className="di-scan-note">{member.note}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             </>
           )}
           <div className="di-scan-actions">

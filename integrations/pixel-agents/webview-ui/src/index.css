@@ -93,6 +93,11 @@
   --di-bad-tint: #2e1d2c;
   /* scan panel (locked 2026-10-25 finals): colours sampled from the three locked frames */
   --di-scan-bg: #12161f;
+  --di-scan-canvas: #0a0e16;
+  --di-scan-well: #0e121c;
+  --di-scan-well-edge: #212538;
+  --di-scan-trash-edge: #3f4558;
+  --di-scan-heading: #b45cf0;
   --di-scan-raised: #1c2028;
   --di-scan-selected: #202024;
   --di-scan-line: #2a3144;
@@ -103,12 +108,12 @@
   --di-scan-building: #3e90f7;
   --di-scan-ok: #04c348;
   --di-scan-bad: #ef5b59;
-  --di-scan-needs-fill: #4e2604;
-  --di-scan-building-fill: #001c5c;
+  --di-scan-needs-fill: #4c2605;
+  --di-scan-building-fill: #001f62;
   --di-scan-ok-fill: #043018;
   --di-scan-bad-fill: #3a1418;
-  --di-scan-needs-line: #e17c12;
-  --di-scan-building-line: #0273da;
+  --di-scan-needs-line: #f6871a;
+  --di-scan-building-line: #0376f7;
   --di-scan-ok-line: #04c348;
   --di-scan-bad-line: #ef5b59;
   --di-scan-badge: #1a1e3b;
