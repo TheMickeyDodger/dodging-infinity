@@ -133,6 +133,17 @@ test('boilerplate is never a title: headers, AUTHORIZED MISSION and ids are skip
   );
 });
 
+test('a proposal digest is never the title, and the goal after the handoff prefix still is', () => {
+  const digest = '3033dab9ca1127b3a8dc907fcbbfbeb522aa461d3035277ff41413fa58820bcb';
+  const prefix = `AUTHORIZED MISSION mn-ba1e47939b4f6b443cd34174b9b1732 (revision 1, proposal digest ${digest}). This is the approved Mission content only, NOT an engineering plan; the Supervisor owns all technical decisions.`;
+  assert.equal(missionTitle(withObjective(prefix)).kind, 'placeholder');
+  assert.equal(missionTitle(withObjective(prefix)).text.includes(digest.slice(0, 12)), false);
+  assert.equal(
+    missionTitle(withObjective(`${prefix}\n\nOBJECTIVE\nRedesign the core panel system.`)).text,
+    'Redesign the core panel system',
+  );
+});
+
 test('with nothing meaningful left, the title is an honest placeholder — never a made-up summary', () => {
   for (const boiler of [
     'AUTHORIZED MISSION',

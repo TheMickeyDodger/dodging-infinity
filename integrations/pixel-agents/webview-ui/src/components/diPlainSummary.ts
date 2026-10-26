@@ -55,6 +55,13 @@ const LEADING_LABEL = new RegExp(
 const LEADING_ID = new RegExp(String.raw`^${ID}(?![\w-])${SEPARATORS}`, 'i');
 /** A whole line that is a heading: ALL CAPS ("OBJECTIVE", "AUTHORIZED MISSION") or a short "Label:". */
 const HEADING_LINE = /^(?:[\p{Lu}\d &/_-]+|[\p{L} ]{1,40}:)$/u;
+/** The handoff's parenthetical identity: revision and proposal digest. Never a title. */
+const DIGEST_CLAUSE = /\(\s*revision\s+\d+\s*,\s*proposal digest\s+[0-9a-f]+\s*\)\.?/i;
+/** The fixed sentence that follows the handoff prefix. It names no goal. */
+const HANDOFF_LEAD = /^This is the approved Mission content only\b[\s\S]*?(?:\.\s*|$)/i;
+const LONG_HEX = /[0-9a-f]{16,}/i;
+const OBJECTIVE_SECTION =
+  /(?:^|\n)\s*OBJECTIVE\s*\n+([\s\S]*?)(?=\n\s*(?:TARGET CONTEXT|REQUESTED SCOPE|APPROVED ACTION SCOPE|APPROVED DELIVERY TARGETS|DELIVERY)\b|$)/i;
 
 function stripBoilerplate(line: string): string {
   let rest = line.replace(/^#+\s*/, '').trim();
@@ -63,6 +70,19 @@ function stripBoilerplate(line: string): string {
     if (next === rest) return rest;
     rest = next;
   }
+}
+
+/** Drop the authorization prefix, the digest clause, and the handoff's fixed sentence. */
+function stripAuthority(line: string): string {
+  return stripBoilerplate(line).replace(DIGEST_CLAUSE, ' ').replace(HANDOFF_LEAD, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function usableTitle(sentence: string): boolean {
+  if (!meaningful(sentence)) return false;
+  if (LONG_HEX.test(sentence)) return false;
+  if (/proposal digest/i.test(sentence)) return false;
+  if (/^this is the approved mission content only/i.test(sentence)) return false;
+  return true;
 }
 
 /** The first sentence: up to a stop followed by a capital, a digit, a quote or the end. */
@@ -87,8 +107,9 @@ function bounded(sentence: string): string {
 /**
  * A Mission's human-meaningful title. The projection carries no separate title field, so the only
  * source-backed meaning is the objective's own text: its first meaningful sentence, after any
- * opening boilerplate (a heading line, "AUTHORIZED MISSION", an id). When nothing meaningful opens
- * it, an honest placeholder; when the source gave no goal, its existing source-qualified words.
+ * opening boilerplate (a heading line, "AUTHORIZED MISSION", an id, the revision and proposal-digest
+ * clause, the handoff's fixed sentence). A long hex string is never a title. When nothing meaningful
+ * opens it, an honest placeholder; when the source gave no goal, its existing source-qualified words.
  * The complete objective is never altered and stays in the inspector.
  */
 export function missionTitle(mission: DiMission): DiMissionTitle {
@@ -97,14 +118,38 @@ export function missionTitle(mission: DiMission): DiMissionTitle {
   for (const raw of objective.text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line === '' || HEADING_LINE.test(line.replace(/^#+\s*/, ''))) continue;
-    const rest = stripBoilerplate(line);
+    const rest = stripAuthority(line);
     if (rest === '') continue;
     const sentence = firstSentence(rest);
-    return meaningful(sentence)
-      ? { kind: 'sentence', text: bounded(sentence) }
-      : { kind: 'placeholder', text: MISSION_TITLE_PLACEHOLDER };
+    if (!usableTitle(sentence)) continue;
+    return { kind: 'sentence', text: bounded(sentence) };
   }
   return { kind: 'placeholder', text: MISSION_TITLE_PLACEHOLDER };
+}
+
+/**
+ * The goal in plain words for a card: the OBJECTIVE section when the handoff carries one, otherwise
+ * the text with the authorization prefix, proposal digest and long hex runs removed. Empty when
+ * nothing but that boilerplate was recorded.
+ */
+export function plainMissionDescription(text: string): string {
+  const section = OBJECTIVE_SECTION.exec(text);
+  let body = (section?.[1] ?? text).replace(DIGEST_CLAUSE, ' ');
+  body = body.replace(/AUTHORIZED MISSION\b[^\n]*/gi, ' ');
+  body = body.replace(HANDOFF_LEAD, ' ');
+  body = body.replace(/\b[0-9a-f]{16,}\b/gi, ' ');
+  body = body
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!usableTitle(body.replace(/\n/g, ' '))) return '';
+  const max = 320;
+  if (body.length <= max) return body;
+  const room = body.slice(0, max - 1);
+  const space = room.lastIndexOf(' ');
+  const kept = space > max / 2 ? room.slice(0, space) : room;
+  return `${kept.replace(/[\s,;:—–-]+$/, '')}…`;
 }
 
 // ── short refs ─────────────────────────────────────────────────────────────────────────────────

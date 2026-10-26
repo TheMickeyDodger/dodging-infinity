@@ -8,7 +8,7 @@
  */
 import type { DiMember, DiMission, DiOfficeState } from '../../../core/src/messages.js';
 import { missionObjective, missionStatus } from './diOperationalStatus.js';
-import { missionTitle, shortMissionRefs } from './diPlainSummary.js';
+import { missionTitle, plainMissionDescription, shortMissionRefs } from './diPlainSummary.js';
 
 export type DiScanTab = 'open' | 'merged' | 'closed' | 'archived';
 
@@ -114,14 +114,34 @@ function pillsFor(
   return pills;
 }
 
+function roleKey(role: string): string {
+  return role.trim().toLowerCase();
+}
+
+function roleRank(role: string): number {
+  const index = ROLE_ORDER.indexOf(role);
+  return index === -1 ? ROLE_ORDER.length : index;
+}
+
+/** One seat per role. Duplicate listings of the same role must not crowd out a later role. */
 function swarmFor(mission: DiMission): DiScanAvatar[] {
   if (mission.members.state !== 'observed') return [];
-  const ranked = [...mission.members.members].sort((a, b) => {
-    const ia = ROLE_ORDER.indexOf(a.role.toLowerCase());
-    const ib = ROLE_ORDER.indexOf(b.role.toLowerCase());
-    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-  });
-  return ranked.slice(0, 4).map((member, index) => avatarFromMember(member, index));
+  const chosen = new Map<string, DiMember>();
+  for (const member of mission.members.members) {
+    const key = roleKey(member.role);
+    if (key === '') continue;
+    const prev = chosen.get(key);
+    if (prev === undefined || betterSeat(member, prev)) chosen.set(key, member);
+  }
+  return [...chosen.entries()]
+    .sort((a, b) => roleRank(a[0]) - roleRank(b[0]) || a[0].localeCompare(b[0]))
+    .map(([, member], index) => avatarFromMember(member, index));
+}
+
+function betterSeat(next: DiMember, prev: DiMember): boolean {
+  const score = (member: DiMember) =>
+    (member.characterId !== null ? 2 : 0) + (paneText(member) !== '' ? 1 : 0);
+  return score(next) > score(prev);
 }
 
 function noteForActivity(activity: string): string {
@@ -142,9 +162,62 @@ function paneText(member: DiMember): string {
   return '';
 }
 
+/** `lead1` and `supervisor` read as names. A bare role word stays the role label. */
+export function plainAgentName(role: string, logical: string): string {
+  const raw = logical.trim();
+  const compact = raw.toLowerCase().replace(/[\s_-]+/g, '');
+  const numbered = /^(supervisor|lead|executor|reviewer)(\d+)$/.exec(compact);
+  if (numbered) {
+    const label = ROLE_LABEL[numbered[1]] ?? numbered[1];
+    return `${label} ${Number(numbered[2])}`;
+  }
+  if (ROLE_LABEL[compact]) return ROLE_LABEL[compact];
+  if (/^[a-z][a-z'-]{1,30}$/.test(raw)) return `${raw.charAt(0).toUpperCase()}${raw.slice(1)}`;
+  return raw !== '' ? raw : roleLabel(role);
+}
+
+function plainLifecycle(state: string): string {
+  const key = state.trim().toLowerCase();
+  const known: Record<string, string> = {
+    active: 'Active',
+    aborted: 'Stopped',
+    merged: 'Merged',
+    closed: 'Closed',
+    archived: 'Archived',
+    failed: 'Failed',
+  };
+  if (known[key]) return known[key];
+  if (key === '') return 'Status not recorded';
+  return state.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function plainSource(sourceId: string): string {
+  const known: Record<string, string> = {
+    di_herdr_tasks: 'Herdr',
+    herdr_tasks: 'Herdr',
+    herd: 'Herdr',
+    herdr: 'Herdr',
+  };
+  if (known[sourceId]) return known[sourceId];
+  const words = sourceId.replace(/^di_/, '').replace(/[_-]+/g, ' ').trim();
+  if (words === '') return 'Recorded source';
+  return words.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function plainContext(lifecycle: string, sourceId: string): string {
+  return `${plainLifecycle(lifecycle)} · ${plainSource(sourceId)}`;
+}
+
+function plainFooter(shortRef: string, sourceId: string): string {
+  const source = plainSource(sourceId);
+  const suffix = ` · ${sourceId}`;
+  if (shortRef.endsWith(suffix)) return `${shortRef.slice(0, -sourceId.length)}${source}`;
+  return shortRef;
+}
+
 function avatarFromMember(member: DiMember, index: number): DiScanAvatar {
   const key = member.role.toLowerCase();
-  const name = member.logical.trim() !== '' ? member.logical : member.agent;
+  const name = plainAgentName(member.role, member.logical.trim() !== '' ? member.logical : member.agent);
   const note = noteForActivity(member.activity);
   const pane = paneText(member);
   return {
@@ -169,13 +242,14 @@ export function scanRowsFromOffice(state: DiOfficeState): DiScanRow[] {
     return {
       id: mission.missionRef,
       title: missionTitle(mission).text,
-      context: `${mission.lifecycleState} · ${mission.sourceId}`,
-      description: objective.text.trim(),
+      context: plainContext(mission.lifecycleState, mission.sourceId),
+      description:
+        objective.kind === 'goal' ? plainMissionDescription(objective.text) : '',
       pills: pillsFor(mission, status, tab, needsYou),
       tab,
       needsYou,
       swarm: swarmFor(mission),
-      footer: shorts.get(mission.missionRef) ?? mission.missionRef,
+      footer: plainFooter(shorts.get(mission.missionRef) ?? mission.missionRef, mission.sourceId),
       handoff: '',
       updated: '',
       reviewOffered:
