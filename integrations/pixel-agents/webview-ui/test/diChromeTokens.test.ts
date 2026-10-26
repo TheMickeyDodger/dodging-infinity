@@ -44,7 +44,12 @@ describe('the shared chrome tokens are defined once and are checkable', () => {
         expect(tokens[m[1]], `--di-${n} uses --di-${m[1]}`).toMatch(SOLID);
   });
   it('no chrome stylesheet defines a --di-* token of its own (one definition, in index.css)', () => {
-    for (const file of ['diOperationalPanel.css', 'diMissionRequest.css', 'diCodeReview.css']) {
+    for (const file of [
+      'diOperationalPanel.css',
+      'diMissionRequest.css',
+      'diCodeReview.css',
+      'diScanPanel.css',
+    ]) {
       const css = fs.readFileSync(path.join(root, 'src/components', file), 'utf-8');
       expect(css, file).not.toMatch(/--di-[a-z0-9-]+\s*:/);
     }

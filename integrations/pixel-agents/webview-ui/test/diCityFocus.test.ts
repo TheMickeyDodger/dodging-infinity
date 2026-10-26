@@ -109,6 +109,8 @@ beforeEach(async (ctx) => {
 
 const p = () => page!;
 const GATE = '[data-di-world-controls]';
+/** A narrow world pins the version label in the rail footer, outside the controls gate. It is still world furniture. */
+const WORLD_REGION = `${GATE}, [data-testid="di-world-rail-footer"] .di-version-label`;
 
 /** Open the App at a window size, hand it the shipped world and the fixture's agents, and wait until it is drawn. */
 async function boot(
@@ -163,7 +165,7 @@ const minimizeOffice = async () => {
 const CITY = '#city-controls';
 const REGIONS = {
   city: CITY,
-  world: GATE,
+  world: WORLD_REGION,
   panel: '[data-testid="di-office-panel"]',
   strip: '[data-testid="di-minimized-tray"]',
 };
@@ -318,13 +320,16 @@ for (const c of CONTEXTS) {
       // so a control added to it cannot escape the invariant by simply not being named here
       if (c.notice) {
         const tabbable = await p().evaluate(() => {
-          const gate = document
-            .querySelector('.di-version-label')
+          const selector =
+            'button:not([disabled]):not([tabindex="-1"]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+          const label = document.querySelector('.di-version-label');
+          const gate = label?.closest('[data-di-world-controls]');
+          if (gate) return gate.querySelectorAll(selector).length;
+          const noticeGate = document
+            .querySelector('.di-version-notice')
             ?.closest('[data-di-world-controls]');
-          if (!gate) return null;
-          return gate.querySelectorAll(
-            'button:not([disabled]):not([tabindex="-1"]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
-          ).length;
+          const inNotice = noticeGate ? noticeGate.querySelectorAll(selector).length : 0;
+          return inNotice + (label ? 1 : 0);
         });
         assert.equal(
           tabbable,

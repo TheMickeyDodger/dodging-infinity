@@ -98,6 +98,9 @@ const WORLD_OVERLAYS: Layer[] = [
   // controls are reachable again once the workspace is closed or minimized). Beside the panel the workspace is inset by the strip's width, so
   // they never overlap, and the strip (25) is above the beside layer (21) in any case, which keeps its restore controls reachable.
   { file: 'components/diOperationalPanel.css', what: 'the minimized-surface strip', z: [25] },
+  // The scan click-in stage (mission, diff, Herdr, comments) covers the world the way the left strip does,
+  // and it stays below the covering workspace.
+  { file: 'components/diScanPanel.css', what: 'the scan click-in stage', z: [30] },
 ];
 
 /** The intro bubble, modals, notices and dialog backdrops: they must sit ABOVE the covering workspace. */

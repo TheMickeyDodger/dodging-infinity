@@ -91,6 +91,56 @@
   --di-perm-tint: #2a2624;
   --di-warn-tint: #2f2426;
   --di-bad-tint: #2e1d2c;
+  /* scan panel (locked 2026-10-25 finals): colours sampled from the three locked frames */
+  --di-scan-bg: #12161f;
+  --di-scan-canvas: #0a0e16;
+  --di-scan-well: #0e121c;
+  --di-scan-well-edge: #212538;
+  --di-scan-trash-edge: #3f4558;
+  --di-scan-heading: #b45cf0;
+  --di-scan-raised: #1c2028;
+  --di-scan-selected: #202024;
+  --di-scan-line: #2a3144;
+  --di-scan-text: #f4f5f7;
+  --di-scan-muted: #b7b8c4;
+  --di-scan-yellow: #ffe60a;
+  --di-scan-needs: #f17f08;
+  --di-scan-building: #3e90f7;
+  --di-scan-ok: #04c348;
+  --di-scan-bad: #ef5b59;
+  --di-scan-needs-fill: #4c2605;
+  --di-scan-building-fill: #001f62;
+  --di-scan-ok-fill: #043018;
+  --di-scan-bad-fill: #3a1418;
+  --di-scan-needs-line: #f6871a;
+  --di-scan-building-line: #0376f7;
+  --di-scan-ok-line: #04c348;
+  --di-scan-bad-line: #ef5b59;
+  --di-scan-badge: #1a1e3b;
+  --di-scan-icon: #ededee;
+  --di-scan-logo: #a84ef0;
+  --di-scan-accent: #6127d6;
+  --di-scan-accent-hover: #7436e4;
+  --di-scan-underline: #cc41d8;
+  --di-scan-gold: #bb7b1e;
+  --di-scan-gold-text: #f6ead6;
+  --di-scan-comments: #e05514;
+  --di-scan-ink: #1a1408;
+  --di-scan-chip: #1e2230;
+  --di-scan-needs-chip: #3a2418;
+  --di-scan-building-chip: #1a2740;
+  --di-scan-ok-chip: #15281c;
+  --di-scan-bad-chip: #3a1c22;
+  --di-scan-diff-add-bg: #122421;
+  --di-scan-diff-add: #74e08c;
+  --di-scan-diff-del-bg: #1e131f;
+  --di-scan-diff-del: #e47084;
+  --di-scan-code: #e4e7f2;
+  --di-scan-code-key: #c4b6ff;
+  --di-scan-code-fn: #7fd7ff;
+  --di-scan-code-str: #8ee0b0;
+  --di-scan-code-note: #9aa3b8;
+  --di-scan-hunk: #b7a6ff;
   /* type: the system reading faces (no web font is bundled) */
   --di-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --di-font-code:
@@ -295,8 +345,32 @@
   scrollbar-width: none;
   overscroll-behavior: contain;
 }
+/* A 225 px window leaves the scrolling strip about 100 px once the pinned fixture notice has wrapped.
+   The first camera stop sits 96 px into that strip, so it hangs into the notice. Tighten the notice
+   only in that short window so it stays one band beside the version label (the 220 px cap) and the
+   stop fits in the scrollport. A full-width band pushes that label past the rail, where the rail clips it. */
+@media (max-height: 240px) {
+  .di-fixture-banner {
+    padding: 2px 6px;
+    font-size: 12px;
+    line-height: 1.15;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 .di-world-rail::-webkit-scrollbar {
   display: none;
+}
+
+/* The open office panel owns the bottom-right corner. The version label and the update notice lift above that footer band so they do not sit on it.
+   A narrow world (the rule below) still parks them at the top, and that rule wins because it follows this one. */
+.di-dock-open .di-version-label {
+  bottom: 88px;
+}
+.di-dock-open .di-version-notice {
+  bottom: 148px;
 }
 
 /* A NARROW world (DI_WORLD_ROOMY_PX): the right-hand corner furniture would meet the bottom-left column (WorldStack), so it moves into the TOP-RIGHT band: the version

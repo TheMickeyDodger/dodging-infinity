@@ -23,6 +23,7 @@ import {
 } from './components/diOfficeFormat.js';
 import { DiOfficePanel } from './components/DiOfficePanel.js';
 import { useDiReceptionInbox } from './components/diReceptionInboxState.js';
+import { officePanelPresentation } from './components/diScanModel.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
@@ -1018,7 +1019,7 @@ function App() {
         ref={containerRef}
         // overflow CLIP, not hidden: a hidden box is still programmatically scrollable (focus,
         // scrollIntoView), and scrolling it lifted the office canvas off the bottom of the view
-        className="h-full relative overflow-clip"
+        className={`h-full relative overflow-clip${diOfficeState && !diPanelCollapsed ? ' di-dock-open' : ''}`}
         // DI mode: the office yields the docked panel's width, so it re-centres beside it
         // and no character can sit under the panel.
         style={{
@@ -1196,6 +1197,19 @@ function App() {
                 review={reviewAccess}
                 mission={missionAccess}
                 receptionInbox={receptionInbox}
+                presentation={officePanelPresentation({
+                  face:
+                    typeof window === 'undefined'
+                      ? null
+                      : (window as Window & { __DI_OFFICE_PANEL_FACE?: string })
+                          .__DI_OFFICE_PANEL_FACE,
+                  e2e:
+                    typeof window !== 'undefined' &&
+                    (window as Window & { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E ===
+                      true,
+                })}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+                onFocusAgent={handleClick}
               />
             )}
             {diOfficeState && (

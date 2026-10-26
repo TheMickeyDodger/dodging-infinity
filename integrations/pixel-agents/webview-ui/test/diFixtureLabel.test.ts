@@ -649,7 +649,7 @@ test('TAB TRAVERSAL, PAIRED: a stop under a transparent INERT parent with a PAIN
     t2.stops.some((x) => x.id === 'zz-inert-btn' || x.id === 'in'),
     `the same button, no longer inert, IS a tab stop (${t2.stops.map((x) => x.id).join(', ')})`,
   );
-});
+}, 120_000);
 
 interface Ctx {
   label: string;

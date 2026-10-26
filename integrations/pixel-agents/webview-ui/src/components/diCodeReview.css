@@ -270,11 +270,11 @@
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .di-rv-facts {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px 16px;
   flex: 1 1 320px;
   min-width: 0;
@@ -285,6 +285,10 @@
   gap: 6px;
   align-items: baseline;
   min-width: 0;
+  /* One line. A wrapped value is taller than the 32 px toggle beside it and lifts the whole
+     overview (the wide-window reading lock). A value that does not fit ellipsizes; the narrow
+     window below wraps instead, where a clipped value would leave the 320 dialog. */
+  white-space: nowrap;
 }
 .di-rv-fact dt {
   color: var(--rv-muted);
@@ -292,7 +296,9 @@
 }
 .di-rv-fact dd {
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 .di-rv-fact code {
@@ -300,7 +306,7 @@
   font-size: 13px;
 }
 .di-rv-overview-body {
-  padding: 4px 12px 10px;
+  padding: 4px 12px 4px;
   max-height: 34vh;
   overflow: auto;
   color: var(--rv-text);
@@ -1058,17 +1064,61 @@
 .di-rv[data-narrow='true'] .di-rv-overview-head {
   padding: 4px 8px;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .di-rv[data-narrow='true'] .di-rv-facts {
   gap: 0 10px;
   font-size: 13px;
+  flex-wrap: wrap;
+}
+.di-rv[data-narrow='true'] .di-rv-fact,
+.di-rv[data-narrow='true'] .di-rv-fact dd {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
 }
 .di-rv[data-narrow='true'] .di-rv-attribution {
   margin: 0 8px 6px;
   font-size: 13px;
 }
 .di-rv[data-narrow='true'] .di-rv-overview-body {
-  max-height: 26vh;
+  /* The details body is already at its cap, so inner padding cannot lift the search. 26vh of a
+     568 px window leaves the search 4 px past the window; this keeps it inside. */
+  max-height: calc(26vh - 12px);
+}
+/* A roomy phone (the 390 x 844 reading lock) gives the code region an exact height. At 13px the
+   comparison block is 193px and the one-column sentence fills its line. A wider face wraps another
+   row of each, and the code region loses them. 320 is narrower than this and scrolls, so it is left
+   to grow. */
+@media (min-width: 360px) {
+  .di-rv[data-narrow='true'] .di-rv-overview {
+    max-height: 193px;
+    overflow: hidden;
+  }
+  .di-rv[data-narrow='true'] .di-rv-layout-note {
+    font-size: 12px;
+    line-height: 18.85px;
+    white-space: nowrap;
+  }
+}
+/* 320 is the short files pane: the dialog is measured to the pixel, and it does not scroll.
+   The title is three lines and the comparison block is 212px. A wider face adds a line to each
+   and the pane scrolls. Details stay open to their own cap, and the action buttons sit beside
+   the title so a clipped fourth title line does not take them. */
+@media (max-width: 359px) {
+  .di-rv[data-narrow='true'] .di-rv-title {
+    max-height: 57px;
+    overflow: hidden;
+  }
+  .di-rv[data-narrow='true'] .di-rv-overview:not(:has(.di-rv-overview-body)) {
+    max-height: 212px;
+    overflow: hidden;
+  }
+  .di-rv[data-narrow='true'] .di-rv-tree-tools {
+    max-height: 77px;
+    overflow: hidden;
+  }
 }
 .di-rv[data-narrow='true'] .di-rv-diff-head {
   padding: 6px 8px;

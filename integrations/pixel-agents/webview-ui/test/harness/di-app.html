@@ -9,6 +9,11 @@
          records the App's own OfficeState instance so the test can observe its selection. -->
   </head>
   <body>
+    <!-- The product office panel is the locked scan face. This harness keeps the operational list
+         its tests already drive. -->
+    <script>
+      window.__DI_OFFICE_PANEL_FACE = 'operational';
+    </script>
     <div id="root"></div>
     <script type="module" src="./diAppProbe.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
