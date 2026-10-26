@@ -97,8 +97,9 @@ function Avatar({ member, large = false }: { member: DiScanAvatar; large?: boole
   );
 }
 
-function distinctName(member: DiScanAvatar): string | null {
-  return member.name.toLowerCase() === member.role.toLowerCase() ? null : member.name;
+function displayName(member: DiScanAvatar): string {
+  const name = member.name.trim();
+  return name !== '' ? name : member.role;
 }
 
 function BackIcon() {
@@ -463,9 +464,7 @@ function Stage({
                       <Avatar member={member} large />
                       <span className="di-scan-card-copy">
                         <span className="di-scan-role">{member.role}</span>
-                        {distinctName(member) !== null && (
-                          <span className="di-scan-name">{distinctName(member)}</span>
-                        )}
+                        <span className="di-scan-name">{displayName(member)}</span>
                         {member.note !== '' && <span className="di-scan-note">{member.note}</span>}
                       </span>
                     </li>
@@ -618,7 +617,7 @@ function Stage({
           ) : (
             <ul className="di-scan-panes" data-count={row.swarm.length}>
               {row.swarm.map((member) => {
-                const name = distinctName(member);
+                const name = displayName(member);
                 return (
                   <li
                     key={member.role}
@@ -642,7 +641,7 @@ function Stage({
                     </div>
                     <div className="di-scan-term-meta">
                       <span>{member.role}</span>
-                      {name !== null && <span>{name}</span>}
+                      <span>{name}</span>
                       {member.note !== '' && <span>{member.note}</span>}
                     </div>
                   </li>
@@ -902,9 +901,7 @@ export function DiScanPanel({
                       <li key={member.role} className="di-scan-member">
                         <span className="di-scan-role">{member.role}</span>
                         <Avatar member={member} />
-                        {distinctName(member) !== null && (
-                          <span className="di-scan-name">{distinctName(member)}</span>
-                        )}
+                        <span className="di-scan-name">{displayName(member)}</span>
                       </li>
                     ))}
                   </ul>

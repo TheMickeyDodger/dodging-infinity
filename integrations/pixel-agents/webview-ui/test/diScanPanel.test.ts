@@ -95,7 +95,7 @@ test('office rows bucket by standing and never invent a pull request', () => {
     ['Needs you', 'Building'],
   );
   assert.equal(open?.swarm[0]?.role, 'Lead');
-  assert.equal(open?.swarm[0]?.name, 'Lead 1');
+  assert.equal(open?.swarm[0]?.name, 'Leo');
   assert.equal(open?.swarm[0]?.note, 'In progress.');
   assert.equal(open?.reviewOffered, false);
   assert.equal(open?.context, 'Active · Herdr');
@@ -287,7 +287,7 @@ test('duplicate seats collapse to one pane per role, and a digest never becomes 
   );
   assert.deepEqual(
     row.swarm.map((avatar) => avatar.name),
-    ['Supervisor', 'Lead 1', 'Executor', 'Sam'],
+    ['Ken', 'Leo', 'Mia', 'Sam'],
   );
   assert.equal(row.footer.includes(digest), false);
   assert.equal(row.footer.includes('di_herdr_tasks'), false);

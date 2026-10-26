@@ -69,11 +69,15 @@ const ROLE_LABEL: Record<string, string> = {
 
 const ROLE_ORDER = ['supervisor', 'lead', 'executor', 'reviewer'];
 
-const ROLE_PALETTE: Record<string, number> = {
-  supervisor: 0,
-  lead: 1,
-  executor: 2,
-  reviewer: 3,
+/**
+ * The bust for each role is that character (lock: Ken, Leo, Mia, Sam).
+ * A seat key such as `supervisor` or `lead1` is not a display name.
+ */
+const ROLE_CAST: Record<string, { palette: number; name: string }> = {
+  supervisor: { palette: 0, name: 'Ken' },
+  lead: { palette: 1, name: 'Leo' },
+  executor: { palette: 2, name: 'Mia' },
+  reviewer: { palette: 3, name: 'Sam' },
 };
 
 function roleLabel(role: string): string {
@@ -162,16 +166,17 @@ function paneText(member: DiMember): string {
   return '';
 }
 
-/** `lead1` and `supervisor` read as names. A bare role word stays the role label. */
+/**
+ * The name under the role. The four swarm roles always wear their locked character
+ * (Ken, Leo, Mia, Sam), never the seat key (`lead1`, `supervisor`) and never a blank.
+ * `logical` is only a fallback for a role outside that cast.
+ */
 export function plainAgentName(role: string, logical: string): string {
+  const cast = ROLE_CAST[roleKey(role)];
+  if (cast) return cast.name;
   const raw = logical.trim();
   const compact = raw.toLowerCase().replace(/[\s_-]+/g, '');
-  const numbered = /^(supervisor|lead|executor|reviewer)(\d+)$/.exec(compact);
-  if (numbered) {
-    const label = ROLE_LABEL[numbered[1]] ?? numbered[1];
-    return `${label} ${Number(numbered[2])}`;
-  }
-  if (ROLE_LABEL[compact]) return ROLE_LABEL[compact];
+  if (/^(supervisor|lead|executor|reviewer)\d*$/.test(compact)) return roleLabel(role);
   if (/^[a-z][a-z'-]{1,30}$/.test(raw)) return `${raw.charAt(0).toUpperCase()}${raw.slice(1)}`;
   return raw !== '' ? raw : roleLabel(role);
 }
@@ -223,7 +228,7 @@ function avatarFromMember(member: DiMember, index: number): DiScanAvatar {
   return {
     role: roleLabel(member.role),
     name,
-    palette: ROLE_PALETTE[key] ?? index % 6,
+    palette: ROLE_CAST[key]?.palette ?? index % 6,
     note,
     characterId: member.characterId,
     lines: [note, pane].filter((line) => line !== ''),
