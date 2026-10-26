@@ -113,6 +113,8 @@ import { DiReceptionInbox } from './DiReceptionInbox.js';
 import type { DiReceptionInboxAccess } from './diReceptionInboxState.js';
 import { attentionLine, buildInbox, panelSourceOf } from './diReceptionItems.js';
 import { useRovingFocus } from './diRovingFocus.js';
+import { DI_SCAN_LOCK, scanRowsFromOffice } from './diScanModel.js';
+import { DiScanPanel } from './DiScanPanel.js';
 import { useStickyScrollPad } from './diStickyPad.js';
 
 interface DiOfficePanelProps {
@@ -144,6 +146,15 @@ interface DiOfficePanelProps {
    * two entrances to ONE dialog. Absent: the attention line is words only and no inbox exists.
    */
   receptionInbox?: DiReceptionInboxAccess | null;
+  /**
+   * `scan` is the locked side panel (header, tabs, list, expanded detail, footer).
+   * `operational` keeps the previous list for harnesses that still assert it. Absent: operational.
+   */
+  presentation?: 'scan' | 'operational';
+  /** Opens Settings. Absent: the scan header's settings icon does nothing. */
+  onOpenSettings?: () => void;
+  /** Focus a drawn character's terminal. The scan Herdr panes call this. */
+  onFocusAgent?: (id: number) => void;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -2346,6 +2357,9 @@ function DiOfficePanelBody({
   review = null,
   mission = null,
   receptionInbox = null,
+  presentation = 'operational',
+  onOpenSettings,
+  onFocusAgent,
 }: DiOfficePanelProps) {
   const [selectedId, setSelectedId] = useState<number | null>(officeState.selectedAgentId);
   useEffect(() => {
@@ -2685,6 +2699,90 @@ function DiOfficePanelBody({
     setInspector(null);
     navigateTo(id);
   };
+
+  if (presentation === 'scan') {
+    const scanLock =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('di-scan-lock') === '1';
+    const scanRows = scanLock ? DI_SCAN_LOCK : scanRowsFromOffice(state);
+    const selectScanRow = (id: string) => {
+      const picked = missions.missions.find((item) => item.missionRef === id);
+      const drawn =
+        picked?.members.members.find((member) => member.characterId !== null)?.characterId ?? null;
+      if (drawn !== null && officeState.characters.has(drawn)) navigateTo(drawn);
+    };
+    const openNewMission =
+      mission !== null && !requestsUnavailable(mission.state)
+        ? (opener: HTMLElement) => mission.open('ask', opener)
+        : undefined;
+    return (
+      <>
+        {restoreControl}
+        <aside
+          ref={asideRef}
+          hidden={collapsed}
+          tabIndex={-1}
+          className="di-scan"
+          style={{ width: widthPx ?? DI_PANEL_WIDTH_PX }}
+          data-testid="di-office-panel"
+          data-minimized={collapsed ? 'true' : 'false'}
+          data-presentation="scan"
+        >
+          {fixtureNote && (
+            <div
+              ref={noteRef}
+              className="di-op-fixture-note"
+              role="status"
+              data-testid="di-fixture-banner-in-panel"
+            >
+              {DI_FIXTURE_BANNER}
+            </div>
+          )}
+          <DiScanPanel
+            rows={scanRows}
+            initialSelectedId={scanLock ? (DI_SCAN_LOCK[0]?.id ?? null) : null}
+            minimizeRef={minimizeRef}
+            onMinimize={minimizePanel}
+            onSelect={selectScanRow}
+            onNewMission={openNewMission}
+            onOpenSettings={onOpenSettings}
+            onOpenReception={
+              receptionInbox ? (opener) => receptionInbox.openFrom(opener) : undefined
+            }
+            onFocusAgent={onFocusAgent}
+            onOpenReview={
+              review
+                ? (id, opener) => {
+                    const picked = missions.missions.find((item) => item.missionRef === id);
+                    const member = picked?.members.members.find(
+                      (item) =>
+                        item.codeReview?.state === 'offered' &&
+                        item.codeReview.listing !== null &&
+                        item.codeReview.taskId !== null,
+                    );
+                    const offer = member?.codeReview;
+                    if (!member || offer === undefined || offer.listing === null || offer.taskId === null)
+                      return;
+                    review.open(
+                      {
+                        missionRef: id,
+                        memberRef: member.memberRef,
+                        taskId: offer.taskId,
+                        listing: offer.listing,
+                        agentName: member.agent,
+                      },
+                      opener,
+                    );
+                  }
+                : undefined
+            }
+            receptionAttention={attention !== null && attention.count > 0}
+          />
+        </aside>
+        {receptionDialog}
+      </>
+    );
+  }
 
   return (
     <>

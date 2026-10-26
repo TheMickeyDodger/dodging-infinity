@@ -91,6 +91,38 @@
   --di-perm-tint: #2a2624;
   --di-warn-tint: #2f2426;
   --di-bad-tint: #2e1d2c;
+  /* scan panel (locked 2026-10-25 side panel): flat high-contrast dark chrome over the pixel world */
+  --di-scan-bg: #10141c;
+  --di-scan-raised: #1a1d28;
+  --di-scan-line: #2c3142;
+  --di-scan-text: #f2f2f4;
+  --di-scan-muted: #b9b9c6;
+  --di-scan-yellow: #ffe60a;
+  --di-scan-needs: #ef6d14;
+  --di-scan-building: #3b8ef2;
+  --di-scan-ok: #14b84a;
+  --di-scan-bad: #ef5b59;
+  --di-scan-badge: #2c3142;
+  --di-scan-icon: #c8c8d2;
+  --di-scan-accent: #6e38c4;
+  --di-scan-accent-hover: #7d48d0;
+  --di-scan-gold: #c4892a;
+  --di-scan-ink: #1a1408;
+  --di-scan-chip: #1e2230;
+  --di-scan-needs-chip: #3a2418;
+  --di-scan-building-chip: #1a2740;
+  --di-scan-ok-chip: #15281c;
+  --di-scan-bad-chip: #3a1c22;
+  --di-scan-diff-add-bg: #10241c;
+  --di-scan-diff-add: #5ddea0;
+  --di-scan-diff-del-bg: #2a1520;
+  --di-scan-diff-del: #ff8b9a;
+  --di-scan-code: #e4e7f2;
+  --di-scan-code-key: #c4b6ff;
+  --di-scan-code-fn: #7fd7ff;
+  --di-scan-code-str: #8ee0b0;
+  --di-scan-code-note: #9aa3b8;
+  --di-scan-hunk: #b7a6ff;
   /* type: the system reading faces (no web font is bundled) */
   --di-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --di-font-code:

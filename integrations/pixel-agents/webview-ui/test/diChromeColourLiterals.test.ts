@@ -23,6 +23,7 @@ const CHROME_STYLESHEETS = [
   'src/components/diOperationalPanel.css',
   'src/components/diMissionRequest.css',
   'src/components/diCodeReview.css',
+  'src/components/diScanPanel.css',
 ];
 
 /** The custom properties allowed to hold a raw colour, and why: the review dialog's CONTENT palette (diff semantics and syntax colours), contrast-tested. */

@@ -65,6 +65,7 @@
     "test/diModalStack.test.ts",
     "test/diServerWording.test.ts",
     "test/diCopyMarkers.test.ts",
+    "test/diScanPanel.test.ts",
     "test/diChromeA11y.ts",
     "test/diTokenScope.ts",
     "test/diChromeColourLiterals.test.ts",
