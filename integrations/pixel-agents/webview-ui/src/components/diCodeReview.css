@@ -1102,6 +1102,24 @@
     white-space: nowrap;
   }
 }
+/* 320 is the short files pane: the dialog is measured to the pixel, and it does not scroll.
+   The title is three lines and the comparison block is 212px. A wider face adds a line to each
+   and the pane scrolls. Details stay open to their own cap, and the action buttons sit beside
+   the title so a clipped fourth title line does not take them. */
+@media (max-width: 359px) {
+  .di-rv[data-narrow='true'] .di-rv-title {
+    max-height: 57px;
+    overflow: hidden;
+  }
+  .di-rv[data-narrow='true'] .di-rv-overview:not(:has(.di-rv-overview-body)) {
+    max-height: 212px;
+    overflow: hidden;
+  }
+  .di-rv[data-narrow='true'] .di-rv-tree-tools {
+    max-height: 77px;
+    overflow: hidden;
+  }
+}
 .di-rv[data-narrow='true'] .di-rv-diff-head {
   padding: 6px 8px;
   gap: 4px 8px;
