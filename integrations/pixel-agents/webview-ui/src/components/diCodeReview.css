@@ -1087,6 +1087,21 @@
      568 px window leaves the search 4 px past the window; this keeps it inside. */
   max-height: calc(26vh - 12px);
 }
+/* A roomy phone (the 390 x 844 reading lock) gives the code region an exact height. At 13px the
+   comparison block is 193px and the one-column sentence fills its line. A wider face wraps another
+   row of each, and the code region loses them. 320 is narrower than this and scrolls, so it is left
+   to grow. */
+@media (min-width: 360px) {
+  .di-rv[data-narrow='true'] .di-rv-overview {
+    max-height: 193px;
+    overflow: hidden;
+  }
+  .di-rv[data-narrow='true'] .di-rv-layout-note {
+    font-size: 12px;
+    line-height: 18.85px;
+    white-space: nowrap;
+  }
+}
 .di-rv[data-narrow='true'] .di-rv-diff-head {
   padding: 6px 8px;
   gap: 4px 8px;
