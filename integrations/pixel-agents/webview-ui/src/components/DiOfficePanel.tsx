@@ -2472,6 +2472,21 @@ function DiOfficePanelBody({
   // the sticky fixture note covers the top of the panel's scrollport: its height is reserved as scroll-padding so a focused control is never scrolled under it (diStickyPad.ts)
   const noteRef = useRef<HTMLDivElement>(null);
   useStickyScrollPad(noteRef, asideRef, fixtureNote);
+  // Shift+Tab scrolls a control to the top of the scrollport and leaves it under the sticky note.
+  // scroll-padding does not clear that case in Chrome, so a focus that still intersects the note is moved below it.
+  useEffect(() => {
+    const scroller = asideRef.current;
+    const note = noteRef.current;
+    if (!fixtureNote || scroller === null || note === null) return;
+    const clear = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || target === scroller || !scroller.contains(target)) return;
+      const overlap = note.getBoundingClientRect().bottom - target.getBoundingClientRect().top;
+      if (overlap > 0.5) scroller.scrollTop -= overlap + 4;
+    };
+    scroller.addEventListener('focusin', clear);
+    return () => scroller.removeEventListener('focusin', clear);
+  }, [fixtureNote]);
   const restoreRef = useRef<HTMLButtonElement>(null);
   const minimizeRef = useRef<HTMLButtonElement>(null);
   const keptView = useRef<DiKeptView | null>(null);

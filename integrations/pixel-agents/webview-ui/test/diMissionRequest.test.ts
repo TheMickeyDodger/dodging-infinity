@@ -5029,7 +5029,7 @@ for (const [w, h] of [
             if (e === null) return { found: false, best, steps: i };
             best = Math.max(best, e.fraction);
             if (e.fraction >= 0.99) return { found: true, best, steps: i };
-            const dist = e.box[1] > innerHeight ? e.box[1] - innerHeight : 0;
+            const dist = e.box[1] > h ? e.box[1] - h : 0;
             const step = dist > 250 ? 200 : STEP_FINE;
             await page.mouse.wheel(0, step);
             await page.waitForTimeout(step === STEP_FINE ? 35 : 70);

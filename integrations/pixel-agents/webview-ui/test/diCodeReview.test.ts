@@ -2454,7 +2454,11 @@ test(
       [['0', 22, 0, true, true], ['1', 22, 0, true, true]],
       '1600: the bars are one row high, carry the name themselves (it fits) and have no name rows of their own',
     );
-    assert.deepEqual(wide.bars.map((b) => b.spanClientWidth), [287, 371], '1600: the names are drawn at their full widths (px)');
+    const nameWidths = wide.bars.map((b) => b.spanClientWidth);
+    assert.ok(
+      nameWidths.length === 2 && nameWidths.every((w, i) => Math.abs(w - [287, 371][i]) <= 1),
+      `1600: the names are drawn at their full widths (px): ${nameWidths.join(', ')} (287 and 371, 1 px of font rounding)`,
+    );
     await p().setViewportSize({ width: 320, height: 568 });
     await frames(3);
     await p().waitForTimeout(1200);
