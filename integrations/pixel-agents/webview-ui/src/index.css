@@ -347,13 +347,17 @@
 }
 /* A 225 px window leaves the scrolling strip about 100 px once the pinned fixture notice has wrapped.
    The first camera stop sits 96 px into that strip, so it hangs into the notice. Tighten the notice
-   only in that short window so it stays one band and the stop fits in the scrollport. */
+   only in that short window so it stays one band beside the version label (the 220 px cap) and the
+   stop fits in the scrollport. A full-width band pushes that label past the rail, where the rail clips it. */
 @media (max-height: 240px) {
   .di-fixture-banner {
-    max-width: 100%;
     padding: 2px 6px;
     font-size: 12px;
     line-height: 1.15;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 .di-world-rail::-webkit-scrollbar {

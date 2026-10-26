@@ -285,6 +285,10 @@
   gap: 6px;
   align-items: baseline;
   min-width: 0;
+  /* One line. A wrapped value is taller than the 32 px toggle beside it and lifts the whole
+     overview (the wide-window reading lock). A value that does not fit ellipsizes; the narrow
+     window below wraps instead, where a clipped value would leave the 320 dialog. */
+  white-space: nowrap;
 }
 .di-rv-fact dt {
   color: var(--rv-muted);
@@ -292,7 +296,9 @@
 }
 .di-rv-fact dd {
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 .di-rv-fact code {
@@ -1065,12 +1071,21 @@
   font-size: 13px;
   flex-wrap: wrap;
 }
+.di-rv[data-narrow='true'] .di-rv-fact,
+.di-rv[data-narrow='true'] .di-rv-fact dd {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
 .di-rv[data-narrow='true'] .di-rv-attribution {
   margin: 0 8px 6px;
   font-size: 13px;
 }
 .di-rv[data-narrow='true'] .di-rv-overview-body {
-  max-height: 26vh;
+  /* The details body is already at its cap, so inner padding cannot lift the search. 26vh of a
+     568 px window leaves the search 4 px past the window; this keeps it inside. */
+  max-height: calc(26vh - 12px);
 }
 .di-rv[data-narrow='true'] .di-rv-diff-head {
   padding: 6px 8px;
