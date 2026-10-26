@@ -204,14 +204,21 @@ function BellIcon() {
 
 function TrashIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+    <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
       <path
-        d="M3 4.2h10M6.2 4.2V3h3.6v1.2M4.4 4.2l.6 8.2h6l.6-8.2"
+        d="M4 7h16M9.2 7V4.6h5.6V7M6.4 7.4l.9 13h9.4l.9-13"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.4"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+      <path
+        d="M10 11v6M14 11v6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -553,7 +560,7 @@ function Stage({
                     data-selected={entry.selected ? 'true' : undefined}
                     style={{ paddingLeft: `${10 + entry.depth * 16}px` }}
                   >
-                    {entry.kind === 'dir' ? <TwistIcon /> : <span className="di-scan-twist" />}
+                    <TwistIcon />
                     {entry.kind === 'dir' ? <FolderIcon /> : <FileIcon />}
                     <span>{entry.name}</span>
                     {entry.mark && <span className="di-scan-mark-badge">{entry.mark}</span>}

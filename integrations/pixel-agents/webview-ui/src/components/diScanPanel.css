@@ -663,8 +663,8 @@
 }
 
 .di-scan-card {
-  margin-top: 22px;
-  padding: 22px 22px 14px;
+  margin-top: 18px;
+  padding: 18px 20px 12px;
   border: 1px solid var(--di-scan-line);
   border-radius: 12px;
   background: var(--di-scan-bg);
@@ -677,9 +677,9 @@
   font-weight: 700;
 }
 .di-scan-card p {
-  margin: 0 0 10px;
-  font-size: 20px;
-  line-height: 1.45;
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.35;
   color: var(--di-scan-text);
 }
 .di-scan-handoff {
@@ -710,7 +710,7 @@
 .di-scan-cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 28px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -720,9 +720,9 @@
   align-items: center;
   gap: 14px;
   min-width: 0;
-  padding: 16px 14px;
-  border: 1px solid var(--di-scan-line);
-  border-radius: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 .di-scan-card-copy {
   display: flex;
@@ -731,12 +731,13 @@
   gap: 2px;
 }
 .di-scan-note {
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1.25;
   color: var(--di-scan-muted);
 }
 .di-scan-avatar-lg {
-  width: 72px;
-  height: 72px;
+  width: 80px;
+  height: 80px;
 }
 .di-scan-card-copy .di-scan-role {
   font-size: 13px;
@@ -749,19 +750,22 @@
 .di-scan-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-top: 26px;
+  gap: 24px;
+  margin-top: auto;
+  padding-top: 28px;
 }
 .di-scan-action {
   appearance: none;
   border: 0;
   cursor: pointer;
-  height: 56px;
-  padding: 0 28px;
-  border-radius: 8px;
-  font-size: 16px;
+  flex: 1 1 200px;
+  max-width: 280px;
+  height: 64px;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-size: 20px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--di-on-accent);
 }
 .di-scan-action-diff {
@@ -779,10 +783,16 @@
 }
 .di-scan-trash-boxed {
   margin-left: auto;
-  width: 42px;
-  height: 42px;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
   border: 1px solid var(--di-scan-line);
-  border-radius: 8px;
+  border-radius: 10px;
+  color: var(--di-scan-icon);
+}
+.di-scan-trash-boxed svg {
+  width: 32px;
+  height: 32px;
 }
 
 .di-scan-ide {
@@ -818,7 +828,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 40px;
   color: var(--di-scan-text);
   font-size: 14px;
 }
