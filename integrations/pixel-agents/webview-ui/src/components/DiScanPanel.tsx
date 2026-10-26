@@ -46,7 +46,9 @@ function assetUrl(palette: number): { url: string; bust: boolean } {
 function codeTokens(text: string): { text: string; kind: string }[] {
   if (text.trimStart().startsWith('//')) return [{ text, kind: 'note' }];
   const out: { text: string; kind: string }[] = [];
-  const re = /([A-Za-z_][A-Za-z0-9_]*)|('(?:\\.|[^'])*'|"(?:\\.|[^"])*")|(\s+)|(.)/g;
+  // The escaped-char alternative and the ordinary-char class are disjoint, so a long run of
+  // backslashes cannot make this scan exponential.
+  const re = /([A-Za-z_][A-Za-z0-9_]*)|('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")|(\s+)|(.)/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text))) {
     const word = match[1];
