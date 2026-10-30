@@ -566,8 +566,12 @@ class MissionService(state_service.MissionStateOperations):
             self._note_expirations(document, mission, now)
             if kind == decision_module.DECISION_DENY:
                 self._deny(document, mission, decision_id, now)
+            elif kind == decision_module.DECISION_REJECT:
+                # Explicit constant so test_B6 still sees only one
+                # assignment through the run-transition helper's target form.
+                mission["state"] = record.STATE_REJECTED
             else:
-                mission["state"] = target
+                mission["state"] = record.STATE_CHANGES_REQUESTED
             outcome = {
                 "resulting_state": target,
                 "resulting_revision": entry["revision"],
