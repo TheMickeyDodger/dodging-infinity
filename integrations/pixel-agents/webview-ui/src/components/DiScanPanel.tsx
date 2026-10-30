@@ -1152,13 +1152,21 @@ function Stage({
             aria-labelledby="di-scan-details-heading"
           >
             <h2 id="di-scan-details-heading">Mission details</h2>
-            {row.description !== '' && <p>{row.description}</p>}
-            {row.handoff !== '' &&
-              row.handoff.split('\n').map((line) => (
-                <p key={line} className="di-scan-handoff">
-                  {line}
-                </p>
-              ))}
+            <div
+              className="di-scan-details-body"
+              data-testid="di-scan-details-body"
+              tabIndex={0}
+              role="region"
+              aria-label="Mission details text"
+            >
+              {row.description !== '' && <p className="di-scan-details-text">{row.description}</p>}
+              {row.handoff !== '' &&
+                row.handoff.split('\n').map((line) => (
+                  <p key={line} className="di-scan-handoff">
+                    {line}
+                  </p>
+                ))}
+            </div>
             <div className="di-scan-card-foot">
               <MetaLine text={row.footer} />
               {row.updated !== '' && <p className="di-scan-updated">{row.updated}</p>}

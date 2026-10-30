@@ -79,6 +79,9 @@
   --di-line-soft: #1b1e2d;
   --di-edge: #737a91;
   --di-black: #000000;
+  /* Mission details scrollbar: defined once here, consumed by .di-scan-details-body */
+  --di-details-scroll-thumb: var(--di-edge);
+  --di-details-scroll-track: var(--di-control);
   /* text */
   --di-text: #e6e2d6;
   --di-muted: #8b919e;

@@ -123,7 +123,7 @@ BINDINGS_FILE = snapshot_module.BINDINGS_FILE
 ROOT_KEY_HEX = 12
 #: The display objective: the task description's first non-empty line,
 #: bounded (a description is a whole prompt). Display only, never identity.
-MAX_OBJECTIVE_CHARS = 160
+MAX_OBJECTIVE_CHARS = 1024
 #: The Mission bridge's handoff (target_runtime/mission_bridge.py
 #: ``handoff_text``), which a bridge-dispatched child records as its task
 #: description: its first line begins with the prefix
