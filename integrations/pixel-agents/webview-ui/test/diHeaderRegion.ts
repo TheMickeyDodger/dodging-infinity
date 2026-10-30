@@ -9,6 +9,9 @@
  *    and not inferred from boxes. A pixel counts as drawn only if some channel differs from the blank bar by more than TOLERANCE levels: the controls found 4-level
  *    raster noise on single pixels (items that merely touch read as "overdrawing" without it) and a 20-level positive control proves a faint real overdraw is
  *    still found above it. A tolerance is only safe when something smaller than the effect proves the instrument still sees it.
+ *    A drawn pixel is charged to an item only inside that item's own border box widened by BOX_SLACK px: on GitHub's Ubuntu runner a few pixels far from the item
+ *    changed whenever some crumb text was shown (World and Leaf "sharing" pixels 150 px apart), which no box comparison can explain. Those strays are still
+ *    measured and printed when a control fails (`strayPairs`), but they are not an overdraw. Real overdraw lands inside both boxes, and P3 to P5 prove it is still found.
  *
  * THE CONTROLS (`headerControls`) run the SAME measure and pixel code on a synthetic header and each carries an expectation the instrument must meet: negative
  * (no overlap with a visually hidden description present; an overflow:hidden item with a visually hidden LONG-TEXT child is NOT clipped; items that only touch
@@ -22,6 +25,8 @@ import { PNG } from 'pngjs';
 
 /** A pixel is DRAWN only if some channel differs from the blank bar by more than this. */
 export const TOLERANCE = 12;
+/** A drawn pixel counts for an item only inside the item's border box widened by this many px on every side (anti-aliased edges included). */
+export const BOX_SLACK = 2;
 
 export interface HeaderBox {
   name: string;
@@ -70,6 +75,22 @@ export interface DrawnOverlap {
   a: string;
   b: string;
   sharedDrawnPixels: number;
+  /** Up to 6 shared pixels, for the failure report: bar-relative position and the blank / a-alone / b-alone RGB there. */
+  samples?: SharedPixel[];
+}
+export interface SharedPixel {
+  x: number;
+  y: number;
+  blank: [number, number, number];
+  a: [number, number, number];
+  b: [number, number, number];
+}
+export interface DrawnResult {
+  drawn: Record<string, number>;
+  /** Pairs drawing the same pixel inside BOTH items' (widened) boxes: the overdraw the instrument reports. */
+  overdrawPairs: DrawnOverlap[];
+  /** Diagnostics only: pairs sharing pixels that lie OUTSIDE at least one item's widened box (not an overdraw, printed when a control fails). */
+  strayPairs: DrawnOverlap[];
 }
 
 /* Both evaluate bodies below collect the SAME items: back, mark, the crumb's children, the sibling tabs (skipping a visually hidden description), the tools.
@@ -181,8 +202,8 @@ export async function measureHeader(page: Page): Promise<HeaderMeasure> {
   return { ...m, locationAria };
 }
 
-export async function drawnOverlaps(page: Page): Promise<{ drawn: Record<string, number>; overdrawPairs: DrawnOverlap[] }> {
-  const { clip, names } = await page.evaluate(() => {
+export async function drawnOverlaps(page: Page): Promise<DrawnResult> {
+  const { clip, names, boxes } = await page.evaluate(() => {
     const bar = document.querySelector('.di-scan-stage-bar')!;
     const names: string[] = [];
     const els: Element[] = [];
@@ -208,7 +229,13 @@ export async function drawnOverlaps(page: Page): Promise<{ drawn: Record<string,
     if (tools) [...tools.children].forEach((c, i) => add(`tool-${i}`, c));
     (window as unknown as { __hdrItems: Element[] }).__hdrItems = els;
     const b = bar.getBoundingClientRect();
-    return { clip: { x: Math.floor(b.x), y: Math.floor(b.y), width: Math.ceil(b.width), height: Math.ceil(b.height) }, names };
+    const clip = { x: Math.floor(b.x), y: Math.floor(b.y), width: Math.ceil(b.width), height: Math.ceil(b.height) };
+    // each item's border box in the clip's pixel grid (whole pixels it touches)
+    const boxes = els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x0: Math.floor(r.left) - clip.x, y0: Math.floor(r.top) - clip.y, x1: Math.ceil(r.right) - clip.x, y1: Math.ceil(r.bottom) - clip.y };
+    });
+    return { clip, names, boxes };
   });
   // each visibility change is let through two animation frames before it is photographed, and a photograph is only used once two in a row agree:
   // on a loaded CI runner a screenshot can otherwise still hold the PREVIOUS item, which reads as that item and this one drawing the same pixels
@@ -234,39 +261,70 @@ export async function drawnOverlaps(page: Page): Promise<{ drawn: Record<string,
   };
   await show(-1);
   const blank = await shot();
-  const masks: Array<{ m: Uint8Array; n: number }> = [];
+  // m: drawn pixels inside the item's widened box (what counts); all: every drawn pixel (diagnostics only)
+  const masks: Array<{ m: Uint8Array; all: Uint8Array; n: number; img: PNG }> = [];
   for (let i = 0; i < names.length; i++) {
     await show(i);
     const img = await shot();
-    const m = new Uint8Array(img.width * img.height);
+    const W = img.width;
+    const box = boxes[i]!;
+    const m = new Uint8Array(W * img.height);
+    const all = new Uint8Array(W * img.height);
     let n = 0;
     for (let p = 0; p < m.length; p++) {
       const k = p * 4;
       const d = Math.max(Math.abs(img.data[k]! - blank.data[k]!), Math.abs(img.data[k + 1]! - blank.data[k + 1]!), Math.abs(img.data[k + 2]! - blank.data[k + 2]!));
       if (d > TOLERANCE) {
-        m[p] = 1;
-        n++;
+        all[p] = 1;
+        const x = p % W;
+        const y = (p - x) / W;
+        if (x >= box.x0 - BOX_SLACK && x < box.x1 + BOX_SLACK && y >= box.y0 - BOX_SLACK && y < box.y1 + BOX_SLACK) {
+          m[p] = 1;
+          n++;
+        }
       }
     }
-    masks.push({ m, n });
+    masks.push({ m, all, n, img });
   }
   await page.evaluate(() => {
     (window as unknown as { __hdrItems: HTMLElement[] }).__hdrItems.forEach((el) => {
       el.style.visibility = '';
     });
   });
+  const rgb = (img: PNG, p: number): [number, number, number] => [img.data[p * 4]!, img.data[p * 4 + 1]!, img.data[p * 4 + 2]!];
   const overdrawPairs: DrawnOverlap[] = [];
+  const strayPairs: DrawnOverlap[] = [];
   for (let i = 0; i < masks.length; i++) {
     for (let j = i + 1; j < masks.length; j++) {
+      const A = masks[i]!;
+      const B = masks[j]!;
+      const W = A.img.width;
       let c = 0;
-      const a = masks[i]!.m;
-      const b = masks[j]!.m;
-      for (let p = 0; p < a.length; p++) if (a[p] && b[p]) c++;
-      if (c > 0) overdrawPairs.push({ a: names[i]!, b: names[j]!, sharedDrawnPixels: c });
+      let stray = 0;
+      const samples: SharedPixel[] = [];
+      const straySamples: SharedPixel[] = [];
+      for (let p = 0; p < A.all.length; p++) {
+        if (!(A.all[p] && B.all[p])) continue;
+        const at: SharedPixel = { x: p % W, y: Math.floor(p / W), blank: rgb(blank, p), a: rgb(A.img, p), b: rgb(B.img, p) };
+        if (A.m[p] && B.m[p]) {
+          c++;
+          if (samples.length < 6) samples.push(at);
+        } else {
+          stray++;
+          if (straySamples.length < 6) straySamples.push(at);
+        }
+      }
+      if (c > 0) overdrawPairs.push({ a: names[i]!, b: names[j]!, sharedDrawnPixels: c, samples });
+      if (stray > 0) strayPairs.push({ a: names[i]!, b: names[j]!, sharedDrawnPixels: stray, samples: straySamples });
     }
   }
-  return { drawn: Object.fromEntries(names.map((n, i) => [n, masks[i]!.n])), overdrawPairs };
+  return { drawn: Object.fromEntries(names.map((n, i) => [n, masks[i]!.n])), overdrawPairs, strayPairs };
 }
+
+/** One pair, for a failure report: `a/b:N @x,y blank(r,g,b) a(r,g,b) b(r,g,b); ...` */
+const describePair = (o: DrawnOverlap): string =>
+  `${o.a}/${o.b}:${o.sharedDrawnPixels}` +
+  (o.samples?.length ? ` @${o.samples.map((s) => `${s.x},${s.y} blank(${s.blank.join(',')}) a(${s.a.join(',')}) b(${s.b.join(',')})`).join('; ')}` : '');
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------
 // The controls: a synthetic header with the real class names, in variants that each carry an expectation the instrument must meet.
@@ -402,6 +460,7 @@ export interface ControlResult {
 /** Run every control on a synthetic page; the instrument is trusted only if all of them read as expected. */
 export async function runHeaderControls(browser: Browser): Promise<ControlResult[]> {
   const results: ControlResult[] = [];
+  const browserVersion = browser.version();
   for (const c of headerControls) {
     const page = await browser.newPage({ viewport: { width: 1000, height: 300 } });
     try {
@@ -410,10 +469,25 @@ export async function runHeaderControls(browser: Browser): Promise<ControlResult
         await document.fonts.ready;
       });
       const m = await measureHeader(page);
-      const p = c.pixel ? await drawnOverlaps(page) : { drawn: {}, overdrawPairs: [] };
-      results.push({ control: c.id, ok: c.expect(m, p), why: c.expect(m, p) ? '' : JSON.stringify({ overlaps: m.overlaps.length, clipped: m.clipped, omitted: m.omitted, visuallyHidden: m.visuallyHidden, pairs: p.overdrawPairs.map((o) => `${o.a}/${o.b}:${o.sharedDrawnPixels}`) }) });
+      const p: DrawnResult = c.pixel ? await drawnOverlaps(page) : { drawn: {}, overdrawPairs: [], strayPairs: [] };
+      const ok = c.expect(m, p);
+      results.push({
+        control: c.id,
+        ok,
+        why: ok
+          ? ''
+          : JSON.stringify({
+              browser: browserVersion,
+              overlaps: m.overlaps.length,
+              clipped: m.clipped,
+              omitted: m.omitted,
+              visuallyHidden: m.visuallyHidden,
+              pairs: p.overdrawPairs.map(describePair),
+              strayPairs: p.strayPairs.map(describePair),
+            }),
+      });
     } catch (e) {
-      results.push({ control: c.id, ok: false, why: String(e).split('\n')[0] ?? '' });
+      results.push({ control: c.id, ok: false, why: `${String(e).split('\n')[0] ?? ''} (browser ${browserVersion})` });
     } finally {
       await page.close();
     }
