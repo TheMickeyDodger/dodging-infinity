@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Minimize the office side panel from the scan rail (Pixel Agents DI office).** Minimize used to be the Home logo, and only that logo. Opening Mission details, Code Diff, Comments, Evidence, or a rail page covers the Home header, so the panel could not be collapsed from the screen you were reading. Minimize now sits on the navigation rail, which stays beside those screens, and Restore brings the same screen back. Presentation only: nothing is sent, decided, or started.
 - **The request workspace matches the side panel (Pixel Agents DI office).** Ask and Requests now read as part of the same product as the side
   panel: its palette, type scale, lines and controls; a compact header with quiet tabs; one persistent context area (never dismissable) instead
   of two tall banners; short You / Assistant labels with the drafting-versus-decision note said once; and counts that name what they count

@@ -210,6 +210,22 @@ describe('PRESENTATION: entries behave truthfully (A2)', () => {
     expect(absent).toContain('disabled=""');
     expect(absent).toContain('title="Settings are not available in this office"');
   });
+  it('keeps Minimize on the rail, including when a stage or rail page covers the Home header', () => {
+    // Free UI draws Mission details, Code Diff, and the rail pages from the rail's right edge to the
+    // window's right edge, which covers the Home logo that used to be the only Minimize control.
+    const views = ['list', 'mission', 'diff', 'comments', 'missions', 'reception', 'new'] as const;
+    for (const initialView of views) {
+      const html = render({ initialView, initialSelectedId: DI_SCAN_LOCK[0]!.id });
+      const marks = html.match(/data-testid="di-office-panel-minimize"/g) ?? [];
+      expect(marks, initialView).toHaveLength(1);
+      const r = rail(html);
+      expect(r, initialView).toContain('data-testid="di-office-panel-minimize"');
+      expect(text(r, 'di-office-panel-minimize').replace(/\s+/g, ''), initialView).toBe('▸Minimize');
+      expect(tag(r, 'di-office-panel-minimize'), initialView).toContain(
+        'title="Minimize the office panel; Restore brings it back as you left it"',
+      );
+    }
+  });
   it('marks where the person is: DI World on Home, the Orchestrator on its Mission details', () => {
     expect(tag(rail(render()), 'di-rail-home')).toContain('aria-current="page"');
     const onMission = rail(
