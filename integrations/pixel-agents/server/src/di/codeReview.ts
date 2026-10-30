@@ -8,7 +8,8 @@
  *
  * 1. parses it EXACTLY (closed key set, the backend's grammar) — anything else is refused unread;
  * 2. admits it against its CURRENT listing: the Mission is listed once, as a Mission Core record
- *    whose standing is active and whose binding is bound; the member is listed once, in the direct
+ *    OR a plain Herdr task, whose standing is active and whose binding is bound; the member is
+ *    listed once, in the direct
  *    task, live, with the task the client was shown; and the listing token recomputed from the
  *    listing NOW equals the one the client holds (it moves when the assignment, the agent's
  *    session/pane/workspace or the binding moves — deliberately NOT with the Mission's journal,
@@ -176,7 +177,12 @@ export const REVIEW_REASONS = [
 ] as const;
 /** The reasons each file state can carry (a state not listed carries none). */
 const REASONS_BY_STATE: Record<string, readonly string[] | undefined> = {
-  withheld: ['private_location', 'hidden_name_not_listed', 'credential_like_name', 'key_material_extension'],
+  withheld: [
+    'private_location',
+    'hidden_name_not_listed',
+    'credential_like_name',
+    'key_material_extension',
+  ],
   unsupported: [
     'untracked_not_a_regular_file',
     'untracked_unreadable',
@@ -362,7 +368,8 @@ export function parseMissionReviewRead(msg: Json): CodeReviewRef | null {
     ...(file ? { snapshot: msg.snapshot as string, fileId: msg.fileId as string } : {}),
   };
   if (!isCodeReviewQuery(query)) return null;
-  if (typeof msg.listing !== 'string' || !CODE_REVIEW_GRAMMAR.snapshot.test(msg.listing)) return null;
+  if (typeof msg.listing !== 'string' || !CODE_REVIEW_GRAMMAR.snapshot.test(msg.listing))
+    return null;
   return {
     missionRef: query.missionRef,
     memberRef: '',
@@ -473,7 +480,9 @@ export function reviewOfferFor(
     taskId: member.taskId,
     listing: null,
   });
-  if (mission.sourceKind !== 'mission_core') return no('not_a_mission_core_record');
+  if (mission.sourceKind !== 'mission_core' && mission.sourceKind !== 'herdr_task') {
+    return no('not_a_mission_core_record');
+  }
   if (mission.v2 === null) return no('contract_version_1_office');
   if (!mission.standingKnown || mission.standing !== 'active') return no('assignment_not_active');
   if (mission.bindingState !== 'bound') return no('assignment_not_bound');
@@ -535,7 +544,8 @@ export function missionReviewOfferFor(mission: MissionPresentation): ReviewOffer
   });
   if (mission.sourceKind !== 'mission_core') return no('not_a_mission_core_record');
   if (mission.v2 === null) return no('contract_version_1_office');
-  if (!mission.standingKnown || mission.standing !== 'terminal') return no('assignment_not_finished');
+  if (!mission.standingKnown || mission.standing !== 'terminal')
+    return no('assignment_not_finished');
   if (
     library === null ||
     library.currency !== 'current' ||
@@ -554,9 +564,7 @@ export function missionReviewOfferFor(mission: MissionPresentation): ReviewOffer
   };
 }
 
-export type Admission =
-  | { ok: true }
-  | { ok: false; problem: OfficeReviewProblem; detail: string };
+export type Admission = { ok: true } | { ok: false; problem: OfficeReviewProblem; detail: string };
 
 function refuse(problem: OfficeReviewProblem, detail: string): Admission {
   return { ok: false, problem, detail };
@@ -578,7 +586,10 @@ export function admitAgainstView(view: OfficeView, ref: CodeReviewRef): Admissio
       return refuse('review_not_offered', `no review is offered for this Mission (${own.reason})`);
     }
     if (own.taskId !== ref.taskId) {
-      return refuse('task_not_the_one_listed', 'the Mission is no longer on the task you were shown');
+      return refuse(
+        'task_not_the_one_listed',
+        'the Mission is no longer on the task you were shown',
+      );
     }
     if (own.listing !== ref.listing) {
       return refuse('listing_moved', 'the Mission moved since this listing; select it again');
@@ -680,7 +691,9 @@ export interface ParsedReviewAnswer {
   observedAt: number | null;
 }
 
-const invalid = (why: string): { ok: false; problem: 'backend_answer_invalid'; detail: string } => ({
+const invalid = (
+  why: string,
+): { ok: false; problem: 'backend_answer_invalid'; detail: string } => ({
   ok: false,
   problem: 'backend_answer_invalid',
   detail: `the backend answer is not exactly the review answer for this reference (${why})`,
@@ -720,7 +733,9 @@ function parseTarget(v: unknown): Parsed<ReviewTarget> {
 
 function isStringList(v: unknown, max: number, itemMax: number): v is string[] {
   return (
-    Array.isArray(v) && v.length <= max && v.every((x) => typeof x === 'string' && x.length <= itemMax)
+    Array.isArray(v) &&
+    v.length <= max &&
+    v.every((x) => typeof x === 'string' && x.length <= itemMax)
   );
 }
 
@@ -781,7 +796,10 @@ function parseEntry(v: Json, keys: string[]): Parsed<ReviewEntry> {
     return bad('a withheld file carries counts');
   }
   // A nested repository is ONE new directory git does not enter: no counts, never a tracked change.
-  if (v.reason === 'nested_repository' && (v.additions !== null || v.deletions !== null || v.change !== 'untracked')) {
+  if (
+    v.reason === 'nested_repository' &&
+    (v.additions !== null || v.deletions !== null || v.change !== 'untracked')
+  ) {
     return bad('a nested repository is one untracked entry with no counts');
   }
   const reasons = REASONS_BY_STATE[v.state as string];
@@ -925,7 +943,10 @@ function parseFile(v: unknown): Parsed<ReviewFile> {
     !isCount(v.lines_total) ||
     !isCount(v.lines_retained) ||
     !isCount(v.bytes_total) ||
-    !(v.digest_sha256 === null || (typeof v.digest_sha256 === 'string' && DIGEST.test(v.digest_sha256))) ||
+    !(
+      v.digest_sha256 === null ||
+      (typeof v.digest_sha256 === 'string' && DIGEST.test(v.digest_sha256))
+    ) ||
     !Array.isArray(v.hunks) ||
     v.hunks.length > MAX_REVIEW_FILE_LINES
   ) {
@@ -983,7 +1004,10 @@ function parseFile(v: unknown): Parsed<ReviewFile> {
     ok: true,
     value: {
       ...entry.value,
-      modeChange: mode === null ? null : { old: (mode as Json).old as string, new: (mode as Json).new as string },
+      modeChange:
+        mode === null
+          ? null
+          : { old: (mode as Json).old as string, new: (mode as Json).new as string },
       similarity: v.similarity as number | null,
       hunks,
       truncated: v.truncated,
@@ -1096,7 +1120,9 @@ export function parseCodeReviewAnswer(
 // ---------------------------------------------------------------------------------------------
 // What the client receives
 
-function envelope(ref: CodeReviewRef): Pick<
+function envelope(
+  ref: CodeReviewRef,
+): Pick<
   DiCodeReview,
   'missionRef' | 'memberRef' | 'taskId' | 'listing' | 'snapshot' | 'fileId' | 'view' | 'requestId'
 > {

@@ -430,11 +430,24 @@ class EligibilityTests(ReviewCase):
             copy.deepcopy(self.answer.mission))
         self.refused(code_review.PROBLEM_MISSION_AMBIGUOUS)
 
-    def test_only_a_mission_core_record_names_an_assignment_workspace(self):
-        for model in (contract.LIFECYCLE_MODEL_WORKFLOW_STORE, "herdr.task/1"):
-            with self.subTest(model=model):
-                self.answer.mission["lifecycle"]["model"] = model
-                self.refused(code_review.PROBLEM_SOURCE_KIND)
+    def test_only_a_mission_core_record_or_herdr_task_names_a_workspace(self):
+        self.answer.mission["lifecycle"]["model"] = (
+            contract.LIFECYCLE_MODEL_WORKFLOW_STORE)
+        self.refused(code_review.PROBLEM_SOURCE_KIND)
+
+    def test_an_active_bound_herdr_task_is_read_from_its_workspace(self):
+        ref = "%s:%s@%s" % (SOURCE_ID, TASK, "ab" * 6)
+        self.answer.mission["mission_ref"] = ref
+        self.answer.mission["lifecycle"]["model"] = code_review.HERDR_TASK_MODEL
+        listing = self.overview(mission_ref=ref)
+        self.assertEqual(listing["target"]["source_id"], SOURCE_ID)
+        self.assertEqual(listing["target"]["attribution"], "shared_worktree")
+        self.assertGreater(listing["overview"]["totals"]["files"], 0)
+
+    def test_a_terminal_herdr_task_is_not_a_finished_mission_core_read(self):
+        self.answer.mission["lifecycle"].update(
+            model=code_review.HERDR_TASK_MODEL, standing=contract.STANDING_TERMINAL)
+        self.refused(code_review.PROBLEM_NOT_ACTIVE)
 
     def test_an_assignment_that_is_not_active_is_not_offered(self):
         for standing in (contract.STANDING_INACTIVE,

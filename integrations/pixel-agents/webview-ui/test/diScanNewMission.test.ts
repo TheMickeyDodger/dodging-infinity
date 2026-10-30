@@ -60,7 +60,9 @@ describe('G1: New Mission as drawn (AC-4.3-01/-06/-20)', () => {
     expect(chip).toContain(DI_HARNESS_FULL);
     expect(chip).toContain('Harness');
     expect(chip).not.toMatch(/<button|<input|aria-label="Remove/);
-    expect(html.indexOf('Always included')).toBeLessThan(html.indexOf('data-testid="di-new-harness"'));
+    expect(html.indexOf('Always included')).toBeLessThan(
+      html.indexOf('data-testid="di-new-harness"'),
+    );
   });
   it('the repo limit is optional, and empty means DI chooses', () => {
     expect(html).toMatch(/Limit to repos[\s\S]{0,120}Optional/);
@@ -109,7 +111,9 @@ describe('At 15 running, New Mission refuses with a plain reason, Open Missions,
     );
   });
   it('at 14 running there is no refusal', () => {
-    expect(page(render({ rows: running(DI_ORCHESTRATOR_LIMIT - 1) }))).not.toContain('di-new-limit');
+    expect(page(render({ rows: running(DI_ORCHESTRATOR_LIMIT - 1) }))).not.toContain(
+      'di-new-limit',
+    );
   });
 });
 
@@ -118,7 +122,9 @@ describe('the existing request workspace stays reachable, labelled plainly as th
     const html = page(render({}));
     const link = tag(html, 'di-new-open-workspace');
     expect(link).not.toContain('disabled');
-    expect(html).toMatch(/data-testid="di-new-open-workspace"[^>]*>Open the existing request workspace</);
+    expect(html).toMatch(
+      /data-testid="di-new-open-workspace"[^>]*>Open the existing request workspace</,
+    );
     expect(html.match(/data-testid="di-new-open-workspace"/g)).toHaveLength(1);
   });
   it('without it, the link stays, disabled, and says why', () => {
@@ -129,11 +135,15 @@ describe('the existing request workspace stays reachable, labelled plainly as th
     // and the reason is spoken, not only shown on hover
     const id = /aria-describedby="([^"]+)"/.exec(link)?.[1] ?? '';
     expect(id).not.toBe('');
-    expect(html).toMatch(new RegExp(`id="${id.replace(/[^\w-]/g, '\\$&')}"[^>]*>Mission requests are not available in this office<`));
+    expect(html).toMatch(
+      new RegExp(
+        `id="${id.replace(/[^\w-]/g, '\\$&')}"[^>]*>Mission requests are not available in this office<`,
+      ),
+    );
   });
 });
 
-describe('G2: the proposal shows each role\'s exact model with NO control to change it (AC-4.3-02/-05/-34, D23)', () => {
+describe("G2: the proposal shows each role's exact model with NO control to change it (AC-4.3-02/-05/-34, D23)", () => {
   const html = page(render({ initialView: 'proposal' }), 'di-proposal');
   it('lists every role with its exact model and provider, as drawn', () => {
     const team = /<table[^>]*data-testid="di-proposal-team"[\s\S]*?<\/table>/.exec(html)?.[0] ?? '';
@@ -156,7 +166,7 @@ describe('G2: the proposal shows each role\'s exact model with NO control to cha
     for (const id of ['di-proposal-approve', 'di-proposal-request-changes', 'di-proposal-reject']) {
       const t = tag(html, id);
       expect(t, id).toContain('disabled=""');
-      expect(t, id).toContain('Deciding a proposal is not connected in this layout preview.');
+      expect(t, id).toContain('Deciding a proposal needs the request workspace.');
     }
   });
   it('is labelled as a sample, never mistaken for a live proposal', () => {

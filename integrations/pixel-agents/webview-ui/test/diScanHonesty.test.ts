@@ -20,7 +20,6 @@ import { describe, expect, it } from 'vitest';
 import type { DiOfficeState } from '../../core/src/messages.ts';
 import {
   DI_COMMENTS_PAID,
-  DI_DELIVERY_NOT_READ,
   DI_DIFF_NOT_READ,
   DI_SCAN_LOCK,
   type DiScanKnown,
@@ -94,8 +93,11 @@ const INVENTED = [
 describe('B-H1: every scan view of a production Mission says what it has not read, and invents nothing', () => {
   /** view -> the not-read (or unavailable) words that view must SAY. */
   const MUST_SAY: Record<string, string[]> = {
-    mission: ['Approvals, repository requests, stalls and logs are not read in this layout preview.', DI_DELIVERY_NOT_READ],
-    diff: [DI_DIFF_NOT_READ, 'Files are not read in this layout preview.'],
+    mission: [
+      'Approvals, repository requests, stalls and logs are not reported for this Mission.',
+      'Delivery records name only workflow Missions.',
+    ],
+    diff: [DI_DIFF_NOT_READ, 'Files are not listed until a code review is offered for this Mission.'],
     comments: [DI_COMMENTS_PAID],
     missions: ['Not recorded', '>not read<'],
     reception: [DI_EARLIER_NOT_READ],
@@ -399,10 +401,23 @@ describe('B-H1 round 6: before saying a Mission does NOT need you, the client ca
   it('a category only partly read: not known, with the server\'s gap reason', () => {
     const [row] = unlistedRows(transitions.live!);
     expect(row!.needsYou.known).toBe(false);
-    expect(codesOf(row!)).toContain('pending_decisions:source_kind_has_no_mission_state');
+    // Authorization is known empty. What stays unread is the blockers category's member-activity
+    // gaps, plus the kinds the catalog does not report.
+    expect(codesOf(row!)).toEqual(
+      expect.arrayContaining([
+        'member_activity:projected_reason:binding_not_applicable:covered_by_canonical_record',
+        'member_activity:projected_reason:binding_not_applicable:mission_not_active',
+        'member_activity:unavailable:binding_unverified:task_record_not_corroborated_by_a_live_session',
+        'not_in_catalog_contract:v1_and_v2',
+        'catalog_does_not_report:delivery_presentations',
+      ]),
+    );
+    expect(codesOf(row!)).not.toContain('pending_decisions:source_kind_has_no_mission_state');
     // C-U1: one plain sentence, every unchecked kind named once, the per-category coverage phrases gone
-    expect(whyText(row!)).toContain(UNCHECKED);
-    expect(whyText(row!)).toMatch(/approvals/);
+    expect(whyText(row!)).toContain(
+      'Some things could not be checked: blockers, questions for you and delivery decisions.',
+    );
+    expect(whyText(row!)).not.toMatch(/approvals/);
     expect(whyText(row!).split(UNCHECKED).length - 1).toBe(1);
     expect(whyText(row!)).not.toMatch(IMPLEMENTATION_WORDS);
     expect(whyText(row!)).not.toMatch(RAW_CODE);
@@ -458,7 +473,9 @@ describe('B-H1 round 6: before saying a Mission does NOT need you, the client ca
     expect(unknown.codes).toEqual(
       expect.arrayContaining([
         'envelope_not_fresh:expired_locally:response_expired',
-        'pending_decisions:source_kind_has_no_mission_state',
+        'not_in_catalog_contract:v1_and_v2',
+        'catalog_does_not_report:delivery_presentations',
+        'member_activity:unavailable:binding_unverified:task_record_not_corroborated_by_a_live_session',
       ]),
     );
   });

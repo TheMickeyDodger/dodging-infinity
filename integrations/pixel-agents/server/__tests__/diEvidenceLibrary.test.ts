@@ -291,7 +291,7 @@ describe('empty, not reported, unsupported, stale, refused and unavailable never
     });
   });
 
-  it('unsupported: a plain Herdr task has no Mission Core evidence', () => {
+  it('a plain Herdr task reports no Mission Core artifact library, and shows the catalog review', () => {
     const p = path.join(
       __dirname,
       'fixtures/di-backend/herdr-task/herdr-task-answer-v2.FIXTURE.json',
@@ -302,13 +302,60 @@ describe('empty, not reported, unsupported, stale, refused and unavailable never
     const herd = v.missions.value.find((m) => m.sourceKind === 'herdr_task')!;
     const lib = herd.evidence!;
     for (const s of [lib.artifacts, lib.verification, lib.receipts]) {
-      expect(s.state).toBe('not_applicable');
-      expect(s.reason).toBe('source_kind_has_no_mission_core_evidence');
+      expect(s.state).toBe('not_recorded');
+      expect(s.reason).toBeNull();
     }
-    expect(lib.reviews.state).toBe('not_applicable');
+    // this fixture's catalog still carries the older kind refusal; the office shows it as said
+    expect(lib.reviews).toMatchObject({
+      state: 'not_applicable',
+      reason: 'source_kind_has_no_canonical_review',
+    });
     expect(lib.contentReads).toEqual({
       state: 'unavailable',
-      reason: 'source_kind_has_no_artifact_content',
+      reason: 'herdr_task_has_no_artifact_bodies',
+    });
+  });
+
+  it('a Herdr task with a recorded review shows that review, and not_recorded stays empty', () => {
+    const p = path.join(
+      __dirname,
+      'fixtures/di-backend/herdr-task/herdr-task-answer-v2.FIXTURE.json',
+    );
+    const answer = JSON.parse(fs.readFileSync(p, 'utf-8')) as Raw;
+    const missions = (answer.response as Raw).missions as Raw[];
+    const raw = missions.find((m) => (m.lifecycle as Raw).model === 'herdr.task/1')!;
+    const review = (raw.admitted_artifacts as Raw).canonical_review as Raw;
+    review.state = 'not_recorded';
+    review.problem = null;
+    const empty = viewOf(answer);
+    if (empty.missions.state !== 'observed') throw new Error('missions');
+    const emptyHerd = empty.missions.value.find((m) => m.sourceKind === 'herdr_task')!;
+    expect(emptyHerd.evidence!.reviews).toMatchObject({
+      state: 'not_recorded',
+      reason: null,
+      items: [],
+    });
+
+    review.state = 'admitted';
+    review.record = {
+      round: 1,
+      reviewer_logical: 'reviewer1',
+      reviewer_agent: 'pod-reviewer1',
+      protocol_token: 'APPROVE',
+    };
+    review.gate = 'parsed';
+    review.verdict = 'APPROVE';
+    review.currency = 'current';
+    review.integrity = 'linkage_corroborated';
+    review.task_status = 'ACTIVE';
+    const admitted = viewOf(answer);
+    if (admitted.missions.state !== 'observed') throw new Error('missions');
+    const herd = admitted.missions.value.find((m) => m.sourceKind === 'herdr_task')!;
+    expect(herd.evidence!.reviews.state).toBe('observed');
+    expect(herd.evidence!.reviews.items[0]).toMatchObject({
+      round: 1,
+      reviewerLogical: 'reviewer1',
+      verdict: 'APPROVE',
     });
   });
 });

@@ -250,12 +250,56 @@ export function missionStatus(mission: DiMission, state: DiOfficeState): DiOpSta
     (m) =>
       `${field(`members[${m.memberRef}].live`, m.live)}, ${field(`members[${m.memberRef}].classification`, m.classification)}`,
   );
-  if (confirmed.length === 0)
+  if (confirmed.length === 0) {
+    // The catalog already named a status. Do not collapse that to Unknown when no member
+    // is confirmed live: a bound active Herdr task is active, and a declared workflow phase
+    // is that phase.
+    if (
+      mission.sourceKind === 'herdr_task' &&
+      mission.standing === 'active' &&
+      mission.bindingState === 'bound'
+    ) {
+      return result(
+        'running',
+        `The Herdr task record is active (${shown}). No team member is confirmed live in this office.`,
+        [...standing, ...binding, ...memberFields],
+      );
+    }
+    const phase =
+      mission.sourceKind === 'workflow_store' && mission.v2.projected
+        ? mission.v2.workflowPhase
+        : undefined;
+    if (phase !== undefined && phase.state === 'observed' && phase.phase !== null) {
+      const declared = phase.phase;
+      if (declared === 'BLOCKED') {
+        return result('blocked', `Workflow phase ${declared}.`, [
+          ...standing,
+          field('v2.workflowPhase.phase', declared),
+        ]);
+      }
+      if (declared === 'NEEDS_REAUTHORIZATION') {
+        return result('waiting', `Workflow phase ${declared}.`, [
+          ...standing,
+          field('v2.workflowPhase.phase', declared),
+        ]);
+      }
+      if (declared === 'COMPLETED') {
+        return result('ended', `Workflow phase ${declared}.`, [
+          ...standing,
+          field('v2.workflowPhase.phase', declared),
+        ]);
+      }
+      return result('running', `Workflow phase ${declared}.`, [
+        ...standing,
+        field('v2.workflowPhase.phase', declared),
+      ]);
+    }
     return result(
       'unknown',
       `The record says ${mission.lifecycleState}; no team member is confirmed live.`,
       [...standing, ...binding, ...memberFields],
     );
+  }
   // A terminal's own `blocked` report counts ONLY from a confirmed, live member. Any other member's
   // report is a last-known detail (memberTerminalNotes), never the Mission's current status.
   const blocked = confirmed.filter((m) => m.activity === 'blocked');

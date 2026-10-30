@@ -819,6 +819,22 @@ class CatalogService(object):
         return dict((root, expected[root])
                     for root in kept[:snapshot_module.MAX_HERD_ROOTS])
 
+    def _review_chains(self, discovery, samples):
+        """The chain-capture review binding: unique Mission Core claims, plus
+        the contested roots that must not fall through to a task record's
+        own id. When the contested list does not fit, the key is omitted and
+        unclaimed roots are not read (the older rule)."""
+        expected = self._expected_reviews(discovery, samples)
+        contested = self._composer.contested_review_roots(samples)
+        order = set(self._manual_roots)
+        if discovery:
+            order.update(discovery["roots"])
+        contested = [root for root in contested if root in order]
+        chains = {"expected_reviews": expected}
+        if len(contested) <= snapshot_module.MAX_HERD_ROOTS:
+            chains["contested_roots"] = contested
+        return chains
+
     def _capture_chains(self, wait_seconds, discovery, samples,
                         observation=None):
         """``_capture_runtime`` for a CHAIN request: ``(snapshot,
@@ -841,8 +857,7 @@ class CatalogService(object):
                 None, names, over_bound)
         capture = self._runtime.request(
             wait_seconds * RUNTIME_SHARE, discovered,
-            chains={"expected_reviews": self._expected_reviews(discovery,
-                                                               samples)},
+            chains=self._review_chains(discovery, samples),
             stable_names=names)
         runtime.update(available=capture.is_available(),
                        problem=capture.problem, detail=capture.detail,

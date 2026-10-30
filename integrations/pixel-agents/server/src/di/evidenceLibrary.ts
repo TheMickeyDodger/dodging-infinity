@@ -318,9 +318,15 @@ export function presentEvidenceLibrary(
   if (v2 === null) return null;
   const ms = v2.missionState;
   const missionCore = input.sourceKind === 'mission_core';
+  const herdr = input.sourceKind === 'herdr_task';
+  // A Herdr task has no Mission Core artifact report. That is "not reported",
+  // not a kind that can never have evidence: its review is the canonical
+  // review section, read from the task's .herd/state record.
   const gate = missionCore
     ? missionStateGate(ms)
-    : section<never>('not_applicable', 'source_kind_has_no_mission_core_evidence');
+    : herdr
+      ? section<never>('not_recorded', null)
+      : section<never>('not_applicable', 'source_kind_has_no_mission_core_evidence');
   const report = gate === null ? ms.report : null;
   const identity = ms.executionIdentity;
   const active = input.bindingState === 'bound';
@@ -339,17 +345,19 @@ export function presentEvidenceLibrary(
         : identity.state === 'unexpected'
           ? 'historical_identity_unexpected'
           : 'historical_identity_not_established';
-  const contentReads = !missionCore
-    ? 'source_kind_has_no_artifact_content'
-    : !input.officeLive
-      ? 'office_not_live'
-      : report === null
-        ? 'mission_state_not_observed'
-        : !active && !historical
-          ? unbound
-          : cursor === null
-            ? 'journal_cursor_not_reported'
-            : null;
+  const contentReads = herdr
+    ? 'herdr_task_has_no_artifact_bodies'
+    : !missionCore
+      ? 'source_kind_has_no_artifact_content'
+      : !input.officeLive
+        ? 'office_not_live'
+        : report === null
+          ? 'mission_state_not_observed'
+          : !active && !historical
+            ? unbound
+            : cursor === null
+              ? 'journal_cursor_not_reported'
+              : null;
   return {
     cursor,
     execution: {

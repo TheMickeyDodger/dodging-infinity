@@ -65,17 +65,21 @@ export interface ReviewTargetRef {
 }
 
 export type ReviewRequest =
-  | { kind: 'overview' }
-  | { kind: 'file'; fileId: string; snapshot: string; path: string };
+  { kind: 'overview' } | { kind: 'file'; fileId: string; snapshot: string; path: string };
 
 /**
  * The wire message for a request: an ADMITTED REFERENCE and nothing else (never a path), naming itself with an opaque id the office echoes. It carries no
  * authority: the backend never sees it. A member-bound target is asked as `diCodeReviewRead` (byte-identical to what it always was); a Mission-level target
  * as `diCodeReviewMissionRead`, which has no member key at all.
  */
-export function reviewReadMessage(target: ReviewTargetRef, request: ReviewRequest, requestId?: string) {
+export function reviewReadMessage(
+  target: ReviewTargetRef,
+  request: ReviewRequest,
+  requestId?: string,
+) {
   const named = requestId === undefined ? {} : { requestId };
-  const file = request.kind === 'overview' ? {} : { snapshot: request.snapshot, fileId: request.fileId };
+  const file =
+    request.kind === 'overview' ? {} : { snapshot: request.snapshot, fileId: request.fileId };
   if (target.level === 'mission') {
     return {
       type: 'diCodeReviewMissionRead' as const,
@@ -164,7 +168,10 @@ export type ReviewEvent =
   | { type: 'moved' };
 
 /** Is this event about the session's own target? (An event that names none is about whichever session is current.) */
-const aboutThisTarget = (session: ReviewSession, named: ReviewTargetRef | null | undefined): boolean =>
+const aboutThisTarget = (
+  session: ReviewSession,
+  named: ReviewTargetRef | null | undefined,
+): boolean =>
   named === undefined ||
   (named !== null &&
     session.target !== null &&
@@ -266,7 +273,9 @@ export function reduceSession(session: ReviewSession, event: ReviewEvent): Revie
         // But the refusal also said something about the SNAPSHOT (that the workspace moved), a fact that outlives the request it was said to, and the
         // selection that replaced this one may need no read at all (a binary or withheld file): no later refusal would ever restore it. So that fact is
         // kept at once, as a property of the snapshot, and nothing of the request is.
-        const moved = answer.state === 'refused' && (answer.problem === 'snapshot_moved' || answer.problem === 'workspace_moved_during_read');
+        const moved =
+          answer.state === 'refused' &&
+          (answer.problem === 'snapshot_moved' || answer.problem === 'workspace_moved_during_read');
         return { ...settled, stale: moved ? true : settled.stale };
       }
       if (answer.state === 'refused') {
@@ -299,7 +308,9 @@ export interface DiCodeReviewFeed {
   subscribe(listener: (answer: DiCodeReview) => void): () => void;
 }
 
-export function createDiCodeReviewFeed(): DiCodeReviewFeed & { publish(answer: DiCodeReview): void } {
+export function createDiCodeReviewFeed(): DiCodeReviewFeed & {
+  publish(answer: DiCodeReview): void;
+} {
   const listeners = new Set<(answer: DiCodeReview) => void>();
   return {
     subscribe(listener) {
@@ -334,7 +345,9 @@ export function createRequestIds(tag: string): () => string {
 const RETRYABLE_AT_ONCE = ['read_rate_limited', 'read_in_progress', 'review_read_in_progress'];
 
 export function isRetryable(refusal: DiCodeReview | null): boolean {
-  return refusal !== null && refusal.problem !== null && RETRYABLE_AT_ONCE.includes(refusal.problem);
+  return (
+    refusal !== null && refusal.problem !== null && RETRYABLE_AT_ONCE.includes(refusal.problem)
+  );
 }
 
 /** The files of the current overview (empty when none). */
@@ -343,7 +356,10 @@ export function overviewFiles(session: ReviewSession): DiCodeReviewEntry[] {
 }
 
 /** The listed entry for a path in the current overview, if any. */
-export function entryForPath(session: ReviewSession, path: string | null): DiCodeReviewEntry | null {
+export function entryForPath(
+  session: ReviewSession,
+  path: string | null,
+): DiCodeReviewEntry | null {
   if (path === null) return null;
   return overviewFiles(session).find((f) => f.path === path) ?? null;
 }
@@ -459,7 +475,15 @@ export function buildTree(files: readonly DiCodeReviewEntry[]): TreeNode[] {
 }
 
 const compareNames = (a: string, b: string): number =>
-  a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : a < b ? -1 : a > b ? 1 : 0;
+  a.toLowerCase() < b.toLowerCase()
+    ? -1
+    : a.toLowerCase() > b.toLowerCase()
+      ? 1
+      : a < b
+        ? -1
+        : a > b
+          ? 1
+          : 0;
 
 function flatLeaves(nodes: readonly TreeNode[]): TreeLeaf[] {
   return nodes.flatMap((n) => (n.kind === 'file' ? [n] : flatLeaves(n.children)));
@@ -470,7 +494,10 @@ export function filterFiles(
   files: readonly DiCodeReviewEntry[],
   query: string,
 ): DiCodeReviewEntry[] {
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w !== '');
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w !== '');
   if (words.length === 0) return [...files];
   return files.filter((f) => {
     const haystack = `${f.path} ${f.oldPath ?? ''}`.toLowerCase();
@@ -609,7 +636,11 @@ export const WITHHELD_CHANGE_WORDS =
  * The plain words for a file's state, with its reason when it has one. `change` is the kind of change the listing
  * gave the file: a withheld file that git tracks says how its change is known (see WITHHELD_CHANGE_WORDS).
  */
-export function stateWords(state: string, reason: string | null, change: string | null = null): StateWords {
+export function stateWords(
+  state: string,
+  reason: string | null,
+  change: string | null = null,
+): StateWords {
   switch (state) {
     case 'text':
       return { badge: '', title: 'Text', body: '', tone: 'ok' };
@@ -654,7 +685,9 @@ export function stateWords(state: string, reason: string | null, change: string 
       return {
         badge: 'not shown',
         title: 'Not shown',
-        body: (reason !== null && REASON_WORDS[reason]) || 'This view does not show this kind of change.',
+        body:
+          (reason !== null && REASON_WORDS[reason]) ||
+          'This view does not show this kind of change.',
         tone: 'warn',
       };
     case 'no_content_diff':
@@ -722,7 +755,8 @@ const FINISHED_REFUSAL_OUTCOME =
  *  - read history, for the two codes the backend can raise at its end-of-read re-check (no_fresh_catalog_answer, mission_listed_more_than_once): there the workspace HAS been read and the answer is discarded.
  * So the sentence is about THE REFUSED REQUEST and about what it returned, which is true at admission and at the re-check and claims nothing about the screen. The cause clause before it is unchanged.
  */
-const REFUSED_REQUEST_RETURNED_NOTHING = 'The refused request returned nothing from a working tree.';
+const REFUSED_REQUEST_RETURNED_NOTHING =
+  'The refused request returned nothing from a working tree.';
 
 const PROBLEM_WORDS: Record<string, ProblemWords> = {
   // refused by the office
@@ -835,7 +869,7 @@ const PROBLEM_WORDS: Record<string, ProblemWords> = {
   },
   assignment_not_a_mission_core_record: {
     title: 'Not a supported assignment',
-    body: 'Only a Mission Core assignment names a workspace this view can read.',
+    body: 'Only a Mission Core assignment, or a Herdr task with a bound workspace, names a workspace this view can read.',
     retry: false,
   },
   assignment_not_active: {
@@ -996,7 +1030,7 @@ export const PROBLEM_WORD_KEYS: readonly string[] = Object.keys(PROBLEM_WORDS);
 
 export const UNAVAILABLE_WORDS: Record<string, string> = {
   not_a_mission_core_record:
-    'This is a plain Herdr task, not a Mission Core assignment, so no workspace is bound for a review.',
+    'Code review is offered for an active Mission Core assignment, and for an active Herdr task whose workspace is bound. This record is neither.',
   contract_version_1_office:
     'This office was started with the older query contract, which does not corroborate assignment workspaces.',
   assignment_not_active: 'The assignment is not active work now.',
@@ -1013,7 +1047,9 @@ export const UNAVAILABLE_WORDS: Record<string, string> = {
 };
 
 export function unavailableWords(reason: string | null): string {
-  return (reason !== null && UNAVAILABLE_WORDS[reason]) || 'A review is not offered for this agent.';
+  return (
+    (reason !== null && UNAVAILABLE_WORDS[reason]) || 'A review is not offered for this agent.'
+  );
 }
 
 /**
@@ -1023,7 +1059,7 @@ export function unavailableWords(reason: string | null): string {
  */
 const NOT_OFFERED_CONSEQUENCE: Record<string, string> = {
   not_a_mission_core_record:
-    'This is a plain Herdr task with no code workspace bound to it, so code review is not offered.',
+    'This record is not an active Mission Core assignment or an active Herdr task with a bound workspace, so code review is not offered.',
   contract_version_1_office:
     'This office can’t confirm which code workspace belongs to which agent, so code review is not offered here.',
   assignment_not_active: 'Its assignment is not active work now, so code review is not offered.',
@@ -1033,7 +1069,8 @@ const NOT_OFFERED_CONSEQUENCE: Record<string, string> = {
     'This agent works in a linked child task, not in the Mission’s own workspace, so code review is not offered here.',
   member_not_live: 'This agent is not confirmed running now, so code review is not offered.',
   task_not_observed: 'No task is observed for this agent, so code review is not offered.',
-  assignment_not_finished: 'This Mission is not finished, so code review is not offered for it as a whole.',
+  assignment_not_finished:
+    'This Mission is not finished, so code review is not offered for it as a whole.',
   finished_execution_not_listed:
     'Which code workspace ran this finished Mission is not established, so code review is not offered.',
 };
@@ -1108,7 +1145,8 @@ export function offerFor(
   if (state === null || state.missions.state !== 'observed') return null;
   const mission = state.missions.missions.find((m) => m.missionRef === target.missionRef);
   // A Mission-level target is judged by the Mission's own offer, never by a member's.
-  if (target.level === 'mission') return mission === undefined ? undefined : (mission.codeReview ?? null);
+  if (target.level === 'mission')
+    return mission === undefined ? undefined : (mission.codeReview ?? null);
   const member = mission?.members.members.find((m) => m.memberRef === target.memberRef);
   return member === undefined ? undefined : (member.codeReview ?? null);
 }
@@ -1169,12 +1207,20 @@ export function comparisonSentences(
 export const ATTRIBUTION_WORDS =
   'A shared worktree shows the whole team’s changes in it. Nothing here says who made a change.';
 
-export function totalsWords(
-  totals: { files: number; additions: number; deletions: number; withheld: number; unshown: number },
-): string {
+export function totalsWords(totals: {
+  files: number;
+  additions: number;
+  deletions: number;
+  withheld: number;
+  unshown: number;
+}): string {
   const files = `${totals.files} ${totals.files === 1 ? 'file' : 'files'}`;
   // nothing listed is a finding, not a verdict (see emptyListingWords): the header does not say "0 files changed"
-  const parts = [totals.files === 0 ? 'no changes found' : `${files} changed`, `+${totals.additions}`, `−${totals.deletions}`];
+  const parts = [
+    totals.files === 0 ? 'no changes found' : `${files} changed`,
+    `+${totals.additions}`,
+    `−${totals.deletions}`,
+  ];
   if (totals.withheld > 0) parts.push(`${totals.withheld} withheld`);
   if (totals.unshown - totals.withheld > 0) {
     parts.push(`${totals.unshown - totals.withheld} not shown as text`);
@@ -1350,7 +1396,8 @@ export function splitPaneHeads(
     old: { title: 'Base (old)', detail: `commit ${baseOid.slice(0, 10)}` },
     new: {
       title: 'Working tree (new)',
-      detail: observedAtSeconds === null ? 'as observed' : `as observed ${clockWords(observedAtSeconds)}`,
+      detail:
+        observedAtSeconds === null ? 'as observed' : `as observed ${clockWords(observedAtSeconds)}`,
     },
   };
 }
@@ -1639,7 +1686,13 @@ const LANGUAGES: Record<string, Language> = {
     caseInsensitive: true,
   },
   json: { name: 'JSON', keywords: set('true false null'), strings: ['"'], jsonLike: true },
-  yaml: { name: 'YAML', keywords: YAML_KEYWORDS, lineComment: ['#'], strings: ['"', "'"], jsonLike: true },
+  yaml: {
+    name: 'YAML',
+    keywords: YAML_KEYWORDS,
+    lineComment: ['#'],
+    strings: ['"', "'"],
+    jsonLike: true,
+  },
   css: {
     name: 'CSS',
     keywords: CSS_KEYWORDS,
@@ -1649,22 +1702,57 @@ const LANGUAGES: Record<string, Language> = {
   },
   html: { name: 'HTML', keywords: new Set(), strings: ['"', "'"], markup: true },
   md: { name: 'Markdown', keywords: new Set(), strings: [] },
-  toml: { name: 'TOML', keywords: set('true false'), lineComment: ['#'], strings: ['"', "'"], jsonLike: true },
+  toml: {
+    name: 'TOML',
+    keywords: set('true false'),
+    lineComment: ['#'],
+    strings: ['"', "'"],
+    jsonLike: true,
+  },
 };
 
 const EXTENSIONS: Record<string, string> = {
-  ts: 'ts', tsx: 'ts', js: 'ts', jsx: 'ts', mjs: 'ts', cjs: 'ts', mts: 'ts', cts: 'ts',
-  py: 'py', pyi: 'py',
-  sh: 'sh', bash: 'sh', zsh: 'sh',
-  rs: 'rs', go: 'go',
-  c: 'c', h: 'c', cc: 'c', cpp: 'c', hpp: 'c', cs: 'c',
-  java: 'java', kt: 'java', swift: 'java',
+  ts: 'ts',
+  tsx: 'ts',
+  js: 'ts',
+  jsx: 'ts',
+  mjs: 'ts',
+  cjs: 'ts',
+  mts: 'ts',
+  cts: 'ts',
+  py: 'py',
+  pyi: 'py',
+  sh: 'sh',
+  bash: 'sh',
+  zsh: 'sh',
+  rs: 'rs',
+  go: 'go',
+  c: 'c',
+  h: 'c',
+  cc: 'c',
+  cpp: 'c',
+  hpp: 'c',
+  cs: 'c',
+  java: 'java',
+  kt: 'java',
+  swift: 'java',
   sql: 'sql',
-  json: 'json', jsonc: 'json', json5: 'json',
-  yml: 'yaml', yaml: 'yaml',
-  css: 'css', scss: 'css', less: 'css',
-  html: 'html', htm: 'html', xml: 'html', svg: 'html', vue: 'html',
-  md: 'md', markdown: 'md', txt: '',
+  json: 'json',
+  jsonc: 'json',
+  json5: 'json',
+  yml: 'yaml',
+  yaml: 'yaml',
+  css: 'css',
+  scss: 'css',
+  less: 'css',
+  html: 'html',
+  htm: 'html',
+  xml: 'html',
+  svg: 'html',
+  vue: 'html',
+  md: 'md',
+  markdown: 'md',
+  txt: '',
   toml: 'toml',
 };
 
@@ -1698,7 +1786,8 @@ export function tokenizeLine(
   inBlock = false,
 ): { tokens: Token[]; inBlock: boolean } {
   const lang = languageKey === null ? undefined : LANGUAGES[languageKey];
-  if (lang === undefined || text === '') return { tokens: [{ text, kind: 'plain' }], inBlock: false };
+  if (lang === undefined || text === '')
+    return { tokens: [{ text, kind: 'plain' }], inBlock: false };
   const tokens: Token[] = [];
   let plain = '';
   const flush = (): void => {
@@ -1714,11 +1803,25 @@ export function tokenizeLine(
   const startsWith = (s: string): boolean => text.startsWith(s, i);
   if (lang.name === 'Markdown') {
     const heading = /^(#{1,6}\s)(.*)$/.exec(text);
-    if (heading) return { tokens: [{ text: heading[1], kind: 'keyword' }, { text: heading[2], kind: 'function' }], inBlock: false };
+    if (heading)
+      return {
+        tokens: [
+          { text: heading[1], kind: 'keyword' },
+          { text: heading[2], kind: 'function' },
+        ],
+        inBlock: false,
+      };
     const fence = /^(\s*(```|~~~).*)$/.exec(text);
     if (fence) return { tokens: [{ text, kind: 'comment' }], inBlock: false };
     const list = /^(\s*(?:[-*+]|\d+\.)\s)(.*)$/.exec(text);
-    if (list) return { tokens: [{ text: list[1], kind: 'punct' }, { text: list[2], kind: 'plain' }], inBlock: false };
+    if (list)
+      return {
+        tokens: [
+          { text: list[1], kind: 'punct' },
+          { text: list[2], kind: 'plain' },
+        ],
+        inBlock: false,
+      };
     return { tokens: [{ text, kind: 'plain' }], inBlock: false };
   }
   while (i < text.length) {
@@ -1814,11 +1917,18 @@ export function tokenizeLine(
       i = j;
       continue;
     }
-    if (lang.cssLike && (ch === '.' || ch === '#' || ch === '-' || ch === '@') && isIdentStart(text[i + 1] ?? '')) {
+    if (
+      lang.cssLike &&
+      (ch === '.' || ch === '#' || ch === '-' || ch === '@') &&
+      isIdentStart(text[i + 1] ?? '')
+    ) {
       let j = i + 1;
       while (j < text.length && /[\w-]/.test(text[j])) j += 1;
       const word = text.slice(i, j);
-      push(word, ch === '@' ? 'keyword' : word.startsWith('--') ? 'property' : ch === '-' ? 'plain' : 'type');
+      push(
+        word,
+        ch === '@' ? 'keyword' : word.startsWith('--') ? 'property' : ch === '-' ? 'plain' : 'type',
+      );
       i = j;
       continue;
     }
@@ -1829,7 +1939,8 @@ export function tokenizeLine(
       const lookup = lang.caseInsensitive ? word.toLowerCase() : word;
       const next = text.slice(j).match(/^\s*(\(|:)/);
       if (lang.keywords.has(lookup)) push(word, 'keyword');
-      else if (lang.types?.has(word) || (/^[A-Z][A-Za-z0-9]+$/.test(word) && !lang.cssLike)) push(word, 'type');
+      else if (lang.types?.has(word) || (/^[A-Z][A-Za-z0-9]+$/.test(word) && !lang.cssLike))
+        push(word, 'type');
       else if (lang.cssLike && next?.[1] === ':') push(word, 'property');
       else if (next?.[1] === '(') push(word, 'function');
       else plain += word;
@@ -1861,7 +1972,9 @@ export function luminance(hexColor: string): number {
   const m = /^#([0-9a-f]{6})$/i.exec(hexColor);
   if (!m) throw new Error(`not a #rrggbb colour: ${hexColor}`);
   const n = parseInt(m[1], 16);
-  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
+  return (
+    0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
+  );
 }
 
 /** WCAG contrast ratio of two `#rrggbb` colours (1..21). */
@@ -1910,7 +2023,10 @@ export function shortOid(oid: string): string {
  * but a withheld file is never opened, so its change is judged from recorded metadata and a same-size edit within the recorded
  * second may not be seen. An empty list therefore does not prove the working tree matches the commit.
  */
-export function emptyListingWords(baseOid: string, observed: string): { title: string; body: string; tone: 'info' } {
+export function emptyListingWords(
+  baseOid: string,
+  observed: string,
+): { title: string; body: string; tone: 'info' } {
   return {
     title: 'No changes found',
     body:

@@ -36,7 +36,8 @@ const render = (view: DiScanView, row: DiScanRow = DI_SCAN_LOCK[0]!, specimen = 
 const stage = (html: string) => /data-testid="di-scan-stage"[\s\S]*$/.exec(html)?.[0] ?? '';
 const tag = (html: string, testid: string) =>
   new RegExp(`<[a-z]+[^>]*data-testid="${testid}"[^>]*>`).exec(html)?.[0] ?? '';
-const HERDR = 'Herdr opens in your own terminal. That is not connected in this layout preview.';
+const HERDR =
+  'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.';
 
 describe('C2: Code Diff and Comments switch between each other; Herdr sits beside them, disabled', () => {
   for (const view of ['diff', 'comments'] as const) {
@@ -48,7 +49,7 @@ describe('C2: Code Diff and Comments switch between each other; Herdr sits besid
       const current = view === 'diff' ? 'di-scan-sibling-diff' : 'di-scan-sibling-comments';
       expect(tag(nav, current)).toContain('aria-current="page"');
       const herdr = tag(nav, 'di-scan-sibling-herdr');
-      expect(herdr).toContain('disabled=""');
+      expect(herdr).not.toContain('disabled');
       expect(herdr).toContain(`title="${HERDR}"`);
     });
   }
@@ -65,9 +66,9 @@ describe('C3: the file tree selects a file; folders are structure, not targets',
   const html = stage(render('diff'));
   it('every file is a button; no folder is', () => {
     const files = DI_SCAN_LOCK_DIFF.tree.filter((e) => e.kind === 'file');
-    const buttons = [...html.matchAll(/<button[^>]*data-testid="di-scan-tree-file"[^>]*data-file-id="([^"]+)"/g)].map(
-      (m) => m[1],
-    );
+    const buttons = [
+      ...html.matchAll(/<button[^>]*data-testid="di-scan-tree-file"[^>]*data-file-id="([^"]+)"/g),
+    ].map((m) => m[1]);
     expect(buttons).toEqual(files.map((f) => f.id));
     expect(html).not.toMatch(/<button[^>]*data-testid="di-scan-tree-dir"/);
   });
@@ -105,9 +106,9 @@ describe('X2/X3: Comments in Free is a full-width thread and a Paid/unavailable 
   it('the specimen draws its sample thread, labelled as a sample', () => {
     const html = stage(render('comments'));
     const thread = /<ol[^>]*data-testid="di-scan-thread"[\s\S]*?<\/ol>/.exec(html)?.[0] ?? '';
-    expect([...thread.matchAll(/class="di-scan-comment-author">([^<]*)</g)].map((m) => m[1])).toEqual(
-      DI_SCAN_LOCK_THREAD.map((c) => c.author),
-    );
+    expect(
+      [...thread.matchAll(/class="di-scan-comment-author">([^<]*)</g)].map((m) => m[1]),
+    ).toEqual(DI_SCAN_LOCK_THREAD.map((c) => c.author));
     expect(html).toContain('Sample thread (fixture)');
   });
   it('in place of a composer: a plain label that Comments are Paid and unavailable in Free', () => {
@@ -124,7 +125,9 @@ describe('X2/X3: Comments in Free is a full-width thread and a Paid/unavailable 
     expect(html).not.toContain('data-testid="di-scan-thread"');
     expect(html).not.toContain('fixture');
     expect(html).not.toMatch(/No comments|no comments/);
-    expect(html).toContain('Comments are part of Paid team sharing. They are not available in Free.');
+    expect(html).toContain(
+      'Comments are part of Paid team sharing. They are not available in Free.',
+    );
   });
 });
 
@@ -138,8 +141,12 @@ describe('C3/C4 truthfulness (B-H1): an unread diff is said as unread, never as 
   it('only folders draw the expand chevron; a file row draws none (pixel-lock 03)', () => {
     const html = stage(render('diff'));
     const chevron = 'M2.6 4.2 6 7.8 9.4 4.2';
-    const files = [...html.matchAll(/<button[^>]*data-testid="di-scan-tree-file"[\s\S]*?<\/button>/g)].map((m) => m[0]);
-    const dirs = [...html.matchAll(/<span[^>]*data-testid="di-scan-tree-dir"[\s\S]*?<\/span><\/span>/g)].map((m) => m[0]);
+    const files = [
+      ...html.matchAll(/<button[^>]*data-testid="di-scan-tree-file"[\s\S]*?<\/button>/g),
+    ].map((m) => m[0]);
+    const dirs = [
+      ...html.matchAll(/<span[^>]*data-testid="di-scan-tree-dir"[\s\S]*?<\/span><\/span>/g),
+    ].map((m) => m[0]);
     expect(files.length).toBeGreaterThan(0);
     for (const f of files) expect(f).not.toContain(chevron);
     expect(dirs.length).toBeGreaterThan(0);

@@ -343,14 +343,17 @@ test(
 );
 
 test(
-  'A4: a Mission opened from the rail shows its details beside the rail; Herdr is disabled and no in-app terminal exists',
+  'A4: a Mission opened from the rail shows its details beside the rail; Herdr states the terminal path and no in-app terminal exists',
   async () => {
     await boot();
     await p().click('[data-testid="di-rail-orchestrator"]');
     await p().waitForSelector('[data-testid="di-scan-stage"][data-view="mission"]');
     const stage = await box('[data-testid="di-scan-stage"]');
     assert.equal(stage.x, RAIL_PX);
-    assert.equal(await p().locator('[data-testid="di-scan-herdr"]').isDisabled(), true);
+    assert.equal(await p().locator('[data-testid="di-scan-herdr"]').isDisabled(), false);
+    const herdr = (await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim();
+    assert.match(herdr, /herdctl/);
+    assert.match(herdr, /does not start it/);
     const terminal = await p().evaluate(
       () =>
         document.querySelectorAll(

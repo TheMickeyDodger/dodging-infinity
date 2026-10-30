@@ -236,7 +236,7 @@ describe('PRESENTATION: the trash (D-1, AC-4.4-29/-30/-32), disabled at this sta
     const html = render(merged);
     expect(tag(html, 'di-scan-trash')).toContain('disabled=""');
     expect(block(html, 'di-scan-trash-reason')).toContain(
-      'Deleting a Mission is not connected in this layout preview.',
+      'The office does not delete Missions. Deletion stays outside this office.',
     );
     expect(html).not.toMatch(/aria-label="Clear /);
   });
@@ -262,10 +262,10 @@ describe('A4: no in-app Herdr terminal remains (GAP-RESOLUTIONS 9, 11, 13; super
   it('the Herdr button keeps its place but is disabled, with its plain reason, and opens no nested screen', () => {
     const html = render(building);
     const herdr = tag(html, 'di-scan-herdr');
-    expect(herdr).toContain('disabled=""');
+    expect(herdr).not.toContain('disabled');
     expect(herdr).toContain('aria-describedby="di-scan-herdr-reason"');
     expect(block(html, 'di-scan-herdr-reason')).toContain(
-      'Herdr opens in your own terminal. That is not connected in this layout preview.',
+      'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.',
     );
   });
   it('no view renders a pane grid, a prompt or terminal chrome', () => {
@@ -294,7 +294,7 @@ describe('REVIEW FINDING 1: unread is not absent; an attention-bearing productio
     expect(s).not.toContain('Nothing is waiting on you here');
     expect(s).toContain('Reception lists this Mission as needing you.');
     expect(s).toContain(
-      'Approvals, repository requests, stalls and logs are not read in this layout preview.',
+      'Approvals, repository requests, stalls and logs are not reported for this Mission.',
     );
   });
   it('a production row with no attention still says what is not read, and still makes no absence claim', () => {
@@ -302,7 +302,7 @@ describe('REVIEW FINDING 1: unread is not absent; an attention-bearing productio
     expect(s).not.toContain('Nothing is waiting on you here');
     expect(s).not.toContain('Reception lists this Mission');
     expect(s).toContain(
-      'Approvals, repository requests, stalls and logs are not read in this layout preview.',
+      'Approvals, repository requests, stalls and logs are not reported for this Mission.',
     );
   });
   it('the absence claim appears only where every fact was read (labelled sample state) and none waits', () => {

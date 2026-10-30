@@ -22,6 +22,7 @@ import { createFixtureSource, readFixtureScript } from '../src/di/fixtureSource.
 import { DiIdentityMap } from '../src/di/identityMap.js';
 import { buildDiOfficeStateMessage } from '../src/di/officeStateMessage.js';
 import { buildOfficeView } from '../src/di/officeView.js';
+import { deriveReception } from '../src/di/receptionDesk.js';
 import { readServeTimeVerdict } from '../src/di/serveTimeVerdict.js';
 import { clone } from './helpers/diFixture.js';
 
@@ -484,5 +485,41 @@ describe('D1: publication cleanup — inputs preserved, outputs normalized and c
         if (synthetic > 0) expect(input, name).toContain(SYNTHETIC);
       }
     }
+  });
+});
+
+describe('Herdr reception from the task record', () => {
+  it('FAILED is a blocker and COMPLETE with no approving review is ready for review', () => {
+    const body = clone(emitted(2));
+    const missions = (body.response as { missions: Array<Record<string, unknown>> }).missions;
+    const herd = missions.filter(
+      (m) => (m.lifecycle as { model: string }).model === 'herdr.task/1',
+    );
+    expect(herd.length).toBeGreaterThan(1);
+    const failed = herd[0]!;
+    const ready = herd[1]!;
+    (failed.lifecycle as { state: string; standing: string }).state = 'FAILED';
+    (failed.lifecycle as { standing: string }).standing = 'terminal';
+    const failedReview = (
+      failed.admitted_artifacts as { canonical_review: Record<string, unknown> }
+    ).canonical_review;
+    failedReview.state = 'not_recorded';
+    failedReview.problem = null;
+    (ready.lifecycle as { state: string; standing: string }).state = 'COMPLETE';
+    (ready.lifecycle as { standing: string }).standing = 'terminal';
+    const readyReview = (ready.admitted_artifacts as { canonical_review: Record<string, unknown> })
+      .canonical_review;
+    readyReview.state = 'not_recorded';
+    readyReview.problem = null;
+    const office = view(body, 2);
+    const reception = deriveReception(office);
+    const causes = (missionRef: string) =>
+      reception.entries
+        .filter((e) => e.missionRef === missionRef)
+        .flatMap((e) => e.causes.map((c) => c.cause));
+    expect(causes(String(failed.mission_ref))).toContain('herdr_task_failed');
+    expect(causes(String(ready.mission_ref))).toContain('herdr_task_complete_unreviewed');
+    const blockers = reception.categories.find((c) => c.category === 'blockers');
+    expect(blockers?.reason ?? '').not.toMatch(/source_kind_has_no_mission/);
   });
 });

@@ -59,36 +59,11 @@ describe('Delivery: each step is offered only when the canonical state matches; 
       'pr:locked',
       'accept_ci:locked',
     ]);
-    expect(gates('pushed')).toEqual([
-      'commit:done',
-      'push:done',
-      'pr:ready',
-      'accept_ci:locked',
-    ]);
-    expect(gates('pr_open')).toEqual([
-      'commit:done',
-      'push:done',
-      'pr:done',
-      'accept_ci:locked',
-    ]);
-    expect(gates('ci_passed')).toEqual([
-      'commit:done',
-      'push:done',
-      'pr:done',
-      'accept_ci:ready',
-    ]);
-    expect(gates('ci_accepted')).toEqual([
-      'commit:done',
-      'push:done',
-      'pr:done',
-      'accept_ci:done',
-    ]);
-    expect(gates('merged')).toEqual([
-      'commit:done',
-      'push:done',
-      'pr:done',
-      'accept_ci:done',
-    ]);
+    expect(gates('pushed')).toEqual(['commit:done', 'push:done', 'pr:ready', 'accept_ci:locked']);
+    expect(gates('pr_open')).toEqual(['commit:done', 'push:done', 'pr:done', 'accept_ci:locked']);
+    expect(gates('ci_passed')).toEqual(['commit:done', 'push:done', 'pr:done', 'accept_ci:ready']);
+    expect(gates('ci_accepted')).toEqual(['commit:done', 'push:done', 'pr:done', 'accept_ci:done']);
+    expect(gates('merged')).toEqual(['commit:done', 'push:done', 'pr:done', 'accept_ci:done']);
   });
   it('failed CI offers nothing to accept, and says so', () => {
     const accept = fixture('ci_failed').find((s) => s.id === 'accept_ci')!;
@@ -291,14 +266,14 @@ describe('V-4: every real Mission row carries its status as a dot AND a word (CO
     expect(words(row('r', running))).toEqual(['Building']);
     expect(words(row('r', running, ['r']))).toEqual(['Needs you', 'Building']);
   });
-  it('a Mission whose team is not observed says Unknown, never nothing', () => {
+  it('an active bound Herdr task with no confirmed member says Building, from the task record', () => {
     const r = row('u', {
       lifecycleState: 'ACTIVE',
       standing: 'active',
       bindingState: 'bound',
       members: { state: 'observed', reason: null, members: [] },
     });
-    expect(words(r)).toEqual(['Unknown']);
+    expect(words(r)).toEqual(['Building']);
   });
   it('an inactive Mission says Waiting', () => {
     expect(

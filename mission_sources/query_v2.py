@@ -94,8 +94,17 @@ def _review_block(state, problem, task_status=None):
 
 
 def canonical_review(mission, source_kind, chain_reading):
-    """The mission's admitted canonical review record (see the module)."""
-    if source_kind != contract.KIND_MISSION_CORE:
+    """The mission's admitted canonical review record (see the module).
+
+    A Mission Core record and a task-native record (a plain Herdr task)
+    both take the chain observation's review of the bound workspace. The
+    capture binds an unclaimed root to its own task record id, which is
+    how that task's review under its state directory is read. No review
+    recorded is ``not_recorded``. A workspace the capture did not observe
+    is ``unavailable``. Any other source kind has no canonical review.
+    """
+    task_native = source_kind == contract.KIND_TASK_NATIVE
+    if source_kind != contract.KIND_MISSION_CORE and not task_native:
         return _review_block(contract_v2.REVIEW_NOT_APPLICABLE,
                              contract_v2.PROBLEM_REVIEW_KIND_NOT_APPLICABLE)
     if not chain_reading.is_live():

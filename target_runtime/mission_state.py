@@ -425,6 +425,17 @@ class MissionStateComposer(object):
         return dict((root, ids[0]) for root, ids in claimed.items()
                     if len(ids) == 1)
 
+    @staticmethod
+    def contested_review_roots(samples):
+        """Roots claimed by more than one Mission Core execution. Their
+        reviews are not read, and they must not fall through to the task
+        record's own id."""
+        claimed = {}
+        for sample in samples.values():
+            for root, task_ids in sample.expected_reviews().items():
+                claimed.setdefault(root, []).extend(task_ids)
+        return sorted(root for root, ids in claimed.items() if len(ids) != 1)
+
     # -- the four kinds ----------------------------------------------------
 
     @staticmethod
