@@ -603,6 +603,11 @@ _SAFE_TASK_ID = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 )
 
+# Single stopped-status set for a finished prior task. Kept as ONE set
+# literal so tests/test_target_runtime.py::_herd_stopped_set can derive
+# herd's vocabulary by AST (exactly one COMPLETE-bearing set).
+_PRIOR_TASK_STOPPED = {"COMPLETE", "ABORTED", "ERROR"}
+
 
 def dispatch_task(
     herd: HerdrInstance,
@@ -655,7 +660,7 @@ def dispatch_task(
 
     if (
         prior.get("status")
-        in {"COMPLETE", "ABORTED", "ERROR"}
+        in _PRIOR_TASK_STOPPED
         and preserve_contexts
     ):
         print(
@@ -665,7 +670,7 @@ def dispatch_task(
 
     elif (
         prior.get("status")
-        in {"COMPLETE", "ABORTED", "ERROR"}
+        in _PRIOR_TASK_STOPPED
         and config.get(
             "context",
             {},

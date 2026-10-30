@@ -59,6 +59,7 @@ workflows.json
 **/pixel-agents-di/pixel.json
 
 # Temporary files
+.tmp-test-task-state-guards/
 *.tmp
 *.swp
 *~

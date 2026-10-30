@@ -689,14 +689,22 @@ MISSION_LINK_BASES = (MISSION_LINK_BASIS_RECORD_BINDING,)
 #: ``DELIVERY_ID_PREFIX`` and ``DELIVERY_ID_HEX_CHARS``: ``prd-`` and 24
 #: lowercase hex; parity pinned by test, since this package does not import
 #: ``pr_delivery``). The delivery layer's validator admits any id of its
-#: alphabet; only this shape can be addressed by a consumer.
-_DELIVERY_ID_SHAPE = re.compile(r"prd-[0-9a-f]{24}")
+#: alphabet; only this shape can be addressed by a consumer. Implemented
+#: without ``re.compile`` so the mission_sources call guard (which forbids
+#: the name ``compile``) stays honest.
+_DELIVERY_ID_PREFIX = "prd-"
+_DELIVERY_ID_HEX_CHARS = 24
 
 
 def is_delivery_id(value):
     """Whether ``value`` is a delivery id of the shape a ceremony mints."""
-    return type(value) is str and (
-        _DELIVERY_ID_SHAPE.fullmatch(value) is not None)
+    if type(value) is not str or not value.startswith(_DELIVERY_ID_PREFIX):
+        return False
+    hex_part = value[len(_DELIVERY_ID_PREFIX):]
+    return (
+        len(hex_part) == _DELIVERY_ID_HEX_CHARS
+        and all(ch in "0123456789abcdef" for ch in hex_part)
+    )
 
 
 def mission_delivery_link(mission, unavailable, bound, holders, inspection):

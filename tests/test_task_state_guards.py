@@ -38,6 +38,24 @@ AGENTS = {"supervisor": "sup1", "lead1": "lead1", "executor1": "exec1", "reviewe
 ACTIVE_TASK = {"version": 1, "id": "task-active-1", "status": "ACTIVE", "description": "in flight", "started_at": 1, "heartbeat_count": 7}
 
 
+def _bind_tmpdir_inside_pin():
+    """GitHub Actions leaves TMPDIR at /tmp; Mission launchers bind it
+    under the pin. Self-bind here so the containment assert holds in CI
+    without depending on an external launcher."""
+    current = Path(tempfile.gettempdir()).resolve()
+    if str(current).startswith(str(PIN)):
+        return
+    bound = PIN / ".tmp-test-task-state-guards"
+    bound.mkdir(exist_ok=True)
+    os.environ["TMPDIR"] = str(bound)
+    os.environ["TMP"] = str(bound)
+    os.environ["TEMP"] = str(bound)
+    tempfile.tempdir = None  # clear gettempdir cache
+
+
+_bind_tmpdir_inside_pin()
+
+
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n")

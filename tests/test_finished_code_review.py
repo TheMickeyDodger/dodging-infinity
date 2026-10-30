@@ -672,7 +672,7 @@ class LateRefusalTests(unittest.TestCase):
         self.assert_refused_late_with_no_content(result, calls, "finished_workspace_not_corroborated")
 
     # -- the FILE path: the product reads a real file's bytes, then the re-check refuses ---------------------------------------------------------------------------------------------------------------
-    FILE_PATH = "notes/new.txt"
+    FILE_PATH = "scratch/new.txt"
     FILE_LINES = ["the first line of the file", "the second line of the file"]
 
     class _Manager(object):
@@ -687,7 +687,7 @@ class LateRefusalTests(unittest.TestCase):
 
     def read_file_with(self, workspace, second, after_content=None):
         """A file request (a snapshot and a file id). The listing holds one untracked file that REALLY EXISTS in ``workspace``; ``_annotate`` and ``_file_block`` are the product's."""
-        directory = os.path.join(workspace.path, "notes")
+        directory = os.path.join(workspace.path, "scratch")
         os.makedirs(directory)
         content = ("\n".join(self.FILE_LINES) + "\n").encode("utf-8")
         with open(os.path.join(directory, "new.txt"), "wb") as handle:
