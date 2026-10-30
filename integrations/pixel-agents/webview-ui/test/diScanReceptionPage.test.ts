@@ -17,7 +17,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { DiOfficeState, DiReceptionSourceEntry } from '../../core/src/messages.ts';
 import { attentionLine, buildInbox } from '../src/components/diReceptionItems.ts';
-import { DI_SCAN_V3_CAST, type DiScanRow, scanRowsFromOffice } from '../src/components/diScanModel.ts';
+import {
+  DI_SCAN_V3_CAST,
+  type DiScanRow,
+  scanRowsFromOffice,
+} from '../src/components/diScanModel.ts';
 import {
   DI_EARLIER_NOT_READ,
   DI_RECEPTION_SPECIMEN,
@@ -40,13 +44,17 @@ const render = (reception: DiScanReception | null, rows: readonly DiScanRow[] = 
   );
 /** The page's own markup (the rail is rendered before it). */
 const page = (html: string) => /data-testid="di-reception-page"[\s\S]*$/.exec(html)?.[0] ?? '';
-const rail = (html: string) => /<nav[^>]*data-testid="di-rail"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
+const rail = (html: string) =>
+  /<nav[^>]*data-testid="di-rail"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
 /** Every opening tag carrying `testid`. */
 const tags = (html: string, testid: string) =>
   [...html.matchAll(new RegExp(`<[a-z]+[^>]*data-testid="${testid}"[^>]*>`, 'g'))].map((m) => m[0]);
 const cards = (html: string) =>
-  [...page(html).matchAll(/<li[^>]*data-testid="di-reception-card"[\s\S]*?<\/li>/g)].map((m) => m[0]);
-const card = (html: string, kind: string) => cards(html).find((c) => c.includes(`data-kind="${kind}"`)) ?? '';
+  [...page(html).matchAll(/<li[^>]*data-testid="di-reception-card"[\s\S]*?<\/li>/g)].map(
+    (m) => m[0],
+  );
+const card = (html: string, kind: string) =>
+  cards(html).find((c) => c.includes(`data-kind="${kind}"`)) ?? '';
 
 describe('R1: Needs you / All, and the header reads how many need you (AC-4.7-09)', () => {
   const html = render(DI_RECEPTION_SPECIMEN);
@@ -59,7 +67,9 @@ describe('R1: Needs you / All, and the header reads how many need you (AC-4.7-09
     expect(cards(html).some((c) => c.includes('data-kind="info"'))).toBe(false);
   });
   it('the header states the count in the same words the rail badge speaks', () => {
-    expect(page(html)).toMatch(new RegExp(`data-testid="di-reception-count"[^>]*>[\\s\\S]*?${attentionLine(5)}<`));
+    expect(page(html)).toMatch(
+      new RegExp(`data-testid="di-reception-count"[^>]*>[\\s\\S]*?${attentionLine(5)}<`),
+    );
   });
 });
 
@@ -96,8 +106,12 @@ describe('R2 and AC-4.7-10: each item names its Mission, which opens Mission det
   });
   it('each card shows a status tag as a dot and a word, what is needed, and repos, who raised it and when', () => {
     const stalled = card(html, 'stalled');
-    expect(stalled).toMatch(/<span class="di-scan-dot" data-tone="failed" aria-hidden="true"><\/span>Stalled/);
-    expect(stalled).toContain('The Executor stopped responding. Recover was tried once, 12 minutes ago.');
+    expect(stalled).toMatch(
+      /<span class="di-scan-dot" data-tone="failed" aria-hidden="true"><\/span>Stalled/,
+    );
+    expect(stalled).toContain(
+      'The Executor stopped responding. Recover was tried once, 12 minutes ago.',
+    );
     expect(stalled).toContain('public · dodging-infinity · Supervisor · 13m ago');
   });
   it('a Mission this office does not list is named as text, never a button that goes nowhere', () => {
@@ -119,26 +133,54 @@ describe('R3 to R10: authority controls are drawn for their item type and DISABL
   };
   it('R3 Recover and R10 View log on a stalled item', () => {
     const c = card(html, 'stalled');
-    expectOff(c, 'di-reception-recover', /title="Recover is not connected in this layout preview\.[^"]*restarts/);
-    expectOff(c, 'di-reception-view-log', /title="Logs and checks are not read in this layout preview\."/);
+    expectOff(
+      c,
+      'di-reception-recover',
+      /title="Recover needs a restart route that is not connected in this office\.[^"]*restarts/,
+    );
+    expectOff(
+      c,
+      'di-reception-view-log',
+      /title="Logs and checks are not reported by this catalog\."/,
+    );
   });
   it('R4 Approve, R5 Request changes (asks for a note), R6 Reject (asks you to confirm; ends the Mission) on a proposal', () => {
     const c = card(html, 'proposal');
-    expectOff(c, 'di-reception-approve', /title="Deciding a proposal is not connected in this layout preview\./);
+    expectOff(
+      c,
+      'di-reception-approve',
+      /title="Deciding a proposal needs the request workspace\./,
+    );
     expectOff(c, 'di-reception-request-changes', /title="[^"]*Request changes asks for a note\./);
-    expectOff(c, 'di-reception-reject', /title="[^"]*Reject asks you to confirm, and ends the Mission\./);
+    expectOff(
+      c,
+      'di-reception-reject',
+      /title="[^"]*Reject asks you to confirm, and ends the Mission\./,
+    );
   });
   it('R7 suggested answers and R8 a free-text reply with Send on a question', () => {
     const c = card(html, 'question');
     expect(tags(c, 'di-reception-suggestion')).toHaveLength(2);
-    expectOff(c, 'di-reception-suggestion', /title="Answering a Mission is not connected in this layout preview\."/);
-    expectOff(c, 'di-reception-reply', /title="Answering a Mission is not connected in this layout preview\."/);
-    expectOff(c, 'di-reception-send', /title="Answering a Mission is not connected in this layout preview\."/);
+    expectOff(
+      c,
+      'di-reception-suggestion',
+      /title="Answering a Mission needs the request workspace\./,
+    );
+    expectOff(c, 'di-reception-reply', /title="Answering a Mission needs the request workspace\./);
+    expectOff(c, 'di-reception-send', /title="Answering a Mission needs the request workspace\./);
   });
   it('R9 Accept CI results and R10 View checks on a CI result', () => {
     const c = card(html, 'ci');
-    expectOff(c, 'di-reception-accept-ci', /title="Accepting CI results is not connected in this layout preview\."/);
-    expectOff(c, 'di-reception-view-checks', /title="Logs and checks are not read in this layout preview\."/);
+    expectOff(
+      c,
+      'di-reception-accept-ci',
+      /title="Accepting CI results is not connected in this office\."/,
+    );
+    expectOff(
+      c,
+      'di-reception-view-checks',
+      /title="Logs and checks are not reported by this catalog\."/,
+    );
   });
   it('every reason is also spoken to a screen reader, not only shown on hover', () => {
     const c = card(html, 'proposal');
@@ -169,7 +211,9 @@ describe('R11: a merge waiting offers only Open Mission; Reception never merges 
 describe('R12: Earlier today, and Clear info as a distinct control (AC-4.7-06/-14)', () => {
   it('the specimen says how many were handled earlier today, with Show', () => {
     const html = render(DI_RECEPTION_SPECIMEN);
-    expect(page(html)).toMatch(/data-testid="di-reception-earlier"[\s\S]*?Earlier today: 3 handled/);
+    expect(page(html)).toMatch(
+      /data-testid="di-reception-earlier"[\s\S]*?Earlier today: 3 handled/,
+    );
     expect(tags(page(html), 'di-reception-earlier-show')).toHaveLength(1);
   });
   it('on real data the handled count is NOT read: it says so, and offers no Show', () => {
@@ -203,7 +247,10 @@ describe('the scan face has ONE Reception: the page, never the dialog (lead Q2, 
 
 describe('receptionFromInbox: the page reads the SAME inbox model as the badge (real office data)', () => {
   const fixture = JSON.parse(
-    fs.readFileSync(path.join(root, 'test/fixtures/di-office-state-evidence-historical-v2.FIXTURE.json'), 'utf-8'),
+    fs.readFileSync(
+      path.join(root, 'test/fixtures/di-office-state-evidence-historical-v2.FIXTURE.json'),
+      'utf-8',
+    ),
   ) as { states: Record<string, DiOfficeState> };
   const state = fixture.states.live!;
   const info: DiReceptionSourceEntry = {
@@ -258,13 +305,20 @@ describe('AC-4.7-16 under UNCERTAINTY (pass C): the rail badge and the header ex
   // menu-bar count, does not exist in this webview build. A count whose coverage is incomplete is a FLOOR: the badge says
   // "N+" (or "?" when nothing is known to need attention) and the header must say the same, never a confident number.
   const states = (file: string) =>
-    (JSON.parse(fs.readFileSync(path.join(root, 'test/fixtures', file), 'utf-8')) as {
-      states: Record<string, DiOfficeState>;
-    }).states;
+    (
+      JSON.parse(fs.readFileSync(path.join(root, 'test/fixtures', file), 'utf-8')) as {
+        states: Record<string, DiOfficeState>;
+      }
+    ).states;
   const historical = states('di-office-state-evidence-historical-v2.FIXTURE.json');
   const review = states('di-office-state-code-review-v2.FIXTURE.json');
   const pageOf = (state: DiOfficeState) => {
-    const model = buildInbox(state.reception, { kind: 'not_provided' }, state.missions.missions, new Set());
+    const model = buildInbox(
+      state.reception,
+      { kind: 'not_provided' },
+      state.missions.missions,
+      new Set(),
+    );
     return receptionFromInbox(model, state.reception, scanRowsFromOffice(state));
   };
   const decided = (state: DiOfficeState): DiOfficeState => ({
@@ -287,7 +341,14 @@ describe('AC-4.7-16 under UNCERTAINTY (pass C): the rail badge and the header ex
     /data-testid="di-reception-count"[^>]*>(?:<span[^>]*><\/span>)?([^<]*)</.exec(page(html))?.[1];
   /** The one state both surfaces must express. */
   const stateOf = (badgeText: string | undefined, headerText: string | undefined) => ({
-    badge: badgeText === undefined ? 'none' : badgeText.endsWith('+') ? 'floor' : badgeText === '?' ? 'unknown' : 'exact',
+    badge:
+      badgeText === undefined
+        ? 'none'
+        : badgeText.endsWith('+')
+          ? 'floor'
+          : badgeText === '?'
+            ? 'unknown'
+            : 'exact',
     header: headerText?.startsWith('At least ')
       ? 'floor'
       : headerText?.startsWith('Not known whether')
@@ -306,16 +367,25 @@ describe('AC-4.7-16 under UNCERTAINTY (pass C): the rail badge and the header ex
     expect(header(html)).toMatch(new RegExp(`^At least ${n} `));
     expect(stateOf(railBadge(html), header(html))).toEqual({ badge: 'floor', header: 'floor' });
     // the reasons are said under the header in the same plain words the rows use, never a raw code
-    expect(page(html)).toMatch(/data-testid="di-reception-doubt"[^>]*>[^<]*Some things could not be checked: [^<.]*questions for you/);
+    expect(page(html)).toMatch(
+      /data-testid="di-reception-doubt"[^>]*>[^<]*Some things could not be checked: [^<.]*questions for you/,
+    );
     // C-U1: the reason under the header is one plain sentence: no implementation vocabulary
-    expect(/data-testid="di-reception-doubt"[^>]*>([^<]*)</.exec(page(html))?.[1] ?? '').not.toMatch(
+    expect(
+      /data-testid="di-reception-doubt"[^>]*>([^<]*)</.exec(page(html))?.[1] ?? '',
+    ).not.toMatch(
       /\b(record|records|catalog|Mission Core|source|sources|projection|contract|covered)\b/i,
     );
-    expect(page(html)).not.toMatch(/data-testid="di-reception-doubt"[^>]*>[^<]*\b[a-z_]+:[a-z_0-9:]+/);
+    expect(page(html)).not.toMatch(
+      /data-testid="di-reception-doubt"[^>]*>[^<]*\b[a-z_]+:[a-z_0-9:]+/,
+    );
   });
   it('NOTHING KNOWN, coverage incomplete (no entries listed, clarification unreported): badge "?" and header "Not known whether", never no badge', () => {
     const state = historical.live!;
-    const empty = { ...state, reception: { ...state.reception!, entries: [], entriesTotal: 0 } } as DiOfficeState;
+    const empty = {
+      ...state,
+      reception: { ...state.reception!, entries: [], entriesTotal: 0 },
+    } as DiOfficeState;
     const reception = pageOf(empty);
     expect(reception.attention).toBe(0);
     const html = render(reception, scanRowsFromOffice(empty));
@@ -336,7 +406,10 @@ describe('AC-4.7-16 under UNCERTAINTY (pass C): the rail badge and the header ex
   });
   it('NOTHING WAITING, everything known: no badge and "Nothing listed" on both (AC-4.7-15 holds when coverage is whole)', () => {
     const base = decided(review.live!);
-    const state = { ...base, reception: { ...base.reception!, entries: [], entriesTotal: 0 } } as DiOfficeState;
+    const state = {
+      ...base,
+      reception: { ...base.reception!, entries: [], entriesTotal: 0 },
+    } as DiOfficeState;
     const html = render(pageOf(state), scanRowsFromOffice(state));
     expect(stateOf(railBadge(html), header(html))).toEqual({ badge: 'none', header: 'none' });
   });

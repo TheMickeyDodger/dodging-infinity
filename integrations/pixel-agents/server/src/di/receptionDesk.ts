@@ -175,8 +175,62 @@ function holdDetails(holds: string[], total: number | null): DiReportEntry[] {
 
 // ── probes: one canonical field each ─────────────────────────────
 
+/** A Mission Core report does not apply to a plain Herdr task. That is absence of the fact, not a gap. */
+function notHerdr(m: MissionPresentation): boolean {
+  return m.sourceKind !== 'herdr_task';
+}
+
+/** The Herdr task record's own status literals that mean the task failed. */
+const HERDR_FAILED_STATUS = new Set(['FAILED', 'ERROR']);
+/** The Herdr task record's own status literals that mean the task finished its work. */
+const HERDR_COMPLETE_STATUS = new Set(['COMPLETE', 'COMPLETED']);
+
+/**
+ * A Herdr task whose record says it failed. The status literal is the task record's own
+ * (`herdr.task/1`), not a display guess over a Mission Core lifecycle.
+ */
+function herdrTaskFailed(m: MissionPresentation, ctx: Ctx): Probe {
+  if (notHerdr(m)) return NONE;
+  if (m.v2 === null) return unsupported(`herdr_task:${RECEPTION_V1_REASON}`);
+  if (!HERDR_FAILED_STATUS.has(m.lifecycleState)) return NONE;
+  return found({
+    cause: 'herdr_task_failed',
+    label: 'The Herdr task record reports a failed status',
+    details: [d('task status', m.lifecycleState), d('standing', m.standing)],
+    staleReasons: stale(ctx.envelope),
+  });
+}
+
+/**
+ * A completed Herdr task with no approving review yet. A parsed REJECT or a refused review
+ * belongs to failed verification, not here.
+ */
+function herdrResultsReady(m: MissionPresentation, ctx: Ctx): Probe {
+  if (notHerdr(m)) return NONE;
+  if (m.v2 === null) return unsupported(`herdr_task:${RECEPTION_V1_REASON}`);
+  if (!HERDR_COMPLETE_STATUS.has(m.lifecycleState)) return NONE;
+  const r = m.v2.canonicalReview;
+  if (r.state === 'unavailable') {
+    return unknown(`canonical_review_unavailable:${r.problem ?? 'no_problem_recorded'}`);
+  }
+  if (r.state === 'refused' || (r.state === 'admitted' && r.verdict === 'REJECT')) return NONE;
+  if (r.state === 'admitted' && r.verdict === 'APPROVE') return NONE;
+  if (r.state !== 'not_recorded' && r.state !== 'admitted') return NONE;
+  return found({
+    cause: 'herdr_task_complete_unreviewed',
+    label: 'The Herdr task record is complete and has no approving review yet',
+    details: [
+      d('task status', m.lifecycleState),
+      d('review state', r.state),
+      d('review verdict', r.verdict),
+    ],
+    staleReasons: stale(ctx.envelope),
+  });
+}
+
 /** v2: Mission Core's blockers fact (active blockers, hard_active). */
 function blockersFact(m: MissionPresentation, ctx: Ctx): Probe {
+  if (!notHerdr(m)) return NONE;
   if (m.v2 === null) return unsupported(`mission_core_blockers:${RECEPTION_V1_REASON}`);
   const b = m.v2.attention.blockers;
   if (b.state !== 'observed') return absent('mission_core_blockers', b.state, b.reason);
@@ -252,6 +306,7 @@ function memberActivity(m: MissionPresentation, ctx: Ctx): Probe {
 /** v1 and v2: Mission Core's pause flag (DI progression, not external work). */
 function pauseFlag(m: MissionPresentation, ctx: Ctx): Probe {
   const p = m.paused;
+  if (!notHerdr(m) && p.state === 'not_applicable') return NONE;
   if (p.state === 'observed') {
     return p.value
       ? found({
@@ -267,6 +322,7 @@ function pauseFlag(m: MissionPresentation, ctx: Ctx): Probe {
 
 /** v2: Mission Core's holds on verified success (information holds listed, never blocking). */
 function completionHolds(m: MissionPresentation, ctx: Ctx): Probe {
+  if (!notHerdr(m)) return NONE;
   if (m.v2 === null) return unsupported(`completion_holds:${RECEPTION_V1_REASON}`);
   const c = m.v2.missionState.completion;
   if (c.state !== 'observed') return absent('completion_holds', c.state, c.reason);
@@ -285,6 +341,7 @@ function completionHolds(m: MissionPresentation, ctx: Ctx): Probe {
 
 /** v2: Mission Core flags a source report contradicting the canonical record. */
 function contradicted(m: MissionPresentation, ctx: Ctx): Probe {
+  if (!notHerdr(m)) return NONE;
   if (m.v2 === null) return unsupported(`completion:${RECEPTION_V1_REASON}`);
   const c = m.v2.missionState.completion;
   if (c.state !== 'observed') return absent('completion', c.state, c.reason);
@@ -309,6 +366,7 @@ function contradicted(m: MissionPresentation, ctx: Ctx): Probe {
  * Without a closure there is nothing verified to fail: "not yet verified" is not a failure.
  */
 function verifiedSuccessWithdrawn(m: MissionPresentation, ctx: Ctx): Probe {
+  if (!notHerdr(m)) return NONE;
   if (m.v2 === null) return unsupported(`completion:${RECEPTION_V1_REASON}`);
   const c = m.v2.missionState.completion;
   if (c.state !== 'observed') return absent('completion', c.state, c.reason);
@@ -341,6 +399,7 @@ const EVIDENCE_DRIFT_HOLDS: ReadonlySet<string> = new Set([
  * unclosed, unreported Mission the hold is the only canonical record of it — read it directly.
  */
 function evidenceFailureHolds(m: MissionPresentation, ctx: Ctx): Probe {
+  if (!notHerdr(m)) return NONE;
   if (m.v2 === null) return unsupported(`completion_holds:${RECEPTION_V1_REASON}`);
   const c = m.v2.missionState.completion;
   if (c.state !== 'observed') return absent('completion_holds', c.state, c.reason);
@@ -381,6 +440,9 @@ function canonicalReviewFailure(m: MissionPresentation, ctx: Ctx): Probe {
     case 'not_recorded':
       return NONE;
     case 'not_applicable':
+      // A Herdr task has no Mission Core review kind. An older catalog that still says so is
+      // not a failure; a current catalog reports not_recorded, admitted, refused or unavailable.
+      if (!notHerdr(m)) return NONE;
       return unsupported(`canonical_review_not_applicable:${r.problem ?? 'no_problem_recorded'}`);
     case 'unavailable':
       return unknown(`canonical_review_unavailable:${r.problem ?? 'no_problem_recorded'}`);
@@ -424,6 +486,7 @@ function canonicalReviewFailure(m: MissionPresentation, ctx: Ctx): Probe {
 
 /** v2: the task source reports COMPLETE while Mission Core has not verified success. */
 function reportedCompleteNotVerified(m: MissionPresentation, ctx: Ctx): Probe {
+  if (!notHerdr(m)) return NONE;
   if (m.v2 === null) return unsupported(`completion:${RECEPTION_V1_REASON}`);
   const v2 = m.v2;
   const c = v2.missionState.completion;
@@ -497,7 +560,8 @@ function workflowBlocked(m: MissionPresentation, ctx: Ctx): Probe {
 /** v2: Mission Core's pending_decisions.awaiting_decision (its own boolean, not a literal). */
 function awaitingDecision(m: MissionPresentation, ctx: Ctx): Probe {
   // A Mission Core fact: a workflow-authority record answers through its own typed phase instead.
-  if (m.sourceKind === 'workflow_store') return NONE;
+  // A Herdr task has no pending_decisions fact.
+  if (m.sourceKind === 'workflow_store' || !notHerdr(m)) return NONE;
   if (m.sourceKind === 'unrecognized')
     return unknown('pending_decisions:lifecycle_model_unrecognized');
   if (m.v2 === null) return unsupported(`pending_decisions:${RECEPTION_V1_REASON}`);
@@ -541,7 +605,14 @@ const CATEGORIES: CategoryDef[] = [
       "Outside this office: act through the Mission's operator and its Herdr team. This desk is " +
       'read-only; hiding an entry resolves nothing.',
     v2Only: false,
-    probes: [blockersFact, memberActivity, pauseFlag, workflowBlocked, completionHolds],
+    probes: [
+      blockersFact,
+      memberActivity,
+      pauseFlag,
+      workflowBlocked,
+      completionHolds,
+      herdrTaskFailed,
+    ],
   },
   {
     id: 'clarification',
@@ -617,7 +688,7 @@ const CATEGORIES: CategoryDef[] = [
       "Outside this office: review and verify through the Mission's established Herdr review " +
       'and Mission Core verification route. This desk is read-only.',
     v2Only: true,
-    probes: [reportedCompleteNotVerified],
+    probes: [reportedCompleteNotVerified, herdrResultsReady],
   },
   {
     id: 'delivery_decision',
