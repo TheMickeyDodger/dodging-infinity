@@ -205,7 +205,7 @@ test(
     expect(await stageView(page)).toBe('comments');
     expect(await count(page, `${sel('di-scan-thread')} li`)).toBe(4);
     expect(await page.locator(`${sel('di-scan-comments-view')} textarea, ${sel('di-scan-comments-view')} input`).count()).toBe(0);
-    expect(await page.isDisabled(sel('di-scan-sibling-herdr'))).toBe(true);
+    expect(await page.isDisabled(sel('di-scan-sibling-herdr'))).toBe(false);
 
     await page.click(sel('di-scan-sibling-diff'));
     expect(await stageView(page)).toBe('diff');

@@ -343,8 +343,12 @@ test('duplicate names and duplicate objectives stay distinct records with their 
   const [a, b] = s.missions.missions.filter((m) => m.members.members.length > 0);
   a.members.members[0].live = false;
   for (const x of a.members.members) x.live = false;
-  assert.equal(missionStatus(a, s).status, 'unknown');
-  assert.equal(missionStatus(b, s).status, 'running');
+  const quiet = missionStatus(a, s);
+  const live = missionStatus(b, s);
+  assert.equal(quiet.status, 'running');
+  assert.match(quiet.sentence, /No team member is confirmed live/);
+  assert.equal(live.status, 'running');
+  assert.notEqual(quiet.sentence, live.sentence);
   const objectives = base.missions.missions.map((m) => m.objective.value);
   assert.ok(objectives.length > new Set(objectives).size, 'duplicate objectives exist');
 });

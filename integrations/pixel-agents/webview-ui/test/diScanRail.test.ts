@@ -167,19 +167,17 @@ describe('PRESENTATION: entries behave truthfully (A2)', () => {
       'aria-current="page"',
     );
   });
-  it('Herdr and Connections are drawn but unavailable, each with its plain reason', () => {
+  it('Herdr opens its documented terminal note; Connections stay out of this build', () => {
     const r = rail(render());
-    const reasons: Record<string, string> = {
-      'di-rail-herdr':
-        'Herdr opens in your own terminal. That is not connected in this layout preview.',
-      'di-rail-connections': 'Connections are not part of this build.',
-    };
-    for (const [id, reason] of Object.entries(reasons)) {
-      const t = tag(r, id);
-      expect(t, id).toContain('disabled=""');
-      expect(t, id).toContain(`title="${reason}"`);
-      expect(r, id).toContain(`>${reason}</span>`);
-    }
+    const herdr = tag(r, 'di-rail-herdr');
+    const herdrReason =
+      'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.';
+    expect(herdr).not.toContain('disabled');
+    expect(herdr).toContain(`title="${herdrReason}"`);
+    expect(r).toContain(`>${herdrReason}</span>`);
+    const connections = tag(r, 'di-rail-connections');
+    expect(connections).toContain('disabled=""');
+    expect(connections).toContain('title="Connections are not in this build."');
   });
   // Superseded in pass B: New Orchestrator opened the existing request workspace directly. It now opens the drawn New
   // Mission page (gap 1, CONTROL-MAP G1, lead Q1), which is always drawable, so the entry is never disabled; the page

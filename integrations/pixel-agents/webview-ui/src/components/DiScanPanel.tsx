@@ -153,7 +153,8 @@ const VIEWS: readonly DiScanView[] = ['list', ...DI_SCAN_MISSION_VIEWS, ...DI_SC
 const LAYOUT_NOTE = DI_LAYOUT_NOTE;
 /** Herdr opens the machine's own terminal on the Mission's herd, where the person types (owner decision 1). */
 const HERDR_REASON =
-  'Herdr opens in your own terminal. That is not connected in this layout preview.';
+  'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.';
+const CONNECTIONS_REASON = 'Connections are not in this build.';
 /**
  * The trash's scope, true at FULL scope (owner decision 2): DI's own Mission data, the herd tools' own terminal history,
  * and the model providers' own session transcripts. The summary and the approval record survive, and a partial delete
@@ -902,6 +903,7 @@ function Siblings({
   view: 'diff' | 'comments';
   onView: (view: 'diff' | 'comments') => void;
 }) {
+  const [herdrOpen, setHerdrOpen] = useState(false);
   return (
     <nav className="di-scan-siblings" aria-label="Mission screens" data-testid="di-scan-siblings">
       <button
@@ -917,10 +919,10 @@ function Siblings({
         type="button"
         className="di-scan-sibling"
         data-testid="di-scan-sibling-herdr"
-        // Herdr leaves the app for the machine's own terminal; until that launch is wired it opens nothing
-        disabled
         title={HERDR_REASON}
         aria-describedby="di-scan-sibling-herdr-reason"
+        aria-expanded={herdrOpen}
+        onClick={() => setHerdrOpen((open) => !open)}
       >
         Herdr
       </button>
@@ -936,6 +938,11 @@ function Siblings({
       <span className="di-scan-visually-hidden" id="di-scan-sibling-herdr-reason">
         {HERDR_REASON}
       </span>
+      {herdrOpen && (
+        <p className="di-scan-stage-note" data-testid="di-scan-herdr-open">
+          {HERDR_REASON}
+        </p>
+      )}
     </nav>
   );
 }
@@ -1225,10 +1232,9 @@ function Stage({
               type="button"
               className="di-scan-action di-scan-action-secondary"
               data-testid="di-scan-herdr"
-              // Herdr leaves the app for the machine's own terminal; until that launch is wired it says so, and opens nothing
-              disabled
               title={HERDR_REASON}
               aria-describedby="di-scan-herdr-reason"
+              onClick={() => undefined}
             >
               Herdr
             </button>
@@ -1693,6 +1699,7 @@ function Rail({
   const badgeText = receptionCount === null ? null : countBadge(count, receptionDoubt);
   const spoken = badgeText === null ? undefined : `Reception, ${receptionHeadline(count, receptionDoubt)}`;
   const here = (page: DiScanView[]) => (page.includes(view) ? 'page' : undefined);
+  const [herdrOpen, setHerdrOpen] = useState(false);
   return (
     <nav
       className="di-rail"
@@ -1822,19 +1829,33 @@ function Rail({
           </button>
         </li>
         <li>
-          <RailUnavailable
-            testid="di-rail-herdr"
-            icon={<HerdIcon />}
-            label="Herdr"
-            reason={HERDR_REASON}
-          />
+          <button
+            type="button"
+            className="di-rail-item"
+            data-testid="di-rail-herdr"
+            title={HERDR_REASON}
+            aria-describedby="di-rail-herdr-reason"
+            aria-expanded={herdrOpen}
+            onClick={() => setHerdrOpen((open) => !open)}
+          >
+            <HerdIcon />
+            Herdr
+          </button>
+          <span className="di-scan-visually-hidden" id="di-rail-herdr-reason">
+            {HERDR_REASON}
+          </span>
+          {herdrOpen && (
+            <p className="di-rail-empty" data-testid="di-rail-herdr-note">
+              {HERDR_REASON}
+            </p>
+          )}
         </li>
         <li>
           <RailUnavailable
             testid="di-rail-connections"
             icon={<LinkIcon />}
             label="Connections"
-            reason="Connections are not part of this build."
+            reason={CONNECTIONS_REASON}
           />
         </li>
       </ul>

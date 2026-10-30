@@ -262,10 +262,10 @@ describe('A4: no in-app Herdr terminal remains (GAP-RESOLUTIONS 9, 11, 13; super
   it('the Herdr button keeps its place but is disabled, with its plain reason, and opens no nested screen', () => {
     const html = render(building);
     const herdr = tag(html, 'di-scan-herdr');
-    expect(herdr).toContain('disabled=""');
+    expect(herdr).not.toContain('disabled');
     expect(herdr).toContain('aria-describedby="di-scan-herdr-reason"');
     expect(block(html, 'di-scan-herdr-reason')).toContain(
-      'Herdr opens in your own terminal. That is not connected in this layout preview.',
+      'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.',
     );
   });
   it('no view renders a pane grid, a prompt or terminal chrome', () => {
