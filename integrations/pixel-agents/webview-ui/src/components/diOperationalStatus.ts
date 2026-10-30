@@ -268,29 +268,30 @@ export function missionStatus(mission: DiMission, state: DiOfficeState): DiOpSta
     const phase =
       mission.sourceKind === 'workflow_store' && mission.v2.projected
         ? mission.v2.workflowPhase
-        : null;
-    if (phase !== null && phase.state === 'observed' && phase.phase !== null) {
-      if (phase.phase === 'BLOCKED') {
-        return result('blocked', `Workflow phase ${phase.phase}.`, [
+        : undefined;
+    if (phase !== undefined && phase.state === 'observed' && phase.phase !== null) {
+      const declared = phase.phase;
+      if (declared === 'BLOCKED') {
+        return result('blocked', `Workflow phase ${declared}.`, [
           ...standing,
-          field('v2.workflowPhase.phase', phase.phase),
+          field('v2.workflowPhase.phase', declared),
         ]);
       }
-      if (phase.phase === 'NEEDS_REAUTHORIZATION') {
-        return result('waiting', `Workflow phase ${phase.phase}.`, [
+      if (declared === 'NEEDS_REAUTHORIZATION') {
+        return result('waiting', `Workflow phase ${declared}.`, [
           ...standing,
-          field('v2.workflowPhase.phase', phase.phase),
+          field('v2.workflowPhase.phase', declared),
         ]);
       }
-      if (phase.phase === 'COMPLETED') {
-        return result('ended', `Workflow phase ${phase.phase}.`, [
+      if (declared === 'COMPLETED') {
+        return result('ended', `Workflow phase ${declared}.`, [
           ...standing,
-          field('v2.workflowPhase.phase', phase.phase),
+          field('v2.workflowPhase.phase', declared),
         ]);
       }
-      return result('running', `Workflow phase ${phase.phase}.`, [
+      return result('running', `Workflow phase ${declared}.`, [
         ...standing,
-        field('v2.workflowPhase.phase', phase.phase),
+        field('v2.workflowPhase.phase', declared),
       ]);
     }
     return result(
