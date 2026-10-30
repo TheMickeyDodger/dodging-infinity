@@ -12,6 +12,8 @@
  *    A drawn pixel is charged to an item only inside that item's own border box widened by BOX_SLACK px: on GitHub's Ubuntu runner a few pixels far from the item
  *    changed whenever some crumb text was shown (World and Leaf "sharing" pixels 150 px apart), which no box comparison can explain. Those strays are still
  *    measured and printed when a control fails (`strayPairs`), but they are not an overdraw. Real overdraw lands inside both boxes, and P3 to P5 prove it is still found.
+ *    The slack only reaches pixels that NO OTHER item's raw (unwidened) box owns: items that touch (a crumb and its separator) otherwise both claim the seam
+ *    column inside the neighbour's box and read as "overdrawing" there (N3 failed that way on CI). A pixel inside another item's raw box is that item's alone.
  *
  * THE CONTROLS (`headerControls`) run the SAME measure and pixel code on a synthetic header and each carries an expectation the instrument must meet: negative
  * (no overlap with a visually hidden description present; an overflow:hidden item with a visually hidden LONG-TEXT child is NOT clipped; items that only touch
@@ -25,7 +27,7 @@ import { PNG } from 'pngjs';
 
 /** A pixel is DRAWN only if some channel differs from the blank bar by more than this. */
 export const TOLERANCE = 12;
-/** A drawn pixel counts for an item only inside the item's border box widened by this many px on every side (anti-aliased edges included). */
+/** A drawn pixel counts for an item inside its own border box, or within this many px around it (anti-aliased edges) where no OTHER item's raw box owns the pixel. */
 export const BOX_SLACK = 2;
 
 export interface HeaderBox {
@@ -263,6 +265,7 @@ export async function drawnOverlaps(page: Page): Promise<DrawnResult> {
   const blank = await shot();
   // m: drawn pixels inside the item's widened box (what counts); all: every drawn pixel (diagnostics only)
   const masks: Array<{ m: Uint8Array; all: Uint8Array; n: number; img: PNG }> = [];
+  const inRaw = (b: { x0: number; y0: number; x1: number; y1: number }, x: number, y: number) => x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1;
   for (let i = 0; i < names.length; i++) {
     await show(i);
     const img = await shot();
@@ -278,7 +281,16 @@ export async function drawnOverlaps(page: Page): Promise<DrawnResult> {
         all[p] = 1;
         const x = p % W;
         const y = (p - x) / W;
-        if (x >= box.x0 - BOX_SLACK && x < box.x1 + BOX_SLACK && y >= box.y0 - BOX_SLACK && y < box.y1 + BOX_SLACK) {
+        const inOwn = inRaw(box, x, y);
+        // the slack never claims a pixel another item's raw box owns: touching items would otherwise share the seam column (N3)
+        const inSlack =
+          !inOwn &&
+          x >= box.x0 - BOX_SLACK &&
+          x < box.x1 + BOX_SLACK &&
+          y >= box.y0 - BOX_SLACK &&
+          y < box.y1 + BOX_SLACK &&
+          !boxes.some((o, k) => k !== i && inRaw(o, x, y));
+        if (inOwn || inSlack) {
           m[p] = 1;
           n++;
         }
