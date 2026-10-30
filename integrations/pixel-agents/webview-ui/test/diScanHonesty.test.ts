@@ -20,7 +20,6 @@ import { describe, expect, it } from 'vitest';
 import type { DiOfficeState } from '../../core/src/messages.ts';
 import {
   DI_COMMENTS_PAID,
-  DI_DELIVERY_NOT_READ,
   DI_DIFF_NOT_READ,
   DI_SCAN_LOCK,
   type DiScanKnown,
