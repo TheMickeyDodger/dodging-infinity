@@ -344,6 +344,8 @@ const missionAccess: DiMissionRequestAccess = {
  * provided exactly as App does (AC3), so a test can minimize several surfaces into it at once.
  */
 const WITH_STRIP = new URLSearchParams(window.location.search).get('strip') === '1';
+/** OPT-IN (`?face=scan`): the product's scan face. Every other page load stays the operational list. */
+const SCAN_FACE = new URLSearchParams(window.location.search).get('face') === 'scan';
 
 const listeners = new Set<(next: DiOfficeState) => void>();
 /** The reception inbox seam of the mounted harness, so a test can open it where no entry is drawn (a collapsed sidebar). */
@@ -406,6 +408,7 @@ export function Harness() {
         mission={missionAccess}
         evidence={evidenceAccess}
         receptionInbox={receptionInbox}
+        presentation={SCAN_FACE ? 'scan' : 'operational'}
       />
       {WITH_STRIP && (
         <div

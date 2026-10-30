@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Minimize the office side panel from the scan rail (Pixel Agents DI office).** Minimize used to be the Home logo, and only that logo. Opening Mission details, Code Diff, Comments, Evidence, or a rail page covers the Home header, so the panel could not be collapsed from the screen you were reading. Minimize now sits on the navigation rail, which stays beside those screens, and Restore brings the same screen back. Presentation only: nothing is sent, decided, or started.
 - **Herdr Missions use the same Code Diff, review, and Reception the catalog already has (Pixel Agents DI office).** An active Herdr task with a bound workspace is offered a code review of that workspace. A recorded review under `.herd/state` is shown; none recorded stays empty. Reception treats a failed Herdr task as a blocker and a completed task with no approving review as results ready for review. Delivery still names workflow Missions only, and says so. Herdr in the sidebar is the documented `herdctl` terminal path; this office does not start it, commit, push, merge, or deploy. Connections are not in this build. See [`docs/pixel-agents-office.md`](docs/pixel-agents-office.md).
 - **Free UI for the Pixel Agents DI office: Mission titles and a scrollable Mission details.** The office you open shows the scan face.
   Its reading surfaces (the side panel, dialogs, cards, and the request workspace) use Inter on the Home navy, with purple as a fill

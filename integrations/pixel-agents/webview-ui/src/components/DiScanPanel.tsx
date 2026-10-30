@@ -957,7 +957,6 @@ function Stage({
   onBack,
   onMission,
   onView,
-  minimizeRef,
   onOpenSettings,
   reviewSession,
   onReviewBegin,
@@ -979,7 +978,6 @@ function Stage({
   onBack: () => void;
   onMission: () => void;
   onView: (view: 'mission' | 'diff' | 'comments' | 'evidence') => void;
-  minimizeRef?: Ref<HTMLButtonElement>;
   onOpenSettings?: () => void;
   reviewSession?: ReviewSession | null;
   onReviewBegin?: (target: ReviewTargetRef) => void;
@@ -1083,7 +1081,6 @@ function Stage({
         <div className="di-scan-header-lead">
           <button
             type="button"
-            ref={minimizeRef}
             className="di-scan-back"
             onClick={view === 'mission' ? onBack : onMission}
             aria-label={view === 'mission' ? BACK_TO[origin] : 'Back to mission details'}
@@ -1675,6 +1672,8 @@ function Rail({
   onOpenMission,
   onOpenSettings,
   missionsRead,
+  minimizeRef,
+  onMinimize,
 }: {
   rows: readonly DiScanRow[];
   hidden: ReadonlySet<string>;
@@ -1692,6 +1691,13 @@ function Rail({
   onOpenSettings?: () => void;
   /** Whether the Missions were read: an unread list is said as unread, never as "none running". */
   missionsRead: DiScanMissionsRead;
+  /**
+   * The office Minimize control. It lives on the rail because a Mission stage or a rail page is
+   * `position: fixed` from this rail's right edge to the window's right edge and covers the Home
+   * header, which used to be the only place the control was drawn.
+   */
+  minimizeRef?: Ref<HTMLButtonElement>;
+  onMinimize: () => void;
 }) {
   const orchestrators = railOrchestrators(rows, hidden);
   const count = receptionCount ?? 0;
@@ -1861,6 +1867,17 @@ function Rail({
       </ul>
 
       <div className="di-rail-foot">
+        <button
+          type="button"
+          ref={minimizeRef}
+          className="di-rail-item"
+          data-testid="di-office-panel-minimize"
+          title="Minimize the office panel; Restore brings it back as you left it"
+          onClick={onMinimize}
+        >
+          <span aria-hidden="true">▸</span>
+          Minimize
+        </button>
         <button
           type="button"
           className="di-rail-item"
@@ -2062,23 +2079,17 @@ export function DiScanPanel({
         onOpenMission={openMission}
         onOpenSettings={onOpenSettings}
         missionsRead={missionsRead}
+        minimizeRef={minimizeRef}
+        onMinimize={onMinimize}
       />
       <div ref={rootRef} className="di-scan-body" data-testid="di-scan-panel" data-view={view}>
         {view === 'list' && (
           <>
             <header className="di-scan-header">
               <div className="di-scan-header-lead">
-                <button
-                  type="button"
-                  ref={minimizeRef}
-                  className="di-scan-mark"
-                  onClick={onMinimize}
-                  title="Minimize the office panel"
-                  aria-label="Minimize the office panel"
-                  data-testid="di-office-panel-minimize"
-                >
+                <span className="di-scan-mark" aria-hidden="true">
                   <DiMark />
-                </button>
+                </span>
                 {/* the labelled SAMPLE specimen says so on Home too, as every specimen page does (lead's labelling condition) */}
                 {specimen && (
                   <span className="di-scan-fixture-tag" data-testid="di-home-sample-tag">
@@ -2288,7 +2299,6 @@ export function DiScanPanel({
             onBack={() => setView(origin)}
             onMission={() => setView('mission')}
             onView={setView}
-            minimizeRef={minimizeRef}
             onOpenSettings={onOpenSettings}
             reviewSession={reviewSession}
             onReviewBegin={onReviewBegin}
