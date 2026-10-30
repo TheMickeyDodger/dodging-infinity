@@ -222,7 +222,9 @@ test(
     const probe = await clickAcrossWorld(
       p(),
       { left: 0, top: 0, right: panel.x, bottom: 1000 },
-      24,
+      // 32 px (not 24): the whole world left of the panel is still over 1,000 real clicks, finer than the receptionist sprite,
+      // and the probe fits a CI runner's budget (at 24 px it was ~1,950 clicks and timed out at 120 s)
+      32,
     );
     assert.ok(probe.clicks > 500, `the world was probed (${probe.clicks} clicks)`);
     // every click probed the WORLD (pass C: a Mission opened by a click is undone before the next one)
@@ -230,7 +232,8 @@ test(
     console.info(`WORLD PROBE (%s): %d clicks, %d on the world, %d opened a Mission, the first at click %s`, 'operational face', probe.clicks, probe.worldClicks, probe.missionsOpened, String(probe.firstMissionAt));
     assert.equal(probe.inboxOpened, false, 'no click in the world opened the inbox');
   },
-  STEPS_MS,
+  // the whole-world probe is 1,000+ real clicks: it needs more than one step budget on a CI runner
+  STEPS_MS * 3,
 );
 
 // Superseded and replaced (D-10): the former test kept the world desk target off the open Map. There is no desk target;

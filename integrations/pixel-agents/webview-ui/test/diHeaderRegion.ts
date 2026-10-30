@@ -210,13 +210,28 @@ export async function drawnOverlaps(page: Page): Promise<{ drawn: Record<string,
     const b = bar.getBoundingClientRect();
     return { clip: { x: Math.floor(b.x), y: Math.floor(b.y), width: Math.ceil(b.width), height: Math.ceil(b.height) }, names };
   });
+  // each visibility change is let through two animation frames before it is photographed, and a photograph is only used once two in a row agree:
+  // on a loaded CI runner a screenshot can otherwise still hold the PREVIOUS item, which reads as that item and this one drawing the same pixels
   const show = (which: number) =>
-    page.evaluate((w) => {
-      (window as unknown as { __hdrItems: HTMLElement[] }).__hdrItems.forEach((el, i) => {
-        el.style.visibility = w === i ? 'visible' : 'hidden';
-      });
-    }, which);
-  const shot = async () => PNG.sync.read(await page.screenshot({ clip }));
+    page.evaluate(
+      (w) =>
+        new Promise<void>((resolve) => {
+          (window as unknown as { __hdrItems: HTMLElement[] }).__hdrItems.forEach((el, i) => {
+            el.style.visibility = w === i ? 'visible' : 'hidden';
+          });
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+      which,
+    );
+  const shot = async () => {
+    let prev = await page.screenshot({ clip });
+    for (let k = 0; k < 4; k++) {
+      const next = await page.screenshot({ clip });
+      if (next.equals(prev)) break;
+      prev = next;
+    }
+    return PNG.sync.read(prev);
+  };
   await show(-1);
   const blank = await shot();
   const masks: Array<{ m: Uint8Array; n: number }> = [];
@@ -396,7 +411,7 @@ export async function runHeaderControls(browser: Browser): Promise<ControlResult
       });
       const m = await measureHeader(page);
       const p = c.pixel ? await drawnOverlaps(page) : { drawn: {}, overdrawPairs: [] };
-      results.push({ control: c.id, ok: c.expect(m, p), why: c.expect(m, p) ? '' : JSON.stringify({ overlaps: m.overlaps.length, clipped: m.clipped, omitted: m.omitted, visuallyHidden: m.visuallyHidden, pairs: p.overdrawPairs.length }) });
+      results.push({ control: c.id, ok: c.expect(m, p), why: c.expect(m, p) ? '' : JSON.stringify({ overlaps: m.overlaps.length, clipped: m.clipped, omitted: m.omitted, visuallyHidden: m.visuallyHidden, pairs: p.overdrawPairs.map((o) => `${o.a}/${o.b}:${o.sharedDrawnPixels}`) }) });
     } catch (e) {
       results.push({ control: c.id, ok: false, why: String(e).split('\n')[0] ?? '' });
     } finally {

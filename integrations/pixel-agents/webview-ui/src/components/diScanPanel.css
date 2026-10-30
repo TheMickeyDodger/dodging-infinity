@@ -1249,6 +1249,10 @@
 }
 .di-scan-status-real .di-scan-status-base.di-scan-status-value {
   flex: 0 0 auto;
+  /* the base revision never shrinks, so it is never clipped either: with the value's overflow:hidden and ellipsis it lost the anti-aliased
+     edge of its last character whenever its box ended on a fractional pixel (drawn as a cut identifier on CI at 900 and 1280) */
+  overflow: visible;
+  text-overflow: clip;
 }
 /* end of the REAL-only status bar rules */
 .di-scan-add {

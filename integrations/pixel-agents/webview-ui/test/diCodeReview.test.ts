@@ -2710,7 +2710,9 @@ test(
     // Measured on the product before either change (viewport-BASELINE-metrics log) and after both (viewport-WIP2 log). The narrow-layout rules alone
     // moved nothing at any of these sizes (viewport-WIP1 log). The chrome controls' 1 px borders (AC1) make a content-sized button 1.75 px shorter
     // (33.75 px to the 32 px minimum) and the search field 1.8 px: so the overview is 85.5 -> 83.8 px, the search tools 78.6 -> 76.8 px, and the
-    // code region and the file tree of a wide window take that space (669.7 -> 673.2 px and 702 -> 705.5 px).
+    // code region and the file tree of a wide window take that space (669.7 -> 673.2 px and 702 -> 705.5 px). Inter, the bundled Home face
+    // (index.css --di-font-ui), then sets the key-hints line 1 px taller than the system face did (31.4 -> 32.4 px), and the code region and the
+    // file tree of a wide window give that 1 px back (673.2 -> 672.2 px and 705.5 -> 704.5 px): the visible code is 672 px, still 30 whole rows.
     const open = async (size: { width: number; height: number }, file: boolean) => {
       await freshPageAt({ ...size, scale: 1 });
       p().setDefaultTimeout(15_000);
@@ -2731,14 +2733,14 @@ test(
     near(wide.dialog.height, 956, '1600: the dialog (was 956)');
     near(wide.top?.height, 56.5, '1600: the title bar (was 56.5)');
     near(wide.overview?.height, 83.8, '1600: the overview (was 85.5)');
-    near(wide.body?.height, 782.4, '1600: the body (was 780.6)');
+    near(wide.body?.height, 781.4, '1600: the body (was 782.4 before Inter)');
     near(wide.diffHead?.height, 76.3, '1600: the file bar (was 78)');
     near(wide.treeTools?.height, 76.8, '1600: the search tools (was 78.6)');
-    near(wide.hints?.height, 31.4, '1600: the key hints (was 31.4)');
-    near(wide.code?.rect?.height, 673.2, '1600: the code region (was 669.7)');
-    assert.equal(wide.code?.clientHeight, 673, '1600: the visible code (was 670)');
+    near(wide.hints?.height, 32.4, '1600: the key hints (was 31.4 before Inter)');
+    near(wide.code?.rect?.height, 672.2, '1600: the code region (was 673.2 before Inter)');
+    assert.equal(wide.code?.clientHeight, 672, '1600: the visible code (was 673 before Inter)');
     assert.equal(wide.code?.wholeRows, 30, '1600: the whole rows visible (was 30)');
-    near(wide.tree?.rect?.height, 705.5, '1600: the file tree (was 702)');
+    near(wide.tree?.rect?.height, 704.5, '1600: the file tree (was 705.5 before Inter)');
     assert.equal(wide.tree?.wholeRows, 23, '1600: the whole file rows visible (was 23)');
     // 390 x 844, a roomy phone: the regions fill the window as before and the dialog does not scroll
     const phone = await open({ width: 390, height: 844 }, true);
