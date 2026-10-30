@@ -12,7 +12,11 @@ import type {
   DiObservedValue,
   DiOfficeState,
 } from '../../../core/src/messages.js';
-import type { ReviewTargetRef } from './diCodeReviewModel.js';
+import {
+  reviewNotOfferedConsequence,
+  type ReviewTargetRef,
+  unavailableWords,
+} from './diCodeReviewModel.js';
 import type { DlStep, DlView } from './diDeliveryModel.js';
 import { missionObjective, missionStatus } from './diOperationalStatus.js';
 import { missionTitle, plainMissionDescription, shortMissionRefs } from './diPlainSummary.js';
@@ -1467,11 +1471,27 @@ export type DiScanDiffSource =
   | { kind: 'refused'; reason: string; title: string; detail: string };
 
 export const DI_DIFF_NOT_READ = 'This Mission’s code diff is not read in this layout preview.';
+/** An offered review has not returned a listing yet. Not a layout preview, and not an empty diff. */
+export const DI_DIFF_READING = 'Reading this Mission’s working tree now.';
 
+/**
+ * What Code Diff can say from the row alone. The labelled specimen stays a sample. A real Mission
+ * follows the office's review offer: offered (a bound workspace the route can read), unavailable
+ * (the office's own reason), or unknown (the office said nothing, so nothing is claimed).
+ */
 export function scanDiff(row: DiScanRow): DiScanDiffSource {
-  return row.id === 'lock-next-panel'
-    ? { kind: 'sample', diff: DI_SCAN_LOCK_DIFF }
-    : { kind: 'not_read', reason: DI_DIFF_NOT_READ };
+  if (row.id === 'lock-next-panel') return { kind: 'sample', diff: DI_SCAN_LOCK_DIFF };
+  const offer = row.reviewOffer;
+  if (offer.kind === 'offered') return { kind: 'reading', reason: DI_DIFF_READING };
+  if (offer.kind === 'unavailable') {
+    return {
+      kind: 'unavailable',
+      reason: reviewNotOfferedConsequence(offer.reason),
+      title: 'Code review is not offered',
+      detail: unavailableWords(offer.reason),
+    };
+  }
+  return { kind: 'not_read', reason: DI_DIFF_NOT_READ };
 }
 
 /** One comment in a Mission's thread. */

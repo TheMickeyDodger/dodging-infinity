@@ -225,7 +225,9 @@ _ARTIFACT_FIELDS = (
 #: two; one file's diff takes all four. A reference, never a path, root,
 #: ref, pathspec or git option.
 _CODE_REVIEW_FIELDS = (
-    ("mission_ref", re.compile(r"[a-z0-9][a-z0-9._-]{0,63}:mn-[0-9a-f]{32}")),
+    ("mission_ref", re.compile(
+        r"[a-z0-9][a-z0-9._-]{0,63}:(?:mn-[0-9a-f]{32}"
+        r"|[0-9]{8}-[0-9]{6}-[0-9a-f]{6}@[0-9a-f]{12})")),
     ("task_id", re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")),
     ("snapshot", re.compile(r"[0-9a-f]{64}")),
     ("file_id", re.compile(r"rf-[0-9a-f]{32}")),

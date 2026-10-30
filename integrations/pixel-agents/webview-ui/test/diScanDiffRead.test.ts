@@ -42,17 +42,25 @@ import {
 import type { DiScanDiffSource, DiScanRow } from '../src/components/diScanModel.ts';
 import {
   DI_DIFF_NOT_READ,
+  DI_DIFF_READING,
   DI_SCAN_LOCK,
   reviewOfferOf,
+  scanDiff,
   scanRowsFromOffice,
 } from '../src/components/diScanModel.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const doc = JSON.parse(
-  fs.readFileSync(path.join(root, 'test/fixtures/di-office-state-code-review-v2.FIXTURE.json'), 'utf-8'),
+  fs.readFileSync(
+    path.join(root, 'test/fixtures/di-office-state-code-review-v2.FIXTURE.json'),
+    'utf-8',
+  ),
 ) as {
   reference: { missionRef: string; memberRef: string; taskId: string; listing: string };
-  states: Record<'live' | 'stale' | 'inactive' | 'moved' | 'agentGone' | 'unavailable', DiOfficeState>;
+  states: Record<
+    'live' | 'stale' | 'inactive' | 'moved' | 'agentGone' | 'unavailable',
+    DiOfficeState
+  >;
   replies: { overview: DiCodeReview; files: Record<string, DiCodeReview> };
 };
 const clone = <T>(value: T): T => structuredClone(value);
@@ -76,14 +84,22 @@ const ROW: DiScanRow = liveRows[0]!;
 const TARGET = (ROW.reviewOffer as { kind: 'offered'; target: ReviewTargetRef }).target;
 
 /** A session opened for `target`, asked for the overview, and (optionally) answered. */
-function openSession(target: ReviewTargetRef, overview: DiCodeReview | null = OVERVIEW, selected: string | null = null, file: DiCodeReview | null = null): ReviewSession {
+function openSession(
+  target: ReviewTargetRef,
+  overview: DiCodeReview | null = OVERVIEW,
+  selected: string | null = null,
+  file: DiCodeReview | null = null,
+): ReviewSession {
   let s = reduceSession(CLOSED_SESSION, { type: 'open', target });
   s = reduceSession(s, { type: 'asked', request: { kind: 'overview' } });
   if (overview !== null) s = reduceSession(s, { type: 'answer', answer: overview, nowMs: 0 });
   if (selected !== null) {
     s = reduceSession(s, { type: 'select', path: selected });
     const e = entry(selected);
-    s = reduceSession(s, { type: 'asked', request: { kind: 'file', fileId: e.fileId, snapshot: OVERVIEW.snapshot!, path: selected } });
+    s = reduceSession(s, {
+      type: 'asked',
+      request: { kind: 'file', fileId: e.fileId, snapshot: OVERVIEW.snapshot!, path: selected },
+    });
     if (file !== null) s = reduceSession(s, { type: 'answer', answer: file, nowMs: 0 });
   }
   return s;
@@ -94,26 +110,51 @@ const asRead = (source: DiScanDiffSource) => {
   return source;
 };
 
-describe('the row carries the office\'s own statement about a review', () => {
+describe("the row carries the office's own statement about a review", () => {
   it('an offered review is the admitted reference: Mission, member, task and listing, and no path', () => {
     expect(ROW.reviewOffer.kind).toBe('offered');
     expect(TARGET).toEqual({ ...doc.reference, agentName: expect.any(String) });
-    expect(Object.keys(TARGET).sort()).toEqual(['agentName', 'listing', 'memberRef', 'missionRef', 'taskId']);
+    expect(Object.keys(TARGET).sort()).toEqual([
+      'agentName',
+      'listing',
+      'memberRef',
+      'missionRef',
+      'taskId',
+    ]);
     expect(ROW.id).toBe(doc.reference.missionRef);
   });
 
   it('each way a review is not offered keeps its own reason; a Mission-level reason outranks a member-level one', () => {
-    expect(scanRowsFromOffice(doc.states.stale)[0]!.reviewOffer).toEqual({ kind: 'unavailable', reason: 'member_not_live' });
-    expect(scanRowsFromOffice(doc.states.inactive)[0]!.reviewOffer).toEqual({ kind: 'unavailable', reason: 'assignment_not_active' });
+    expect(scanRowsFromOffice(doc.states.stale)[0]!.reviewOffer).toEqual({
+      kind: 'unavailable',
+      reason: 'member_not_live',
+    });
+    expect(scanRowsFromOffice(doc.states.inactive)[0]!.reviewOffer).toEqual({
+      kind: 'unavailable',
+      reason: 'assignment_not_active',
+    });
     // two members: one says member_not_live, one says assignment_not_active: the Mission-level reason is used
     const both = clone(doc.states.live);
     const mission = both.missions.missions[0]!;
     const second = clone(mission.members.members[0]!);
     second.memberRef = `${second.memberRef}-2`;
-    mission.members.members[0]!.codeReview = { state: 'unavailable', reason: 'member_not_live', taskId: null, listing: null };
-    second.codeReview = { state: 'unavailable', reason: 'assignment_not_active', taskId: null, listing: null };
+    mission.members.members[0]!.codeReview = {
+      state: 'unavailable',
+      reason: 'member_not_live',
+      taskId: null,
+      listing: null,
+    };
+    second.codeReview = {
+      state: 'unavailable',
+      reason: 'assignment_not_active',
+      taskId: null,
+      listing: null,
+    };
     mission.members.members.push(second);
-    expect(reviewOfferOf(mission)).toEqual({ kind: 'unavailable', reason: 'assignment_not_active' });
+    expect(reviewOfferOf(mission)).toEqual({
+      kind: 'unavailable',
+      reason: 'assignment_not_active',
+    });
   });
 
   it('a Mission whose members say nothing about a review (or that lists no member) is NOT CLAIMED: nothing is read, nothing is offered', () => {
@@ -124,33 +165,84 @@ describe('the row carries the office\'s own statement about a review', () => {
   });
 });
 
-describe('the specimen comes first, and unknown stays the existing not-read statement', () => {
+describe('the specimen comes first; an offered review is the real path, not the layout-preview stub', () => {
   const lock = DI_SCAN_LOCK[0]!;
   it('the owner-approved specimen is returned untouched, whatever the session holds', () => {
     const holding = openSession(TARGET);
     const source = scanDiffFor(lock, holding);
     expect(source.kind).toBe('sample');
     expect(scanDiffFor(lock, null).kind).toBe('sample');
+    expect(scanDiff(lock).kind).toBe('sample');
   });
-  it('a row the office said nothing about, and a harness with no session, keep the existing not-read words unchanged', () => {
+  it('a row the office said nothing about keeps the existing not-read words', () => {
     const silent = { ...ROW, reviewOffer: { kind: 'unknown' } as const };
-    expect(scanDiffFor(silent, openSession(TARGET))).toEqual({ kind: 'not_read', reason: DI_DIFF_NOT_READ });
-    expect(scanDiffFor(ROW, null)).toEqual({ kind: 'not_read', reason: DI_DIFF_NOT_READ });
+    expect(scanDiff(silent)).toEqual({ kind: 'not_read', reason: DI_DIFF_NOT_READ });
+    expect(scanDiffFor(silent, openSession(TARGET))).toEqual({
+      kind: 'not_read',
+      reason: DI_DIFF_NOT_READ,
+    });
+  });
+  it('an offered review, including with no session yet, is a read of the working tree, not a layout preview', () => {
+    expect(scanDiff(ROW)).toEqual({ kind: 'reading', reason: DI_DIFF_READING });
+    expect(scanDiffFor(ROW, null)).toEqual({ kind: 'reading', reason: DI_DIFF_READING });
+    expect(JSON.stringify(scanDiff(ROW))).not.toContain('layout preview');
+    const herdr = {
+      ...ROW,
+      id: 'di_herdr_tasks:20261014-000000-aaaaaa@abcdefabcdef',
+      sourceKind: 'herdr_task',
+      reviewOffer: {
+        kind: 'offered' as const,
+        target: {
+          ...TARGET,
+          missionRef: 'di_herdr_tasks:20261014-000000-aaaaaa@abcdefabcdef',
+        },
+      },
+    };
+    expect(scanDiff(herdr).kind).toBe('reading');
+    expect(scanDiffFor(herdr, null).kind).toBe('reading');
+  });
+  it('an offer the office refused is that reason, for a Herdr task whose workspace is not bound as well', () => {
+    const inactive = scanRowsFromOffice(doc.states.inactive)[0]!;
+    expect(scanDiff(inactive).kind).toBe('unavailable');
+    expect(scanDiffFor(inactive, null).kind).toBe('unavailable');
+    const unbound = {
+      ...ROW,
+      sourceKind: 'herdr_task',
+      reviewOffer: { kind: 'unavailable' as const, reason: 'assignment_not_bound' },
+    };
+    const source = scanDiff(unbound);
+    expect(source.kind).toBe('unavailable');
+    if (source.kind === 'unavailable') {
+      expect(source.detail).toContain('not confirmed');
+      expect(source.reason).not.toContain('layout preview');
+    }
   });
 });
 
-describe('THE MISSION SWITCH: a session that holds another Mission\'s diff is never shown under this Mission\'s name', () => {
+describe("THE MISSION SWITCH: a session that holds another Mission's diff is never shown under this Mission's name", () => {
   const OTHER_REF = 'mc1:mn-00000000000000000000000000000002';
-  const rowFor = (missionRef: string, target: ReviewTargetRef): DiScanRow => ({ ...ROW, id: missionRef, reviewOffer: { kind: 'offered', target } });
+  const rowFor = (missionRef: string, target: ReviewTargetRef): DiScanRow => ({
+    ...ROW,
+    id: missionRef,
+    reviewOffer: { kind: 'offered', target },
+  });
 
-  it('the steady state: this Mission\'s own session shows this Mission\'s tree', () => {
+  it("the steady state: this Mission's own session shows this Mission's tree", () => {
     const source = scanDiffFor(ROW, openSession(TARGET));
     expect(kindOf(source)).toBe('read');
-    expect(asRead(source).diff.tree.filter((t) => t.kind === 'file')).toHaveLength(LISTING.files.length);
+    expect(asRead(source).diff.tree.filter((t) => t.kind === 'file')).toHaveLength(
+      LISTING.files.length,
+    );
   });
 
   it('the SWITCH render: the row is Mission B while the session still holds Mission A: B is "reading", and not one of A\'s files appears', () => {
-    const b: ReviewTargetRef = { ...TARGET, missionRef: OTHER_REF, memberRef: `${OTHER_REF}#t#executor1`, taskId: 'task-b', listing: 'b'.repeat(64) };
+    const b: ReviewTargetRef = {
+      ...TARGET,
+      missionRef: OTHER_REF,
+      memberRef: `${OTHER_REF}#t#executor1`,
+      taskId: 'task-b',
+      listing: 'b'.repeat(64),
+    };
     const source = scanDiffFor(rowFor(OTHER_REF, b), openSession(TARGET));
     expect(kindOf(source)).toBe('reading');
     expect(JSON.stringify(source)).not.toContain('app.py');
@@ -166,7 +258,7 @@ describe('THE MISSION SWITCH: a session that holds another Mission\'s diff is ne
     expect(JSON.stringify(source)).not.toContain('app.py');
   });
 
-  it('the listing moved: the row\'s offer is a NEW reference, so the old session is not this row\'s', () => {
+  it("the listing moved: the row's offer is a NEW reference, so the old session is not this row's", () => {
     const moved: ReviewTargetRef = { ...TARGET, listing: 'c'.repeat(64) };
     expect(kindOf(scanDiffFor(rowFor(ROW.id, moved), openSession(TARGET)))).toBe('reading');
     const otherTask: ReviewTargetRef = { ...TARGET, taskId: 'another-task' };
@@ -194,7 +286,7 @@ describe('THE MISSION SWITCH: a session that holds another Mission\'s diff is ne
   });
 });
 
-describe('the states that are NOT a diff, each in the route\'s own words, none an empty diff', () => {
+describe("the states that are NOT a diff, each in the route's own words, none an empty diff", () => {
   it('each way a review is not offered: "unavailable" with the office\'s own reason in words (all seven)', () => {
     for (const reason of Object.keys(UNAVAILABLE_WORDS)) {
       const row: DiScanRow = { ...ROW, reviewOffer: { kind: 'unavailable', reason } };
@@ -208,13 +300,27 @@ describe('the states that are NOT a diff, each in the route\'s own words, none a
   });
 
   it('a finished Mission (the assignment is not active) is unavailable with that reason, never an empty diff', () => {
-    const finished: DiScanRow = { ...ROW, reviewOffer: { kind: 'unavailable', reason: 'assignment_not_active' } };
+    const finished: DiScanRow = {
+      ...ROW,
+      reviewOffer: { kind: 'unavailable', reason: 'assignment_not_active' },
+    };
     const source = scanDiffFor(finished, null);
-    expect(source).toMatchObject({ kind: 'unavailable', detail: 'The assignment is not active work now.' });
+    expect(source).toMatchObject({
+      kind: 'unavailable',
+      detail: 'The assignment is not active work now.',
+    });
   });
 
   it('a cleared session says why and keeps NO content (connection lost, office expired, assignment changed, agent gone ...)', () => {
-    for (const reason of ['connection_lost', 'reconnected_awaiting_state', 'office_expired', 'office_not_live', 'assignment_changed', 'agent_not_live', 'agent_gone'] as const) {
+    for (const reason of [
+      'connection_lost',
+      'reconnected_awaiting_state',
+      'office_expired',
+      'office_not_live',
+      'assignment_changed',
+      'agent_not_live',
+      'agent_gone',
+    ] as const) {
       const cleared = reduceSession(openSession(TARGET), { type: 'clear', reason });
       const source = scanDiffFor(ROW, cleared);
       expect(source.kind, reason).toBe('unavailable');
@@ -247,7 +353,12 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
   it('the real facts appear: the branch, the exact listing count and every listed file by the id the route gave it', () => {
     expect(read.diff.branch).toBe('main');
     expect(read.diff.filesChanged).toBe('23 files changed');
-    expect(read.diff.tree.filter((t) => t.kind === 'file').map((t) => t.id).sort()).toEqual(LISTING.files.map((f) => f.fileId).sort());
+    expect(
+      read.diff.tree
+        .filter((t) => t.kind === 'file')
+        .map((t) => t.id)
+        .sort(),
+    ).toEqual(LISTING.files.map((f) => f.fileId).sort());
   });
 
   it('encoding, line ending and indentation are UNKNOWN on every real file, and "UTF-8" is never said', () => {
@@ -266,7 +377,9 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
     }
     // a text file the route showed (its DIFF TEXT was strict UTF-8) STILL does not make the three facts determined. (The note's own
     // "not covered: ... non-UTF-8 files" is a statement about what the listing excludes, not a claim about any file's encoding.)
-    const withFile = asRead(scanDiffFor(ROW, openSession(TARGET, OVERVIEW, 'src/app.py', fileReply('src/app.py'))));
+    const withFile = asRead(
+      scanDiffFor(ROW, openSession(TARGET, OVERVIEW, 'src/app.py', fileReply('src/app.py'))),
+    );
     for (const word of [withFile.diff.encoding, withFile.diff.lineEnding, withFile.diff.indent]) {
       expect(word).toMatch(/unknown/i);
       expect(word).not.toMatch(/UTF|LF|CRLF|spaces|tabs/i);
@@ -283,13 +396,16 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
 
   it('the totals are EXACT when every listed file carries its counts', () => {
     const counted = clone(OVERVIEW);
-    counted.overview!.files = counted.overview!.files.filter((f) => f.additions !== null && f.deletions !== null);
+    counted.overview!.files = counted.overview!.files.filter(
+      (f) => f.additions !== null && f.deletions !== null,
+    );
     counted.overview!.totals = {
       files: counted.overview!.files.length,
       additions: counted.overview!.files.reduce((n, f) => n + (f.additions ?? 0), 0),
       deletions: counted.overview!.files.reduce((n, f) => n + (f.deletions ?? 0), 0),
       withheld: 0,
-      unshown: counted.overview!.files.filter((f) => f.state !== 'text' && f.state !== 'submodule').length,
+      unshown: counted.overview!.files.filter((f) => f.state !== 'text' && f.state !== 'submodule')
+        .length,
     };
     const exact = asRead(scanDiffFor(ROW, openSession(TARGET, counted)));
     expect(exact.diff.added).toBe(String(counted.overview!.totals.additions));
@@ -317,13 +433,20 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
     expect(source.emptyNotice?.title).toBe('No changes found');
     expect(source.emptyNotice?.body).toMatch(/not proof/);
     // an overview that was NOT read (refused, still reading, cleared) is never "no changes found"
-    const notRead = [openSession(TARGET, null), reduceSession(openSession(TARGET), { type: 'clear', reason: 'agent_gone' })];
-    for (const s of notRead) expect(JSON.stringify(scanDiffFor(ROW, s))).not.toMatch(/no changes found/i);
+    const notRead = [
+      openSession(TARGET, null),
+      reduceSession(openSession(TARGET), { type: 'clear', reason: 'agent_gone' }),
+    ];
+    for (const s of notRead)
+      expect(JSON.stringify(scanDiffFor(ROW, s))).not.toMatch(/no changes found/i);
   });
 
   it('THE BASE is stated in the ORDINARY (non-empty) view: the revision the working tree was compared with, short for the bar and whole for its title', () => {
     expect(LISTING.files.length).toBeGreaterThan(0);
-    expect(read.diff.base).toEqual({ short: OVERVIEW.comparison!.baseOid.slice(0, 10), full: OVERVIEW.comparison!.baseOid });
+    expect(read.diff.base).toEqual({
+      short: OVERVIEW.comparison!.baseOid.slice(0, 10),
+      full: OVERVIEW.comparison!.baseOid,
+    });
     expect(read.diff.base!.short).toHaveLength(10);
   });
 
@@ -342,7 +465,9 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
 
   it('ONE listed file without counts is enough to make the totals a floor, with the reason that is TRUE for it', () => {
     const oneMissing = clone(OVERVIEW);
-    oneMissing.overview!.files = oneMissing.overview!.files.filter((f) => f.path === 'src/app.py' || f.state === 'binary');
+    oneMissing.overview!.files = oneMissing.overview!.files.filter(
+      (f) => f.path === 'src/app.py' || f.state === 'binary',
+    );
     oneMissing.overview!.totals = { files: 2, additions: 1, deletions: 1, withheld: 0, unshown: 1 };
     const source = asRead(scanDiffFor(ROW, openSession(TARGET, oneMissing)));
     expect(source.diff.added).toBe('1+');
@@ -368,7 +493,10 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
     expect(detachedRead.diff.branch + detachedRead.diff.branchHidden).toBe('Detached HEAD');
     // "Detached" is a fixed LABEL, not a variable value: the bar must never truncate it the way it truncates a real branch name
     expect(detachedRead.diff.branchFixed).toBe(true);
-    expect(detachedRead.diff.base).toEqual({ short: detached.comparison!.baseOid.slice(0, 10), full: detached.comparison!.baseOid });
+    expect(detachedRead.diff.base).toEqual({
+      short: detached.comparison!.baseOid.slice(0, 10),
+      full: detached.comparison!.baseOid,
+    });
     const unknown = clone(OVERVIEW);
     unknown.target!.branch = null;
     unknown.target!.detached = false;
@@ -406,7 +534,11 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
   });
 
   it('the base is present in EVERY read state (a branch, a detached HEAD, a branch that is unknown): a detached HEAD never loses its revision', () => {
-    for (const [branch, isDetached] of [['main', false], [null, true], [null, false]] as const) {
+    for (const [branch, isDetached] of [
+      ['main', false],
+      [null, true],
+      [null, false],
+    ] as const) {
       const answer = clone(OVERVIEW);
       answer.target!.branch = branch;
       answer.target!.detached = isDetached;
@@ -452,7 +584,8 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
     expect(read.diff.format?.accessible).toBe(
       'Encoding: unknown to this review. Line ending: unknown to this review. Indentation: unknown to this review',
     );
-    for (const fact of [/Encoding/i, /Line ending/i, /Indentation/i]) expect(read.diff.format?.accessible).toMatch(fact);
+    for (const fact of [/Encoding/i, /Line ending/i, /Indentation/i])
+      expect(read.diff.format?.accessible).toMatch(fact);
     expect(read.diff.format?.accessible).not.toMatch(/UTF|\bLF\b|CRLF|spaces|tabs/i);
   });
 
@@ -472,15 +605,24 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
       read.diff.lineEnding,
       read.diff.indent,
     ];
-    const reads = [asRead(scanDiffFor(ROW, openSession(TARGET))), asRead(scanDiffFor(ROW, openSession(TARGET, unknownBranch)))];
-    for (const text of [...reads.flatMap(words), languageWords('bin/blob.bin'), languageWords('Makefile.weird')]) {
+    const reads = [
+      asRead(scanDiffFor(ROW, openSession(TARGET))),
+      asRead(scanDiffFor(ROW, openSession(TARGET, unknownBranch))),
+    ];
+    for (const text of [
+      ...reads.flatMap(words),
+      languageWords('bin/blob.bin'),
+      languageWords('Makefile.weird'),
+    ]) {
       expect(text).not.toMatch(/not determined/i);
     }
     // not vacuous: each of those places does state the unknown
     expect(reads[1] ? words(reads[1]).join(' ') : '').toMatch(/Branch unknown/);
     expect(words(reads[0]!).join(' ')).toMatch(/Format unknown/);
     expect(languageWords('bin/blob.bin')).toMatch(/unknown/);
-    expect(words(reads[0]!).join(' ')).toMatch(/Encoding unknown.*Line ending unknown.*Indentation unknown/);
+    expect(words(reads[0]!).join(' ')).toMatch(
+      /Encoding unknown.*Line ending unknown.*Indentation unknown/,
+    );
   });
 
   it('the language is by extension; an unknown extension is "unknown", never "plain text"', () => {
@@ -491,12 +633,13 @@ describe('UNKNOWN IS NOT ABSENT: what the route read appears, what it did not de
   });
 });
 
-describe('the ONE note: whose changes these are, and what the listing does not cover, FROM THE ANSWER\'S OWN LIST', () => {
+describe("the ONE note: whose changes these are, and what the listing does not cover, FROM THE ANSWER'S OWN LIST", () => {
   it('carries the shared-worktree fact and every item the answer says it does not cover', () => {
     const note = noteOf(OVERVIEW.comparison!);
     expect(note).toMatch(/shared worktree/i);
     expect(note).toMatch(/Nothing here says who made a change/);
-    for (const id of OVERVIEW.comparison!.doesNotCover) expect(note).toContain(DI_DIFF_NOT_COVERED_WORDS[id]!);
+    for (const id of OVERVIEW.comparison!.doesNotCover)
+      expect(note).toContain(DI_DIFF_NOT_COVERED_WORDS[id]!);
   });
   it('cannot drift from the answer: an item the answer adds is named, an item it drops is not', () => {
     const more = clone(OVERVIEW.comparison!);
@@ -515,7 +658,15 @@ describe('the ONE note: whose changes these are, and what the listing does not c
 
 describe('every kind of change and every file state stays DISTINCT, in the mark and in words', () => {
   it('the seven kinds of change have seven distinct letters and seven distinct labels', () => {
-    const kinds = ['added', 'modified', 'deleted', 'renamed', 'type_changed', 'untracked', 'conflicted'];
+    const kinds = [
+      'added',
+      'modified',
+      'deleted',
+      'renamed',
+      'type_changed',
+      'untracked',
+      'conflicted',
+    ];
     const glyphs = kinds.map((k) => changeGlyph(k));
     expect(new Set(glyphs.map((g) => g.letter)).size).toBe(7);
     expect(new Set(glyphs.map((g) => g.label)).size).toBe(7);
@@ -527,14 +678,20 @@ describe('every kind of change and every file state stays DISTINCT, in the mark 
     return tree.find((t) => t.id === id)!;
   };
 
-  it('the recorded tree carries the real marks with plain labels, and a row\'s name says the file\'s state when it is not plain text', () => {
-    expect(rowOf('src/app.py')).toMatchObject({ mark: 'M', markLabel: 'modified', rowLabel: 'app.py, modified' });
+  it("the recorded tree carries the real marks with plain labels, and a row's name says the file's state when it is not plain text", () => {
+    expect(rowOf('src/app.py')).toMatchObject({
+      mark: 'M',
+      markLabel: 'modified',
+      rowLabel: 'app.py, modified',
+    });
     expect(rowOf('docs/gone.md')).toMatchObject({ mark: 'D', markLabel: 'deleted' });
     expect(rowOf('src/moved.py')).toMatchObject({ mark: 'R', markLabel: 'renamed' });
     expect(rowOf('docs/new-guide.md')).toMatchObject({ mark: 'U' });
     expect(rowOf('bin/blob.bin').rowLabel).toBe('blob.bin, modified, binary');
     expect(rowOf('secrets/server.pem').rowLabel).toBe('server.pem, modified, withheld');
-    expect(rowOf('legacy/latin1.txt').rowLabel).toBe('latin1.txt, new file, not yet tracked by git, not UTF-8');
+    expect(rowOf('legacy/latin1.txt').rowLabel).toBe(
+      'latin1.txt, new file, not yet tracked by git, not UTF-8',
+    );
     expect(rowOf('generated/bundle.min.js').rowLabel).toContain('too large');
     expect(rowOf('vendor/clone').rowLabel).toContain('not shown');
   });
@@ -546,7 +703,18 @@ describe('every kind of change and every file state stays DISTINCT, in the mark 
     expect(lastDir).toBeLessThan(firstFile === -1 ? Infinity : firstFile);
   });
 
-  const withFile = (p: string) => asRead(scanDiffFor(ROW, openSession(TARGET, OVERVIEW, p, entry(p).state === 'text' || entry(p).state === 'submodule' ? fileReply(p) : null)));
+  const withFile = (p: string) =>
+    asRead(
+      scanDiffFor(
+        ROW,
+        openSession(
+          TARGET,
+          OVERVIEW,
+          p,
+          entry(p).state === 'text' || entry(p).state === 'submodule' ? fileReply(p) : null,
+        ),
+      ),
+    );
   const recordOf = (p: string) => Object.values(withFile(p).diff.files)[0]!;
 
   it('a non-text file says WHAT it is, with no lines: binary, not UTF-8, too large, withheld, not shown, empty', () => {
@@ -590,7 +758,9 @@ describe('every kind of change and every file state stays DISTINCT, in the mark 
   });
 
   it('a file asked for and not yet answered is "reading", not "no changes"', () => {
-    const record = Object.values(asRead(scanDiffFor(ROW, openSession(TARGET, OVERVIEW, 'src/app.py', null))).diff.files)[0]!;
+    const record = Object.values(
+      asRead(scanDiffFor(ROW, openSession(TARGET, OVERVIEW, 'src/app.py', null))).diff.files,
+    )[0]!;
     expect(record.notice?.state).toBe('reading');
     expect(record.lines).toHaveLength(0);
   });
@@ -608,7 +778,9 @@ describe('every kind of change and every file state stays DISTINCT, in the mark 
     const line = reply.file!.hunks[0]!.lines.find((l) => l.kind === 'add')!;
     line.text = 'let a = "x‮y"; \u0007\tend';
     line.clipped = 7;
-    const record = Object.values(asRead(scanDiffFor(ROW, openSession(TARGET, OVERVIEW, 'src/app.py', reply))).diff.files)[0]!;
+    const record = Object.values(
+      asRead(scanDiffFor(ROW, openSession(TARGET, OVERVIEW, 'src/app.py', reply))).diff.files,
+    )[0]!;
     const shown = record.lines.find((l) => l.text.includes('let a'))!;
     expect(shown.text).toContain('⟦U+202E⟧');
     expect(shown.text).toContain('⟦U+0007⟧');
@@ -618,34 +790,58 @@ describe('every kind of change and every file state stays DISTINCT, in the mark 
   });
 });
 
-describe('THE SESSION RACE: a verdict decided for the OLD session never lands on the NEW one (a Mission switch closes one and opens another in the same commit, and a parent\'s effect runs after a child\'s)', () => {
+describe("THE SESSION RACE: a verdict decided for the OLD session never lands on the NEW one (a Mission switch closes one and opens another in the same commit, and a parent's effect runs after a child's)", () => {
   const NEW: ReviewTargetRef = { ...TARGET, taskId: 'a-replaced-task', listing: 'e'.repeat(64) };
   /** The old session, closed and a new one opened for NEW, as the stage's effect does. */
-  const swapped = (): ReviewSession => reduceSession(reduceSession(openSession(TARGET), { type: 'close' }), { type: 'open', target: NEW });
+  const swapped = (): ReviewSession =>
+    reduceSession(reduceSession(openSession(TARGET), { type: 'close' }), {
+      type: 'open',
+      target: NEW,
+    });
 
   it('a clear decided for the OLD target does not clear the new session (the moved-listing defect)', () => {
-    const after = reduceSession(swapped(), { type: 'clear', reason: 'assignment_changed', target: TARGET });
+    const after = reduceSession(swapped(), {
+      type: 'clear',
+      reason: 'assignment_changed',
+      target: TARGET,
+    });
     expect(after.cleared).toBeNull();
     expect(after.target).toEqual(NEW);
   });
 
   it('an asked decided for the OLD target does not mark the new session as waiting for an answer that will never come', () => {
-    const after = reduceSession(swapped(), { type: 'asked', request: { kind: 'overview' }, target: TARGET });
+    const after = reduceSession(swapped(), {
+      type: 'asked',
+      request: { kind: 'overview' },
+      target: TARGET,
+    });
     expect(after.pending).toBeNull();
   });
 
   it('the same events for the CURRENT target still apply, and an event that names no target applies to the current session, as before', () => {
     const current = swapped();
-    expect(reduceSession(current, { type: 'clear', reason: 'agent_gone', target: NEW }).cleared).toBe('agent_gone');
-    expect(reduceSession(current, { type: 'clear', reason: 'agent_gone' }).cleared).toBe('agent_gone');
-    expect(reduceSession(current, { type: 'asked', request: { kind: 'overview' }, target: NEW }).pending).toEqual({ kind: 'overview' });
-    expect(reduceSession(current, { type: 'asked', request: { kind: 'overview' } }).pending).toEqual({ kind: 'overview' });
+    expect(
+      reduceSession(current, { type: 'clear', reason: 'agent_gone', target: NEW }).cleared,
+    ).toBe('agent_gone');
+    expect(reduceSession(current, { type: 'clear', reason: 'agent_gone' }).cleared).toBe(
+      'agent_gone',
+    );
+    expect(
+      reduceSession(current, { type: 'asked', request: { kind: 'overview' }, target: NEW }).pending,
+    ).toEqual({ kind: 'overview' });
+    expect(
+      reduceSession(current, { type: 'asked', request: { kind: 'overview' } }).pending,
+    ).toEqual({ kind: 'overview' });
   });
 
   it('an event decided for a session that no longer exists changes nothing at all (a closed session stays closed)', () => {
     const closed = reduceSession(openSession(TARGET), { type: 'close' });
-    expect(reduceSession(closed, { type: 'clear', reason: 'agent_gone', target: TARGET })).toEqual(closed);
-    expect(reduceSession(closed, { type: 'asked', request: { kind: 'overview' }, target: TARGET })).toEqual(closed);
+    expect(reduceSession(closed, { type: 'clear', reason: 'agent_gone', target: TARGET })).toEqual(
+      closed,
+    );
+    expect(
+      reduceSession(closed, { type: 'asked', request: { kind: 'overview' }, target: TARGET }),
+    ).toEqual(closed);
   });
 });
 
@@ -653,12 +849,24 @@ describe('THE SESSION RACE: a verdict decided for the OLD session never lands on
 // CANONICAL ROUND 15, blocker 1: THE FILE READ IS THE LATER OBSERVATION. The overview lists each file with a state it GUESSED from the inventory;
 // the file read, made afterwards, observes the file itself. When the two disagree the read wins, and the panel says what the read observed and why
 // there is no content: it never keeps drawing the overview's confident word ("Text") over a read that learned something that contradicts it.
-describe('A BETTER OBSERVATION ARRIVES: what the file read reports beats the overview\'s earlier guess, and the panel says it', () => {
+describe("A BETTER OBSERVATION ARRIVES: what the file read reports beats the overview's earlier guess, and the panel says it", () => {
   const TEXT_PATH = 'src/util.py'; // listed as text in the overview
   /** The recorded read of TEXT_PATH, with the file's OWN state replaced by what a later read observed (and nothing to draw). */
   const readThatObserved = (state: string, reason: string | null = null): DiCodeReview => {
     const reply = fileReply(TEXT_PATH);
-    reply.file = { ...reply.file!, state, reason, hunks: [], additions: null, deletions: null, linesTotal: 0, linesRetained: 0, truncated: false, bytesTotal: 0, digestSha256: null };
+    reply.file = {
+      ...reply.file!,
+      state,
+      reason,
+      hunks: [],
+      additions: null,
+      deletions: null,
+      linesTotal: 0,
+      linesRetained: 0,
+      truncated: false,
+      bytesTotal: 0,
+      digestSha256: null,
+    };
     return reply;
   };
   const drawn = (reply: DiCodeReview) => {
@@ -681,14 +889,17 @@ describe('A BETTER OBSERVATION ARRIVES: what the file read reports beats the ove
     ['oversized', null, 'Too large to read here'],
     ['withheld', 'private_location', 'Withheld'],
     ['no_content_diff', null, 'No change to the text'],
-  ] as const)('the overview says TEXT, the read says %s: the notice is the read\'s', (state, reason, title) => {
-    const file = drawn(readThatObserved(state, reason));
-    expect(file.lines).toEqual([]);
-    expect(file.notice?.state).toBe(state);
-    expect(file.notice?.title).toBe(title);
-  });
+  ] as const)(
+    "the overview says TEXT, the read says %s: the notice is the read's",
+    (state, reason, title) => {
+      const file = drawn(readThatObserved(state, reason));
+      expect(file.lines).toEqual([]);
+      expect(file.notice?.state).toBe(state);
+      expect(file.notice?.title).toBe(title);
+    },
+  );
 
-  it('the read\'s own state decides the foot too: a read that observed a SUBMODULE says what a submodule change is', () => {
+  it("the read's own state decides the foot too: a read that observed a SUBMODULE says what a submodule change is", () => {
     const reply = fileReply(TEXT_PATH);
     reply.file = { ...reply.file!, state: 'submodule' };
     const file = drawn(reply);
@@ -715,7 +926,12 @@ describe('A REFUSAL for a selection that is no longer selected is discarded, and
     let s = openSession(TARGET, OVERVIEW);
     s = reduceSession(s, { type: 'select', path: A_PATH });
     const asked = nextRequest(s);
-    expect(asked).toEqual({ kind: 'file', fileId: entry(A_PATH).fileId, snapshot: OVERVIEW.snapshot, path: A_PATH });
+    expect(asked).toEqual({
+      kind: 'file',
+      fileId: entry(A_PATH).fileId,
+      snapshot: OVERVIEW.snapshot,
+      path: A_PATH,
+    });
     s = reduceSession(s, { type: 'asked', request: asked! });
     s = reduceSession(s, { type: 'select', path: B_PATH });
     expect(nextRequest(s)).toBeNull(); // A is still in flight: nothing more is asked yet
@@ -734,15 +950,28 @@ describe('A REFUSAL for a selection that is no longer selected is discarded, and
   });
 
   it('a NON-RETRYABLE refusal for A, arriving after B was selected, is discarded: nothing is stored, nothing is pending, and B is the next request', () => {
-    const after = reduceSession(movedOnWhileAIsInFlight(), { type: 'answer', answer: refusalFor(A_PATH, 'file_diff_over_bound'), nowMs: 0 });
+    const after = reduceSession(movedOnWhileAIsInFlight(), {
+      type: 'answer',
+      answer: refusalFor(A_PATH, 'file_diff_over_bound'),
+      nowMs: 0,
+    });
     expect(after.refusal).toBeNull();
     expect(after.pending).toBeNull();
     expect(after.selectedPath).toBe(B_PATH);
-    expect(nextRequest(after)).toEqual({ kind: 'file', fileId: entry(B_PATH).fileId, snapshot: OVERVIEW.snapshot, path: B_PATH });
+    expect(nextRequest(after)).toEqual({
+      kind: 'file',
+      fileId: entry(B_PATH).fileId,
+      snapshot: OVERVIEW.snapshot,
+      path: B_PATH,
+    });
   });
 
   it('AND B LOADS: after the discard, B is asked, B\'s answer arrives, and B\'s own lines are drawn (the face never says "reading" with nothing in flight)', () => {
-    let s = reduceSession(movedOnWhileAIsInFlight(), { type: 'answer', answer: refusalFor(A_PATH, 'file_diff_over_bound'), nowMs: 0 });
+    let s = reduceSession(movedOnWhileAIsInFlight(), {
+      type: 'answer',
+      answer: refusalFor(A_PATH, 'file_diff_over_bound'),
+      nowMs: 0,
+    });
     const asked = nextRequest(s);
     expect(asked).not.toBeNull(); // the stuck state was: reading, with no request pending and none to make
     s = reduceSession(s, { type: 'asked', request: asked! });
@@ -756,9 +985,18 @@ describe('A REFUSAL for a selection that is no longer selected is discarded, and
   });
 
   it('a RETRYABLE refusal for A arriving after B was selected is discarded the same way (B is asked; nothing waits on a retry of A)', () => {
-    const after = reduceSession(movedOnWhileAIsInFlight(), { type: 'answer', answer: refusalFor(A_PATH, 'read_rate_limited'), nowMs: 0 });
+    const after = reduceSession(movedOnWhileAIsInFlight(), {
+      type: 'answer',
+      answer: refusalFor(A_PATH, 'read_rate_limited'),
+      nowMs: 0,
+    });
     expect(after.refusal).toBeNull();
-    expect(nextRequest(after)).toEqual({ kind: 'file', fileId: entry(B_PATH).fileId, snapshot: OVERVIEW.snapshot, path: B_PATH });
+    expect(nextRequest(after)).toEqual({
+      kind: 'file',
+      fileId: entry(B_PATH).fileId,
+      snapshot: OVERVIEW.snapshot,
+      path: B_PATH,
+    });
   });
 
   // ROUND 16, blocker 1. "This snapshot has moved" is a property of the SNAPSHOT; "this request was refused" is a property of a REQUEST that no longer
@@ -767,53 +1005,80 @@ describe('A REFUSAL for a selection that is no longer selected is discarded, and
   // where the next selection is READ, and a selection that needs no read (binary, withheld, not UTF-8, oversized, unsupported, empty, or none) never
   // produces a refusal, so the warning was lost. The old assertion `stale === false` encoded that mistake and is replaced by `stale === true`.
   it('a snapshot_moved refusal for the dead selection marks the SNAPSHOT stale at once and stores nothing: B, when openable, is still asked and still loads', () => {
-    let s = reduceSession(movedOnWhileAIsInFlight(), { type: 'answer', answer: refusalFor(A_PATH, 'snapshot_moved'), nowMs: 0 });
+    let s = reduceSession(movedOnWhileAIsInFlight(), {
+      type: 'answer',
+      answer: refusalFor(A_PATH, 'snapshot_moved'),
+      nowMs: 0,
+    });
     expect(s.refusal).toBeNull(); // nothing that blocks B is stored
     expect(s.stale).toBe(true); // what the refusal said about the snapshot is kept
     const asked = nextRequest(s);
-    expect(asked).toEqual({ kind: 'file', fileId: entry(B_PATH).fileId, snapshot: OVERVIEW.snapshot, path: B_PATH });
+    expect(asked).toEqual({
+      kind: 'file',
+      fileId: entry(B_PATH).fileId,
+      snapshot: OVERVIEW.snapshot,
+      path: B_PATH,
+    });
     s = reduceSession(s, { type: 'asked', request: asked! });
-    s = reduceSession(s, { type: 'answer', answer: refusalFor(B_PATH, 'snapshot_moved'), nowMs: 0 });
+    s = reduceSession(s, {
+      type: 'answer',
+      answer: refusalFor(B_PATH, 'snapshot_moved'),
+      nowMs: 0,
+    });
     expect(s.refusal?.problem).toBe('snapshot_moved'); // B's own refusal is for the selection that IS selected: stored
     expect(s.stale).toBe(true);
   });
 
   // THE CASES WHERE A LATER REFUSAL CAN NEVER ARRIVE, enumerated (the states `canOpen` refuses, plus no selection at all): the staleness must survive each.
-  describe.each([['snapshot_moved'], ['workspace_moved_during_read']] as const)('%s for the dead selection, when the selection that replaced it needs NO read', (problem) => {
-    const NON_OPENABLE: Array<[string, string | null]> = [
-      ['withheld', '.env'],
-      ['binary', 'bin/blob.bin'],
-      ['not_utf8', 'legacy/latin1.txt'],
-      ['oversized', 'generated/bundle.min.js'],
-      ['unsupported', 'vendor/clone'],
-      ['empty', 'empty.txt'],
-      ['no selection at all', null],
-    ];
-    it.each(NON_OPENABLE)('B is %s: the listing is marked stale, nothing is stored, nothing is asked, and the face says what B is (never "reading")', (_what, bPath) => {
-      let s = openSession(TARGET, OVERVIEW);
-      s = reduceSession(s, { type: 'select', path: A_PATH });
-      s = reduceSession(s, { type: 'asked', request: nextRequest(s)! });
-      s = reduceSession(s, { type: 'select', path: bPath });
-      const after = reduceSession(s, { type: 'answer', answer: refusalFor(A_PATH, problem), nowMs: 0 });
-      expect(after.stale).toBe(true);
-      expect(after.refusal).toBeNull();
-      expect(after.pending).toBeNull();
-      expect(nextRequest(after)).toBeNull(); // B needs no read, and none is owed
-      const read = asRead(scanDiffFor(ROW, after));
-      expect(read.diff.tag).toMatch(/changed since it was read/);
-      if (bPath !== null) {
-        const file = Object.values(read.diff.files)[0]!;
-        expect(file.notice?.state).toBe(entry(bPath).state); // the overview's own state: B was never read
-        expect(file.notice?.state).not.toBe('reading');
-      }
-    });
-  });
+  describe.each([['snapshot_moved'], ['workspace_moved_during_read']] as const)(
+    '%s for the dead selection, when the selection that replaced it needs NO read',
+    (problem) => {
+      const NON_OPENABLE: Array<[string, string | null]> = [
+        ['withheld', '.env'],
+        ['binary', 'bin/blob.bin'],
+        ['not_utf8', 'legacy/latin1.txt'],
+        ['oversized', 'generated/bundle.min.js'],
+        ['unsupported', 'vendor/clone'],
+        ['empty', 'empty.txt'],
+        ['no selection at all', null],
+      ];
+      it.each(NON_OPENABLE)(
+        'B is %s: the listing is marked stale, nothing is stored, nothing is asked, and the face says what B is (never "reading")',
+        (_what, bPath) => {
+          let s = openSession(TARGET, OVERVIEW);
+          s = reduceSession(s, { type: 'select', path: A_PATH });
+          s = reduceSession(s, { type: 'asked', request: nextRequest(s)! });
+          s = reduceSession(s, { type: 'select', path: bPath });
+          const after = reduceSession(s, {
+            type: 'answer',
+            answer: refusalFor(A_PATH, problem),
+            nowMs: 0,
+          });
+          expect(after.stale).toBe(true);
+          expect(after.refusal).toBeNull();
+          expect(after.pending).toBeNull();
+          expect(nextRequest(after)).toBeNull(); // B needs no read, and none is owed
+          const read = asRead(scanDiffFor(ROW, after));
+          expect(read.diff.tag).toMatch(/changed since it was read/);
+          if (bPath !== null) {
+            const file = Object.values(read.diff.files)[0]!;
+            expect(file.notice?.state).toBe(entry(bPath).state); // the overview's own state: B was never read
+            expect(file.notice?.state).not.toBe('reading');
+          }
+        },
+      );
+    },
+  );
 
-  it('CONTROL: a refusal for the file that is STILL selected is stored, stated in the route\'s words, and blocks a request for nothing else', () => {
+  it("CONTROL: a refusal for the file that is STILL selected is stored, stated in the route's words, and blocks a request for nothing else", () => {
     let s = openSession(TARGET, OVERVIEW);
     s = reduceSession(s, { type: 'select', path: A_PATH });
     s = reduceSession(s, { type: 'asked', request: nextRequest(s)! });
-    s = reduceSession(s, { type: 'answer', answer: refusalFor(A_PATH, 'file_diff_over_bound'), nowMs: 0 });
+    s = reduceSession(s, {
+      type: 'answer',
+      answer: refusalFor(A_PATH, 'file_diff_over_bound'),
+      nowMs: 0,
+    });
     expect(s.refusal?.problem).toBe('file_diff_over_bound');
     expect(nextRequest(s)).toBeNull(); // not retried: it will not change by waiting
     const file = Object.values(asRead(scanDiffFor(ROW, s)).diff.files)[0]!;
@@ -831,12 +1096,25 @@ describe('A READ WITH NO LINES TO DRAW: the real mode-only emission says why the
   const modeOnlyRead = (): DiCodeReview => {
     const reply = fileReply(PATH);
     reply.file = {
-      ...reply.file!, state: 'no_content_diff', reason: null, hunks: [], additions: 0, deletions: 0, truncated: false, linesTotal: 0, linesRetained: 0, bytesTotal: 0,
-      digestSha256: null, modeChange: { old: '100644', new: '100755' },
+      ...reply.file!,
+      state: 'no_content_diff',
+      reason: null,
+      hunks: [],
+      additions: 0,
+      deletions: 0,
+      truncated: false,
+      linesTotal: 0,
+      linesRetained: 0,
+      bytesTotal: 0,
+      digestSha256: null,
+      modeChange: { old: '100644', new: '100755' },
     };
     return reply;
   };
-  const drawn = (overview: DiCodeReview, reply: DiCodeReview) => Object.values(asRead(scanDiffFor(ROW, openSession(TARGET, overview, PATH, reply))).diff.files)[0]!;
+  const drawn = (overview: DiCodeReview, reply: DiCodeReview) =>
+    Object.values(
+      asRead(scanDiffFor(ROW, openSession(TARGET, overview, PATH, reply))).diff.files,
+    )[0]!;
 
   it('the REAL emission: the overview lists the mode-only change as no_content_diff and the read agrees: no line differs, and it says so (never the bare "Text")', () => {
     const overview = clone(OVERVIEW);
@@ -852,7 +1130,16 @@ describe('A READ WITH NO LINES TO DRAW: the real mode-only emission says why the
 
   it('DEFENSIVE PATH: a read that observed TEXT and returned NO lines (the route cannot emit this) says exactly that, and is never the bare, unexplained "Text"', () => {
     const reply = fileReply(PATH);
-    reply.file = { ...reply.file!, state: 'text', hunks: [], additions: 0, deletions: 0, truncated: false, linesTotal: 0, linesRetained: 0 };
+    reply.file = {
+      ...reply.file!,
+      state: 'text',
+      hunks: [],
+      additions: 0,
+      deletions: 0,
+      truncated: false,
+      linesTotal: 0,
+      linesRetained: 0,
+    };
     const file = drawn(OVERVIEW, reply);
     expect(file.lines).toEqual([]);
     expect(file.notice?.state).toBe('text');
@@ -870,15 +1157,22 @@ describe('A READ WITH NO LINES TO DRAW: the real mode-only emission says why the
 // a request only if it names that request. THE RULE, stated and pinned: if a request CARRIED an id, an answer LACKING one (or naming another) must NOT fulfil
 // it; absence never falls back to matching on the reference, or the defect would return by the back door while every test still passed.
 describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references are not an identity', () => {
-  const withId = (reply: DiCodeReview, requestId?: string): DiCodeReview => (requestId === undefined ? reply : { ...reply, requestId });
+  const withId = (reply: DiCodeReview, requestId?: string): DiCodeReview =>
+    requestId === undefined ? reply : { ...reply, requestId };
   const overviewOf = (branch: string): DiCodeReview => {
     const o = clone(OVERVIEW);
     o.target!.branch = branch;
     return o;
   };
   /** Ask for what the session needs next, naming the request (or not: a client that sends no id). */
-  const askedAs = (s: ReviewSession, id?: string): ReviewSession => reduceSession(s, { type: 'asked', request: nextRequest(s)!, ...(id === undefined ? {} : { id }) });
-  const fresh = (): ReviewSession => reduceSession(CLOSED_SESSION, { type: 'open', target: TARGET });
+  const askedAs = (s: ReviewSession, id?: string): ReviewSession =>
+    reduceSession(s, {
+      type: 'asked',
+      request: nextRequest(s)!,
+      ...(id === undefined ? {} : { id }),
+    });
+  const fresh = (): ReviewSession =>
+    reduceSession(CLOSED_SESSION, { type: 'open', target: TARGET });
 
   it('THE REQUIRED SEQUENCE: an overview is held, the Code Diff is closed and reopened (the SAME offer), the OLD overview arrives FIRST, then the fresh result: the old one is not taken for the fresh read, and the fresh one is the one shown', () => {
     let s = askedAs(fresh(), 'r1'); // the first session's read is in flight
@@ -886,7 +1180,11 @@ describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references 
     s = reduceSession(s, { type: 'open', target: TARGET }); // the same offer, reopened
     s = askedAs(s, 'r2'); // the new session's read
     expect(s.pending).toEqual({ kind: 'overview' });
-    s = reduceSession(s, { type: 'answer', answer: withId(overviewOf('old-branch'), 'r1'), nowMs: 0 }); // the OLD one first
+    s = reduceSession(s, {
+      type: 'answer',
+      answer: withId(overviewOf('old-branch'), 'r1'),
+      nowMs: 0,
+    }); // the OLD one first
     expect(s.overview).toBeNull(); // it did not fulfil the fresh request
     expect(s.pending).toEqual({ kind: 'overview' }); // the fresh request is still waiting for its own answer
     expect(scanDiffFor(ROW, s).kind).toBe('reading'); // never drawn as a read
@@ -895,18 +1193,33 @@ describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references 
     expect(asRead(scanDiffFor(ROW, s)).diff.branch).toBe('main'); // the fresh one is what the reader sees
   });
 
-  it('THE TRACED REAL FLOW: the reopened session\'s read is refused AT ONCE (read_in_progress, naming its OWN id), it is asked again, and the OLD read\'s answer arrives while that retry is in flight: it is not taken for the retry, and the retry\'s own answer is the one shown', () => {
+  it("THE TRACED REAL FLOW: the reopened session's read is refused AT ONCE (read_in_progress, naming its OWN id), it is asked again, and the OLD read's answer arrives while that retry is in flight: it is not taken for the retry, and the retry's own answer is the one shown", () => {
     let s = askedAs(fresh(), 'r1'); // the first session's read: outstanding at the office
     s = reduceSession(s, { type: 'close' });
     s = reduceSession(s, { type: 'open', target: TARGET }); // the same offer, reopened
     s = askedAs(s, 'r2');
-    const busy: DiCodeReview = { ...OVERVIEW, state: 'refused', problem: 'read_in_progress', detail: 'another review read is in progress', target: null, comparison: null, overview: null, file: null, observedAt: null, snapshot: null };
+    const busy: DiCodeReview = {
+      ...OVERVIEW,
+      state: 'refused',
+      problem: 'read_in_progress',
+      detail: 'another review read is in progress',
+      target: null,
+      comparison: null,
+      overview: null,
+      file: null,
+      observedAt: null,
+      snapshot: null,
+    };
     s = reduceSession(s, { type: 'answer', answer: withId(busy, 'r2'), nowMs: 0 }); // the refusal arrives FIRST and names the read it refused
     expect(isRetryable(s.refusal)).toBe(true);
     s = reduceSession(s, { type: 'retry' });
     s = askedAs(s, 'r3'); // the retry, with an id of its own
     expect(s.pendingId).toBe('r3');
-    s = reduceSession(s, { type: 'answer', answer: withId(overviewOf('old-branch'), 'r1'), nowMs: 0 }); // the old read's answer, during the retry's flight
+    s = reduceSession(s, {
+      type: 'answer',
+      answer: withId(overviewOf('old-branch'), 'r1'),
+      nowMs: 0,
+    }); // the old read's answer, during the retry's flight
     expect(s.overview).toBeNull();
     expect(s.pending).toEqual({ kind: 'overview' });
     s = reduceSession(s, { type: 'answer', answer: withId(overviewOf('main'), 'r3'), nowMs: 0 });
@@ -915,7 +1228,18 @@ describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references 
 
   it('a refusal that names ANOTHER read is not taken for the refusal of the request in flight (it would start a retry of nothing and hide the real wait)', () => {
     const s = askedAs(fresh(), 'r3');
-    const busy: DiCodeReview = { ...OVERVIEW, state: 'refused', problem: 'read_in_progress', detail: 'another review read is in progress', target: null, comparison: null, overview: null, file: null, observedAt: null, snapshot: null };
+    const busy: DiCodeReview = {
+      ...OVERVIEW,
+      state: 'refused',
+      problem: 'read_in_progress',
+      detail: 'another review read is in progress',
+      target: null,
+      comparison: null,
+      overview: null,
+      file: null,
+      observedAt: null,
+      snapshot: null,
+    };
     const after = reduceSession(s, { type: 'answer', answer: withId(busy, 'r2'), nowMs: 0 });
     expect(after.refusal).toBeNull();
     expect(after.pending).toEqual({ kind: 'overview' });
@@ -930,7 +1254,11 @@ describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references 
 
   it('THE RULE: a request that CARRIED an id is NOT fulfilled by an answer that LACKS one (absent never falls back to matching on the reference)', () => {
     const s = askedAs(fresh(), 'r2');
-    const after = reduceSession(s, { type: 'answer', answer: OVERVIEW /* recorded: no requestId */, nowMs: 0 });
+    const after = reduceSession(s, {
+      type: 'answer',
+      answer: OVERVIEW /* recorded: no requestId */,
+      nowMs: 0,
+    });
     expect(after.overview).toBeNull();
     expect(after.pending).toEqual({ kind: 'overview' });
   });
@@ -950,10 +1278,12 @@ describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references 
     s = askedAs(s);
     s = reduceSession(s, { type: 'answer', answer: fileReply('src/util.py'), nowMs: 0 });
     expect(s.file?.answer.fileId).toBe(entry('src/util.py').fileId);
-    expect(Object.values(asRead(scanDiffFor(ROW, s)).diff.files)[0]!.lines.length).toBeGreaterThan(0);
+    expect(Object.values(asRead(scanDiffFor(ROW, s)).diff.files)[0]!.lines.length).toBeGreaterThan(
+      0,
+    );
   });
 
-  it('a FILE read is correlated the same way: a held file answer of a closed session does not fulfil the reopened session\'s file request', () => {
+  it("a FILE read is correlated the same way: a held file answer of a closed session does not fulfil the reopened session's file request", () => {
     const open = (): ReviewSession => {
       let s = askedAs(fresh(), 'r1');
       s = reduceSession(s, { type: 'answer', answer: withId(OVERVIEW, 'r1'), nowMs: 0 });
@@ -966,10 +1296,18 @@ describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references 
     s = reduceSession(s, { type: 'answer', answer: withId(OVERVIEW, 'r3'), nowMs: 0 });
     s = reduceSession(s, { type: 'select', path: 'src/util.py' });
     s = askedAs(s, 'r4'); // the reopened session's file request
-    s = reduceSession(s, { type: 'answer', answer: withId(fileReply('src/util.py'), 'r2'), nowMs: 0 }); // the OLD file answer first
+    s = reduceSession(s, {
+      type: 'answer',
+      answer: withId(fileReply('src/util.py'), 'r2'),
+      nowMs: 0,
+    }); // the OLD file answer first
     expect(s.file).toBeNull();
     expect(s.pending?.kind).toBe('file');
-    s = reduceSession(s, { type: 'answer', answer: withId(fileReply('src/util.py'), 'r4'), nowMs: 0 });
+    s = reduceSession(s, {
+      type: 'answer',
+      answer: withId(fileReply('src/util.py'), 'r4'),
+      nowMs: 0,
+    });
     expect(s.file?.answer.fileId).toBe(entry('src/util.py').fileId);
   });
 });
@@ -980,19 +1318,33 @@ describe('A READ BELONGS TO THE REQUEST THAT ASKED FOR IT: identical references 
 // the same defect, moved from the reference layer to the id layer.
 describe('THE ID IS CHECKED IN ADDITION TO THE REFERENCE, AND IDS ARE UNIQUE ACROSS THE WHOLE LIFETIME', () => {
   const open = (): ReviewSession => reduceSession(CLOSED_SESSION, { type: 'open', target: TARGET });
-  const askedAs = (s: ReviewSession, id: string): ReviewSession => reduceSession(s, { type: 'asked', request: nextRequest(s)!, id });
+  const askedAs = (s: ReviewSession, id: string): ReviewSession =>
+    reduceSession(s, { type: 'asked', request: nextRequest(s)!, id });
 
   it('the RIGHT id on the WRONG reference is refused (every existing reference check still holds on top of the id)', () => {
     const s = askedAs(open(), 'r2');
-    for (const wrong of [{ taskId: 'a-replaced-task' }, { listing: 'e'.repeat(64) }, { missionRef: 'mc-1:mn-' + 'f'.repeat(32) }, { memberRef: 'another-member' }]) {
-      const after = reduceSession(s, { type: 'answer', answer: { ...OVERVIEW, ...wrong, requestId: 'r2' }, nowMs: 0 });
+    for (const wrong of [
+      { taskId: 'a-replaced-task' },
+      { listing: 'e'.repeat(64) },
+      { missionRef: 'mc-1:mn-' + 'f'.repeat(32) },
+      { memberRef: 'another-member' },
+    ]) {
+      const after = reduceSession(s, {
+        type: 'answer',
+        answer: { ...OVERVIEW, ...wrong, requestId: 'r2' },
+        nowMs: 0,
+      });
       expect(after.overview, JSON.stringify(wrong)).toBeNull();
       expect(after.pending).toEqual({ kind: 'overview' });
     }
   });
 
   it('CONTROL: the right id on the right reference is accepted (so the refusals above are about the reference, not about every answer being refused)', () => {
-    const after = reduceSession(askedAs(open(), 'r2'), { type: 'answer', answer: { ...OVERVIEW, requestId: 'r2' }, nowMs: 0 });
+    const after = reduceSession(askedAs(open(), 'r2'), {
+      type: 'answer',
+      answer: { ...OVERVIEW, requestId: 'r2' },
+      nowMs: 0,
+    });
     expect(after.overview).not.toBeNull();
     expect(after.pending).toBeNull();
   });
@@ -1007,7 +1359,7 @@ describe('THE ID IS CHECKED IN ADDITION TO THE REFERENCE, AND IDS ARE UNIQUE ACR
     for (let i = 0; i < 50; i++) expect(seen.has(other())).toBe(false);
   });
 
-  it('REOPEN WITH A READ STILL OUTSTANDING: the new session\'s id differs from the outstanding one, so the held old answer cannot match the new request', () => {
+  it("REOPEN WITH A READ STILL OUTSTANDING: the new session's id differs from the outstanding one, so the held old answer cannot match the new request", () => {
     const next = createRequestIds('t');
     const oldId = next();
     let s = askedAs(open(), oldId); // the first session's read: outstanding

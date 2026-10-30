@@ -107,7 +107,11 @@ function overviewRequest(view = viewOf(catalogAnswer(exported()))): CodeReviewRe
 
 function fileRequest(raw: Raw, p: string, view?: OfficeView): CodeReviewRef {
   const answer = fileAnswer(raw, p);
-  return { ...overviewRequest(view), snapshot: String(answer.snapshot), fileId: String(answer.file_id) };
+  return {
+    ...overviewRequest(view),
+    snapshot: String(answer.snapshot),
+    fileId: String(answer.file_id),
+  };
 }
 
 /** The message the client sends for a reference. */
@@ -167,11 +171,17 @@ describe('the TypeScript bounds (exact values — a different mechanism from the
   it('the office never half-writes a character: its own refusal text is cut at a character, not inside a surrogate pair', () => {
     // 'a' then 200 emoji: unit 239 is the first half of a pair, so a cut at 240 units would leave half of one
     const ref: CodeReviewRef = { missionRef: 'm', memberRef: 'x', taskId: 't', listing: 'l' };
-    const refusal = codeReview.officeRefusal(ref, 'review_not_offered', 'a' + '\u{1F600}'.repeat(200));
+    const refusal = codeReview.officeRefusal(
+      ref,
+      'review_not_offered',
+      'a' + '\u{1F600}'.repeat(200),
+    );
     const detail = refusal.detail as string;
     expect(detail.length).toBeLessThanOrEqual(240);
     expect(detail.startsWith('a')).toBe(true);
-    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(detail)).toBe(false);
+    expect(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(detail),
+    ).toBe(false);
     expect(detail).toBe('a' + '\u{1F600}'.repeat(119)); // 239 units: the 120th emoji did not fit whole
   });
 
@@ -199,9 +209,17 @@ describe('the request: EXACTLY an admitted reference', () => {
   // ROUND 16: a read may NAME ITSELF with one optional, opaque `requestId`; the office echoes it. The shapes stay closed: the same five or seven keys plus
   // this ONE optional key, a bounded token. It carries no authority and the backend is never given it (see the DiOffice tests below).
   it('accepts the same two shapes WITH one optional opaque requestId, and carries it on the reference', () => {
-    expect(parseCodeReviewRead({ ...overview(), requestId: 'r1.7' })).toEqual({ ...overviewRequest(), requestId: 'r1.7' });
-    expect(parseCodeReviewRead({ ...file(), requestId: 'abc-DEF_0.9' })).toEqual({ ...fileRequest(exported(), 'src/app.py'), requestId: 'abc-DEF_0.9' });
-    expect(parseCodeReviewRead({ ...overview(), requestId: 'x'.repeat(64) })?.requestId).toBe('x'.repeat(64));
+    expect(parseCodeReviewRead({ ...overview(), requestId: 'r1.7' })).toEqual({
+      ...overviewRequest(),
+      requestId: 'r1.7',
+    });
+    expect(parseCodeReviewRead({ ...file(), requestId: 'abc-DEF_0.9' })).toEqual({
+      ...fileRequest(exported(), 'src/app.py'),
+      requestId: 'abc-DEF_0.9',
+    });
+    expect(parseCodeReviewRead({ ...overview(), requestId: 'x'.repeat(64) })?.requestId).toBe(
+      'x'.repeat(64),
+    );
   });
 
   it('a request WITHOUT a requestId is still served exactly as before (the legacy shape; the recorded fixtures carry none)', () => {
@@ -235,7 +253,10 @@ describe('the request: EXACTLY an admitted reference', () => {
       ['a snapshot without a file id', { ...overview(), snapshot: 'a'.repeat(64) }],
       ['a file id without a snapshot', { ...overview(), fileId: 'rf-' + 'a'.repeat(32) }],
       ['the wrong type', { ...overview(), type: 'diEvidenceRead' }],
-      ['a missing key', (({ listing: _l, ...rest }) => rest)(overview() as Raw & { listing: string })],
+      [
+        'a missing key',
+        (({ listing: _l, ...rest }) => rest)(overview() as Raw & { listing: string }),
+      ],
       ['a non-string Mission', { ...overview(), missionRef: 7 }],
       ['a Mission ref that is a path', { ...overview(), missionRef: '../../etc' }],
       ['a malformed task id', { ...overview(), taskId: '2026-10-18' }],
@@ -254,8 +275,12 @@ describe('the request: EXACTLY an admitted reference', () => {
 
   it('the backend is asked the closed query and nothing else, whatever id the read carried (the id is for the office and the asking client only)', () => {
     const named = { ...fileRequest(exported(), 'src/app.py'), requestId: 'r1.7' };
-    expect(codeReview.backendQuery(named)).toEqual(codeReview.backendQuery(fileRequest(exported(), 'src/app.py')));
-    expect(Object.keys(codeReview.backendQuery({ ...overviewRequest(), requestId: 'r1.7' })).sort()).toEqual(['missionRef', 'taskId']);
+    expect(codeReview.backendQuery(named)).toEqual(
+      codeReview.backendQuery(fileRequest(exported(), 'src/app.py')),
+    );
+    expect(
+      Object.keys(codeReview.backendQuery({ ...overviewRequest(), requestId: 'r1.7' })).sort(),
+    ).toEqual(['missionRef', 'taskId']);
   });
 
   it('the backend is asked the closed query and nothing else', () => {
@@ -279,9 +304,13 @@ describe('the request: EXACTLY an admitted reference', () => {
       `/code_review?mission_ref=${encodeURIComponent(ref.missionRef)}&task_id=${ref.taskId}` +
         `&snapshot=${ref.snapshot}&file_id=${ref.fileId}`,
     );
-    expect(routePath('code_review', undefined, undefined, { ...q, snapshot: undefined, fileId: undefined })).toBe(
-      `/code_review?mission_ref=${encodeURIComponent(ref.missionRef)}&task_id=${ref.taskId}`,
-    );
+    expect(
+      routePath('code_review', undefined, undefined, {
+        ...q,
+        snapshot: undefined,
+        fileId: undefined,
+      }),
+    ).toBe(`/code_review?mission_ref=${encodeURIComponent(ref.missionRef)}&task_id=${ref.taskId}`);
     expect(routePath('code_review')).toBeNull();
     for (const bad of [
       { missionRef: '../x', taskId: ref.taskId },
@@ -294,10 +323,20 @@ describe('the request: EXACTLY an admitted reference', () => {
       expect(routePath('code_review', undefined, undefined, bad)).toBeNull();
     }
     expect(CODE_REVIEW_GRAMMAR.taskId.test('20261014-000000-aaaaaa')).toBe(true);
+    const herdrRef = 'di_herdr_tasks:20261014-000000-aaaaaa@' + 'ab'.repeat(6);
+    expect(isCodeReviewQuery({ missionRef: herdrRef, taskId: '20261014-000000-aaaaaa' })).toBe(
+      true,
+    );
+    expect(
+      routePath('code_review', undefined, undefined, {
+        missionRef: herdrRef,
+        taskId: '20261014-000000-aaaaaa',
+      }),
+    ).toContain('mission_ref=');
   });
 });
 
-describe('the offer: only an active, bound Mission Core assignment, for a live direct member', () => {
+describe('the offer: an active, bound Mission Core assignment or Herdr task, for a live direct member', () => {
   const view = (edit?: (answer: Raw) => void, now?: number): OfficeView => {
     const answer = clone(catalogAnswer(exported()));
     edit?.(answer);
@@ -383,8 +422,16 @@ describe('the offer: only an active, bound Mission Core assignment, for a live d
     expect(reviewOfferFor({ ...mission, v2: null }, member)).toMatchObject({
       reason: 'contract_version_1_office',
     });
-    // a plain Herdr task, a workflow record and an unrecognized kind are not Mission Core records
-    for (const sourceKind of ['herdr_task', 'workflow_store', 'unrecognized'] as const) {
+    // an active, bound Herdr task is offered from the same listing facts as Mission Core
+    const herdr = reviewOfferFor({ ...mission, sourceKind: 'herdr_task' }, member);
+    expect(herdr).toMatchObject({ state: 'offered', reason: null, taskId: member.taskId });
+    if (herdr.state === 'offered') expect(herdr.listing).toMatch(/^[0-9a-f]{64}$/);
+    // unbound: the workspace is not confirmed, which is its own reason
+    expect(
+      reviewOfferFor({ ...mission, sourceKind: 'herdr_task', bindingState: 'unverified' }, member),
+    ).toMatchObject({ state: 'unavailable', reason: 'assignment_not_bound', listing: null });
+    // a workflow record and an unrecognized kind are not reviewed
+    for (const sourceKind of ['workflow_store', 'unrecognized'] as const) {
       expect(reviewOfferFor({ ...mission, sourceKind }, member), sourceKind).toMatchObject({
         state: 'unavailable',
         reason: 'not_a_mission_core_record',
@@ -407,7 +454,10 @@ describe('the offer: only an active, bound Mission Core assignment, for a live d
       ['agent', listingToken(mission, { ...member, agent: 'someone-else' })],
       [
         'session',
-        listingToken(mission, { ...member, sessionRecorded: { state: 'observed', value: 'other' } }),
+        listingToken(mission, {
+          ...member,
+          sessionRecorded: { state: 'observed', value: 'other' },
+        }),
       ],
       ['pane', listingToken(mission, { ...member, paneId: { state: 'observed', value: 'w9:p9' } })],
       [
@@ -456,10 +506,18 @@ describe('admission against the CURRENT listing', () => {
     (missionRaw(unbound).binding as Raw).state = 'ambiguous';
     refuse(viewOf(unbound), r, 'review_not_offered');
     // the office is no longer live
-    refuse(viewOf(catalogAnswer(exported()), generatedAt(catalogAnswer(exported())) + 100_000), r, 'review_not_offered');
+    refuse(
+      viewOf(catalogAnswer(exported()), generatedAt(catalogAnswer(exported())) + 100_000),
+      r,
+      'review_not_offered',
+    );
     // the office lists no Missions at all
     const missions = viewOf(catalogAnswer(exported()));
-    refuse({ ...missions, missions: { state: 'unavailable', reason: 'x' } } as OfficeView, r, 'review_not_offered');
+    refuse(
+      { ...missions, missions: { state: 'unavailable', reason: 'x' } } as OfficeView,
+      r,
+      'review_not_offered',
+    );
   });
 
   it('refuses a Mission listed twice and a member listed twice', () => {
@@ -507,14 +565,28 @@ describe('the backend answer, re-checked against the real emissions', () => {
       baseKind: 'head_commit',
       candidateKind: 'working_tree',
       covers: ['staged', 'unstaged', 'untracked', 'submodule_pointers'],
-      doesNotCover: ['ignored', 'submodule_contents', 'binary_content', 'files_over_bound', 'private_locations'],
+      doesNotCover: [
+        'ignored',
+        'submodule_contents',
+        'binary_content',
+        'files_over_bound',
+        'private_locations',
+      ],
       filtersNotRun: [],
     });
     const byPath = new Map(a.overview!.files.map((f) => [f.path, f]));
     // a submodule is listed by its recorded commit (shown, so not "unshown"); a nested repository
     // is one entry that says why it is not shown
-    expect(byPath.get('vendor/lib')).toMatchObject({ state: 'submodule', reason: null, additions: 1, deletions: 1 });
-    expect(byPath.get('vendor/clone')).toMatchObject({ state: 'unsupported', reason: 'nested_repository' });
+    expect(byPath.get('vendor/lib')).toMatchObject({
+      state: 'submodule',
+      reason: null,
+      additions: 1,
+      deletions: 1,
+    });
+    expect(byPath.get('vendor/clone')).toMatchObject({
+      state: 'unsupported',
+      reason: 'nested_repository',
+    });
     expect(byPath.get('src/moved.py')).toMatchObject({
       change: 'renamed',
       oldPath: 'src/mover.py',
@@ -594,7 +666,7 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
     expect(parsed.ok, label).toBe(false);
     if (!parsed.ok) expect(parsed.problem, label).toBe('backend_answer_invalid');
   };
-  const files = (a: Raw): Raw[] => ((a.overview as Raw).files as Raw[]);
+  const files = (a: Raw): Raw[] => (a.overview as Raw).files as Raw[];
   const entry = (a: Raw, p: string): Raw => files(a).find((f) => f.path === p)!;
 
   it('the envelope', () => {
@@ -602,7 +674,11 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
     invalid(null, ref, 'null');
     invalid([], ref, 'array');
     invalid({ ...overview(), extra: 1 }, ref, 'an extra key');
-    invalid((({ accounting: _a, ...rest }) => rest)(overview() as Raw & { accounting: unknown }), ref, 'a missing key');
+    invalid(
+      (({ accounting: _a, ...rest }) => rest)(overview() as Raw & { accounting: unknown }),
+      ref,
+      'a missing key',
+    );
     invalid({ ...overview(), schema: 'di.evidence.artifact_content' }, ref, 'schema');
     invalid({ ...overview(), version: 2 }, ref, 'version');
     invalid({ ...overview(), view: 'file' }, ref, 'the wrong view');
@@ -613,7 +689,11 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
     invalid({ ...overview(), state: 'maybe' }, ref, 'state');
     invalid({ ...overview(), problem: 'made_up' }, ref, 'an observed answer with a problem');
     invalid({ ...overview(), detail: 'x' }, ref, 'an observed answer with a detail');
-    invalid({ ...overview(), accounting: { ...(overview().accounting as Raw), git_bytes: -1 } }, ref, 'accounting');
+    invalid(
+      { ...overview(), accounting: { ...(overview().accounting as Raw), git_bytes: -1 } },
+      ref,
+      'accounting',
+    );
     invalid({ ...overview(), snapshot: 'nope' }, ref, 'snapshot');
   });
 
@@ -630,7 +710,11 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
     invalid({ ...clone(base), detail: null }, ref, 'no detail');
     invalid({ ...clone(base), detail: 'x'.repeat(241) }, ref, 'an over-long detail');
     invalid({ ...clone(base), target: overviewAnswer(raw()).target }, ref, 'a target in a refusal');
-    invalid({ ...clone(base), overview: overviewAnswer(raw()).overview }, ref, 'content in a refusal');
+    invalid(
+      { ...clone(base), overview: overviewAnswer(raw()).overview },
+      ref,
+      'content in a refusal',
+    );
     invalid({ ...clone(base), snapshot: 'a'.repeat(64) }, ref, 'a snapshot nobody asked for');
   });
 
@@ -656,7 +740,11 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
       return a;
     };
     invalid(withComparison({ mode: 'index_to_head' }), ref, 'mode');
-    invalid(withComparison({ base: { kind: 'head_commit', oid: 'a'.repeat(40) } }), ref, 'a base that is not the target head');
+    invalid(
+      withComparison({ base: { kind: 'head_commit', oid: 'a'.repeat(40) } }),
+      ref,
+      'a base that is not the target head',
+    );
     invalid(withComparison({ covers: ['staged'] }), ref, 'a narrower claim of coverage');
     invalid(withComparison({ does_not_cover: [] }), ref, 'a silenced gap');
     invalid(withComparison({ filters_not_run: Array(17).fill('x') }), ref, 'filters bound');
@@ -670,41 +758,153 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
       edit(a);
       return a;
     };
-    invalid(mutate((a) => ((a.overview as Raw).totals as Raw).files = 20), ref, 'totals.files');
-    invalid(mutate((a) => ((a.overview as Raw).totals as Raw).additions = 1), ref, 'totals.additions');
-    invalid(mutate((a) => ((a.overview as Raw).totals as Raw).withheld = 0), ref, 'totals.withheld');
-    invalid(mutate((a) => ((a.overview as Raw).totals as Raw).unshown = 0), ref, 'totals.unshown');
-    invalid(mutate((a) => files(a).push(clone(files(a)[0]))), ref, 'a duplicate file');
-    invalid(mutate((a) => (files(a)[1].file_id = files(a)[0].file_id)), ref, 'a duplicate id');
-    invalid(mutate((a) => (files(a)[0].path = files(a)[1].path)), ref, 'a duplicate path');
-    for (const bad of ['/etc/passwd', '../x', 'a//b', 'a/./b', 'a\\b', 'a\u0000b', '', 'p'.repeat(1025)]) {
-      invalid(mutate((a) => (files(a)[0].path = bad)), ref, `path ${JSON.stringify(bad.slice(0, 12))}`);
+    invalid(
+      mutate((a) => (((a.overview as Raw).totals as Raw).files = 20)),
+      ref,
+      'totals.files',
+    );
+    invalid(
+      mutate((a) => (((a.overview as Raw).totals as Raw).additions = 1)),
+      ref,
+      'totals.additions',
+    );
+    invalid(
+      mutate((a) => (((a.overview as Raw).totals as Raw).withheld = 0)),
+      ref,
+      'totals.withheld',
+    );
+    invalid(
+      mutate((a) => (((a.overview as Raw).totals as Raw).unshown = 0)),
+      ref,
+      'totals.unshown',
+    );
+    invalid(
+      mutate((a) => files(a).push(clone(files(a)[0]))),
+      ref,
+      'a duplicate file',
+    );
+    invalid(
+      mutate((a) => (files(a)[1].file_id = files(a)[0].file_id)),
+      ref,
+      'a duplicate id',
+    );
+    invalid(
+      mutate((a) => (files(a)[0].path = files(a)[1].path)),
+      ref,
+      'a duplicate path',
+    );
+    for (const bad of [
+      '/etc/passwd',
+      '../x',
+      'a//b',
+      'a/./b',
+      'a\\b',
+      'a\u0000b',
+      '',
+      'p'.repeat(1025),
+    ]) {
+      invalid(
+        mutate((a) => (files(a)[0].path = bad)),
+        ref,
+        `path ${JSON.stringify(bad.slice(0, 12))}`,
+      );
     }
-    invalid(mutate((a) => (files(a)[0].change = 'obliterated')), ref, 'change');
-    invalid(mutate((a) => (files(a)[0].staging = 'maybe')), ref, 'staging');
-    invalid(mutate((a) => (files(a)[0].state = 'fine')), ref, 'state');
-    invalid(mutate((a) => (files(a)[0].file_id = 'rf-xyz')), ref, 'file id');
-    invalid(mutate((a) => (entry(a, 'secrets/server.pem').additions = 3)), ref, 'counts on a withheld file');
-    invalid(mutate((a) => (entry(a, 'secrets/server.pem').reason = null)), ref, 'a withheld file without a reason');
-    invalid(mutate((a) => (entry(a, 'src/app.py').reason = 'private_location')), ref, 'a text file with a reason');
+    invalid(
+      mutate((a) => (files(a)[0].change = 'obliterated')),
+      ref,
+      'change',
+    );
+    invalid(
+      mutate((a) => (files(a)[0].staging = 'maybe')),
+      ref,
+      'staging',
+    );
+    invalid(
+      mutate((a) => (files(a)[0].state = 'fine')),
+      ref,
+      'state',
+    );
+    invalid(
+      mutate((a) => (files(a)[0].file_id = 'rf-xyz')),
+      ref,
+      'file id',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'secrets/server.pem').additions = 3)),
+      ref,
+      'counts on a withheld file',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'secrets/server.pem').reason = null)),
+      ref,
+      'a withheld file without a reason',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'src/app.py').reason = 'private_location')),
+      ref,
+      'a text file with a reason',
+    );
     // a submodule is shown (it carries its pointer's lines), so it is not "unshown" and carries no reason;
     // a nested repository's reason belongs to the state that explains it
-    invalid(mutate((a) => (entry(a, 'vendor/lib').reason = 'nested_repository')), ref, 'a submodule with a reason');
-    invalid(mutate((a) => (entry(a, 'src/app.py').reason = 'nested_repository')), ref, 'nested_repository on a text file');
-    invalid(mutate((a) => (entry(a, 'vendor/clone').reason = null)), ref, 'a nested repository without its reason');
-    invalid(mutate((a) => (entry(a, 'vendor/clone').additions = 2)), ref, 'counts on a nested repository');
-    invalid(mutate((a) => (entry(a, 'vendor/clone').change = 'modified')), ref, 'a nested repository that is not new');
     invalid(
-      mutate((a) => ((a.overview as Raw).totals as Raw).unshown = 12),
+      mutate((a) => (entry(a, 'vendor/lib').reason = 'nested_repository')),
+      ref,
+      'a submodule with a reason',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'src/app.py').reason = 'nested_repository')),
+      ref,
+      'nested_repository on a text file',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'vendor/clone').reason = null)),
+      ref,
+      'a nested repository without its reason',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'vendor/clone').additions = 2)),
+      ref,
+      'counts on a nested repository',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'vendor/clone').change = 'modified')),
+      ref,
+      'a nested repository that is not new',
+    );
+    invalid(
+      mutate((a) => (((a.overview as Raw).totals as Raw).unshown = 12)),
       ref,
       'a submodule counted as not shown',
     );
-    invalid(mutate((a) => (entry(a, 'src/app.py').old_path = 'src/old.py')), ref, 'old_path without a rename');
-    invalid(mutate((a) => (entry(a, 'src/moved.py').old_path = null)), ref, 'a rename without old_path');
-    invalid(mutate((a) => (entry(a, 'src/app.py').additions = -1)), ref, 'negative count');
-    invalid(mutate((a) => (entry(a, 'src/app.py').deletions = 1.5)), ref, 'fractional count');
     invalid(
-      mutate((a) => ((a.overview as Raw).files = Array.from({ length: 501 }, (_x, i) => ({ ...clone(files(a)[0]), path: `p${i}`, file_id: 'rf-' + String(i).padStart(32, '0') })))),
+      mutate((a) => (entry(a, 'src/app.py').old_path = 'src/old.py')),
+      ref,
+      'old_path without a rename',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'src/moved.py').old_path = null)),
+      ref,
+      'a rename without old_path',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'src/app.py').additions = -1)),
+      ref,
+      'negative count',
+    );
+    invalid(
+      mutate((a) => (entry(a, 'src/app.py').deletions = 1.5)),
+      ref,
+      'fractional count',
+    );
+    invalid(
+      mutate(
+        (a) =>
+          ((a.overview as Raw).files = Array.from({ length: 501 }, (_x, i) => ({
+            ...clone(files(a)[0]),
+            path: `p${i}`,
+            file_id: 'rf-' + String(i).padStart(32, '0'),
+          }))),
+      ),
       ref,
       'more files than the bound',
     );
@@ -722,48 +922,150 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
     const lines = (block: Raw): Raw[] => hunk(block).lines as Raw[];
     expect(parseCodeReviewAnswer(file('src/util.py'), ref).ok).toBe(true);
     invalid({ ...file('src/util.py'), view: 'overview' }, ref, 'view');
-    invalid({ ...file('src/util.py'), overview: overviewAnswer(raw_).overview }, ref, 'an overview in a file answer');
-    invalid({ ...file('src/util.py'), snapshot: 'b'.repeat(64) }, ref, 'a snapshot nobody asked for');
+    invalid(
+      { ...file('src/util.py'), overview: overviewAnswer(raw_).overview },
+      ref,
+      'an overview in a file answer',
+    );
+    invalid(
+      { ...file('src/util.py'), snapshot: 'b'.repeat(64) },
+      ref,
+      'a snapshot nobody asked for',
+    );
     invalid(file('src/app.py'), ref, 'another file than the one asked');
     invalid({ ...file('src/util.py'), file: null }, ref, 'no file');
-    invalid(mutate((b) => (hunk(b).old_lines = 9)), ref, 'a hunk longer than its header');
-    invalid(mutate((b) => (hunk(b).new_lines = 1)), ref, 'a hunk shorter than its header');
-    invalid(mutate((b) => lines(b).pop()), ref, 'a missing line');
-    invalid(mutate((b) => (lines(b)[0].kind = 'weird')), ref, 'line kind');
-    invalid(mutate((b) => (lines(b)[0].old = null)), ref, 'a context line without an old number');
-    invalid(mutate((b) => (lines(b)[1].new = 4)), ref, 'a deleted line with a new number');
-    invalid(mutate((b) => (lines(b)[0].text = 'x'.repeat(1201))), ref, 'an over-long line');
-    invalid(mutate((b) => (lines(b)[0].clipped = -1)), ref, 'clipped');
-    invalid(mutate((b) => (b.additions = 5)), ref, 'counts that disagree with the lines');
-    invalid(mutate((b) => (b.lines_retained = 4)), ref, 'retained lines that disagree');
-    invalid(mutate((b) => (b.lines_total = 2)), ref, 'a total below what was retained');
-    invalid(mutate((b) => (b.truncated = true)), ref, 'truncated with nothing left out');
-    invalid(mutate((b) => (b.digest_sha256 = 'abc')), ref, 'digest');
-    invalid(mutate((b) => (b.mode_change = { old: 'x', new: 'y' })), ref, 'mode change');
-    invalid(mutate((b) => (b.similarity = 101)), ref, 'similarity');
-    invalid(mutate((b) => (hunk(b).section = 's'.repeat(201))), ref, 'section');
-    invalid(mutate((b) => (b.extra = 1)), ref, 'an extra file key');
-    invalid(mutate((b) => (hunk(b).extra = 1)), ref, 'an extra hunk key');
-    invalid(mutate((b) => (lines(b)[0].extra = 1)), ref, 'an extra line key');
-    invalid(mutate((b) => ((b.hunks as Raw[]).length = 0)), ref, 'a text file whose hunks are gone');
+    invalid(
+      mutate((b) => (hunk(b).old_lines = 9)),
+      ref,
+      'a hunk longer than its header',
+    );
+    invalid(
+      mutate((b) => (hunk(b).new_lines = 1)),
+      ref,
+      'a hunk shorter than its header',
+    );
+    invalid(
+      mutate((b) => lines(b).pop()),
+      ref,
+      'a missing line',
+    );
+    invalid(
+      mutate((b) => (lines(b)[0].kind = 'weird')),
+      ref,
+      'line kind',
+    );
+    invalid(
+      mutate((b) => (lines(b)[0].old = null)),
+      ref,
+      'a context line without an old number',
+    );
+    invalid(
+      mutate((b) => (lines(b)[1].new = 4)),
+      ref,
+      'a deleted line with a new number',
+    );
+    invalid(
+      mutate((b) => (lines(b)[0].text = 'x'.repeat(1201))),
+      ref,
+      'an over-long line',
+    );
+    invalid(
+      mutate((b) => (lines(b)[0].clipped = -1)),
+      ref,
+      'clipped',
+    );
+    invalid(
+      mutate((b) => (b.additions = 5)),
+      ref,
+      'counts that disagree with the lines',
+    );
+    invalid(
+      mutate((b) => (b.lines_retained = 4)),
+      ref,
+      'retained lines that disagree',
+    );
+    invalid(
+      mutate((b) => (b.lines_total = 2)),
+      ref,
+      'a total below what was retained',
+    );
+    invalid(
+      mutate((b) => (b.truncated = true)),
+      ref,
+      'truncated with nothing left out',
+    );
+    invalid(
+      mutate((b) => (b.digest_sha256 = 'abc')),
+      ref,
+      'digest',
+    );
+    invalid(
+      mutate((b) => (b.mode_change = { old: 'x', new: 'y' })),
+      ref,
+      'mode change',
+    );
+    invalid(
+      mutate((b) => (b.similarity = 101)),
+      ref,
+      'similarity',
+    );
+    invalid(
+      mutate((b) => (hunk(b).section = 's'.repeat(201))),
+      ref,
+      'section',
+    );
+    invalid(
+      mutate((b) => (b.extra = 1)),
+      ref,
+      'an extra file key',
+    );
+    invalid(
+      mutate((b) => (hunk(b).extra = 1)),
+      ref,
+      'an extra hunk key',
+    );
+    invalid(
+      mutate((b) => (lines(b)[0].extra = 1)),
+      ref,
+      'an extra line key',
+    );
+    invalid(
+      mutate((b) => ((b.hunks as Raw[]).length = 0)),
+      ref,
+      'a text file whose hunks are gone',
+    );
     // a file whose state carries no content must carry none
     const binaryRef = fileRequest(raw_, 'bin/blob.bin');
     expect(parseCodeReviewAnswer(file('bin/blob.bin'), binaryRef).ok).toBe(true);
     invalid(
-      mutate((b) => (b.hunks = clone((fileAnswer(raw_, 'src/util.py').file as Raw).hunks)), 'bin/blob.bin'),
+      mutate(
+        (b) => (b.hunks = clone((fileAnswer(raw_, 'src/util.py').file as Raw).hunks)),
+        'bin/blob.bin',
+      ),
       binaryRef,
       'content on a binary file',
     );
     // a submodule's file view is its pointer: lines that add up to its counts
     const pointerRef = fileRequest(raw_, 'vendor/lib');
     expect(parseCodeReviewAnswer(file('vendor/lib'), pointerRef).ok).toBe(true);
-    invalid(mutate((b) => (b.additions = 3), 'vendor/lib'), pointerRef, 'a pointer whose counts disagree with its lines');
-    invalid(mutate((b) => ((b.hunks as Raw[]).length = 0), 'vendor/lib'), pointerRef, 'a pointer whose lines are gone');
+    invalid(
+      mutate((b) => (b.additions = 3), 'vendor/lib'),
+      pointerRef,
+      'a pointer whose counts disagree with its lines',
+    );
+    invalid(
+      mutate((b) => ((b.hunks as Raw[]).length = 0), 'vendor/lib'),
+      pointerRef,
+      'a pointer whose lines are gone',
+    );
     // a nested repository has nothing to show
     const nestedRef = fileRequest(raw_, 'vendor/clone');
     expect(parseCodeReviewAnswer(file('vendor/clone'), nestedRef).ok).toBe(true);
     invalid(
-      mutate((b) => (b.hunks = clone((fileAnswer(raw_, 'vendor/lib').file as Raw).hunks)), 'vendor/clone'),
+      mutate(
+        (b) => (b.hunks = clone((fileAnswer(raw_, 'vendor/lib').file as Raw).hunks)),
+        'vendor/clone',
+      ),
       nestedRef,
       'content on a nested repository',
     );
@@ -861,10 +1163,15 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
     const backend = vi.fn(async (_e: unknown, _q: unknown) => http200(clone(overviewAnswer(raw))));
     const o = await office(backend);
     const sent: Raw[] = [];
-    await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1.7' }), (m) => sent.push(m));
+    await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1.7' }), (m) =>
+      sent.push(m),
+    );
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ state: 'observed', requestId: 'r1.7' });
-    expect(backend.mock.calls[0][1]).toEqual({ missionRef: overviewRequest().missionRef, taskId: overviewRequest().taskId }); // no id
+    expect(backend.mock.calls[0][1]).toEqual({
+      missionRef: overviewRequest().missionRef,
+      taskId: overviewRequest().taskId,
+    }); // no id
     expect(JSON.stringify(backend.mock.calls)).not.toContain('r1.7');
     expect(logs.join('\n')).not.toContain('r1.7');
     o.stop();
@@ -872,13 +1179,23 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
 
   it('an id the BACKEND supplies is never relayed: its answer is invalid, and the id on the refusal is the one the CLIENT sent', async () => {
     const raw = exported();
-    const o = await office(async () => http200({ ...clone(overviewAnswer(raw)), requestId: 'invented-by-the-backend' }));
+    const o = await office(async () =>
+      http200({ ...clone(overviewAnswer(raw)), requestId: 'invented-by-the-backend' }),
+    );
     const sent: Raw[] = [];
-    await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) => sent.push(m));
+    await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) =>
+      sent.push(m),
+    );
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ state: 'refused', problem: 'backend_answer_invalid', requestId: 'r1' });
+    expect(sent[0]).toMatchObject({
+      state: 'refused',
+      problem: 'backend_answer_invalid',
+      requestId: 'r1',
+    });
     expect(JSON.stringify(sent)).not.toContain('invented-by-the-backend');
-    const bare = await office(async () => http200({ ...clone(overviewAnswer(raw)), requestId: 'invented-by-the-backend' }));
+    const bare = await office(async () =>
+      http200({ ...clone(overviewAnswer(raw)), requestId: 'invented-by-the-backend' }),
+    );
     const sentBare: Raw[] = [];
     await bare.readCodeReview(messageOf(overviewRequest()), (m) => sentBare.push(m));
     expect(sentBare[0].state).toBe('refused');
@@ -930,14 +1247,19 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
     it('an admission refusal', async () => {
       const o = await office(async () => http200({}));
       const sent: Raw[] = [];
-      await o.readCodeReview(messageOf({ ...overviewRequest(), missionRef: 'mc-1:mn-' + 'f'.repeat(32) }), (m) => sent.push(m));
+      await o.readCodeReview(
+        messageOf({ ...overviewRequest(), missionRef: 'mc-1:mn-' + 'f'.repeat(32) }),
+        (m) => sent.push(m),
+      );
       expect(sent[0].state).toBe('refused');
       expect(Object.keys(sent[0]).sort()).toEqual(ANSWER_KEYS);
       o.stop();
     });
 
     it('a backend failure', async () => {
-      const o = await office(async () => ({ kind: 'transport_error', problem: 'backend_unreachable' }) as BackendResult);
+      const o = await office(
+        async () => ({ kind: 'transport_error', problem: 'backend_unreachable' }) as BackendResult,
+      );
       const sent: Raw[] = [];
       await o.readCodeReview(messageOf(overviewRequest()), (m) => sent.push(m));
       expect(sent[0]).toMatchObject({ problem: 'backend_unavailable' });
@@ -947,14 +1269,18 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
   });
 
   describe('EVERY refusal path echoes the id (one test per path, so a path that stops echoing is named by its own test)', () => {
-    it('read_in_progress: the second read is refused AT ONCE and names WHICH read was refused; the first read\'s answer names the first', async () => {
+    it("read_in_progress: the second read is refused AT ONCE and names WHICH read was refused; the first read's answer names the first", async () => {
       const raw = exported();
       let release: (r: BackendResult) => void = () => undefined;
       const backend = vi.fn(() => new Promise<BackendResult>((resolve) => (release = resolve)));
       const o = await office(backend);
       const sent: Raw[] = [];
-      const first = o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) => sent.push(m));
-      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r2' }), (m) => sent.push(m)); // refused AT ONCE, and it arrives first
+      const first = o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) =>
+        sent.push(m),
+      );
+      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r2' }), (m) =>
+        sent.push(m),
+      ); // refused AT ONCE, and it arrives first
       expect(sent).toHaveLength(1);
       expect(sent[0]).toMatchObject({ problem: 'read_in_progress', requestId: 'r2' });
       release(http200(clone(overviewAnswer(raw))));
@@ -967,8 +1293,12 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
       const raw = exported();
       const o = await office(async () => http200(clone(overviewAnswer(raw))));
       const sent: Raw[] = [];
-      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) => sent.push(m));
-      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r3' }), (m) => sent.push(m)); // the interval has not passed
+      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) =>
+        sent.push(m),
+      );
+      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r3' }), (m) =>
+        sent.push(m),
+      ); // the interval has not passed
       expect(sent[1]).toMatchObject({ problem: 'read_rate_limited', requestId: 'r3' });
       o.stop();
     });
@@ -977,7 +1307,11 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
       const o = await office(async () => http200({}));
       const sent: Raw[] = [];
       await o.readCodeReview(
-        messageOf({ ...overviewRequest(), missionRef: 'mc-1:mn-' + 'f'.repeat(32), requestId: 'r4' }),
+        messageOf({
+          ...overviewRequest(),
+          missionRef: 'mc-1:mn-' + 'f'.repeat(32),
+          requestId: 'r4',
+        }),
         (m) => sent.push(m),
       );
       expect(sent[0]).toMatchObject({ state: 'refused', requestId: 'r4' });
@@ -986,9 +1320,13 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
     });
 
     it('a backend failure names the read it failed', async () => {
-      const failing = await office(async () => ({ kind: 'transport_error', problem: 'backend_unreachable' }) as BackendResult);
+      const failing = await office(
+        async () => ({ kind: 'transport_error', problem: 'backend_unreachable' }) as BackendResult,
+      );
       const sent: Raw[] = [];
-      await failing.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r5' }), (m) => sent.push(m));
+      await failing.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r5' }), (m) =>
+        sent.push(m),
+      );
       expect(sent[0]).toMatchObject({ problem: 'backend_unavailable', requestId: 'r5' });
       failing.stop();
     });
@@ -1070,7 +1408,11 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
     const o = await office(backend);
     const base = overviewRequest();
     const cases: Array<[string, CodeReviewRef, string]> = [
-      ['an unlisted Mission', { ...base, missionRef: 'mc1:mn-' + 'e'.repeat(32) }, 'mission_not_listed'],
+      [
+        'an unlisted Mission',
+        { ...base, missionRef: 'mc1:mn-' + 'e'.repeat(32) },
+        'mission_not_listed',
+      ],
       ['an unlisted member', { ...base, memberRef: base.memberRef + 'x' }, 'member_not_listed'],
       ['another task', { ...base, taskId: '20261014-000000-bbbbbb' }, 'task_not_the_one_listed'],
       ['a moved listing', { ...base, listing: 'c'.repeat(64) }, 'listing_moved'],
@@ -1131,8 +1473,14 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
     const ref = overviewRequest();
     const outcomes: Array<[BackendResult, string]> = [
       [{ kind: 'transport_error', problem: 'backend_unreachable' }, 'backend_unavailable'],
-      [{ kind: 'http', status: 503, headers: {}, body: undefined, bodyProblem: null }, 'backend_refused_request'],
-      [{ kind: 'http', status: 200, headers: {}, body: undefined, bodyProblem: 'body_not_json' }, 'backend_answer_invalid'],
+      [
+        { kind: 'http', status: 503, headers: {}, body: undefined, bodyProblem: null },
+        'backend_refused_request',
+      ],
+      [
+        { kind: 'http', status: 200, headers: {}, body: undefined, bodyProblem: 'body_not_json' },
+        'backend_answer_invalid',
+      ],
       [http200({ not: 'an answer' }), 'backend_answer_invalid'],
     ];
     for (const [result, problem] of outcomes) {
@@ -1213,7 +1561,13 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
     await o.readCodeReview(messageOf(overviewRequest()), () => undefined);
     const text = logs.join('\n');
     expect(text).toContain('code review read: backend observed');
-    for (const secret of ['secret-not-logged', 'src/app.py', 'main', 'di-fixture-root', overviewRequest().listing]) {
+    for (const secret of [
+      'secret-not-logged',
+      'src/app.py',
+      'main',
+      'di-fixture-root',
+      overviewRequest().listing,
+    ]) {
       expect(text).not.toContain(secret);
     }
     o.stop();
