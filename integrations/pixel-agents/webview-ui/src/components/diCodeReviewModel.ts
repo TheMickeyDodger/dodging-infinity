@@ -55,19 +55,58 @@ export interface ReviewTargetRef {
   memberRef: string;
   taskId: string;
   listing: string;
-  /** For display only: the agent the review was opened from. */
+  /** For display only: the agent the review was opened from (a Mission-level reference has none: it says "this Mission"). */
   agentName: string;
+  /**
+   * Present (as 'mission') ONLY on a Mission-level reference, the kind a FINISHED Mission is read by: it names no member (`memberRef` is the empty string,
+   * which a member-bound reference can never be), and it is asked and answered as `diCodeReviewMissionRead`. A member-bound target has no `level` key.
+   */
+  level?: 'mission';
 }
 
 export type ReviewRequest =
   | { kind: 'overview' }
   | { kind: 'file'; fileId: string; snapshot: string; path: string };
 
+/**
+ * The wire message for a request: an ADMITTED REFERENCE and nothing else (never a path), naming itself with an opaque id the office echoes. It carries no
+ * authority: the backend never sees it. A member-bound target is asked as `diCodeReviewRead` (byte-identical to what it always was); a Mission-level target
+ * as `diCodeReviewMissionRead`, which has no member key at all.
+ */
+export function reviewReadMessage(target: ReviewTargetRef, request: ReviewRequest, requestId?: string) {
+  const named = requestId === undefined ? {} : { requestId };
+  const file = request.kind === 'overview' ? {} : { snapshot: request.snapshot, fileId: request.fileId };
+  if (target.level === 'mission') {
+    return {
+      type: 'diCodeReviewMissionRead' as const,
+      missionRef: target.missionRef,
+      taskId: target.taskId,
+      listing: target.listing,
+      ...named,
+      ...file,
+    };
+  }
+  return {
+    type: 'diCodeReviewRead' as const,
+    missionRef: target.missionRef,
+    memberRef: target.memberRef,
+    taskId: target.taskId,
+    listing: target.listing,
+    ...named,
+    ...file,
+  };
+}
+
 export interface ReviewSession {
   /** What is open: null when the modal is closed. */
   target: ReviewTargetRef | null;
   /** The request in flight (one at a time), or null. */
   pending: ReviewRequest | null;
+  /**
+   * The NAME of the request in flight (the opaque id it was sent with), or null when it was sent with none. A reference is a description of what is
+   * asked, not an identity: a session that is closed and reopened asks for the very same reference, so only the id tells the two reads apart.
+   */
+  pendingId: string | null;
   /** The latest overview that was OBSERVED, with the local time it arrived. */
   overview: { answer: DiCodeReview; receivedAtMs: number } | null;
   /** The file the reader selected (by path, so it survives a new snapshot). */
@@ -91,11 +130,13 @@ export type ClearedReason =
   | 'office_not_live'
   | 'assignment_changed'
   | 'agent_not_live'
-  | 'agent_gone';
+  | 'agent_gone'
+  | 'mission_changed';
 
 export const CLOSED_SESSION: ReviewSession = {
   target: null,
   pending: null,
+  pendingId: null,
   overview: null,
   selectedPath: null,
   file: null,
@@ -105,16 +146,32 @@ export const CLOSED_SESSION: ReviewSession = {
   refresh: false,
 };
 
+/**
+ * `asked` and `clear` are decided from a RENDER of the session, and applied after other events may have replaced it (a Mission switch
+ * closes one session and opens another in the same commit, and a parent's effect runs after a child's). They therefore NAME the target
+ * they were decided for, and the reducer applies them only to that target: a verdict about the old session never lands on the new one.
+ * (Absent: applied to whatever session is current, as before.)
+ */
 export type ReviewEvent =
   | { type: 'open'; target: ReviewTargetRef }
   | { type: 'close' }
-  | { type: 'asked'; request: ReviewRequest }
+  | { type: 'asked'; request: ReviewRequest; target?: ReviewTargetRef | null; id?: string }
   | { type: 'answer'; answer: DiCodeReview; nowMs: number }
   | { type: 'select'; path: string | null }
-  | { type: 'clear'; reason: ClearedReason }
+  | { type: 'clear'; reason: ClearedReason; target?: ReviewTargetRef | null }
   | { type: 'refresh' }
   | { type: 'retry' }
   | { type: 'moved' };
+
+/** Is this event about the session's own target? (An event that names none is about whichever session is current.) */
+const aboutThisTarget = (session: ReviewSession, named: ReviewTargetRef | null | undefined): boolean =>
+  named === undefined ||
+  (named !== null &&
+    session.target !== null &&
+    session.target.missionRef === named.missionRef &&
+    session.target.memberRef === named.memberRef &&
+    session.target.taskId === named.taskId &&
+    session.target.listing === named.listing);
 
 const sameTarget = (a: ReviewTargetRef, answer: DiCodeReview): boolean =>
   a.missionRef === answer.missionRef &&
@@ -122,10 +179,17 @@ const sameTarget = (a: ReviewTargetRef, answer: DiCodeReview): boolean =>
   a.taskId === answer.taskId &&
   a.listing === answer.listing;
 
-/** Does this answer belong to the request now in flight (never to an older or another one)? */
+/**
+ * Does this answer belong to the request now in flight (never to an older or another one)? It must name the same REFERENCE and, in addition and never
+ * instead, the same REQUEST: the answer's `requestId` must equal the id the request in flight was sent with. Absence is not a wildcard in either
+ * direction: a request that carried an id is not fulfilled by an answer that lacks one (or names another), and a request that carried none is not
+ * fulfilled by an answer that names one (it answers some other read). Were absence to fall back to the reference, the defect would return by the back
+ * door: the old read of a closed session would fulfil the new one.
+ */
 export function answersPending(session: ReviewSession, answer: DiCodeReview): boolean {
   const { target, pending } = session;
   if (target === null || pending === null || !sameTarget(target, answer)) return false;
+  if ((answer.requestId ?? null) !== session.pendingId) return false;
   if (pending.kind === 'overview') return answer.view === 'overview' && answer.fileId === null;
   return (
     answer.view === 'file' &&
@@ -151,11 +215,12 @@ export function reduceSession(session: ReviewSession, event: ReviewEvent): Revie
     case 'close':
       return CLOSED_SESSION;
     case 'asked':
-      return session.target === null
+      return session.target === null || !aboutThisTarget(session, event.target)
         ? session
         : {
             ...session,
             pending: event.request,
+            pendingId: event.id ?? null,
             refresh: event.request.kind === 'overview' ? false : session.refresh,
           };
     case 'retry':
@@ -173,11 +238,12 @@ export function reduceSession(session: ReviewSession, event: ReviewEvent): Revie
     case 'moved':
       return session.target === null ? session : { ...session, stale: true };
     case 'clear':
-      return session.target === null
+      return session.target === null || !aboutThisTarget(session, event.target)
         ? session
         : {
             ...session,
             pending: null,
+            pendingId: null,
             overview: null,
             file: null,
             refusal: null,
@@ -188,20 +254,25 @@ export function reduceSession(session: ReviewSession, event: ReviewEvent): Revie
     case 'answer': {
       if (!answersPending(session, event.answer)) return session;
       const answer = event.answer;
-      const settled: ReviewSession = { ...session, pending: null, cleared: null };
-      if (answer.state === 'refused') {
-        const moved =
-          answer.problem === 'snapshot_moved' || answer.problem === 'workspace_moved_during_read';
-        return { ...settled, refusal: answer, stale: moved ? true : settled.stale };
-      }
+      const settled: ReviewSession = { ...session, pending: null, pendingId: null, cleared: null };
       if (
         answer.view === 'file' &&
         session.pending?.kind === 'file' &&
         session.pending.path !== session.selectedPath
       ) {
-        // The reader moved to another file while this one was read: its answer is not shown under
-        // the file now selected. The next request asks for the one that is.
-        return settled;
+        // The reader moved to another file while this one was read: neither its content NOR its refusal belongs under the file now selected. The
+        // selection is checked BEFORE a refusal is stored: a stored refusal for a dead selection would block the request for the live one, whose face
+        // would then say "reading" with nothing in flight, a word that is false and never clears. The next request asks for the file that is selected.
+        // But the refusal also said something about the SNAPSHOT (that the workspace moved), a fact that outlives the request it was said to, and the
+        // selection that replaced this one may need no read at all (a binary or withheld file): no later refusal would ever restore it. So that fact is
+        // kept at once, as a property of the snapshot, and nothing of the request is.
+        const moved = answer.state === 'refused' && (answer.problem === 'snapshot_moved' || answer.problem === 'workspace_moved_during_read');
+        return { ...settled, stale: moved ? true : settled.stale };
+      }
+      if (answer.state === 'refused') {
+        const moved =
+          answer.problem === 'snapshot_moved' || answer.problem === 'workspace_moved_during_read';
+        return { ...settled, refusal: answer, stale: moved ? true : settled.stale };
       }
       if (answer.view === 'overview') {
         return {
@@ -216,6 +287,47 @@ export function reduceSession(session: ReviewSession, event: ReviewEvent): Revie
       return { ...settled, file: { answer, receivedAtMs: event.nowMs }, refusal: null };
     }
   }
+}
+
+/**
+ * Where the office's answers ENTER the session. A feed hands EVERY answer to whoever is subscribed, in the order it arrived, and keeps NOTHING: no latest value,
+ * no history, no replay to a late subscriber. The answers used to be held in one latest-value state slot, so two answers handled before a render kept only the
+ * last: when the reopened session's read was refused at once and the old read's answer followed, the slot ended up holding the stale answer (which the id
+ * refuses) and the refusal that mattered was gone, leaving the read pending with nothing in flight. A stream of events must not be collapsed into a value.
+ */
+export interface DiCodeReviewFeed {
+  subscribe(listener: (answer: DiCodeReview) => void): () => void;
+}
+
+export function createDiCodeReviewFeed(): DiCodeReviewFeed & { publish(answer: DiCodeReview): void } {
+  const listeners = new Set<(answer: DiCodeReview) => void>();
+  return {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    publish(answer) {
+      // A copy, so a listener that unsubscribes (or subscribes) while this answer is delivered does not change who receives it; one that was
+      // unsubscribed by an earlier listener of the same delivery receives nothing.
+      for (const listener of [...listeners]) if (listeners.has(listener)) listener(answer);
+    },
+  };
+}
+
+/**
+ * A source of request ids that never repeats: `<tag>.<n>` with n counting up for the whole life of the allocator, and a tag that tells allocators apart.
+ * The counter is NOT per session: a session that is closed and reopened keeps drawing from the same allocator, so a new read can never be stamped with
+ * the id a still-outstanding read of the previous session carries (the held old answer would then match the new request perfectly, the defect moved from
+ * the reference to the id). The result is an opaque token in the charset and length the wire allows.
+ */
+export function createRequestIds(tag: string): () => string {
+  let n = 0;
+  return () => {
+    n += 1;
+    return `${tag}.${n}`;
+  };
 }
 
 /** Refusals that only mean "not this instant": the session asks again by itself. */
@@ -578,8 +690,53 @@ export interface ProblemWords {
   retry: boolean;
 }
 
+/**
+ * What every refusal to read a FINISHED Mission states, because it is true wherever the refusal arose and for each of the four codes. Two things it must not do:
+ *  - say whether, or what, the workspace was read: the refusal arises at admission (before the workspace is read) AND at the end-of-read re-check (after it was read, where the answer is discarded),
+ *    and the answer carries no phase (none is added);
+ *  - say what EXISTS: for a contested or unverifiable record a tie between the Mission and a working tree may well exist, and the refused request could not establish it. The first clause is therefore
+ *    about what could be ESTABLISHED. (An earlier wording, "No working tree is tied to this Mission", asserted absence, and in the unverifiable body sat next to a cause clause that presupposes the tie
+ *    may exist.)
+ *  - speak about the REVIEW or the VIEW. This notice is printed beside whatever is still current: the reducer keeps a settled overview and attaches a refusal to it (a refusal never erases what is still
+ *    current), so after a successful overview and a refused file read the tree, the branch and the change counts are still drawn. A sentence about "this review" or about what "is shown" is then false of the
+ *    screen it sits in. Both clauses are therefore about THE REFUSED REQUEST: it could not establish a link, and it returned nothing from a working tree (true at admission, where nothing was asked of the
+ *    workspace, and at the end-of-read re-check, where the answer is discarded). The retained overview is NOT cleared to make a sentence true: preserving valid prior information is the behaviour, and
+ *    the words are scoped to it.
+ *
+ * FIVE AXES on which a sentence can claim more than its data. Each was found by a rejected wording in this one small surface, one rejection at a time; enumerate them before editing these bodies:
+ *   read history  whether, or what, was read ("Nothing was read" was false at the re-check; "what was read was discarded" was false at admission);
+ *   absence       what EXISTS ("No working tree is tied to this Mission" asserted that a tie does not exist, where only "could not be established" is supported);
+ *   attribution   who acted (a timestamp records that an action happened, not who did it);
+ *   completeness  how much of the whole the data covers (a list cut off at a limit is a floor, not a total);
+ *   referent      what the sentence is ABOUT: "This review ... and nothing from one is shown" was true of the refused request and false of the composite view it was printed in. A sentence shown in a
+ *                 composite view makes claims about everything visible around it, not only about the thing that produced it, so read every notice WITH the rest of the screen present.
+ */
+const FINISHED_REFUSAL_OUTCOME =
+  'The refused request could not establish a link between this Mission and a working tree, and returned nothing from one.';
+
+/**
+ * The trailing sentence of the four older refusals that used to end "Nothing was read." (the Mission or the agent listed twice, no backend discovery, no fresh catalog answer). That sentence failed on two axes:
+ *  - referent: it is printed beside whatever is still current, and the reducer attaches ANY refusal to the settled overview with no filter on the code, so after a successful overview and a refused file read the
+ *    tree, the branch and the change counts are still drawn and "Nothing was read." is false of the screen. Each of the four was DEMONSTRATED to arrive as a file refusal beside an observed overview (the office
+ *    decides three of the codes per request, against the current listing and the discovery file; the backend raises the other two at its own admission of every request), not argued from the pattern;
+ *  - read history, for the two codes the backend can raise at its end-of-read re-check (no_fresh_catalog_answer, mission_listed_more_than_once): there the workspace HAS been read and the answer is discarded.
+ * So the sentence is about THE REFUSED REQUEST and about what it returned, which is true at admission and at the re-check and claims nothing about the screen. The cause clause before it is unchanged.
+ */
+const REFUSED_REQUEST_RETURNED_NOTHING = 'The refused request returned nothing from a working tree.';
+
 const PROBLEM_WORDS: Record<string, ProblemWords> = {
   // refused by the office
+  // A read the office refused UNREAD: its shape was exactly a read's, but what it named could not be admitted. Found in the reception-v2
+  // preview, where the office offered a review whose task id the read grammar refuses.
+  // THE COMPOSITE SENTENCE (REFUSED_REQUEST_RETURNED_NOTHING) IS DELIBERATELY ABSENT. It is not an oversight, so do not add it.
+  // diRefusalBodiesComposite.test.ts pins exactly the four bodies whose reach beside a retained overview is DEMONSTRATED. This one's
+  // reach there is not demonstrated, and is likely unreachable: a file read refused unread needs a snapshot or file id outside the
+  // grammar, and both come from an overview the office re-checked. The body therefore makes no read-history, offer or referent claim.
+  reference_not_admitted: {
+    title: 'The office could not admit this read',
+    body: 'The office could not accept the request for this review.',
+    retry: false,
+  },
   mission_not_listed: {
     title: 'The assignment is no longer listed',
     body: 'The office no longer lists this Mission, so there is nothing current to read.',
@@ -587,7 +744,7 @@ const PROBLEM_WORDS: Record<string, ProblemWords> = {
   },
   mission_listed_more_than_once: {
     title: 'The assignment is listed more than once',
-    body: 'The office lists this Mission twice, so which workspace is meant cannot be told. Nothing was read.',
+    body: `The office lists this Mission twice, so which workspace is meant cannot be told. ${REFUSED_REQUEST_RETURNED_NOTHING}`,
     retry: false,
   },
   member_not_listed: {
@@ -597,7 +754,7 @@ const PROBLEM_WORDS: Record<string, ProblemWords> = {
   },
   member_listed_more_than_once: {
     title: 'The agent is listed more than once',
-    body: 'The roster lists this agent twice, so the review cannot tell which one is meant. Nothing was read.',
+    body: `The roster lists this agent twice, so the review cannot tell which one is meant. ${REFUSED_REQUEST_RETURNED_NOTHING}`,
     retry: false,
   },
   review_not_offered: {
@@ -637,7 +794,7 @@ const PROBLEM_WORDS: Record<string, ProblemWords> = {
   },
   backend_discovery_unavailable: {
     title: 'The backend cannot be found',
-    body: 'The office could not find the catalog backend to ask. Nothing was read.',
+    body: `The office could not find the catalog backend to ask. ${REFUSED_REQUEST_RETURNED_NOTHING}`,
     retry: true,
   },
   backend_unavailable: {
@@ -673,7 +830,7 @@ const PROBLEM_WORDS: Record<string, ProblemWords> = {
   },
   no_fresh_catalog_answer: {
     title: 'The backend has no current picture of the assignment',
-    body: 'Its last catalog answer is missing or too old to show the assignment is active. Nothing was read.',
+    body: `Its last catalog answer is missing or too old to show the assignment is active. ${REFUSED_REQUEST_RETURNED_NOTHING}`,
     retry: true,
   },
   assignment_not_a_mission_core_record: {
@@ -683,7 +840,7 @@ const PROBLEM_WORDS: Record<string, ProblemWords> = {
   },
   assignment_not_active: {
     title: 'The assignment is not active',
-    body: 'A live review is offered only for work in progress. A completed or paused assignment is not read here.',
+    body: 'A live review is offered for work in progress, and for a finished Mission whose recorded execution is established. This assignment is neither right now.',
     retry: false,
   },
   assignment_binding_not_bound: {
@@ -796,6 +953,32 @@ const PROBLEM_WORDS: Record<string, ProblemWords> = {
     body: 'git printed something this view does not recognise, so nothing is guessed.',
     retry: false,
   },
+  // a FINISHED Mission (I3): the four reasons the backend gives when it will not tie a working tree to a finished Mission. These refusals arise at admission AND at the end-of-read re-check (after the
+  // workspace was read, where the answer is discarded), and the answer does not say which, so each states its cause and the outcome that holds at both points (FINISHED_REFUSAL_OUTCOME), and asserts
+  // neither a read history in either direction nor an absence (what the refused request could establish, not what exists), and is about THE REFUSED REQUEST, not the review or the view. Three wordings were
+  // rejected, each on a different axis: "nothing was read" (read history: false at the re-check), "no working tree is tied" (absence: the contested and unverifiable codes do not support it) and "This
+  // review could not establish a link ... and nothing from one is shown" (referent: true of the refused request, false of the composite view that still draws the overview a successful read returned).
+  // The five axes are listed at FINISHED_REFUSAL_OUTCOME; read them before editing any of these bodies.
+  finished_execution_not_established: {
+    title: 'This finished Mission’s execution is not established',
+    body: `The Mission is finished, but its record does not establish which task and workspace ran it. ${FINISHED_REFUSAL_OUTCOME}`,
+    retry: false,
+  },
+  finished_ownership_unverifiable: {
+    title: 'The workspace’s ownership could not be checked',
+    body: `The records that tie this finished Mission to its workspace could not be read, or did not agree with the listing, so nothing is guessed. ${FINISHED_REFUSAL_OUTCOME} Asking again may help.`,
+    retry: true,
+  },
+  finished_ownership_contested: {
+    title: 'More than one record claims this workspace',
+    body: `Another Mission record also names this task and workspace, so which Mission any changes there belong to cannot be told. ${FINISHED_REFUSAL_OUTCOME}`,
+    retry: false,
+  },
+  finished_workspace_not_corroborated: {
+    title: 'The workspace does not say it belongs to this Mission',
+    body: `The workspace’s own task record is missing, unreadable or names another run, so changes in that workspace cannot be tied to this Mission. ${FINISHED_REFUSAL_OUTCOME}`,
+    retry: false,
+  },
 };
 
 export function problemWords(problem: string | null, detail: string | null): ProblemWords {
@@ -823,6 +1006,10 @@ export const UNAVAILABLE_WORDS: Record<string, string> = {
     'This agent belongs to a linked child task, not the Mission’s own task, so the Mission’s workspace is not its workspace.',
   member_not_live: 'This agent is not confirmed running now.',
   task_not_observed: 'This agent has no observed task, so no assignment to review.',
+  assignment_not_finished:
+    'The Mission is not finished, so it is reviewed through its agents, not as a finished Mission.',
+  finished_execution_not_listed:
+    'This finished Mission’s recorded execution is not listed as established right now, so which task and workspace ran it is not known. Only a completed Mission with an established execution is read.',
 };
 
 export function unavailableWords(reason: string | null): string {
@@ -846,6 +1033,9 @@ const NOT_OFFERED_CONSEQUENCE: Record<string, string> = {
     'This agent works in a linked child task, not in the Mission’s own workspace, so code review is not offered here.',
   member_not_live: 'This agent is not confirmed running now, so code review is not offered.',
   task_not_observed: 'No task is observed for this agent, so code review is not offered.',
+  assignment_not_finished: 'This Mission is not finished, so code review is not offered for it as a whole.',
+  finished_execution_not_listed:
+    'Which code workspace ran this finished Mission is not established, so code review is not offered.',
 };
 
 /** True when a member's review entry states that its review is not offered (no button): the rule
@@ -902,6 +1092,11 @@ export function clearedWords(reason: ClearedReason): { title: string; body: stri
         title: 'The agent is gone: the review was cleared',
         body: 'The agent this review was opened from is no longer listed.',
       };
+    case 'mission_changed':
+      return {
+        title: 'The Mission changed: the review was cleared',
+        body: 'The Mission is no longer what you opened this review for: it is no longer listed as finished with its recorded execution established, or its record moved. Open its Code Diff again.',
+      };
   }
 }
 
@@ -912,6 +1107,8 @@ export function offerFor(
 ): DiCodeReviewOffer | null | undefined {
   if (state === null || state.missions.state !== 'observed') return null;
   const mission = state.missions.missions.find((m) => m.missionRef === target.missionRef);
+  // A Mission-level target is judged by the Mission's own offer, never by a member's.
+  if (target.level === 'mission') return mission === undefined ? undefined : (mission.codeReview ?? null);
   const member = mission?.members.members.find((m) => m.memberRef === target.memberRef);
   return member === undefined ? undefined : (member.codeReview ?? null);
 }
@@ -935,6 +1132,8 @@ export function clearedReasonFor(
   }
   if (state === null || !state.live) return 'office_not_live';
   const offer = offerFor(state, target);
+  // A Mission-level review has no agent to be gone or not live: the Mission's own offer holds, or the Mission changed.
+  if (target.level === 'mission') return offerStillHolds(target, offer) ? null : 'mission_changed';
   if (offer === undefined) return 'agent_gone';
   if (offerStillHolds(target, offer)) return null;
   if (offer !== null && offer.state === 'unavailable' && offer.reason === 'member_not_live') {

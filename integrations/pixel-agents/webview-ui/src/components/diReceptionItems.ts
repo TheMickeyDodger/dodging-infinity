@@ -373,12 +373,17 @@ export interface SourceLine {
 export interface InboxModel {
   /** Everything that needs the person, hidden or not. */
   all: InboxItem[];
-  /** Not hidden in this view. */
+  /** What the LIST draws: `all` less what is hidden in this view. A view preference; it never changes `attention`. */
   visible: InboxItem[];
+  /** How many of `all` are hidden in this view only (still counted in `attention`). */
   hiddenCount: number;
   /** Delivery proposals that do not wait on the person (information). */
   information: DiReceptionSourceEntry[];
-  /** The number the sidebar and the dialog's headline both say. */
+  /**
+   * The number the sidebar and the dialog's headline both say: EVERY item that needs the person (plus any the display cap left out), hidden in this view or not. "Hide in this view" resolves, approves and dismisses
+   * nothing, so it cannot change how many things need attention; counting only `visible` made the number say "Nothing listed" while an entry still needed the person (and made the operational face disagree with the
+   * scan face, which hides nothing, about the same office state: AC-4.7-16).
+   */
   attention: number;
   sources: SourceLine[];
 }
@@ -743,7 +748,7 @@ export function buildInbox(
     visible,
     hiddenCount: items.length - visible.length,
     information,
-    attention: visible.length + notListed,
+    attention: items.length + notListed,
     sources,
   };
 }

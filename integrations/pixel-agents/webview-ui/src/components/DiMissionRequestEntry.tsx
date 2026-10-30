@@ -29,6 +29,8 @@ export interface DiMissionRequestAccess {
   openConversation?: (conversationId: string, opener: HTMLElement) => void;
   /** Open the workspace on the Requests tab with this request read (a view-only read). */
   openRequest?: (requestRef: string, opener: HTMLElement) => void;
+  /** Put text in the workspace's own Ask draft (its composer state; nothing is sent). New Mission uses it only when that draft is empty (G1/G2). */
+  setComposer?: (text: string) => void;
 }
 
 /**

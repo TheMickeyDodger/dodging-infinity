@@ -38,7 +38,7 @@ test('the pinned fingerprint IS the bundled default layout (only it may be resha
 });
 
 test('fit zoom is INTEGER device pixels from the backing store, clamped', () => {
-  // 1440x900 viewport, 420 px panel -> main 1020x900 CSS.
+  // An example main area: 1440x900 with the office panel at its pre-pass-C 420 px -> main 1020x900 CSS (an input to the arithmetic, not a layout pin).
   assert.equal(diFitZoom(1020, 900, 20, 17), 3); // DPR 1
   assert.equal(diFitZoom(2040, 1800, 20, 17), 6); // DPR 2: twice the zoom, never half
   assert.equal(diFitZoom(100000, 100000, 1, 1), ZOOM_MAX);

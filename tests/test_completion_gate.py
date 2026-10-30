@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,9 +9,12 @@ import herdctl
 
 class HerdrCompletionGateTests(unittest.TestCase):
     def test_task_complete_blocks_unresolved_child(self):
-        repo = Path(
-            "/tmp/herdr-completion-test"
-        )
+        # A contained temp directory with a real `.herd/state`: the completion command now takes the registry lock on that
+        # directory (it refuses if it is missing), so the fixture must be a place the test owns, not an absolute path outside it.
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name).resolve() / "herdr-completion-test"
+        (repo / ".herd" / "state").mkdir(parents=True)
 
         task = {
             "id": "parent-task",

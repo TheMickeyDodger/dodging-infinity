@@ -1,0 +1,779 @@
+{
+ "note": "Hand-run LIKE-FOR-LIKE measurements of the locked stage header, and the PRODUCT targets derived from them. Numbers only: the reference images are private design inputs and are not copied into the tree. METHOD (one function on every image): the INK of an element = the bounding box of the pixels whose largest channel difference from the most common colour of the measured rectangle exceeds 40 (scratch/hdr/header_elems.mjs in the evidence; the test measures the product the same way on a viewport screenshot, inside each element's own DOM box grown by 2 px). EXCEPTION: the Mission details BACK BOX (back.top, back.left, back.w, back.h) is the earlier pass's HAND measurement of the lock (left 296, right 342, top 28, bottom 79), NOT an ink-function measurement, and the product's Mission Back box is measured as its OUTER LAYOUT RECTANGLE: layout-box geometry against hand-measured reference bounds, not ink against ink. Its painted ring is checked separately by the rule under views.mission.paint. All values are image pixels = CSS pixels at device pixel ratio 1. POSITIONS ARE RELATIVE TO THE STAGE'S OWN LEFT EDGE (the first column after its border): the locks keep a world strip left of the stage (the recorded D-2 'rail priority' deviation), so absolute x cannot be compared. LOCK COLUMN = what the reference draws; TARGET COLUMN = what the product is required to measure: they differ only where a recorded decision says so (the NOTE). Below 1500 px there is NO reference for Code Diff and Mission details: their sizes are DERIVED (about 0.72 of these) and are not asserted here; Comments' reference is measured at 1280 and applies as measured. `scales: true` marks the numbers that the stylesheet derives below 1500 px as about 0.72 of the value here (diScanHeaderGeometry.test.ts asserts that CONSISTENCY at 1280 x 720, labelled DERIVED: it is not a reference). Back's own size and Mission details' band padding have their own compact rules and do not scale.",
+ "views": {
+  "diff": {
+   "reference": {
+    "file": "pixel-lock/03-code-diff.png",
+    "sha256": "3bbd3598e07443e6c85a9c32c044b0a33eba0ed6fbb632033618d3597f027a03",
+    "size": [
+     1672,
+     941
+    ],
+    "stageLeftEdge": 278
+   },
+   "targets": [
+    {
+     "id": "back.top",
+     "lock": 18,
+     "target": 18,
+     "tol": 1,
+     "note": "band padding-top (the product's 28 is the pixel-lock 02 value)",
+     "scales": true
+    },
+    {
+     "id": "back.left",
+     "lock": 11,
+     "target": 12,
+     "tol": 1,
+     "note": "the lock's control is 49 wide and the product's Back 46: centred on the lock's control (stage-relative x of the box)",
+     "scales": true
+    },
+    {
+     "id": "back.w",
+     "lock": 49,
+     "target": 46,
+     "tol": 1,
+     "note": "KEPT: Back is source-required; the lock's >> control is not adopted (3 px)"
+    },
+    {
+     "id": "back.h",
+     "lock": 50,
+     "target": 51,
+     "tol": 1,
+     "note": "KEPT (1 px)"
+    },
+    {
+     "id": "back.glyph.h",
+     "lock": 16,
+     "target": 16,
+     "tol": 2,
+     "note": "the chevron INSIDE the Back box: the lock draws a double chevron (>>) for a different control; Back keeps its single chevron and matches the glyph's SIZE (height); the width is a shape difference (a single chevron is narrower)",
+     "scales": true
+    },
+    {
+     "id": "back.glyph.w",
+     "lock": 19,
+     "target": 8,
+     "tol": 2.5,
+     "note": "shape residual: a single chevron at the lock's glyph height",
+     "scales": true
+    },
+    {
+     "id": "mark.w",
+     "lock": 55,
+     "target": 55,
+     "tol": 1,
+     "note": "the product's own mark asset scaled uniformly (IoU 0.886 against the lock's mask; controls 0.50 to 0.60)",
+     "scales": true
+    },
+    {
+     "id": "mark.h",
+     "lock": 36,
+     "target": 36,
+     "tol": 1,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "mark.left",
+     "lock": 82,
+     "target": 82,
+     "tol": 1,
+     "note": "360 - 278",
+     "scales": true
+    },
+    {
+     "id": "mark.centreVsBack",
+     "lock": 0,
+     "target": 0,
+     "tol": 1.5,
+     "note": "vertical centre of the mark minus the vertical centre of the Back box (the lock: both 42.5)"
+    },
+    {
+     "id": "divider.h",
+     "lock": 38,
+     "target": 38,
+     "tol": 1,
+     "note": "a 1 x 38 rule between the mark and the crumb",
+     "scales": true
+    },
+    {
+     "id": "divider.w",
+     "lock": 1,
+     "target": 1,
+     "tol": 0.5,
+     "note": "exactly one column: an ABSENT divider (0) and a doubled one (2) both fail"
+    },
+    {
+     "id": "divider.left",
+     "lock": 158,
+     "target": 158,
+     "tol": 1,
+     "note": "436 - 278; 21 px after the mark and 21 px before World",
+     "scales": true
+    },
+    {
+     "id": "world.left",
+     "lock": 180,
+     "target": 180,
+     "tol": 2,
+     "note": "458 - 278",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap1",
+     "lock": 20,
+     "target": 19,
+     "tol": 2,
+     "note": "World to the first separator",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap2",
+     "lock": 18,
+     "target": 19,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap3",
+     "lock": 19,
+     "target": 19,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap4",
+     "lock": 19,
+     "target": 19,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "tool.search.w",
+     "lock": 28,
+     "target": 28,
+     "tol": 2,
+     "note": "ink; the lock draws OUTLINE glyphs, the product's are its own filled/stroke assets: only size and pitch are restored",
+     "scales": true
+    },
+    {
+     "id": "tool.search.h",
+     "lock": 28,
+     "target": 28,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "tool.copy.w",
+     "lock": 32,
+     "target": 32,
+     "tol": 2,
+     "note": "slot 2: the lock draws a LAYOUT glyph (no product control); Copy is RETAINED as an explicit PROPOSED deviation and drawn at the lock's size",
+     "scales": true
+    },
+    {
+     "id": "tool.gear.w",
+     "lock": 31,
+     "target": 31,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "tool.more.h",
+     "lock": 27,
+     "target": 27,
+     "tol": 2,
+     "note": "ink height of the three dots",
+     "scales": true
+    },
+    {
+     "id": "tool.pitch",
+     "lock": 70,
+     "target": 70,
+     "tol": 2,
+     "note": "centre to centre, mean of the three",
+     "scales": true
+    },
+    {
+     "id": "tool.rightInset",
+     "lock": 40,
+     "target": 40,
+     "tol": 1,
+     "note": "from the last glyph's ink to the right edge of the viewport",
+     "scales": true
+    },
+    {
+     "id": "rule.y",
+     "lock": 82,
+     "target": 82,
+     "tol": 0,
+     "note": "the band's bottom rule: the row of the rule's core (a full-width line)",
+     "scales": true
+    }
+   ]
+  },
+  "mission": {
+   "reference": {
+    "file": "pixel-lock/02-mission-details.png",
+    "sha256": "4f41faa35816a6ff91139874fb04234bfa8e0e512a7851e09592e6982dbfed59",
+    "size": [
+     1672,
+     941
+    ],
+    "stageLeftEdge": 275,
+    "note": "the Back box is the earlier pass's hand measurement (pixel-lock-02-measurements.FIXTURE.json: left 296, right 342, top 28, bottom 79)"
+   },
+   "paint": {
+    "rule": "every side's peak >= floor(0.5 x the weakest side of the locked reference), measured by test/diRingPaint.ts (the straight part of each side, 12 px left out at each end; adjacent background = the median profile at offsets -5, -4, -3 outside the box; peak = the largest channel difference at offsets -1 to +3). DERIVED FROM THE REFERENCE by logs/visual-VG1-reference-20261028T125531Z.log BEFORE any candidate result was read; a paint check, not a contrast floor",
+    "fraction": 0.5,
+    "referenceSha256": "4f41faa35816a6ff91139874fb04234bfa8e0e512a7851e09592e6982dbfed59",
+    "referencePeaks": { "top": 30, "right": 28, "bottom": 34.5, "left": 28 },
+    "removedPeaks": { "top": 0, "right": 0, "bottom": 0.5, "left": 0 },
+    "minPeak": 14
+   },
+   "targets": [
+    {
+     "id": "back.top",
+     "lock": 28,
+     "target": 28,
+     "tol": 1,
+     "note": ""
+    },
+    {
+     "id": "back.left",
+     "lock": 21,
+     "target": 21,
+     "tol": 1.5,
+     "note": "296 - 275"
+    },
+    {
+     "id": "back.w",
+     "lock": 46,
+     "target": 46,
+     "tol": 1,
+     "note": ""
+    },
+    {
+     "id": "back.h",
+     "lock": 51,
+     "target": 51,
+     "tol": 1,
+     "note": ""
+    },
+    {
+     "id": "back.glyph.h",
+     "lock": 26,
+     "target": 26,
+     "tol": 2,
+     "note": "the chevron inside the Back box, the SAME glyph the product draws, at the lock's size (15 x 26)",
+     "scales": true
+    },
+    {
+     "id": "back.glyph.w",
+     "lock": 15,
+     "target": 15,
+     "tol": 2.5,
+     "note": "the product's own chevron scaled uniformly to the lock's height (26) is about 14.6 wide; the lock's is 15",
+     "scales": true
+    },
+    {
+     "id": "mark.w",
+     "lock": 45,
+     "target": 45,
+     "tol": 1,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "mark.h",
+     "lock": 36,
+     "target": 36,
+     "tol": 1,
+     "note": "In the lock the shape SELECTED by the violet colour predicate (b - g > 40 and b > 120) is 35 rows high, and the ink function (a pixel differing from the background by more than 40) also takes a top row of three faint non-violet pixels, so the lock's INK box is 36 high (logs/mark-lock02-dump-20261028T051612Z.log). The product draws the SELECTED shape as its OWN Mission-only drawing (45 x 35; never the 45 x 29 asset stretched), so it measures 35 and PASSES 36 +-1 ONLY ON THE TOLERANCE EDGE, which is where it sits; the target and the tolerance are not changed (the Supervisor, round 26). The violet selection is a colour threshold on a raster: it does not establish the original artwork's opacity or vector boundary, and the 36 is what the ink function measures on the lock, not demonstrably what the lock draws",
+     "scales": true
+    },
+    {
+     "id": "mark.left",
+     "lock": 98,
+     "target": 98,
+     "tol": 1,
+     "note": "373 - 275"
+    },
+    {
+     "id": "world.left",
+     "lock": 170,
+     "target": 170,
+     "tol": 2,
+     "note": "445 - 275"
+    },
+    {
+     "id": "mark.gapFromBack",
+     "lock": 30,
+     "target": 30,
+     "tol": 1.5,
+     "note": "the open space between Back's box and the mark's ink (373 - 343); Back keeps its own compact size and inset, so the GAP is what scales",
+     "scales": true
+    },
+    {
+     "id": "world.gapFromMark",
+     "lock": 27,
+     "target": 27,
+     "tol": 1.5,
+     "note": "the open space between the mark's ink and World's ink (445 - 418)",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap1",
+     "lock": 17,
+     "target": 16,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap2",
+     "lock": 15,
+     "target": 16,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap3",
+     "lock": 17,
+     "target": 16,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "crumb.gap4",
+     "lock": 17,
+     "target": 16,
+     "tol": 2,
+     "note": "",
+     "scales": true
+    },
+    {
+     "id": "divider.w",
+     "lock": 0,
+     "target": 0,
+     "tol": 0,
+     "note": "the lock draws NO divider here"
+    },
+    {
+     "id": "rule.y",
+     "lock": -1,
+     "target": -1,
+     "tol": 0,
+     "note": "the lock draws NO rule under this band (-1 = none)"
+    }
+   ]
+  },
+  "comments": {
+   "reference": {
+    "file": "reconciled-free-ui-v3/07-comments.png",
+    "sha256": "c9c194f2afc65e8257ac36f81fc1d4ef8986220e87e11934cf826a718f975785",
+    "size": [
+     1280,
+     720
+    ],
+    "stageLeftEdge": 220,
+    "note": "a different composition from the other two: a small text link, then the heading, then the Mission name; NO mark, NO crumb, NO tabs (the sibling tabs are a REQUIRED ADDITION the reference does not draw)"
+   },
+   "targets": [
+    {
+     "id": "mark.count",
+     "lock": 0,
+     "target": 0,
+     "tol": 0,
+     "note": "no mark element in the stage bar"
+    },
+    {
+     "id": "crumb.count",
+     "lock": 0,
+     "target": 0,
+     "tol": 0,
+     "note": "no crumb (so no Location landmark) in the stage bar"
+    },
+    {
+     "id": "backText.left",
+     "lock": 30,
+     "target": 30,
+     "tol": 1.5,
+     "note": "250 - 220: the ink of the arrow and the word"
+    },
+    {
+     "id": "backText.top",
+     "lock": 25,
+     "target": 25,
+     "tol": 1,
+     "note": ""
+    },
+    {
+     "id": "backText.w",
+     "lock": 41,
+     "target": 41,
+     "tol": 3,
+     "note": ""
+    },
+    {
+     "id": "backText.h",
+     "lock": 9,
+     "target": 9,
+     "tol": 2,
+     "note": ""
+    },
+    {
+     "id": "heading.top",
+     "lock": 58,
+     "target": 58,
+     "tol": 1,
+     "note": "ink top of the heading"
+    },
+    {
+     "id": "subtitle.top",
+     "lock": 86,
+     "target": 86,
+     "tol": 1,
+     "note": "ink top of the Mission name"
+    }
+   ]
+  }
+ },
+ "homeGuard": {
+  "note": "BASELINE, NOT A REFERENCE: Home (v3 01, governed by the Plan) is UNCHANGED by the stage-header restoration. These numbers were MEASURED ON THE RESTORED CANDIDATE (the DOM boxes of Home's header mark and tool buttons, both surfaces, 1280 x 720 and 1672 x 941); they equal the values recorded for Home before this work (the 36 x 23 mark: reports/finding-stage-header-app-vs-specimen-geometry.md section 3; the v3 01-home ink is 37 x 24). A before-product measurement was NOT taken (it would need the swap runner, and ad-hoc and runner copies are stopped); the before/after claim for Home rests on the accepted Home captures (01, specimen, 1280 and 1672) staying byte-identical to the accepted manifest, and on the scope-leak mutant turning this guard red.",
+  "entries": [
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markSvg.w",
+    "value": 36
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markSvg.h",
+    "value": 23
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markBtn.w",
+    "value": 36
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markBtn.h",
+    "value": 23
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tools.n",
+    "value": 2
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tool0.w",
+    "value": 32
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tool0.h",
+    "value": 32
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tools.gap",
+    "value": 6
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.header.h",
+    "value": 50
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markSvg.w",
+    "value": 36
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markSvg.h",
+    "value": 23
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markBtn.w",
+    "value": 36
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markBtn.h",
+    "value": 23
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tools.n",
+    "value": 2
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tool0.w",
+    "value": 32
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tool0.h",
+    "value": 32
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tools.gap",
+    "value": 6
+   },
+   {
+    "surface": "specimen",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.header.h",
+    "value": 50
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markSvg.w",
+    "value": 36
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markSvg.h",
+    "value": 23
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markBtn.w",
+    "value": 36
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.markBtn.h",
+    "value": 23
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tools.n",
+    "value": 2
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tool0.w",
+    "value": 32
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tool0.h",
+    "value": 32
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.tools.gap",
+    "value": 6
+   },
+   {
+    "surface": "real",
+    "size": [
+     1280,
+     720
+    ],
+    "id": "home.header.h",
+    "value": 50
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markSvg.w",
+    "value": 36
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markSvg.h",
+    "value": 23
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markBtn.w",
+    "value": 36
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.markBtn.h",
+    "value": 23
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tools.n",
+    "value": 2
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tool0.w",
+    "value": 32
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tool0.h",
+    "value": 32
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.tools.gap",
+    "value": 6
+   },
+   {
+    "surface": "real",
+    "size": [
+     1672,
+     941
+    ],
+    "id": "home.header.h",
+    "value": 50
+   }
+  ]
+ }
+}

@@ -7,11 +7,26 @@ review preamble. It lives in its own subtree,
 [`integrations/pixel-agents/`](../integrations/pixel-agents/), with its own Node.js
 dependency and build boundary.
 
-It observes; it does not control, with ONE deliberate, bounded exception: the **Codex
-Orchestrator** request panel (see [Requesting Missions](#requesting-missions-the-codex-orchestrator)),
-where you ask for work, decide on an exact proposal yourself, and start it. Everything else
-here is read-only. The office does not spawn Herdr (the panel's own bridge asks Herdr, after your
-explicit Start), mark Missions complete, create Git authority, deploy, or rewrite durable state.
+It observes; it does not control, with TWO deliberate, bounded exceptions. Each is opt-in, and
+each is a process you start yourself. The first is the **Codex Orchestrator** request panel (see
+[Requesting Missions](#requesting-missions-the-codex-orchestrator)), where you ask for work, decide
+on an exact proposal yourself, and start it. The second, with `--delivery-adapter-discovery`, is the
+office delivery adapter (`didelivery_office.py`). The office relays to it a status read, and a
+request for ONE delivery step you confirm (a commit, a push or a pull-request creation). The adapter
+admits or refuses that step under the delivery's own authorization. The office holds no delivery
+authority of its own, and has no route to merge, release or deploy. You reach it from a Mission:
+Mission details shows **Delivery** under Swarm, and for a workflow Mission whose ONE delivery the
+catalog links (see "Delivery links on Missions" under [Launch](#launch), which needs the catalog's
+`--delivery-store`), it reads that delivery's status when you ask, and offers the one step the
+adapter names eligible behind a local confirmation, with the adapter's two notes shown as it wrote
+them. No delivery id is typed there, and no other delivery can be chosen. Accepting CI results is not
+connected. A Mission Core Mission, or any Mission without such a link, shows why no delivery is read
+and offers nothing to confirm. The catalog's delivery store is not shown to be the one the adapter
+reads: if the adapter has no record of a linked delivery, its refusal is shown as it answered. A
+separate panel where a delivery id is typed is kept for test harnesses only, with no product entry (owner
+decision, 2026-10-29): the office does not draw it, and Delivery under Swarm is the product's delivery view. Everything else here is
+read-only. The office does not spawn Herdr (the panel's own bridge asks Herdr, after your explicit
+Start), mark Missions complete, create Git authority, deploy, or rewrite durable state.
 It is a browser package only: there is no native wrapper, no signing or notarization, and no
 controls beyond that panel. Dots (future
 and optional, not today's mobile interface) and R1 are separate and are not part of it. Today
@@ -71,6 +86,13 @@ npm run test:server -- __tests__/di      # DI server suites
 npm run test:webview -- test/di          # DI webview suites
 npm run test:package-contract
 ```
+
+In CI (`.github/workflows/pixel-validation.yml`) the webview suite runs as four parallel shards
+balanced by measured per-file time (`scripts/pixel-ui-shards.mjs`, timings in
+`scripts/pixel-ui-test-durations.json`); files stay serial inside each shard. The required check is
+the final `Pixel validation` job, which passes only when `Pixel checks` and all four shards pass.
+To run one shard locally: `cd webview-ui && npm test -- $(node ../scripts/pixel-ui-shards.mjs --shard 1 --of 4)`.
+When a UI test file grows a lot slower, refresh its seconds in the timings file so the shards stay even.
 
 The bridge's tests are the repository's ordinary Python suites, for example
 `tests/test_catalog.py`, `tests/test_catalog_http.py` and `tests/test_catalog_v2.py`
@@ -147,6 +169,16 @@ node dist/di-cli.js --state-dir /absolute/office-state \
   reason. It covers the Grok Bot route only: a proposal presented straight from the command line
   (`present-dots`) is not stored anywhere, so it cannot appear. When the flag is not given, Reception
   labels it "not reported" and does not show it as "none".
+- **Delivery links on Missions.** With `--delivery-store DIR`, each version 2 Mission also says
+  which ONE delivery record, if any, that store links to it. Only a workflow Mission can be linked:
+  by the one valid record whose own Mission binding names its workflow id, while every workflow
+  source was read and no other Mission holds that id. Two matching records are ambiguous, and none
+  is chosen. A Mission Core Mission is never linked: no delivery record names one, so its link is
+  "not known", not "none". Without the flag, every workflow Mission says that no store is
+  registered; a Mission Core Mission still says its link is not known. A link names which
+  delivery's status may be read; it authorizes nothing, and the office delivery adapter is not
+  shown to read the same store. Mission details reads a linked delivery under Swarm (see the
+  delivery adapter, above).
 - **Runtime source.** The bridge needs `--discover-roots` or at least one
   `--herd-root PATH`; without one it refuses to start (exit 2).
 - **Discovery file.** The bridge publishes `{url, port, token}` atomically and no-clobber as a
@@ -620,18 +652,20 @@ herdr agent list ───┘     dicatalog_http.py                             
 - **Routes.** `GET /catalog`, `GET /diagnostics`, `GET /healthz`, `GET /artifact` and
   `GET /code_review`, and nothing else. `GET /artifact` returns one recorded artifact's text for
   the evidence library. It takes an admitted reference (Mission, artifact id, listing cursor),
-  never a path. `GET /code_review` returns the read-only view of an active assignment's workspace
-  (see [Live code review](#live-code-review)); it takes a Mission and a task id, and for one
+  never a path. `GET /code_review` returns the read-only view of an active assignment's workspace,
+  or of a COMPLETED Mission's recorded workspace when its execution is established and the
+  workspace names the run (see [Live code review](#live-code-review)); it takes a Mission and a task id, and for one
   file the snapshot and file id the overview listed. Never a path, a ref or a git option. All
   routes are loopback-only (`127.0.0.1`), behind one bearer token compared in constant time,
   with exact `Host` and `Origin` checks. There is no CORS header, no cookie and no 5xx.
 - **No route to action.** It imports, proxies and invokes none of the consequential entry
   points (`direquest.py`, `dirun.py`, `grokbot.py`, `codexgw.py`, Git delivery).
 
-**The office only reads the bridge.** (The request panel is a separate, second connection and is
-described in [Requesting Missions](#requesting-missions-the-codex-orchestrator): the office relays
-one closed message type to it, `diMissionRequest`, never holding the panel's token in the
-browser, and the catalog bridge below stays read-only.)
+**The office only reads the bridge.** (Two separate, opt-in connections are not the bridge. The
+request panel, described in [Requesting Missions](#requesting-missions-the-codex-orchestrator), is
+relayed one closed message type, `diMissionRequest`. The office delivery adapter is relayed one
+closed message type, `diDeliveryRequest`, with two operations: a status read and one confirmed
+step. Neither token is ever held in the browser, and the catalog bridge below stays read-only.)
 
 - **What it reads.** It reads the bridge's discovery file and polls `GET /catalog`. It never
   starts, supervises or restarts the bridge; a missing discovery file is shown as
@@ -912,13 +946,20 @@ overview, a searchable tree of the changed files and a unified or side-by-side d
 only. It never edits, stages, applies, reverts, commits, dispatches, approves, opens a shell or
 sends anything but a read.
 
-**Who is offered it.** A live member of the DIRECT task of a Mission Core Mission whose standing
-is `active` and whose binding is `bound`. This is a different question from the evidence
-library's: a COMPLETED Mission is never offered a live review, a plain Herdr task is not a Mission
-Core record, a child-task member does not work in the Mission's workspace, and a v1 office
-corroborates no workspace. Where it is not offered, the inspector says why in words. The target
-comes from the canonical record: the renderer never supplies a root, a ref, a pathspec or a git
-option, and similar names or paths are not identity.
+**Who is offered it.** Two cases, asked by two different references. (1) A live member of the
+DIRECT task of a Mission Core Mission whose standing is `active` and whose binding is `bound`:
+the review is opened from the agent. (2) A **COMPLETED** Mission, as a whole, in the Mission's
+Code Diff: offered only when the office lists the Mission's historical recorded execution as
+**established** in a current listing, and read only when the backend also finds that execution
+unique and unchanged and the recorded workspace's own task record names this run. It is asked
+for by a Mission-level reference that names no agent. A plain Herdr task is not a Mission Core
+record, a child-task member does not work in the Mission's workspace, a v1 office corroborates
+no workspace, and a BLOCKED, CANCELLED or CLOSED Mission is not offered a review. A finished
+Mission is read **as the workspace is now**, with ownership checked at one instant (and again at
+the end of the read): a root since reused for other work is refused, not shown. Where a review
+is not offered or is refused, the page says why in words. The target comes from the canonical
+record: the renderer never supplies a root, a ref, a pathspec or a git option, and similar
+names or paths are not identity.
 
 **What is compared, exactly.** The working tree of the assignment's own worktree against the
 commit its `HEAD` names (branch or detached HEAD, the commit's object id shown), as observed at a
@@ -1260,6 +1301,29 @@ screen before you decide, because it is the honest ceiling of this feature:
   Mission Core's current record before anything is written.
 
 **Approving starts nothing.** Starting is a separate, explicit act.
+
+### Declining, rejecting, or asking for changes
+
+Beside **Approve**, on the same offer, you can decide not to approve (owner decision (c)). Each is
+recorded in Mission Core exactly the way an approval is, as an Operator attestation of your choice
+that is **not independently verified**, and each binds the Mission, revision and digest you were
+shown, checked against the retained offer and Mission Core's current record before anything is
+written. None of them starts anything or grants any authority, and none of them is a withdrawal.
+
+- **Decline** records that you did not approve this proposal. It is Mission Core's existing
+  DENY: not final, and a new proposal can be submitted.
+- **Reject for good…** asks once more (**Confirm: reject for good**), because a rejection is
+  final: the proposal becomes REJECTED and can never be approved, revised or started.
+- **Ask for changes** needs your reason (at most 2000 characters, not blank), which is recorded
+  exactly as you wrote it and shown back on the request. The proposal is CHANGES_REQUESTED: it
+  can no longer be approved as it stands. Submit the revised proposal as a new request; it goes
+  through the same approval flow. Asking for changes submits and approves nothing.
+
+Once you have declined, rejected or asked for changes, the proposal can no longer be withdrawn:
+withdrawal stays what it was, the requester taking back a proposal that has no decision yet. If
+the panel cannot tell whether your choice was applied, the request says **Outcome unknown**; it
+is not applied again, and choosing the same outcome on the same proposal only reconciles it from
+Mission Core's own record.
 
 ### Starting, and what happens next
 

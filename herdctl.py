@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -22,12 +23,14 @@ from herdr.config import (
     apply_preset_to_config,
 )
 from herdr.control_plane import HerdrControlPlane
+from herdr.follow_on import FollowOnRefused, registry_lock
 from herdr.registry import REGISTRY
 from herdr import guards
 from herdr.guards import install_git_guard as install_git_guard_runtime
 from herdr import tasks
 from target_runtime import review_findings
 from herdr.instance import HerdrInstance
+from herdr.lifecycle import logical_roles, role_counts
 from herdr.observe import observe as observe_projection, render_observation
 from herdr.runtime import agent_info, jrun, prompt, run, split, start_agent
 from herdr.policy import DEFAULT_POLICY, HerdrPolicy
@@ -1450,8 +1453,7 @@ def _health_expected_roles(config):
         raise ValueError(f"`orchestration` in {CFG} is not a JSON object")
     try:
         # OverflowError: json.loads accepts `Infinity`, and int(inf) raises it.
-        leads = max(1, int(orchestration.get("leads", 1)))
-        pods = max(1, int(orchestration.get("pods", 1)))
+        leads, pods = role_counts(orchestration)
     except (TypeError, ValueError, OverflowError):
         raise ValueError(
             f"`orchestration.leads`/`orchestration.pods` in {CFG} must be integers"
@@ -1461,12 +1463,7 @@ def _health_expected_roles(config):
             f"`orchestration.leads`/`orchestration.pods` in {CFG} "
             f"must be at most {_HEALTH_MAX_ROLE_COUNT}"
         )
-    expected = {"supervisor"}
-    expected |= {f"lead{i}" for i in range(1, leads + 1)}
-    for i in range(1, pods + 1):
-        expected.add(f"executor{i}")
-        expected.add(f"reviewer{i}")
-    return expected
+    return set(logical_roles(leads, pods))
 
 
 def _health_agents_row(config, agents, herdr_reachable):
@@ -1729,6 +1726,31 @@ def trim_task_history(path, max_chars):
     path.write_text(header + "\n\n" + tail.lstrip())
 
 
+#: How long `task-complete` waits for the registry lock (held by a spawn or a follow-on dispatch) before it refuses.
+COMPLETION_LOCK_WAIT_SECONDS = 30
+
+
+@contextlib.contextmanager
+def completion_admission(r):
+    """Serialize a parent's completion (the dependency check AND the save of COMPLETE) with dispatch admission.
+
+    A follow-on dispatch and a spawn hold the same registry lock from the moment they read the parent's task as ACTIVE until
+    their dependency record is written. Taking it here means a completion cannot land between those two points (a child launched
+    under a completed parent), and a dispatch that starts after a completion sees the parent COMPLETE and refuses.
+
+    FAILS CLOSED: if the lock cannot be taken (no state directory, not lockable, busy past the wait) the completion is refused. A
+    missing state directory never means "nothing to serialize against": completion reads the task from that directory, so an
+    ACTIVE task with no state directory is a contradiction, and treating it as permission would let the serialization be defeated
+    by the absence of a directory.
+    """
+
+    with registry_lock(
+        HerdrInstance(r),
+        wait_seconds=COMPLETION_LOCK_WAIT_SECONDS,
+    ):
+        yield
+
+
 def task_complete_cmd(args):
     r = resolve_repo_ref(args.repo)
     t = load_task(r)
@@ -1738,57 +1760,70 @@ def task_complete_cmd(args):
     cp = HerdrControlPlane()
 
     try:
-        cp.require_child_dependencies_complete(
-            r,
-            t.get("id"),
+        with completion_admission(r):
+            # Re-read under the lock: the task may have changed while this waited for the registry.
+            t = load_task(r)
+            if t.get("status") != "ACTIVE":
+                raise SystemExit(f"No ACTIVE task to complete (current status: {t.get('status','IDLE')}).")
+
+            try:
+                cp.require_child_dependencies_complete(
+                    r,
+                    t.get("id"),
+                )
+            except RuntimeError as exc:
+                raise SystemExit(str(exc))
+
+            checkpoint = ""
+            checkpoint_path = None
+            if args.checkpoint_file:
+                checkpoint_path = Path(args.checkpoint_file)
+                if not checkpoint_path.is_absolute():
+                    checkpoint_path = (r / checkpoint_path).resolve()
+                try:
+                    checkpoint_path.relative_to(r.resolve())
+                except ValueError:
+                    raise SystemExit("Checkpoint file must be inside the repository boundary.")
+                if not checkpoint_path.exists():
+                    raise SystemExit(f"Checkpoint file not found: {checkpoint_path}")
+                checkpoint = checkpoint_path.read_text(errors="replace")[:24000]
+            elif args.note:
+                checkpoint = args.note[:24000]
+
+            now = int(time.time())
+            t["status"] = "COMPLETE"
+            t["completed_at"] = now
+            t["duration_seconds"] = now - int(t.get("started_at", now))
+            if checkpoint_path:
+                t["checkpoint_file"] = str(checkpoint_path)
+            if args.note:
+                t["note"] = args.note
+            save_task(r, t)
+            archive_task(r, t)
+
+            if cfg(r).get("context", {}).get("checkpoint_history", True):
+                hist = hroot(r) / "memory" / "task-history.md"
+                hist.parent.mkdir(parents=True, exist_ok=True)
+                if not hist.exists():
+                    hist.write_text("# Task History\n\nCompact checkpoints from completed top-level tasks.\n")
+                with hist.open("a") as f:
+                    f.write("\n\n---\n\n")
+                    f.write(f"## {time.strftime('%Y-%m-%d %H:%M:%S')} — {t.get('id','task')}\n\n")
+                    f.write(f"**Request:** {t.get('description','')}\n\n")
+                    f.write(f"**Duration:** {human_duration(t.get('duration_seconds',0))}\n\n")
+                    if checkpoint:
+                        f.write(checkpoint.rstrip() + "\n")
+                    else:
+                        f.write("No explicit checkpoint was supplied.\n")
+                trim_task_history(hist, int(cfg(r).get("context", {}).get("task_history_max_chars", 60000)))
+            print(f"Task {t.get('id')} marked COMPLETE in {human_duration(t.get('duration_seconds',0))}.")
+            print("Idle-aware heartbeat will now sleep until a new ACTIVE task exists.")
+    except FollowOnRefused as exc:
+        # the registry lock could not be had: nothing was checked or saved
+        raise SystemExit(
+            f"Parent task cannot complete yet ({exc.check}): {exc.detail} Nothing was changed."
+            + (" Try again when the other operation has finished." if exc.check == "registry_busy" else "")
         )
-    except RuntimeError as exc:
-        raise SystemExit(str(exc))
-
-    checkpoint = ""
-    checkpoint_path = None
-    if args.checkpoint_file:
-        checkpoint_path = Path(args.checkpoint_file)
-        if not checkpoint_path.is_absolute():
-            checkpoint_path = (r / checkpoint_path).resolve()
-        try:
-            checkpoint_path.relative_to(r.resolve())
-        except ValueError:
-            raise SystemExit("Checkpoint file must be inside the repository boundary.")
-        if not checkpoint_path.exists():
-            raise SystemExit(f"Checkpoint file not found: {checkpoint_path}")
-        checkpoint = checkpoint_path.read_text(errors="replace")[:24000]
-    elif args.note:
-        checkpoint = args.note[:24000]
-
-    now = int(time.time())
-    t["status"] = "COMPLETE"
-    t["completed_at"] = now
-    t["duration_seconds"] = now - int(t.get("started_at", now))
-    if checkpoint_path:
-        t["checkpoint_file"] = str(checkpoint_path)
-    if args.note:
-        t["note"] = args.note
-    save_task(r, t)
-    archive_task(r, t)
-
-    if cfg(r).get("context", {}).get("checkpoint_history", True):
-        hist = hroot(r) / "memory" / "task-history.md"
-        hist.parent.mkdir(parents=True, exist_ok=True)
-        if not hist.exists():
-            hist.write_text("# Task History\n\nCompact checkpoints from completed top-level tasks.\n")
-        with hist.open("a") as f:
-            f.write("\n\n---\n\n")
-            f.write(f"## {time.strftime('%Y-%m-%d %H:%M:%S')} — {t.get('id','task')}\n\n")
-            f.write(f"**Request:** {t.get('description','')}\n\n")
-            f.write(f"**Duration:** {human_duration(t.get('duration_seconds',0))}\n\n")
-            if checkpoint:
-                f.write(checkpoint.rstrip() + "\n")
-            else:
-                f.write("No explicit checkpoint was supplied.\n")
-        trim_task_history(hist, int(cfg(r).get("context", {}).get("task_history_max_chars", 60000)))
-    print(f"Task {t.get('id')} marked COMPLETE in {human_duration(t.get('duration_seconds',0))}.")
-    print("Idle-aware heartbeat will now sleep until a new ACTIVE task exists.")
 
 
 def task_abort_cmd(args):

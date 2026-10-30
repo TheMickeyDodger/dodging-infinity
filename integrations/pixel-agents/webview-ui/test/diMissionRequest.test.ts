@@ -666,7 +666,12 @@ async function approve(page: Page) {
 }
 async function start(page: Page) {
   await pressKey(page, T('di-mr-dispatch'), 'Enter');
-  await waitFor('the start to be recorded', async () => !(await exists(page, T('di-mr-dispatch'))));
+  // The wait, its condition and its timeout are unchanged; a timeout now also says what the page and the harness show (as the two waits above do).
+  try {
+    await waitFor('the start to be recorded', async () => !(await exists(page, T('di-mr-dispatch'))));
+  } catch (e) {
+    throw new Error(`${String(e).split('\n')[0]} -- ${await whatHappened(page)}`, { cause: e });
+  }
 }
 const missionState = async (ref: string) => {
   const s = await state();
@@ -1398,18 +1403,21 @@ test(
 
 
 test(
-  'G2. THE RESERVE: with the office open the workspace covers below 1056 px and docks a 360 px pane beside from 1056, in a FRESH window at each width (no resize, so there is no earlier state to mistake for the answer)',
+  'G2. THE RESERVE: with the office open the workspace covers below the panel + 276 + 360 px (1064 at the measured 428) and docks a 360 px pane beside from there, in a FRESH window at each width (no resize, so there is no earlier state to mistake for the answer)',
   async () => {
     // THE RACE IS REMOVED BY CONSTRUCTION, NOT DETECTED. Each width gets its own freshly opened window of exactly that size: the page loads at the width and the layout's first render
     // takes it from the window, so there is never a previous width whose answer a wait could accept. (The same boundary stepped by resizing one window needed a stale-state handshake
     // that two attempts got wrong: waiting for the expected value accepted the previous step's value, rendered pane geometry is already true before the app re-renders, and the
     // frame count and innerWidth ideas were rejected as a timer and as the value the test had just set.) G keeps its own responsive resizing loop, which tests something different.
-    // THE BOUNDARY IS PINNED BY LITERALS, independent of the constants: 420 + 276 + 360 = 1056. At the old reserve of 240 the workspace docked beside from 1020, so 1020 to 1055 now cover.
+    // THE BOUNDARY: the RESERVE (276) and the pane (360) PINNED BY LITERALS, independent of the constants; the PANEL term DERIVES from DI_PANEL_WIDTH_PX
+    // (pass C: it was the literal 420, and the panel is now 428): panel + 276 + 360. At the old reserve of 240 the workspace docked beside from
+    // panel + 240 + 360, so from there to the boundary it now covers.
+    const SIDE = DI_PANEL_WIDTH_PX;
     for (const [width, covering] of [
-      [1019, true],
-      [1020, true],
-      [1055, true],
-      [1056, false],
+      [SIDE + 240 + 360 - 1, true],
+      [SIDE + 240 + 360, true],
+      [SIDE + 276 + 360 - 1, true],
+      [SIDE + 276 + 360, false],
     ] as const) {
       const page = await openWindow({ width, height: 900 });
       await openWorkspace(page);
@@ -2404,13 +2412,15 @@ test(
  * no canvas exception: at 320 x 568 every control and every line of text of the office panel must lie inside the window,
  * with no horizontal scrolling of the page or of the panel.
  *
- * The design under test: the panel's width is min(420, window width - strip width), where the strip of minimized surfaces
+ * The design under test: the panel's width is min(428, window width - strip width), where the strip of minimized surfaces
  * counts (44 px) ONLY while it holds at least one restore control. With the panel open the strip sits at the panel's left
  * edge, so the two sit side by side, both inside the window. The world canvas yields (at 320 with the office expanded its
  * width is 0, deliberately); it returns when the office is minimized. The request workspace keeps covering at narrow widths.
  * The numbers are restated here on purpose (not imported from the product) so a change to them is noticed.
  */
-const OFFICE_PANEL_MAX_PX = 420;
+// INDEPENDENT pin (pass C, C-V1): measured from 01-home.jpg to the panel's own EDGE RULE at x 852 in the 1280 frame (1280 - 852 = 428);
+// not the dark lead-in from x 847, which would read 433. Was 420.
+const OFFICE_PANEL_MAX_PX = 428;
 const OFFICE_STRIP_PX = 44;
 const OFFICE_NAMED = {
   'di-find-input': 'the Find box',
@@ -2669,23 +2679,23 @@ test(
     const panel = await rectOf(page, T('di-office-panel'));
     expect(
       [panel.left, panel.right, panel.width],
-      'the panel is exactly 420 wide at the right edge',
-    ).toEqual([1020, 1440, 420]);
-    expect(await worldWidth(page), 'the world is 1440 - 420').toBe(1440 - OFFICE_PANEL_MAX_PX);
+      `the panel is exactly ${OFFICE_PANEL_MAX_PX} wide at the right edge`,
+    ).toEqual([1440 - OFFICE_PANEL_MAX_PX, 1440, OFFICE_PANEL_MAX_PX]);
+    expect(await worldWidth(page), `the world is 1440 - ${OFFICE_PANEL_MAX_PX}`).toBe(1440 - OFFICE_PANEL_MAX_PX);
     await minimizeRequestWorkspace(page);
     await page.waitForTimeout(1200);
     const tray = await rectOf(page, T('di-minimized-tray'));
-    expect(tray.right, 'the strip sits at the panel’s left edge: its right edge is 1020').toBe(
-      1020,
+    expect(tray.right, `the strip sits at the panel’s left edge: its right edge is ${1440 - OFFICE_PANEL_MAX_PX}`).toBe(
+      1440 - OFFICE_PANEL_MAX_PX,
     );
     expect(tray.width, 'the strip is 44 wide').toBe(OFFICE_STRIP_PX);
     expect(
       await worldWidth(page),
-      `the world is 1440 - 420 - 44 = ${1440 - OFFICE_PANEL_MAX_PX - OFFICE_STRIP_PX}`,
+      `the world is 1440 - ${OFFICE_PANEL_MAX_PX} - 44 = ${1440 - OFFICE_PANEL_MAX_PX - OFFICE_STRIP_PX}`,
     ).toBe(1440 - OFFICE_PANEL_MAX_PX - OFFICE_STRIP_PX);
     expect(
       (await rectOf(page, T('di-office-panel'))).width,
-      'the panel is still 420 wide with a minimized surface',
+      `the panel is still ${OFFICE_PANEL_MAX_PX} wide with a minimized surface`,
     ).toBe(OFFICE_PANEL_MAX_PX);
     await notOccluded(
       page,
@@ -2697,7 +2707,7 @@ test(
 );
 
 test(
-  'AC-UX-13 / SC 1.4.10, office panel at 320, REAL APP: case 5, intermediate widths 360 x 640 and 414 x 800 (panel = window - strip, never wider than 420)',
+  'AC-UX-13 / SC 1.4.10, office panel at 320, REAL APP: case 5, intermediate widths 360 x 640 and 414 x 800 (panel = window - strip, never wider than 428)',
   async () => {
     for (const [w, h] of [
       [360, 640],
@@ -2873,7 +2883,9 @@ test(
     const at = '1440 x 900, office expanded';
     await fixtureLabelFloating(page, at, 1440, 900);
     const panel = await rectOf(page, T('di-office-panel'));
-    expect(panel.left, `${at}: the panel starts at 1020`).toBe(1020);
+    // the independent DESIGN assertion, kept (the 428 restated in this file on purpose: 1440 - 428 = 1012)
+    const PANEL_LEFT = 1440 - OFFICE_PANEL_MAX_PX;
+    expect(panel.left, `${at}: the panel starts at ${PANEL_LEFT}`).toBe(PANEL_LEFT);
     const world = await page.evaluate(() => {
       const box = (el: Element | null | undefined) => {
         if (!el) return null;
@@ -2901,8 +2913,9 @@ test(
       expect(b, `${at}: the ${what} is on the page`).not.toBeNull();
       expect(b!.visible, `${at}: the ${what} is visible`).toBe(true);
       expect(
-        b!.left >= -0.75 && b!.right <= 1020 + 0.75,
-        `${at}: the ${what} (${b!.left} to ${b!.right}) lies in the world, left of the panel (right edge <= 1020)`,
+        // DERIVED from the RENDERED panel edge, never a literal: no world content may cross into the panel (a stale 1020 admitted 8 px)
+        b!.left >= -0.75 && b!.right <= panel.left + 0.75,
+        `${at}: the ${what} (${b!.left} to ${b!.right}) lies in the world, left of the panel (right edge <= ${panel.left})`,
       ).toBe(true);
     }
     await notOccluded(page, at, T('di-office-panel'));
@@ -4629,10 +4642,10 @@ test(
         [599, 700, 'Close'],
       ] as const) {
         // the REAL rule (layoutFor): the workspace covers iff the window minus the side panel (none when hidden) minus the world's reserve (MR_WORLD_KEEP_PX, 276)
-        // leaves under 360 px (MR_MIN_BESIDE_PX): below 1056 px with the side panel shown, below 636 px with it hidden. So 1019x720 covers only with the side panel shown.
+        // leaves under 360 px (MR_MIN_BESIDE_PX): below the panel + 276 + 360 px with the side panel shown (1064 at 428), below 636 px with it hidden. So 1019x720 covers only with the side panel shown.
         // BEFORE this was written with the literals 420, 240 and 360 (1020 and 600): it agreed with the real rule at the two sampled widths only because both lie below
         // BOTH the old and the new boundary, and would have gone on agreeing while the reserve moved. It is now derived, and the boundaries are pinned independently, by
-        // literals, in the wider-reading test (1019, 1020, 1055, 1056) and in diMissionRequestModel.test.ts (THE RESERVE).
+        // literals for the reserve and the pane (the panel term derived from DI_PANEL_WIDTH_PX since pass C), in G2 and in diMissionRequestModel.test.ts (THE RESERVE).
         const covers = width - (collapsed ? 0 : DI_PANEL_WIDTH_PX) - MR_WORLD_KEEP_PX < MR_MIN_BESIDE_PX;
         const where = `${collapsed ? 'sidebar hidden' : 'sidebar shown'} · ${width}x${height} (${covers ? 'covering' : 'beside'})`;
         const page = await openWindow();

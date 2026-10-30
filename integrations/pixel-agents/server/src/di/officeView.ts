@@ -39,6 +39,7 @@ import type {
   CatalogResponseView,
   DeliveryPresentationsView,
   MemberView,
+  MissionDeliveryLinkView,
   MissionReportView,
   MissionStateView,
   MissionView,
@@ -294,6 +295,8 @@ export interface MissionV2Presentation {
   attention: AttentionFactsPresentation;
   /** The producer's DECLARED workflow phase (`missions[].workflow_phase`), as projected. */
   workflowPhase: WorkflowPhaseView;
+  /** The producer's DECLARED delivery link (`missions[].delivery_link`), as projected; ABSENT when the answer carries none. */
+  deliveryLink?: MissionDeliveryLinkView;
 }
 
 /**
@@ -1138,6 +1141,7 @@ function presentMissionV2(mission: MissionView): MissionV2Presentation | null {
     },
     attention: presentAttention(v2.missionState, report.facts),
     workflowPhase: v2.workflowPhase,
+    ...(v2.deliveryLink === undefined ? {} : { deliveryLink: { ...v2.deliveryLink } }),
     canonicalReview: {
       state: review.state,
       problem: review.problem,

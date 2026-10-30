@@ -20,8 +20,10 @@ import {
   DI_FIXTURE_BANNER,
   diCharacterLabel,
   diCharacterTitle,
+  diMissionRefForCharacter,
 } from './components/diOfficeFormat.js';
 import { DiOfficePanel } from './components/DiOfficePanel.js';
+import { missionTitle } from './components/diPlainSummary.js';
 import { useDiReceptionInbox } from './components/diReceptionInboxState.js';
 import { officePanelPresentation } from './components/diScanModel.js';
 import { EditActionBar } from './components/EditActionBar.js';
@@ -45,6 +47,7 @@ import {
   DI_FAVICON_DATA_URI,
   DI_MINIMIZED_STRIP_WIDTH_PX,
   DI_OFFICE_DISTRICT_PATTERNS,
+  DI_RAIL_WIDTH_PX,
   DI_WORLD_REFLOW_MS,
   WORLD_KEY_PAN_FRACTION,
   ZOOM_MAX,
@@ -53,6 +56,7 @@ import {
 import { diDockFor } from './diPanelLayout.js';
 import { useCityPresentation } from './hooks/useCityPresentation.js';
 import { useDiCodeReview } from './hooks/useDiCodeReview.js';
+import { useDiDelivery } from './hooks/useDiDelivery.js';
 import { useDiMissionRequest } from './hooks/useDiMissionRequest.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
@@ -66,7 +70,6 @@ import {
   snapshotTrainsRaw,
 } from './office/ambient/ambientProbe.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
-import { ReceptionTarget } from './office/components/ReceptionTarget.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
@@ -145,7 +148,7 @@ function App() {
   const {
     diOfficeState,
     diEvidenceContent,
-    diCodeReviewAnswer,
+    diCodeReviewFeed,
     diClientReason,
     agents,
     selectedAgent,
@@ -210,7 +213,20 @@ function App() {
    * (see diPanelLayout.ts: responsive width, and the recorded behaviour that the world yields entirely where nothing is left).
    */
   const viewportWidthPx = useViewportWidth();
-  const dock = diDockFor(viewportWidthPx, diPanelCollapsed, minimizedCount > 0);
+  /** Which face the office panel shows (the product's scan face, or the operational list a harness asks for). */
+  const officeFace = officePanelPresentation({
+    face:
+      typeof window === 'undefined'
+        ? null
+        : (window as Window & { __DI_OFFICE_PANEL_FACE?: string }).__DI_OFFICE_PANEL_FACE,
+    e2e:
+      typeof window !== 'undefined' &&
+      (window as Window & { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E === true,
+  });
+  /** The scan face's navigation rail at the window's left edge: the world yields it while the office is open (it minimizes with the office). */
+  const diRailPx =
+    diOfficeState && officeFace === 'scan' && !diPanelCollapsed ? DI_RAIL_WIDTH_PX : 0;
+  const dock = diDockFor(viewportWidthPx, diPanelCollapsed, minimizedCount > 0, diRailPx);
   /** The width taken at the right of the world: the docked panel while open, and the strip while it shows. */
   const diRightInsetPx = dock.insetPx;
   /**
@@ -331,7 +347,7 @@ function App() {
   // item 3: the live code review. The side panel is only the entry; the reading is in the modal.
   // The session sends only reads by an admitted reference and clears itself the moment the
   // connection, the office state, the assignment or the agent cannot be vouched for.
-  const review = useDiCodeReview(diOfficeState, diClientReason, diCodeReviewAnswer);
+  const review = useDiCodeReview(diOfficeState, diClientReason, diCodeReviewFeed);
   const reviewOpener = useRef<HTMLElement | null>(null);
   const openReview = review.open;
   const reviewAccess = useMemo<DiCodeReviewAccess>(
@@ -340,18 +356,30 @@ function App() {
         reviewOpener.current = opener;
         openReview(target);
       },
+      // Stage 4: the scan face reads the same session in its nested Code Diff editor (see the modal's mount below)
+      session: review.session,
+      begin: review.open,
+      end: review.close,
+      choose: review.select,
     }),
-    [openReview],
+    [openReview, review.session, review.open, review.close, review.select],
   );
   // item 4: the Mission request workspace. It talks only to the closed `diMissionRequest`
   // messages the server relays to the request panel's loopback adapter (the token stays in the
   // server), asks for nothing the records do not offer, and clears itself the moment the client
   // cannot vouch for the office.
   const mission = useDiMissionRequest(diClientReason, diOfficeState !== null);
+  /**
+   * M8: Mission details' OWN delivery session, in linked mode: its one id is the shown Mission's delivery link (never typed). It
+   * sends nothing by itself. It is the office's ONLY delivery session: the standalone panel, where an id is typed, is kept for test
+   * harnesses only, with no product entry (owner decision, 2026-10-29), so App starts no session for it.
+   */
+  const missionDelivery = useDiDelivery(diClientReason, 'linked');
   const missionOpener = useRef<HTMLElement | null>(null);
   const openMission = mission.open;
   const readConversation = mission.openConversation;
   const readRequest = mission.select;
+  const setMissionComposer = mission.setComposer;
   const missionAccess = useMemo<DiMissionRequestAccess>(
     () => ({
       state: mission.state,
@@ -371,17 +399,15 @@ function App() {
         openMission('requests');
         readRequest(requestRef);
       },
+      // G1/G2: New Mission hands its ask to the panel's own Ask draft (nothing is sent; the panel stays the one driver)
+      setComposer: setMissionComposer,
     }),
-    [mission.state, openMission, readConversation, readRequest],
+    [mission.state, openMission, readConversation, readRequest, setMissionComposer],
   );
-  // The reception inbox: ONE dialog, two entrances (the sidebar's attention entry and the reception
-  // desk in the world). They share this state, so they can never open two different inboxes.
+  // The reception inbox: ONE dialog with ONE entrance in the chrome (the rail's Reception on the scan face; the
+  // operational list's attention entry in the harness face). Nothing in the world opens it (D-10: Reception is
+  // left-rail navigation only); the receptionist and the desk stay in the world as they are.
   const receptionInbox = useDiReceptionInbox();
-  const receptionTargetRef = useRef<HTMLButtonElement | null>(null);
-  const openReceptionFromWorld = useCallback(
-    () => receptionInbox.openFrom(receptionTargetRef.current),
-    [receptionInbox],
-  );
   // Round 15 F2: a read pending when the client stops vouching for the office state is
   // forgotten with it (its answer, if any, is dropped by the message handler).
   useEffect(() => {
@@ -833,13 +859,61 @@ function App() {
     transport.send({ type: 'closeAgent', id });
   }, []);
 
-  const handleClick = useCallback((agentId: number) => {
-    // If clicked agent is a sub-agent, focus the parent's terminal instead
-    const os = getOfficeState();
-    const meta = os.subagentMeta.get(agentId);
-    const focusId = meta ? meta.parentAgentId : agentId;
-    transport.send({ type: 'focusAgent', id: focusId });
+  /**
+   * AC-4.4-26: on the scan face, clicking an agent or its Mission label opens THAT Mission's details (a team member's own
+   * Mission, a sub-agent its parent's; a runtime agent none). Home is the origin, so Back returns there; the world is not
+   * touched. A minimized office panel is restored, or the Mission could not show. The operational face is unchanged.
+   */
+  const [worldOpen, setWorldOpen] = useState<{ ref: string; seq: number } | null>(null);
+  /**
+   * Pass C item 5: on the scan face the world's own controls (zoom, views, Map, Districts, Layout, City, Settings, the
+   * legend, the version label and its update notice) sit behind ONE disclosure at the world's top-right, the chevron the
+   * locked Home draws; collapsed by default, nothing removed. The FIXTURE label and the connection status are required
+   * notices and are never behind it. Elsewhere (Pixel, the operational face) the controls are always shown.
+   */
+  const worldChromeCollapsible = diOfficeState !== null && officeFace === 'scan';
+  const [worldChromeOpen, setWorldChromeOpen] = useState(false);
+  const worldChromeShown = !worldChromeCollapsible || worldChromeOpen;
+  const toggleWorldChrome = useCallback(() => {
+    setWorldChromeOpen((open) => {
+      // the City panel opens from a control behind the disclosure, so it closes with it
+      if (open) setIsCityOpen(false);
+      return !open;
+    });
   }, []);
+  const missionRefFor = useCallback(
+    (agentId: number): string | null => {
+      if (!diOfficeState || officeFace !== 'scan') return null;
+      const os = getOfficeState();
+      return diMissionRefForCharacter(
+        diOfficeState,
+        agentId,
+        (id) => os.subagentMeta.get(id)?.parentAgentId ?? null,
+      );
+    },
+    [diOfficeState, officeFace],
+  );
+  const openMissionFromWorld = useCallback(
+    (agentId: number) => {
+      const ref = missionRefFor(agentId);
+      if (ref === null) return;
+      setDiPanelCollapsed(false);
+      setWorldOpen((prev) => ({ ref, seq: (prev?.seq ?? 0) + 1 }));
+    },
+    [missionRefFor],
+  );
+
+  const handleClick = useCallback(
+    (agentId: number) => {
+      // If clicked agent is a sub-agent, focus the parent's terminal instead
+      const os = getOfficeState();
+      const meta = os.subagentMeta.get(agentId);
+      const focusId = meta ? meta.parentAgentId : agentId;
+      transport.send({ type: 'focusAgent', id: focusId });
+      openMissionFromWorld(agentId);
+    },
+    [openMissionFromWorld],
+  );
 
   const officeState = getOfficeState();
 
@@ -1019,12 +1093,15 @@ function App() {
         ref={containerRef}
         // overflow CLIP, not hidden: a hidden box is still programmatically scrollable (focus,
         // scrollIntoView), and scrolling it lifted the office canvas off the bottom of the view
-        className={`h-full relative overflow-clip${diOfficeState && !diPanelCollapsed ? ' di-dock-open' : ''}`}
+        className={`h-full relative overflow-clip${diOfficeState && !diPanelCollapsed ? ' di-dock-open' : ''}${worldChromeCollapsible ? ' di-world-home' : ''}`}
+        data-testid="di-world"
         // DI mode: the office yields the docked panel's width, so it re-centres beside it
         // and no character can sit under the panel.
         style={{
-          // ...and the strip of minimized surfaces, while it holds any, so it covers nothing of the world.
-          width: diOfficeState ? `calc(100% - ${diRightInsetPx}px)` : '100%',
+          // ...and the strip of minimized surfaces, while it holds any, so it covers nothing of the world. On the scan face
+          // the world also starts after the navigation rail at the window's left edge (DI_RAIL_WIDTH_PX).
+          width: diOfficeState ? `calc(100% - ${diRightInsetPx + diRailPx}px)` : '100%',
+          marginLeft: diRailPx,
         }}
       >
         <OfficeCanvas
@@ -1047,15 +1124,35 @@ function App() {
           centerWhenWorldFits={isDiMode}
           onUserPan={handleUserPan}
           renderPaused={isDiMode && largeWorld && mapShown && !editor.isEditMode}
-          onReceptionClick={
-            isDiMode && !editor.isEditMode && !(largeWorld && mapShown)
-              ? openReceptionFromWorld
-              : undefined
-          }
         />
 
         {!isDebugMode ? (
           <>
+            {worldChromeCollapsible && (
+              <WorldControlsGate available={worldControlsAvailable} narrow={dock.worldNarrow}>
+                <button
+                  type="button"
+                  className="di-world-disclosure"
+                  data-testid="di-world-disclosure"
+                  aria-expanded={worldChromeOpen}
+                  aria-controls="di-world-controls"
+                  aria-label={worldChromeOpen ? 'Hide world controls' : 'Show world controls'}
+                  title={worldChromeOpen ? 'Hide world controls' : 'Show world controls'}
+                  onClick={toggleWorldChrome}
+                >
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                    <path
+                      d={worldChromeOpen ? 'M4 10l4-4 4 4' : 'M4 6l4 4 4-4'}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </WorldControlsGate>
+            )}
             <WorldControlsGate
               available={worldControlsAvailable}
               narrow={dock.worldNarrow}
@@ -1149,18 +1246,6 @@ function App() {
                   );
                 })()}
 
-              {isDiMode && (
-                <ReceptionTarget
-                  officeState={officeState}
-                  containerRef={containerRef}
-                  zoom={editor.zoom}
-                  panRef={editor.panRef}
-                  buttonRef={receptionTargetRef}
-                  onOpen={(opener) => receptionInbox.openFrom(opener)}
-                  // never over (or through) the Map, which is opaque and owns the screen while open
-                  hidden={editor.isEditMode || (largeWorld && mapShown)}
-                />
-              )}
             </WorldControlsGate>
 
             <ToolOverlay
@@ -1183,6 +1268,17 @@ function App() {
                   : undefined
               }
               diTitleFor={diOfficeState ? (id) => diCharacterTitle(diOfficeState, id) : undefined}
+              // AC-4.4-26: on the scan face a character's Mission label is a button that opens its Mission
+              diMissionFor={
+                diOfficeState && officeFace === 'scan'
+                  ? (id) => {
+                      const ref = missionRefFor(id);
+                      const found = diOfficeState.missions.missions.find((m) => m.missionRef === ref);
+                      return found ? { title: missionTitle(found).text } : null;
+                    }
+                  : undefined
+              }
+              onOpenMission={openMissionFromWorld}
             />
             {diOfficeState && (
               <DiOfficePanel
@@ -1196,20 +1292,11 @@ function App() {
                 evidence={diEvidence}
                 review={reviewAccess}
                 mission={missionAccess}
+                missionDelivery={missionDelivery}
                 receptionInbox={receptionInbox}
-                presentation={officePanelPresentation({
-                  face:
-                    typeof window === 'undefined'
-                      ? null
-                      : (window as Window & { __DI_OFFICE_PANEL_FACE?: string })
-                          .__DI_OFFICE_PANEL_FACE,
-                  e2e:
-                    typeof window !== 'undefined' &&
-                    (window as Window & { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E ===
-                      true,
-                })}
+                presentation={officeFace}
+                worldOpen={worldOpen}
                 onOpenSettings={() => setIsSettingsOpen(true)}
-                onFocusAgent={handleClick}
               />
             )}
             {diOfficeState && (
@@ -1221,13 +1308,17 @@ function App() {
                 fixture={isFixturePreview}
               />
             )}
-            <DiCodeReview
-              session={review.session}
-              onClose={review.close}
-              onRefresh={review.refresh}
-              onSelect={review.select}
-              returnFocusTo={reviewOpener}
-            />
+            {/* the modal is the OPERATIONAL face's presentation of the session; the scan face reads it in the nested Code Diff editor, so
+                the two are never both showing it (no duplicate modal) */}
+            {officeFace !== 'scan' && (
+              <DiCodeReview
+                session={review.session}
+                onClose={review.close}
+                onRefresh={review.refresh}
+                onSelect={review.select}
+                returnFocusTo={reviewOpener}
+              />
+            )}
           </>
         ) : (
           <DebugView
@@ -1332,7 +1423,7 @@ function App() {
             ) : null
           }
           top={
-            !isDebugMode ? (
+            !isDebugMode && worldChromeShown ? (
               <WorldControlsGate
                 available={worldControlsAvailable}
                 narrow={dock.worldNarrow}
@@ -1362,7 +1453,9 @@ function App() {
                       .filter((o) => o.kind === 'district')
                       .map((o) => ({
                         label: o.label,
-                        short: DI_OFFICE_DISTRICT_PATTERNS.find((p) => p.match.test(o.label))?.short ?? o.label,
+                        short:
+                          DI_OFFICE_DISTRICT_PATTERNS.find((p) => p.match.test(o.label))?.short ??
+                          o.label,
                       }))}
                   />
                 )}
@@ -1386,22 +1479,24 @@ function App() {
           }
         >
           <WorldStack>
-            <WorldControlsGate available={worldControlsAvailable} narrow={dock.worldNarrow}>
-              <BottomToolbar
-                isEditMode={editor.isEditMode}
-                onOpenClaude={editor.handleOpenClaude}
-                onToggleEditMode={editor.handleToggleEditMode}
-                isSettingsOpen={isSettingsOpen}
-                onToggleSettings={() => setIsSettingsOpen((v) => !v)}
-                workspaceFolders={workspaceFolders}
-                city={
-                  isDiMode
-                    ? { open: isCityOpen, onToggle: () => setIsCityOpen((v) => !v) }
-                    : undefined
-                }
-              />
-              {diOfficeState && <AmbientLegend officeState={officeState} />}
-            </WorldControlsGate>
+            {worldChromeShown && (
+              <WorldControlsGate available={worldControlsAvailable} narrow={dock.worldNarrow}>
+                <BottomToolbar
+                  isEditMode={editor.isEditMode}
+                  onOpenClaude={editor.handleOpenClaude}
+                  onToggleEditMode={editor.handleToggleEditMode}
+                  isSettingsOpen={isSettingsOpen}
+                  onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+                  workspaceFolders={workspaceFolders}
+                  city={
+                    isDiMode
+                      ? { open: isCityOpen, onToggle: () => setIsCityOpen((v) => !v) }
+                      : undefined
+                  }
+                />
+                {diOfficeState && <AmbientLegend officeState={officeState} />}
+              </WorldControlsGate>
+            )}
           </WorldStack>
         </WorldLeftRail>
         {/* the update notice can sit under the City popover: suspended (inert, still drawn) while it is open */}
@@ -1410,14 +1505,17 @@ function App() {
           narrow={dock.worldNarrow}
           suspended={isCityOpen}
         >
-          <VersionIndicator
-            currentVersion={extensionVersion}
-            lastSeenVersion={lastSeenVersion}
-            onDismiss={handleWhatsNewDismiss}
-            onOpenChangelog={handleOpenChangelog}
-            labelHost={dock.worldNarrow && worldControlsAvailable ? railFooter : null}
-            suspended={isCityOpen}
-          />
+          {/* the version label and its update notice are world chrome (item 5: behind the disclosure on the scan face) */}
+          {worldChromeShown && (
+            <VersionIndicator
+              currentVersion={extensionVersion}
+              lastSeenVersion={lastSeenVersion}
+              onDismiss={handleWhatsNewDismiss}
+              onOpenChangelog={handleOpenChangelog}
+              labelHost={dock.worldNarrow && worldControlsAvailable ? railFooter : null}
+              suspended={isCityOpen}
+            />
+          )}
 
           <ConnectionIndicator reducedMotion={officeState.reducedMotion} />
         </WorldControlsGate>

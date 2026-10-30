@@ -1924,7 +1924,9 @@ test('reflowReach CONTRACT has TEETH: content cut off the window edges, sideways
  * The widths: 320 (the standard's), 360 and 414 (common phones) and 640; with and without a minimized surface (which brings the 44 px strip).
  */
 test('AC-UX-13 / SC 1.4.10, office panel reflow [harness: the real panel and the real dock arithmetic]: at 320, 360, 414 and 640 the panel and the strip both fit, and no reading or control content is cut off or needs sideways scrolling', async () => {
-  const DESIGN = 420;
+  // INDEPENDENT pin: the design width itself (pass C, C-V1: measured from 01-home.jpg to the panel's own EDGE RULE at x 852 in the
+  // 1280 frame, 1280 - 852 = 428; not the dark lead-in from x 847, which would read 433)
+  const DESIGN = 428;
   const STRIP = 44;
   const findings: string[] = [];
   for (const width of [320, 360, 414, 640]) {
@@ -1946,7 +1948,7 @@ test('AC-UX-13 / SC 1.4.10, office panel reflow [harness: the real panel and the
         assert.equal(
           reach.root?.width,
           expected,
-          `${at}: the panel is ${expected} px (420, or what the window leaves beside the strip)`,
+          `${at}: the panel is ${expected} px (${DESIGN}, or what the window leaves beside the strip)`,
         );
         assert.ok(
           reach.root!.left >= 0 && reach.root!.right <= width,

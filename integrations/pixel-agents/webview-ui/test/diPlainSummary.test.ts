@@ -37,6 +37,7 @@ import { INITIAL_STATE } from '../src/components/diMissionRequestModel.ts';
 import { plainIdentityReason } from '../src/components/diNavigation.ts';
 import { navigationOrder } from '../src/components/diOfficeFormat.ts';
 import { DiOfficePanel, RuntimeAgentsSection } from '../src/components/DiOfficePanel.tsx';
+import { missionObjective } from '../src/components/diOperationalStatus.ts';
 import {
   agentNow,
   agentPhrase,
@@ -161,11 +162,14 @@ test('with nothing meaningful left, the title is an honest placeholder — never
   assert.equal(MISSION_TITLE_PLACEHOLDER, 'Objective text available: open to read');
 });
 
-test('a header-only, empty or missing objective keeps its source-qualified "No goal reported" wording', () => {
+// CHANGED IN NAMING (a), 2026-10-28 (owner ruling: no machine id or state code in a primary title): the HEADLINE is exactly "No goal reported" (the source reported none; it is not claimed that
+// none exists), and the source-qualified note with its state stays as SECONDARY detail (missionObjective's text, unchanged).
+test('a header-only, empty or missing objective is headed "No goal reported", with the source and state kept as secondary detail', () => {
   for (const value of ['OBJECTIVE', '   ', null]) {
     const t = missionTitle(withObjective(value));
     assert.equal(t.kind, 'no-goal', String(value));
-    assert.match(t.text, /^No goal reported: mc /);
+    assert.equal(t.text, 'No goal reported', String(value));
+    assert.match(missionObjective(withObjective(value)).text, /^No goal reported: mc /, String(value));
   }
 });
 
@@ -634,12 +638,12 @@ test('zero attention entries is said honestly: never "none" while some kinds can
   const s = fresh();
   s.reception!.entries = [];
   s.reception!.entriesTotal = 0;
-  const zero = attentionSummary(s.reception!, new Set());
+  const zero = attentionSummary(s.reception!);
   assert.equal(zero.count, 0);
   assert.equal(zero.text, 'Nothing listed as needing attention');
   // What the desk cannot read is said once, by viewLimits — never folded into a "none".
   assert.match(viewLimits(s)!.summary, /may not show everything that needs attention/);
-  assert.equal(attentionSummary(fresh().reception!, new Set()).text, '1 needs attention');
+  assert.equal(attentionSummary(fresh().reception!).text, '1 needs attention');
 });
 
 const officeStub = {

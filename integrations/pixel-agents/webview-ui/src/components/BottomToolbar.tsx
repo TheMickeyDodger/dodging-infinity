@@ -85,7 +85,10 @@ export function BottomToolbar({
   };
 
   return (
-    <div className="order-0 shrink-0 pointer-events-auto flex items-center gap-4 pixel-panel p-4">
+    <div
+      className="order-0 shrink-0 pointer-events-auto flex items-center gap-4 pixel-panel p-4"
+      data-testid="world-toolbar"
+    >
       {/* Hide + Agent in standalone browser mode (no terminal to interact with) */}
       {!isBrowserRuntime && (
         <div

@@ -16,8 +16,6 @@ import {
   CHARACTER_HIT_HEIGHT,
   DI_RECEPTION_DESK_TYPE,
   DI_RECEPTION_DESK_UID,
-  DI_RECEPTION_LABEL,
-  DI_RECEPTION_TARGET_Z_INDEX,
   DI_RECEPTIONIST_ID,
   DI_RECEPTIONIST_PALETTE,
   GREETER_ID,
@@ -69,8 +67,6 @@ test('the new reception bounds are pinned to their exact values', () => {
     DI_RECEPTION_DESK_TYPE,
     DI_RECEPTIONIST_ID,
     DI_RECEPTIONIST_PALETTE,
-    DI_RECEPTION_LABEL,
-    DI_RECEPTION_TARGET_Z_INDEX,
   });
   // The lobby desk every shipped preset already carries (palace-relative (23, 9)).
   assert.equal(DI_RECEPTION_DESK_UID, 'expansion-148');
@@ -80,9 +76,9 @@ test('the new reception bounds are pinned to their exact values', () => {
   assert.notEqual(DI_RECEPTIONIST_ID, GREETER_ID);
   // The receptionist job's own palette (ambientJobs.ts).
   assert.equal(DI_RECEPTIONIST_PALETTE, 3);
-  assert.equal(DI_RECEPTION_LABEL, 'Reception');
-  // Above the canvas, below the DI panel/dialog stack (the inbox backdrop is z-index 1000).
-  assert.equal(DI_RECEPTION_TARGET_Z_INDEX, 20);
+  // Superseded (D-10, CONTROL-MAP "Reception left-rail only"): the in-world desk TARGET, an inbox opener, is removed,
+  // and with it the two constants that pinned its label and stacking order (DI_RECEPTION_LABEL,
+  // DI_RECEPTION_TARGET_Z_INDEX). The desk, the receptionist and the post pinned above are unchanged.
 });
 
 for (const [file, dc, dr, stand] of SHIPPED) {

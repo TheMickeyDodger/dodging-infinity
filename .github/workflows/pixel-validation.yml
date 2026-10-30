@@ -9,19 +9,27 @@ on:
 permissions:
   contents: read
 
+# The UI suite (webview-ui, ~55 min serial) runs as four parallel shards balanced by measured
+# per-file time (integrations/pixel-agents/scripts/pixel-ui-shards.mjs). Files stay serial inside
+# each shard (fileParallelism: false), so screenshot timing is unchanged. Types, lint, builds and the
+# server/package tests run once in "Pixel checks". The required status check is the final
+# "Pixel validation" job, which passes only when every job above it passed.
+
+env:
+  HUSKY: "0"
+  SCARF_ANALYTICS: "false"
+  DO_NOT_TRACK: "1"
+  CI: "true"
+  PIXEL_UI_SHARDS: "4"
+
 jobs:
-  pixel-validation:
-    name: Pixel validation
+  pixel-checks:
+    name: Pixel checks
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
       run:
         working-directory: integrations/pixel-agents
-    env:
-      HUSKY: "0"
-      SCARF_ANALYTICS: "false"
-      DO_NOT_TRACK: "1"
-      CI: "true"
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -44,6 +52,9 @@ jobs:
           diff -u "$RUNNER_TEMP/pixel-hooks-before" "$RUNNER_TEMP/pixel-hooks-after"
           git diff --exit-code -- package-lock.json
 
+      - name: Prove the UI test shards cover every file exactly once
+        run: node scripts/pixel-ui-shards.mjs --check --of "$PIXEL_UI_SHARDS"
+
       - name: Generate and validate AsyncAPI messages
         run: |
           npm run asyncapi:generate
@@ -63,11 +74,69 @@ jobs:
       - name: Run server tests
         run: npm run test:server
 
-      - name: Run UI tests
-        run: npm run test:webview
-
       - name: Check package contracts and asset budgets
         run: npm run test:package-contract
 
       - name: Assemble the standalone DI package
         run: node scripts/build-di-package.mjs --out "$RUNNER_TEMP/pixel-agents-di-package"
+
+  pixel-ui-tests:
+    name: Pixel UI tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: integrations/pixel-agents
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "26.5.0"
+          cache: npm
+          cache-dependency-path: integrations/pixel-agents/package-lock.json
+
+      - name: Install locked dependencies and preserve Git hooks
+        shell: bash
+        run: |
+          git config --get core.hooksPath > "$RUNNER_TEMP/pixel-hooks-before" || test "$?" -eq 1
+          npm ci --foreground-scripts --no-audit --no-fund --no-update-notifier
+          git config --get core.hooksPath > "$RUNNER_TEMP/pixel-hooks-after" || test "$?" -eq 1
+          diff -u "$RUNNER_TEMP/pixel-hooks-before" "$RUNNER_TEMP/pixel-hooks-after"
+          git diff --exit-code -- package-lock.json
+
+      - name: Run UI tests (shard ${{ matrix.shard }}/4)
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mapfile -t files < <(node scripts/pixel-ui-shards.mjs --shard "$SHARD" --of "$PIXEL_UI_SHARDS")
+          test "${#files[@]}" -gt 0
+          printf 'shard %s/%s runs %s files\n' "$SHARD" "$PIXEL_UI_SHARDS" "${#files[@]}"
+          cd webview-ui
+          npm test -- "${files[@]}"
+
+  pixel-validation:
+    name: Pixel validation
+    if: ${{ always() }}
+    needs: [pixel-checks, pixel-ui-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every Pixel job to pass
+        env:
+          CHECKS: ${{ needs.pixel-checks.result }}
+          UI_TESTS: ${{ needs.pixel-ui-tests.result }}
+        run: |
+          echo "Pixel checks: $CHECKS"
+          echo "Pixel UI tests (all shards): $UI_TESTS"
+          test "$CHECKS" = success
+          test "$UI_TESTS" = success

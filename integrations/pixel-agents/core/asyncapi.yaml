@@ -127,6 +127,7 @@ components:
         - $ref: '#/components/schemas/DiEvidenceContent'
         - $ref: '#/components/schemas/DiCodeReview'
         - $ref: '#/components/schemas/DiMissionRequestReply'
+        - $ref: '#/components/schemas/DiDeliveryReply'
       discriminator: type
 
     ClientMessage:
@@ -159,7 +160,9 @@ components:
         - $ref: '#/components/schemas/SaveDiSeatPreferences'
         - $ref: '#/components/schemas/DiEvidenceRead'
         - $ref: '#/components/schemas/DiCodeReviewRead'
+        - $ref: '#/components/schemas/DiCodeReviewMissionRead'
         - $ref: '#/components/schemas/DiMissionRequest'
+        - $ref: '#/components/schemas/DiDeliveryRequest'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -1079,12 +1082,19 @@ components:
         optional supersedes), `decide` (requestRef, missionId, revision, digest, reply: the word
         the person typed, relayed unchanged; and the EXACT offer displayed: offerDigest,
         expiresAt, scope, deliveryTargets, repositoryUrl), `checkApproval` (requestRef),
+        `decline` and `reject` (owner decision (c): the person's chosen non-approval outcome, on the
+        same EXACT offer displayed as `decide`, with no typed word), `requestChanges` (the same, and
+        reason: the person's words saying what should change, relayed unchanged),
         `withdraw` (requestRef, missionId, revision, digest) and `run` (requestRef, command:
         dispatch, observe, reconcile or verify; progression normally needs none of the last
         three, which a running progression runtime does). Nothing here names a path, a shell, a principal, a provider or a model. A
-        decision is the person's typed reply to exactly the displayed Mission, revision and
-        digest; it is an operator attestation, not independently verified. Answered with exactly
-        one diMissionRequestReply to the asking connection only.
+        decision is the person's typed reply, or their chosen decline, rejection or change request,
+        to exactly the displayed Mission, revision and digest; it is an operator attestation, not
+        independently verified.
+        THE CORRELATION DOMAIN: a diMissionRequest whose type, seq and op are valid is answered
+        with EXACTLY ONE diMissionRequestReply, correlated by that seq and op, to the asking
+        connection only, even when this office refuses it itself. A message without a valid seq
+        or op cannot be correlated: it gets no reply, and no seq or op is invented for it.
       type: object
       additionalProperties: false
       required: [type, seq, op]
@@ -1148,22 +1158,39 @@ components:
         supersedes:
           type: [string, 'null']
           maxLength: 35
+        reason:
+          type: string
+          maxLength: 2000
 
     DiMissionRequestOp:
       type: string
       enum:
         [refresh, conversation, request, offer, result, turn, submit, decide, checkApproval,
-         withdraw, run]
+         decline, reject, requestChanges, withdraw, run]
 
     DiMissionRequestReply:
       description: |
-        DI office only: the answer to one diMissionRequest, to the asking connection only. `state`
-        ok carries the adapter's own answer in `answer`; refused carries the code and the words
-        of whichever side refused (`problem`, `reason`, with the adapter's `details` inside
-        `answer`); unavailable means the request panel's adapter could not be reached or is not
-        configured (nothing was changed). EVERYTHING in `answer` is UNTRUSTED data: provider text,
-        a person's words and a team's result among it. A client shows it as inert text and never
-        renders, executes, follows or fetches from it, and never treats it as a decision.
+        DI office only: the answer to one diMissionRequest, to the asking connection only,
+        correlated by `seq` and `op`. `state`:
+        ok: the adapter answered, and `answer` carries its own answer.
+        refused: this office or the adapter refused the request, with the code and the words of
+        whichever side refused (`problem`, `reason`, with the adapter's `details` inside
+        `answer`). A refusal claims no more about what changed than the refusing side's own
+        answer says.
+        unavailable: NOTHING WAS CHANGED. The request was not sent (no request panel configured,
+        its discovery file unusable, nothing answering at its address, or this office refused to
+        send it), the adapter rejected this office's credentials before acting on it, or the
+        request was a READ (refresh, conversation, request or result), which changes nothing.
+        unknown: a WRITE only (offer, turn, submit, decide, checkApproval, decline, reject,
+        requestChanges, withdraw or run). The
+        request may have reached the request panel and no usable answer came back: no answer in
+        time, a broken connection, an answer too large or unreadable, or the panel reporting an
+        unexpected error or an oversized answer after handling it. WHETHER IT TOOK EFFECT IS NOT
+        KNOWN: it is neither a refusal nor a statement that nothing changed. The server never
+        sends a request again on its own.
+        EVERYTHING in `answer` is UNTRUSTED data: provider text, a person's words and a team's
+        result among it. A client shows it as inert text and never renders, executes, follows or
+        fetches from it, and never treats it as a decision.
       type: object
       additionalProperties: false
       required: [type, seq, op, state, problem, reason, answer]
@@ -1188,7 +1215,130 @@ components:
 
     DiMissionRequestState:
       type: string
-      enum: [ok, refused, unavailable]
+      enum: [ok, refused, unavailable, unknown]
+
+    DiDeliveryRequest:
+      description: |
+        DI office only (owner decision (b), the delivery bridge): ONE closed request to the office
+        delivery adapter (didelivery_office.py, a process the person starts), relayed by the server,
+        which alone holds the adapter's bearer token (a client never sees it). `seq` is a number the
+        client chooses; the reply echoes it with `op`. Each `op` takes exactly its own fields and no
+        others, and anything else is refused: `status` (deliveryId: the delivery's status and the
+        one step eligible now, as the adapter answers it) and `advanceOnce` (deliveryId and
+        `confirmation`, the exact binding of the eligible step that was displayed and confirmed).
+        advanceOnce asks for AT MOST ONE step. pr_delivery's expected-step guard refuses it before
+        any effect unless the confirmation is exactly the binding of the step the record makes
+        eligible now. There is no op to advance further, revoke, mint or retry. The confirmation is
+        a local confirmation of what was displayed; it grants no authority beyond the one human
+        delivery ceremony. Nothing here names a path, a shell, a branch, a remote or a token.
+        One whose type, seq and op are valid is answered with exactly one diDeliveryReply to the
+        asking connection only; one without a valid seq or op gets no reply (see DiDeliveryReply).
+      type: object
+      additionalProperties: false
+      required: [type, seq, op, deliveryId]
+      properties:
+        type:
+          const: diDeliveryRequest
+        seq:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        op:
+          $ref: '#/components/schemas/DiDeliveryOp'
+        deliveryId:
+          type: string
+          pattern: '^prd-[0-9a-f]{24}$'
+          maxLength: 28
+        confirmation:
+          $ref: '#/components/schemas/DiDeliveryConfirmation'
+
+    DiDeliveryOp:
+      type: string
+      enum: [status, advanceOnce]
+
+    DiDeliveryStep:
+      type: string
+      enum: [BASE_REFRESH, COMMIT, PUSH, PR_CREATE]
+
+    DiDeliveryConfirmation:
+      description: |
+        The exact binding of ONE eligible delivery step, as the adapter's status answer gave it,
+        returned to the adapter unchanged: exactly these four keys, each of exactly its type.
+        WHY THESE KEYS ARE snake_case, unlike the rest of this contract: they are the adapter's
+        OWN keys (office_delivery/adapter.py, _CONFIRMATION_KEYS). The adapter compares the key
+        set exactly, and the expected-step guard needs the binding to still match the record, so
+        the confirmation must come back exactly as it was issued. Renaming it on the wire, in the
+        client or the relay, would put a transformation where that round-trip can silently break.
+        Do not convert these keys to camelCase.
+      type: object
+      additionalProperties: false
+      required: [delivery_id, revision, candidate_identity_digest_sha256, step]
+      properties:
+        delivery_id:
+          type: string
+          pattern: '^prd-[0-9a-f]{24}$'
+          maxLength: 28
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        candidate_identity_digest_sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          maxLength: 64
+        step:
+          $ref: '#/components/schemas/DiDeliveryStep'
+
+    DiDeliveryReply:
+      description: |
+        DI office only: the answer to one diDeliveryRequest, to the asking connection only,
+        correlated by `seq` and `op`. THE CORRELATION DOMAIN: every diDeliveryRequest whose type,
+        seq and op are valid gets exactly one, a malformed one and one sent to an office without a
+        delivery adapter included. A message without a valid seq or op cannot be correlated: it gets
+        no reply, and no seq or op is invented for it. `state`:
+        ok: the adapter answered, and `answer` carries its answer.
+        refused: this office or the adapter refused the request (a domain refusal included, with
+        its details inside `answer`), with the code and the words of whichever side refused
+        (`problem`, `reason`). A refusal claims no more about what changed than the adapter's own
+        answer says.
+        unavailable: NOTHING WAS CHANGED. The request was not sent (no adapter configured, its
+        discovery file unusable, nothing answering at its address, or this office refused to send
+        it), the adapter rejected this office's credentials before any step, or the request was a
+        status READ, which changes nothing.
+        unknown: advanceOnce only. The request may have reached the adapter and no usable answer
+        came back (no answer in time, a broken connection, an answer too large or unreadable, a
+        server error, or an answer withheld because it carried this office's credentials).
+        WHETHER A STEP WAS TAKEN IS NOT KNOWN. A client reads the status again before acting, and
+        never treats unknown as a refusal or as safe to send again.
+        The server sends no second advanceOnce for any reply. A reply never carries the adapter's
+        bearer token: an answer that would is withheld (problem `adapter_answer_withheld`).
+        EVERYTHING in `answer` is UNTRUSTED data: a client shows it as inert text and never
+        renders, executes, follows or fetches from it, and never treats it as an authorization.
+      type: object
+      additionalProperties: false
+      required: [type, seq, op, state, problem, reason, answer]
+      properties:
+        type:
+          const: diDeliveryReply
+        seq:
+          type: integer
+        op:
+          $ref: '#/components/schemas/DiDeliveryOp'
+        state:
+          $ref: '#/components/schemas/DiDeliveryState'
+        problem:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+        answer:
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: true
+
+    DiDeliveryState:
+      type: string
+      enum: [ok, refused, unavailable, unknown]
 
     DiCodeReviewRead:
       description: |
@@ -1223,10 +1373,62 @@ components:
         fileId:
           type: string
           maxLength: 35
+        requestId:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._-]{1,64}$'
+          description: |
+            OPTIONAL. An opaque name the client gives this read so that it can tell which read an
+            answer is for (a reference describes WHAT was asked, not WHICH ask: a Code Diff that is
+            closed and reopened asks for the same reference twice). The office echoes it in the
+            one diCodeReview it sends for this read, on every path, a refusal included. It carries
+            no authority and is never passed to the backend, which is asked only the admitted
+            reference. A read without it is answered without it.
+
+    DiCodeReviewMissionRead:
+      description: |
+        DI office only (item 3, live code review of a FINISHED Mission): the same read-only view as
+        diCodeReviewRead, asked by a MISSION-LEVEL reference — the Mission ref, the task id its
+        recorded execution names and the listing token the office gave with the Mission's own
+        offer (`DiMission.codeReview`). There is NO member: a message that carries a `memberRef`
+        is refused unread, and a diCodeReviewRead is never accepted for a Mission-level offer.
+        Never a path, root, ref, pathspec or git option. With neither `snapshot` nor `fileId`
+        this asks for the OVERVIEW; with both it asks for that ONE file's diff. Answered with
+        exactly one diCodeReview to the asking connection only, whose `memberRef` is the empty
+        string. Changes nothing, anywhere.
+      type: object
+      additionalProperties: false
+      required: [type, missionRef, taskId, listing]
+      properties:
+        type:
+          const: diCodeReviewMissionRead
+        missionRef:
+          type: string
+          maxLength: 104
+        taskId:
+          type: string
+          maxLength: 22
+        listing:
+          type: string
+          maxLength: 64
+        snapshot:
+          type: string
+          maxLength: 64
+        fileId:
+          type: string
+          maxLength: 35
+        requestId:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._-]{1,64}$'
+          description: |
+            OPTIONAL. The same opaque name as on diCodeReviewRead: echoed in the one diCodeReview
+            sent for this read, never passed to the backend, carrying no authority.
 
     DiCodeReview:
       description: |
-        DI office only: the answer to one diCodeReviewRead. `state` observed carries the target
+        DI office only: the answer to one diCodeReviewRead or diCodeReviewMissionRead (for the
+        latter `memberRef` is the empty string: the reference names no member). `state` observed carries the target
         (repository/worktree, branch or detached HEAD, base commit), the comparison stated in
         words-as-data, and the overview or the one file's diff; refused carries the code of
         whichever side refused (`decidedBy`: office or backend). A shared worktree is shown as
@@ -1284,6 +1486,13 @@ components:
             - $ref: '#/components/schemas/DiCodeReviewFile'
         observedAt:
           type: [integer, 'null']
+        requestId:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._-]{1,64}$'
+          description: |
+            OPTIONAL. Present exactly when the diCodeReviewRead it answers carried a requestId, and
+            then equal to it. It is taken from the request, never from the backend.
 
     DiCodeReviewView:
       type: string
@@ -1502,10 +1711,13 @@ components:
 
     DiCodeReviewOffer:
       description: |
-        Whether a code review is offered for this member (item 3): decided from the typed facts
-        of the listing (a Mission Core record, active standing, bound, a live member of the direct
-        task). `listing` is the token that identifies what the viewer was shown; it moves when
-        the assignment, the agent or the binding moves, and the office recomputes it at every
+        Whether a code review is offered (item 3), for a MEMBER (`DiMember.codeReview`: a Mission
+        Core record, active standing, bound, a live member of the direct task) or for a FINISHED
+        MISSION as a whole (`DiMission.codeReview`: a Mission Core record, terminal standing, the
+        historical execution established by the backend, with its cursor and task). Decided from
+        the typed facts of the listing. `listing` is the token that identifies what the viewer was
+        shown; it moves when the assignment, the agent or the binding (for a Mission, the task,
+        the evidence cursor or the standing) moves, and the office recomputes it at every
         read. `reason` names why not (a closed vocabulary), never a free label.
       type: object
       additionalProperties: false
@@ -2523,6 +2735,8 @@ components:
           $ref: '#/components/schemas/DiHerdrTask'
         evidence:
           $ref: '#/components/schemas/DiEvidenceLibrary'
+        codeReview:
+          $ref: '#/components/schemas/DiCodeReviewOffer'
 
     DiHerdrTask:
       description: |
@@ -2913,10 +3127,21 @@ components:
       description: |
         contract v2 blocks of one Mission, verbatim from the backend (`projected` is false
         for a v1 office: no chain, children, Mission State or review is then shown).
+        `workflowPhase` is the producer's DECLARED workflow phase and exists only inside the
+        v2 block: it is present exactly when `projected` is true. A v1 office has no v2 block
+        and so carries no workflow phase of any kind, not even an empty one; the absence of
+        the field (with `projected: false`) is how that is said, and no phase value stands in
+        for it. `deliveryLink` is the producer's DECLARED per-Mission delivery link; it is
+        present only when the backend's answer carries one (an answer that predates the field
+        has none, and nothing stands in for it).
       type: object
       additionalProperties: false
       required: [projected, taskChains, childrenRecord, missionState, canonicalReview]
       properties:
+        workflowPhase:
+          $ref: '#/components/schemas/DiWorkflowPhase'
+        deliveryLink:
+          $ref: '#/components/schemas/DiMissionDeliveryLink'
         projected:
           type: boolean
         taskChains:
@@ -3308,6 +3533,113 @@ components:
           type: [string, 'null']
         protocolToken:
           type: [string, 'null']
+
+    DiWorkflowPhase:
+      description: |
+        The workflow phase the PRODUCER DECLARES for one Mission (`missions[].workflow_phase`,
+        contract v2), as projected: never derived from the display-only lifecycle state, and
+        never defaulted. `state` is one of the producer's three, which are different facts and
+        are not merged:
+        - `observed`: a workflow_authority.workflow_phase/2 record's own phase (valid only for
+          that kind of record). `phase` is the phase when it is in the producer's closed
+          vocabulary (PLANNED, AUTHORIZED, WORKSPACE_READY, PREPARED, VALIDATED, DISPATCHED,
+          VERIFIED, COMPLETED, BLOCKED, NEEDS_REAUTHORIZATION); when it is not, `phase` is null
+          and `unrecognized` carries the declared value as inert text (bounded; null when the
+          declared value was not text).
+        - `not_applicable`: the Mission's lifecycle model has no workflow phase (Mission Core
+          is one). `phase` is null; `problem` is the producer's own reason.
+        - `not_reported`: a v2 answer from a producer that predates the declared field (the
+          key was absent). Unknown, never "none". `phase` is null.
+        All text is UNTRUSTED data a client shows as inert text.
+      type: object
+      additionalProperties: false
+      required: [state, phase, unrecognized, problem]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiWorkflowPhaseState'
+        phase:
+          type: [string, 'null']
+        unrecognized:
+          type: [string, 'null']
+        problem:
+          type: [string, 'null']
+
+    DiWorkflowPhaseState:
+      description: |
+        The producer's three declared states of the workflow phase, which are different facts:
+        observed = a workflow_authority record's own phase; not_applicable = the Mission's
+        lifecycle model has no workflow phase; not_reported = the producer predates the field
+        (unknown, never "none").
+      type: string
+      enum: [observed, not_applicable, not_reported]
+
+    DiMissionDeliveryLink:
+      description: |
+        Which ONE delivery record, if any, the catalog's registered delivery store links to
+        this Mission (`missions[].delivery_link`, contract v2), as the producer DECLARES it,
+        with the rule that linked it. Only a workflow_authority Mission can be linked, and only
+        by the one valid delivery record whose own Mission binding names its workflow id.
+        Mission Core, and every other kind of Mission, is never linked: no delivery record
+        names such a Mission, so its link is not known (never "none"). `deliveryId` is set
+        exactly when `state` is `linked`: one id, of the shape a delivery ceremony mints, never
+        a list or a count. `basis` names the rule that linked it, and is null otherwise.
+        A link selects which delivery's status may be read; it authorizes nothing, and the
+        catalog's store is not shown to be the store the office delivery adapter reads.
+      type: object
+      additionalProperties: false
+      required: [state, deliveryId, basis]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiMissionDeliveryLinkState'
+        deliveryId:
+          type: [string, 'null']
+          pattern: '^prd-[0-9a-f]{24}$'
+        basis:
+          oneOf:
+            - $ref: '#/components/schemas/DiMissionDeliveryLinkBasis'
+            - type: 'null'
+
+    DiMissionDeliveryLinkState:
+      description: |
+        The producer's declared states of a Mission's delivery link, each a different fact:
+        - linked: exactly one valid delivery record in the catalog's registered store names
+          this workflow Mission, no other registered Mission holds its id, and every workflow
+          source was read.
+        - unlinked_model_not_recorded: not known; delivery records name only workflow Missions,
+          so no delivery can be linked to a Mission of this kind (Mission Core is one).
+        - unlinked_store_not_registered: not known; no delivery store is registered with the
+          catalog.
+        - unlinked_store_unavailable: not known; the registered store could not be read, or a
+          record in it did not validate.
+        - unlinked_reader_failed: not known; the catalog's link reader failed.
+        - unlinked_no_record: no delivery record in the registered store names this workflow.
+        - unlinked_ambiguous: several records name this workflow, or several registered
+          Missions hold its id; none is chosen.
+        - unlinked_sources_incomplete: not known; a workflow source was not read, so this
+          Mission's id is not known to be unique.
+        - unlinked_id_not_addressable: the one matching record's delivery id is not of the shape
+          a ceremony mints, so it cannot be addressed.
+      type: string
+      enum:
+        [
+          linked,
+          unlinked_model_not_recorded,
+          unlinked_store_not_registered,
+          unlinked_store_unavailable,
+          unlinked_reader_failed,
+          unlinked_no_record,
+          unlinked_ambiguous,
+          unlinked_sources_incomplete,
+          unlinked_id_not_addressable,
+        ]
+
+    DiMissionDeliveryLinkBasis:
+      description: |
+        The rule that linked a Mission to its delivery: record_mission_binding, the delivery
+        record's own sealed Mission binding naming the Mission's workflow id. It is never an
+        engineering task id, an attested receipt or a newest pick.
+      type: string
+      enum: [record_mission_binding]
 
     # ── Client message variants ────────────────────────────────────
 

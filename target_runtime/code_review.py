@@ -22,7 +22,15 @@ hold or the answer REFUSES with its own code:
 - the Mission's source is still registered, read from the registry NOW, as
   the listing named it.
 
-A COMPLETED Mission is never admitted here, whatever its record still proves.
+A COMPLETED Mission is admitted here ONLY when the caller injects a finished-execution
+provider (``read(..., finished=...)``), which stands on the evidence library's record-side
+admission (``artifact_content.historical_execution``); the version 2 owner (``CatalogService.code_review``)
+injects it (I3), and a caller that injects none gets a COMPLETED Mission refused as not active, whatever
+its record still proves.
+Even then it is read ONLY when the recorded workspace's OWN task record (``.herd/state/task.json``:
+one hardened no-follow read, repeated at the release check) names THIS run (the one shared
+predicate, ``run_association.names_this_run``) AND is the task the verified receipt names: the
+workspace is shown as it is NOW, and its ownership was checked at one instant.
 
 WHAT IS COMPARED, exactly (``comparison`` says it in every answer):
 
@@ -87,6 +95,7 @@ from mission_sources import contract
 from mission_sources import registry as registry_module
 from target_runtime import git_transport as transport_module
 from target_runtime import prepare as prepare_module
+from target_runtime import run_association
 from target_runtime import state_artifact
 
 SCHEMA = "di.code_review"
@@ -245,7 +254,17 @@ PROBLEM_MOVED_DURING_READ = "workspace_moved_during_read"
 PROBLEM_ASSIGNMENT_CHANGED = "assignment_changed_during_read"
 PROBLEM_FILE_DIFF_OVER_BOUND = "file_diff_over_bound"
 PROBLEM_DIFF_NOT_UNDERSTOOD = "diff_not_understood"
-#: The CLOSED problem vocabulary (a consumer maps every one; no default).
+#: THE FINISHED-EXECUTION REASONS (I3 made them closed codes; the TypeScript list gained them in the same change). Three are the review route's
+#: words for a refusal of the evidence library's record-side admission (``FINISHED_REFUSALS``); the fourth (I2) is this route's OWN, from its
+#: workspace-side witness: no refusal of the record-side admission maps to it.
+FINISHED_NOT_ESTABLISHED = "finished_execution_not_established"
+FINISHED_UNVERIFIABLE = "finished_ownership_unverifiable"
+FINISHED_CONTESTED = "finished_ownership_contested"
+FINISHED_WORKSPACE_NOT_CORROBORATED = "finished_workspace_not_corroborated"
+FINISHED_REASONS = (FINISHED_NOT_ESTABLISHED, FINISHED_UNVERIFIABLE,
+                    FINISHED_CONTESTED, FINISHED_WORKSPACE_NOT_CORROBORATED)
+#: The CLOSED problem vocabulary (a consumer maps every one; no default): the
+#: active route's thirty codes, then the four finished-execution reasons.
 PROBLEMS = (
     PROBLEM_CONTRACT_VERSION, PROBLEM_SHUT_DOWN, PROBLEM_BUSY,
     PROBLEM_NOT_CORROBORATED, PROBLEM_MISSION_NOT_LISTED,
@@ -260,7 +279,34 @@ PROBLEMS = (
     PROBLEM_FILE_NOT_LISTED, PROBLEM_MOVED_DURING_READ,
     PROBLEM_ASSIGNMENT_CHANGED, PROBLEM_FILE_DIFF_OVER_BOUND,
     PROBLEM_DIFF_NOT_UNDERSTOOD,
-)
+) + FINISHED_REASONS
+
+#: What the review route says for each refusal of the evidence library's record-side admission (KEY: that
+#: library's own code). TOTAL in both directions (a test derives the reachable codes from its source): an
+#: existing review code where one already says the thing, else one of the three record-side finished reasons.
+FINISHED_REFUSALS = {
+    "no_fresh_catalog_answer": PROBLEM_NOT_CORROBORATED,
+    "mission_not_listed": PROBLEM_MISSION_NOT_LISTED,
+    "mission_listed_more_than_once": PROBLEM_MISSION_AMBIGUOUS,
+    "source_kind_has_no_artifact_content": PROBLEM_SOURCE_KIND,
+    "mission_binding_not_bound": FINISHED_NOT_ESTABLISHED,
+    "mission_task_or_workspace_unresolved": PROBLEM_UNRESOLVED,
+    "mission_state_not_observed": FINISHED_UNVERIFIABLE,
+    "cursor_not_the_listed_cursor": FINISHED_UNVERIFIABLE,
+    "registry_unreadable": PROBLEM_REGISTRY,
+    "source_not_registered": PROBLEM_SOURCE_NOT_REGISTERED,
+    "mission_store_unavailable": FINISHED_UNVERIFIABLE,
+    "mission_absent_from_store": FINISHED_UNVERIFIABLE,
+    "mission_moved_since_listing": FINISHED_UNVERIFIABLE,
+    "mission_task_or_workspace_changed": FINISHED_UNVERIFIABLE,
+    "workspace_not_one_resolved_root": PROBLEM_UNRESOLVED,
+    "request_read_budget_exhausted": PROBLEM_BUDGET,
+    "historical_identity_not_established": FINISHED_NOT_ESTABLISHED,
+    "historical_uniqueness_unverifiable": FINISHED_UNVERIFIABLE,
+    "historical_identity_conflict": FINISHED_CONTESTED,
+    "source_registration_changed": PROBLEM_REGISTRATION_CHANGED,
+    "historical_identity_changed": FINISHED_UNVERIFIABLE,
+}
 
 #: The registration fields a listing's source block and the registry share.
 _REGISTRATION_FIELDS = ("source_id", "kind", "store_dir", "producer",
@@ -367,9 +413,122 @@ def _registration(entry):
     return dict((field, entry[field]) for field in _REGISTRATION_FIELDS)
 
 
-def _corroborated(answer, freshness, now, mission_ref, task_id):
+#: The ONE fixed artifact the workspace witness reads: the recorded workspace's OWN task record.
+TASK_RECORD_DIRS = (".herd", "state")
+TASK_RECORD_NAME = "task.json"
+#: Every projected string is bounded to this many characters, ellipsis included: the legacy observer's own bound, so the two readers project the same fields.
+TASK_FIELD_MAX_CHARS = 200
+
+
+def _text_or_none(value):
+    if not isinstance(value, str):
+        return None
+    if len(value) <= TASK_FIELD_MAX_CHARS:
+        return value
+    return value[:TASK_FIELD_MAX_CHARS - 1] + "…"
+
+
+def _task_record(workspace, accounting):
+    """The workspace's OWN task record as the identity-bearing projection
+    ``{id, description, started_at, digest_sha256}``, from ONE hardened
+    no-follow read of ``.herd/state/task.json`` (the review route's reader: it
+    refuses an escaping chain, a symlink, a hardlink, a non-regular file, more
+    than the instruction bound and non-UTF-8, where the legacy observer reads
+    leniently). What a read can cost is HELD before it, the exact bytes settled
+    after; a refused read keeps its hold. Anything that is not a readable JSON
+    object is refused as ``finished_workspace_not_corroborated``."""
+    if accounting.untracked_bytes + MAX_UNTRACKED_READ_COST_BYTES > (
+            MAX_UNTRACKED_TOTAL_BYTES):
+        raise _Refused(PROBLEM_BUDGET, "the untracked files already read for"
+                       " this view used its %d-byte budget"
+                       % MAX_UNTRACKED_TOTAL_BYTES)
+    status, count, digest, text = state_artifact.read_state_artifact(
+        workspace, TASK_RECORD_DIRS, TASK_RECORD_NAME)
+    if status != prepare_module.INSTRUCTION_READ:
+        accounting.untracked_bytes += MAX_UNTRACKED_READ_COST_BYTES
+        raise _Refused(FINISHED_WORKSPACE_NOT_CORROBORATED, "the workspace's"
+                       " own task record was not read (%s)" % status)
+    accounting.untracked_bytes += count
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise _Refused(FINISHED_WORKSPACE_NOT_CORROBORATED, "the workspace's"
+                       " own task record is not valid JSON")
+    if not isinstance(data, dict):
+        raise _Refused(FINISHED_WORKSPACE_NOT_CORROBORATED, "the workspace's"
+                       " own task record is not a JSON object")
+    started = data.get("started_at")
+    return {"id": _text_or_none(data.get("id")),
+            "description": _text_or_none(data.get("description")),
+            "started_at": started if type(started) is int else None,
+            "digest_sha256": digest}
+
+
+def _witness(proof, accounting):
+    """The WORKSPACE-SIDE witness of a finished assignment: the recorded
+    workspace's own task record names THIS run (the one shared predicate,
+    ``run_association.names_this_run``, over the intent facts the record-side
+    proof carries) AND is the task the verified receipt names (a separate
+    comparison: the predicate does not compare ids). Returned in the bound, so
+    the release-time comparison sees a record that changed."""
+    intent, mission_id = proof.get("intent"), proof.get("mission_id")
+    if not (isinstance(mission_id, str) and isinstance(intent, dict)
+            and type(intent.get("revision")) is int
+            and isinstance(intent.get("proposal_digest_sha256"), str)
+            and type(intent.get("recorded_at")) is int):
+        raise _Refused(FINISHED_WORKSPACE_NOT_CORROBORATED, "the record-side"
+                       " proof carries no usable run intent to compare the"
+                       " workspace's task record with")
+    record = _task_record(proof["workspace"], accounting)
+    if not run_association.names_this_run(
+            {"task": {"description": record["description"],
+                      "started_at": record["started_at"]}},
+            mission_id, intent):
+        raise _Refused(FINISHED_WORKSPACE_NOT_CORROBORATED, "the workspace's"
+                       " own task record does not begin with this run's"
+                       " handoff, or its task started before the intent was"
+                       " recorded")
+    if record["id"] != proof["task_id"]:
+        raise _Refused(FINISHED_WORKSPACE_NOT_CORROBORATED, "the workspace's"
+                       " own task record names another task than the verified"
+                       " receipt")
+    return record
+
+
+def _finished(answer, finished, accounting, mission_ref, task_id):
+    """The COMPLETED assignment of ``mission_ref``, from the injected
+    ``finished`` provider (it stands on the evidence library's record-side
+    admission and is given the SAME held ``answer``): the bound the active
+    path would build, carrying the WHOLE proof AND the workspace-side witness
+    so the release-time comparison sees any change in either. The bytes the
+    provider read are charged even when it refuses. A refusal is mapped
+    through ``FINISHED_REFUSALS`` (a code the table does not know fails closed
+    to unverifiable)."""
+    proof, charged, refusal_ = finished(answer, mission_ref)
+    if accounting is not None:
+        accounting.registry_bytes += charged
+    if refusal_ is not None:
+        problem, detail = refusal_
+        raise _Refused(FINISHED_REFUSALS.get(problem, FINISHED_UNVERIFIABLE),
+                       detail)
+    if proof["task_id"] != task_id:
+        raise _Refused(PROBLEM_TASK_CHANGED, "the Mission's recorded task is"
+                       " not the one this review was opened for; open it"
+                       " again")
+    witness = _witness(proof, Accounting() if accounting is None
+                       else accounting)
+    return {"source_id": proof["source_id"], "task_id": proof["task_id"],
+            "workspace": proof["workspace"],
+            "registration": proof["registration"], "finished": proof,
+            "witness": witness}
+
+
+def _corroborated(answer, freshness, now, mission_ref, task_id, finished=None,
+                  accounting=None):
     """The ACTIVE assignment of ``mission_ref`` in the owner's last refreshed
-    answer, as a dict of the facts that identify it, or ``_Refused``."""
+    answer, as a dict of the facts that identify it, or ``_Refused``. With a
+    ``finished`` provider, a TERMINAL assignment is judged by it instead
+    (``_finished``); every other standing, and the active path, are unchanged."""
     if answer is None or answer.get("response") is None:
         raise _Refused(PROBLEM_NOT_CORROBORATED, "no refreshed catalog answer"
                        " is held; nothing shows the assignment is active")
@@ -392,6 +551,10 @@ def _corroborated(answer, freshness, now, mission_ref, task_id):
                        " an assignment with a bound workspace; this one is %s"
                        % mission["lifecycle"]["model"])
     if mission["lifecycle"]["standing"] != contract.STANDING_ACTIVE:
+        if finished is not None and mission["lifecycle"][
+                "standing"] == contract.STANDING_TERMINAL:
+            return _finished(answer, finished, accounting, mission_ref,
+                             task_id)
         raise _Refused(PROBLEM_NOT_ACTIVE, "the assignment's standing is %s,"
                        " not active; a review is offered only for work in"
                        " progress" % mission["lifecycle"]["standing"])
@@ -1501,14 +1664,16 @@ def _comparison(identity):
 
 
 def _revalidated(registry, corroboration, freshness, clock, bound, accounting,
-                 transport, workspace, identity, mission_ref, task_id):
+                 transport, workspace, identity, mission_ref, task_id,
+                 finished=None):
     """``_Refused`` unless, NOW, the registry and the catalog still show the
     SAME active assignment and the workspace is still the observed one. The
     owner need not have refreshed: a removal or repoint is seen here."""
     when = "while the workspace was read; the answer is discarded"
     _registered(_registry_now(registry, accounting), bound, when)
     if _corroborated(corroboration(), freshness, clock(), mission_ref,
-                     task_id) != bound:
+                     task_id, finished=finished,
+                     accounting=accounting) != bound:
         raise _Refused(PROBLEM_ASSIGNMENT_CHANGED, "the assignment changed %s"
                        % when)
     try:
@@ -1521,9 +1686,9 @@ def _revalidated(registry, corroboration, freshness, clock, bound, accounting,
 
 
 def _read(registry, corroboration, freshness, clock, transport, mission_ref,
-          task_id, snapshot, file_id, accounting):
+          task_id, snapshot, file_id, accounting, finished=None):
     bound = _corroborated(corroboration(), freshness, clock(), mission_ref,
-                          task_id)
+                          task_id, finished=finished, accounting=accounting)
     _registered(_registry_now(registry, accounting), bound, "now")
     workspace = _workspace(bound["workspace"])
     held = []
@@ -1573,27 +1738,31 @@ def _read(registry, corroboration, freshness, clock, transport, mission_ref,
         if held:
             held[0].__exit__(None, None, None)
     _revalidated(registry, corroboration, freshness, clock, bound, accounting,
-                 transport, workspace, identity, mission_ref, task_id)
+                 transport, workspace, identity, mission_ref, task_id,
+                 finished=finished)
     return (_target(bound, workspace, identity), _comparison(identity),
             current, _overview(files, current) if file_id is None else None,
             None if file_id is None else file_)
 
 
 def read(registry, corroboration, freshness, clock, transport, mission_ref,
-         task_id, snapshot=None, file_id=None):
+         task_id, snapshot=None, file_id=None, finished=None):
     """One review request; ALWAYS an answer (observed, or refused with its
     code and an honest account of what was read). ``corroboration`` returns
     the owner's last refreshed answer (or None) each time it is called;
     ``freshness`` is the served version's consumer operation; ``clock`` the
     owner's clock; ``transport`` the constructor-injected git boundary. With
     no ``file_id`` this is the OVERVIEW; with one (and the ``snapshot`` it was
-    listed in) it is that file's diff."""
+    listed in) it is that file's diff. ``finished`` is the optional provider of a
+    COMPLETED Mission's record-side admission (None: a COMPLETED Mission is
+    refused as not active, as before); the version 2 owner passes one."""
     view = VIEW_OVERVIEW if file_id is None else VIEW_FILE
     accounting = Accounting()
     try:
         target, comparison, current, overview, file_ = _read(
             registry, corroboration, freshness, clock, transport,
-            mission_ref, task_id, snapshot, file_id, accounting)
+            mission_ref, task_id, snapshot, file_id, accounting,
+            finished=finished)
     except _Refused as exc:
         return refusal(exc.problem, exc.detail, view, mission_ref, task_id,
                        snapshot, file_id, clock(), accounting)

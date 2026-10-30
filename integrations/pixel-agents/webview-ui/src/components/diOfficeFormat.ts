@@ -89,6 +89,21 @@ export function memberForCharacter(
 }
 
 /**
+ * AC-4.4-26: the Mission a drawn character opens when it (or its Mission label) is clicked: a team member's OWN Mission,
+ * and a sub-agent its PARENT's (`parentOf`). A runtime agent opens nothing: its contract never assigns it to a Mission
+ * (RUNTIME_ASSIGNMENT_STATES: unassigned, unverified_reference), so its root is where it runs, not a Mission it works on.
+ */
+export function diMissionRefForCharacter(
+  state: DiOfficeState,
+  characterId: number,
+  parentOf: (id: number) => number | null,
+): string | null {
+  return (
+    memberForCharacter(state, parentOf(characterId) ?? characterId)?.mission.missionRef ?? null
+  );
+}
+
+/**
  * item 07: the runtime agent a drawn character is, or null. A runtime agent is NEVER a team
  * member: it is looked up only after every Mission roster, and found only by its own characterId.
  */

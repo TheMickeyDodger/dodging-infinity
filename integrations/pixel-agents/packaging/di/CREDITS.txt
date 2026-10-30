@@ -6,6 +6,8 @@ Where these files are
     dist/assets/characters/char_0..5.png  <- webview-ui/public/assets/characters/char_0..5.png
     the font binary                       <- webview-ui/public/fonts/FSPixelSansUnicode-Regular.ttf
     its licence text                      <- packaging/di/OFL-1.1.txt
+    dist/webview/fonts/InterVariable.woff2 <- webview-ui/public/fonts/InterVariable.woff2
+    dist/webview/fonts/Inter-OFL.txt      <- webview-ui/public/fonts/Inter-OFL.txt
   scripts/build-di-package.mjs GENERATES dist/webview/fonts/OFL.txt (the font's embedded notices
   plus packaging/di/OFL-1.1.txt) and THIRD-PARTY-NOTICES.txt (from the installed packages' own
   licence files) when it assembles the package; neither is a source file.
@@ -41,6 +43,12 @@ Font
   FS Pixel Sans Unicode Regular, by NZWStudios2024 — SIL Open Font License 1.1, NOT the
   MIT licence. See dist/webview/fonts/OFL.txt (the embedded copyright notice, the current
   source notice and the full licence text).
+  Inter (the reading face of the DI chrome), Copyright (c) 2016 The Inter Project Authors
+  (https://github.com/rsms/inter) — SIL Open Font License 1.1, NOT the MIT licence. The file
+  dist/webview/fonts/InterVariable.woff2 is web/InterVariable.woff2 from the official Inter 4.1
+  release (https://github.com/rsms/inter/releases/tag/v4.1, Inter-4.1.zip), byte for byte
+  (sha256 693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3). Its licence, the
+  release's own LICENSE.txt unchanged, is dist/webview/fonts/Inter-OFL.txt.
 
 Code
   Pixel Agents: MIT licence (LICENSE). Third-party code bundled into the shipped files:

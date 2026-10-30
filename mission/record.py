@@ -82,13 +82,25 @@ Operator. Its provenance proof is ``operator_attested_not_independently_verified
 It travels only in an ``OperatorAttestedContext``, never an
 ``AuthenticatedContext``; it is NOT authenticated, is not in
 ``AUTHENTICATED_PRINCIPAL_KINDS``, and
-carries an APPROVE only (``APPROVE_ONLY_PRINCIPAL_KINDS``): no EDIT, no
-DENY, no state operation. ``OPERATOR_ATTESTED_RESIDUAL_RISK`` states the
+through the general decision path carries an APPROVE only
+(``APPROVE_ONLY_PRINCIPAL_KINDS``): no EDIT, no DENY, no state operation.
+``OPERATOR_ATTESTED_RESIDUAL_RISK`` states the
 residual risk: a mistaken or malicious same-user operator or local process
 could fabricate it. The decision path enforces, in the core, that such an
 APPROVE binds the exact current proposal digest, the exact requested scope
 and targets, and a bounded expiry, for a proposal the unauthenticated local
 caller kind made.
+
+Owner decision (c): the same attestation may also carry the three
+non-approval outcomes the person chose, each through its OWN narrow entry
+point in ``mission.service`` (never the general decision path): DECLINE,
+recorded as the existing non-terminal DENY; REJECT, the terminal state
+REJECTED; and REQUEST CHANGES, the non-terminal state CHANGES_REQUESTED with
+the person's readable reason recorded verbatim. Each binds the exact
+revision and proposal digest the person saw, applies only to a proposal the
+unauthenticated local caller kind made, and issues no authorization. EDIT
+and state operations stay unavailable to it, and so does the same Mission's
+withdrawal once any of them is recorded.
 
 Proof contract (Mission State). ``proof_contract`` is the ONE
 additive-optional proposal key. It holds the whole consequential
@@ -177,17 +189,23 @@ STATE_BLOCKED = "BLOCKED"
 STATE_COMPLETED = "COMPLETED"
 STATE_CLOSED = "CLOSED"
 STATE_CANCELLED = "CANCELLED"
+# Owner decision (c): a rejection is TERMINAL; a change request is not (only a
+# new revision, the existing EDIT, returns the Mission to AWAITING_DECISION).
+STATE_REJECTED = "REJECTED"
+STATE_CHANGES_REQUESTED = "CHANGES_REQUESTED"
 MISSION_STATES = (
     STATE_AWAITING_DECISION, STATE_AUTHORIZED, STATE_DENIED, STATE_RUNNING,
     STATE_BLOCKED, STATE_COMPLETED, STATE_CLOSED, STATE_CANCELLED,
+    STATE_REJECTED, STATE_CHANGES_REQUESTED,
 )
 # The states a Mission can actually hold: the only ones a wired
 # transition can reach. A stored record in any other state is malformed,
 # because nothing here can produce it. Task 8 increment 2 (intentional
 # invariant change): the run states became reachable; CLOSED did not.
+# (c): REJECTED and CHANGES_REQUESTED are reachable by a decision.
 REACHABLE_STATES = (STATE_AWAITING_DECISION, STATE_AUTHORIZED, STATE_DENIED,
                     STATE_RUNNING, STATE_BLOCKED, STATE_COMPLETED,
-                    STATE_CANCELLED)
+                    STATE_CANCELLED, STATE_REJECTED, STATE_CHANGES_REQUESTED)
 # The run transitions (Task 8 increment 2), exactly the ones the run uses:
 # RUNNING is reachable from AUTHORIZED only, COMPLETED from RUNNING only.
 RUN_TRANSITIONS = frozenset((
@@ -198,9 +216,12 @@ RUN_TRANSITIONS = frozenset((
     (STATE_RUNNING, STATE_BLOCKED),
     (STATE_RUNNING, STATE_CANCELLED),
 ))
-TERMINAL_STATES = (STATE_BLOCKED, STATE_COMPLETED, STATE_CANCELLED)
+TERMINAL_STATES = (STATE_BLOCKED, STATE_COMPLETED, STATE_CANCELLED,
+                   STATE_REJECTED)
 ALLOWED_TRANSITIONS = {
-    STATE_AWAITING_DECISION: frozenset((STATE_AUTHORIZED, STATE_DENIED)),
+    STATE_AWAITING_DECISION: frozenset((STATE_AUTHORIZED, STATE_DENIED,
+                                        STATE_REJECTED,
+                                        STATE_CHANGES_REQUESTED)),
     STATE_AUTHORIZED: frozenset((STATE_AWAITING_DECISION, STATE_RUNNING,
                                  STATE_BLOCKED, STATE_CANCELLED)),
     STATE_DENIED: frozenset((STATE_AWAITING_DECISION,)),
@@ -210,6 +231,8 @@ ALLOWED_TRANSITIONS = {
     STATE_COMPLETED: frozenset(),
     STATE_CLOSED: frozenset(),
     STATE_CANCELLED: frozenset(),
+    STATE_REJECTED: frozenset(),
+    STATE_CHANGES_REQUESTED: frozenset((STATE_AWAITING_DECISION,)),
 }
 
 # -- the run record (Task 8 increment 2) --------------------------------
@@ -397,8 +420,10 @@ PRINCIPAL_KINDS = AUTHENTICATED_PRINCIPAL_KINDS + (
 ADAPTER_CONTEXT_PRINCIPAL_KINDS = AUTHENTICATED_PRINCIPAL_KINDS + (
     PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER,
 )
-# Kinds that may reserve a decision id and carry an APPROVE decision, and
-# nothing else: no EDIT, no DENY, no state operation.
+# Kinds that may reserve a decision id and, through the general decision
+# path, carry an APPROVE decision and nothing else: no EDIT, no DENY, no state
+# operation. (c)'s three non-approval outcomes reach Mission Core only through
+# their own entry points, never through that path.
 APPROVE_ONLY_PRINCIPAL_KINDS = (PRINCIPAL_KIND_OPERATOR_ATTESTED,)
 PROOF_TRANSPORT_CREDENTIAL_ONLY = "transport_credential_only"
 PROOF_NONE_UNAUTHENTICATED = "none_unauthenticated"
@@ -420,6 +445,12 @@ MAX_ATTESTED_APPROVAL_VALIDITY_SECONDS = 900
 # extended); ``MissionService.withdraw_proposal`` itself refuses a first
 # withdrawal at or after it, not any entry point.
 WITHDRAWAL_KEY_VALIDITY_SECONDS = 604800
+# (c): the longest reason a change request records, in characters.
+# Exact-value pinned. A deliberate choice, set equal to this module's other
+# paragraph-length human text bound, MAX_REQUIREMENT_DESCRIPTION_CHARS (a proof
+# requirement's description), and kept a separate constant so that changing
+# one never silently changes the other.
+MAX_CHANGE_REQUEST_REASON_CHARS = 2000
 # The proof a provenance block records is fixed by its principal kind.
 _PROOF_BY_PRINCIPAL_KIND = {
     PRINCIPAL_KIND_CONNECTOR_CREDENTIAL: PROOF_TRANSPORT_CREDENTIAL_ONLY,
@@ -600,6 +631,10 @@ PROBLEM_INVALID_TRANSITION = "mission_invalid_transition"
 PROBLEM_PROVENANCE = "mission_provenance"
 PROBLEM_UNAUTHENTICATED_PRINCIPAL = "mission_unauthenticated_principal"
 PROBLEM_ATTESTED_APPROVAL = "mission_attested_approval"
+# (c): an attested non-approval outcome on a proposal the local request
+# surface did not make; and a change request without a readable reason.
+PROBLEM_ATTESTED_OUTCOME = "mission_attested_outcome"
+PROBLEM_CHANGE_REQUEST_REASON = "mission_change_request_reason"
 # Task 8 increment 2: the run record and the terminal guard.
 PROBLEM_MISSION_TERMINAL = "mission_terminal"
 PROBLEM_RUN = "mission_run"
@@ -1276,13 +1311,19 @@ def require_authenticated_context(value, location="context"):
 
 
 def _require_decision_kind(principal_kind, approve, location):
+    """``approve`` is True where the operator-attested kind is admitted: an
+    APPROVE (and an authorization's principal), or, on a STORED decision
+    record only, one of (c)'s attested outcomes (``mission.decision``
+    passes it). Never an EDIT."""
     if principal_kind in AUTHENTICATED_PRINCIPAL_KINDS:
         return
     if principal_kind in APPROVE_ONLY_PRINCIPAL_KINDS:
         if approve:
             return
         fail(PROBLEM_ATTESTED_APPROVAL,
-             "%s.principal_kind %r may carry only an APPROVE decision"
+             "%s.principal_kind %r may carry only an APPROVE decision or, as a"
+             " recorded decision, one of the attested outcomes DENY, REJECT"
+             " and REQUEST_CHANGES; never this one"
              % (location, principal_kind))
     _refuse_unauthenticated(principal_kind, location)
 
@@ -1321,7 +1362,8 @@ def require_any_context(value, location="context"):
 
 def require_decision_provenance(value, approve, location="provenance"):
     """A stored decision's or authorization's provenance: an authenticated
-    kind, or the operator-attested kind on an APPROVE."""
+    kind, or the operator-attested kind where ``approve`` admits it (an
+    APPROVE, or a recorded (c) outcome)."""
     validate_provenance(value, location)
     _require_decision_kind(value["principal_kind"], approve, location)
     return value
@@ -1335,6 +1377,31 @@ def require_authenticated_provenance(value, location="provenance"):
     instead, which also admits the operator-attested kind on an APPROVE."""
     validate_provenance(value, location)
     _refuse_unauthenticated(value["principal_kind"], location)
+    return value
+
+
+def change_request_reason_problem(value):
+    """None when ``value`` is a READABLE change-request reason; else why not.
+    Readable: a string of at most ``MAX_CHANGE_REQUEST_REASON_CHARS``
+    characters, not blank, with no control character other than newline and
+    tab. It is recorded exactly as given, never trimmed or rewritten."""
+    if not isinstance(value, str):
+        return "must be a string"
+    if len(value) > MAX_CHANGE_REQUEST_REASON_CHARS:
+        return "is %d characters; at most %d are recorded" % (
+            len(value), MAX_CHANGE_REQUEST_REASON_CHARS)
+    if not value.strip():
+        return "is blank; a change request states what should change"
+    if any(ord(ch) < 32 and ch not in "\n\t" or ord(ch) == 127 for ch in value):
+        return "contains a control character other than newline or tab"
+    return None
+
+
+def require_change_request_reason(value, location="reason"):
+    """The reason, unchanged, or refuse with PROBLEM_CHANGE_REQUEST_REASON."""
+    problem = change_request_reason_problem(value)
+    if problem is not None:
+        fail(PROBLEM_CHANGE_REQUEST_REASON, "%s %s" % (location, problem))
     return value
 
 

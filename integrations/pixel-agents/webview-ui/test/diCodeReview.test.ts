@@ -130,8 +130,11 @@ function serve(ws: WebSocket) {
     const msg = JSON.parse(String(data)) as Record<string, unknown>;
     if (msg.type === 'diCodeReviewRead') {
       requests.push(msg);
-      const reply = replyFor(msg);
-      if (reply === null) return;
+      const found = replyFor(msg);
+      if (found === null) return;
+      // The real office ECHOES the id the read carried, on every answer it sends (an observation and every refusal), taking it from the REQUEST (never from
+      // the answer), and adds no key to the answer to a read that carried none. This rule is the one the SERVER test pins; it is not decided here.
+      const reply = typeof msg.requestId === 'string' ? { ...found, requestId: msg.requestId } : found;
       const send = () => ws.readyState === ws.OPEN && ws.send(JSON.stringify(reply));
       if (replyDelayMs > 0) setTimeout(send, replyDelayMs);
       else send();
@@ -457,7 +460,9 @@ test(
     await p().waitForSelector(T('di-review-dialog'));
     await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
     assert.equal(requests.length, 1);
-    assert.deepEqual(Object.keys(requests[0]).sort(), ['listing', 'memberRef', 'missionRef', 'taskId', 'type']);
+    // The closed overview shape: the five reference keys plus the ONE opaque id the read names itself with (still an exact key set, not a subset check).
+    assert.deepEqual(Object.keys(requests[0]).sort(), ['listing', 'memberRef', 'missionRef', 'requestId', 'taskId', 'type']);
+    assert.match(String(requests[0].requestId), /^[A-Za-z0-9._-]{1,64}$/);
     assert.equal(requests[0].type, 'diCodeReviewRead');
     assert.equal(requests[0].missionRef, REF.missionRef);
     assert.equal(requests[0].listing, REF.listing);
@@ -493,7 +498,8 @@ test(
     await openReview();
     await openFile('src/app.py');
     const file = requests.find((r) => r.fileId !== undefined)!;
-    assert.deepEqual(Object.keys(file).sort(), ['fileId', 'listing', 'memberRef', 'missionRef', 'snapshot', 'taskId', 'type']);
+    assert.deepEqual(Object.keys(file).sort(), ['fileId', 'listing', 'memberRef', 'missionRef', 'requestId', 'snapshot', 'taskId', 'type']);
+    assert.match(String(file.requestId), /^[A-Za-z0-9._-]{1,64}$/);
     assert.equal(file.snapshot, doc.replies.overview.snapshot);
     await p().waitForSelector(T('di-review-line'));
     const lines = await p().$$eval(T('di-review-line'), (els) =>
@@ -1570,7 +1576,7 @@ test(
     for (const r of requests) {
       assert.equal(r.type, 'diCodeReviewRead');
       for (const [key, value] of Object.entries(r)) {
-        assert.ok(['type', 'missionRef', 'memberRef', 'taskId', 'listing', 'snapshot', 'fileId'].includes(key), `key ${key}`);
+        assert.ok(['type', 'missionRef', 'memberRef', 'taskId', 'listing', 'snapshot', 'fileId', 'requestId'].includes(key), `key ${key}`);
         assert.equal(typeof value, 'string');
         // an identifier, never a path, a root, a ref or an option
         assert.doesNotMatch(String(value), /[/\\]|\.\.|^-/, `${key} looks like a path or option`);
@@ -1588,6 +1594,10 @@ test(
         assert.ok(Array.isArray(entry.i) && entry.i.length === 5 && typeof entry.s === 'string');
       }
     }
+    // Every read names itself with an opaque id of its own (a bounded token, never a path), so an answer can be matched to the read it answers.
+    const ids = requests.map((r) => String(r.requestId));
+    for (const id of ids) assert.match(id, /^[A-Za-z0-9._-]{1,64}$/, 'the id is a bounded opaque token');
+    assert.equal(new Set(ids).size, ids.length, 'no two reads share an id');
     assert.deepEqual(otherMessages, [], `no other message type was sent: ${otherMessages.join()}`);
     // The only other traffic is the entry's read-only overview ping, in exactly its one shape.
     for (const ping of overviewPings) assert.ok(isOverviewPing(ping), JSON.stringify(ping));
@@ -2700,7 +2710,9 @@ test(
     // Measured on the product before either change (viewport-BASELINE-metrics log) and after both (viewport-WIP2 log). The narrow-layout rules alone
     // moved nothing at any of these sizes (viewport-WIP1 log). The chrome controls' 1 px borders (AC1) make a content-sized button 1.75 px shorter
     // (33.75 px to the 32 px minimum) and the search field 1.8 px: so the overview is 85.5 -> 83.8 px, the search tools 78.6 -> 76.8 px, and the
-    // code region and the file tree of a wide window take that space (669.7 -> 673.2 px and 702 -> 705.5 px).
+    // code region and the file tree of a wide window take that space (669.7 -> 673.2 px and 702 -> 705.5 px). Inter, the bundled Home face
+    // (index.css --di-font-ui), then sets the key-hints line 1 px taller than the system face did (31.4 -> 32.4 px), and the code region and the
+    // file tree of a wide window give that 1 px back (673.2 -> 672.2 px and 705.5 -> 704.5 px): the visible code is 672 px, still 30 whole rows.
     const open = async (size: { width: number; height: number }, file: boolean) => {
       await freshPageAt({ ...size, scale: 1 });
       p().setDefaultTimeout(15_000);
@@ -2721,14 +2733,14 @@ test(
     near(wide.dialog.height, 956, '1600: the dialog (was 956)');
     near(wide.top?.height, 56.5, '1600: the title bar (was 56.5)');
     near(wide.overview?.height, 83.8, '1600: the overview (was 85.5)');
-    near(wide.body?.height, 782.4, '1600: the body (was 780.6)');
+    near(wide.body?.height, 781.4, '1600: the body (was 782.4 before Inter)');
     near(wide.diffHead?.height, 76.3, '1600: the file bar (was 78)');
     near(wide.treeTools?.height, 76.8, '1600: the search tools (was 78.6)');
-    near(wide.hints?.height, 31.4, '1600: the key hints (was 31.4)');
-    near(wide.code?.rect?.height, 673.2, '1600: the code region (was 669.7)');
-    assert.equal(wide.code?.clientHeight, 673, '1600: the visible code (was 670)');
+    near(wide.hints?.height, 32.4, '1600: the key hints (was 31.4 before Inter)');
+    near(wide.code?.rect?.height, 672.2, '1600: the code region (was 673.2 before Inter)');
+    assert.equal(wide.code?.clientHeight, 672, '1600: the visible code (was 673 before Inter)');
     assert.equal(wide.code?.wholeRows, 30, '1600: the whole rows visible (was 30)');
-    near(wide.tree?.rect?.height, 705.5, '1600: the file tree (was 702)');
+    near(wide.tree?.rect?.height, 704.5, '1600: the file tree (was 705.5 before Inter)');
     assert.equal(wide.tree?.wholeRows, 23, '1600: the whole file rows visible (was 23)');
     // 390 x 844, a roomy phone: the regions fill the window as before and the dialog does not scroll
     const phone = await open({ width: 390, height: 844 }, true);

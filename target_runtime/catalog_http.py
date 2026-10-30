@@ -59,7 +59,9 @@ Routes, ALL ``GET``; nothing else exists:
   fixed grammar: a reference, never a path, root, ref or git option), and,
   for ONE file's diff, also the ``snapshot`` the overview carried and the
   ``file_id`` it listed: the live code review's read-only view of an ACTIVE
-  assignment's workspace (``CatalogService.code_review``,
+  assignment's workspace, or of a COMPLETED Mission's recorded workspace
+  where its execution is established and the workspace names the run
+  (``CatalogService.code_review``,
   ``target_runtime.code_review``), ``200`` for every answer, observed or
   refused by its own code; any other query is ``400``. It never starts a
   refresh and never writes to the workspace it reads.

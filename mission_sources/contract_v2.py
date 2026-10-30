@@ -59,6 +59,15 @@ What version 2 adds, and nothing else:
   display-only ``lifecycle.state``. Only a ``workflow_authority.workflow_phase/2``
   record has one (its record's own phase); Mission Core is ``not_applicable``
   (``lifecycle_model_has_no_workflow_phase``) and is never given one.
+- ``missions[].delivery_link``: which ONE delivery record, if any, the
+  catalog's registered delivery store links to the Mission (``state``,
+  ``delivery_id``, ``basis``; see ``MISSION_LINK_KEYS``). Only a workflow
+  Mission can be linked: by the one record whose own ``mission.workflow_id``
+  equals its ``native_id``, while every registered workflow source was read
+  fresh and no other workflow Mission holds that id. Mission Core, and every
+  other model, is ``unlinked_model_not_recorded``: not known, because no
+  delivery record names such a Mission. At most one id, never a list or a
+  count; a link authorizes nothing.
 - ``missions[].admitted_artifacts.canonical_review``: NARROW CANONICAL REVIEW
   RECORD CONTENT INSPECTION, the ONLY admitted content class. It is reached
   from the task record's own canonical reference (``review_rounds``,
@@ -443,7 +452,7 @@ MISSION_VIEW_KEYS = ("mission_ref", "source_id", "native_id", "lifecycle",
                      "execution", "native")
 MISSION_KEYS_V2 = MISSION_VIEW_KEYS + (
     "binding", "members", "task_chains", "children_record", "mission_state",
-    "admitted_artifacts", "workflow_phase")
+    "admitted_artifacts", "workflow_phase", "delivery_link")
 
 # -- the declared workflow phase (version 2) ----------------------------------
 
@@ -633,6 +642,116 @@ INSPECTIONS = (INSPECTION_COMPLETE, INSPECTION_SOURCES_INCOMPLETE,
 #: workflow Mission's authorization digest; this one does not.
 AUTHORIZATION_NOT_COMPARABLE = "not_comparable"
 AUTHORIZATION_CHECKS = ("corroborated", "differs", AUTHORIZATION_NOT_COMPARABLE)
+
+# -- the Mission's delivery link (version 2) ----------------------------------
+
+#: ``missions[].delivery_link``: which ONE delivery record, if any, the
+#: catalog's registered delivery store links to this Mission, DECLARED with the
+#: rule that established it, so a consumer never guesses a delivery for a
+#: Mission:
+#: - only a ``workflow_authority.workflow_phase/2`` Mission can be linked, and
+#:   only by a record whose OWN ``mission.workflow_id`` (one of the record's
+#:   sealed authority keys) equals its ``native_id``. Delivery records name no
+#:   Mission of any other model, so such a Mission (Mission Core included) is
+#:   ``unlinked_model_not_recorded``: NOT KNOWN, never "no match";
+#: - strict multiplicity: several records naming the workflow, or several
+#:   registered workflow Missions holding the id, are ``unlinked_ambiguous``;
+#:   none is chosen, and "newest" is never a rule;
+#: - a unique match is claimed only when every registered workflow-store
+#:   source was read fresh (``unlinked_sources_incomplete`` otherwise);
+#: - ``delivery_id`` is set EXACTLY when linked: at most one, of the shape a
+#:   delivery ceremony mints, never a list or a count. ``basis`` names the rule
+#:   (only ``record_mission_binding``), never an engineering task id or an
+#:   attested receipt.
+#: A link selects which delivery's status may be read; it authorizes nothing.
+#: The catalog's registered store is not shown to be the store any other
+#: reader (the office's delivery adapter) uses.
+MISSION_LINK_KEYS = ("state", "delivery_id", "basis")
+MISSION_LINK_LINKED = "linked"
+MISSION_LINK_MODEL_NOT_RECORDED = "unlinked_model_not_recorded"
+MISSION_LINK_STORE_NOT_REGISTERED = "unlinked_store_not_registered"
+MISSION_LINK_STORE_UNAVAILABLE = "unlinked_store_unavailable"
+MISSION_LINK_READER_FAILED = "unlinked_reader_failed"
+MISSION_LINK_NO_RECORD = "unlinked_no_record"
+MISSION_LINK_AMBIGUOUS = LINK_UNLINKED_AMBIGUOUS
+MISSION_LINK_SOURCES_INCOMPLETE = LINK_UNLINKED_SOURCES_INCOMPLETE
+MISSION_LINK_ID_NOT_ADDRESSABLE = "unlinked_id_not_addressable"
+MISSION_LINK_STATES = (MISSION_LINK_LINKED, MISSION_LINK_MODEL_NOT_RECORDED,
+                       MISSION_LINK_STORE_NOT_REGISTERED,
+                       MISSION_LINK_STORE_UNAVAILABLE,
+                       MISSION_LINK_READER_FAILED, MISSION_LINK_NO_RECORD,
+                       MISSION_LINK_AMBIGUOUS,
+                       MISSION_LINK_SOURCES_INCOMPLETE,
+                       MISSION_LINK_ID_NOT_ADDRESSABLE)
+MISSION_LINK_BASIS_RECORD_BINDING = "record_mission_binding"
+MISSION_LINK_BASES = (MISSION_LINK_BASIS_RECORD_BINDING,)
+#: The delivery id a ceremony mints (``pr_delivery.authorization``'s
+#: ``DELIVERY_ID_PREFIX`` and ``DELIVERY_ID_HEX_CHARS``: ``prd-`` and 24
+#: lowercase hex; parity pinned by test, since this package does not import
+#: ``pr_delivery``). The delivery layer's validator admits any id of its
+#: alphabet; only this shape can be addressed by a consumer. Implemented
+#: without ``re.compile`` so the mission_sources call guard (which forbids
+#: the name ``compile``) stays honest.
+_DELIVERY_ID_PREFIX = "prd-"
+_DELIVERY_ID_HEX_CHARS = 24
+
+
+def is_delivery_id(value):
+    """Whether ``value`` is a delivery id of the shape a ceremony mints."""
+    if type(value) is not str or not value.startswith(_DELIVERY_ID_PREFIX):
+        return False
+    hex_part = value[len(_DELIVERY_ID_PREFIX):]
+    return (
+        len(hex_part) == _DELIVERY_ID_HEX_CHARS
+        and all(ch in "0123456789abcdef" for ch in hex_part)
+    )
+
+
+def mission_delivery_link(mission, unavailable, bound, holders, inspection):
+    """The DECLARED ``delivery_link`` block of one mission view (version 2).
+
+    ``unavailable``: None when the registered delivery store was read and
+    every record in it validated, else the unlinked state saying why it was
+    not (``MISSION_LINK_STORE_NOT_REGISTERED``, ``…_STORE_UNAVAILABLE`` or
+    ``…_READER_FAILED``). ``bound``: ``{workflow id: [delivery ids]}`` of the
+    validated records whose own binding names that workflow. ``holders``:
+    ``{native id: count}`` of this response's workflow Missions.
+    ``inspection``: what the Mission side could inspect (``INSPECTIONS``)."""
+    def unlinked(state):
+        return {"state": state, "delivery_id": None, "basis": None}
+    if mission["lifecycle"]["model"] != contract.LIFECYCLE_MODEL_WORKFLOW_STORE:
+        return unlinked(MISSION_LINK_MODEL_NOT_RECORDED)
+    if unavailable is not None:
+        return unlinked(unavailable)
+    found = bound.get(mission["native_id"], [])
+    if not found:
+        return unlinked(MISSION_LINK_NO_RECORD)
+    if len(found) > 1 or holders.get(mission["native_id"], 0) > 1:
+        return unlinked(MISSION_LINK_AMBIGUOUS)
+    if inspection != INSPECTION_COMPLETE:
+        return unlinked(MISSION_LINK_SOURCES_INCOMPLETE)
+    if not is_delivery_id(found[0]):
+        return unlinked(MISSION_LINK_ID_NOT_ADDRESSABLE)
+    return {"state": MISSION_LINK_LINKED, "delivery_id": found[0],
+            "basis": MISSION_LINK_BASIS_RECORD_BINDING}
+
+
+def _validate_mission_delivery_link(value, lifecycle, location):
+    _closed(value, MISSION_LINK_KEYS, location)
+    state = _member(value["state"], MISSION_LINK_STATES, location + ".state")
+    workflow = lifecycle["model"] == contract.LIFECYCLE_MODEL_WORKFLOW_STORE
+    if workflow == (state == MISSION_LINK_MODEL_NOT_RECORDED):
+        raise _shape("%s: exactly the Missions whose model no delivery record "
+                     "names are unlinked_model_not_recorded" % location)
+    if state == MISSION_LINK_LINKED:
+        if not is_delivery_id(value["delivery_id"]):
+            raise _shape("%s: a linked Mission carries one delivery id of "
+                         "the shape a ceremony mints" % location)
+        _member(value["basis"], MISSION_LINK_BASES, location + ".basis")
+        return
+    if value["delivery_id"] is not None or value["basis"] is not None:
+        raise _shape("%s: an unlinked Mission carries no delivery id and no "
+                     "basis" % location)
 
 
 def delivery_presentations_block(state, problem, delivery_store, total,
@@ -1445,6 +1564,8 @@ def validate_mission_v2(value, location):
             location + ".lifecycle.standing")
     _validate_workflow_phase(value["workflow_phase"], value["lifecycle"],
                              location + ".workflow_phase")
+    _validate_mission_delivery_link(value["delivery_link"], value["lifecycle"],
+                                    location + ".delivery_link")
     _closed(value["execution"], EXECUTION_KEYS, location + ".execution")
     _validate_binding(value["binding"], location + ".binding")
     for index, member in enumerate(_list(

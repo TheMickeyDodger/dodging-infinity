@@ -22,7 +22,11 @@ refuses ``mission_request_id_conflict`` without mutation. A consumed
 decision id replayed with the same decision digest (content including
 the requested expiry; excluding the processing timestamps) returns the
 recorded outcome and issues nothing; a different digest refuses
-``mission_decision_id_conflict``. Stated residual limit: if the first
+``mission_decision_id_conflict``. The decision digest does not hold a
+presented expected proposal digest, so an APPROVE replay that presents
+one is answered only when it is the digest the approval recorded; any
+other refuses ``mission_decision_id_conflict`` too, and a replay that
+presents none is answered as before. Stated residual limit: if the first
 response is lost before the caller learns its id, a retry mints a new
 id and creates a second Mission. The duplicate carries no authority.
 
@@ -429,8 +433,10 @@ class MissionService(state_service.MissionStateOperations):
         provenance proof says so. Every rule (approve-only kind, exact digest,
         exact scope and targets, bounded expiry, local-surface proposal) is
         enforced inside ``apply_human_decision`` itself; this only builds the
-        envelope. Replaying the same ``decision_id`` with the same content
-        returns the recorded outcome and issues nothing."""
+        envelope. Replaying the same ``decision_id`` with the same content and
+        the digest the approval recorded returns the recorded outcome and
+        issues nothing; another digest refuses
+        ``mission_decision_id_conflict``."""
         # An OperatorAttestedContext only: never an AuthenticatedContext.
         record.require_operator_attested_context(context)
         envelope = decision_module.HumanDecisionEnvelope(
@@ -443,6 +449,144 @@ class MissionService(state_service.MissionStateOperations):
             expected_proposal_digest_sha256=proposal_digest_sha256,
         )
         return self.apply_human_decision(envelope)
+
+    # -- the attested non-approval outcomes (owner decision (c)) -----------
+    #
+    # Each outcome has its OWN entry point, as the attested approval has, and
+    # none of them goes through ``apply_human_decision``: that path keeps
+    # refusing an attested DENY or EDIT, and the envelope's vocabulary is
+    # unchanged. Each binds the exact revision and proposal digest the person
+    # saw, applies only to a proposal the unauthenticated local caller kind
+    # made, replays idempotently by decision id, issues no authorization and
+    # records an operator-attested, not independently verified provenance.
+
+    def apply_operator_attested_decline(self, context, decision_id, mission_id,
+                                        revision, proposal_digest_sha256):
+        """DECLINE: the existing DENY (durable and NON-terminal), carried by
+        an operator attestation. It is not a withdrawal."""
+        return self._apply_attested_outcome(
+            context, decision_id, mission_id, revision, proposal_digest_sha256,
+            decision_module.DECISION_DENY, None)
+
+    def apply_operator_attested_rejection(self, context, decision_id,
+                                          mission_id, revision,
+                                          proposal_digest_sha256):
+        """REJECT: the TERMINAL state REJECTED. Nothing follows it."""
+        return self._apply_attested_outcome(
+            context, decision_id, mission_id, revision, proposal_digest_sha256,
+            decision_module.DECISION_REJECT, None)
+
+    def apply_operator_attested_change_request(self, context, decision_id,
+                                               mission_id, revision,
+                                               proposal_digest_sha256, reason):
+        """REQUEST CHANGES: the non-terminal state CHANGES_REQUESTED, with the
+        person's readable reason recorded verbatim. Only a new revision (the
+        existing EDIT) returns the Mission to AWAITING_DECISION; it implies
+        no revision submitted or approved."""
+        return self._apply_attested_outcome(
+            context, decision_id, mission_id, revision, proposal_digest_sha256,
+            decision_module.DECISION_REQUEST_CHANGES, reason)
+
+    def _apply_attested_outcome(self, context, decision_id, mission_id,
+                                revision, proposal_digest_sha256, kind, reason):
+        # An OperatorAttestedContext only, checked by the existing validator.
+        record.require_operator_attested_context(context)
+        # The reason, before anything is read or written.
+        if kind == decision_module.DECISION_REQUEST_CHANGES:
+            record.require_change_request_reason(reason)
+        record.require_id(decision_id, record.DECISION_ID_PREFIX, "decision_id")
+        record.require_id(mission_id, record.MISSION_ID_PREFIX, "mission_id")
+        record.require_int(revision, "revision", minimum=1)
+        record.require_hex(proposal_digest_sha256, "proposal_digest_sha256", 64)
+        digest = decision_module.decision_digest(
+            mission_id, revision, kind, None, None, None, None, reason)
+        target = {
+            decision_module.DECISION_DENY: record.STATE_DENIED,
+            decision_module.DECISION_REJECT: record.STATE_REJECTED,
+            decision_module.DECISION_REQUEST_CHANGES:
+                record.STATE_CHANGES_REQUESTED,
+        }[kind]
+        with self._store.lock():
+            document = self._store.load()
+            reservation = self._reservation(
+                document, decision_id, store_module.RESERVATION_KIND_DECISION,
+                context, PROBLEM_UNKNOWN_DECISION_ID,
+                PROBLEM_DECISION_CONTEXT_CONFLICT,
+            )
+            mission = self._mission(document, mission_id)
+            if reservation["consumed_by"] is not None:
+                recorded = self._recorded_decision(document, decision_id)
+                # Round 61: a replay returns the recorded outcome only for the SAME
+                # content AND the same proposal digest the outcome bound. The digest
+                # is not in the decision digest (the revision fixes it on first use),
+                # so it is compared here, against what the decision recorded.
+                if recorded is None or recorded["mission_id"] != mission_id or (
+                    recorded["decision_digest_sha256"] != digest
+                ) or recorded["outcome"]["proposal_digest_sha256"] != (
+                    proposal_digest_sha256
+                ):
+                    record.fail(PROBLEM_DECISION_ID_CONFLICT,
+                                "decision id %s was already applied with"
+                                " different content or for a different proposal"
+                                " digest; nothing was changed" % decision_id)
+                return self._decision_outcome(document, recorded, True)
+            self._refuse_terminal(mission)
+            if mission.get("run") is not None:
+                record.fail(record.PROBLEM_RUN_RECORDED,
+                            "mission %s carries a run record; no decision"
+                            " applies to it, and nothing was changed"
+                            % mission_id)
+            withdrawal = mission.get("withdrawal")
+            if withdrawal is not None:
+                record.fail(PROBLEM_PROPOSAL_WITHDRAWN,
+                            "mission %s carries a withdrawal marker, so no"
+                            " decision applies to it; its state stays %s and"
+                            " nothing was changed" % (mission_id, mission["state"]))
+            if revision != mission["current_revision"]:
+                record.fail(PROBLEM_STALE_REVISION,
+                            "the outcome names revision %d but mission %s is at"
+                            " revision %d; re-read the mission and decide on"
+                            " the current revision"
+                            % (revision, mission_id, mission["current_revision"]))
+            entry = manifest.current_revision_entry(mission)
+            if proposal_digest_sha256 != entry["proposal_digest_sha256"]:
+                record.fail(PROBLEM_PROPOSAL_DIGEST_MISMATCH,
+                            "the outcome binds proposal digest %s but revision %d"
+                            " of mission %s carries %s; nothing was changed"
+                            % (proposal_digest_sha256, entry["revision"],
+                               mission_id, entry["proposal_digest_sha256"]))
+            proposer = mission["revisions"][0]["provenance"]["principal_kind"]
+            if proposer != record.PRINCIPAL_KIND_UNAUTHENTICATED_LOCAL_CALLER:
+                record.fail(record.PROBLEM_ATTESTED_OUTCOME,
+                            "an operator-attested decline, rejection or change"
+                            " request applies only to a proposal the local"
+                            " request surface made")
+            record.validate_transition(mission["state"], target)
+            now = self._now()
+            self._note_expirations(document, mission, now)
+            if kind == decision_module.DECISION_DENY:
+                self._deny(document, mission, decision_id, now)
+            elif kind == decision_module.DECISION_REJECT:
+                # Explicit constant so test_B6 still sees only one
+                # assignment through the run-transition helper's target form.
+                mission["state"] = record.STATE_REJECTED
+            else:
+                mission["state"] = record.STATE_CHANGES_REQUESTED
+            outcome = {
+                "resulting_state": target,
+                "resulting_revision": entry["revision"],
+                "proposal_digest_sha256": entry["proposal_digest_sha256"],
+                "authorization_id": None,
+                "invalidated_authorization_ids": [],
+            }
+            decision_record = decision_module.new_attested_outcome_record(
+                context, decision_id, mission_id, entry["revision"], kind, now,
+                now, outcome, reason)
+            manifest.append_decision(mission, decision_record)
+            mission["updated_at"] = now
+            reservation["consumed_by"] = decision_id
+            self._store.save(document)
+        return self._decision_outcome(document, decision_record, False)
 
     # -- decisions ---------------------------------------------------------
 
@@ -481,6 +625,22 @@ class MissionService(state_service.MissionStateOperations):
                                 "decision id %s was already applied with"
                                 " different content; nothing was changed"
                                 % envelope.decision_id)
+                # The presented digest is not part of the decision digest (the
+                # revision fixes it on first application), so an APPROVE replay
+                # that presents one is answered only when it is the digest the
+                # approval RECORDED. An omitted digest is answered as before;
+                # DENY and EDIT replays are unchanged.
+                expected = envelope.expected_proposal_digest_sha256
+                approved_digest = recorded["outcome"]["proposal_digest_sha256"]
+                if envelope.decision == decision_module.DECISION_APPROVE and (
+                    expected is not None
+                ) and approved_digest != expected:
+                    record.fail(PROBLEM_DECISION_ID_CONFLICT,
+                                "decision id %s was already applied as the"
+                                " approval of proposal digest %s, not %s;"
+                                " nothing was changed"
+                                % (envelope.decision_id, approved_digest,
+                                   expected))
                 return self._decision_outcome(document, recorded, True)
             # Task 8 increment 2: a terminal Mission takes no decision, and
             # neither does one whose run DI has recorded (an intent, a pause
@@ -518,7 +678,7 @@ class MissionService(state_service.MissionStateOperations):
             if envelope.decision == decision_module.DECISION_APPROVE:
                 outcome = self._approve(document, mission, envelope, now)
             elif envelope.decision == decision_module.DECISION_DENY:
-                outcome = self._deny(document, mission, envelope, now)
+                outcome = self._deny(document, mission, envelope.decision_id, now)
             else:
                 outcome = self._edit(document, mission, envelope, now)
             decision_record = decision_module.new_decision_record(
@@ -1325,12 +1485,14 @@ class MissionService(state_service.MissionStateOperations):
             "invalidated_authorization_ids": [],
         }
 
-    def _deny(self, document, mission, envelope, now):
+    def _deny(self, document, mission, decision_id, now):
+        """The one DENY effect, for the general path and (c)'s attested
+        decline alike: the state DENIED and its ledger entry."""
         record.validate_transition(mission["state"], record.STATE_DENIED)
         mission["state"] = record.STATE_DENIED
         self._ledger(document, authorization_module.LEDGER_DENIED, now,
                      mission["mission_id"], mission["current_revision"], None,
-                     envelope.decision_id, _DENIAL_REASON)
+                     decision_id, _DENIAL_REASON)
         return {
             "resulting_state": record.STATE_DENIED,
             "resulting_revision": mission["current_revision"],

@@ -2,7 +2,7 @@
  * The docked layout at the window's right edge: the DI office panel, the strip of restore controls beside it, and what is left for the world.
  * One place states the arithmetic, so the real App and the test harness cannot disagree.
  *
- * RESPONSIVE WIDTH (WCAG 2.2 SC 1.4.10 Reflow): the panel is its design width (420 px) wherever the window can hold it, and otherwise
+ * RESPONSIVE WIDTH (WCAG 2.2 SC 1.4.10 Reflow): the panel is its design width (DI_PANEL_WIDTH_PX) wherever the window can hold it, and otherwise
  * exactly as wide as the window leaves it, so its reading and control content is never pushed off the window's edge. The strip's width
  * counts only while the strip holds a restore control, and it sits at the panel's left edge, so the panel and the strip are BOTH
  * inside the window and neither covers the other: with a strip, the panel never takes more than the window minus the strip.
@@ -28,6 +28,7 @@ import {
   DI_PANEL_WIDTH_PX,
   DI_WORLD_CONTROLS_MIN_PX,
   DI_WORLD_ROOMY_PX,
+  DI_WORLD_SCAN_CONTROLS_MIN_PX,
 } from './constants.js';
 
 export interface DiDock {
@@ -52,18 +53,26 @@ export interface DiDock {
   fixtureWords: 'floating' | 'in-panel';
 }
 
-/** The dock for a window `viewportPx` wide. */
+/**
+ * The dock for a window `viewportPx` wide. `railPx` is the DI navigation rail at the window's LEFT edge (the scan face's;
+ * 0 where there is none): the world yields it while the office is open, and the rail minimizes with the office. Nothing
+ * else in the dock depends on it.
+ */
 export function diDockFor(
   viewportPx: number,
   panelCollapsed: boolean,
   stripShown: boolean,
+  railPx = 0,
 ): DiDock {
   const stripPx = stripShown ? DI_MINIMIZED_STRIP_WIDTH_PX : 0;
   const panelPx = Math.max(0, Math.min(DI_PANEL_WIDTH_PX, viewportPx - stripPx));
   const openPx = panelCollapsed ? 0 : panelPx;
   const insetPx = openPx + stripPx;
-  const worldPx = Math.max(0, viewportPx - insetPx);
-  const worldControls = worldPx >= DI_WORLD_CONTROLS_MIN_PX;
+  const leftPx = panelCollapsed ? 0 : railPx;
+  const worldPx = Math.max(0, viewportPx - insetPx - leftPx);
+  // the scan face (where the rail is) has its own, narrower converged chrome, so its own measured threshold (pass C, (B))
+  const worldControls =
+    worldPx >= (leftPx > 0 ? DI_WORLD_SCAN_CONTROLS_MIN_PX : DI_WORLD_CONTROLS_MIN_PX);
   return {
     panelPx,
     stripPx,

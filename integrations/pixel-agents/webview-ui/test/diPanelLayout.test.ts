@@ -9,6 +9,7 @@ import {
   DI_WORLD_COLUMN_MAX_PX,
   DI_WORLD_CONTROLS_MIN_PX,
   DI_WORLD_ROOMY_PX,
+  DI_WORLD_SCAN_CONTROLS_MIN_PX,
   WORLD_RAIL_TOP_PX,
   WORLD_VIEW_CONTROL_MIN_PX,
   WORLD_VIEW_CONTROLS_TOP_PX,
@@ -17,7 +18,7 @@ import { diDockFor } from '../src/diPanelLayout.ts';
 
 /*
  * The docked layout arithmetic, pinned. It is what the real App and the panel harness both use, so these numbers are what a person sees: the
- * panel is 420 wide where the window can hold it and otherwise exactly what the strip leaves, the strip counts only while it holds a restore
+ * panel is DI_PANEL_WIDTH_PX (428) wide where the window can hold it and otherwise exactly what the strip leaves, the strip counts only while it holds a restore
  * control, the world gets what is left (and yields entirely at 0, a recorded behaviour), the fixture words float or sit in the panel, and the
  * world's controls are offered only while the world can hold them whole.
  *
@@ -31,29 +32,35 @@ import { diDockFor } from '../src/diPanelLayout.ts';
 /** The narrowest width supported, and the strip that always exists once the office is minimized (the office's own restore control lives in it). */
 const NARROWEST_PX = 320;
 
-test('desktop is unchanged: 1440 wide, panel 420, strip beside it only while it holds a control, controls and floating fixture words offered', () => {
+test('the panel is 428 wide: measured from 01-home.jpg to the panel\'s own EDGE RULE at x 852 in the 1280 frame (not the dark lead-in from x 847, which would read 433)', () => {
+  // INDEPENDENT pin: the width itself is the requirement (pass C, C-V1); everything below DERIVES from it
+  assert.equal(DI_PANEL_WIDTH_PX, 428);
+  assert.equal(1280 - DI_PANEL_WIDTH_PX, 852);
+});
+
+test('desktop: 1440 wide, the panel at its design width, strip beside it only while it holds a control, controls and floating fixture words offered', () => {
   assert.deepEqual(diDockFor(1440, false, false), {
-    panelPx: 420,
+    panelPx: DI_PANEL_WIDTH_PX,
     stripPx: 0,
-    trayRightPx: 420,
-    insetPx: 420,
-    worldPx: 1020,
+    trayRightPx: DI_PANEL_WIDTH_PX,
+    insetPx: DI_PANEL_WIDTH_PX,
+    worldPx: 1440 - DI_PANEL_WIDTH_PX,
     worldControls: true,
     worldNarrow: false,
     fixtureWords: 'floating',
   });
   assert.deepEqual(diDockFor(1440, false, true), {
-    panelPx: 420,
+    panelPx: DI_PANEL_WIDTH_PX,
     stripPx: 44,
-    trayRightPx: 420,
-    insetPx: 464,
-    worldPx: 976,
+    trayRightPx: DI_PANEL_WIDTH_PX,
+    insetPx: DI_PANEL_WIDTH_PX + 44,
+    worldPx: 1440 - DI_PANEL_WIDTH_PX - 44,
     worldControls: true,
     worldNarrow: false,
     fixtureWords: 'floating',
   });
   assert.deepEqual(diDockFor(1440, true, true), {
-    panelPx: 420,
+    panelPx: DI_PANEL_WIDTH_PX,
     stripPx: 44,
     trayRightPx: 0,
     insetPx: 44,
@@ -144,12 +151,14 @@ test('STRUCTURAL GUARD: the controls threshold can never exceed the world that e
   );
 });
 
-test('boundaries: the panel is 420 exactly where the window holds it with the strip, and every threshold flips at exactly one pixel (stated through the constants)', () => {
-  assert.equal(diDockFor(464, false, true).panelPx, 420);
-  assert.equal(diDockFor(463, false, true).panelPx, 419);
-  assert.equal(diDockFor(464, false, true).worldPx, 0);
-  assert.equal(diDockFor(465, false, true).worldPx, 1);
-  assert.equal(diDockFor(420, false, false).worldPx, 0);
+test('boundaries: the panel is its design width exactly where the window holds it with the strip, and every threshold flips at exactly one pixel (stated through the constants)', () => {
+  // DERIVED from the constants (pass C): the boundary is the panel plus the strip, wherever the panel's width moves
+  const withStrip = DI_PANEL_WIDTH_PX + DI_MINIMIZED_STRIP_WIDTH_PX;
+  assert.equal(diDockFor(withStrip, false, true).panelPx, DI_PANEL_WIDTH_PX);
+  assert.equal(diDockFor(withStrip - 1, false, true).panelPx, DI_PANEL_WIDTH_PX - 1);
+  assert.equal(diDockFor(withStrip, false, true).worldPx, 0);
+  assert.equal(diDockFor(withStrip + 1, false, true).worldPx, 1);
+  assert.equal(diDockFor(DI_PANEL_WIDTH_PX, false, false).worldPx, 0);
   assert.equal(
     diDockFor(DI_PANEL_WIDTH_PX + DI_WORLD_CONTROLS_MIN_PX, false, false).worldControls,
     true,
@@ -205,4 +214,24 @@ test('fixture words are never both, never neither: exactly one of floating and i
             'a minimized office has nothing to host them: they float',
           );
       }
+});
+
+test('pass C (B): the SCAN face (where the rail is) offers its world controls by its OWN measured threshold, one pixel each side; the operational face keeps the pixel toolbar\'s 276', () => {
+  const RAIL = 200;
+  // measured from the converged chrome (logs/measure-scan-world-chrome-1440-20261027T005429Z.json: widest piece 230.7 px) plus headroom
+  assert.equal(DI_WORLD_SCAN_CONTROLS_MIN_PX, 240);
+  assert.ok(DI_WORLD_SCAN_CONTROLS_MIN_PX > 230.7, 'the widest converged piece fits inside the threshold');
+  assert.ok(DI_WORLD_SCAN_CONTROLS_MIN_PX < DI_WORLD_CONTROLS_MIN_PX, 'the converged chrome is narrower than the pixel toolbar');
+  const at = (worldPx: number) => DI_PANEL_WIDTH_PX + RAIL + worldPx;
+  assert.equal(diDockFor(at(DI_WORLD_SCAN_CONTROLS_MIN_PX), false, false, RAIL).worldControls, true);
+  assert.equal(diDockFor(at(DI_WORLD_SCAN_CONTROLS_MIN_PX - 1), false, false, RAIL).worldControls, false);
+  // the fixture words follow the same offer (floating beside the controls, else inside the panel): never both, never neither
+  assert.equal(diDockFor(at(DI_WORLD_SCAN_CONTROLS_MIN_PX), false, false, RAIL).fixtureWords, 'floating');
+  assert.equal(diDockFor(at(DI_WORLD_SCAN_CONTROLS_MIN_PX - 1), false, false, RAIL).fixtureWords, 'in-panel');
+  // the operational face (no rail) at the SAME world width keeps the pixel toolbar's threshold
+  const op = DI_PANEL_WIDTH_PX + DI_WORLD_SCAN_CONTROLS_MIN_PX;
+  assert.equal(diDockFor(op, false, false).worldControls, false);
+  assert.equal(diDockFor(DI_PANEL_WIDTH_PX + DI_WORLD_CONTROLS_MIN_PX, false, false).worldControls, true);
+  // minimized, the rail goes with the office: the threshold is the operational one again (and the world is wide)
+  assert.equal(diDockFor(at(DI_WORLD_SCAN_CONTROLS_MIN_PX - 1), true, false, RAIL).worldControls, true);
 });

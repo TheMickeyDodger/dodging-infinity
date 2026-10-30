@@ -810,7 +810,7 @@ for (const [width, height] of [
       // its outcome depended on that race (22 of 22 in one run, 21 of 22 in the next). This only fixes WHICH state is measured; no assertion below changed.
       await p().waitForSelector('[data-testid="ambient-legend"]', { state: 'attached', timeout: 30_000 });
       await p().waitForTimeout(300);
-      // With the office open it takes 420 px of the window. Where that leaves a world narrower than the toolbar (640 wide leaves 220 px) the world's
+      // With the office open it takes 428 px of the window (420 before pass C). Where that leaves a world narrower than the toolbar (640 wide leaves 212 px) the world's
       // controls, the City button among them, are REMOVED until the office is minimized (WorldControlsGate, diPanelLayout.ts), so the City panel is
       // reached after Minimize. Only that precondition is added: the viewport and every assertion below are unchanged. The condition is the rendered
       // fact (the City button is not available), never a hardcoded width.

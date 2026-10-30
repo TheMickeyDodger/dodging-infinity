@@ -29,8 +29,11 @@ would build it from the local process user), or, for an APPROVE only
 Operator's attestation that it relayed the human's explicit reply,
 trusted by declared policy, NOT independently verified, and labelled
 ``operator_attested_not_independently_verified``. A mistaken or malicious
-same-user operator or local process could fabricate it. No field of either
-context is reachable from a tool payload. Provenance records state only what is
+same-user operator or local process could fabricate it. By owner decision
+(c) the same attestation may also record the person's decline (the existing
+DENY), rejection (REJECTED, terminal) or change request (CHANGES_REQUESTED,
+with their reason), each through its own entry point; none of them issues an
+authorization. No field of either context is reachable from a tool payload. Provenance records state only what is
 known: the transport, the KIND of principal (authenticated, or
 operator-attested and not independently verified) and its
 reference, the configured subject if one is known, the receive time,

@@ -9,7 +9,11 @@
  * Contents (an ALLOWLIST — anything else is excluded and the exclusion is PROVEN in the
  * inventory):
  *   dist/di-cli.js                      the DI entry (no source map)
- *   dist/webview/index.html, assets/index-*.{js,css}, fonts/FSPixelSansUnicode-Regular.ttf
+ *   dist/webview/assets/characters/busts/bust_0.png … bust_3.png, assets/characters/char_0.png … char_5.png
+ *                                       the Swarm avatars (SWARM_AVATAR_FILES, ten named files), which the
+ *                                       webview loads by URL from this root
+ *   dist/webview/index.html, assets/index-*.{js,css}, fonts/FSPixelSansUnicode-Regular.ttf,
+ *   fonts/InterVariable.woff2, fonts/Inter-OFL.txt (Inter, the DI chrome's Home face, with its own licence)
  *   dist/assets/**                      runtime assets (characters, floors, walls, carpets,
  *                                       furniture, pets, default layout)
  *   node_modules/**                     the EXACT runtime closure of the four externals
@@ -41,7 +45,25 @@ const EXTERNALS = ['fastify', '@fastify/websocket', '@fastify/static', '@fastify
 const FONT_REL = 'dist/webview/fonts/FSPixelSansUnicode-Regular.ttf';
 /** sha256 the font must keep (W3 ruling 4: byte-for-byte, never re-encoded). */
 const FONT_SHA256_PREFIX = '3b4e53ff';
+/** Inter 4.1 web/InterVariable.woff2 from the official release (SIL OFL 1.1), shipped byte for byte like the pixel face. */
+const INTER_REL = 'dist/webview/fonts/InterVariable.woff2';
+const INTER_SHA256_PREFIX = '693b77d4';
 const W3_EXCLUDED = ['Screenshot.jpg', 'icon.png', 'banner.png', 'office.png', 'characters.png'];
+// Mission details' Swarm avatar loads these BY URL from the office's one static root, dist/webview
+// (DiScanPanel.tsx assetUrl: bust_<palette> for palettes 0-3, else char_<palette mod 6>). Left out of the
+// package's dist/webview, every avatar is an empty circle. Named one by one so the allowlist widens by exactly these.
+const SWARM_AVATAR_FILES = [
+  'assets/characters/busts/bust_0.png',
+  'assets/characters/busts/bust_1.png',
+  'assets/characters/busts/bust_2.png',
+  'assets/characters/busts/bust_3.png',
+  'assets/characters/char_0.png',
+  'assets/characters/char_1.png',
+  'assets/characters/char_2.png',
+  'assets/characters/char_3.png',
+  'assets/characters/char_4.png',
+  'assets/characters/char_5.png',
+];
 const FONT_SOURCE_URL =
   'https://fontstruct.com/fontstructions/show/2606508/fs-pixel-sans-unicode-regular';
 const FONT_LICENSE_URL =
@@ -218,7 +240,10 @@ function main() {
     (f) =>
       f === 'index.html' ||
       /^assets\/index-[A-Za-z0-9_-]+\.(js|css)$/.test(f) ||
-      f === 'fonts/FSPixelSansUnicode-Regular.ttf',
+      f === 'fonts/FSPixelSansUnicode-Regular.ttf' ||
+      f === 'fonts/InterVariable.woff2' ||
+      f === 'fonts/Inter-OFL.txt' ||
+      SWARM_AVATAR_FILES.includes(f),
   );
   const excludedWebview = webviewFiles.filter((f) => !allowedWebview.includes(f));
   for (const f of allowedWebview)
@@ -242,6 +267,11 @@ function main() {
   const fontHash = sha256(path.join(pkgDir, FONT_REL));
   if (!fontHash.startsWith(FONT_SHA256_PREFIX))
     fail(`font bytes changed (${fontHash}); W3 requires the binary unchanged`);
+  if (!fs.existsSync(path.join(pkgDir, 'dist/webview/fonts/Inter-OFL.txt')))
+    fail('Inter is shipped without its licence (fonts/Inter-OFL.txt)');
+  const interHash = sha256(path.join(pkgDir, INTER_REL));
+  if (!interHash.startsWith(INTER_SHA256_PREFIX))
+    fail(`Inter bytes changed (${interHash}); the release file ships unchanged`);
 
   // ── the exact runtime closure of the externals ──
   const closure = runtimeClosure(EXTERNALS);
@@ -348,7 +378,7 @@ function main() {
         private: true,
         description: 'Pixel Agents DI office — standalone, read-only, loopback-only package',
         license:
-          'MIT AND OFL-1.1 (see LICENSE, dist/webview/fonts/OFL.txt, THIRD-PARTY-NOTICES.txt)',
+          'MIT AND OFL-1.1 (see LICENSE, dist/webview/fonts/OFL.txt, dist/webview/fonts/Inter-OFL.txt, THIRD-PARTY-NOTICES.txt)',
         engines: { node: '>=20' },
         main: 'dist/di-cli.js',
         dependencies: deps,

@@ -23,6 +23,14 @@ task being the mission's task. The root's review block (decided inside the
 capture, linkage and corroboration included) is then carried verbatim, with
 ``candidate_applicability`` ``unproven``.
 
+Every mission's ``delivery_link`` comes from an injected ``delivery_links``
+callable (the registered delivery store's reader lives outside this
+package), called once per response. Without one, every workflow mission says no
+store is registered; a callable that raises or returns the wrong shape makes the
+workflow missions ``unlinked_reader_failed``, never a crash. A mission of any
+other model (Mission Core included) is ``unlinked_model_not_recorded`` either
+way.
+
 The whole response is validated by ``contract_v2.validate_response_v2``
 before it is returned: an assembly defect is a raised ``ContractError``,
 never a malformed response handed to a consumer.
@@ -373,7 +381,8 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
                 max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
                 registry_directory=None, registry_bytes=None,
                 observed_roots=None, confirmed_bindings=None, compose=None,
-                budget=None, runtime_agents=None, delivery_presentations=None):
+                budget=None, runtime_agents=None, delivery_presentations=None,
+                delivery_links=None):
     """One version 2 response over an already loaded (and validated)
     registry. ``runtime_agents``: as ``query.assemble``.
     ``delivery_presentations``: None (not registered) or a callable taking
@@ -381,7 +390,13 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
     (``contract_v2.INSPECTIONS``) and the response's own ``{source_id: kind}``,
     and returning its ``delivery_presentations`` block (D1; see
     ``target_runtime.mission_state.DeliveryPresentationsReader``); a failure of
-    the hook is an unavailable block, never an empty one. ``observed_roots``
+    the hook is an unavailable block, never an empty one. ``delivery_links``:
+    None (no delivery store registered) or a callable taking nothing and
+    returning the registered store's ``{workflow id: [delivery ids]}``, or None
+    when the store is unavailable (``target_runtime.mission_state.
+    DeliveryLinksReader.bindings``); every mission then carries its
+    ``delivery_link`` (``contract_v2.mission_delivery_link``), and a failure of
+    the hook is ``unlinked_reader_failed``, never a crash. ``observed_roots``
     and ``confirmed_bindings``: see
     ``roster.classify``; ``compose``: see the module; ``budget``: this
     pass's ``PassBudget`` (the owner's, of its SHARED refresh budget; a
@@ -411,12 +426,22 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         canonical_complete=roster.canonical_sources_complete(source_blocks))
     states = _mission_states(missions, kinds, sources_by_id, chain_reading,
                              compose)
+    inspection = _inspection(source_blocks)
+    unavailable, bound = _delivery_bindings(delivery_links)
+    holders = {}
+    for mission in missions:
+        if mission["lifecycle"]["model"] == (
+                contract.LIFECYCLE_MODEL_WORKFLOW_STORE):
+            holders[mission["native_id"]] = holders.get(
+                mission["native_id"], 0) + 1
     for mission in missions:
         mission["mission_state"] = states[mission["mission_ref"]]
         mission["admitted_artifacts"] = {
             "canonical_review": canonical_review(
                 mission, kinds[mission["source_id"]], chain_reading)}
         mission["workflow_phase"] = contract_v2.workflow_phase(mission)
+        mission["delivery_link"] = contract_v2.mission_delivery_link(
+            mission, unavailable, bound, holders, inspection)
     registry = query_module._registry_block(
         contract.HEALTH_FRESH, None, len(registry_document["sources"]),
         registry_directory, registry_bytes)
@@ -429,10 +454,33 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         None if runtime_agents is None
         else runtime_agents(missions, reading, now, source_blocks),
         _delivery_presentations_block(
-            delivery_presentations, missions, _inspection(source_blocks),
+            delivery_presentations, missions, inspection,
             dict((block["source_id"], block["kind"])
                  for block in source_blocks)))
     return contract_v2.validate_response_v2(response)
+
+
+def _delivery_bindings(hook):
+    """``(unavailable, bound)`` for this refresh's delivery links (see
+    ``contract_v2.mission_delivery_link``): the registered store's
+    ``{workflow id: [delivery ids]}`` from ``hook``, or why there is none:
+    not registered (no hook), unavailable (the hook returned None), or reader
+    failed (it raised, or returned anything but that map). An empty map is
+    returned only when the store was read and no record names a workflow."""
+    if hook is None:
+        return contract_v2.MISSION_LINK_STORE_NOT_REGISTERED, None
+    try:
+        bound = hook()
+    except Exception:                                      # noqa: BLE001
+        return contract_v2.MISSION_LINK_READER_FAILED, None
+    if bound is None:
+        return contract_v2.MISSION_LINK_STORE_UNAVAILABLE, None
+    if type(bound) is not dict or not all(
+            type(workflow_id) is str and type(ids) is list and ids
+            and all(type(one) is str for one in ids)
+            for workflow_id, ids in bound.items()):
+        return contract_v2.MISSION_LINK_READER_FAILED, None
+    return None, bound
 
 
 def _inspection(source_blocks):
@@ -463,7 +511,8 @@ def _delivery_presentations_block(hook, missions, inspection, kinds):
 def query_v2(source_registry, runtime_snapshot, chain_observation, now,
              max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
              observed_roots=None, confirmed_bindings=None, compose=None,
-             budget=None, runtime_agents=None, delivery_presentations=None):
+             budget=None, runtime_agents=None, delivery_presentations=None,
+             delivery_links=None):
     """``query.query`` for version 2: a registry that cannot be loaded
     degrades explicitly (its own health and problem, no sources, no
     missions) instead of raising or reading as empty."""
@@ -493,4 +542,5 @@ def query_v2(source_registry, runtime_snapshot, chain_observation, now,
     return assemble_v2(document, runtime_snapshot, chain_observation, now,
                        max_age_seconds, readers, source_registry.directory,
                        size, observed_roots, confirmed_bindings, compose,
-                       budget, runtime_agents, delivery_presentations)
+                       budget, runtime_agents, delivery_presentations,
+                       delivery_links=delivery_links)

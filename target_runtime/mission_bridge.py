@@ -203,6 +203,7 @@ from target_runtime import process_ownership as ownership_module
 from target_runtime import start_cause as start_cause_module
 from target_runtime import workspace_trust as workspace_trust_module
 from target_runtime.worker import RuntimeWorker
+from target_runtime.run_association import handoff_prefix, names_this_run  # noqa: F401
 from target_runtime.git_transport import (
     CAPTURE_CAPTURED,
     GitTransport,
@@ -294,7 +295,10 @@ ADVANCE_ACTIONS = (ADVANCE_NONE, ADVANCE_PAUSED, ADVANCE_BUSY, ADVANCE_RECONCILE
 TERMINAL_MISSION_STATES = (
     mission_record.STATE_COMPLETED, mission_record.STATE_BLOCKED,
     mission_record.STATE_CLOSED, mission_record.STATE_CANCELLED,
-    mission_record.STATE_DENIED)
+    mission_record.STATE_DENIED,
+    # (c): neither has anything to advance; a change request, like a denial,
+    # waits for a new revision.
+    mission_record.STATE_REJECTED, mission_record.STATE_CHANGES_REQUESTED)
 WAIT_RECONCILE_SPACING = "reconcile_spacing"
 WAIT_TARGET_NOT_OBSERVED = "target_not_observed"
 WAIT_PENDING_PROOF = "verification_pending_proof"
@@ -427,16 +431,6 @@ class WorkspacePlan:
     create: bool
 
 
-def handoff_prefix(mission_id, revision, digest):
-    """The handoff's first sentence: it names the exact Mission, revision
-    and proposal digest. The child Herdr records the handoff as its own
-    ``task.json`` description, and the observer projects that field
-    truncated to 200 characters; this prefix is 150, so the target's OWN
-    durable task record names the intent that started it."""
-    return "AUTHORIZED MISSION %s (revision %d, proposal digest %s)." % (
-        mission_id, revision, digest)
-
-
 def handoff_text(mission_id, revision, digest, proposal, scope, targets):
     """The handoff: the approved Mission content in a FIXED template,
     authority only, no engineering plan. No surrounding whitespace, so the
@@ -494,25 +488,6 @@ def _check_entry(snapshot, derived):
 def _hex64(value):
     return isinstance(value, str) and len(value) == 64 and not (
         set(value) - set("0123456789abcdef"))
-
-
-def names_this_run(raw_observation, mission_id, intent):
-    """Durable proof that the workspace's CURRENT task is the one THIS
-    run's intent started: the target's own ``task.json`` description (as
-    observed) begins with this intent's exact handoff prefix (Mission id,
-    revision, proposal digest), and the task started no earlier than the
-    intent was recorded. An old or foreign child sharing the workspace
-    fails both or either, and is never adopted."""
-    task = raw_observation.get("task") if isinstance(
-        raw_observation, dict) and isinstance(raw_observation.get("task"),
-                                              dict) else {}
-    description, started = task.get("description"), task.get("started_at")
-    return bool(
-        isinstance(description, str)
-        and description.startswith(handoff_prefix(
-            mission_id, intent["revision"], intent["proposal_digest_sha256"]))
-        and isinstance(started, int) and not isinstance(started, bool)
-        and started >= intent["recorded_at"])
 
 
 class MissionBridge(object):

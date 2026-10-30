@@ -27,16 +27,17 @@ import {
   DI_SHORT_REF_FULL_MAX_CHARS,
   DI_SHORT_REF_MIN_CHARS,
 } from '../constants.js';
-import type { DiFreshness } from './diNavigation.js';
+import type { DiFreshness, DiRecord } from './diNavigation.js';
 import { plainBindingReason, plainIdentityReason, plainNotLive } from './diNavigation.js';
 import { navigationOrder } from './diOfficeFormat.js';
 import { missionObjective, shortMemberIdentity } from './diOperationalStatus.js';
-import { visibleEntries } from './diReceptionFormat.js';
 
 // ── titles ─────────────────────────────────────────────────────────────────────────────────────
 
 /** Said instead of a title when the objective's opening is only boilerplate (ids, headers). */
 export const MISSION_TITLE_PLACEHOLDER = 'Objective text available: open to read';
+/** The headline of a Mission whose source reported no goal; the source and state are secondary detail. */
+export const MISSION_TITLE_NO_GOAL = 'No goal reported';
 
 export interface DiMissionTitle {
   /** sentence: a verbatim slice of the objective; placeholder: nothing meaningful opens it; no-goal: the source gave none. */
@@ -114,7 +115,9 @@ function bounded(sentence: string): string {
  */
 export function missionTitle(mission: DiMission): DiMissionTitle {
   const objective = missionObjective(mission);
-  if (objective.kind === 'no-goal') return { kind: 'no-goal', text: objective.text };
+  // Plain-English naming (owner ruling, 2026-10-28): the HEADLINE carries no source id and no state code. It says what the state says, that this source REPORTED no goal (not that none exists);
+  // the source-qualified note with its state stays as secondary detail (missionObjective's text, shown beside the title).
+  if (objective.kind === 'no-goal') return { kind: 'no-goal', text: MISSION_TITLE_NO_GOAL };
   for (const raw of objective.text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line === '' || HEADING_LINE.test(line.replace(/^#+\s*/, ''))) continue;
@@ -497,6 +500,27 @@ export function firstLayerName(
   return `${member.logical} · ${member.role}${twins > 1 ? ` · ${chain}` : ''}`;
 }
 
+/**
+ * The inspector's heading: who or what this is, by its first-layer name. A Mission is headed by its title, the plain-English name
+ * the naming rule derives from its own goal text. Where the source reported NO goal, the facts support no name, so the heading says
+ * exactly that ("No goal reported") and names no id; the inspector draws the short source-qualified ref on its own line beneath it.
+ */
+export function inspectorHeading(
+  state: Pick<DiOfficeState, 'runtimeAgents'>,
+  record: DiRecord | null,
+  mission: DiMission | null,
+): string {
+  if (record?.target.kind === 'member')
+    return firstLayerName(state, {
+      kind: 'member',
+      mission: record.target.mission,
+      member: record.target.member,
+    });
+  if (record?.target.kind === 'runtime' || record?.target.kind === 'unverified')
+    return firstLayerName(state, { kind: 'runtime', agent: record.target.agent });
+  return mission ? missionTitle(mission).text : 'This record is no longer in the office state';
+}
+
 /** What most rows share, said once: "All N: x." / "n of N: x." (a clear majority), else null. */
 function majority<T>(
   items: readonly T[],
@@ -617,22 +641,19 @@ export function plainObserved(
 // ── attention ──────────────────────────────────────────────────────────────────────────────────
 
 export interface DiAttentionSummary {
-  /** Entries listed as needing attention and not hidden in this view, plus any the cap left out. */
+  /** Every entry listed as needing attention (hidden in some view or not), plus any the cap left out. */
   count: number;
   text: string;
 }
 
 /**
  * The ONE attention entry's words. Zero is said as what it is — nothing LISTED — never "none" or
- * "all clear": what the desk cannot read is said once, by viewLimits.
+ * "all clear": what the desk cannot read is said once, by viewLimits. It takes no hidden set: hiding
+ * an entry in a view resolves and dismisses nothing, so it cannot change how many need attention.
  */
-export function attentionSummary(
-  reception: DiReception,
-  hidden: ReadonlySet<string>,
-): DiAttentionSummary {
-  const { visible } = visibleEntries(reception.entries, hidden);
+export function attentionSummary(reception: DiReception): DiAttentionSummary {
   const notListed = Math.max(0, reception.entriesTotal - reception.entries.length);
-  const count = visible.length + notListed;
+  const count = reception.entries.length + notListed;
   return {
     count,
     text:

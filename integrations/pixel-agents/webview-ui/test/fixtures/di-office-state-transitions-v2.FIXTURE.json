@@ -105,8 +105,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000000-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -462,8 +474,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000001-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -817,8 +841,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000002-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -1172,8 +1208,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000003-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -1527,8 +1575,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000004-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -1882,8 +1942,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000005-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -2237,8 +2309,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000006-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -2592,8 +2676,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000007-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -2947,8 +3043,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000008-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -3302,8 +3410,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000000-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -3658,8 +3778,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000001-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -4013,8 +4145,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000002-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -4368,8 +4512,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000003-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -4723,8 +4879,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000004-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -5078,8 +5246,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000005-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -5433,8 +5613,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000006-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -5788,8 +5980,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000007-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -6143,8 +6347,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000008-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -6498,8 +6714,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000009-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -6853,8 +7081,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000010-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -7208,8 +7448,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000011-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -7563,8 +7815,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000012-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -7918,8 +8182,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000013-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -8273,8 +8549,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000014-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -8628,8 +8916,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000015-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -8983,8 +9283,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000016-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -9338,8 +9650,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000017-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -9693,8 +10017,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000018-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -10048,8 +10384,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000019-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -10403,8 +10751,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000020-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -10758,8 +11118,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000021-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -11113,8 +11485,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000022-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -11468,8 +11852,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000023-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -11823,8 +12219,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000024-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -12178,8 +12586,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000025-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -12533,8 +12953,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000026-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -12888,8 +13320,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000027-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -13243,8 +13687,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000028-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -13598,8 +14054,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000000-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -13953,8 +14421,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000001-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -14308,8 +14788,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000002-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -14663,8 +15155,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000003-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -15018,8 +15522,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000004-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -15373,8 +15889,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000005-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -15728,8 +16256,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000006-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -16083,8 +16623,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000007-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -16438,8 +16990,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000008-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -16793,8 +17357,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000009-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -17148,8 +17724,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000010-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -17503,8 +18091,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000011-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -17858,8 +18458,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000012-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -18213,8 +18825,20 @@
               "reason": "binding_not_applicable:covered_by_canonical_record",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -18845,8 +19469,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-150121-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -19200,8 +19836,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -19555,8 +20203,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -19910,8 +20570,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -20266,8 +20938,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -20621,8 +21305,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -20976,8 +21672,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -21331,8 +22039,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -21686,8 +22406,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -22041,8 +22773,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -22396,8 +23140,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -23028,8 +23784,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -24376,8 +25144,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000000-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -24733,8 +25513,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000001-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -25088,8 +25880,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000002-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -25443,8 +26247,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000003-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -25798,8 +26614,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000004-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -26153,8 +26981,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000005-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -26508,8 +27348,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000006-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -26863,8 +27715,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000007-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -27218,8 +28082,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000008-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -27573,8 +28449,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000000-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -27929,8 +28817,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000001-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -28284,8 +29184,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000002-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -28639,8 +29551,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000003-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -28994,8 +29918,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000004-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -29349,8 +30285,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000005-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -29704,8 +30652,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000006-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -30059,8 +31019,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000007-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -30414,8 +31386,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000008-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -30769,8 +31753,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000009-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -31124,8 +32120,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000010-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -31479,8 +32487,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000011-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -31834,8 +32854,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000012-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -32189,8 +33221,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000013-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -32544,8 +33588,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000014-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -32899,8 +33955,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000015-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -33254,8 +34322,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000016-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -33609,8 +34689,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000017-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -33964,8 +35056,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000018-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -34319,8 +35423,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000019-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -34674,8 +35790,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000020-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -35029,8 +36157,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000021-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -35384,8 +36524,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000022-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -35739,8 +36891,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000023-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -36094,8 +37258,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000024-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -36449,8 +37625,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000025-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -36804,8 +37992,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000026-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -37159,8 +38359,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000027-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -37514,8 +38726,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000028-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -37869,8 +39093,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000000-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -38224,8 +39460,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000001-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -38579,8 +39827,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000002-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -38934,8 +40194,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000003-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -39289,8 +40561,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000004-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -39644,8 +40928,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000005-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -39999,8 +41295,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000006-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -40354,8 +41662,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000007-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -40709,8 +42029,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000008-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -41064,8 +42396,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000009-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -41419,8 +42763,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000010-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -41774,8 +43130,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000011-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -42129,8 +43497,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000012-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -42484,8 +43864,20 @@
               "reason": "binding_not_applicable:covered_by_canonical_record",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -43047,8 +44439,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-150121-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -43402,8 +44806,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -43757,8 +45173,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -44112,8 +45540,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -44468,8 +45908,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -44823,8 +46275,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -45178,8 +46642,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -45533,8 +47009,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -45888,8 +47376,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -46243,8 +47743,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -46598,8 +48110,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -47230,8 +48754,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -48549,8 +50085,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000000-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -48906,8 +50454,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000001-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -49261,8 +50821,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000002-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -49616,8 +51188,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000003-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -49971,8 +51555,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000004-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -50326,8 +51922,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000005-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -50681,8 +52289,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000006-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -51036,8 +52656,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000007-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -51391,8 +53023,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000008-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -51746,8 +53390,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000000-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -52102,8 +53758,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000001-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -52457,8 +54125,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000002-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -52812,8 +54492,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000003-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -53167,8 +54859,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000004-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -53522,8 +55226,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000005-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -53877,8 +55593,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000006-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -54232,8 +55960,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000007-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -54587,8 +56327,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000008-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -54942,8 +56694,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000009-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -55297,8 +57061,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000010-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -55652,8 +57428,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000011-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -56007,8 +57795,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000012-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -56362,8 +58162,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000013-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -56717,8 +58529,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000014-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -57072,8 +58896,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000015-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -57427,8 +59263,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000016-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -57782,8 +59630,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000017-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -58137,8 +59997,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000018-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -58492,8 +60364,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000019-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -58847,8 +60731,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000020-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -59202,8 +61098,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000021-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -59557,8 +61465,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000022-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -59912,8 +61832,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000023-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -60267,8 +62199,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000024-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -60622,8 +62566,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000025-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -60977,8 +62933,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000026-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -61332,8 +63300,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000027-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -61687,8 +63667,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000028-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -62042,8 +64034,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000000-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -62397,8 +64401,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000001-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -62752,8 +64768,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000002-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -63107,8 +65135,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000003-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -63462,8 +65502,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000004-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -63817,8 +65869,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000005-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -64172,8 +66236,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000006-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -64527,8 +66603,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000007-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -64882,8 +66970,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000008-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -65237,8 +67337,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000009-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -65592,8 +67704,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000010-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -65947,8 +68071,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000011-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -66302,8 +68438,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000012-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -66657,8 +68805,20 @@
               "reason": "binding_not_applicable:covered_by_canonical_record",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -67289,8 +69449,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-150121-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -67644,8 +69816,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -67999,8 +70183,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -68354,8 +70550,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -68710,8 +70918,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -69065,8 +71285,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -69420,8 +71652,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -69775,8 +72019,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -70130,8 +72386,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -70485,8 +72753,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -70840,8 +73120,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -71472,8 +73764,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -72820,8 +75124,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000000-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -73177,8 +75493,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000001-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -73532,8 +75860,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000002-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -73887,8 +76227,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000003-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -74242,8 +76594,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000004-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -74597,8 +76961,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000005-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -74952,8 +77328,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000006-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -75307,8 +77695,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000007-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -75662,8 +78062,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260801-000008-ffffff",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -76017,8 +78429,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000000-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -76373,8 +78797,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000001-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -76728,8 +79164,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000002-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -77083,8 +79531,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000003-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -77438,8 +79898,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000004-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -77793,8 +80265,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000005-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -78148,8 +80632,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000006-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -78503,8 +80999,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000007-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -78858,8 +81366,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000008-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -79213,8 +81733,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000009-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -79568,8 +82100,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000010-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -79923,8 +82467,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000011-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -80278,8 +82834,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000012-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -80633,8 +83201,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000013-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -80988,8 +83568,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000014-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -81343,8 +83935,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000015-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -81698,8 +84302,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000016-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -82053,8 +84669,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000017-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -82408,8 +85036,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000018-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -82763,8 +85403,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000019-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -83118,8 +85770,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000020-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -83473,8 +86137,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000021-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -83828,8 +86504,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000022-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -84183,8 +86871,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000023-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -84538,8 +87238,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000024-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -84893,8 +87605,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000025-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -85248,8 +87972,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000026-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -85603,8 +88339,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000027-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -85958,8 +88706,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20260901-000028-eeeeee",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -86313,8 +89073,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000000-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -86668,8 +89440,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000001-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -87023,8 +89807,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000002-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -87378,8 +90174,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000003-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -87733,8 +90541,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000004-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -88088,8 +90908,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000005-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -88443,8 +91275,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000006-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -88798,8 +91642,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000007-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -89153,8 +92009,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000008-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -89508,8 +92376,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000009-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -89863,8 +92743,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000010-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -90218,8 +93110,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000011-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -90573,8 +93477,20 @@
               "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261001-000012-dddddd",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -90928,8 +93844,20 @@
               "reason": "binding_not_applicable:covered_by_canonical_record",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -91560,8 +94488,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": "20261017-150121-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -91915,8 +94855,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -92270,8 +95222,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -92625,8 +95589,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -92981,8 +95957,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -93336,8 +96324,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -93691,8 +96691,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -94046,8 +97058,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -94401,8 +97425,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -94756,8 +97792,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -95111,8 +98159,20 @@
               "reason": "binding_not_applicable:mission_not_active",
               "members": []
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "not_a_mission_core_record",
+              "taskId": null,
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -95743,8 +98803,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261017-133442-bbbbbb",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",

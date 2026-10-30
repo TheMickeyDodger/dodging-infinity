@@ -72,6 +72,10 @@ MISSION_CORE_STANDING = {
     mission_record.STATE_COMPLETED: contract.STANDING_TERMINAL,
     mission_record.STATE_CANCELLED: contract.STANDING_TERMINAL,
     mission_record.STATE_CLOSED: contract.STANDING_TERMINAL,
+    # (c): a rejection is terminal; a change request waits, like a denial,
+    # for a new revision and is not active.
+    mission_record.STATE_REJECTED: contract.STANDING_TERMINAL,
+    mission_record.STATE_CHANGES_REQUESTED: contract.STANDING_INACTIVE,
 }
 
 # WorkflowStore eligibility is the store's OWN rule, ``store.is_active``:

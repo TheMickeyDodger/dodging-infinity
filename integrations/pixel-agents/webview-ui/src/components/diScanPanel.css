@@ -1,6 +1,8 @@
 /*
- * Locked scan panel (2026-10-25). Flat, high-contrast, docked over the pixel world.
- * Every colour is a shared --di-* token (index.css). Primary actions and the Open underline use --di-accent.
+ * The scan face: the locked scan panel (2026-10-25), the DI navigation rail and Mission details, in the HOME tokens
+ * (index.css: #0d0f1b, #552df0, #e6e2d6, #8b919e, Inter). Every colour is a shared --di-* token.
+ * Purple is a FILL only (primary actions, the wordmark); state marks (the Open underline, the rail's current place)
+ * use --di-scan-underline, and every bordered control takes the 3:1 control edge --di-scan-edge.
  */
 
 .di-scan {
@@ -14,7 +16,7 @@
   background: var(--di-scan-bg);
   color: var(--di-scan-text);
   border-left: 1px solid var(--di-scan-line);
-  font-family: Inter, var(--di-font-ui);
+  font-family: var(--di-font-ui);
   font-size: 14px;
   line-height: 1.35;
   overflow: hidden;
@@ -82,10 +84,7 @@
 
 .di-scan-mark,
 .di-scan-chevron,
-.di-scan-new,
 .di-scan-icon-button,
-.di-scan-reception,
-.di-scan-clear,
 .di-scan-trash {
   appearance: none;
   border: 0;
@@ -127,25 +126,6 @@
   display: block;
 }
 
-.di-scan-new {
-  height: 38px;
-  padding: 0 16px;
-  border-radius: 9px;
-  background: var(--di-scan-accent);
-  color: var(--di-on-accent);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-.di-scan-new:hover {
-  background: var(--di-scan-accent-hover);
-}
-.di-scan-new:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 .di-scan-icon-button {
   width: 32px;
   height: 32px;
@@ -174,12 +154,14 @@
   flex-shrink: 0;
 }
 
+/* C-V1 (pass C): the tabs never shrink under their own width (so nothing can overlap them) and spread across the row as
+   01-home.jpg draws them; the search field keeps the width its full placeholder needs. */
 .di-scan-tablist {
   display: flex;
   align-items: stretch;
+  justify-content: space-between;
   gap: 2px;
-  min-width: 0;
-  flex: 1;
+  flex: 1 0 auto;
 }
 
 .di-scan-tab {
@@ -216,10 +198,12 @@
   text-align: center;
 }
 
+/* C-V1 (pass C): the field sits INSIDE the tabs row (no margin of its own), so the row is as tall as the tabs, as 01-home.jpg
+   draws it; it takes the room the tabs leave, and its placeholder is never clipped (diHomeConvergence C-V1 (3)). */
 .di-scan-search {
   position: relative;
-  flex: 0 1 196px;
-  margin: 8px 0;
+  flex: 0 0 160px;
+  margin: 0 0 0 6px;
 }
 .di-scan-search svg {
   position: absolute;
@@ -231,10 +215,10 @@
 }
 .di-scan-search input {
   width: 100%;
-  height: 32px;
-  padding: 0 10px 0 28px;
+  height: 28px;
+  padding: 0 6px 0 26px;
   border-radius: 8px;
-  border: 1px solid var(--di-scan-line);
+  border: 1px solid var(--di-scan-edge);
   background: var(--di-scan-raised);
   color: var(--di-scan-text);
   font-size: 13px;
@@ -261,16 +245,19 @@
   padding: 12px 4px;
 }
 
+/* H-1 (pass C, 01-home): every collapsed card is its own card with the reference's SUBTLE grouping edge (the line token,
+   as on Mission details' outlined Swarm cards). Its text names it as a control (WCAG 1.4.11: a boundary that does not
+   identify the control needs no 3:1); the selected yellow edge and the focus ring carry state and keep 3:1. */
 .di-scan-row {
   appearance: none;
   width: 100%;
   text-align: left;
   cursor: pointer;
-  background: transparent;
+  background: var(--di-scan-well);
   color: inherit;
-  border: 1px solid transparent;
+  border: 1px solid var(--di-scan-well-edge);
   border-radius: 8px;
-  padding: 14px 14px 15px 20px;
+  padding: 10px 12px 11px 16px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -281,8 +268,35 @@
 .di-scan-row-copy {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+}
+
+/* H-2 (pass C, 01-home): Home's titles are compact and regular, the pills on the title row; Mission details keeps the
+   pixel-lock scale (its own .di-scan-mission-title), untouched by these rules. */
+.di-scan-row .di-scan-title,
+.di-scan-detail .di-scan-title {
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+.di-scan-row .di-scan-context {
+  font-size: 13px;
+  line-height: 1.3;
+}
+.di-scan-row .di-scan-pills,
+.di-scan-detail-top .di-scan-pills {
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+}
+.di-scan-row .di-scan-pill,
+.di-scan-detail .di-scan-pill {
+  font-size: 12px;
+  font-weight: 500;
+  gap: 5px;
+  padding: 2px 7px 2px 6px;
 }
 .di-scan-row:hover {
   background: var(--di-scan-raised);
@@ -327,9 +341,6 @@
   gap: 8px;
   flex-shrink: 0;
 }
-.di-scan-row .di-scan-pills {
-  margin-top: 10px;
-}
 
 .di-scan-pill {
   display: inline-flex;
@@ -358,19 +369,19 @@
   background: var(--di-scan-bad-chip);
 }
 .di-scan-pill[data-fill='solid'] {
-  height: 44px;
+  height: 38px;
   padding: 0 20px;
-  gap: 20px;
+  gap: 16px;
   border-radius: 8px;
   border: 2px solid transparent;
-  font-size: 21px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--di-on-accent);
 }
 .di-scan-pill[data-fill='solid'] .di-scan-dot {
-  width: 15px;
-  height: 16px;
-  border-radius: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
 }
 .di-scan-pill[data-fill='solid'] .di-scan-dot[data-tone='needs'] {
   background: var(--di-scan-needs-line);
@@ -406,11 +417,16 @@
   background: var(--di-scan-bad-fill);
   border-color: var(--di-scan-bad-line);
 }
+.di-scan-pill[data-fill='solid'][data-tone='idle'] {
+  background: var(--di-scan-chip);
+  border-color: var(--di-scan-edge);
+}
 
+/* Status is a DOT plus its word, the same round shape on every surface (Mission text; CONTROL-MAP "same-shape dot + word"). */
 .di-scan-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
 }
 .di-scan-dot[data-tone='needs'] {
@@ -441,20 +457,11 @@
   overflow: hidden;
 }
 
-.di-scan-detail .di-scan-title {
-  font-size: 22px;
-  line-height: 1.1;
-}
 
-.di-scan-detail-top .di-scan-pills {
-  margin-top: 0;
-  justify-content: flex-end;
-  align-items: center;
-}
 
 .di-scan-desc {
-  margin: 10px 0 8px;
-  font-size: 14px;
+  margin: 8px 0 10px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--di-scan-muted);
   min-width: 0;
@@ -512,6 +519,45 @@
   box-shadow: inset 0 0 0 1px var(--di-scan-line);
 }
 
+/* H-3 (pass C, 01-home): per role, its word above a SMALL avatar with the name beside it (Mission details keeps its
+   four large cards, .di-scan-card*, untouched). */
+.di-scan-detail .di-scan-swarm {
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.di-scan-detail .di-scan-member {
+  align-items: flex-start;
+  text-align: left;
+  gap: 6px;
+}
+.di-scan-detail .di-scan-role {
+  font-size: 12px;
+}
+.di-scan-member-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.di-scan-detail .di-scan-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+/* the same sheet framing as the 50px avatar, scaled to 28px (291 x 250 at 50px); named per variant so the later
+   unscoped [data-bust] rules cannot win on order */
+.di-scan-detail .di-scan-avatar[data-bust='sheet'] {
+  background-size: 163px 140px;
+}
+.di-scan-detail .di-scan-avatar[data-bust='true'] {
+  background-size: cover;
+}
+.di-scan-detail .di-scan-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .di-scan-detail-foot {
   display: flex;
   align-items: center;
@@ -533,9 +579,13 @@
   padding: 0;
   flex-shrink: 0;
 }
-.di-scan-trash:hover {
+.di-scan-trash:hover:not(:disabled) {
   color: var(--di-scan-bad);
   background: var(--di-scan-raised);
+}
+.di-scan-trash:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .di-scan-meta {
@@ -578,52 +628,7 @@
   background-position: 0 0;
 }
 
-/* ---------- sticky footer ---------- */
-
-.di-scan-footer {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px 14px;
-  border-top: 1px solid var(--di-scan-line);
-  background: var(--di-scan-bg);
-}
-
-.di-scan-reception {
-  height: 38px;
-  padding: 0 16px;
-  border-radius: 9px;
-  background: var(--di-scan-accent);
-  color: var(--di-on-accent);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.di-scan-reception:hover {
-  background: var(--di-scan-accent-hover);
-}
-.di-scan-reception[data-attention='true'] {
-  box-shadow: 0 0 0 1px var(--di-focus);
-}
-
-.di-scan-clear {
-  background: transparent;
-  color: var(--di-scan-text);
-  font-size: 15px;
-  font-weight: 500;
-  padding: 8px 4px;
-  border-radius: 6px;
-}
-.di-scan-clear:hover {
-  color: var(--di-on-accent);
-}
-
-/* ---------- click-in stage (mission, diff, herdr, comments) ---------- */
+/* ---------- click-in stage (mission, diff, comments); its left edge is the rail's (set inline) ---------- */
 
 .di-scan-stage {
   position: fixed;
@@ -631,7 +636,6 @@
   top: 0;
   right: 0;
   bottom: 0;
-  left: 16.75%;
   display: flex;
   flex-direction: column;
   background: var(--di-scan-canvas);
@@ -644,16 +648,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 22px 10px;
+  padding: 28px 22px 0;
   flex-shrink: 0;
 }
 
 .di-scan-back {
   appearance: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid var(--di-scan-line);
+  width: 46px;
+  height: 51px;
+  border-radius: 10px;
+  border: 1px solid var(--di-scan-edge);
   background: var(--di-scan-raised);
   color: var(--di-scan-text);
   display: inline-flex;
@@ -667,9 +671,9 @@
 .di-scan-crumb {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
-  font-size: 14px;
+  font-size: 24px;
   color: var(--di-scan-muted);
 }
 .di-scan-crumb button,
@@ -692,7 +696,7 @@
   color: var(--di-scan-text);
 }
 .di-scan-crumb-current {
-  color: var(--di-scan-accent-hover);
+  color: var(--di-scan-text);
   font-weight: 650;
 }
 
@@ -706,9 +710,9 @@
 }
 
 .di-scan-mission-title {
-  margin: 20px 0 8px 8px;
-  font-size: 28px;
-  font-weight: 650;
+  margin: 24px 0 19px 8px;
+  font-size: 56px;
+  font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -717,9 +721,9 @@
 .di-scan-card {
   display: flex;
   flex-direction: column;
-  min-height: 349px;
-  margin-top: 27px;
-  padding: 22px 30px 14px;
+  min-height: 348px;
+  margin-top: 30px;
+  padding: 21px 30px 16px;
   border: 1px solid var(--di-scan-well-edge);
   border-radius: 8px;
   background: var(--di-scan-well);
@@ -728,26 +732,26 @@
 .di-scan-swarm-heading {
   margin: 0 0 12px;
   color: var(--di-scan-heading);
-  font-size: 16px;
+  font-size: 30px;
   font-weight: 700;
 }
 .di-scan-card h2 {
-  margin-bottom: 12px;
-  font-size: 16px;
-  line-height: 1.2;
+  margin-bottom: 17px;
+  font-size: 30px;
+  line-height: 36px;
 }
 .di-scan-card p {
   max-width: 1034px;
-  margin: 0 0 8px;
-  font-size: 14px;
-  line-height: 1.45;
+  margin: 0 0 19px;
+  font-size: 24px;
+  line-height: 35px;
   color: var(--di-scan-text);
   overflow-wrap: anywhere;
 }
 .di-scan-card p.di-scan-handoff {
   max-width: 1034px;
   margin: 0;
-  line-height: 1.45;
+  line-height: 35px;
   color: var(--di-scan-text);
 }
 .di-scan-card-foot {
@@ -756,37 +760,45 @@
   justify-content: space-between;
   gap: 12px;
   margin-top: auto;
-  padding-top: 16px;
+  padding-top: 14px;
   border-top: 1px solid var(--di-scan-well-edge);
 }
 .di-scan-card-foot .di-scan-meta {
   text-align: left;
+  font-size: 22px;
+  line-height: 30px;
+}
+/* the footer's lines are not body paragraphs: they take the footer's size and no paragraph spacing */
+.di-scan-card .di-scan-card-foot p {
+  margin: 0;
+  font-size: 22px;
+  line-height: 30px;
+}
+.di-scan-card-foot .di-scan-meta-line svg {
+  width: 28px;
+  height: 28px;
 }
 .di-scan-updated {
   margin: 0;
   color: var(--di-scan-muted);
-  font-size: 13px;
+  font-size: 22px;
+  line-height: 30px;
 }
 
 .di-scan-swarm-heading {
-  margin: 20px 0 12px 8px;
-  line-height: 1.08;
+  margin: 14px 0 8px 8px;
+  line-height: 36px;
 }
 
+/* The pixel-lock composition: FOUR separately outlined cards with gutters, not one outlined container (D-2). */
 .di-scan-swarm-box {
-  display: flex;
-  align-items: center;
-  min-height: 119px;
-  padding: 16px 18px;
-  border: 1px solid var(--di-scan-well-edge);
-  border-radius: 8px;
-  background: var(--di-scan-well);
+  display: block;
 }
 
 .di-scan-cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 15px;
   width: 100%;
   margin: 0;
   padding: 0;
@@ -797,9 +809,11 @@
   align-items: center;
   gap: 14px;
   min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  min-height: 118px;
+  padding: 14px 18px;
+  border: 1px solid var(--di-scan-well-edge);
+  border-radius: 8px;
+  background: var(--di-scan-well);
 }
 .di-scan-card-copy {
   display: flex;
@@ -812,46 +826,158 @@
   line-height: 1.25;
   color: var(--di-scan-muted);
 }
+.di-scan-card-copy .di-scan-note {
+  font-size: 21px;
+}
 .di-scan-avatar-lg {
   width: 80px;
   height: 80px;
 }
 .di-scan-card-copy .di-scan-role {
-  font-size: 13px;
+  font-size: 16px;
 }
 .di-scan-card-copy .di-scan-name {
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 700;
 }
 
+.di-scan-fact {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--di-scan-muted);
+}
+.di-scan-fact[data-fact='observed'],
+.di-scan-fact[data-fact='configured'] {
+  color: var(--di-scan-text);
+}
+
+/* ---------- Delivery (below Swarm) and the state actions: drawn, gated, disabled at this stage ---------- */
+
+.di-scan-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 26px 0 12px 8px;
+}
+.di-scan-section-heading {
+  margin: 0;
+  color: var(--di-scan-heading);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.08;
+}
+.di-scan-fixture-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 4px;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.di-scan-steps {
+  margin: 0;
+  padding: 4px 18px;
+  list-style: none;
+  border: 1px solid var(--di-scan-well-edge);
+  border-radius: 8px;
+  background: var(--di-scan-well);
+}
+.di-scan-step {
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  border-bottom: 1px solid var(--di-scan-line);
+}
+.di-scan-step:last-child {
+  border-bottom: 0;
+}
+.di-scan-step-name {
+  color: var(--di-scan-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.di-scan-step-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--di-scan-text);
+  font-size: 13px;
+}
+.di-scan-step-reason {
+  color: var(--di-scan-muted);
+  font-size: 13px;
+}
+.di-scan-step-action {
+  appearance: none;
+  justify-self: start;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--di-scan-edge);
+  background: transparent;
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-scan-stage-note {
+  margin: 8px 0 0 8px;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.di-scan-state {
+  margin-top: 18px;
+}
+.di-scan-state-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-left: 8px;
+}
+.di-scan-state-action {
+  appearance: none;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--di-scan-edge);
+  background: transparent;
+  color: var(--di-scan-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.di-scan-step-action:disabled,
+.di-scan-state-action:disabled,
+.di-scan-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.di-scan-dot[data-tone='idle'] {
+  background: var(--di-scan-muted);
+}
+
+/* ---------- the three buttons and the trash (bottom-right) ---------- */
+
 .di-scan-actions {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 22px;
-  margin-top: 43px;
+  margin-top: 30px;
   padding-left: 8px;
 }
 .di-scan-action {
   appearance: none;
   border: 0;
   cursor: pointer;
-  flex: 0 0 266px;
-  width: 266px;
+  flex: 0 0 264px;
+  width: 264px;
   height: 66px;
   padding: 0 16px;
   border-radius: 10px;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: 22px;
+  font-weight: 700;
   color: var(--di-on-accent);
-}
-.di-scan-action-herdr {
-  flex-basis: 264px;
-  width: 264px;
-}
-.di-scan-action-comments {
-  flex-basis: 279px;
-  width: 279px;
 }
 .di-scan-action-diff {
   background: var(--di-scan-accent);
@@ -859,26 +985,40 @@
 .di-scan-action-diff:hover {
   background: var(--di-scan-accent-hover);
 }
-.di-scan-action-herdr {
-  background: var(--di-scan-gold);
-  color: var(--di-scan-gold-text);
+.di-scan-action-secondary {
+  border: 1px solid var(--di-scan-edge);
+  background: var(--di-scan-raised);
+  color: var(--di-scan-text);
 }
-.di-scan-action-comments {
-  background: var(--di-scan-comments);
+.di-scan-action-secondary:hover:not(:disabled) {
+  background: var(--di-control-hover);
 }
 .di-scan-trash-boxed {
   margin-left: auto;
-  width: 76px;
-  height: 69px;
-  flex: 0 0 76px;
-  border: 1px solid var(--di-scan-trash-edge);
+  width: 74px;
+  height: 66px;
+  flex: 0 0 74px;
+  border: 1px solid var(--di-scan-edge);
   border-radius: 10px;
   background: transparent;
   color: var(--di-scan-icon);
 }
 .di-scan-trash-boxed svg {
-  width: 30px;
-  height: 34px;
+  width: 26px;
+  height: 30px;
+}
+.di-scan-actions-notes {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding-left: 8px;
+}
+.di-scan-actions-notes .di-scan-stage-note {
+  margin-left: 0;
+}
+.di-scan-trash-notes {
+  max-width: 380px;
+  text-align: right;
 }
 
 .di-scan-ide {
@@ -988,9 +1128,7 @@
 }
 .di-scan .di-scan-editor-body,
 .di-scan .di-scan-editor-body *,
-.di-scan .di-scan-editor-path,
-.di-scan .di-scan-pane pre,
-.di-scan .di-scan-pane pre * {
+.di-scan .di-scan-editor-path {
   font-family: 'JetBrains Mono', var(--di-font-code);
 }
 .di-scan-editor-body {
@@ -1083,6 +1221,40 @@
 .di-scan-status-end {
   margin-left: auto;
 }
+/* Stage 4, increment 1: REAL data only. These selectors hang off classes that exist only on a real read (the specimen's bar never carries a -real
+   class), so the owner-approved composition cannot move. A real bar is ONE line in its approved box: its items keep their natural width and the one
+   variable field, the branch NAME and then the base, gives way with an ellipsis; its full value stays in the text and in the title. A fixed label
+   ("Detached"), the word "base", the counts and the file facts are never truncated. No minimum width is set for the branch yet: the whole-candidate
+   fit measurement decides it. */
+.di-scan-statusbar-real {
+  white-space: nowrap;
+}
+.di-scan-statusbar-real > * {
+  flex-shrink: 0;
+}
+.di-scan-statusbar-real > .di-scan-status-real {
+  flex: 0 100 auto;
+  min-width: 0;
+}
+.di-scan-status-real > svg {
+  flex: none;
+}
+.di-scan-status-real .di-scan-status-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.di-scan-status-real .di-scan-status-branch.di-scan-status-value {
+  flex: 0 1 auto;
+}
+.di-scan-status-real .di-scan-status-base.di-scan-status-value {
+  flex: 0 0 auto;
+  /* the base revision never shrinks, so it is never clipped either: with the value's overflow:hidden and ellipsis it lost the anti-aliased
+     edge of its last character whenever its box ended on a fractional pixel (drawn as a cut identifier on CI at 900 and 1280) */
+  overflow: visible;
+  text-overflow: clip;
+}
+/* end of the REAL-only status bar rules */
 .di-scan-add {
   color: var(--di-scan-ok);
 }
@@ -1100,86 +1272,10 @@
   border: 0;
 }
 
-.di-scan-herdr-view,
 .di-scan-comments-view {
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-.di-scan-herdr-view {
-  display: flex;
-  flex-direction: column;
-  background: var(--di-scan-canvas);
-  padding: 8px 10px 12px;
-}
-.di-scan .di-scan-panes {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(180px, 1fr);
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  min-height: 0;
-  list-style: none;
-  font-family: var(--di-font-code);
-}
-.di-scan .di-scan-panes[data-count='1'] {
-  grid-template-columns: minmax(0, 1fr);
-}
-.di-scan .di-scan-pane {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid var(--di-scan-line);
-  border-radius: 6px;
-  background: var(--di-scan-bg);
-  overflow: hidden;
-  font-family: var(--di-font-code);
-}
-.di-scan-term-log {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  margin: 0;
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.35;
-  color: var(--di-scan-code);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.di-scan-term-ask {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 8px 4px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: var(--di-scan-raised);
-  color: var(--di-scan-muted);
-  font-size: 12px;
-  line-height: 1.3;
-}
-.di-scan-term-gt {
-  color: var(--di-scan-text);
-}
-.di-scan-term-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 2px 10px 8px;
-  font-size: 11px;
-  line-height: 1.3;
-  color: var(--di-scan-muted);
-}
-.di-scan-term-meta span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .di-scan-comments-view {
   padding: 28px 40px;
@@ -1195,6 +1291,107 @@
 }
 
 /* The product dock is 420px. The lock frame is wider, and those measurements stay. Below that, the list compresses so the header, tabs and rows stay inside the dock. */
+/* Mission details below 1500 px wide (the v3 02 twin is 1280 x 720): the same composition at about 0.72 of the pixel-lock
+   scale, so Swarm stays on the first screen. Fixed px at a width breakpoint (never viewport units), so browser zoom still
+   enlarges the text. At 1500 px and wider the pixel-lock 02 scale above applies (measured at 1672 x 941). */
+@media (max-width: 1499px) {
+  .di-scan-stage-bar {
+    padding-top: 18px;
+  }
+  .di-scan-back {
+    width: 34px;
+    height: 36px;
+  }
+  .di-scan-crumb {
+    font-size: 17px;
+  }
+  .di-scan-mission-title {
+    margin: 16px 0 13px 8px;
+    font-size: 40px;
+  }
+  .di-scan-pill[data-fill='solid'] {
+    height: 30px;
+    padding: 0 14px;
+    gap: 12px;
+    font-size: 18px;
+  }
+  .di-scan-pill[data-fill='solid'] .di-scan-dot {
+    width: 11px;
+    height: 11px;
+  }
+  .di-scan-card {
+    min-height: 250px;
+    margin-top: 21px;
+    padding: 15px 22px 12px;
+  }
+  .di-scan-card h2,
+  .di-scan-swarm-heading {
+    font-size: 22px;
+  }
+  .di-scan-card h2 {
+    margin-bottom: 12px;
+    line-height: 26px;
+  }
+  .di-scan-card p,
+  .di-scan-card p.di-scan-handoff {
+    font-size: 17px;
+    line-height: 25px;
+  }
+  .di-scan-card p {
+    margin-bottom: 13px;
+  }
+  .di-scan-card .di-scan-card-foot p {
+    font-size: 16px;
+    line-height: 22px;
+  }
+  .di-scan-card-foot {
+    padding-top: 10px;
+  }
+  .di-scan-card-foot .di-scan-meta-line svg {
+    width: 20px;
+    height: 20px;
+  }
+  .di-scan-swarm-heading {
+    margin: 10px 0 6px 8px;
+    line-height: 26px;
+  }
+  .di-scan-cards {
+    gap: 11px;
+  }
+  .di-scan-card-member {
+    min-height: 85px;
+    gap: 10px;
+    padding: 10px 13px;
+  }
+  .di-scan-avatar-lg {
+    width: 58px;
+    height: 58px;
+  }
+  .di-scan-card-copy .di-scan-role {
+    font-size: 12px;
+  }
+  .di-scan-card-copy .di-scan-name {
+    font-size: 17px;
+  }
+  .di-scan-card-copy .di-scan-note {
+    font-size: 15px;
+  }
+  .di-scan-fact {
+    font-size: 12px;
+  }
+  .di-scan-action {
+    flex-basis: 190px;
+    width: 190px;
+    height: 48px;
+    font-size: 16px;
+  }
+  .di-scan-trash-boxed {
+    flex-basis: 54px;
+    width: 54px;
+    height: 48px;
+  }
+}
+
 @container scanlist (max-width: 480px) {
   .di-scan-header {
     padding: 12px 10px 6px;
@@ -1204,34 +1401,190 @@
     width: 36px;
     height: 23px;
   }
-  .di-scan-new {
-    height: 34px;
-    padding: 0 10px;
-    font-size: 12px;
-    letter-spacing: 0.02em;
-  }
   .di-scan-header-tools {
     gap: 6px;
   }
   .di-scan-tab {
     font-size: 13px;
-    padding: 8px 6px 10px;
+    font-weight: 500;
+    padding: 7px 4px 8px;
     gap: 4px;
   }
   .di-scan-search {
-    flex-basis: 120px;
+    flex-basis: 140px;
   }
-  .di-scan-title,
-  .di-scan-detail .di-scan-title {
-    font-size: 18px;
+  .di-scan-search input {
+    font-size: 12px;
   }
-  .di-scan-context {
-    font-size: 14px;
-  }
-  .di-scan-pill {
-    font-size: 13px;
-  }
-  .di-scan-row {
-    padding: 12px 10px 12px 12px;
-  }
+  /* pass C (H-2): Home's cards are compact at every panel width (01-home draws exactly this narrow panel), so the
+     narrow-panel title, context, pill and card sizes that shrank the OLD large scale are gone */
+}
+
+/* ---------- the DI navigation rail (01-home.jpg): fixed at the window's left, as wide as the world yields ---------- */
+
+.di-rail {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 12px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--di-scan-bg);
+  border-right: 1px solid var(--di-scan-line);
+}
+/* Nothing in the rail shrinks to make room: where the Orchestrators are many, THEIR list scrolls, and the actions,
+   Workspace and Settings keep their size and stay in the window. */
+.di-rail > * {
+  flex-shrink: 0;
+}
+.di-rail > .di-rail-orchestrators {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.di-rail-wordmark {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--di-scan-text);
+  cursor: pointer;
+}
+.di-rail-wordmark-di {
+  display: inline-flex;
+  color: var(--di-scan-logo);
+}
+.di-rail-wordmark-di svg {
+  display: block;
+  width: 38px;
+  height: 25px;
+}
+.di-rail-wordmark-world {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.di-rail-new {
+  appearance: none;
+  width: 100%;
+  height: 40px;
+  margin: 0 0 14px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--di-scan-accent);
+  color: var(--di-on-accent);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.di-rail-new:hover:not(:disabled) {
+  background: var(--di-scan-accent-hover);
+}
+.di-rail-new:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.di-rail-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--di-scan-text);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.di-rail-item svg {
+  flex-shrink: 0;
+  color: var(--di-scan-muted);
+}
+.di-rail-item:hover:not(:disabled) {
+  background: var(--di-scan-raised);
+}
+.di-rail-item[aria-current='page'] {
+  background: var(--di-scan-raised);
+  box-shadow: inset 3px 0 0 var(--di-scan-underline);
+}
+.di-rail-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.di-rail-count {
+  min-width: 22px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--di-scan-attn);
+  color: var(--di-scan-ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.di-rail-label {
+  margin: 18px 10px 6px;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.di-rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.di-rail-empty {
+  margin: 0 10px;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+}
+.di-rail-orchestrator {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.di-rail-orchestrator-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.di-rail-orchestrator-status {
+  width: 100%;
+  padding-left: 16px;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-rail-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--di-scan-line);
 }

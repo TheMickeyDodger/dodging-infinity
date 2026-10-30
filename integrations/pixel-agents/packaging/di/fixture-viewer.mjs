@@ -11,7 +11,7 @@
  *               marked with FIXTURE-PROFILE.json; an existing directory is used only if it carries
  *               that marker, so this can never adopt another office's profile.
  *   --fixture   zero-agent (default), crowded, stale, malformed, replacement, reconnect,
- *               reception-v2, reception-v2-unavailable, reception-v1, herdr-task-ordinary-v1,
+ *               reception-v2, reception-v2-unavailable, reception-v2-partial, reception-v1, herdr-task-ordinary-v1,
  *               herdr-task-crowded-v1, herdr-task-crowded-v2, herdr-task-session-mismatch-v2, or an
  *               absolute path to a fixture script.
  *   --port      Loopback port (default 63420). 62892 is refused: it is the live office's port.
@@ -47,6 +47,7 @@ const FIXTURE_IDS = [
   'reconnect',
   'reception-v2',
   'reception-v2-unavailable',
+  'reception-v2-partial',
   'reception-v1',
   'herdr-task-ordinary-v1',
   'herdr-task-crowded-v1',

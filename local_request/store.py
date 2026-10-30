@@ -85,7 +85,10 @@ PROBLEM_APPROVAL_UNAUTHENTICATED = "local_request_approval_unauthenticated"
 
 # Task 8: the operator-attested approval of a request (one per request).
 # Additive-optional: a document written before it existed has none.
-REQUEST_OPTIONAL_KEYS = ("attested_approval",)
+# Owner decision (c): the operator-attested NON-APPROVAL outcome of a request,
+# also additive-optional and also one per request. A request never holds both
+# unless one of them was REFUSED by Mission Core (checked on every load).
+REQUEST_OPTIONAL_KEYS = ("attested_approval", "attested_outcome")
 ATTESTED_KEYS = (
     "state", "decision_id", "binding", "relayed_reply", "relay_ref",
     "attested_at", "outcome", "provenance_label", "residual_risk",
@@ -114,6 +117,25 @@ ATTESTED_REFUSED = "REFUSED"
 ATTESTED_HOLD = "HOLD"
 ATTESTED_STATES = (ATTESTED_APPLIED, ATTESTED_HOLD, ATTESTED_REFUSED,
                    ATTESTED_RESERVED)
+# (c): the three outcomes, the Mission Core decision each records, and the
+# state it leaves the Mission in. An outcome's binding is the exact Mission,
+# revision and proposal digest the person saw; it approves no scope and has
+# no expiry. The reason is a change request's alone.
+OUTCOME_DECLINE = "decline"
+OUTCOME_REJECT = "reject"
+OUTCOME_REQUEST_CHANGES = "request_changes"
+OUTCOME_KINDS = (OUTCOME_DECLINE, OUTCOME_REJECT, OUTCOME_REQUEST_CHANGES)
+OUTCOME_RESULTING_STATES = {
+    OUTCOME_DECLINE: mission_record.STATE_DENIED,
+    OUTCOME_REJECT: mission_record.STATE_REJECTED,
+    OUTCOME_REQUEST_CHANGES: mission_record.STATE_CHANGES_REQUESTED,
+}
+ATTESTED_OUTCOME_KEYS = (
+    "state", "kind", "decision_id", "binding", "reason", "relay_ref",
+    "attested_at", "outcome", "provenance_label", "residual_risk",
+    "evidence_status",
+)
+ATTESTED_OUTCOME_BINDING_KEYS = ("mission_id", "revision", "proposal_digest_sha256")
 # Exact-value pinned. The relayed reply and the relay reference are what
 # the Operator REPORTS; they are evidence of the claim, not proof of it.
 MAX_RELAYED_REPLY_CHARS = 200
@@ -257,6 +279,61 @@ def _validate_attested(value, request, where):
              " operator-attested trust exactly")
 
 
+def _validate_attested_outcome(value, request, where):
+    _closed(value, ATTESTED_OUTCOME_KEYS, where)
+    if value["state"] not in ATTESTED_STATES:
+        _bad(where, "state is not in the closed vocabulary")
+    if value["kind"] not in OUTCOME_KINDS:
+        _bad(where, "kind is not one of %s" % ", ".join(OUTCOME_KINDS))
+    if mission_record.id_problem(value["decision_id"],
+                                 mission_record.DECISION_ID_PREFIX):
+        _bad(where, "decision_id must be an md- id")
+    binding = value["binding"]
+    _closed(binding, ATTESTED_OUTCOME_BINDING_KEYS, where + ".binding")
+    if binding["mission_id"] != request["mission_id"]:
+        _bad(where, "binding must name the request's own Mission")
+    _int(binding["revision"], where + ".binding.revision")
+    _hex64(binding["proposal_digest_sha256"],
+           where + ".binding.proposal_digest_sha256")
+    if value["kind"] == OUTCOME_REQUEST_CHANGES:
+        problem = mission_record.change_request_reason_problem(value["reason"])
+        if problem is not None:
+            _bad(where, "reason %s" % problem)
+    elif value["reason"] is not None:
+        _bad(where, "only a change request records a reason")
+    if not isinstance(value["relay_ref"], str) or len(value["relay_ref"]) > (
+        MAX_RELAY_REF_CHARS
+    ):
+        _bad(where, "relay_ref must be a string of at most %d"
+             % MAX_RELAY_REF_CHARS)
+    if value["evidence_status"] != EVIDENCE_STATUS:
+        _bad(where, "evidence_status must be %r" % EVIDENCE_STATUS)
+    _int(value["attested_at"], where + ".attested_at")
+    outcome = value["outcome"]
+    if value["state"] in (ATTESTED_RESERVED, ATTESTED_HOLD):
+        if outcome is not None:
+            _bad(where, "a %s outcome carries no result" % value["state"])
+    else:
+        _closed(outcome, ("resulting_state", "problem"), where + ".outcome")
+        if value["state"] == ATTESTED_APPLIED and (
+            outcome["resulting_state"] != OUTCOME_RESULTING_STATES[value["kind"]]
+            or outcome["problem"] is not None
+        ):
+            _bad(where, "an APPLIED %s names the state it left, %s"
+                 % (value["kind"], OUTCOME_RESULTING_STATES[value["kind"]]))
+        if value["state"] == ATTESTED_REFUSED and (
+            outcome["resulting_state"] is not None
+            or not isinstance(outcome["problem"], str)
+        ):
+            _bad(where, "a REFUSED outcome names its problem and no state")
+    if value["provenance_label"] != {
+        "principal_kind": mission_record.PRINCIPAL_KIND_OPERATOR_ATTESTED,
+        "proof": mission_record.PROOF_OPERATOR_ATTESTED,
+    } or value["residual_risk"] != mission_record.OPERATOR_ATTESTED_RESIDUAL_RISK:
+        _bad(where, "provenance_label and residual_risk must state the"
+             " operator-attested trust exactly")
+
+
 def _validate_request(ref, value, where):
     if not isinstance(value, dict):
         _bad(where, "must be an object")
@@ -270,6 +347,17 @@ def _validate_request(ref, value, where):
                  " Mission")
         _validate_attested(value["attested_approval"], value,
                            where + ".attested_approval")
+    if "attested_outcome" in value:
+        if value["mission_id"] is None:
+            _bad(where, "an attested outcome needs the request's confirmed"
+                 " Mission")
+        _validate_attested_outcome(value["attested_outcome"], value,
+                                   where + ".attested_outcome")
+        if "attested_approval" in value and ATTESTED_REFUSED not in (
+            value["attested_approval"]["state"], value["attested_outcome"]["state"]
+        ):
+            _bad(where, "holds both an attested approval and an attested"
+                 " outcome, neither refused")
     if request_ref_problem(ref) is not None or value["request_ref"] != ref:
         _bad(where, "request_ref must be its own key and an lr- id")
     if mission_record.id_problem(value["mission_request_id"],

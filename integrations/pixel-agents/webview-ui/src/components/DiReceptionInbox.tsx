@@ -573,8 +573,8 @@ function PanelCard({
 }
 
 /**
- * The RECEPTION INBOX: the ONE dialog the sidebar's attention entry and the in-world reception desk
- * both open (PR69's full-size details pattern, diModal.ts: #root inert, focus in, Tab trapped, Escape
+ * The RECEPTION INBOX: the ONE dialog, opened from the panel chrome only (the rail's Reception on the scan
+ * face, the attention entry on the operational list; D-10: nothing in the world opens it) (PR69's full-size details pattern, diModal.ts: #root inert, focus in, Tab trapped, Escape
  * and Close restore focus to whatever opened it).
  *
  * Reads top to bottom: the short headline, a search and category filter, what could not be checked
@@ -948,7 +948,7 @@ export function DiReceptionInbox({
                 )}
                 {model.hiddenCount > 0 && (
                   <div className="di-op-card-foot di-rc-section" data-testid="di-reception-hidden">
-                    <span className="di-op-muted">{`${model.hiddenCount} hidden in this view only`}</span>
+                    <span className="di-op-muted">{`${model.hiddenCount} hidden in this view only, and still counted in the number above`}</span>
                     <button
                       type="button"
                       className={`di-op-link ${DI_FOCUS_RING}`}
