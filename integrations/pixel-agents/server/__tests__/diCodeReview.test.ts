@@ -38,13 +38,13 @@ import {
   CODE_REVIEW_MIN_INTERVAL_MS,
   CODE_REVIEW_PROBLEMS,
   CODE_REVIEW_REQUEST_TIMEOUT_MS,
+  herdrWorkspaceReviewOffer,
   isSafeReviewPath,
   listingToken,
   OFFICE_REVIEW_PROBLEMS,
   parseCodeReviewAnswer,
   parseCodeReviewRead,
   REVIEW_UNAVAILABLE_REASONS,
-  herdrWorkspaceReviewOffer,
   reviewOfferFor,
 } from '../src/di/codeReview.js';
 import { DI_HANDLED_MESSAGE_TYPES, handleDiClientMessage } from '../src/di/diClientMessages.js';
