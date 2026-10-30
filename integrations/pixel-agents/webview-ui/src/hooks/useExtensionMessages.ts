@@ -7,6 +7,8 @@ import type {
   DiOfficeState,
   HooksConsentRequest,
 } from '../../../core/src/messages.js';
+import type { DiCodeReviewFeed } from '../components/diCodeReviewModel.js';
+import { createDiCodeReviewFeed } from '../components/diCodeReviewModel.js';
 import {
   clientInvalidationReason,
   DI_READY_TRACKER_AT_MOUNT,
@@ -125,10 +127,12 @@ interface ExtensionMessageState {
    */
   diEvidenceContent: DiEvidenceContent | null;
   /**
-   * DI office only (item 3): the LATEST live code review answer this connection received — one
-   * entry, replaced by the next, never a cache. Untrusted data (patch text): shown only as text.
+   * DI office only (item 3): where each live code review answer this connection receives is
+   * delivered, one by one and in arrival order (never a latest-value slot, which loses one of two
+   * answers handled in the same render batch). It keeps nothing. Untrusted data (patch text): shown
+   * only as text.
    */
-  diCodeReviewAnswer: DiCodeReview | null;
+  diCodeReviewFeed: DiCodeReviewFeed;
   /**
    * DI office only: why the client cannot vouch for the last office state (disconnected,
    * reconnected without a new state, or expired), or null while it can.
@@ -210,7 +214,7 @@ export function useExtensionMessages(
   /** DI only: the last office state as RECEIVED from the server. */
   const [diServerState, setDiServerState] = useState<DiOfficeState | null>(null);
   const [diEvidenceContent, setDiEvidenceContent] = useState<DiEvidenceContent | null>(null);
-  const [diCodeReviewAnswer, setDiCodeReviewAnswer] = useState<DiCodeReview | null>(null);
+  const diCodeReviewFeed = useMemo(() => createDiCodeReviewFeed(), []);
   /** DI only: transport state + whether a NEW office message arrived since it connected. */
   const [diConnection, setDiConnection] = useState<DiConnection>({
     transport: transport.state,
@@ -1155,7 +1159,7 @@ export function useExtensionMessages(
           (msg.state === 'observed' || msg.state === 'refused') &&
           diClientReasonRef.current === null
         ) {
-          setDiCodeReviewAnswer(msg as unknown as DiCodeReview);
+          diCodeReviewFeed.publish(msg as unknown as DiCodeReview);
         }
       } else if (msg.type === 'diOfficeState') {
         // DI office: fully projected by the server. Store it; the presentation (and
@@ -1246,7 +1250,7 @@ export function useExtensionMessages(
     diClientReasonRef.current = diClientReason;
     if (diClientReason !== null) {
       setDiEvidenceContent(null);
-      setDiCodeReviewAnswer(null);
+      // Nothing to clear for the code review: its answers are delivered, not held (the review session clears itself from the same reason).
     }
   }, [diClientReason]);
 
@@ -1285,7 +1289,7 @@ export function useExtensionMessages(
     diAnnounced,
     diOfficeState,
     diEvidenceContent,
-    diCodeReviewAnswer,
+    diCodeReviewFeed,
     diClientReason,
     agents,
     selectedAgent,

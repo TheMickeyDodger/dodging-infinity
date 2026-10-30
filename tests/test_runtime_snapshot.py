@@ -1573,9 +1573,9 @@ class OwnerContractTests(Fixture):
     def test_the_one_shot_waits_for_its_owned_work(self):
         stall = self.stalled_start()
         timer = threading.Timer(1.0, stall.release.set)
+        started = time.monotonic()
         timer.start()
         self.addCleanup(timer.cancel)
-        started = time.monotonic()
         got = service.capture([self.herd()], self.clock, self.plan(), 0.2)
         self.assertGreaterEqual(time.monotonic() - started, 1.0)
         self.assertEqual(got.problem, service.PROBLEM_CAPTURE_PENDING)

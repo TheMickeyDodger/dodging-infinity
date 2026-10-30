@@ -90,8 +90,8 @@ export function VersionIndicator({
         onClick={handleOpenChangelog}
         className={
           hosted
-            ? 'absolute bottom-full right-0 mb-4 z-20 pixel-panel py-6 px-12 cursor-pointer text-sm whitespace-nowrap pointer-events-auto'
-            : 'absolute bottom-42 right-28 z-20 pixel-panel py-6 px-12 cursor-pointer text-sm whitespace-nowrap'
+            ? 'di-version-tip absolute bottom-full right-0 mb-4 z-20 pixel-panel py-6 px-12 cursor-pointer text-sm whitespace-nowrap pointer-events-auto'
+            : 'di-version-tip absolute bottom-42 right-28 z-20 pixel-panel py-6 px-12 cursor-pointer text-sm whitespace-nowrap'
         }
       >
         See what's new!

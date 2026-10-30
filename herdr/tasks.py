@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import time
 from pathlib import Path
 
@@ -47,15 +49,52 @@ def load_task(herd: HerdrInstance) -> dict:
         }
 
 
+def load_task_strict(
+    herd: HerdrInstance,
+) -> dict:
+    """The task state, or a REFUSAL when it cannot be read. Used by exactly the two reads that guard an ACTIVE task (`dispatch_task`'s
+    "already ACTIVE" and `clear_contexts`'s "refusing during an ACTIVE task"). `load_task` turns an unreadable file into
+    ``{"status": "ERROR"}``, which is "not ACTIVE", so a read that landed while a writer had the file open for writing skipped both guards:
+    an ACTIVE task could be overwritten and the agents' contexts cleared. A file that does not exist is IDLE; anything else that is not a
+    readable JSON object refuses, changing nothing."""
+
+    path = _task_path(herd)
+    refusal = (
+        f"Task state is unreadable ({{why}}): {path}. Nothing was changed; it may be mid-write by a running herd, so try again."
+    )
+
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return {"status": "IDLE"}
+    except OSError as exc:
+        raise RuntimeError(refusal.format(why=exc.__class__.__name__))
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise RuntimeError(refusal.format(why="not valid JSON"))
+
+    if not isinstance(data, dict):
+        raise RuntimeError(refusal.format(why="not a JSON object"))
+
+    return data
+
+
 def save_task(
     herd: HerdrInstance,
     task: dict,
 ) -> None:
+    # A temporary file in the SAME directory, then a rename: a reader sees the old whole file or the new whole one, never the emptied file
+    # that `path.write_text(...)` leaves between opening and writing.
     path = _task_path(herd)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    temporary = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+
+    temporary.write_text(
         json.dumps(task, indent=2) + "\n"
     )
+    os.replace(temporary, path)
 
 
 def role_type_for_logical(logical: str) -> str:
@@ -206,7 +245,7 @@ def clear_contexts(
 
     config = herd.load_config()
     runtime = load_runtime(herd)
-    task = load_task(herd)
+    task = load_task_strict(herd)
 
     if task.get("status") == "ACTIVE":
         raise RuntimeError(
@@ -560,14 +599,36 @@ def _rules_text(
     )
 
 
+_SAFE_TASK_ID = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+)
+
+# Single stopped-status set for a finished prior task. Kept as ONE set
+# literal so tests/test_target_runtime.py::_herd_stopped_set can derive
+# herd's vocabulary by AST (exactly one COMPLETE-bearing set).
+_PRIOR_TASK_STOPPED = {"COMPLETE", "ABORTED", "ERROR"}
+
+
 def dispatch_task(
     herd: HerdrInstance,
     text: str,
     *,
     rejection_drill: bool = False,
     task_policy: dict | None = None,
+    preserve_contexts: bool = False,
+    task_id: str | None = None,
 ) -> dict:
-    """Dispatch one top-level objective to the running Supervisor."""
+    """Dispatch one top-level objective to the running Supervisor.
+
+    `preserve_contexts` keeps the agents' contexts when the previous task is
+    COMPLETE, ABORTED or ERROR. The default is unchanged: such a task makes
+    the next dispatch reset every context first (`context.clear_before_new_task`).
+    A caller that reuses a finished herd and must not lose its sessions' context
+    (the follow-on dispatch) passes True; it is never inferred.
+
+    `task_id` names the new task up front, so a caller can record its intent
+    under the real id before the dispatch. Absent: derived as always.
+    """
 
     text = text.strip()
 
@@ -576,9 +637,20 @@ def dispatch_task(
             "Task description cannot be empty."
         )
 
+    if (
+        task_id is not None
+        and (
+            not isinstance(task_id, str)
+            or not _SAFE_TASK_ID.match(task_id)
+        )
+    ):
+        raise ValueError(
+            "Task id must be a plain name."
+        )
+
     config = herd.load_config()
     runtime = load_runtime(herd)
-    prior = load_task(herd)
+    prior = load_task_strict(herd)
 
     if prior.get("status") == "ACTIVE":
         raise RuntimeError(
@@ -588,7 +660,17 @@ def dispatch_task(
 
     if (
         prior.get("status")
-        in {"COMPLETE", "ABORTED", "ERROR"}
+        in _PRIOR_TASK_STOPPED
+        and preserve_contexts
+    ):
+        print(
+            f"Previous task is {prior.get('status')}; "
+            "keeping the agents' contexts, as requested."
+        )
+
+    elif (
+        prior.get("status")
+        in _PRIOR_TASK_STOPPED
         and config.get(
             "context",
             {},
@@ -615,13 +697,14 @@ def dispatch_task(
             "not ready for a new top-level task."
         )
 
-    task_id = (
-        time.strftime("%Y%m%d-%H%M%S")
-        + "-"
-        + hashlib.sha1(
-            text.encode()
-        ).hexdigest()[:6]
-    )
+    if task_id is None:
+        task_id = (
+            time.strftime("%Y%m%d-%H%M%S")
+            + "-"
+            + hashlib.sha1(
+                text.encode()
+            ).hexdigest()[:6]
+        )
 
     task = {
         "version": 1,

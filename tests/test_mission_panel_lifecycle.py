@@ -457,6 +457,10 @@ class WordingTests(Derive):
         return views
 
     def test_W1_no_stage_ever_claims_a_denial_or_a_verified_human(self):
+        # SCOPE NARROWED BY (c), owner decision: the stages "declined", "rejected" and
+        # "changes_requested" name the outcome THIS panel relayed and Mission Core recorded,
+        # so they may say so. They are not among every_view()'s scenarios; this pin covers
+        # every other stage, unchanged.
         for view in self.every_view():
             text = " ".join(str(view.get(k) or "") for k in ("label", "detail", "notice"))
             self.assertIsNone(re.search(r"\b(deny|denied|denial|rejected)\b", text, re.I), text)

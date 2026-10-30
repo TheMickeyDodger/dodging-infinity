@@ -329,6 +329,31 @@ export const DELIVERY_LINK_STATES = [
 ] as const;
 export const DELIVERY_AUTHORIZATION_CHECKS = ['corroborated', 'differs', 'not_comparable'] as const;
 
+/**
+ * contract v2 — `missions[].delivery_link`, which ONE delivery record (if any) the catalog's registered delivery store links to
+ * a Mission, DECLARED by the producer with the rule that established it (mission_sources/contract_v2.py MISSION_LINK_KEYS /
+ * MISSION_LINK_STATES / MISSION_LINK_BASES). Only a workflow_authority Mission can be linked; every other model (Mission Core
+ * included) is `unlinked_model_not_recorded`, NOT KNOWN, because no delivery record names such a Mission. `delivery_id` is set
+ * exactly when linked, of the shape a ceremony mints. ADDITIVE: an answer from a producer that predates the field carries no key,
+ * and then nothing is projected (never a default). These names are distinct from DELIVERY_LINK_*, which belong to a delivery
+ * PRESENTATION's link to a Mission.
+ */
+export const MISSION_DELIVERY_LINK_KEYS = ['state', 'delivery_id', 'basis'] as const;
+export const MISSION_DELIVERY_LINK_STATES = [
+  'linked',
+  'unlinked_model_not_recorded',
+  'unlinked_store_not_registered',
+  'unlinked_store_unavailable',
+  'unlinked_reader_failed',
+  'unlinked_no_record',
+  'unlinked_ambiguous',
+  'unlinked_sources_incomplete',
+  'unlinked_id_not_addressable',
+] as const;
+export const MISSION_DELIVERY_LINK_BASES = ['record_mission_binding'] as const;
+/** The delivery id a ceremony mints: `prd-` and 24 lowercase hex (the producer's `is_delivery_id`). */
+export const MISSION_DELIVERY_ID = /^prd-[0-9a-f]{24}$/;
+
 /** Facts the backend never reports: always the LITERAL string "unknown" in a member. */
 export const UNREPORTED_FACTS = ['model', 'cost', 'tokens', 'progress'] as const;
 export const UNKNOWN_LITERAL = 'unknown';
@@ -362,5 +387,7 @@ export type RuntimeAgentsState = (typeof RUNTIME_AGENTS_STATES)[number];
 export type DeliveryPresentationsState = (typeof DELIVERY_PRESENTATIONS_STATES)[number];
 export type DeliveryEntryState = (typeof DELIVERY_ENTRY_STATES)[number];
 export type DeliveryLinkState = (typeof DELIVERY_LINK_STATES)[number];
+export type MissionDeliveryLinkState = (typeof MISSION_DELIVERY_LINK_STATES)[number];
+export type MissionDeliveryLinkBasis = (typeof MISSION_DELIVERY_LINK_BASES)[number];
 export type RuntimeIdentityState = (typeof RUNTIME_IDENTITY_STATES)[number];
 export type RuntimeAssignmentState = (typeof RUNTIME_ASSIGNMENT_STATES)[number];

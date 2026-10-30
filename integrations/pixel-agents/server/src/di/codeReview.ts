@@ -64,6 +64,9 @@ export const REVIEW_UNAVAILABLE_REASONS = [
   'member_not_in_direct_task',
   'member_not_live',
   'task_not_observed',
+  // the Mission-level offer of a FINISHED Mission (see `missionReviewOfferFor`)
+  'assignment_not_finished',
+  'finished_execution_not_listed',
 ] as const;
 export type ReviewUnavailableReason = (typeof REVIEW_UNAVAILABLE_REASONS)[number];
 
@@ -73,6 +76,8 @@ export type ReviewOffer =
 
 /** Refusals decided by the OFFICE (before or after asking the backend). */
 export const OFFICE_REVIEW_PROBLEMS = [
+  // a read the parser refused unread, answered because its shape is exactly a read's (`unadmittedReadReply`)
+  'reference_not_admitted',
   'mission_not_listed',
   'mission_listed_more_than_once',
   'member_not_listed',
@@ -127,6 +132,10 @@ export const CODE_REVIEW_PROBLEMS = [
   'assignment_changed_during_read',
   'file_diff_over_bound',
   'diff_not_understood',
+  'finished_execution_not_established',
+  'finished_ownership_unverifiable',
+  'finished_ownership_contested',
+  'finished_workspace_not_corroborated',
 ] as const;
 // END CODE_REVIEW_PROBLEMS
 
@@ -277,15 +286,35 @@ export interface CodeReviewRef {
   /** Present only for one file's diff, and then together with fileId. */
   snapshot?: string;
   fileId?: string;
+  /**
+   * The opaque name the client gave this read, present only when it sent one. It is echoed in the answer and goes NOWHERE else: not to the backend
+   * (`backendQuery` never reads it), not to the log. It carries no authority.
+   */
+  requestId?: string;
+  /**
+   * Present (as 'mission') ONLY on a Mission-level reference, the kind a FINISHED Mission is read by: no member (`memberRef` is the empty string,
+   * which a member-bound reference can never carry). A member-bound reference has NO `level` key at all: what `parseCodeReviewRead` returns is
+   * unchanged.
+   */
+  level?: 'mission';
 }
 
 const READ_KEYS = ['type', 'missionRef', 'memberRef', 'taskId', 'listing'];
 
-/** A diCodeReviewRead, EXACTLY: five keys (the overview) or seven (one file); null otherwise. */
+/** The one optional key of a read: a bounded opaque token (letters, digits, dot, underscore, hyphen), never a path or a free-form string. */
+const REQUEST_ID = /^[A-Za-z0-9._-]{1,64}$/;
+
+/**
+ * A diCodeReviewRead, EXACTLY: five keys (the overview) or seven (one file), plus one OPTIONAL `requestId`; null otherwise. A request id that is present
+ * but is not a bounded token refuses the whole read, like any other extra or malformed key.
+ */
 export function parseCodeReviewRead(msg: Json): CodeReviewRef | null {
   if (msg.type !== 'diCodeReviewRead') return null;
+  const named = 'requestId' in msg;
+  if (named && !(typeof msg.requestId === 'string' && REQUEST_ID.test(msg.requestId))) return null;
   const file = 'snapshot' in msg || 'fileId' in msg;
-  if (!exactKeys(msg, file ? [...READ_KEYS, 'snapshot', 'fileId'] : READ_KEYS)) return null;
+  const keys = file ? [...READ_KEYS, 'snapshot', 'fileId'] : READ_KEYS;
+  if (!exactKeys(msg, named ? [...keys, 'requestId'] : keys)) return null;
   const query: CodeReviewQuery = {
     missionRef: msg.missionRef as string,
     taskId: msg.taskId as string,
@@ -308,7 +337,83 @@ export function parseCodeReviewRead(msg: Json): CodeReviewRef | null {
     taskId: query.taskId,
     listing: msg.listing,
     ...(file ? { snapshot: query.snapshot, fileId: query.fileId } : {}),
+    ...(named ? { requestId: msg.requestId as string } : {}),
   };
+}
+
+const MISSION_READ_KEYS = ['type', 'missionRef', 'taskId', 'listing'];
+
+/**
+ * A diCodeReviewMissionRead, EXACTLY: the Mission-level reference a FINISHED Mission is read by. Four keys (the overview) or six (one file), plus the
+ * one OPTIONAL `requestId`; null otherwise. There is NO member key (a message that carries one is refused unread), and the result is the same
+ * `CodeReviewRef` shape with the member empty and `level: 'mission'`, so everything downstream of the parse (the backend query, the answer's re-check, the
+ * correlation) is one path. A diCodeReviewRead is never accepted here, and this type is never accepted by `parseCodeReviewRead`.
+ */
+export function parseMissionReviewRead(msg: Json): CodeReviewRef | null {
+  if (msg.type !== 'diCodeReviewMissionRead') return null;
+  const named = 'requestId' in msg;
+  if (named && !(typeof msg.requestId === 'string' && REQUEST_ID.test(msg.requestId))) return null;
+  const file = 'snapshot' in msg || 'fileId' in msg;
+  const keys = file ? [...MISSION_READ_KEYS, 'snapshot', 'fileId'] : MISSION_READ_KEYS;
+  if (!exactKeys(msg, named ? [...keys, 'requestId'] : keys)) return null;
+  const query: CodeReviewQuery = {
+    missionRef: msg.missionRef as string,
+    taskId: msg.taskId as string,
+    ...(file ? { snapshot: msg.snapshot as string, fileId: msg.fileId as string } : {}),
+  };
+  if (!isCodeReviewQuery(query)) return null;
+  if (typeof msg.listing !== 'string' || !CODE_REVIEW_GRAMMAR.snapshot.test(msg.listing)) return null;
+  return {
+    missionRef: query.missionRef,
+    memberRef: '',
+    taskId: query.taskId,
+    listing: msg.listing,
+    ...(file ? { snapshot: query.snapshot, fileId: query.fileId } : {}),
+    ...(named ? { requestId: msg.requestId as string } : {}),
+    level: 'mission',
+  };
+}
+
+/** The office's words for a read it refused unread: the detail of a `reference_not_admitted` refusal. */
+const NOT_ADMITTED_DETAIL = 'the read is not exactly an admitted reference';
+
+/**
+ * The ONE answer to a read the parser refused, when the read can be NAMED, or null when it cannot. The contract (core/asyncapi.yaml,
+ * DiCodeReviewRead.requestId) says the read's id is "echoed in the one diCodeReview it sends for this read, on every path, a refusal
+ * included". A read refused unread used to get nothing, and the page that sent it waited on "Reading the files." with no end.
+ *
+ * A read can be named when its SHAPE is exactly a read's: the read's own key set (the overview's, or one file's with both `snapshot` and
+ * `fileId`, plus the one optional `requestId`), every reference value a string, and the request id, when present, the bounded token the
+ * contract allows, so that the echo is itself a valid answer. Only the CONTENT failed the parse. The office then echoes exactly what was
+ * sent, which is what the page matches an answer by: the reference, the request id, the view, the file and the snapshot.
+ *
+ * LENGTHS ARE DELIBERATELY NOT PART OF THE SHAPE. The catalog projection does not bound the strings an offer carries, so a length rule would
+ * leave unanswered a read the page built from the office's own offer.
+ *
+ * Anything that is not a read's shape cannot be named, and gets nothing, as an uncorrelatable delivery request gets nothing. That covers a
+ * missing, extra or non-string key, a malformed request id, a snapshot without its file id, and a Mission-level read carrying a member. The
+ * page never sends one: it builds every read from its typed target and an id "<tag>.<n>".
+ */
+export function unadmittedReadReply(msg: Json): DiCodeReview | null {
+  const missionLevel = msg.type === 'diCodeReviewMissionRead';
+  if (!missionLevel && msg.type !== 'diCodeReviewRead') return null;
+  const named = 'requestId' in msg;
+  if (named && !(typeof msg.requestId === 'string' && REQUEST_ID.test(msg.requestId))) return null;
+  const file = 'snapshot' in msg || 'fileId' in msg;
+  const own = missionLevel ? MISSION_READ_KEYS : READ_KEYS;
+  const keys = file ? [...own, 'snapshot', 'fileId'] : own;
+  if (!exactKeys(msg, named ? [...keys, 'requestId'] : keys)) return null;
+  if (!keys.every((k) => typeof msg[k] === 'string')) return null;
+  const ref: CodeReviewRef = {
+    missionRef: msg.missionRef as string,
+    memberRef: missionLevel ? '' : (msg.memberRef as string),
+    taskId: msg.taskId as string,
+    listing: msg.listing as string,
+    ...(file ? { snapshot: msg.snapshot as string, fileId: msg.fileId as string } : {}),
+    ...(named ? { requestId: msg.requestId as string } : {}),
+    ...(missionLevel ? { level: 'mission' as const } : {}),
+  };
+  return officeRefusal(ref, 'reference_not_admitted', NOT_ADMITTED_DETAIL);
 }
 
 /** What the backend is asked for a reference (never anything else). */
@@ -385,6 +490,70 @@ export function reviewOfferFor(
   };
 }
 
+/**
+ * The token that identifies WHAT THE CLIENT WAS SHOWN of a FINISHED Mission: the Mission (ref, source, native id), the task its recorded execution
+ * names, the evidence cursor that binds that execution (the journal head and the execution identity), and its standing. It is its OWN token: the
+ * leading tag keeps it from ever equalling a member-bound token, which a different reference kind is admitted by.
+ */
+export function missionListingToken(
+  mission: MissionPresentation,
+  taskId: string,
+  cursor: string,
+): string {
+  return crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify([
+        'finished-mission',
+        mission.missionRef,
+        mission.sourceId,
+        mission.nativeId,
+        taskId,
+        cursor,
+        mission.standing,
+      ]),
+      'utf8',
+    )
+    .digest('hex');
+}
+
+/**
+ * Whether a review is offered for a FINISHED Mission as a whole, decided from the typed facts the listing carries — never a name, a path or the
+ * lifecycle literal. It stands on the same listed facts the evidence library reads a completed Mission by: a Mission Core record, terminal standing,
+ * and the HISTORICAL execution ESTABLISHED by the backend (with its cursor and the task its receipt names), in a listing that is CURRENT (an office that is
+ * not live lists nothing it can stand on, as the evidence library says). This is what the office can say; the
+ * backend still decides, and says why when it refuses (the record may not be unique, the workspace may not name the run). An ACTIVE Mission is
+ * offered per member (`reviewOfferFor`), never here.
+ */
+export function missionReviewOfferFor(mission: MissionPresentation): ReviewOffer {
+  const library = mission.evidence;
+  const no = (reason: ReviewUnavailableReason): ReviewOffer => ({
+    state: 'unavailable',
+    reason,
+    taskId: library?.execution.taskId ?? null,
+    listing: null,
+  });
+  if (mission.sourceKind !== 'mission_core') return no('not_a_mission_core_record');
+  if (mission.v2 === null) return no('contract_version_1_office');
+  if (!mission.standingKnown || mission.standing !== 'terminal') return no('assignment_not_finished');
+  if (
+    library === null ||
+    library.currency !== 'current' ||
+    library.execution.basis !== 'historical_completed_execution' ||
+    library.execution.identityState !== 'established' ||
+    library.cursor === null
+  ) {
+    return no('finished_execution_not_listed');
+  }
+  if (library.execution.taskId === null) return no('task_not_observed');
+  return {
+    state: 'offered',
+    reason: null,
+    taskId: library.execution.taskId,
+    listing: missionListingToken(mission, library.execution.taskId, library.cursor),
+  };
+}
+
 export type Admission =
   | { ok: true }
   | { ok: false; problem: OfficeReviewProblem; detail: string };
@@ -393,7 +562,7 @@ function refuse(problem: OfficeReviewProblem, detail: string): Admission {
   return { ok: false, problem, detail };
 }
 
-/** Is this reference offered, for this member, at the listing the client saw — NOW? */
+/** Is this reference offered, for this member (or, for a Mission-level reference, this finished Mission), at the listing the client saw — NOW? */
 export function admitAgainstView(view: OfficeView, ref: CodeReviewRef): Admission {
   if (view.missions.state !== 'observed') {
     return refuse('review_not_offered', `no Missions are observed (${view.missions.state})`);
@@ -402,6 +571,20 @@ export function admitAgainstView(view: OfficeView, ref: CodeReviewRef): Admissio
   if (found.length === 0) return refuse('mission_not_listed', 'the office does not list it now');
   if (found.length > 1) return refuse('mission_listed_more_than_once', 'listed more than once');
   const mission = found[0];
+  // A Mission-level reference names no member: it is admitted by the Mission's own offer and token, and by nothing a member says.
+  if (ref.level === 'mission') {
+    const own = missionReviewOfferFor(mission);
+    if (own.state !== 'offered') {
+      return refuse('review_not_offered', `no review is offered for this Mission (${own.reason})`);
+    }
+    if (own.taskId !== ref.taskId) {
+      return refuse('task_not_the_one_listed', 'the Mission is no longer on the task you were shown');
+    }
+    if (own.listing !== ref.listing) {
+      return refuse('listing_moved', 'the Mission moved since this listing; select it again');
+    }
+    return { ok: true };
+  }
   if (mission.members.state !== 'observed') {
     return refuse('member_not_listed', `the Mission's members are ${mission.members.state}`);
   }
@@ -915,7 +1098,7 @@ export function parseCodeReviewAnswer(
 
 function envelope(ref: CodeReviewRef): Pick<
   DiCodeReview,
-  'missionRef' | 'memberRef' | 'taskId' | 'listing' | 'snapshot' | 'fileId' | 'view'
+  'missionRef' | 'memberRef' | 'taskId' | 'listing' | 'snapshot' | 'fileId' | 'view' | 'requestId'
 > {
   return {
     missionRef: ref.missionRef,
@@ -925,6 +1108,9 @@ function envelope(ref: CodeReviewRef): Pick<
     snapshot: ref.snapshot ?? null,
     fileId: ref.fileId ?? null,
     view: ref.fileId === undefined ? 'overview' : 'file',
+    // The read's own name, echoed on EVERY answer built here (an observation and every refusal): it comes from the request, never from the backend's
+    // answer, and the key is absent when the read carried none.
+    ...(ref.requestId === undefined ? {} : { requestId: ref.requestId }),
   };
 }
 

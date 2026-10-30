@@ -554,7 +554,7 @@ test(
     assert.ok((await canvasDrawn()).drawnFraction > 0.9, 'and again after a second round trip');
 
     await restoreOffice();
-    await p().setViewportSize({ width: 900, height: 568 }); // office open, world 480 wide
+    await p().setViewportSize({ width: 900, height: 568 }); // office open: the world is 900 minus the panel (472 at the measured 428)
     await p().waitForTimeout(1500);
     const widened = await canvasDrawn();
     assert.ok(

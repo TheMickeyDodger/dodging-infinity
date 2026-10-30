@@ -144,6 +144,50 @@ OUTCOME_REVOKED = "revoked"
 OUTCOME_COMPLETE = "complete"
 OUTCOME_NO_STEP = "no_step"
 
+# The expected-step guard (owner decision, expected-step supplement,
+# 2026-10-28): the OPT-IN binding a caller may hand ``advance_once``. When it
+# is given, the step that call would select must be exactly the one the
+# caller confirmed, for exactly the displayed delivery, or the call refuses
+# before any branch runs and nothing is written. It refuses the SELECTION of
+# an unconfirmed step and nothing more: it is not a lock, not transaction
+# isolation and not an exactly-once proof. A caller that passes nothing
+# (``advance`` and every existing caller) is unaffected.
+PROBLEM_EXPECTED_STEP_REFUSED = "pr_delivery_expected_step_refused"
+EXPECTED_STEP_KEYS = (
+    "delivery_id", "revision", "candidate_identity_digest_sha256", "step",
+)
+
+
+def _require_expected_step(record, expected):
+    """Refuse unless ``expected`` binds exactly this loaded record and the
+    step its phase selects (the same ``step_for_phase`` call
+    ``advance_once`` dispatches on)."""
+    # Exactly these keys: a SET question, so no ordering (keys of mixed types
+    # cannot be sorted, and must refuse here like any other bad binding).
+    if not isinstance(expected, dict) or set(expected) != set(
+        EXPECTED_STEP_KEYS
+    ):
+        raise MachineError(
+            "the expected-step binding must name exactly %s"
+            % ", ".join(EXPECTED_STEP_KEYS), PROBLEM_EXPECTED_STEP_REFUSED)
+    selected = auth.step_for_phase(record["mode"], record["phase"])
+    actual = {
+        "delivery_id": record["delivery_id"],
+        "revision": record["revision"],
+        "candidate_identity_digest_sha256": record["candidate"][
+            "identity_digest_sha256"],
+        "step": selected,
+    }
+    for key in EXPECTED_STEP_KEYS:
+        if type(expected[key]) is not type(actual[key]) or (
+            expected[key] != actual[key]
+        ):
+            raise MachineError(
+                "expected-step binding refused: %s is %r in the record, not"
+                " the confirmed %r; no step was selected and nothing was"
+                " written" % (key, actual[key], expected[key]),
+                PROBLEM_EXPECTED_STEP_REFUSED)
+
 
 class MachineError(Exception):
     def __init__(self, message, problem):
@@ -333,8 +377,12 @@ class DeliveryMachine(object):
             if outcome != OUTCOME_ADVANCED:
                 return outcome
 
-    def advance_once(self, delivery_id):
+    def advance_once(self, delivery_id, *, expected=None):
         record = self.load(delivery_id)
+        if expected is not None:
+            # Checked against THIS loaded record, before any branch below:
+            # the step it binds is the one selected from this same record.
+            _require_expected_step(record, expected)
         now = self.clock()
         if record["phase"] in auth.TERMINAL_PHASES:
             return (

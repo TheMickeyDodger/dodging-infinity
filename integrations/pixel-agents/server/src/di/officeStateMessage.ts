@@ -7,20 +7,23 @@
 
 import type {
   DiChainObservation,
+  DiCodeReviewOffer,
   DiEvidenceLibrary,
   DiMember,
   DiMission,
+  DiMissionDeliveryLink,
   DiMissionV2,
   DiObservationState,
   DiObservedValue,
   DiOfficeState,
   DiRuntimeAgent,
   DiRuntimeAgents,
+  DiWorkflowPhase,
 } from '../../../core/src/messages.js';
 import { DI_RUNTIME_AGENTS_MAX_UNVERIFIED } from '../constants.js';
-import type { UnreportedFact } from './catalogProjection.js';
+import type { MissionDeliveryLinkView, UnreportedFact, WorkflowPhaseView } from './catalogProjection.js';
 import type { ReviewOffer } from './codeReview.js';
-import { reviewOfferFor } from './codeReview.js';
+import { missionReviewOfferFor, reviewOfferFor } from './codeReview.js';
 import type {
   MemberPresentation,
   MissionPresentation,
@@ -181,10 +184,38 @@ const V2_NOT_PROJECTED: DiMissionV2 = {
   },
 };
 
+/** The most characters of an out-of-vocabulary declared phase the wire carries: it is inert text a producer chose, so it is bounded. */
+const UNRECOGNIZED_PHASE_BOUND = 64;
+
+/**
+ * The producer's DECLARED workflow phase on the wire, its three states kept apart exactly as the source keeps them (catalogProjection.ts `WorkflowPhaseView`): `observed` (valid only for a workflow_authority
+ * record; a phase outside the producer's vocabulary is kept as bounded inert text and never mapped to a known one), `not_applicable` (the model has no phase; Mission Core is one) and `not_reported` (the key was
+ * absent: unknown, never "none"). Nothing is derived from the lifecycle state, and a v1 office never reaches this function: it has no v2 block (`m.v2 === null`) and so no phase value of any kind.
+ */
+function workflowPhaseOnWire(w: WorkflowPhaseView): DiWorkflowPhase {
+  switch (w.state) {
+    case 'observed':
+      return w.phase.known
+        ? { state: 'observed', phase: w.phase.value, unrecognized: null, problem: null }
+        : {
+            state: 'observed',
+            phase: null,
+            unrecognized:
+              typeof w.phase.raw === 'string' ? w.phase.raw.slice(0, UNRECOGNIZED_PHASE_BOUND) : null,
+            problem: null,
+          };
+    case 'not_applicable':
+      return { state: 'not_applicable', phase: null, unrecognized: null, problem: w.problem };
+    case 'not_reported':
+      return { state: 'not_reported', phase: null, unrecognized: null, problem: null };
+  }
+}
+
 function missionV2(m: MissionPresentation): DiMissionV2 {
   if (m.v2 === null) return V2_NOT_PROJECTED;
   return {
     projected: true,
+    workflowPhase: workflowPhaseOnWire(m.v2.workflowPhase),
     taskChains: m.v2.taskChains.map((c) => ({ ...c, declaredAgents: [...c.declaredAgents] })),
     childrenRecord: { ...m.v2.childrenRecord },
     missionState: {
@@ -208,7 +239,14 @@ function missionV2(m: MissionPresentation): DiMissionV2 {
       },
     },
     canonicalReview: { ...m.v2.canonicalReview },
+    // The producer's DECLARED delivery link, copied as projected; ABSENT when the answer carries none (never defaulted).
+    ...(m.v2.deliveryLink === undefined ? {} : { deliveryLink: deliveryLinkOnWire(m.v2.deliveryLink) }),
   };
+}
+
+/** The declared delivery link on the wire: the same three facts, copied (one id only when linked; a link authorizes nothing). */
+function deliveryLinkOnWire(link: MissionDeliveryLinkView): DiMissionDeliveryLink {
+  return { state: link.state, deliveryId: link.deliveryId, basis: link.basis };
 }
 
 /** item 2: the evidence library on the wire, exactly as presented (copied, never shared). */
@@ -256,6 +294,11 @@ function chainObservation(view: OfficeView): DiChainObservation {
     : { projected: true, ...c };
 }
 
+function missionOffer(m: MissionPresentation): DiCodeReviewOffer {
+  const offer = missionReviewOfferFor(m);
+  return { state: offer.state, reason: offer.reason, taskId: offer.taskId, listing: offer.listing };
+}
+
 function mission(m: MissionPresentation, characterIdFor: CharacterIdFor): DiMission {
   const members = listOf(m.members, (x) =>
     member(x, characterIdFor, reviewOfferFor(m, x)),
@@ -280,6 +323,9 @@ function mission(m: MissionPresentation, characterIdFor: CharacterIdFor): DiMiss
     cancelRequested: observed(m.cancelRequested),
     ambiguity: observed(m.ambiguity),
     members: { state: members.state, reason: members.reason, members: members.items },
+    // item 3 (a FINISHED Mission): whether a review is offered for the Mission as a whole, by a Mission-level reference (an active assignment is
+    // offered per member, above). Decided from the typed facts of the listing; `listing` is the token every later read is admitted by.
+    codeReview: missionOffer(m),
     v2: missionV2(m),
     ...(m.evidence === null ? {} : { evidence: evidenceLibrary(m)! }),
     ...(m.herdrTask === null

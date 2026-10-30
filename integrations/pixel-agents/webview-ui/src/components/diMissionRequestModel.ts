@@ -75,7 +75,18 @@ const isObject = (v: unknown): v is Json =>
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const int = (v: unknown): number | null =>
   typeof v === 'number' && Number.isInteger(v) ? v : null;
-const strings = (v: unknown): string[] =>
+/** The last instant a JavaScript Date can represent, in seconds: a recorded time beyond it cannot be placed on any day. */
+const MAX_RECORDED_TIME_S = 8_640_000_000_000;
+/**
+ * An OPTIONAL recorded time (epoch seconds) from untrusted adapter data: a positive safe integer a Date can represent, else
+ * null. Null means "no recorded time", never "some time": the caller lists the row either way, and the value never reaches a
+ * day computation unless it passed here.
+ */
+const recordedTime = (v: unknown): number | null => {
+  const n = int(v);
+  return n !== null && Number.isSafeInteger(n) && n > 0 && n <= MAX_RECORDED_TIME_S ? n : null;
+};
+const strings =(v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 
 export type MrAction =
@@ -155,6 +166,14 @@ export interface MrRun {
   blockers: Array<{ code: string; detail: string }>;
 }
 
+/** (c): the non-approval outcome this panel relayed for a request, as its record holds it. */
+export interface MrOutcome {
+  kind: string;
+  state: string;
+  /** A change request's reason, the person's own words (untrusted text): null for the other two. */
+  reason: string | null;
+}
+
 export interface MrRequest {
   requestRef: string;
   missionId: string;
@@ -167,6 +186,7 @@ export interface MrRequest {
   supersededBy: string | null;
   cancelledAt: number | null;
   attestation: MrAttestation | null;
+  outcome: MrOutcome | null;
   run: MrRun | null;
   /**
    * Why an in-doubt Start is in doubt, when the panel could bind a retained startup diagnostic to this exact attempt
@@ -188,6 +208,10 @@ export interface MrSummary {
   terminal: boolean;
   actions: MrAction[];
   notice: string | null;
+  /** When an approval was RECORDED for this request (epoch seconds), or null: none recorded, or not a readable time. Says that it was recorded and when, not who did it. */
+  attestedAt: number | null;
+  /** When a withdrawal was RECORDED for this request (epoch seconds), or null, as above. */
+  cancelledAt: number | null;
 }
 
 /** The closed vocabulary of the progression probe (anything else reads as unreadable). */
@@ -407,6 +431,14 @@ function parseRun(v: unknown): MrRun | null {
   };
 }
 
+function parseOutcome(v: unknown): MrOutcome | null {
+  if (!isObject(v)) return null;
+  const kind = str(v.kind);
+  const state = str(v.state);
+  if (kind === null || state === null) return null;
+  return { kind, state, reason: str(v.reason) };
+}
+
 export function parseRequest(v: unknown): MrRequest | null {
   if (!isObject(v)) return null;
   const lifecycle = parseLifecycle(v.lifecycle);
@@ -449,6 +481,7 @@ export function parseRequest(v: unknown): MrRequest | null {
           expiresAt: binding ? int(binding.expires_at) : null,
         }
       : null,
+    outcome: parseOutcome(v.outcome),
     run: parseRun(v.run),
     startCause: parseStartCause(v.start_cause),
   };
@@ -486,6 +519,9 @@ function parseSummary(v: unknown): MrSummary | null {
       (ACTIONS as readonly string[]).includes(a),
     ),
     notice: str(v.lifecycle.notice),
+    // Optional, each validated on its own: absent or unreadable is "no recorded time", and the row is still listed.
+    attestedAt: recordedTime(v.attested_at),
+    cancelledAt: recordedTime(v.cancelled_at),
   };
 }
 
@@ -1111,6 +1147,18 @@ export interface MrState {
   composer: string;
   revising: string | null;
   typed: string;
+  /** (c): the reason being written for a change request on the selected proposal, kept exactly as typed. */
+  changeReason: string;
+  /**
+   * (c), round 61: Reject's first step, armed FOR exactly what it would reject (the request, proposal and offer then shown).
+   * The confirmation is offered, and Reject is sent, only while that is still exactly what is shown; null when not armed.
+   */
+  rejectArm: MrRejectArm | null;
+  /**
+   * Round 61 sweep: Withdraw's first step, armed FOR exactly the request and proposal then shown (a withdrawal is
+   * permanent). The confirmation is offered, and Withdraw is sent, only while that is still exactly what is shown.
+   */
+  withdrawArm: MrBinding | null;
   pending: MrPending[];
   notices: MrNotice[];
   nextSeq: number;
@@ -1132,6 +1180,9 @@ export const INITIAL_STATE: MrState = {
   composer: '',
   revising: null,
   typed: '',
+  changeReason: '',
+  rejectArm: null,
+  withdrawArm: null,
   pending: [],
   notices: [],
   nextSeq: 1,
@@ -1146,6 +1197,11 @@ export type MrEvent =
   | { type: 'wide'; on: boolean }
   | { type: 'composer'; text: string }
   | { type: 'typed'; text: string }
+  | { type: 'changeReason'; text: string }
+  | { type: 'armReject'; arm: MrRejectArm }
+  | { type: 'disarmReject' }
+  | { type: 'armWithdraw'; arm: MrBinding }
+  | { type: 'disarmWithdraw' }
   | { type: 'select'; requestRef: string | null }
   | { type: 'revise'; requestRef: string | null }
   | { type: 'newConversation' }
@@ -1163,12 +1219,19 @@ export type MrEvent =
     }
   | { type: 'reply'; reply: DiMissionRequestReply; nowMs: number };
 
+/** (c): the person's chosen non-approval outcomes, each sent on exactly the offer shown. */
+export type MrOutcomeOp = 'decline' | 'reject' | 'requestChanges';
+export const OUTCOME_OPS: readonly MrOutcomeOp[] = ['decline', 'reject', 'requestChanges'];
+/** The longest change-request reason (Mission Core's own bound, in code points). */
+export const MR_MAX_CHANGE_REASON_CHARS = 2000;
+
 /** The operations that WRITE (everything but the five reads). */
 export const WRITE_OPS: readonly DiMissionRequestOp[] = [
   'turn',
   'submit',
   'decide',
   'checkApproval',
+  ...OUTCOME_OPS,
   'withdraw',
   'run',
 ];
@@ -1253,18 +1316,32 @@ function withView(state: MrState, request: MrRequest, nowMs: number): MrState {
   };
 }
 
-/** A person's words for a refusal the adapter or this office made. */
-export function problemWords(problem: string | null, reason: string | null): string {
+/**
+ * A person's words for a refusal the adapter or this office made. `op` is the operation refused: a stale or expired
+ * offer refusing one of (c)'s outcomes means nothing was RECORDED, which is not the same claim as nothing approved.
+ */
+export function problemWords(
+  problem: string | null,
+  reason: string | null,
+  op: DiMissionRequestOp | null = null,
+): string {
   const said = reason !== null && reason.trim() !== '' ? reason.trim() : null;
+  const outcome = op !== null && (OUTCOME_OPS as readonly string[]).includes(op);
   switch (problem) {
     case 'local_request_reply_not_affirmative':
       return `That is not the word. Type exactly "${MR_DECISION_WORD}" to approve. Nothing was recorded.`;
     case 'mission_panel_response_too_large':
       return 'The panel\u2019s answer was larger than this window can receive, so it was refused instead of being cut. Nothing was changed.';
     case 'mission_panel_display_stale':
-      return 'The offer you were shown is no longer the offer of record: the proposal changed, was withdrawn or replaced, or the offer was not the one issued. Nothing was approved. Read the current proposal, then decide on that.';
+      return `The offer you were shown is no longer the offer of record: the proposal changed, was withdrawn or replaced, or the offer was not the one issued. Nothing was ${outcome ? 'recorded' : 'approved'}. Read the current proposal, then decide on that.`;
     case 'mission_panel_offer_expired':
-      return 'The approval window you were shown has passed. Nothing about the proposal changed and nothing was approved. Read the offer again for a new window, then decide.';
+      return outcome
+        ? 'The window you were shown has passed. Nothing about the proposal changed and nothing was recorded. Read the offer again for a new window, then decide.'
+        : 'The approval window you were shown has passed. Nothing about the proposal changed and nothing was approved. Read the offer again for a new window, then decide.';
+    case 'local_request_change_request_reason':
+      return `A change request needs a reason: write what should change, in at most ${MR_MAX_CHANGE_REASON_CHARS} characters. Nothing was recorded.`;
+    case 'local_request_attestation_conflict':
+      return 'This request already holds a different decision, so this one was not recorded. Read the request again to see what is of record.';
     case 'local_request_cancelled':
       return 'This proposal was withdrawn and is permanently closed.';
     case 'mission_panel_withdrawal_key_unavailable':
@@ -1283,10 +1360,8 @@ export function problemWords(problem: string | null, reason: string | null): str
     case 'request_invalid':
       return said ?? 'This office refused to send that request. Nothing was sent.';
     default:
-      return (
-        said ??
-        `The request was refused (${problem ?? 'no reason given'}). Nothing was changed by this message.`
-      );
+      // A refusal claims no more about what changed than the refusing side said, so this says nothing about it.
+      return said ?? `The request was refused (${problem ?? 'no reason given'}).`;
   }
 }
 
@@ -1295,10 +1370,12 @@ export function unavailableWords(problem: string, reason: string): string {
   switch (problem) {
     case 'panel_not_configured':
       return 'Mission requests are not set up in this office. Start the request panel (dimission_panel.py) and give this office its discovery file with --mission-panel-discovery.';
+    // Neither says whether the panel is running: an unusable discovery file, or nothing answering at
+    // its address, does not establish that.
     case 'panel_discovery_unavailable':
-      return `The request panel is not running, so no request can be made or read right now. ${reason}`;
+      return `No request can be made or read right now. ${reason}`.trimEnd();
     case 'panel_unreachable':
-      return 'The request panel is not listening. Nothing was sent.';
+      return 'Nothing answered at the address in the request panel’s discovery file. Nothing was sent.';
     case 'panel_credentials_rejected':
       return 'The request panel did not accept this office. It may have restarted; close and reopen the panel.';
     default:
@@ -1306,11 +1383,31 @@ export function unavailableWords(problem: string, reason: string): string {
   }
 }
 
+/**
+ * Round 62: the typed word belongs to the request still chosen, so a clear that one request's answer (or an event
+ * naming one request) causes empties it only when that request IS the chosen one; another request's word stays.
+ */
+function typedClearedFor(state: MrState, requestRef: string): string {
+  return requestRef === state.selectedRef ? '' : state.typed;
+}
+
 function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number): MrState {
   const pending = state.pending.find((p) => p.seq === reply.seq) ?? null;
   let next: MrState = { ...state, pending: state.pending.filter((p) => p.seq !== reply.seq) };
   const { op } = reply;
   const answer = reply.answer;
+
+  if (reply.state === 'unknown') {
+    // A write that may have reached the panel and came back with no usable answer: whether it took
+    // effect is not known. It is shown as exactly that, never as a refusal, as done or as nothing
+    // changed, and the panel is not declared down.
+    return addNotice(
+      next,
+      'unknown',
+      op,
+      reply.reason ?? 'Whether that request took effect is not known.',
+    );
+  }
 
   if (reply.state === 'unavailable') {
     const reason = unavailableWords(reply.problem ?? 'panel_unavailable', reply.reason ?? '');
@@ -1338,25 +1435,25 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       ...next,
       availability: next.availability.kind === 'unavailable' ? { kind: 'ok' } : next.availability,
     };
-    const words = problemWords(reply.problem, reply.reason);
+    const words = problemWords(reply.problem, reply.reason, op);
     if (reply.problem === 'mission_panel_display_stale' && pending?.requestRef) {
       const view = next.views[pending.requestRef];
       if (view) {
         next = {
           ...next,
-          typed: '',
+          typed: typedClearedFor(next, pending.requestRef),
           views: { ...next.views, [pending.requestRef]: { ...view, stale: true } },
         };
       }
     }
     if (reply.problem === 'mission_panel_offer_expired' && pending?.requestRef) {
       // Only time passed: the proposal on display is unchanged and stays. The offer is dropped
-      // and what was typed cleared; a NEW offer is read only when the person asks for it.
+      // and what was typed for it cleared; a NEW offer is read only when the person asks for it.
       const view = next.views[pending.requestRef];
       if (view) {
         next = {
           ...next,
-          typed: '',
+          typed: typedClearedFor(next, pending.requestRef),
           views: {
             ...next.views,
             [pending.requestRef]: { ...view, offer: null, offerEpoch: view.offerEpoch + 1 },
@@ -1403,6 +1500,9 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
     case 'withdraw':
     case 'run':
     case 'decide':
+    case 'decline':
+    case 'reject':
+    case 'requestChanges':
     case 'submit': {
       let out = next;
       if (op === 'submit') {
@@ -1410,11 +1510,17 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
         const request = parseRequest(answer.request);
         if (request) {
           out = withView(out, request, nowMs);
+          // Round 62: moving the choice follows `select`'s rule, so nothing typed or armed for the request
+          // chosen before follows it to the new one.
+          const same = request.requestRef === out.selectedRef;
           out = {
             ...out,
             selectedRef: request.requestRef,
             revising: null,
             typed: '',
+            changeReason: same ? out.changeReason : '',
+            rejectArm: same ? out.rejectArm : null,
+            withdrawArm: same ? out.withdrawArm : null,
             tab: 'requests',
           };
         } else if (submission && str(submission.state) === 'UNCERTAIN') {
@@ -1436,7 +1542,25 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       }
       const request = parseRequest(op === 'request' ? answer : answer.request);
       if (request) out = withView(out, request, nowMs);
-      if (op === 'decide' && request) out = { ...out, typed: '' };
+      // Round 61 sweep: an approval's answer clears the typed word only when it answers the request
+      // still chosen; the word in the box belongs to that request, never to another one's answer.
+      if (op === 'decide' && request && request.requestRef === out.selectedRef)
+        out = { ...out, typed: '' };
+      if (
+        op === 'withdraw' &&
+        request &&
+        out.withdrawArm !== null &&
+        out.withdrawArm.requestRef === request.requestRef
+      )
+        out = { ...out, withdrawArm: null };
+      // (c), round 61: the outcome of THIS request is of record now, so THIS request's input is not
+      // kept: the word and the reason only while it is still the one chosen (they belong to the chosen
+      // request), and its own armed Reject. Another request's input is left exactly as it is.
+      if ((OUTCOME_OPS as readonly string[]).includes(op) && request) {
+        if (request.requestRef === out.selectedRef) out = { ...out, typed: '', changeReason: '' };
+        if (out.rejectArm !== null && out.rejectArm.requestRef === request.requestRef)
+          out = { ...out, rejectArm: null };
+      }
       if (op === 'withdraw' && request)
         out = addNotice(out, 'info', op, 'The proposal was withdrawn and is permanently closed.');
       return out;
@@ -1451,7 +1575,7 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
       if (!offerMatchesDisplay(view.displayed, offer)) {
         return {
           ...next,
-          typed: '',
+          typed: typedClearedFor(next, offer.requestRef),
           views: { ...next.views, [offer.requestRef]: { ...view, stale: true } },
         };
       }
@@ -1501,13 +1625,29 @@ export function reduce(state: MrState, event: MrEvent): MrState {
       return { ...state, composer: event.text };
     case 'typed':
       return { ...state, typed: event.text };
-    case 'select':
-      // A different request is a different decision: the typed word does not follow it.
+    case 'changeReason':
+      return { ...state, changeReason: event.text };
+    case 'armReject':
+      return { ...state, rejectArm: event.arm };
+    case 'disarmReject':
+      return { ...state, rejectArm: null };
+    case 'armWithdraw':
+      return { ...state, withdrawArm: event.arm };
+    case 'disarmWithdraw':
+      return { ...state, withdrawArm: null };
+    case 'select': {
+      // A different request is a different decision: neither the typed word, nor a change
+      // request's reason, nor an armed Reject or Withdraw follows it.
+      const same = event.requestRef === state.selectedRef;
       return {
         ...state,
         selectedRef: event.requestRef,
-        typed: event.requestRef === state.selectedRef ? state.typed : '',
+        typed: same ? state.typed : '',
+        changeReason: same ? state.changeReason : '',
+        rejectArm: same ? state.rejectArm : null,
+        withdrawArm: same ? state.withdrawArm : null,
       };
+    }
     case 'revise':
       return {
         ...state,
@@ -1527,7 +1667,7 @@ export function reduce(state: MrState, event: MrEvent): MrState {
       if (!view) return state;
       return {
         ...state,
-        typed: '',
+        typed: typedClearedFor(state, event.requestRef),
         views: {
           ...state.views,
           [event.requestRef]: {
@@ -1542,12 +1682,12 @@ export function reduce(state: MrState, event: MrEvent): MrState {
       };
     }
     case 'dropOffer': {
-      // The person asked to read the offer again (it expired): drop it and what was typed.
+      // The person asked to read the offer again (it expired): drop it and what was typed for it.
       const view = state.views[event.requestRef];
       if (!view) return state;
       return {
         ...state,
-        typed: '',
+        typed: typedClearedFor(state, event.requestRef),
         views: {
           ...state.views,
           [event.requestRef]: { ...view, offer: null, offerEpoch: view.offerEpoch + 1 },
@@ -1837,6 +1977,161 @@ export function decisionFields(view: MrView, reply: string): MrFields | null {
     deliveryTargets: offer.deliveryTargets,
     repositoryUrl: offer.repositoryUrl,
   };
+}
+
+/** A C0 control other than tab or newline, or DEL: a change request's reason carries none (Mission Core's rule). */
+const isReasonControl = (ch: string): boolean => {
+  const code = ch.codePointAt(0) ?? 0;
+  return (code < 32 && ch !== '\n' && ch !== '\t') || code === 127;
+};
+
+/**
+ * (c): why this text is not yet a readable change-request reason, or null when it is. The rule is Mission Core's
+ * (mission/record.py change_request_reason_problem): not blank, at most 2000 characters, no control character other
+ * than newline and tab. The reason is sent exactly as written, never trimmed.
+ */
+export function changeReasonProblem(reason: string): string | null {
+  if (reason.trim() === '') return 'Write what should change to enable Ask for changes.';
+  if (codePointCount(reason) > MR_MAX_CHANGE_REASON_CHARS)
+    return `The reason is longer than ${MR_MAX_CHANGE_REASON_CHARS} characters; shorten it.`;
+  if ([...reason].some(isReasonControl))
+    return 'The reason contains a control character; remove it.';
+  return null;
+}
+
+/**
+ * (c): a decline, rejection or change request, bound to what the person is SHOWN, exactly as a decision is: the
+ * proposal on display AND the offer on display, submitted whole, without the typed word. A change request carries
+ * the reason unchanged, and only a readable one. With no matching offer on display there is nothing to send.
+ */
+export function outcomeFields(view: MrView, op: MrOutcomeOp, reason: string): MrFields | null {
+  const offer = view.offer;
+  if (offer === null || !offerMatchesDisplay(view.displayed, offer)) return null;
+  if (op === 'requestChanges' && changeReasonProblem(reason) !== null) return null;
+  const b = bindingOf(view.displayed);
+  return {
+    requestRef: b.requestRef,
+    missionId: b.missionId,
+    revision: b.revision,
+    digest: b.digest,
+    offerDigest: offer.offerDigest,
+    expiresAt: offer.expiresAt,
+    scope: offer.scope,
+    deliveryTargets: offer.deliveryTargets,
+    repositoryUrl: offer.repositoryUrl,
+    ...(op === 'requestChanges' ? { reason } : {}),
+  };
+}
+
+/** True while ANY decision on this request (an approval or one of (c)'s outcomes) is waiting for its answer. */
+export function decisionPending(state: MrState, requestRef: string): boolean {
+  return (['decide', ...OUTCOME_OPS] as DiMissionRequestOp[]).some((op) =>
+    isPending(state, op, requestRef),
+  );
+}
+
+/** (c), round 61: what an armed Reject is FOR: the request, the proposal (Mission, revision, digest) and the offer shown. */
+export interface MrRejectArm {
+  requestRef: string;
+  missionId: string;
+  revision: number;
+  digest: string;
+  offerDigest: string;
+  expiresAt: number;
+}
+
+/** The arm that this view would form now: its displayed proposal and the offer on display; null with no matching offer. */
+export function rejectArmFor(view: MrView): MrRejectArm | null {
+  const offer = view.offer;
+  if (offer === null || !offerMatchesDisplay(view.displayed, offer)) return null;
+  const b = bindingOf(view.displayed);
+  return {
+    requestRef: b.requestRef,
+    missionId: b.missionId,
+    revision: b.revision,
+    digest: b.digest,
+    offerDigest: offer.offerDigest,
+    expiresAt: offer.expiresAt,
+  };
+}
+
+/** True only while the armed Reject is for EXACTLY what this view shows now: an arm formed anywhere else authorizes nothing. */
+export function rejectArmed(state: MrState, view: MrView): boolean {
+  const armed = state.rejectArm;
+  const now = rejectArmFor(view);
+  return (
+    armed !== null &&
+    now !== null &&
+    armed.requestRef === now.requestRef &&
+    armed.missionId === now.missionId &&
+    armed.revision === now.revision &&
+    armed.digest === now.digest &&
+    armed.offerDigest === now.offerDigest &&
+    armed.expiresAt === now.expiresAt
+  );
+}
+
+/**
+ * (c): whether the window may decide this outcome on the selected request now: something selected, a current display, a
+ * window that can vouch for what it holds, a decision offered by the record, an offer that is live by the clock the window
+ * can read, and no decision already waiting for its answer. For Reject this is whether its FIRST step may be taken.
+ */
+export function outcomeAvailable(
+  state: MrState,
+  op: MrOutcomeOp,
+  serverNowSec: number | null,
+): boolean {
+  const ref = state.selectedRef;
+  const view = ref === null ? undefined : state.views[ref];
+  if (ref === null || !view || view.stale || state.unvouched !== null) return false;
+  if (!offeredActions(state, ref).includes('decide')) return false;
+  if (offerState(view, serverNowSec) !== 'live' || decisionPending(state, ref)) return false;
+  return outcomeFields(view, op, state.changeReason) !== null;
+}
+
+/**
+ * (c): the fields to send for this outcome on the selected request, or null when it may not be sent now (see
+ * `outcomeAvailable`). Reject is final, so it is sent only once ARMED for exactly the request, proposal and offer shown
+ * (round 61): its own first step, never a flag left over from another request or another offer.
+ */
+export function outcomeRequest(
+  state: MrState,
+  op: MrOutcomeOp,
+  serverNowSec: number | null,
+): MrFields | null {
+  if (!outcomeAvailable(state, op, serverNowSec)) return null;
+  const view = state.views[state.selectedRef as string];
+  if (op === 'reject' && !rejectArmed(state, view)) return null;
+  return outcomeFields(view, op, state.changeReason);
+}
+
+/** Round 61 sweep: the arm that Withdraw's first step forms on this view: exactly the proposal on display. */
+export function withdrawArmFor(view: MrView): MrBinding {
+  return bindingOf(view.displayed);
+}
+
+/** True only while the armed Withdraw is for EXACTLY the request and proposal this view shows now. */
+export function withdrawArmed(state: MrState, view: MrView): boolean {
+  return state.withdrawArm !== null && sameBinding(state.withdrawArm, withdrawArmFor(view));
+}
+
+/**
+ * Round 61 sweep: the fields to send for Withdraw on the selected request, or null when it may not be sent now: nothing
+ * selected or read, withdrawal not offered by the record, a withdrawal already waiting for its answer, or not ARMED for
+ * exactly the request and proposal shown (its own first step; never a flag left over from another request).
+ */
+export function withdrawRequest(state: MrState): MrFields | null {
+  const ref = state.selectedRef;
+  const view = ref === null ? undefined : state.views[ref];
+  if (
+    ref === null ||
+    !view ||
+    !offeredActions(state, ref).includes('withdraw') ||
+    actionPending(state, 'withdraw', ref) ||
+    !withdrawArmed(state, view)
+  )
+    return null;
+  return withdrawFields(view);
 }
 
 export function withdrawFields(view: MrView): MrFields {

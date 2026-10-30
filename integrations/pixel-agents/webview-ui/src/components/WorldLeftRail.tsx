@@ -72,6 +72,8 @@ export function WorldLeftRail({
         width: `min(100%, ${RAIL_WIDTH_PX}px)`,
       }}
       data-testid="di-world-rail-frame"
+      // what the world's disclosure (scan face) shows and hides
+      id="di-world-controls"
     >
       <div
         className="di-world-rail min-h-0 flex-1 flex flex-col-reverse overflow-y-auto overflow-x-hidden pointer-events-none"

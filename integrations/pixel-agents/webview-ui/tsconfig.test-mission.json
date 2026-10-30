@@ -6,11 +6,15 @@
        its callbacks need, it IMPORTS the real server relay (handleDiClientMessage, DiMissionRequests,
        AgentStateStore), and the server's sources are written with TypeScript parameter properties,
        which `erasableSyntaxOnly` forbids. That flag exists so SHIPPED webview code stays erasable;
-       these server files are not shipped here, they are type-checked only as an import of this one test,
+       these server files are not shipped here, they are type-checked only as an import of these tests,
        and under their own project (server/tsconfig.json) they are already checked with it off.
-       The relaxation is therefore confined to this single project and this single test. */
+       The M8 delivery composition browser test is here for the same reason: it IMPORTS the real catalog
+       projection (catalogProjection.ts declares a parameter property) and the office-state builders.
+       The unadmitted-read composition test is here for the same reason: it IMPORTS the office's code review
+       answer (server/src/di/codeReview.ts, whose types reach catalogProjection.ts).
+       The relaxation is therefore confined to this single project and these three tests. */
     "erasableSyntaxOnly": false
   },
-  "include": ["test/diMissionRequest.test.ts"],
+  "include": ["test/diMissionRequest.test.ts", "test/diMissionDeliveryComposition.test.ts", "test/diCodeReviewUnadmitted.test.ts"],
   "exclude": []
 }

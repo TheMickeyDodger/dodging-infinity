@@ -13,7 +13,13 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import type { DiMissionRequestOp, DiMissionRequestReply } from '../../../core/src/messages.js';
-import type { MrFields, MrState, MrTab, MrTurn } from '../components/diMissionRequestModel.js';
+import type {
+  MrFields,
+  MrOutcomeOp,
+  MrState,
+  MrTab,
+  MrTurn,
+} from '../components/diMissionRequestModel.js';
 import {
   actionPending,
   buildMessage,
@@ -28,8 +34,12 @@ import {
   MR_POLL_TURN_MS,
   offeredActions,
   offerMatchesDisplay,
+  outcomeRequest,
   reduce,
-  withdrawFields,
+  rejectArmFor,
+  serverNowSeconds,
+  withdrawArmFor,
+  withdrawRequest,
 } from '../components/diMissionRequestModel.js';
 import { transport } from '../transport/index.js';
 
@@ -63,6 +73,19 @@ export interface DiMissionRequestControl {
   revise: (requestRef: string | null) => void;
   /** Send the typed word as the decision on the proposal AND offer on display. */
   decide: () => void;
+  /** (c): keep the reason being written for a change request, exactly as typed. */
+  setChangeReason: (text: string) => void;
+  /** (c): send the person's decline, rejection or change request on the proposal AND offer on display. */
+  decline: () => void;
+  /** Sends only while Reject is armed for exactly what is on display (round 61). */
+  reject: () => void;
+  requestChanges: () => void;
+  /** (c), round 61: Reject's first step, armed for exactly the request, proposal and offer on display; and stepping back. */
+  armReject: () => void;
+  disarmReject: () => void;
+  /** Round 61 sweep: Withdraw's first step, armed for exactly the request and proposal on display; and stepping back. */
+  armWithdraw: () => void;
+  disarmWithdraw: () => void;
   /** Read the decision offer again (after it expired): an explicit act, never a silent swap. */
   readOffer: (requestRef: string) => void;
   withdraw: () => void;
@@ -283,6 +306,36 @@ export function useDiMissionRequest(
     ask('decide', fields, { requestRef: ref });
   }, [ask]);
 
+  const setChangeReason = useCallback(
+    (text: string) => dispatch({ type: 'changeReason', text }),
+    [],
+  );
+  /** (c): one of the three outcomes, only when the model says the window may decide now; never sent twice by itself. */
+  const sendOutcome = useCallback(
+    (op: MrOutcomeOp) => {
+      const s = stateRef.current;
+      const fields = outcomeRequest(
+        s,
+        op,
+        serverNowSeconds(s.overview, s.overviewAtMs, Date.now()),
+      );
+      if (fields === null || s.selectedRef === null) return;
+      ask(op, fields, { requestRef: s.selectedRef });
+    },
+    [ask],
+  );
+  const decline = useCallback(() => sendOutcome('decline'), [sendOutcome]);
+  const reject = useCallback(() => sendOutcome('reject'), [sendOutcome]);
+  const requestChanges = useCallback(() => sendOutcome('requestChanges'), [sendOutcome]);
+  /** Round 61: Reject's first step, armed for exactly the request, proposal and offer on display now. */
+  const armReject = useCallback(() => {
+    const s = stateRef.current;
+    const view = s.selectedRef === null ? undefined : s.views[s.selectedRef];
+    const arm = view ? rejectArmFor(view) : null;
+    if (arm !== null) dispatch({ type: 'armReject', arm });
+  }, []);
+  const disarmReject = useCallback(() => dispatch({ type: 'disarmReject' }), []);
+
   const readOffer = useCallback(
     (requestRef: string) => {
       dispatch({ type: 'dropOffer', requestRef });
@@ -294,17 +347,18 @@ export function useDiMissionRequest(
 
   const withdraw = useCallback(() => {
     const s = stateRef.current;
-    const ref = s.selectedRef;
-    const view = ref === null ? undefined : s.views[ref];
-    if (
-      !ref ||
-      !view ||
-      !offeredActions(s, ref).includes('withdraw') ||
-      actionPending(s, 'withdraw', ref)
-    )
-      return;
-    ask('withdraw', withdrawFields(view), { requestRef: ref });
+    // Round 61 sweep: only while Withdraw is armed for exactly the request and proposal on display.
+    const fields = withdrawRequest(s);
+    if (fields === null || s.selectedRef === null) return;
+    ask('withdraw', fields, { requestRef: s.selectedRef });
   }, [ask]);
+  /** Round 61 sweep: Withdraw's first step, armed for exactly the request and proposal on display now. */
+  const armWithdraw = useCallback(() => {
+    const s = stateRef.current;
+    const view = s.selectedRef === null ? undefined : s.views[s.selectedRef];
+    if (view) dispatch({ type: 'armWithdraw', arm: withdrawArmFor(view) });
+  }, []);
+  const disarmWithdraw = useCallback(() => dispatch({ type: 'disarmWithdraw' }), []);
 
   const checkApproval = useCallback(() => {
     const s = stateRef.current;
@@ -363,8 +417,16 @@ export function useDiMissionRequest(
     acknowledge,
     revise,
     decide,
+    setChangeReason,
+    decline,
+    reject,
+    requestChanges,
+    armReject,
+    disarmReject,
     readOffer,
     withdraw,
+    armWithdraw,
+    disarmWithdraw,
     checkApproval,
     run,
     loadResult,

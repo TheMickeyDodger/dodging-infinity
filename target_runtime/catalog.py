@@ -324,6 +324,8 @@ class CatalogService(object):
             contract_version]
         self._composer = None
         self._presentations = None
+        self._delivery_links = None
+        self._mission_state = None
         if contract_version != 1:
             # Imported HERE, only when a version 2 owner is built: a
             # default (version 1) process loads neither Mission Core's
@@ -332,6 +334,9 @@ class CatalogService(object):
             from target_runtime import mission_state as mission_state_module
             self._composer = mission_state_module.MissionStateComposer(
                 clock, delivery_store)
+            # The same module, kept for the live code review's finished-
+            # execution provider (``_finished_execution``): no second import.
+            self._mission_state = mission_state_module
             # D1: the explicitly registered, read-only reader of the Grok
             # Bot's delivery presentations; it lives in the same module as the
             # composer above (one lazy import, nothing new), and is built only
@@ -341,6 +346,15 @@ class CatalogService(object):
                 self._presentations = (
                     mission_state_module.DeliveryPresentationsReader(
                         delivery_presentations, delivery_store, clock).block)
+            # The read-only reader behind every Mission's delivery_link, over
+            # the SAME registered store (same module, nothing new), built
+            # only when a store is registered; without it every workflow
+            # Mission says no store is registered (Mission Core is not known
+            # either way).
+            if delivery_store is not None:
+                self._delivery_links = (
+                    mission_state_module.DeliveryLinksReader(
+                        delivery_store, clock).bindings)
         self._registry = registry_module.SourceRegistry(registry_directory)
         self._clock = clock
         self._monotonic = monotonic or time.monotonic
@@ -436,9 +450,10 @@ class CatalogService(object):
 
     def code_review(self, mission_ref, task_id, snapshot=None, file_id=None):
         """The live code review's ONE read (``target_runtime.code_review``):
-        what is changed in the workspace of a currently ACTIVE assignment,
-        corroborated by this owner's last refreshed answer and the registry
-        read now. With no ``file_id`` the overview; with one (and the
+        what is changed in the workspace of a currently ACTIVE assignment (or
+        of a COMPLETED Mission whose recorded execution and workspace the
+        review admits), corroborated by this owner's last refreshed answer
+        and the registry read now. With no ``file_id`` the overview; with one (and the
         ``snapshot`` it was listed in) that file's diff. Version 2 owners
         only; refused after shutdown; one read at a time (a second is
         refused, never queued). Always an answer; never starts a refresh;
@@ -472,9 +487,27 @@ class CatalogService(object):
             return review_module.read(
                 self._registry, self._corroborating_answer, self._freshness,
                 self._now, self._git_transport, mission_ref, task_id,
-                snapshot, file_id)
+                snapshot, file_id, finished=self._finished_execution())
         finally:
             self._review_slot.release()
+
+    def _finished_execution(self):
+        """The live code review's finished-execution provider: the evidence
+        library's record-side admission of a COMPLETED Mission
+        (``artifact_content.historical_execution``), given the SAME held
+        answer the review judged, so both stand on one answer. Only the
+        review's own corroboration of a TERMINAL assignment ever calls it;
+        an active assignment never does."""
+        # Imported here, as ``artifact_content`` does: nothing is loaded
+        # until a review is asked of a version 2 owner.
+        from target_runtime import artifact_content as content_module
+        mission_state = self._mission_state
+
+        def provider(held, mission_ref):
+            return content_module.historical_execution(
+                mission_state, self._registry, held, self._freshness,
+                self._now, mission_ref)
+        return provider
 
     def _corroborating_answer(self):
         """The last refreshed answer, as held (judged by the caller)."""
@@ -855,7 +888,8 @@ class CatalogService(object):
             confirmed_bindings=confirmed, compose=compose,
             budget=budget.pass_budget(),
             runtime_agents=_runtime_agents_hook(observation, native),
-            delivery_presentations=self._presentations),
+            delivery_presentations=self._presentations,
+            delivery_links=self._delivery_links),
             deadline)
         if "response" not in outcome:
             return catalog_answer(requested_at, None, outcome["problem"],

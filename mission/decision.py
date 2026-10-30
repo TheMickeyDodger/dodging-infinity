@@ -37,6 +37,16 @@ kind, or the operator-attested kind for an APPROVE only (with the exact
 proposal digest and an expiry). A stored decision's provenance must match.
 An ``unauthenticated_local_caller`` context can neither apply nor be
 recorded as an APPROVE, EDIT or DENY (``mission_unauthenticated_principal``).
+
+Owner decision (c). The envelope's vocabulary, ``DECISIONS``, is UNCHANGED:
+no authenticated or attested envelope can carry a rejection or a change
+request. Two more kinds exist only as RECORDED decisions
+(``RECORDED_DECISIONS``), written by ``mission.service``'s narrow attested
+entry points: REJECT and REQUEST_CHANGES. A stored record of the
+operator-attested kind may be an APPROVE or one of the attested outcomes
+(``ATTESTED_RECORD_DECISIONS``: DENY, REJECT, REQUEST_CHANGES), never an
+EDIT. A REQUEST_CHANGES record alone carries ``reason``, the person's
+readable reason, verbatim, and its decision digest covers it.
 """
 
 from dataclasses import dataclass
@@ -50,6 +60,18 @@ DECISION_APPROVE = "APPROVE"
 DECISION_EDIT = "EDIT"
 DECISION_DENY = "DENY"
 DECISIONS = (DECISION_APPROVE, DECISION_EDIT, DECISION_DENY)
+# (c): recorded only, through mission.service's attested outcome entry points.
+DECISION_REJECT = "REJECT"
+DECISION_REQUEST_CHANGES = "REQUEST_CHANGES"
+RECORDED_DECISIONS = DECISIONS + (DECISION_REJECT, DECISION_REQUEST_CHANGES)
+# The three non-approval outcomes an attestation may carry (decline is the
+# existing DENY), and every recorded kind an operator-attested provenance may
+# carry: those and APPROVE. Never an EDIT.
+ATTESTED_OUTCOME_DECISIONS = (DECISION_DENY, DECISION_REJECT,
+                              DECISION_REQUEST_CHANGES)
+ATTESTED_RECORD_DECISIONS = (DECISION_APPROVE,) + ATTESTED_OUTCOME_DECISIONS
+# The one optional record key, present on a REQUEST_CHANGES record only.
+REASON_KEY = "reason"
 
 DECISION_KEYS = (
     "decision_id", "mission_id", "revision", "decision",
@@ -86,7 +108,9 @@ class HumanDecisionEnvelope:
     expires_at: Optional[int] = None
     # When set, the core refuses unless it equals the current revision's
     # proposal digest, checked under the store lock. Not part of the decision
-    # digest (the revision already fixes the digest).
+    # digest (the revision fixes the digest on first application), so a
+    # replay of an applied APPROVE compares it with the digest that approval
+    # recorded instead, and refuses any other.
     expected_proposal_digest_sha256: Optional[str] = None
 
     def validate(self):
@@ -163,10 +187,12 @@ class HumanDecisionEnvelope:
 
 def decision_digest(mission_id, revision, decision, approved_action_scope,
                     approved_delivery_targets, expires_at,
-                    proposal_digest_sha256):
+                    proposal_digest_sha256, reason=None):
     """Content-only digest: approval content including the requested
-    expiry; no transport/processing timestamp, no DI-minted id."""
-    return json_digest({
+    expiry; no transport/processing timestamp, no DI-minted id. A change
+    request's reason is content too, so it is covered; it is absent from
+    every other decision, whose digest is therefore unchanged by (c)."""
+    content = {
         "mission_id": mission_id,
         "revision": revision,
         "decision": decision,
@@ -174,7 +200,44 @@ def decision_digest(mission_id, revision, decision, approved_action_scope,
         "approved_delivery_targets": approved_delivery_targets,
         "expires_at": expires_at,
         "proposal_digest_sha256": proposal_digest_sha256,
-    })
+    }
+    if reason is not None:
+        content[REASON_KEY] = reason
+    return json_digest(content)
+
+
+def new_attested_outcome_record(context, decision_id, mission_id, revision,
+                                decision, received_at, decided_at, outcome,
+                                reason=None):
+    """The durable record of one (c) outcome: a DENY (decline), REJECT or
+    REQUEST_CHANGES carried by an operator attestation. No scope, targets,
+    expiry or replacement; ``reason`` on a REQUEST_CHANGES only."""
+    record.require_operator_attested_context(context)
+    record.require_member(decision, ATTESTED_OUTCOME_DECISIONS,
+                          "decision", PROBLEM_DECISION)
+    provenance = record.provenance_record(
+        context, received_at, record.REFERENCE_KIND_DECISION, decision_id,
+        mission_id, revision,
+    )
+    document = {
+        "decision_id": decision_id,
+        "mission_id": mission_id,
+        "revision": revision,
+        "decision": decision,
+        "approved_action_scope": None,
+        "approved_delivery_targets": None,
+        "expires_at": None,
+        "proposal_digest_sha256": None,
+        "provenance": provenance,
+        "received_at": received_at,
+        "decided_at": decided_at,
+        "decision_digest_sha256": decision_digest(
+            mission_id, revision, decision, None, None, None, None, reason),
+        "outcome": dict(outcome),
+    }
+    if decision == DECISION_REQUEST_CHANGES:
+        document[REASON_KEY] = reason
+    return validate_decision_record(document)
 
 
 def new_decision_record(envelope, decided_at, outcome):
@@ -207,14 +270,24 @@ def new_decision_record(envelope, decided_at, outcome):
 
 def validate_decision_record(value, location="decision"):
     record.require_dict(value, location)
-    record.require_closed_keys(value, DECISION_KEYS, location)
+    record.require_closed_keys(value, DECISION_KEYS, location,
+                               optional=(REASON_KEY,))
     record.require_id(value["decision_id"], record.DECISION_ID_PREFIX,
                       location + ".decision_id")
     record.require_id(value["mission_id"], record.MISSION_ID_PREFIX,
                       location + ".mission_id")
     record.require_int(value["revision"], location + ".revision", minimum=1)
-    record.require_member(value["decision"], DECISIONS,
+    record.require_member(value["decision"], RECORDED_DECISIONS,
                           location + ".decision", PROBLEM_DECISION)
+    # (c): the reason belongs to a change request alone, and a change request
+    # is not one without a readable reason.
+    reason = value.get(REASON_KEY)
+    if value["decision"] == DECISION_REQUEST_CHANGES:
+        record.require_change_request_reason(reason, location + "." + REASON_KEY)
+    elif REASON_KEY in value:
+        record.fail(record.PROBLEM_UNKNOWN_KEY,
+                    "%s carries a reason, which only a REQUEST_CHANGES records"
+                    % location)
     actions = value["approved_action_scope"]
     targets = value["approved_delivery_targets"]
     replacement = value["proposal_digest_sha256"]
@@ -248,10 +321,10 @@ def validate_decision_record(value, location="decision"):
                                64)
         elif replacement is not None:
             record.fail(PROBLEM_DECISION,
-                        "%s.proposal_digest_sha256 must be null for DENY"
-                        % location)
+                        "%s.proposal_digest_sha256 must be null for %s"
+                        % (location, value["decision"]))
     provenance = record.require_decision_provenance(
-        value["provenance"], value["decision"] == DECISION_APPROVE,
+        value["provenance"], value["decision"] in ATTESTED_RECORD_DECISIONS,
         location + ".provenance")
     if provenance["reference_kind"] != record.REFERENCE_KIND_DECISION:
         record.fail(record.PROBLEM_PROVENANCE,
@@ -274,7 +347,7 @@ def validate_decision_record(value, location="decision"):
                     % (location, location))
     expected = decision_digest(
         value["mission_id"], value["revision"], value["decision"], actions,
-        targets, expires_at, replacement,
+        targets, expires_at, replacement, reason,
     )
     record.require_hex(value["decision_digest_sha256"],
                        location + ".decision_digest_sha256", 64)

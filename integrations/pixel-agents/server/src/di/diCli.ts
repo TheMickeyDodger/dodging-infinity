@@ -8,7 +8,12 @@
  *
  * What it composes: the agent store, the bundled assets, the layout, and the DI
  * office's own authenticated loopback HTTP/WS surface (diHttpServer.ts), plus a
- * read-only consumer of the DI backend's catalog API (diOffice.ts).
+ * read-only consumer of the DI backend's catalog API (diOffice.ts), and the two relays a
+ * person points at a process they started: the Mission request panel (missionRequests.ts,
+ * --mission-panel-discovery) and the office delivery adapter (deliveryRequests.ts, with
+ * deliveryClient.ts as its transport, --delivery-adapter-discovery). Each answers "not
+ * configured" without its flag. (This list omitted the request panel before the delivery
+ * flag was added; naming it corrects that older omission.)
  *
  * What it never composes — by construction, not by a disabled branch: no hook
  * provider (so no consent ask and no installer), no AgentRuntime (so no session
@@ -46,6 +51,8 @@ import {
 } from './browserAccess.js';
 import type { QueryContractVersion } from './catalogContract.js';
 import { DEFAULT_QUERY_CONTRACT_VERSION } from './catalogContract.js';
+import { requestDelivery } from './deliveryClient.js';
+import { DiDeliveryRequests } from './deliveryRequests.js';
 import { handleDiClientMessage, initDiDefaults } from './diClientMessages.js';
 import { createDiHttpServer, DI_BIND_HOST } from './diHttpServer.js';
 import { DiOffice } from './diOffice.js';
@@ -76,6 +83,11 @@ export interface DiCliArgs {
    * combines with a fixture source (the world is a fixture; the panel is whatever this names).
    */
   missionPanelDiscovery?: string;
+  /**
+   * b2b: the office delivery adapter's discovery file (didelivery_office.py), READ ONLY. Absent: every
+   * delivery request is answered "not configured". Independent of the catalog backend, like the panel's.
+   */
+  deliveryAdapterDiscovery?: string;
 }
 
 export class DiCliArgsError extends Error {}
@@ -96,6 +108,11 @@ const USAGE = `Usage: pixel-agents-di --state-dir <absolute dir> --backend-disco
                                  (dimission_panel.py), READ ONLY. Absolute. Optional: without it
                                  the office shows the request panel as not configured. The
                                  token it holds stays in this server; a browser never sees it.
+  --delivery-adapter-discovery <file>
+                                 The office delivery adapter's discovery file
+                                 (didelivery_office.py), READ ONLY. Absolute. Optional: without it
+                                 every delivery request is answered as not configured. The token it
+                                 holds stays in this server; a browser never sees it.
   --port, -p <n>                 Loopback port (default: OS-assigned)
   --contract-version <1|2>       The catalog contract version this process reads (default 1).
                                  ONE version per process: a response of any other version is
@@ -126,6 +143,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
   let contractVersion: QueryContractVersion = DEFAULT_QUERY_CONTRACT_VERSION;
   let fixturePreview = false;
   let missionPanelDiscovery: string | undefined;
+  let deliveryAdapterDiscovery: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -160,6 +178,13 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
         throw new DiCliArgsError('--mission-panel-discovery must be an absolute path');
       }
       missionPanelDiscovery = path.normalize(value);
+    } else if (flag === '--delivery-adapter-discovery') {
+      if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
+      i++;
+      if (!path.isAbsolute(value)) {
+        throw new DiCliArgsError('--delivery-adapter-discovery must be an absolute path');
+      }
+      deliveryAdapterDiscovery = path.normalize(value);
     } else if (flag === '--contract-version') {
       if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
       i++;
@@ -196,6 +221,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
       contractVersion,
       fixturePreview: true,
       missionPanelDiscovery,
+      deliveryAdapterDiscovery,
     };
   }
   if (!backendDiscovery || !path.isAbsolute(backendDiscovery)) {
@@ -208,7 +234,20 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
     contractVersion,
     fixturePreview,
     missionPanelDiscovery,
+    deliveryAdapterDiscovery,
   };
+}
+
+/**
+ * b2b: the office delivery adapter's relay, with its HTTP client (deliveryClient.ts) as the transport. The relay has no
+ * default transport of its own; this is where the office injects it. Without a discovery file, every delivery request is
+ * answered "not configured".
+ */
+export function deliveryRelay(
+  discoveryPath: string | null,
+  log?: (line: string) => void,
+): DiDeliveryRequests {
+  return new DiDeliveryRequests(discoveryPath, { request: requestDelivery, log });
 }
 
 async function main(): Promise<void> {
@@ -295,6 +334,14 @@ async function main(): Promise<void> {
       ? `[Pixel Agents DI] mission request panel discovery (read-only): ${args.missionPanelDiscovery}`
       : '[Pixel Agents DI] mission request panel: not configured (--mission-panel-discovery)',
   );
+  // b2b: the office delivery adapter. Its token stays in THIS process; the browser only ever sends the closed
+  // diDeliveryRequest messages, which are relayed here, one at a time, and answered to the asker alone.
+  const deliveryRequests = deliveryRelay(args.deliveryAdapterDiscovery ?? null);
+  console.log(
+    args.deliveryAdapterDiscovery
+      ? `[Pixel Agents DI] office delivery adapter discovery (read-only): ${args.deliveryAdapterDiscovery}`
+      : '[Pixel Agents DI] office delivery adapter: not configured (--delivery-adapter-discovery)',
+  );
   if (args.fixturePreview)
     console.log(
       '[Pixel Agents DI] FIXTURE PREVIEW: backend is a synthetic fixture stand-in; views are labelled',
@@ -321,6 +368,7 @@ async function main(): Promise<void> {
         readEvidence: (m, reply) => void office.readEvidence(m, reply),
         readCodeReview: (m, reply) => void office.readCodeReview(m, reply),
         missionRequest: (m, reply) => void missionRequests.handle(m, reply),
+        deliveryRequest: (m, reply) => void deliveryRequests.handle(m, reply),
       });
       if (typeof disposition === 'object') {
         // The type and the reason only — never the payload.

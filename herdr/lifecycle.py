@@ -453,6 +453,58 @@ def _retain_post_bootstrap_failure(exc, herd, stage, workspace_id,
         return
 
 
+def role_counts(
+    orchestration: dict,
+) -> tuple[int, int]:
+    """(leads, pods) from an `orchestration` block, each at least 1: the ONE derivation `start_herd` uses, the follow-on's check of what a
+    child requires, and the CLI's health check. A count that is not an integer raises `int()`'s own TypeError, ValueError or OverflowError,
+    unchanged; each caller says so in its own words (the CLI's messages and the follow-on's refusals are theirs, not the package's)."""
+
+    return (
+        max(
+            1,
+            int(orchestration.get("leads", 1)),
+        ),
+        max(
+            1,
+            int(orchestration.get("pods", 1)),
+        ),
+    )
+
+
+def logical_roles(
+    leads: int,
+    pods: int,
+) -> list[str]:
+    """The logical roles a herd with these counts bootstraps, in bootstrap order: the Supervisor, each Lead, then each Executor with its
+    Reviewer."""
+
+    roles = [
+        "supervisor",
+    ]
+
+    roles += [
+        f"lead{i}"
+        for i in range(
+            1,
+            leads + 1,
+        )
+    ]
+
+    for i in range(
+        1,
+        pods + 1,
+    ):
+        roles.append(
+            f"executor{i}"
+        )
+        roles.append(
+            f"reviewer{i}"
+        )
+
+    return roles
+
+
 def start_herd(
     herd: HerdrInstance,
     *,
@@ -557,13 +609,8 @@ def start_herd(
     stage = None
 
     try:
-        leads = max(
-            1,
-            int(orchestration.get("leads", 1)),
-        )
-        pods = max(
-            1,
-            int(orchestration.get("pods", 1)),
+        leads, pods = role_counts(
+            orchestration
         )
 
         panes = {

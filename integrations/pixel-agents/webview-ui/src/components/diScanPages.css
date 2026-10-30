@@ -1,0 +1,1108 @@
+/*
+ * The rail's pages on the scan face (pass B): Missions (04), Reception (03), New Mission (4.3a) and the proposal (4.3b).
+ * Home tokens and Inter only. Purple (--di-scan-accent) is a FILL behind --di-on-accent text, never text, an edge or a
+ * focus ring. Every bordered control takes the 3:1 control edge (--di-scan-edge). Focus is the panel's own ring
+ * (.di-scan :focus-visible), which these pages inherit.
+ */
+
+.di-scan-page-stage {
+  overflow-y: auto;
+}
+
+.di-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 1120px;
+  padding: 22px 28px 32px;
+  color: var(--di-scan-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* the title and its sample tag stay on screen when the page scrolls, so a scrolled page is never unlabelled (B-E1);
+   the 6 px padding and the matching negative margin keep the resting layout unchanged */
+.di-page-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block: -6px;
+  padding-block: 6px;
+  background: var(--di-scan-canvas);
+}
+/* under fixture mode's banner, which is exactly 30 px tall */
+.di-scan-stage-fixture + .di-page .di-page-head {
+  top: 30px;
+}
+.di-page-title {
+  margin: 0;
+  color: var(--di-scan-heading);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.di-page-sub {
+  margin: -8px 0 0;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+}
+.di-page-note {
+  margin: 0;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-page-empty {
+  margin: 8px 0;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+}
+.di-page-empty p {
+  margin: 0;
+}
+.di-page-foot {
+  margin: 4px 0 0;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-page-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 999px;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+
+/* a status: a round dot beside its word (V-1) */
+.di-page-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 999px;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------- chips: the filters and tabs ---------- */
+
+.di-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.di-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+/* hover lifts to the raised surface, where muted text still reads at 4.5:1 (the hover tone would not) */
+.di-chip:hover:not(:disabled) {
+  background: var(--di-scan-raised);
+}
+.di-chip[aria-pressed='true'] {
+  background: var(--di-scan-raised);
+  color: var(--di-scan-text);
+}
+.di-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.di-chip-count {
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+
+/* ---------- buttons ---------- */
+
+.di-page-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.di-page-button:hover:not(:disabled) {
+  background: var(--di-control-hover);
+}
+.di-page-primary {
+  border-color: transparent;
+  background: var(--di-scan-accent);
+  color: var(--di-on-accent);
+}
+.di-page-primary:hover:not(:disabled) {
+  background: var(--di-scan-accent-hover);
+}
+.di-page-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.di-page-back {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 8px 0 4px;
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--di-scan-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.di-page-input {
+  height: 32px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 6px;
+  background: var(--di-scan-well);
+  color: var(--di-scan-text);
+  font-size: 13px;
+}
+.di-page-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.di-page-lock {
+  flex-shrink: 0;
+  color: var(--di-scan-muted);
+}
+
+/* ---------- 04 Missions ---------- */
+
+.di-missions-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.di-missions-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.di-missions-table th {
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--di-scan-line);
+  color: var(--di-scan-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.di-missions-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--di-scan-line);
+  color: var(--di-scan-muted);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.di-missions-row {
+  cursor: pointer;
+}
+.di-missions-row:hover {
+  background: var(--di-scan-well);
+}
+.di-missions-open {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.di-missions-title {
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-missions-step {
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-phase {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.di-phase-word {
+  color: var(--di-scan-muted);
+}
+.di-phase-bar {
+  display: inline-flex;
+  gap: 3px;
+}
+.di-phase-seg {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--di-scan-line);
+}
+.di-phase-seg[data-state='done'] {
+  background: var(--di-scan-ok);
+}
+.di-phase-seg[data-state='current'] {
+  background: var(--di-scan-building);
+}
+
+/* ---------- 03 Reception ---------- */
+
+.di-reception-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.di-reception-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 8px;
+  background: var(--di-scan-well);
+}
+.di-reception-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.di-reception-card-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.di-reception-title {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+button.di-reception-title {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--di-scan-line);
+  text-underline-offset: 3px;
+}
+.di-reception-need,
+.di-reception-meta,
+.di-reception-note {
+  margin: 0;
+}
+.di-reception-need {
+  color: var(--di-scan-text);
+  font-size: 13px;
+}
+.di-reception-meta,
+.di-reception-note {
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-reception-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+.di-reception-answer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.di-reception-suggestions,
+.di-reception-reply {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.di-reception-reply .di-page-input {
+  width: 200px;
+}
+.di-reception-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.di-reception-section-head h2 {
+  margin: 0;
+  color: var(--di-scan-heading);
+  font-size: 14px;
+  font-weight: 600;
+}
+.di-reception-info,
+.di-reception-earlier {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.di-reception-earlier-line {
+  margin: 0;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+}
+.di-reception-checked {
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-reception-checked summary {
+  cursor: pointer;
+}
+
+/* ---------- New Mission and the proposal ---------- */
+
+.di-new {
+  max-width: 760px;
+}
+.di-new-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.di-new-label {
+  margin: 0;
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-new-optional {
+  margin-left: 6px;
+  color: var(--di-scan-muted);
+  font-weight: 400;
+}
+.di-new-harness {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 6px;
+  background: var(--di-scan-raised);
+}
+.di-new-harness-repo {
+  color: var(--di-scan-text);
+  font-size: 13px;
+}
+.di-new-harness-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--di-scan-badge);
+  color: var(--di-scan-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.di-new-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 8px 8px 14px;
+  border: 1px dashed var(--di-scan-line);
+  border-radius: 6px;
+}
+.di-new-placeholder {
+  color: var(--di-scan-muted);
+}
+.di-new-ask {
+  width: 100%;
+  min-height: 104px;
+  padding: 12px 14px;
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 8px;
+  background: var(--di-scan-well);
+  color: var(--di-scan-text);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.di-new-ask::placeholder {
+  color: var(--di-scan-muted);
+}
+.di-new-recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.di-new-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--di-scan-needs-line);
+  border-radius: 8px;
+  background: var(--di-scan-needs-chip);
+}
+.di-new-limit-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--di-scan-text);
+}
+.di-new-existing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 8px;
+}
+.di-new-existing .di-page-note {
+  flex-basis: 100%;
+}
+/* The page's primary control (now "Continue in the request workspace") stays on screen however long the page is (Figure 4.3d keeps it at the panel's foot) */
+.di-new-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--di-scan-line);
+  background: var(--di-scan-canvas);
+}
+.di-new-foot kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.di-proposal {
+  max-width: 760px;
+}
+.di-proposal-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -6px 0 0;
+  color: var(--di-scan-muted);
+}
+.di-proposal-ask {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 8px;
+  background: var(--di-scan-badge);
+  color: var(--di-scan-text);
+  font-size: 14px;
+}
+.di-proposal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--di-scan-needs-line);
+  border-radius: 10px;
+  background: var(--di-scan-well);
+}
+.di-proposal-card p {
+  margin: 0;
+}
+.di-proposal-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.di-proposal-card-head h2 {
+  margin: 0;
+  color: var(--di-scan-heading);
+  font-size: 15px;
+  font-weight: 600;
+}
+.di-proposal-card-head .di-page-tag {
+  margin-left: auto;
+}
+.di-proposal-team {
+  width: 100%;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 6px;
+  border-collapse: collapse;
+}
+.di-proposal-team th,
+.di-proposal-team td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--di-scan-line);
+  font-size: 13px;
+  text-align: left;
+}
+.di-proposal-team th {
+  width: 120px;
+  color: var(--di-scan-text);
+  font-weight: 400;
+}
+.di-proposal-team code,
+.di-proposal-repo code {
+  color: var(--di-scan-text);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 13px;
+}
+td.di-proposal-provider {
+  color: var(--di-scan-muted);
+  text-align: right;
+}
+.di-proposal-repos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.di-proposal-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 6px;
+}
+.di-proposal-chose {
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-proposal-scope {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+.di-proposal-scope dt {
+  color: var(--di-scan-muted);
+}
+.di-proposal-scope dd {
+  margin: 0;
+}
+.di-proposal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* ---------- a Mission's nested screens: the sibling switch, the file tree, Comments ---------- */
+
+.di-scan-siblings {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.di-scan-sibling {
+  appearance: none;
+  white-space: nowrap;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--di-scan-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.di-scan-sibling[aria-current='page'] {
+  border-bottom-color: var(--di-scan-underline);
+  color: var(--di-scan-text);
+}
+.di-scan-sibling:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+button.di-scan-tree-row {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+button.di-scan-tree-row:hover:not([data-selected='true']) {
+  background: var(--di-scan-well);
+}
+.di-scan-comments-view .di-scan-comments-title {
+  margin: 4px 0 8px;
+  color: var(--di-scan-heading);
+  font-size: 20px;
+  font-weight: 600;
+}
+.di-scan-comments-view .di-scan-comments-sub {
+  margin: -6px 0 18px;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+}
+/* B-V3: v3 07 body geometry, measured at 1280 x 720: 22 px placeholder circles, the text column 46 px from the circle's
+   left edge, 13 px names and 13 px muted body, items 56 px apart (39 px of text and a 17 px gap) */
+.di-scan-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  margin: 14px 0 22px;
+  padding: 0;
+  list-style: none;
+}
+.di-scan-comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+.di-scan-comment-avatar {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--di-control-hover);
+}
+.di-scan-comment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.di-scan-comments-view .di-scan-comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  line-height: 16px;
+}
+.di-scan-comment-author {
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-scan-comment-when {
+  color: var(--di-scan-muted);
+  font-size: 11px;
+}
+.di-scan-comments-view .di-scan-comment-text {
+  color: var(--di-scan-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 17px;
+}
+/* the v3 page's content starts 28 px from the rail */
+.di-scan-comments-view {
+  padding-left: 28px;
+}
+.di-scan-comments-view .di-scan-comments-paid {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 720px;
+  padding: 12px 14px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 8px;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+}
+.di-scan-comments-paid-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--di-scan-line);
+  border-radius: 4px;
+  color: var(--di-scan-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* a file row keeps the chevron's place, but only folders expand (pixel-lock 03) */
+.di-scan-twist-spacer {
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
+}
+/* the empty diff pane speaks in the UI font (the editor forces the code font on everything inside it), and its one
+   action is a compact button, not the Mission details button (B-V2) */
+.di-scan .di-scan-editor-body .di-scan-editor-empty,
+.di-scan .di-scan-editor-body .di-scan-editor-empty * {
+  font-family: var(--di-font-ui);
+}
+.di-scan .di-scan-editor-body .di-scan-editor-empty .di-scan-action {
+  flex: 0 0 auto;
+  width: auto;
+  height: 36px;
+  margin-top: 12px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-family: var(--di-font-ui);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* fixture mode's label on every page and stage (B-E1): sticky, so scrolling never hides it */
+.di-scan-stage-fixture {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: 30px;
+  margin: 0;
+  overflow: hidden;
+  padding: 6px 16px;
+  line-height: 17px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--di-scan-needs-line);
+  background: var(--di-scan-needs-chip);
+  color: var(--di-scan-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* the stage bar gives way to a long Mission title ONLY: every other label keeps its whole width (B-V2) */
+.di-scan-stage-bar .di-scan-header-lead {
+  flex: 1 1 auto;
+}
+.di-scan-stage-bar .di-scan-header-tools {
+  flex-shrink: 0;
+}
+.di-scan-crumb {
+  flex: 1 1 auto;
+}
+.di-scan-crumb > * {
+  flex-shrink: 0;
+}
+.di-scan-crumb > .di-scan-crumb-title {
+  flex-shrink: 1;
+}
+
+/* the stage header WRAPS BY CONTENT in Code Diff (no width is chosen: the rule measures). When the FIXED parts of the lead group (Back, the mark, World, the tab, the
+   separators, the screen name; the title is the one flexible item, B-V2) plus the tabs and the tools no longer fit on one row with the normal clearance, the tabs and
+   the tools move TOGETHER to their own row, right-aligned, and the crumb keeps its row and gives the title its room. It changes no element's size or spacing: where the
+   header fits on one row every box is what it was. The crumb is a grid only so that its MINIMUM size is the fixed parts (the title track is minmax(1.5em, max-content): the title may give way, but never below one letter and its ellipsis, so the wrap fires BEFORE the title is crushed; found at the geometry restoration, where the one-letter-title test fell in the 14 px window of widths that a minimum of 0 leaves between 'the fixed parts fit' and 'the fixed parts and one letter fit');
+   it is seven items with the title fifth (a test pins that), its gap is the ordinary `gap`, and the fixed items cannot shrink. */
+.di-scan-stage[data-view='diff'] .di-scan-stage-bar {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-lead {
+  flex: 1 1 0;
+  min-width: min-content;
+}
+.di-scan-stage[data-view='diff'] .di-scan-crumb {
+  display: grid;
+  grid-template-columns: auto auto auto auto minmax(1.5em, max-content) auto auto;
+  align-items: center;
+  justify-content: start;
+}
+.di-scan-stage[data-view='diff'] .di-scan-crumb > :not(.di-scan-crumb-title) {
+  min-width: max-content;
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-controls .di-scan-siblings {
+  margin-left: 0;
+}
+
+/* ═══ STAGE HEADER GEOMETRY, per view (the restoration): each view is drawn to ITS OWN governing reference, measured like for like (ink against ink) at the
+   reference's own size; the numbers and their provenance are test/fixtures/stage-header-geometry-targets.FIXTURE.json and are pinned by diScanHeaderGeometry.test.ts.
+     Code Diff -> pixel-lock 03 (1672 x 941) · Mission details -> pixel-lock 02 (1672 x 941) · Comments -> v3 07 (1280 x 720).
+   Every rule is scoped to ONE view under the stage, so Home (which shares .di-scan-mark and the tool classes) is untouched.
+   --stage-hdr-k is the scale: 1 at 1500 px and wider (the locks are at 1672), and the stylesheet's own 0.72 convention below 1500, where NO reference exists for Code Diff
+   and Mission details: those sizes are DERIVED, not measured. Comments' reference is at 1280, so its numbers apply as measured at every width. */
+.di-scan-stage {
+  --stage-hdr-k: 1;
+}
+@media (max-width: 1499px) {
+  .di-scan-stage {
+    --stage-hdr-k: 0.72;
+  }
+}
+
+/* CODE DIFF (pixel-lock 03): the band is 18 px from the top, the Back box sits 12 px in, the mark is the product's own asset scaled uniformly to 36 px high, a 1 x 38
+   divider stands 21 px either side, the crumb items are 19 px apart, the four tool glyphs are 28 to 32 px of ink on a 70 px pitch with the last 40 px from the edge,
+   and a 1 px rule closes the band at y 82. Back is KEPT (46 x 51, the source requires it; the lock's >> is 49 x 50). The tabs are a required addition the lock does
+   not draw and stay where the wrap rules above put them. */
+.di-scan-stage[data-view='diff'] .di-scan-stage-bar {
+  padding: calc(18px * var(--stage-hdr-k)) calc(21.5px * var(--stage-hdr-k))
+    calc(13px * var(--stage-hdr-k)) calc(12px * var(--stage-hdr-k));
+  border-bottom: 1px solid var(--di-scan-line);
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-lead {
+  gap: 0;
+}
+/* VISUAL FOLLOW-UP V2 (pixel-lock 03): Code Diff's Back is a violet outline with a dark halo and a faint glow around a tinted interior, not the raised box Home draws. View-scoped: the base .di-scan-back rule (the Home control) is not touched. The ring is a CANDIDATE token mix
+   awaiting side-by-side comparison with the lock: the SECONDARY ACCENT (--di-accent-b, the accent family's brighter violet, which index.css also aliases as the state underline --di-scan-underline that this stylesheet's own test requires on the current sibling) blended toward the page. index.css grounds the fill-only rule in the contrast of the specific Home purple on the page, not in a ban on every violet-family perimeter. No exact match is claimed or excluded. The interior is the nearest REVIEWED background
+   token. The control keeps its visible chevron, its accessible name and the generic focus ring; this ring is decorative and is never the focus indicator. Radius 6 is DERIVED from the lock crop, not measured. */
+.di-scan-stage[data-view='diff'] .di-scan-back {
+  border: 2px solid color-mix(in srgb, var(--di-accent-b) 70%, var(--di-scan-canvas));
+  border-radius: 6px;
+  background: var(--di-scan-well);
+  box-shadow:
+    0 0 0 1px var(--di-black),
+    0 0 10px color-mix(in srgb, var(--di-accent-b) 25%, transparent);
+}
+.di-scan-stage[data-view='diff'] .di-scan-back svg {
+  /* the chevron inside Back at the lock's glyph SIZE (its ink is 16 high; the lock's >> is a different control and a different shape: Back keeps its single chevron) */
+  width: calc(23px * var(--stage-hdr-k));
+  height: calc(23px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-mark {
+  margin-left: calc(24px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-mark svg {
+  width: auto;
+  height: calc(36px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-crumb {
+  box-sizing: content-box;
+  height: calc(38px * var(--stage-hdr-k));
+  margin-left: calc(20px * var(--stage-hdr-k));
+  padding-left: calc(21px * var(--stage-hdr-k));
+  border-left: 1px solid var(--di-scan-line);
+  gap: calc(19px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-tools {
+  gap: calc(26px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-tools .di-scan-icon-button {
+  width: calc(44px * var(--stage-hdr-k));
+  height: calc(44px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='Find a file'] svg {
+  width: calc(38px * var(--stage-hdr-k));
+  height: calc(38px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='Copy the diff'] svg {
+  width: calc(41px * var(--stage-hdr-k));
+  height: calc(41px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='Settings'] svg {
+  width: calc(33px * var(--stage-hdr-k));
+  height: calc(33px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='diff'] .di-scan-header-tools [aria-label='More'] svg {
+  width: calc(36px * var(--stage-hdr-k));
+  height: calc(36px * var(--stage-hdr-k));
+}
+
+/* COMMENTS (v3 07, measured at 1280 x 720, applied as measured at every width): NO mark, NO crumb (so no Location landmark), NO band: a small muted text link "<- Back"
+   whose ink is 41 x 9 px at 30 px in and 25 px down, then the page's own heading (ink top 58 px) and the Mission name (ink top 86 px). The sibling tabs are a REQUIRED
+   addition the reference does not draw and stay at the right of the Back row. */
+.di-scan-stage[data-view='comments'] .di-scan-stage-bar {
+  align-items: flex-start;
+  padding: 21px 22px 0 29px;
+}
+.di-scan-stage[data-view='comments'] .di-scan-back {
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+.di-scan-stage[data-view='comments'] .di-scan-back:hover {
+  color: var(--di-scan-text);
+}
+/* VISUAL FOLLOW-UP V4 (v3 07): the arrow is a small thin stroked SVG in the link's own colour (currentColor), set beside the word; the gap is DERIVED from the reference crop, not measured. */
+.di-scan-stage[data-view='comments'] .di-scan-back-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.di-scan-stage[data-view='comments'] .di-scan-siblings {
+  /* the tabs are taller (36 px) than the 16 px Back line: they are CENTRED on the link's line and must not set the band's height (the reference's heading starts right
+     under the link), so they hang above and below it by 10 px each; and they must paint ABOVE the page or the lower part of each tab cannot be pressed (found by
+     diScanPassB's click on the Code Diff tab) */
+  position: relative;
+  z-index: 1;
+  margin-top: -10px;
+  margin-bottom: -10px;
+}
+.di-scan-stage[data-view='comments'] .di-scan-comments-view {
+  padding-top: 12px;
+}
+
+/* MISSION DETAILS (pixel-lock 02): Back stays where it is (21 to 22 px in, 28 px down, 46 x 51); the mark is 45 px wide, 30 px after Back; World is 27 px after the mark;
+   the crumb items are 16 px apart; no divider, no rule. The mark is Mission's OWN drawing (DiMarkMission, 45 x 35, traced from the shape the lock's violet colour predicate selects; the lock's ink box is 36 high because the ink function also
+   takes a top row of three faint non-violet pixels, which are not drawn). The stage header chooses it on this view alone, and the height is `auto`, so the box keeps the drawing's own aspect: the 45 x 29 asset is never stretched. */
+.di-scan-stage[data-view='mission'] .di-scan-header-lead {
+  gap: 0;
+}
+/* VISUAL FOLLOW-UP V1 (pixel-lock 02): Mission details' Back is a soft 2 px ring on an interior close to the page colour, not the raised box Home draws. View-scoped: the base .di-scan-back rule (the Home control) is not touched. Ring, fill and radius are read from the
+   lock crop within the shared palette (ring = the raised-control token, interior = the page token); the radius is DERIVED from the crop, not measured. The ring is a decorative boundary: the chevron, the accessible name and the generic focus ring identify and operate the control. */
+.di-scan-stage[data-view='mission'] .di-scan-back {
+  border: 2px solid var(--di-scan-raised);
+  border-radius: 6px;
+  background: var(--di-scan-canvas);
+}
+.di-scan-stage[data-view='mission'] .di-scan-back svg {
+  /* the SAME chevron the lock draws, at the lock's size (its ink is 26 high) */
+  width: calc(37px * var(--stage-hdr-k));
+  height: calc(37px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='mission'] .di-scan-mark {
+  margin-left: calc(30px * var(--stage-hdr-k));
+}
+.di-scan-stage[data-view='mission'] .di-scan-mark svg {
+  width: calc(45px * var(--stage-hdr-k));
+  height: auto;
+}
+.di-scan-stage[data-view='mission'] .di-scan-crumb {
+  margin-left: calc(27px * var(--stage-hdr-k));
+  gap: calc(16px * var(--stage-hdr-k));
+}
+
+/* the diff pane: the file tree and the editor side by side, the status bar beneath BOTH, spanning the whole Mission
+   content from the rail's edge (pixel-lock 03 spans it under the tree too) */
+.di-scan-ide {
+  flex-direction: column;
+}
+.di-scan-ide-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+/* a changed line keeps its diff colour on EVERY token, so a changed comment reads red or green as in pixel-lock 03 (the
+   flat token colours would otherwise win over the line's); an unchanged comment keeps its muted note colour */
+.di-scan-diff-line[data-kind='add'] .di-scan-code span,
+.di-scan-diff-line[data-kind='del'] .di-scan-code span {
+  color: inherit;
+}
+
+/* the first hunk header in the Old/New row */
+.di-scan-gutter-head {
+  background: var(--di-scan-raised);
+}
+.di-scan-gutter-head .di-scan-hunk {
+  /* the gutter's number spans align right; the hunk header starts the code column, as pixel-lock 03 draws it */
+  padding: 0 12px;
+  color: var(--di-scan-hunk);
+  text-align: left;
+}
+.di-scan-tree-note {
+  margin: 4px 16px;
+}
+
+/* B-V1: at the pixel-lock size (1500 px and wider; measured at 1672 x 941 against pixel-lock 03) the diff editor, the
+   file tree and the status bar take the reference's scale: code rows 39 px apart, file rows 44 px, the status bar 82 px
+   tall. Below 1500 px the v3 06 compact scale stays (the same breakpoint Mission details uses). */
+@media (min-width: 1500px) {
+  .di-scan-tree {
+    width: 354px;
+  }
+  .di-scan-tree-head {
+    padding: 30px 24px 16px;
+    font-size: 20px;
+  }
+  .di-scan-tree-row {
+    min-height: 44px;
+    gap: 12px;
+    font-size: 22px;
+  }
+  .di-scan-tree-row svg {
+    width: 20px;
+    height: 20px;
+  }
+  .di-scan-editor-bar {
+    min-height: 79px;
+    padding: 0 18px;
+  }
+  .di-scan .di-scan-editor-path {
+    font-size: 22px;
+  }
+  .di-scan-unified select {
+    height: 48px;
+    padding: 0 14px;
+    font-size: 20px;
+  }
+  .di-scan-editor-body {
+    padding: 0 0 16px;
+    font-size: 20px;
+    line-height: 39px;
+  }
+  /* the reference leaves an 11 px gap under the Old/New row before the first code row */
+  .di-scan-gutter-head {
+    margin-bottom: 14px;
+  }
+  .di-scan-gutter-head,
+  .di-scan-diff-line {
+    grid-template-columns: 67px 67px minmax(0, 1fr);
+  }
+  .di-scan-gutter-head {
+    min-height: 42px;
+    padding: 0;
+    font-size: 16px;
+  }
+  .di-scan-diff-line {
+    min-height: 39px;
+    /* the row separator, drawn INSIDE the row so the 39 px stride does not move; one under the last row too */
+    box-shadow: inset 0 -1px 0 var(--di-line-soft);
+  }
+  /* the gutter's column rules (Old | New | code), also inset */
+  .di-scan-diff-line .di-scan-ln,
+  .di-scan-gutter-head > span:nth-child(-n + 2) {
+    box-shadow: inset -1px 0 0 var(--di-scan-line);
+  }
+  .di-scan-statusbar {
+    height: 82px;
+    gap: 32px;
+    padding: 0 24px;
+    font-size: 21px;
+  }
+}

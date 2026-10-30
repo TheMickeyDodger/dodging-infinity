@@ -165,6 +165,8 @@ function summary(over: Partial<MrSummary> = {}): MrSummary {
     terminal: false,
     actions: ['decide'],
     notice: null,
+    attestedAt: null,
+    cancelledAt: null,
     ...over,
   };
 }
@@ -437,11 +439,13 @@ describe('one decision observed twice counts once — only when the evidence pro
     const plain = hideKey(item.entry);
     expect(item.hideKey).toBe(`${plain}\u0000${item.panel.signature}`);
     expect(build(entry, [summary()], new Set([plain])).visible).toHaveLength(1);
-    // the item's own key hides it, counts it hidden and takes it off the attention count
+    // the item's own key hides it from the LIST and counts it hidden, but leaves the attention count where it was: hiding is a view preference that resolves and dismisses nothing,
+    // so it cannot change how many things need the person (the count and its words are pinned across every kind of item in diReceptionHideCount.test.ts)
     const hidden = build(entry, [summary()], new Set([item.hideKey]));
     expect(hidden.visible).toEqual([]);
     expect(hidden.hiddenCount).toBe(1);
-    expect(hidden.attention).toBe(0);
+    expect(hidden.attention).toBe(build(entry, [summary()], new Set()).attention);
+    expect(hidden.attention).toBe(1);
     // a new PANEL signature (the request's digest) resurfaces it, and so does new MISSION content (its signature)
     expect(build(entry, [summary({ digest: 'c'.repeat(64) })], new Set([item.hideKey])).visible).toHaveLength(1);
     expect(build({ ...entry, signature: 's2' }, [summary()], new Set([item.hideKey])).visible).toHaveLength(1);

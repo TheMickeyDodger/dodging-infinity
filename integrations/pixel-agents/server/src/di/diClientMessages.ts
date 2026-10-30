@@ -11,13 +11,20 @@
  * office-local preferences (layout, seats, display toggles) under the DI state
  * root (see stateRoot.ts), or READ by an admitted reference (evidence, code review).
  *
- * ONE deliberate, bounded exception (item 4, Mission requests): `diMissionRequest`. It is not
- * passive: it can submit a proposal, relay a person's typed decision and ask for a run to start.
- * It is still not a shell, a PTY, a filesystem read or a command route. It is one of eleven closed
- * operations, each with its own exact keys and reference-shaped ids, relayed by the server (which
- * alone holds the token) to the request panel's loopback adapter. That adapter, not this module,
- * binds a decision to the displayed Mission, revision and digest and records it as an operator
- * attestation that is NOT independently verified; this module never decides anything.
+ * TWO deliberate, bounded exceptions, each relayed by the server (which alone holds its token) to
+ * a loopback adapter a person starts; this module never decides anything:
+ *
+ * - item 4, Mission requests: `diMissionRequest`. It is not passive: it can submit a proposal,
+ *   relay a person's typed decision (or, by owner decision (c), their decline, rejection or change
+ *   request) and ask for a run to start. It is still not a shell, a PTY, a
+ *   filesystem read or a command route. It is one of fourteen closed operations, each with its own
+ *   exact keys and reference-shaped ids, relayed to the request panel's adapter. That adapter, not
+ *   this module, binds a decision to the displayed Mission, revision and digest and records it as
+ *   an operator attestation that is NOT independently verified.
+ * - b2b, the delivery bridge: `diDeliveryRequest`. Two closed operations: `status`, a read, and
+ *   `advanceOnce`, which asks the office delivery adapter for AT MOST ONE step, carrying the exact
+ *   binding of that step as the adapter displayed it. pr_delivery's expected-step guard, not this
+ *   module, admits or refuses it before any effect. No op advances further, revokes, mints or retries.
  */
 
 import type { AmbientSpriteSheet } from '../../../core/src/messages.js';
@@ -30,11 +37,16 @@ import { PALETTE_COUNT } from '../constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../layoutPersistence.js';
 import { readAmbientState, writeAmbientState } from './ambientStatePersistence.js';
 import { readCityPresentation, writeCityPresentation } from './cityPresentationPersistence.js';
-import { parseCodeReviewRead } from './codeReview.js';
+import { parseCodeReviewRead, parseMissionReviewRead, unadmittedReadReply } from './codeReview.js';
+import { invalidRequestReply, notConfiguredReply, parseDeliveryRequest } from './deliveryRequests.js';
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
 import { readDiSeatPreferences, writeDiSeatPreferences } from './diSeatPreferencesPersistence.js';
 import { parseEvidenceRead } from './evidenceContent.js';
-import { parseMissionRequest } from './missionRequests.js';
+import {
+  invalidMissionRequestReply,
+  panelNotConfiguredReply,
+  parseMissionRequest,
+} from './missionRequests.js';
 
 export type DiSend = (message: Record<string, unknown>) => void;
 
@@ -59,6 +71,11 @@ export interface DiMessageContext {
    * connection only; absent, the message is refused.
    */
   missionRequest?: (msg: Record<string, unknown>, send: DiSend) => void;
+  /**
+   * b2b: the office delivery adapter (DiDeliveryRequests.handle). It answers the asking
+   * connection only, with one adapter request at most; absent, the message is refused.
+   */
+  deliveryRequest?: (msg: Record<string, unknown>, send: DiSend) => void;
 }
 
 /** What the handler did with one message (returned for tests and diagnostics). */
@@ -79,7 +96,9 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'saveDiSeatPreferences',
   'diEvidenceRead',
   'diCodeReviewRead',
+  'diCodeReviewMissionRead',
   'diMissionRequest',
+  'diDeliveryRequest',
 ] as const;
 
 /**
@@ -238,8 +257,12 @@ export function handleDiClientMessage(
     // item 3 (live code review): a READ, by an admitted reference only — never a path, root, ref
     // or git option. Nothing is written; the office answers this connection with exactly one
     // diCodeReview.
+    // THE CONTRACT: one answer on every path, a refusal included. A read refused unread is answered when it can be named (its shape is exactly a
+    // read's: codeReview.ts unadmittedReadReply); one that cannot be named gets nothing, as an uncorrelatable delivery request gets nothing.
     case 'diCodeReviewRead': {
       if (parseCodeReviewRead(msg) === null) {
+        const reply = unadmittedReadReply(msg);
+        if (reply !== null) send(reply as unknown as Record<string, unknown>);
         return { refused: 'diCodeReviewRead is not exactly an admitted reference' };
       }
       if (!ctx.readCodeReview) return { refused: 'no code review reader in this office' };
@@ -247,14 +270,59 @@ export function handleDiClientMessage(
       return 'handled';
     }
 
-    // item 4 (Mission requests): one of eleven closed operations, relayed to the request panel's
+    // The same read for a FINISHED Mission, by a Mission-level reference (no member): the Mission, its task and the listing token the office gave
+    // with the Mission's own offer. Never a path, root, ref or git option. Answered with exactly one diCodeReview.
+    case 'diCodeReviewMissionRead': {
+      if (parseMissionReviewRead(msg) === null) {
+        const reply = unadmittedReadReply(msg);
+        if (reply !== null) send(reply as unknown as Record<string, unknown>);
+        return { refused: 'diCodeReviewMissionRead is not exactly an admitted reference' };
+      }
+      if (!ctx.readCodeReview) return { refused: 'no code review reader in this office' };
+      ctx.readCodeReview(msg, send);
+      return 'handled';
+    }
+
+    // item 4 (Mission requests): one of fourteen closed operations, relayed to the request panel's
     // loopback adapter. The shape is checked HERE, before anything is sent, and again by the
-    // handler that relays it; a decision is the person's typed word, never anything generated.
+    // handler that relays it; a decision is the person's typed word (or their chosen non-approval
+    // outcome and its reason), never anything generated.
+    // EVERY diMissionRequest inside the correlation domain (a valid type, seq and op) gets EXACTLY ONE correlated reply: the relay
+    // sends it, or, when this office refuses the message itself, this case sends it, built by the relay's own reply functions. A
+    // message outside the domain gets none, and no seq or op is invented for it.
     case 'diMissionRequest': {
       const parsed = parseMissionRequest(msg);
-      if (!parsed.ok) return { refused: `diMissionRequest ${parsed.reason}` };
-      if (!ctx.missionRequest) return { refused: 'no request panel in this office' };
+      if (!parsed.ok) {
+        const refusal = invalidMissionRequestReply(parsed);
+        if (refusal !== null) send(refusal as unknown as Record<string, unknown>);
+        return { refused: `diMissionRequest ${parsed.reason}` };
+      }
+      if (!ctx.missionRequest) {
+        send(panelNotConfiguredReply(parsed) as unknown as Record<string, unknown>);
+        return { refused: 'no request panel in this office' };
+      }
       ctx.missionRequest(msg, send);
+      return 'handled';
+    }
+
+    // b2b (the delivery bridge): one of two closed operations, relayed to the office delivery adapter's
+    // loopback interface. The shape is checked HERE, before anything is sent, and again by the relay;
+    // advanceOnce asks for at most one step, which pr_delivery's expected-step guard admits or refuses.
+    // THE CORRELATION DOMAIN (round 48; owed item 1): every diDeliveryRequest whose type, seq and op are valid gets EXACTLY
+    // ONE correlated reply: the relay sends it, or, when this office refuses the message itself, this case sends it, built by
+    // the relay's own reply functions. A message without a valid seq or op cannot be correlated: no reply, nothing invented.
+    case 'diDeliveryRequest': {
+      const parsed = parseDeliveryRequest(msg);
+      if (!parsed.ok) {
+        const refusal = invalidRequestReply(parsed);
+        if (refusal !== null) send(refusal as unknown as Record<string, unknown>);
+        return { refused: `diDeliveryRequest ${parsed.reason}` };
+      }
+      if (!ctx.deliveryRequest) {
+        send(notConfiguredReply(parsed) as unknown as Record<string, unknown>);
+        return { refused: 'no delivery adapter in this office' };
+      }
+      ctx.deliveryRequest(msg, send);
       return 'handled';
     }
 

@@ -2,9 +2,9 @@
  * HTTP client for the Mission request panel's local adapter (`dimission_panel.py`).
  *
  * It is the ONLY way the DI server reaches the adapter, and the adapter is the only thing it
- * reaches. It issues exactly the adapter's twelve routes, only to 127.0.0.1, with the per-launch
+ * reaches. It issues exactly the adapter's fifteen routes, only to 127.0.0.1, with the per-launch
  * bearer token read from the adapter's discovery file and a Host header naming the same
- * listener. It sends no Origin and no cookie. A path that is not one of the twelve, or a body
+ * listener. It sends no Origin and no cookie. A path that is not one of the fifteen, or a body
  * larger than the adapter accepts, is refused HERE before a socket exists. It never spawns,
  * starts or imports the adapter. Every failure is a typed problem code; none carries the token.
  *
@@ -53,6 +53,10 @@ const ROUTES: ReadonlyArray<{ method: 'GET' | 'POST'; path: RegExp }> = [
   { method: 'POST', path: new RegExp(`^/requests/${REF}/offer$`) },
   { method: 'POST', path: new RegExp(`^/requests/${REF}/decide$`) },
   { method: 'POST', path: new RegExp(`^/requests/${REF}/check-approval$`) },
+  // (c): the person's decline, rejection or change request, on exactly the offer shown.
+  { method: 'POST', path: new RegExp(`^/requests/${REF}/decline$`) },
+  { method: 'POST', path: new RegExp(`^/requests/${REF}/reject$`) },
+  { method: 'POST', path: new RegExp(`^/requests/${REF}/request-changes$`) },
   { method: 'POST', path: new RegExp(`^/requests/${REF}/withdraw$`) },
   { method: 'POST', path: new RegExp(`^/requests/${REF}/run$`) },
 ];
@@ -62,7 +66,10 @@ export function isPanelRoute(call: PanelCall): boolean {
 }
 
 export type PanelTransportProblem =
-  /** Nothing was sent: the adapter is not listening. */
+  /**
+   * Nothing was sent: nothing answered at the address in the discovery file. That does not establish whether the adapter runs (it
+   * may be elsewhere, or the address stale); only that this address took no connection.
+   */
   | 'panel_unreachable'
   /** The request may have been applied; its outcome is UNKNOWN. */
   | 'panel_timeout'

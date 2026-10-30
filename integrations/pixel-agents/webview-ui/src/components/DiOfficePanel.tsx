@@ -15,6 +15,7 @@ import type {
   DiRuntimeAgents,
 } from '../../../core/src/messages.js';
 import { DI_PANEL_WIDTH_PX, DI_SELECTION_POLL_MS } from '../constants.js';
+import type { DiDeliveryControl } from '../hooks/useDiDelivery.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import type { DiCodeReviewAccess } from './DiCodeReviewEntry.js';
 import { DiCodeReviewEntry } from './DiCodeReviewEntry.js';
@@ -23,6 +24,7 @@ import {
   statesReviewNotOffered,
   unavailableWords,
 } from './diCodeReviewModel.js';
+import { DiDeliveryEntry } from './DiDeliveryEntry.js';
 import type { DiEvidenceAccess } from './DiEvidenceLibrary.js';
 import { DiEvidenceLibrary } from './DiEvidenceLibrary.js';
 import type { DiKeptView } from './diMinimize.js';
@@ -90,7 +92,6 @@ import type { DiOpStatusResult } from './diOperationalStatus.js';
 import {
   backendNormalWait,
   memberTerminalNotes,
-  missionLabel,
   missionObjective,
   missionStatus,
 } from './diOperationalStatus.js';
@@ -99,6 +100,7 @@ import {
   agentNow,
   agentPhrase,
   firstLayerName,
+  inspectorHeading,
   missionResults,
   missionTitle,
   navigationOrientation,
@@ -109,11 +111,19 @@ import {
   teamSummary,
   viewLimits,
 } from './diPlainSummary.js';
+import { earlierFromPanel } from './diReceptionEarlier.js';
 import { DiReceptionInbox } from './DiReceptionInbox.js';
 import type { DiReceptionInboxAccess } from './diReceptionInboxState.js';
-import { attentionLine, buildInbox, panelSourceOf } from './diReceptionItems.js';
+import {
+  attentionLine,
+  buildInbox,
+  panelSourceOf,
+  undeterminedDeliveries,
+} from './diReceptionItems.js';
 import { useRovingFocus } from './diRovingFocus.js';
-import { DI_SCAN_LOCK, scanRowsFromOffice } from './diScanModel.js';
+import { DI_SCAN_LOCK, missionsRead, scanRowsFromOffice } from './diScanModel.js';
+import type { DiReceptionCard } from './diScanPagesModel.js';
+import { receptionFromInbox } from './diScanPagesModel.js';
 import { DiScanPanel } from './DiScanPanel.js';
 import { useStickyScrollPad } from './diStickyPad.js';
 
@@ -142,8 +152,19 @@ interface DiOfficePanelProps {
   /** item 4: the Mission request workspace seam (absent: no entry is drawn). */
   mission?: DiMissionRequestAccess | null;
   /**
-   * The reception inbox seam (owned by App): the sidebar's attention entry and the in-world desk are
-   * two entrances to ONE dialog. Absent: the attention line is words only and no inbox exists.
+   * b3: the standalone delivery panel's session, passed only by test harnesses (absent: no entry is drawn). The panel is kept for
+   * harnesses only, with no product entry (owner decision, 2026-10-29), so App does not pass it. Drawn on the operational face.
+   */
+  delivery?: DiDeliveryControl | null;
+  /**
+   * M8: Mission details' OWN delivery session (owned by App; linked mode: its one id is the shown Mission's delivery link, never
+   * typed). Passed to the scan face's Delivery under Swarm. Absent: Delivery says this window has no delivery session.
+   */
+  missionDelivery?: DiDeliveryControl | null;
+  /**
+   * The reception inbox seam (owned by App): ONE dialog, opened from the panel chrome only (the rail's
+   * Reception on the scan face, the attention entry on the operational list). Absent: the attention line
+   * is words only and no inbox exists.
    */
   receptionInbox?: DiReceptionInboxAccess | null;
   /**
@@ -151,10 +172,10 @@ interface DiOfficePanelProps {
    * `operational` keeps the previous list for harnesses that still assert it. Absent: operational.
    */
   presentation?: 'scan' | 'operational';
-  /** Opens Settings. Absent: the scan header's settings icon does nothing. */
+  /** Opens Settings. Absent: the scan header's settings icon does nothing, and the rail's Settings says why. */
   onOpenSettings?: () => void;
-  /** Focus a drawn character's terminal. The scan Herdr panes call this. */
-  onFocusAgent?: (id: number) => void;
+  /** AC-4.4-26, scan face: a Mission to open because its agent or label was clicked in the world (`seq` makes each click count). */
+  worldOpen?: { ref: string; seq: number } | null;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -196,6 +217,9 @@ function Observed({ value }: { value: DiObservedValue }) {
 }
 
 /** True only in an EXPLICIT fixture preview: every LIVE in the panel is then qualified. */
+/** The scan face hides no Reception item: its inbox model is built with this empty set. */
+const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
+
 const FixtureMode = createContext(false);
 
 function LiveBadge({ live, reason }: { live: boolean; reason: string | null }) {
@@ -1651,7 +1675,6 @@ type InspectorSection = 'evidence';
 /** What the inspector opens on: one Mission (from its card), or the current selection (the dock). */
 type InspectorTarget =
   { kind: 'mission'; missionRef: string; section?: InspectorSection } | { kind: 'selection' };
-
 /**
  * feature13 — the full-size INSPECTOR. A real modal dialog (portal to <body>) with the code review
  * dialog's mechanics (diModal.ts): #root inert, focus in on open and returned to the control that
@@ -1722,20 +1745,7 @@ function OfficeInspector({
     statesReviewNotOffered(record.target.member)
       ? record.target.member.memberRef
       : undefined;
-  const heading =
-    record?.target.kind === 'member'
-      ? firstLayerName(state, {
-          kind: 'member',
-          mission: record.target.mission,
-          member: record.target.member,
-        })
-      : record?.target.kind === 'runtime' || record?.target.kind === 'unverified'
-        ? firstLayerName(state, { kind: 'runtime', agent: record.target.agent })
-        : mission
-          ? missionTitle(mission).kind === 'no-goal'
-            ? missionLabel(mission)
-            : missionTitle(mission).text
-          : 'This record is no longer in the office state';
+  const heading = inspectorHeading(state, record, mission);
   /** A Mission's short source-qualified ref: lookalikes never share a heading. */
   const missionShortRef =
     record === null && mission
@@ -2356,10 +2366,12 @@ function DiOfficePanelBody({
   evidence = null,
   review = null,
   mission = null,
+  delivery = null,
+  missionDelivery = null,
   receptionInbox = null,
   presentation = 'operational',
   onOpenSettings,
-  onFocusAgent,
+  worldOpen = null,
 }: DiOfficePanelProps) {
   const [selectedId, setSelectedId] = useState<number | null>(officeState.selectedAgentId);
   useEffect(() => {
@@ -2480,7 +2492,8 @@ function DiOfficePanelBody({
     if (!fixtureNote || scroller === null || note === null) return;
     const clear = (event: FocusEvent) => {
       const target = event.target;
-      if (!(target instanceof HTMLElement) || target === scroller || !scroller.contains(target)) return;
+      if (!(target instanceof HTMLElement) || target === scroller || !scroller.contains(target))
+        return;
       const overlap = note.getBoundingClientRect().bottom - target.getBoundingClientRect().top;
       if (overlap > 0.5) scroller.scrollTop -= overlap + 4;
     };
@@ -2609,7 +2622,7 @@ function DiOfficePanelBody({
         }
       : undefined;
 
-  /** The reception inbox: ONE dialog for both entrances, drawn even while the panel is collapsed. */
+  /** The reception inbox: ONE dialog, drawn even while the panel is collapsed. */
   const receptionDialog =
     receptionInbox?.open === true
       ? createPortal(
@@ -2719,7 +2732,8 @@ function DiOfficePanelBody({
     const scanLock =
       typeof window !== 'undefined' &&
       new URLSearchParams(window.location.search).get('di-scan-lock') === '1';
-    const scanRows = scanLock ? DI_SCAN_LOCK : scanRowsFromOffice(state);
+    // "awaiting a decision" is read from the request panel's own requests, tied to a Mission by its Mission Core id (M9 / R4)
+    const scanRows = scanLock ? DI_SCAN_LOCK : scanRowsFromOffice(state, panelSource);
     const selectScanRow = (id: string) => {
       const picked = missions.missions.find((item) => item.missionRef === id);
       const drawn =
@@ -2730,6 +2744,46 @@ function DiOfficePanelBody({
       mission !== null && !requestsUnavailable(mission.state)
         ? (opener: HTMLElement) => mission.open('ask', opener)
         : undefined;
+    // G1/G2 "Continue in the request workspace": put the ask in the workspace's own Ask draft (only when New Mission found it empty) and open it there; nothing is sent, the workspace stays the
+    // one driver of the request state, and its human gate is where the person decides
+    const setComposer = mission?.setComposer;
+    const continueAsk =
+      mission !== null && !requestsUnavailable(mission.state) && setComposer !== undefined
+        ? (transfer: string | null, opener: HTMLElement) => {
+            if (transfer !== null) setComposer(transfer);
+            mission.open('ask', opener);
+          }
+        : undefined;
+    // The scan face's ONE Reception is the full page (lead Q2, D-10): it reads an inbox model built with NOTHING hidden
+    // (the scan face never hides an action item, AC-4.7-06), and the rail badge reads the same source (AC-4.7-16).
+    const scanInbox = buildInbox(state.reception, panelSource, missions.missions, NOTHING_HIDDEN);
+    const scanReception = state.reception
+      ? receptionFromInbox(
+          scanInbox,
+          state.reception,
+          scanRows,
+          undeterminedDeliveries(state.reception) > 0,
+          earlierFromPanel(panelSource),
+        )
+      : null;
+    // A Reception item whose source names the request workspace opens it there (view only; nothing is sent).
+    const openRequestItem =
+      mission?.openConversation && mission.openRequest
+        ? (card: DiReceptionCard, opener: HTMLElement) => {
+            if (card.request?.requestRef) mission.openRequest?.(card.request.requestRef, opener);
+            else if (card.request?.conversationId)
+              mission.openConversation?.(card.request.conversationId, opener);
+          }
+        : undefined;
+    // M9 / R4 "Decide in the request panel": opens the existing workspace on that proposal, whose own decision block records the exact approval (a navigation; nothing is decided here).
+    const openDecision = mission?.openRequest
+      ? (requestRef: string, opener: HTMLElement) => mission.openRequest?.(requestRef, opener)
+      : undefined;
+    // R10 "Evidence and review": the EXISTING evidence library for that Mission, as the office lists it, with the same content-read seam as the operational face (a read only when a person chooses an artifact)
+    const renderEvidence = (missionRef: string) => {
+      const listed = missions.missions.find((item) => item.missionRef === missionRef);
+      return listed?.evidence ? <DiEvidenceLibrary mission={listed} access={evidence} /> : null;
+    };
     return (
       <>
         {restoreControl}
@@ -2759,42 +2813,29 @@ function DiOfficePanelBody({
             minimizeRef={minimizeRef}
             onMinimize={minimizePanel}
             onSelect={selectScanRow}
-            onNewMission={openNewMission}
+            onOpenRequestWorkspace={openNewMission}
+            askDraft={mission?.state.composer ?? ''}
+            onContinueAsk={continueAsk}
             onOpenSettings={onOpenSettings}
-            onOpenReception={
-              receptionInbox ? (opener) => receptionInbox.openFrom(opener) : undefined
-            }
-            onFocusAgent={onFocusAgent}
-            onOpenReview={
-              review
-                ? (id, opener) => {
-                    const picked = missions.missions.find((item) => item.missionRef === id);
-                    const member = picked?.members.members.find(
-                      (item) =>
-                        item.codeReview?.state === 'offered' &&
-                        item.codeReview.listing !== null &&
-                        item.codeReview.taskId !== null,
-                    );
-                    const offer = member?.codeReview;
-                    if (!member || offer === undefined || offer.listing === null || offer.taskId === null)
-                      return;
-                    review.open(
-                      {
-                        missionRef: id,
-                        memberRef: member.memberRef,
-                        taskId: offer.taskId,
-                        listing: offer.listing,
-                        agentName: member.agent,
-                      },
-                      opener,
-                    );
-                  }
-                : undefined
-            }
-            receptionAttention={attention !== null && attention.count > 0}
+            openRequest={worldOpen}
+            reception={scanReception}
+            onOpenRequestItem={openRequestItem}
+            onOpenDecision={openDecision}
+            renderEvidence={renderEvidence}
+            // B-H1: an unread Missions list is said as unread; B-E1: fixture mode stays labelled on every screen
+            missionsRead={missionsRead(missions)}
+            // whenever the office is a fixture preview, wherever the dock puts the world's own label: a stage covers both
+            fixtureBanner={state.fixtureMode === true ? DI_FIXTURE_BANNER : null}
+            // Stage 4: the scan Code Diff reads the selected Mission through the ONE review session: nested editor, no modal, no path
+            reviewSession={review?.session ?? null}
+            onReviewBegin={review?.begin}
+            onReviewEnd={review?.end}
+            onReviewChoose={review?.choose}
+            // M8: Delivery under Swarm reads the ONE delivery the catalog links to the shown Mission, through its own session
+            missionDelivery={missionDelivery}
           />
         </aside>
-        {receptionDialog}
+        {/* no inbox dialog on the scan face: the rail's Reception page is its one entrance (lead Q2, D-10) */}
       </>
     );
   }
@@ -2885,7 +2926,7 @@ function DiOfficePanelBody({
                       data-testid="di-open-reception"
                       data-attention={attention.count > 0 ? 'true' : undefined}
                       onClick={(event) => receptionInbox.openFrom(event.currentTarget)}
-                      title="View only: opens the reception inbox, the same one as the reception desk in the office"
+                      title="View only: opens the reception inbox"
                     >
                       {attention.count > 0 && (
                         <span className="di-op-attn-glyph" aria-hidden="true">
@@ -2913,6 +2954,9 @@ function DiOfficePanelBody({
           {!(mission !== null && requestsUnavailable(mission.state)) && (
             <DiMissionRequestEntry access={mission} />
           )}
+          {/* b3: the standalone delivery panel's entry, beside item 4, drawn only when a control is passed. Test harnesses pass one;
+            the product (App) does not: the panel is kept for harnesses only, with no product entry (owner decision, 2026-10-29). */}
+          <DiDeliveryEntry control={delivery} />
         </div>
 
         <FindSection state={state} query={query} onQuery={setQuery} onSelect={selectRecord} />
@@ -2985,9 +3029,7 @@ function DiOfficePanelBody({
                     <option value="">All Missions ({missions.missions.length})</option>
                     {missions.missions.map((m) => (
                       <option key={m.missionRef} value={m.missionRef}>
-                        {missionTitle(m).kind === 'no-goal'
-                          ? missionLabel(m)
-                          : `${missionTitle(m).text} (${shortRefs.get(m.missionRef)})`}
+                        {`${missionTitle(m).text} (${shortRefs.get(m.missionRef)})`}
                       </option>
                     ))}
                   </select>

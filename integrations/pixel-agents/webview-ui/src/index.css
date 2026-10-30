@@ -8,6 +8,16 @@
   src: url('/fonts/FSPixelSansUnicode-Regular.ttf') format('truetype');
 }
 
+/* Inter, the Home face of the DI chrome: the official Inter 4.1 variable font (SIL OFL 1.1, public/fonts/Inter-OFL.txt),
+   bundled byte for byte and served with the app like the pixel face above. Nothing is fetched from another origin. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/InterVariable.woff2') format('woff2');
+}
+
 :root {
   /* Core palette */
   --color-bg: #1e1e2e;
@@ -49,35 +59,40 @@
    * tables, navigation, composer). The pixel world keeps the tokens above: FS Pixel Sans, square
    * borders and the hard offset shadow. Each chrome stylesheet names its palette as aliases of these.
    *
-   * From the approved prototype (DI World Prototype/app.css): every alpha text colour there is given
-   * here as the SOLID colour it shows on --di-bg, and two values are corrected for WCAG 2.2 AA. Faint
-   * text is #9a9aa6 (the prototype's #7d7d86 is 4.0:1 on --di-bg), and controls get a 3:1 edge
-   * (--di-edge), which the prototype's 12% white border does not give. Colours are solid #rrggbb so the
-   * contrast tests can compute every pairing; shadows and the glow mix solid tokens, never an alpha
-   * literal.
+   * HOME is the visual source of truth (reconciled-free-ui-v3/01-home.jpg, CONTROL-MAP locked rules):
+   * background #0d0f1b, purple #552df0, warm text #e6e2d6, muted #8b919e, Inter. The other surfaces are
+   * the Home navy family, chosen so every chrome pairing still meets WCAG 2.2 AA: muted text keeps 4.5:1
+   * on every surface it is drawn on (the control surfaces are dark enough for it), and a control keeps a
+   * 3:1 edge (--di-edge) on every surface. Purple is a FILL only: about 2.75:1 on the Home background, it
+   * is never text, a control edge or a focus ring; it fills behind near-white text, and draws the wordmark.
+   * Colours are solid #rrggbb so the contrast tests can compute every pairing; shadows and the glow mix
+   * solid tokens, never an alpha literal.
    */
   /* surfaces */
-  --di-bg: #1e1e2e;
-  --di-surface: #181828;
-  --di-surface-deep: #13131f;
-  --di-control: #353445;
-  --di-control-hover: #4e4b68;
-  --di-selected: #2c2b6d;
-  --di-line: #2d2d45;
-  --di-line-soft: #252539;
-  --di-edge: #8484ac;
+  --di-bg: #0d0f1b;
+  --di-surface: #141726;
+  --di-surface-deep: #080a12;
+  --di-control: #1f2333;
+  --di-control-hover: #2d3348;
+  --di-selected: #231d52;
+  --di-line: #262a3d;
+  --di-line-soft: #1b1e2d;
+  --di-edge: #737a91;
   --di-black: #000000;
+  /* Mission details scrollbar: defined once here, consumed by .di-scan-details-body */
+  --di-details-scroll-thumb: var(--di-edge);
+  --di-details-scroll-track: var(--di-control);
   /* text */
-  --di-text: #ededee;
-  --di-muted: #aaaab0;
+  --di-text: #e6e2d6;
+  --di-muted: #8b919e;
   --di-faint: #9a9aa6;
   --di-neutral: #c6c6cf;
   --di-link: #a9a6ff;
   --di-on-accent: #ffffff;
   /* accent and focus */
-  --di-accent: #6030ff;
+  --di-accent: #552df0;
   --di-accent-b: #746fff;
-  --di-accent-hover: #6d42ff;
+  --di-accent-hover: #6236f5;
   --di-focus: #9d99ff;
   /* status words and dots (each always paired with a word and a shape) */
   --di-ok: #89d185;
@@ -91,18 +106,22 @@
   --di-perm-tint: #2a2624;
   --di-warn-tint: #2f2426;
   --di-bad-tint: #2e1d2c;
-  /* scan panel (locked 2026-10-25 finals): colours sampled from the three locked frames */
-  --di-scan-bg: #12161f;
-  --di-scan-canvas: #0a0e16;
-  --di-scan-well: #0e121c;
-  --di-scan-well-edge: #212538;
-  --di-scan-trash-edge: #3f4558;
-  --di-scan-heading: #b45cf0;
-  --di-scan-raised: #1c2028;
-  --di-scan-selected: #202024;
-  --di-scan-line: #2a3144;
-  --di-scan-text: #f4f5f7;
-  --di-scan-muted: #b7b8c4;
+  /*
+   * The scan face (the Home missions panel, the left rail and Mission details). Surfaces and text are the
+   * Home tokens above; the status pills keep the hues sampled from the locked 2026-10-25 frames, each
+   * beside its word.
+   */
+  --di-scan-bg: var(--di-bg);
+  --di-scan-canvas: var(--di-bg);
+  --di-scan-well: var(--di-surface);
+  --di-scan-well-edge: var(--di-line);
+  --di-scan-edge: var(--di-edge);
+  --di-scan-heading: var(--di-text);
+  --di-scan-raised: var(--di-control);
+  --di-scan-selected: var(--di-surface);
+  --di-scan-line: var(--di-line);
+  --di-scan-text: var(--di-text);
+  --di-scan-muted: var(--di-muted);
   --di-scan-yellow: #ffe60a;
   --di-scan-needs: #f17f08;
   --di-scan-building: #3e90f7;
@@ -116,15 +135,13 @@
   --di-scan-building-line: #0376f7;
   --di-scan-ok-line: #04c348;
   --di-scan-bad-line: #ef5b59;
-  --di-scan-badge: #1a1e3b;
-  --di-scan-icon: #ededee;
-  --di-scan-logo: #a84ef0;
-  --di-scan-accent: #6127d6;
-  --di-scan-accent-hover: #7436e4;
-  --di-scan-underline: #cc41d8;
-  --di-scan-gold: #bb7b1e;
-  --di-scan-gold-text: #f6ead6;
-  --di-scan-comments: #e05514;
+  --di-scan-badge: var(--di-selected);
+  --di-scan-attn: var(--di-perm);
+  --di-scan-icon: var(--di-text);
+  --di-scan-logo: var(--di-accent);
+  --di-scan-accent: var(--di-accent);
+  --di-scan-accent-hover: var(--di-accent-hover);
+  --di-scan-underline: var(--di-accent-b);
   --di-scan-ink: #1a1408;
   --di-scan-chip: #1e2230;
   --di-scan-needs-chip: #3a2418;
@@ -141,8 +158,9 @@
   --di-scan-code-str: #8ee0b0;
   --di-scan-code-note: #9aa3b8;
   --di-scan-hunk: #b7a6ff;
-  /* type: the system reading faces (no web font is bundled) */
-  --di-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* type: Inter, the Home face, BUNDLED (the @font-face above); the system reading face only while it loads */
+  --di-font-ui:
+    Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --di-font-code:
     ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --di-text-label: 11px;
@@ -385,4 +403,239 @@
   right: 10px;
   bottom: auto;
   max-width: min(288px, calc(100% - 126px));
+}
+
+/* pass C (B): CONDITIONAL GUARD for the UNHOSTED version label in a narrow world. In a narrow world with the controls offered, App hosts
+   the label in the strip's pinned footer (labelHost), and this rule does not apply to it; it governs the label only while it is NOT
+   hosted, i.e. before the footer has mounted. Whether that state is ever painted was NOT measured, and nothing here claims it never
+   is. WHAT THIS RULE IS FOR, should it ever paint: with no narrow rule the label sits at the world's bottom-right (right 28 px,
+   bottom 88 px) and meets the toolbar's right end (the toolbar ends 219.8 px into a 272 px world); the original narrow rule parks it
+   top-right (top 8 px, right 28 px), which is ON the disclosure (32 px wide, 12 px in from the right). This rule parks it to the
+   disclosure's LEFT, clear of both. It was written from the CSS and the geometry above; no test renders that state. */
+.di-world-home .di-world-controls[data-di-world-width='narrow'] .di-version-label {
+  top: 12px;
+  right: 52px;
+}
+
+/* AC-4.4-26: a world Mission label is one button over the label (the label's own text stays as drawn); keyboard focus shows. */
+.di-mission-label {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.di-mission-label:focus-visible {
+  outline: 2px solid var(--di-focus);
+  outline-offset: 2px;
+}
+
+/* ---------- pass C item 5: the world's own chrome on the SCAN face, in Home tokens and Inter ----------
+   Scoped to .di-world-home (App.tsx: the scan face's world), so Pixel mode and the operational face keep their pixel chrome.
+   CONVERGED here: the disclosure; the zoom buttons and the zoom level readout; the view, Map and Districts buttons and the
+   district list; the Layout, City and Settings bar; the ambient legend; the version label, its hover tip and its update
+   notice; the connection status; the world's FIXTURE label; the agent and Mission labels.
+   KEEP (the boundary, not owed work): the INTERIORS of the City panel and the World Map overlay, the Settings dialog and the
+   Layout editor keep their existing chrome and behaviour. Their TRIGGERS (City, Map, Settings, Layout) are converged here.
+   WHAT HOLDS THIS: only the explicit selector lists below (nothing outside them is styled by this block). It is a statement
+   of intent, NOT enforced: no test asserts the KEEP interiors' chrome, so a selector widened here would cross it silently. */
+
+.di-world-disclosure {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 31;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--di-edge);
+  border-radius: 8px;
+  background: var(--di-bg);
+  color: var(--di-text);
+  font-family: var(--di-font-ui);
+  cursor: pointer;
+}
+.di-world-disclosure:hover {
+  background: var(--di-control);
+}
+.di-world-disclosure[aria-expanded='true'] {
+  background: var(--di-selected);
+  border-color: var(--di-accent-b);
+}
+.di-world-disclosure:focus {
+  outline: none;
+}
+.di-world-disclosure:focus-visible {
+  outline: 2px solid var(--di-focus);
+  outline-offset: 2px;
+}
+
+/* type: Inter for what the world draws in the DOM (the canvas is pixels, drawn as it was) */
+.di-world-home
+  :is(
+    [data-testid='world-zoom-buttons'],
+    [data-testid='world-view-controls'],
+    [data-testid='world-toolbar'],
+    [data-testid='ambient-legend'],
+    [data-testid='di-fixture-banner'],
+    [data-testid='connection-indicator'],
+    [data-testid='world-zoom-level'],
+    [data-testid='agent-overlay'],
+    .di-version-label,
+    .di-version-tip,
+    .di-version-notice
+  ),
+.di-world-home
+  :is(
+    [data-testid='world-zoom-buttons'],
+    [data-testid='world-view-controls'],
+    [data-testid='world-toolbar'],
+    [data-testid='ambient-legend'],
+    [data-testid='di-fixture-banner'],
+    [data-testid='connection-indicator'],
+    [data-testid='world-zoom-level'],
+    [data-testid='agent-overlay'],
+    .di-version-label,
+    .di-version-tip,
+    .di-version-notice
+  )
+  * {
+  font-family: var(--di-font-ui);
+}
+
+/* panels: the Home surface, a quiet line, rounded, no hard pixel shadow */
+.di-world-home
+  :is(
+    [data-testid='world-toolbar'],
+    [data-testid='ambient-legend'],
+    [data-testid='di-fixture-banner'],
+    [data-testid='connection-indicator'],
+    [data-testid='world-zoom-level'],
+    [data-testid='world-district-list'],
+    .di-version-tip,
+    .di-version-notice
+  ),
+.di-world-home [data-testid='agent-overlay'] .pixel-panel {
+  background: var(--di-bg);
+  border: 1px solid var(--di-line);
+  border-radius: 8px;
+  box-shadow: none;
+  color: var(--di-text);
+}
+
+/* buttons: Home controls (the 3:1 control edge, Inter 13px), current state on the state tokens, a visible focus ring */
+.di-world-home
+  :is([data-testid='world-zoom-buttons'], [data-testid='world-view-controls'], [data-testid='world-toolbar'])
+  button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--di-edge);
+  border-radius: 6px;
+  background: var(--di-bg);
+  box-shadow: none;
+  color: var(--di-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.di-world-home
+  :is([data-testid='world-zoom-buttons'], [data-testid='world-view-controls'], [data-testid='world-toolbar'])
+  button:hover:not(:disabled) {
+  background: var(--di-control);
+}
+.di-world-home
+  :is([data-testid='world-zoom-buttons'], [data-testid='world-view-controls'], [data-testid='world-toolbar'])
+  button:is([aria-pressed='true'], [aria-expanded='true'], .border-accent) {
+  background: var(--di-selected);
+  border-color: var(--di-accent-b);
+}
+.di-world-home
+  :is([data-testid='world-zoom-buttons'], [data-testid='world-view-controls'], [data-testid='world-toolbar'])
+  button:focus-visible {
+  outline: 2px solid var(--di-focus);
+  outline-offset: 2px;
+}
+.di-world-home [data-testid='world-zoom-buttons'] button {
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  font-size: 18px;
+}
+.di-world-home [data-testid='world-toolbar'] {
+  gap: 6px;
+  padding: 6px;
+}
+.di-world-home [data-testid='world-district-list'] {
+  padding: 6px;
+}
+
+/* words */
+.di-world-home [data-testid='ambient-legend'] {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--di-muted);
+}
+.di-world-home [data-testid='di-fixture-banner'] {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--di-warn);
+  /* pass C (B): in a narrow world the version label shares this footer; the label's text WRAPS to make room (never cut), so
+     both stay inside the world (at 900 x 700 the world is 272: 220 + 6 + 39 would overflow it by 3 px) */
+  flex-shrink: 1;
+  /* the FLOOR (lead, B-E1): a required persistent notice may wrap, never shrink past readability: at least 200 px wide, its
+     12 px type unchanged, never cut (diScanFace proves it whole and topmost at 900) */
+  min-width: 200px;
+}
+/* pass C (B): the view buttons keep their own width when the Districts list opens beside them (a stretching column widened
+   them to the list's width and into the update notice's band in a narrow world) */
+.di-world-home [data-testid='world-view-controls'] {
+  align-items: flex-start;
+}
+.di-world-home [data-testid='world-view-controls'] > button {
+  min-width: 100px;
+}
+.di-world-home :is([data-testid='connection-indicator'], [data-testid='world-zoom-level'], .di-version-tip) {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+.di-world-home .di-version-notice span {
+  font-size: 12px;
+  color: var(--di-muted);
+}
+.di-world-home .di-version-notice span:first-child {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--di-text);
+}
+/* the version label: a quiet Home chip, fully opaque (its pixel form faded it to 0.4, set inline) */
+.di-world-home .di-version-label {
+  padding: 2px 8px;
+  border: 1px solid var(--di-line);
+  border-radius: 6px;
+  background: var(--di-bg);
+  color: var(--di-muted);
+  font-size: 11px;
+  opacity: 1 !important;
+}
+/* agent and Mission labels: their inline pixel sizes (18 to 22px) give way to the Home scale */
+.di-world-home [data-testid='agent-overlay'] .pixel-panel {
+  padding: 3px 8px;
+}
+.di-world-home [data-testid='agent-overlay'] .pixel-panel span {
+  font-size: 12px !important;
+  line-height: 1.3 !important;
+}
+
+@layer base {
+  /* the zoom buttons' border colour is an IMPORTANT utility (border-border!, ZoomControls.tsx); an important declaration in
+     an EARLIER layer outranks it, so this one rule sits here (scan face only) */
+  .di-world-home [data-testid='world-zoom-buttons'] button {
+    border-color: var(--di-edge) !important;
+  }
 }

@@ -416,17 +416,22 @@ test('category chips filter the cards, say what is pressed and never change a ca
   );
 });
 
-test('hiding an entry is a view preference shared by the inbox and the sidebar count; it resolves nothing', async () => {
+test('hiding an entry is a view preference shared by the inbox and the sidebar; it resolves nothing and CHANGES NO COUNT', async () => {
+  // The requirement this states: "Hide in this view" resolves, approves and dismisses nothing (docs/pixel-agents-office.md, Hiding), so it cannot change how many things need the person, and the
+  // sidebar and the dialog must keep saying the same true number (AC-4.7-16). The entry leaves the LIST; the number does not move, and the notice says the entry is hidden here and still counted.
   const sidebar = () => p().textContent('[data-testid="di-reception-summary"]');
   assert.match((await sidebar())!, /1 needs attention/);
   await openByKeyboard();
   await p().click(`${ENTRY} button:has-text("Hide in this view")`);
   assert.equal(await p().locator(ENTRY).count(), 0);
-  assert.match((await p().textContent('[data-testid="di-reception-inbox-summary"]'))!, /Nothing listed as needing attention/);
-  assert.match((await p().textContent('[data-testid="di-reception-hidden"]'))!, /1 hidden in this view only/);
+  const headline = (await p().textContent('[data-testid="di-reception-inbox-summary"]'))!;
+  assert.match(headline, /1 needs attention/);
+  assert.doesNotMatch(headline, /Nothing listed/);
+  assert.match((await p().textContent('[data-testid="di-reception-hidden"]'))!, /1 hidden in this view only, and still counted in the number above/);
   await p().keyboard.press('Escape');
   await p().waitForSelector(INBOX, { state: 'detached' });
-  assert.match((await sidebar())!, /Nothing listed as needing attention/);
+  assert.match((await sidebar())!, /1 needs attention/);
+  assert.doesNotMatch((await sidebar())!, /Nothing listed/);
   // the category still says what it reports: hiding changed no canonical outcome
   await openByKeyboard();
   assert.equal(
@@ -610,6 +615,24 @@ async function detailsIdentity() {
   }));
 }
 
+/**
+ * The list AFTER "Show this Mission" has finished. The product's design is a multi-render sequence: it closes the inbox FIRST, runs the jump in a passive effect after the render in which the inbox
+ * unmounts (DiOfficePanel.tsx `afterReceptionClose`), and the jump's focus takes one render more. A single read taken right after the inbox detaches therefore reads MID-SEQUENCE; it passed by timing
+ * until larger office states (S3's regenerated fixtures) made it read the pre-jump list every time. So this waits for the product's own signal that the jump happened (the Mission picker holding the
+ * target). A wait that times out is SWALLOWED, so the unchanged exact assertions report whatever the page shows: if the product never reaches the destination, the test stays red with the same
+ * messages. This corrects WHEN the test reads, never what it claims. (How the larger fixtures widen the window is not established by this; only that the read was mid-sequence.)
+ */
+async function listAfterJump(ref: string) {
+  await p()
+    .waitForFunction(
+      (r) => (document.querySelector('[data-testid="di-mission-select"]') as HTMLSelectElement | null)?.value === r,
+      ref,
+      { timeout: 5_000 },
+    )
+    .catch(() => undefined);
+  return listIdentity();
+}
+
 function assertExactDestination(
   list: Awaited<ReturnType<typeof listIdentity>>,
   m: FixtureMission,
@@ -667,7 +690,7 @@ for (const collapsedStart of [false, true]) {
     await openInbox();
     await showThisMission(drawnMission.missionRef, 'x');
     await p().waitForSelector('[data-testid="di-office-panel"]');
-    assertExactDestination(await listIdentity(), drawnMission, where);
+    assertExactDestination(await listAfterJump(drawnMission.missionRef), drawnMission, where);
     const sel = await selectionIdentity();
     assert.equal(sel.selected, firstDrawn, `${where}: the first drawn member is selected`);
     assert.equal(sel.follow, firstDrawn, `${where}: and followed`);
@@ -686,7 +709,7 @@ for (const collapsedStart of [false, true]) {
     await openInbox();
     await showThisMission(undrawn.missionRef, 'undrawn');
     await p().waitForSelector('[data-testid="di-office-panel"]');
-    assertExactDestination(await listIdentity(), undrawn, where);
+    assertExactDestination(await listAfterJump(undrawn.missionRef), undrawn, where);
     assertNothingSelected(await selectionIdentity(), where);
   });
 
@@ -702,7 +725,7 @@ for (const collapsedStart of [false, true]) {
     }
     await showThisMission(undrawn.missionRef, 'undrawn');
     await p().waitForSelector('[data-testid="di-office-panel"]');
-    assertExactDestination(await listIdentity(), undrawn, where);
+    assertExactDestination(await listAfterJump(undrawn.missionRef), undrawn, where);
     assertNothingSelected(await selectionIdentity(), where);
     // the Selected dock's Mission steps start from nothing, not from the previous agent
     assert.equal(

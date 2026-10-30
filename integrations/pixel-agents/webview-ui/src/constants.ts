@@ -338,10 +338,11 @@ export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
  *  ids (positive) and sub-agent ids (small negatives from -1 down). */
 export const GREETER_ID = -1_000_000_000;
 /** Stacking order for the Intro's bubble. Deliberately BELOW the modal stack
- *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100): the
- *  Intro is diegetic furniture over the office, not a modal, so a modal opened
- *  on top of it must cover it rather than slide underneath. */
-export const INTRO_BUBBLE_Z_INDEX = 45;
+ *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100) and
+ *  ABOVE the covering workspace (44) and the open mission stage (43): the Intro
+ *  is diegetic furniture over the office, not a modal, so a modal opened on top
+ *  of it must cover it rather than slide underneath. */
+export const INTRO_BUBBLE_Z_INDEX = 46;
 /** The greeter stands this many tiles in from the office's bottom-left corner
  *  (target tile (margin, rows-1-margin); nearest walkable tile if blocked). */
 export const GREETER_TILE_MARGIN = 3;
@@ -451,10 +452,6 @@ export const DI_RECEPTION_DESK_TYPE = 'DESK_FRONT';
 export const DI_RECEPTIONIST_ID = -1_000_000_001;
 /** The receptionist's character palette (0-5): the receptionist job's own palette. */
 export const DI_RECEPTIONIST_PALETTE = 3;
-/** Words of the desk's permanent label and accessible name. */
-export const DI_RECEPTION_LABEL = 'Reception';
-/** Stacking order of the desk target: above the canvas, below the DI panel and every dialog. */
-export const DI_RECEPTION_TARGET_Z_INDEX = 20;
 /** The shipped worlds' reception bench: the one chair that faces the reception desk. It is the receptionist's
  *  workstation, so it is never a seat a real agent can take (alongside any seat whose facing tile is on the desk). */
 export const DI_RECEPTION_BENCH_UID = 'expansion-150';
@@ -499,8 +496,19 @@ export const DI_OFFICE_WORK_ROOM_RESIDENT_TARGET = 2;
 export const AMBIENT_OFFICE_VISIT_EVERY = 4;
 
 // ── DI office panel ─────────────────────────────────────────
-/** Width of the docked DI office sidebar; the office canvas narrows by this while it is open. */
-export const DI_PANEL_WIDTH_PX = 420;
+/**
+ * Width of the docked DI office sidebar; the office canvas narrows by this while it is open. 428 (pass C, C-V1): MEASURED from
+ * the locked Home (reconciled-free-ui-v3/01-home.jpg, 1280 wide) to the panel's own EDGE RULE at x 852 (1280 - 852 = 428).
+ * NOT to where the dark fill begins at x 847: those 5 px are the fill's lead-in, and measuring them would read 433. Was 420.
+ */
+export const DI_PANEL_WIDTH_PX = 428;
+/**
+ * Width of the DI navigation rail at the window's LEFT edge (the scan face only: 01-home.jpg draws it 200 px wide in a 1280 px
+ * frame). The world yields this width while the office is open, so the rail covers nothing of it, and the Mission stage starts at
+ * its edge. At a 900 px window the scan face's world is 900 - 428 - 200 = 272, which keeps its controls offered against the scan
+ * face's own threshold (DI_WORLD_SCAN_CONTROLS_MIN_PX, 240), not the pixel toolbar's 276.
+ */
+export const DI_RAIL_WIDTH_PX = 200;
 /** How often the DI panel re-reads the canvas selection (a local UI read only). */
 export const DI_SELECTION_POLL_MS = 250;
 /**
@@ -519,6 +527,18 @@ export const DI_MINIMIZED_STRIP_WIDTH_PX = 44;
  * the controls are removed from the tab order, the pointer and the screen together (WorldControlsGate).
  */
 export const DI_WORLD_CONTROLS_MIN_PX = 276;
+/**
+ * The SCAN face's own threshold for offering the world's controls (pass C, decision (B)): its world chrome is converged to Home
+ * tokens and Inter (item 5) and is NARROWER than the pixel toolbar that sets DI_WORLD_CONTROLS_MIN_PX (276), so gating it by
+ * 276 would gate new chrome by old chrome's width. MEASURED as rendered on the production build (fixture viewer, reception-v2,
+ * 1440 x 900, the disclosure open; logs/measure-scan-world-chrome-1440-20261027T005429Z.json): its widest pieces end 230.7 px
+ * into the world (the ambient legend; it wraps at the column cap as its counts grow) and 230 px (the FIXTURE label, capped
+ * at 220 wide); the Layout / City / Settings bar ends at 219.8 and the view buttons at 110.5. 240 = 230.7 plus about 9 px of
+ * headroom. Applied ONLY where the rail is (diDockFor railPx > 0, the scan face with the office open); the operational face,
+ * which keeps the pixel toolbar, keeps 276. Below it the controls are REMOVED whole, never clipped (WorldControlsGate), and
+ * that they are whole and non-overlapping at 900 is proved rendered in diScanFace.test.ts, not by this comment.
+ */
+export const DI_WORLD_SCAN_CONTROLS_MIN_PX = 240;
 
 /** The bottom-left column's distance from the world's left edge (WorldStack). */
 export const DI_WORLD_COLUMN_LEFT_PX = 10;
@@ -541,8 +561,6 @@ export const DI_WORLD_COLUMN_MAX_PX = DI_WORLD_CONTROLS_MIN_PX - DI_WORLD_COLUMN
  */
 export const DI_WORLD_ROOMY_PX = 480;
 
-/** A first-frame estimate of the reception target's box (it measures about 72 x 30), used until its own size has been measured: slightly generous. */
-export const DI_RECEPTION_TARGET_ESTIMATE_PX = { w: 96, h: 34 };
 /** How often the client re-checks its own invalidation (transport, valid_until) for the DI office. */
 export const DI_CLIENT_CHECK_MS = 1000;
 /** Longest Mission title (characters, ellipsis included); the full objective stays in the inspector. */

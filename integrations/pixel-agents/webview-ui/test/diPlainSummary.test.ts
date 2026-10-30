@@ -37,6 +37,7 @@ import { INITIAL_STATE } from '../src/components/diMissionRequestModel.ts';
 import { plainIdentityReason } from '../src/components/diNavigation.ts';
 import { navigationOrder } from '../src/components/diOfficeFormat.ts';
 import { DiOfficePanel, RuntimeAgentsSection } from '../src/components/DiOfficePanel.tsx';
+import { missionObjective } from '../src/components/diOperationalStatus.ts';
 import {
   agentNow,
   agentPhrase,
@@ -133,6 +134,31 @@ test('boilerplate is never a title: headers, AUTHORIZED MISSION and ids are skip
   );
 });
 
+test('a proposal digest is never the title, and the goal after the handoff prefix still is', () => {
+  const digest = '3033dab9ca1127b3a8dc907fcbbfbeb522aa461d3035277ff41413fa58820bcb';
+  const prefix = `AUTHORIZED MISSION mn-ba1e47939b4f6b443cd34174b9b1732 (revision 1, proposal digest ${digest}). This is the approved Mission content only, NOT an engineering plan; the Supervisor owns all technical decisions.`;
+  assert.equal(missionTitle(withObjective(prefix)).kind, 'placeholder');
+  assert.equal(missionTitle(withObjective(prefix)).text.includes(digest.slice(0, 12)), false);
+  assert.equal(
+    missionTitle(withObjective(`${prefix}\n\nOBJECTIVE\nRedesign the core panel system.`)).text,
+    'Redesign the core panel system',
+  );
+});
+
+test('a catalog-truncated handoff lead ("… This is …") is never the title', () => {
+  const digest = '3033dab9ca1127b3a8dc907fcbbfbeb522aa461d3035277ff41413fa58820bcb';
+  const cut = `AUTHORIZED MISSION mn-ba1e47939b4f6b443cd34174b9b1732 (revision 1, proposal digest ${digest}). This is …`;
+  assert.deepEqual(missionTitle(withObjective(cut)), { kind: 'placeholder', text: MISSION_TITLE_PLACEHOLDER });
+  for (const fragment of ['This is …', 'This is the appr…', 'This is the approved Mission...']) {
+    assert.equal(missionTitle(withObjective(fragment)).kind, 'placeholder', fragment);
+  }
+  // A real objective that happens to start "This is" is still a title.
+  assert.equal(
+    missionTitle(withObjective('This is a plan to speed up Pixel CI.')).text,
+    'This is a plan to speed up Pixel CI',
+  );
+});
+
 test('with nothing meaningful left, the title is an honest placeholder — never a made-up summary', () => {
   for (const boiler of [
     'AUTHORIZED MISSION',
@@ -150,11 +176,14 @@ test('with nothing meaningful left, the title is an honest placeholder — never
   assert.equal(MISSION_TITLE_PLACEHOLDER, 'Objective text available: open to read');
 });
 
-test('a header-only, empty or missing objective keeps its source-qualified "No goal reported" wording', () => {
+// CHANGED IN NAMING (a), 2026-10-28 (owner ruling: no machine id or state code in a primary title): the HEADLINE is exactly "No goal reported" (the source reported none; it is not claimed that
+// none exists), and the source-qualified note with its state stays as SECONDARY detail (missionObjective's text, unchanged).
+test('a header-only, empty or missing objective is headed "No goal reported", with the source and state kept as secondary detail', () => {
   for (const value of ['OBJECTIVE', '   ', null]) {
     const t = missionTitle(withObjective(value));
     assert.equal(t.kind, 'no-goal', String(value));
-    assert.match(t.text, /^No goal reported: mc /);
+    assert.equal(t.text, 'No goal reported', String(value));
+    assert.match(missionObjective(withObjective(value)).text, /^No goal reported: mc /, String(value));
   }
 });
 
@@ -623,12 +652,12 @@ test('zero attention entries is said honestly: never "none" while some kinds can
   const s = fresh();
   s.reception!.entries = [];
   s.reception!.entriesTotal = 0;
-  const zero = attentionSummary(s.reception!, new Set());
+  const zero = attentionSummary(s.reception!);
   assert.equal(zero.count, 0);
   assert.equal(zero.text, 'Nothing listed as needing attention');
   // What the desk cannot read is said once, by viewLimits — never folded into a "none".
   assert.match(viewLimits(s)!.summary, /may not show everything that needs attention/);
-  assert.equal(attentionSummary(fresh().reception!, new Set()).text, '1 needs attention');
+  assert.equal(attentionSummary(fresh().reception!).text, '1 needs attention');
 });
 
 const officeStub = {

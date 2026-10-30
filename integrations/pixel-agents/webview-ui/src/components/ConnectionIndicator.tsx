@@ -30,7 +30,10 @@ export function ConnectionIndicator({ reducedMotion = false }: { reducedMotion?:
   const dotClass = state === 'connecting' ? 'bg-status-permission' : 'bg-status-error';
 
   return (
-    <div className="absolute top-8 left-1/2 -translate-x-1/2 z-20 pixel-panel py-6 px-12 flex items-center gap-8 text-sm">
+    <div
+      className="absolute top-8 left-1/2 -translate-x-1/2 z-20 pixel-panel py-6 px-12 flex items-center gap-8 text-sm"
+      data-testid="connection-indicator"
+    >
       {/* The state is the label + dot colour; the pulse is decoration (still under reduced motion). */}
       <span
         className={`w-8 h-8 rounded-full inline-block shrink-0 ${dotClass} ${reducedMotion ? '' : 'pixel-pulse'}`}

@@ -79,6 +79,7 @@ import {
   startCauseWords,
 } from '../src/components/diMissionRequestStartCause.ts';
 import {
+  DI_PANEL_WIDTH_PX,
   DI_WORLD_COLUMN_LEFT_PX,
   DI_WORLD_COLUMN_MAX_PX,
   DI_WORLD_CONTROLS_MIN_PX,
@@ -961,7 +962,23 @@ describe('asking is held until the answer; an unknown outcome is shown as unknow
     }
   });
 
-  it('"not listening" means nothing was sent, and marks the panel unavailable', () => {
+  it('a reply whose state is "unknown" is shown as unknown, with its reason, for any operation: never as a refusal or as done, and the panel is not declared down', () => {
+    const reason =
+      'The request panel did not answer in time. Whether it applied this request is not known; read the record again before acting.';
+    for (const op of ['decide', 'run', 'withdraw', 'checkApproval', 'offer', 'turn', 'submit'] as const) {
+      const s = apply(
+        stateWithView(),
+        { type: 'sent', seq: 5, op, requestRef: REF, turnId: null },
+        { type: 'reply', nowMs: 1, reply: reply(op, 5, 'unknown', null, 'panel_timeout', reason) },
+      );
+      expect(s.notices[0], op).toMatchObject({ kind: 'unknown', op, text: reason });
+      expect(s.availability.kind, op).toBe('ok');
+      expect(s.pending, op).toEqual([]);
+      expect(s.views[REF].displayed.lifecycle.stage, op).toBe('of_record');
+    }
+  });
+
+  it('nothing answering at the address means nothing was sent, and marks the panel unavailable without claiming it is not running', () => {
     const s = apply(
       stateWithView(),
       { type: 'sent', seq: 5, op: 'decide', requestRef: REF, turnId: null },
@@ -974,12 +991,14 @@ describe('asking is held until the answer; an unknown outcome is shown as unknow
           'unavailable',
           null,
           'panel_unreachable',
-          'The request panel is not listening. Nothing was sent.',
+          'Nothing answered at the address in the request panel’s discovery file. Nothing was sent.',
         ),
       },
     );
     expect(s.availability).toMatchObject({ kind: 'unavailable', problem: 'panel_unreachable' });
     expect(s.notices[0].kind).toBe('unavailable');
+    expect(s.notices[0].text).toMatch(/Nothing was sent/);
+    expect(s.notices[0].text).not.toMatch(/not (running|listening)/);
   });
 
   it('an unavailable refresh drops the overview rather than keep showing it as current', () => {
@@ -1009,7 +1028,7 @@ describe('asking is held until the answer; an unknown outcome is shown as unknow
           'unavailable',
           null,
           'panel_discovery_unavailable',
-          'The request panel is not running (discovery_absent).',
+          'The request panel’s discovery file could not be used (discovery_absent). Whether the panel is running is not known.',
         ),
       },
     );
@@ -1018,6 +1037,9 @@ describe('asking is held until the answer; an unknown outcome is shown as unknow
       kind: 'unavailable',
       problem: 'panel_discovery_unavailable',
     });
+    const words = s.availability.kind === 'unavailable' ? s.availability.reason : '';
+    expect(words).toMatch(/discovery_absent/);
+    expect(words).not.toMatch(/not (running|listening)|is running(?! is not known)/);
   });
 
   it('keeps the composer when a turn is refused and clears it only when the turn was accepted', () => {
@@ -1178,11 +1200,24 @@ describe('words', () => {
     expect(problemWords('weird', 'The adapter said this.')).toBe('The adapter said this.');
   });
 
-  it('says the panel is not set up, and how, without inventing a status', () => {
+  it('a refusal with no words of its own names its code and claims nothing about what changed', () => {
+    const words = problemWords('weird', null);
+    expect(words).toContain('weird');
+    expect(words).not.toMatch(/[Nn]othing was (changed|applied|recorded)/);
+    expect(problemWords(null, null)).not.toMatch(/[Nn]othing was (changed|applied|recorded)/);
+  });
+
+  it('says the panel is not set up, and how, without inventing a status: an unusable discovery file or a silent address claims nothing about whether the panel runs', () => {
     expect(unavailableWords('panel_not_configured', '')).toMatch(/--mission-panel-discovery/);
-    expect(unavailableWords('panel_discovery_unavailable', 'x (discovery_absent)')).toMatch(
-      /not running/,
+    const discovery = unavailableWords(
+      'panel_discovery_unavailable',
+      'The request panel’s discovery file could not be used (discovery_absent). Whether the panel is running is not known.',
     );
+    expect(discovery).toMatch(/discovery_absent/);
+    expect(discovery).not.toMatch(/not (running|listening)|is running(?! is not known)/);
+    const unreachable = unavailableWords('panel_unreachable', '');
+    expect(unreachable).toMatch(/Nothing was sent/);
+    expect(unreachable).not.toMatch(/not (running|listening)/);
   });
 
   it('the countdown is plain and never negative', () => {
@@ -1302,7 +1337,8 @@ describe('words', () => {
 });
 
 describe('where the workspace sits', () => {
-  const PANEL = 420;
+  // DERIVED (pass C): the office panel the product docks beside, wherever its width moves
+  const PANEL = DI_PANEL_WIDTH_PX;
   it('takes its width beside the office panel and leaves the world visible where the window allows', () => {
     expect(layoutFor(1600, false, false, PANEL)).toEqual({
       covering: false,
@@ -2168,11 +2204,12 @@ describe('panel polish: the open request leads with its plain title, status and 
 });
 
 describe('wider reading is never worse than ordinary reading at the same pane width', () => {
-  // the sidebar is 420px (DI_PANEL_WIDTH_PX); the pane is min(600 | 960, viewport - sidebar - MR_WORLD_KEEP_PX) and covers the window below 360.
+  // the sidebar is DI_PANEL_WIDTH_PX (428 since pass C); the pane is min(600 | 960, viewport - sidebar - MR_WORLD_KEEP_PX) and covers the window below 360.
   // Every viewport below is the PANE WIDTH the case is about plus what sits beside it (the sidebar, when expanded, and the world's reserve), so each case is
   // still the same pane (360, 440, 601, 639, 640, 649, 960 px). They were literals that held when the reserve was 240 (1019, 1020, 1100, 1261, 1299, 1300,
   // 1309, 1620; collapsed 599, 600, 879, 880) and described a different pane once it became 276.
-  const SIDEBAR = 420;
+  // DERIVED (pass C): the product's sidebar, never a stale literal (420 passed here silently after the panel moved)
+  const SIDEBAR = DI_PANEL_WIDTH_PX;
   const KEEP = MR_WORLD_KEEP_PX;
   const at = (viewport: number, collapsed: boolean, wide: boolean) =>
     twoColumnReading(layoutFor(viewport, collapsed, wide, SIDEBAR), wide);
@@ -2199,21 +2236,24 @@ describe('wider reading is never worse than ordinary reading at the same pane wi
     // derived, not independent: the reserve IS the toolbar's right edge, and the column ends there (WorldStack), so a change to the toolbar's extent propagates
     expect(MR_WORLD_KEEP_PX).toBe(DI_WORLD_CONTROLS_MIN_PX);
     expect(DI_WORLD_COLUMN_LEFT_PX + DI_WORLD_COLUMN_MAX_PX).toBe(MR_WORLD_KEEP_PX);
-    // THE BOUNDARIES, as literals at the documented 276 (these fail if the reserve falls back to 240 or any other value, and are not derived from it).
-    // Office open: the workspace COVERS below 420 + 276 + 360 = 1056 px and docks 360 px beside from 1056. At 240 it docked at 1020.
-    expect(layoutFor(1019, false, true, 420).covering).toBe(true);
-    expect(layoutFor(1020, false, true, 420).covering).toBe(true); // docked 360 px beside under the old reserve of 240
-    expect(layoutFor(1055, false, true, 420).covering).toBe(true);
-    expect(layoutFor(1056, false, true, 420)).toEqual({ covering: false, widthPx: 360, rightPx: 420 });
-    // Office minimized: below 276 + 360 = 636 px (it was 600).
-    expect(layoutFor(600, true, true, 420).covering).toBe(true); // docked 360 px beside under the old reserve
-    expect(layoutFor(635, true, true, 420).covering).toBe(true);
-    expect(layoutFor(636, true, true, 420)).toEqual({ covering: false, widthPx: 360, rightPx: 0 });
+    // THE BOUNDARIES: the RESERVE (276) and the pane (360) as literals at their documented values (these fail if the reserve falls back to
+    // 240 or any other value, and are not derived from it); the SIDEBAR term DERIVES from DI_PANEL_WIDTH_PX (pass C: it was the literal 420,
+    // which kept passing as a parameter after the product's panel moved to 428). Office open: the workspace COVERS below
+    // sidebar + 276 + 360 (1064 at 428) and docks 360 px beside from there. Under the old reserve of 240 it docked at sidebar + 240 + 360.
+    const SIDE = DI_PANEL_WIDTH_PX;
+    expect(layoutFor(SIDE + 240 + 360 - 1, false, true, SIDE).covering).toBe(true);
+    expect(layoutFor(SIDE + 240 + 360, false, true, SIDE).covering).toBe(true); // docked 360 px beside under the old reserve of 240
+    expect(layoutFor(SIDE + 276 + 360 - 1, false, true, SIDE).covering).toBe(true);
+    expect(layoutFor(SIDE + 276 + 360, false, true, SIDE)).toEqual({ covering: false, widthPx: 360, rightPx: SIDE });
+    // Office minimized: below 276 + 360 = 636 px (it was 600), whatever the sidebar
+    expect(layoutFor(600, true, true, SIDE).covering).toBe(true); // docked 360 px beside under the old reserve
+    expect(layoutFor(635, true, true, SIDE).covering).toBe(true);
+    expect(layoutFor(636, true, true, SIDE)).toEqual({ covering: false, widthPx: 360, rightPx: 0 });
     // the invariant itself, over every width: wherever the workspace docks beside, the world keeps at least 276 px of it
     for (const collapsed of [false, true])
       for (const wide of [false, true])
         for (let viewport = 300; viewport <= 2600; viewport += 1) {
-          const lay = layoutFor(viewport, collapsed, wide, 420);
+          const lay = layoutFor(viewport, collapsed, wide, SIDE);
           if (!lay.covering)
             expect(
               viewport - lay.rightPx - lay.widthPx,

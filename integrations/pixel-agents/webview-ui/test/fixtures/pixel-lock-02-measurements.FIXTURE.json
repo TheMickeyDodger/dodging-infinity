@@ -1,0 +1,43 @@
+{
+  "note": "Hand-run measurements of the locked Mission chrome reference, mission-design-pack-2026-10-26/pixel-lock/02-mission-details.png, exactly 1672x941. Numbers only: the image itself is a private design input and is not copied into the tree. Method: a row profile of bright pixels (luminance over 110) across the content column for text bands, and luminance transitions along chosen rows and columns for box edges (outlines are about #202638 on a background of about #0b0e17). All values are image pixels, which are CSS pixels in a 1672x941 window at device pixel ratio 1. Font sizes are DERIVED from glyph heights with Inter's proportions (cap height 0.727 em, descender about 0.2 em) because the reference is drawn in a pixel face; Inter and the Home tokens stay (D-2), so these are the sizes at which Inter's glyphs match the reference's.",
+  "viewport": { "width": 1672, "height": 941 },
+  "boxes": {
+    "backButton": { "top": 28, "bottom": 79, "left": 296, "right": 342 },
+    "statusPills": { "top": 186, "bottom": 224 },
+    "detailsCard": { "top": 254, "bottom": 602, "left": 290, "right": 1639 },
+    "detailsCardFootRule": 540,
+    "swarmCards": [
+      { "top": 660, "bottom": 778, "left": 291, "right": 628 },
+      { "top": 660, "bottom": 778, "left": 643, "right": 970 },
+      { "top": 660, "bottom": 778, "left": 985, "right": 1302 },
+      { "top": 660, "bottom": 778, "left": 1317, "right": 1637 }
+    ],
+    "buttonRow": { "top": 823, "bottom": 889 }
+  },
+  "glyphBands": {
+    "breadcrumbText": [45, 67],
+    "title": [115, 168],
+    "statusPillText": [196, 217],
+    "missionDetailsHeading": [283, 306],
+    "bodyLines": [[337, 361], [372, 395], [426, 449], [461, 479], [496, 515]],
+    "footerText": [561, 581],
+    "swarmHeading": [623, 645],
+    "swarmRole": [685, 699],
+    "swarmName": [713, 730],
+    "swarmNote": [743, 758],
+    "buttonLabel": [845, 864]
+  },
+  "derivedFontPx": {
+    "breadcrumb": 24,
+    "title": 56,
+    "statusPill": 24,
+    "cardHeading": 30,
+    "body": 24,
+    "bodyLinePitch": 35,
+    "footer": 22,
+    "swarmHeading": 30,
+    "swarmRole": 16,
+    "swarmName": 24,
+    "swarmNote": 21
+  }
+}

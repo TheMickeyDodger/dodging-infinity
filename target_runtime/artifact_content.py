@@ -860,6 +860,86 @@ def _admit(mission_state, registry, corroboration, freshness, clock,
              "media": _media(artifact["locator"])})
 
 
+def _listed_cursor(answer, mission_ref):
+    """The historical cursor the held ``answer`` lists for ``mission_ref``,
+    or None. Every other problem with the listing is left to
+    ``_corroborated``, which refuses it with its own code; this finds only the
+    one value ``_corroborated`` compares a caller's cursor against."""
+    try:
+        listed = [m for m in answer["response"]["missions"]
+                  if m["mission_ref"] == mission_ref]
+        if len(listed) != 1:
+            return None
+        return listed[0]["mission_state"][
+            contract_v2.EXECUTION_IDENTITY_KEY]["cursor_sha256"]
+    except (KeyError, TypeError, IndexError, AttributeError):
+        return None
+
+
+def historical_execution(mission_state, registry, answer, freshness, clock,
+                         mission_ref):
+    """The record-side admission of a COMPLETED Mission's recorded execution,
+    for the live code review: ``(bound, charged_bytes, None)`` or ``(None,
+    charged_bytes, (problem, detail))``, with this module's own problem codes.
+    NEVER raises. It composes the SAME helpers ``_admit`` does, in the same
+    order, up to (not including) the artifact: the corroboration of the held
+    ``answer`` (the caller passes the answer it already holds, so both stand
+    on ONE answer, and the cursor compared is the one the listing itself
+    carries), the registry read now, the source and the listed universe as
+    listed, the record re-read through the load boundary, its head and its
+    execution identity against the listing, and the execution recomputed from
+    the record. ``bound`` is the dict ``_admit`` stands on, plus ``mission_id``
+    and ``intent`` (the revision, proposal digest and recorded_at of the run's
+    intent) for the review route's workspace witness. It reads no
+    artifact and no workspace file and writes nothing. The owner does not
+    wire it yet; a test pins that it refuses exactly where ``_admit`` does."""
+    budget = RequestReadBudget()
+    try:
+        cursor = _listed_cursor(answer, mission_ref)
+        bound = _corroborated(answer, freshness, clock(), mission_ref, cursor)
+        if bound["basis"] != EXECUTION_HISTORICAL:
+            raise _Refused(PROBLEM_HISTORICAL_IDENTITY, "the Mission is not a"
+                           " COMPLETED one under its recorded execution")
+        registered = _registry_now(registry, budget)
+        source = _registered_source(registered, bound["source_id"])
+        _registrations_hold(registered, bound, "now")
+        document = _load(mission_state, source["store_dir"], budget)
+        mission, state, head = _head(document, bound["native_id"])
+        if head != bound["journal"]:
+            raise _Refused(PROBLEM_CURSOR_MOVED, "the Mission's journal moved"
+                           " since it was listed; refresh and select it again")
+        _same_identity(mission_state, source, mission, head, bound, cursor,
+                       PROBLEM_HISTORICAL_CHANGED, "now")
+        execution = sources_module._mission_core_view(source, mission)[
+            "execution"]
+        if (execution["task_id"], execution["workspace_realpath"]) != (
+                bound["task_id"], bound["workspace"]) or not (
+                    execution["consistent"]):
+            raise _Refused(PROBLEM_BINDING_CHANGED, "the record's task or"
+                           " workspace is not the corroborated one")
+        root = bound["workspace"]
+        if not os.path.isabs(root) or os.path.realpath(root) != root:
+            raise _Refused(PROBLEM_WORKSPACE_UNRESOLVED, "the workspace is not"
+                           " one resolved root")
+        # The run's own intent facts, from the record this entry just
+        # re-read and whose identity it just established (the identity digest
+        # covers the whole run): the review route compares the workspace's
+        # task record with them. A shape that does not carry them refuses.
+        intent = mission["run"]["intent"]
+        bound = dict(bound, mission_id=mission["mission_id"], intent={
+            "revision": intent["revision"],
+            "proposal_digest_sha256": intent["proposal_digest_sha256"],
+            "recorded_at": intent["recorded_at"]})
+    except _Refused as exc:
+        return None, _accounting(budget)["charged_bytes"], (exc.problem,
+                                                           exc.detail)
+    except (KeyError, TypeError, IndexError, AttributeError, ValueError):
+        return None, _accounting(budget)["charged_bytes"], (
+            PROBLEM_NOT_CORROBORATED, "the held answer or the record has a"
+            " shape this read cannot use")
+    return bound, _accounting(budget)["charged_bytes"], None
+
+
 def read(registry, corroboration, freshness, clock, mission_ref, artifact_id,
          cursor):
     """One content request; ALWAYS an answer (admitted, or refused with its

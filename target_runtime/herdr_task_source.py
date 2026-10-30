@@ -123,7 +123,20 @@ BINDINGS_FILE = snapshot_module.BINDINGS_FILE
 ROOT_KEY_HEX = 12
 #: The display objective: the task description's first non-empty line,
 #: bounded (a description is a whole prompt). Display only, never identity.
-MAX_OBJECTIVE_CHARS = 160
+MAX_OBJECTIVE_CHARS = 1024
+#: The Mission bridge's handoff (target_runtime/mission_bridge.py
+#: ``handoff_text``), which a bridge-dispatched child records as its task
+#: description: its first line begins with the prefix
+#: ``AUTHORIZED MISSION mn-<32 lowercase hex> (revision <n>, proposal digest
+#: <64 lowercase hex>).`` (run_association.py ``handoff_prefix``) and is
+#: authority only; the goal follows under ``OBJECTIVE``. These are the
+#: template's section headings, exact strings (a test reads them back from
+#: ``handoff_text`` itself); see ``_objective``.
+_BRIDGE_PREFIX_HEAD = "AUTHORIZED MISSION mn-"
+_BRIDGE_SECTION_HEADINGS = frozenset(
+    ("OBJECTIVE", "TARGET CONTEXT", "REQUESTED SCOPE", "APPROVED ACTION SCOPE",
+     "APPROVED DELIVERY TARGETS", "DELIVERY"))
+_LOWER_HEX = frozenset("0123456789abcdef")
 #: The headings ``herdctl task --mission`` writes into a task description
 #: (herdctl.py ``task``): the first section's, and the four optional ones that
 #: follow it. Exact strings; see ``_objective``.
@@ -429,6 +442,34 @@ def _root_state(root, reservation):
     return task, files
 
 
+def _is_bridge_prefix_line(line):
+    """True when ``line`` begins with the Mission bridge's handoff prefix in its
+    exact grammar: ``AUTHORIZED MISSION mn-`` + 32 lowercase hex, `` (revision ``
+    + a positive integer without a leading zero, ``, proposal digest `` + 64
+    lowercase hex, then ``).`` at the end of the line or before a space.
+    Structure only; nothing else about the line is read."""
+    if not line.startswith(_BRIDGE_PREFIX_HEAD):
+        return False
+    rest = line[len(_BRIDGE_PREFIX_HEAD):]
+    if len(rest) < 32 or any(ch not in _LOWER_HEX for ch in rest[:32]):
+        return False
+    rest = rest[32:]
+    if not rest.startswith(" (revision "):
+        return False
+    rest = rest[len(" (revision "):]
+    digits = len(rest) - len(rest.lstrip("0123456789"))
+    if digits == 0 or rest[0] == "0":
+        return False
+    rest = rest[digits:]
+    if not rest.startswith(", proposal digest "):
+        return False
+    rest = rest[len(", proposal digest "):]
+    if len(rest) < 64 or any(ch not in _LOWER_HEX for ch in rest[:64]):
+        return False
+    rest = rest[64:]
+    return rest == ")." or rest.startswith("). ")
+
+
 def _objective(description):
     """The display objective: the description's first non-empty line, bounded.
 
@@ -448,9 +489,24 @@ def _objective(description):
     written, including one that begins with ``- ``: the formatter's bullets only
     ever follow a section heading, a heading in this position is refused before
     its bullets are reached, so from the formatter a ``- `` line here is the
-    objective's own text. Any other FIRST line is returned exactly as before. The
-    only comparison is of a stripped line against those five exact strings;
-    nothing else about a line is inspected. Display only, never identity."""
+    objective's own text.
+
+    A SECOND exact exception, for the Mission bridge's handoff (plain-English
+    naming, 2026-10-28): when the first non-empty line BEGINS with the bridge
+    prefix in its exact grammar (``_is_bridge_prefix_line``) AND the next
+    non-empty line is exactly ``OBJECTIVE``, the objective is the line after
+    that, under the same absence rule: unknown (``None``) when there is none, or
+    when it is itself a heading, of either format (the bridge template's next
+    heading follows an empty objective). The bridge's first line is authority
+    only, so without this the bounded first line is that authority line (at
+    the old 160-character cap it ended ``<prefix> This is …``; a real handoff
+    prefix now fits the catalog cap whole).
+    A first line with the prefix but NO ``OBJECTIVE`` next is returned as before.
+
+    Any other FIRST line is returned exactly as before. The only comparisons
+    are of a stripped line against those exact strings and of the first line
+    against the prefix's exact grammar; nothing about the goal's words is
+    inspected. Display only, never identity."""
     if type(description) is not str:
         return None
     lines = (line for line in (raw.strip() for raw in description.splitlines())
@@ -460,6 +516,12 @@ def _objective(description):
         first = next(lines, None)
         if first in _MISSION_SECTION_HEADINGS:
             first = None
+    elif first is not None and _is_bridge_prefix_line(first):
+        if next(lines, None) == _MISSION_OBJECTIVE_HEADING:
+            first = next(lines, None)
+            if (first in _MISSION_SECTION_HEADINGS
+                    or first in _BRIDGE_SECTION_HEADINGS):
+                first = None
     if first is None:
         return None
     return (first if len(first) <= MAX_OBJECTIVE_CHARS

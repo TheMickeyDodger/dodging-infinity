@@ -10,16 +10,24 @@ WHAT THIS IS
   a desk in the layout editor.
   Consequential action lives in the existing DI, Grok Bot and Codex action routes. They are
   NAMED HERE AS DOCUMENTATION ONLY: this office never invokes them.
-  ONE OPT-IN EXCEPTION: --mission-panel-discovery (below) connects the Codex Orchestrator
-  request panel. Without that flag the office has no such connection and everything above holds
-  exactly. With it, the office RELAYS eleven closed message operations (read, converse, submit a
+  TWO OPT-IN EXCEPTIONS. With neither of the two flags below, the office has neither connection
+  and everything above holds exactly.
+  The first: --mission-panel-discovery (below) connects the Codex Orchestrator request panel.
+  With it, the office RELAYS eleven closed message operations (read, converse, submit a
   proposal, decide, start, observe) to a separate request panel process YOU started
   (dimission_panel.py), over 127.0.0.1 with that panel's token, which stays in the office's
   server and never reaches the browser. The office never starts that panel, never holds a
-  decision of its own, and never has a route to commit, push, merge, release or deploy.
+  decision of its own, and has no route through it to commit, push, merge, release or deploy.
   Approval there is an OPERATOR ATTESTATION, not verified human authorship, and progression
   after an explicit Start is done by a separate runtime (dirun.py, MissionCore mode), not by the
   office. See docs/pixel-agents-office.md, "Requesting Missions: the Codex Orchestrator".
+  The second: --delivery-adapter-discovery (below) connects the office delivery adapter. With
+  it, the office RELAYS two closed operations, a status read and a request for ONE delivery step
+  you confirm (a commit, a push or a pull-request creation), to a separate adapter process YOU
+  started (didelivery_office.py), over 127.0.0.1 with that adapter's token, which stays in the
+  office's server and never reaches the browser. The adapter admits or refuses the step under
+  the delivery's own authorization. The office never starts that adapter, holds no delivery
+  authority of its own, and has no route to merge, release or deploy.
 
 RUN (no install: extract the package and run it)
   Node >= 20. The runtime dependencies are in node_modules/.
@@ -40,6 +48,10 @@ RUN (no install: extract the package and run it)
                         OPTIONAL, absolute path: the request panel's discovery file, READ ONLY.
                         Absent: the Codex Orchestrator shows "not set up". The office never
                         starts, supervises or restarts that panel
+  --delivery-adapter-discovery
+                        OPTIONAL, absolute path: the office delivery adapter's discovery file,
+                        READ ONLY. Absent: every delivery request is answered as not configured.
+                        The office never starts, supervises or restarts that adapter
 
   The office binds 127.0.0.1 only. It prints the path of its access file, not the URL. Open the
   URL stored in <state-dir>/run/browser-access.json, or run ./pixel (see OPENING A RUNNING
@@ -505,6 +517,9 @@ NOTICES AND UPDATES
   Font: FS Pixel Sans Unicode — SIL Open Font License 1.1, NOT MIT; dist/webview/fonts/OFL.txt
   carries its notices and the licence text (the licence text is TRANSCRIBED — verify it against
   the licence page named in that file).
+  Font: Inter (the DI chrome's reading face, dist/webview/fonts/InterVariable.woff2, from
+  webview-ui/public/fonts/) — SIL Open Font License 1.1, NOT MIT; dist/webview/fonts/Inter-OFL.txt
+  is the Inter 4.1 release's own licence file, unchanged (CREDITS.txt names the release and digest).
   Characters: CREDITS.txt (CC0 1.0).
   Updates: there is no auto-update. A new version is a new package with a new sha256; check it
   against the compatibility record, then run it from a fresh extract.

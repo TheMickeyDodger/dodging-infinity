@@ -1,8 +1,9 @@
 /**
- * The reception inbox's ONE open/closed state. The sidebar entry and the in-world reception desk are
- * two entrances to the same dialog, so they share this state (owned by App, read by the panel and by
- * the desk target) instead of each holding a copy. Opening records the control that opened it: focus
- * returns there when the dialog closes (diModal.ts reads `returnFocusTo` once, when it mounts).
+ * The reception inbox's ONE open/closed state, owned by App and read by the panel. The inbox has ONE
+ * entrance in the chrome: the rail's Reception on the scan face (the operational list's attention entry
+ * in the harness face). Nothing in the world opens it (D-10: Reception is left-rail navigation only).
+ * Opening records the control that opened it: focus returns there when the dialog closes (diModal.ts
+ * reads `returnFocusTo` once, when it mounts).
  *
  * Presentation only: opening or closing the inbox reads, writes and sends nothing.
  */
@@ -30,7 +31,7 @@ export interface DiReceptionInboxAccess {
   setLastKey: (key: string) => void;
   /**
    * AC3: minimized, the inbox stays open and mounted but hidden, and the rest of the app is usable; Restore (or
-   * either entrance) brings it back as it was. Presentation only.
+   * the entrance) brings it back as it was. Presentation only.
    */
   minimized: boolean;
   minimize: () => void;
@@ -50,7 +51,7 @@ export function useDiReceptionInbox(): DiReceptionInboxAccess {
   }, []);
   const openFrom = useCallback(
     (opener: HTMLElement | null) => {
-      // An entrance used while the inbox is minimized restores it as it was; focus still returns, on close, to
+      // The entrance used while the inbox is minimized restores it as it was; focus still returns, on close, to
       // the control that first opened it.
       if (!minimizedNow.current) returnFocusTo.current = opener;
       setMinimizedNow(false);

@@ -27,16 +27,17 @@ import {
   DI_SHORT_REF_FULL_MAX_CHARS,
   DI_SHORT_REF_MIN_CHARS,
 } from '../constants.js';
-import type { DiFreshness } from './diNavigation.js';
+import type { DiFreshness, DiRecord } from './diNavigation.js';
 import { plainBindingReason, plainIdentityReason, plainNotLive } from './diNavigation.js';
 import { navigationOrder } from './diOfficeFormat.js';
 import { missionObjective, shortMemberIdentity } from './diOperationalStatus.js';
-import { visibleEntries } from './diReceptionFormat.js';
 
 // ── titles ─────────────────────────────────────────────────────────────────────────────────────
 
 /** Said instead of a title when the objective's opening is only boilerplate (ids, headers). */
 export const MISSION_TITLE_PLACEHOLDER = 'Objective text available: open to read';
+/** The headline of a Mission whose source reported no goal; the source and state are secondary detail. */
+export const MISSION_TITLE_NO_GOAL = 'No goal reported';
 
 export interface DiMissionTitle {
   /** sentence: a verbatim slice of the objective; placeholder: nothing meaningful opens it; no-goal: the source gave none. */
@@ -55,6 +56,21 @@ const LEADING_LABEL = new RegExp(
 const LEADING_ID = new RegExp(String.raw`^${ID}(?![\w-])${SEPARATORS}`, 'i');
 /** A whole line that is a heading: ALL CAPS ("OBJECTIVE", "AUTHORIZED MISSION") or a short "Label:". */
 const HEADING_LINE = /^(?:[\p{Lu}\d &/_-]+|[\p{L} ]{1,40}:)$/u;
+/** The handoff's parenthetical identity: revision and proposal digest. Never a title. */
+const DIGEST_CLAUSE = /\(\s*revision\s+\d+\s*,\s*proposal digest\s+[0-9a-f]+\s*\)\.?/i;
+/** The fixed sentence that follows the handoff prefix. It names no goal. */
+const HANDOFF_LEAD = /^This is the approved Mission content only\b[\s\S]*?(?:\.\s*|$)/i;
+const LONG_HEX = /[0-9a-f]{16,}/i;
+const HANDOFF_LEAD_TEXT = 'this is the approved mission content only';
+/** A cut-off start of the handoff's fixed sentence ("This is …", "This is the appr…"): never a title. */
+function truncatedHandoffLead(text: string): boolean {
+  const m = /^(.*?)\s*(?:…|\.\.\.)\s*$/su.exec(text.trim());
+  if (!m) return false;
+  const head = m[1].replace(/\s+/g, ' ').trim().toLowerCase();
+  return head.length >= 4 && HANDOFF_LEAD_TEXT.startsWith(head);
+}
+const OBJECTIVE_SECTION =
+  /(?:^|\n)\s*OBJECTIVE\s*\n+([\s\S]*?)(?=\n\s*(?:TARGET CONTEXT|REQUESTED SCOPE|APPROVED ACTION SCOPE|APPROVED DELIVERY TARGETS|DELIVERY)\b|$)/i;
 
 function stripBoilerplate(line: string): string {
   let rest = line.replace(/^#+\s*/, '').trim();
@@ -63,6 +79,21 @@ function stripBoilerplate(line: string): string {
     if (next === rest) return rest;
     rest = next;
   }
+}
+
+/** Drop the authorization prefix, the digest clause, and the handoff's fixed sentence. */
+function stripAuthority(line: string): string {
+  const rest = stripBoilerplate(line).replace(DIGEST_CLAUSE, ' ').replace(HANDOFF_LEAD, '').replace(/\s{2,}/g, ' ').trim();
+  return truncatedHandoffLead(rest) ? '' : rest;
+}
+
+function usableTitle(sentence: string): boolean {
+  if (!meaningful(sentence)) return false;
+  if (LONG_HEX.test(sentence)) return false;
+  if (/proposal digest/i.test(sentence)) return false;
+  if (/^this is the approved mission content only/i.test(sentence)) return false;
+  if (truncatedHandoffLead(sentence)) return false;
+  return true;
 }
 
 /** The first sentence: up to a stop followed by a capital, a digit, a quote or the end. */
@@ -87,24 +118,47 @@ function bounded(sentence: string): string {
 /**
  * A Mission's human-meaningful title. The projection carries no separate title field, so the only
  * source-backed meaning is the objective's own text: its first meaningful sentence, after any
- * opening boilerplate (a heading line, "AUTHORIZED MISSION", an id). When nothing meaningful opens
- * it, an honest placeholder; when the source gave no goal, its existing source-qualified words.
+ * opening boilerplate (a heading line, "AUTHORIZED MISSION", an id, the revision and proposal-digest
+ * clause, the handoff's fixed sentence). A long hex string is never a title. When nothing meaningful
+ * opens it, an honest placeholder; when the source gave no goal, its existing source-qualified words.
  * The complete objective is never altered and stays in the inspector.
  */
 export function missionTitle(mission: DiMission): DiMissionTitle {
   const objective = missionObjective(mission);
-  if (objective.kind === 'no-goal') return { kind: 'no-goal', text: objective.text };
+  // Plain-English naming (owner ruling, 2026-10-28): the HEADLINE carries no source id and no state code. It says what the state says, that this source REPORTED no goal (not that none exists);
+  // the source-qualified note with its state stays as secondary detail (missionObjective's text, shown beside the title).
+  if (objective.kind === 'no-goal') return { kind: 'no-goal', text: MISSION_TITLE_NO_GOAL };
   for (const raw of objective.text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line === '' || HEADING_LINE.test(line.replace(/^#+\s*/, ''))) continue;
-    const rest = stripBoilerplate(line);
+    const rest = stripAuthority(line);
     if (rest === '') continue;
     const sentence = firstSentence(rest);
-    return meaningful(sentence)
-      ? { kind: 'sentence', text: bounded(sentence) }
-      : { kind: 'placeholder', text: MISSION_TITLE_PLACEHOLDER };
+    if (!usableTitle(sentence)) continue;
+    return { kind: 'sentence', text: bounded(sentence) };
   }
   return { kind: 'placeholder', text: MISSION_TITLE_PLACEHOLDER };
+}
+
+/**
+ * The goal in plain words for a card: the OBJECTIVE section when the handoff carries one, otherwise
+ * the text with the authorization prefix, proposal digest and long hex runs removed. Empty when
+ * nothing but that boilerplate was recorded.
+ */
+export function plainMissionDescription(text: string): string {
+  const section = OBJECTIVE_SECTION.exec(text);
+  let body = (section?.[1] ?? text).replace(DIGEST_CLAUSE, ' ');
+  body = body.replace(/AUTHORIZED MISSION\b[^\n]*/gi, ' ');
+  body = body.replace(HANDOFF_LEAD, ' ');
+  body = body.replace(/\b[0-9a-f]{16,}\b/gi, ' ');
+  body = body
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!usableTitle(body.replace(/\n/g, ' '))) return '';
+  // Full text, no character cap: Mission details scrolls inside its card, and the Home detail card clamps with CSS (-webkit-line-clamp).
+  return body;
 }
 
 // ── short refs ─────────────────────────────────────────────────────────────────────────────────
@@ -452,6 +506,27 @@ export function firstLayerName(
   return `${member.logical} · ${member.role}${twins > 1 ? ` · ${chain}` : ''}`;
 }
 
+/**
+ * The inspector's heading: who or what this is, by its first-layer name. A Mission is headed by its title, the plain-English name
+ * the naming rule derives from its own goal text. Where the source reported NO goal, the facts support no name, so the heading says
+ * exactly that ("No goal reported") and names no id; the inspector draws the short source-qualified ref on its own line beneath it.
+ */
+export function inspectorHeading(
+  state: Pick<DiOfficeState, 'runtimeAgents'>,
+  record: DiRecord | null,
+  mission: DiMission | null,
+): string {
+  if (record?.target.kind === 'member')
+    return firstLayerName(state, {
+      kind: 'member',
+      mission: record.target.mission,
+      member: record.target.member,
+    });
+  if (record?.target.kind === 'runtime' || record?.target.kind === 'unverified')
+    return firstLayerName(state, { kind: 'runtime', agent: record.target.agent });
+  return mission ? missionTitle(mission).text : 'This record is no longer in the office state';
+}
+
 /** What most rows share, said once: "All N: x." / "n of N: x." (a clear majority), else null. */
 function majority<T>(
   items: readonly T[],
@@ -572,22 +647,19 @@ export function plainObserved(
 // ── attention ──────────────────────────────────────────────────────────────────────────────────
 
 export interface DiAttentionSummary {
-  /** Entries listed as needing attention and not hidden in this view, plus any the cap left out. */
+  /** Every entry listed as needing attention (hidden in some view or not), plus any the cap left out. */
   count: number;
   text: string;
 }
 
 /**
  * The ONE attention entry's words. Zero is said as what it is — nothing LISTED — never "none" or
- * "all clear": what the desk cannot read is said once, by viewLimits.
+ * "all clear": what the desk cannot read is said once, by viewLimits. It takes no hidden set: hiding
+ * an entry in a view resolves and dismisses nothing, so it cannot change how many need attention.
  */
-export function attentionSummary(
-  reception: DiReception,
-  hidden: ReadonlySet<string>,
-): DiAttentionSummary {
-  const { visible } = visibleEntries(reception.entries, hidden);
+export function attentionSummary(reception: DiReception): DiAttentionSummary {
   const notListed = Math.max(0, reception.entriesTotal - reception.entries.length);
-  const count = visible.length + notListed;
+  const count = reception.entries.length + notListed;
   return {
     count,
     text:

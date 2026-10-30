@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Shape } from './helpers/layoutCaps.js';
@@ -118,14 +119,19 @@ describe('DI handler: inert types do nothing at all', () => {
       .filter(Boolean);
     // + saveAmbientState (M3 S4, DI only) + diEvidenceRead (item 2, DI only, a READ)
     // + diCodeReviewRead (item 3, DI only, a READ)
-    // + diMissionRequest (item 4, DI only: the ONE deliberate, bounded non-read; eleven closed ops)
+    // + diCodeReviewMissionRead (I3, DI only, a READ: the same review asked by a Mission-level reference, for a FINISHED Mission)
+    // + diMissionRequest (item 4, DI only: the ONE deliberate, bounded non-read; fourteen closed ops since (c))
     // + saveCityPresentation (living city 6-9, DI only: the viewer's lighting/weather/traffic choice,
     //   checked against core/src/cityPresentation.ts and written under the DI state root)
     // + saveDiSeatPreferences (P2-C, DI only: the identity-keyed seat preferences, checked against
     //   core/src/diSeatPreferences.ts and written under the DI state root)
-    expect(variants).toHaveLength(28);
+    // CHANGED IN I3 (was 28 and 28): diCodeReviewMissionRead is the 29th protocol variant and the 29th declared type, handled.
+    // CHANGED IN b2b (was 29 and 29): diDeliveryRequest (the delivery bridge, DI only: two closed ops, relayed to the office
+    //   delivery adapter, at most one step per advanceOnce) is the 30th protocol variant and the 30th declared type, HANDLED.
+    //   It was declared only after its dispatch case and its relay existed.
+    expect(variants).toHaveLength(30);
     const declared = new Set<string>([...DI_HANDLED_MESSAGE_TYPES, ...DI_INERT_MESSAGE_TYPES]);
-    expect(declared.size).toBe(28);
+    expect(declared.size).toBe(30);
     // every protocol variant is declared exactly one way: handled or inert, never both, never neither
     for (const variant of variants) {
       const camel = variant.replace(/^./, (c) => c.toLowerCase());
@@ -135,6 +141,16 @@ describe('DI handler: inert types do nothing at all', () => {
       DI_HANDLED_MESSAGE_TYPES.filter((t) => (DI_INERT_MESSAGE_TYPES as readonly string[]).includes(t)),
     ).toEqual([]);
     for (const type of Object.keys(INERT_PAYLOADS)) expect(DI_INERT_MESSAGE_TYPES).toContain(type);
+  });
+
+  // The generated protocol names every type: each enum in core/asyncapi.yaml is a NAMED schema. A generator-numbered
+  // AnonymousSchema_<n> name depends on how many anonymous schemas the generator meets, so an unrelated contract
+  // change elsewhere renumbers it, and anything importing it breaks for a reason far from the edit that caused it.
+  // This FAILS WHEN THE GENERATED FILE CONTAINS SUCH A NAME. It does not stop anyone writing an inline enum in the
+  // yaml; if a contract ever legitimately needs an anonymous schema, this fails and a person decides.
+  it('the generated protocol names no generator-numbered AnonymousSchema type', () => {
+    const messagesTs = fs.readFileSync(path.join(__dirname, '../../core/src/messages.ts'), 'utf-8');
+    expect(messagesTs.match(/\bAnonymousSchema_\d+\b/g) ?? []).toEqual([]);
   });
 
   for (const [type, payload] of Object.entries(INERT_PAYLOADS)) {
@@ -241,6 +257,181 @@ describe('DI module graph is free of provider / runtime / scanner / consent code
     expect(forbidden).toEqual([]);
     expect(closure).toContain('di/diHttpServer.ts');
     expect(closure).toContain('socketPipe.ts');
+  });
+
+  // The office composes "no terminal or launch path", by construction: diCli.ts:16 and
+  // docs/pixel-agents-office.md:642 both say so. This pin FAILS ON THE CODE CHANGE that composes a launch
+  // into the office's own closure, which is the occasion to correct those two statements; it does not
+  // check them. It reads MODULE SPECIFIERS from the PARSED source (the TypeScript parser), so line
+  // placement, comments and strings can neither hide an import nor fake one (round 46: a static import
+  // after another statement on the same line was invisible to the line-anchored patterns this replaces).
+  // Its closure follows every relative VALUE form: static, side-effect, re-export, import-equals, dynamic
+  // import() and require() with a literal specifier. Type-only declarations compose no module and are not
+  // followed. The process check counts type-only imports too, which is conservative. NOT covered:
+  // computed specifiers.
+  type Specifier = { specifier: string; typeOnly: boolean };
+
+  /** Every module specifier a source names, in source order, read from its syntax tree. */
+  function moduleSpecifiers(source: string): Specifier[] {
+    const file = ts.createSourceFile('module.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const found: Specifier[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+        found.push({ specifier: node.moduleSpecifier.text, typeOnly: node.importClause?.isTypeOnly === true });
+      } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) {
+        found.push({ specifier: node.moduleSpecifier.text, typeOnly: node.isTypeOnly });
+      } else if (
+        ts.isImportEqualsDeclaration(node) &&
+        ts.isExternalModuleReference(node.moduleReference) &&
+        ts.isStringLiteralLike(node.moduleReference.expression)
+      ) {
+        found.push({ specifier: node.moduleReference.expression.text, typeOnly: node.isTypeOnly });
+      } else if (
+        ts.isCallExpression(node) &&
+        node.arguments.length > 0 &&
+        ts.isStringLiteralLike(node.arguments[0]) &&
+        (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+      ) {
+        found.push({ specifier: node.arguments[0].text, typeOnly: false });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    return found;
+  }
+
+  const PROCESS_MODULES = new Set(['child_process', 'node:child_process', 'cluster', 'node:cluster']);
+
+  /** The relative VALUE specifiers a source imports, type-only declarations excluded: what the closure walk follows. */
+  function relativeImports(source: string): string[] {
+    return moduleSpecifiers(source)
+      .filter((s) => !s.typeOnly && /^\.{1,2}\//.test(s.specifier))
+      .map((s) => s.specifier);
+  }
+
+  /** Whether a source imports a process-starting module: child_process or cluster, with or without node:, type-only included. */
+  function importsProcessModule(source: string): boolean {
+    return moduleSpecifiers(source).some((s) => PROCESS_MODULES.has(s.specifier));
+  }
+
+  function moduleClosure(entry: string, root: string = SRC): string[] {
+    const seen = new Set<string>();
+    const queue = [entry];
+    while (queue.length > 0) {
+      const file = queue.pop()!;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const specifier of relativeImports(fs.readFileSync(file, 'utf-8'))) {
+        const base = path.resolve(path.dirname(file), specifier);
+        const target = [base.replace(/\.js$/, '.ts'), base, `${base}.ts`, path.join(base, 'index.ts')].find(
+          (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile(),
+        );
+        if (target !== undefined) queue.push(target);
+      }
+    }
+    return [...seen].map((f) => path.relative(root, f)).sort();
+  }
+
+  it('the matchers detect every import form, and neither a type-only relative import nor a label string', () => {
+    expect(
+      relativeImports(
+        [
+          "import { a } from './herdrLaunch.js';",
+          "import './herdrLaunch.js';",
+          'import {\n  b,\n  type C,\n} from "./herdrLaunch.js";',
+          "export * from './herdrLaunch.js';",
+          "export { d } from '../x/herdrLaunch.js';",
+          "const e = () => import('./herdrLaunch.js');",
+          'const f = () => require(`./herdrLaunch.js`);',
+          "import type { G } from './typesOnly.js';",
+          "export type { H } from './typesOnly.js';",
+        ].join('\n'),
+      ),
+    ).toEqual([
+      './herdrLaunch.js',
+      './herdrLaunch.js',
+      './herdrLaunch.js',
+      './herdrLaunch.js',
+      '../x/herdrLaunch.js',
+      './herdrLaunch.js',
+      './herdrLaunch.js',
+    ]);
+    for (const form of [
+      "import { spawn } from 'child_process';",
+      'import * as cp from "node:child_process";',
+      "import 'node:child_process';",
+      "export { spawn } from 'child_process';",
+      "const m = () => import('node:child_process');",
+      'const r = () => require(`child_process`);',
+      "import cluster from 'node:cluster';",
+      "import type { ChildProcess } from 'child_process';",
+    ]) {
+      expect(importsProcessModule(form), form).toBe(true);
+    }
+    for (const notAnImport of [
+      "    wrap(targets.childProcess, 'child_process', name, (_self, args) => emit('process', `child_process.${name}`, processDetail(name, args)));",
+      "const label = 'node:child_process';",
+      "import { x } from './child_process_notes.js';",
+    ]) {
+      expect(importsProcessModule(notAnImport), notAnImport).toBe(false);
+    }
+  });
+
+  // Round 46: a valid static import placed AFTER ANOTHER STATEMENT on the same line must be seen, by the closure walk AND by the process check.
+  it('ROUND 46: a static launch import after another statement on the same line is followed by the closure walk', () => {
+    expect(
+      relativeImports("import { DiOffice } from './diOffice.js'; import { nodeHerdrLaunchEffects } from './herdrLaunch.js';"),
+    ).toEqual(['./diOffice.js', './herdrLaunch.js']);
+    expect(relativeImports("/* note */ import { nodeHerdrLaunchEffects } from './herdrLaunch.js';")).toEqual(['./herdrLaunch.js']);
+  });
+
+  it('ROUND 46: a process import after another statement on the same line is detected', () => {
+    expect(importsProcessModule("import { DiOffice } from './diOffice.js'; import { spawn } from 'node:child_process';")).toBe(true);
+    expect(importsProcessModule("export const one = 1; import 'node:child_process';")).toBe(true);
+    expect(importsProcessModule("/* note */ import cluster from 'node:cluster';")).toBe(true);
+  });
+
+  it('same-line survivors: a type-only launch import is not followed, and neither a path in a string nor a label is a process import', () => {
+    expect(
+      relativeImports("import { DiOffice } from './diOffice.js'; import type { HerdrRoleBinding } from './herdrLaunch.js';"),
+    ).toEqual(['./diOffice.js']);
+    expect(relativeImports("import { a } from './a.js'; const p = './herdrLaunch.js';")).toEqual(['./a.js']);
+    expect(
+      importsProcessModule("import { a } from './a.js'; const label = 'node:child_process'; import { r } from './child_process_notes.js';"),
+    ).toBe(false);
+  });
+
+  it('ROUND 46, through a real module graph: same-line imports are reached and detected, and same-line survivors are not', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'launch-pin-'));
+    try {
+      const files: Record<string, string> = {
+        'entry.ts':
+          "export const marker = 1; import { one } from './one.js'; import { launch } from './herdrLaunch.js'; import { q } from './quiet.js'; import type { T } from './typeOnly.js'; const p = './lookalike.js';\nexport { one, launch, q, p };\nexport type { T };\n",
+        'one.ts': "export const one = 1; import { spawn } from 'node:child_process';\nexport { spawn };\n",
+        'herdrLaunch.ts': 'export const launch = 0;\n',
+        'quiet.ts': "export const q = 1; const label = 'child_process'; import { r } from './child_process_notes.js';\nexport { label, r };\n",
+        'child_process_notes.ts': 'export const r = 0;\n',
+        'typeOnly.ts': 'export type T = number;\n',
+        'lookalike.ts': 'export const x = 0;\n',
+      };
+      for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(root, name), text);
+      const closure = moduleClosure(path.join(root, 'entry.ts'), root);
+      expect(closure).toEqual(['child_process_notes.ts', 'entry.ts', 'herdrLaunch.ts', 'one.ts', 'quiet.ts']);
+      expect(closure.filter((f) => importsProcessModule(fs.readFileSync(path.join(root, f), 'utf-8')))).toEqual(['one.ts']);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('the DI entry composes NO terminal or launch path: no process-starting module anywhere in its closure, and herdrLaunch is never reached', () => {
+    const entry = path.join(SRC, 'di/diCli.ts');
+    const closure = moduleClosure(entry);
+    expect(valueImportClosure(entry).filter((f) => !closure.includes(f))).toEqual([]);
+    expect(closure).toContain('di/diHttpServer.ts');
+    expect(closure).toContain('socketPipe.ts');
+    expect(closure).not.toContain('di/herdrLaunch.ts');
+    const importing = closure.filter((f) => importsProcessModule(fs.readFileSync(path.join(SRC, f), 'utf-8')));
+    expect(importing).toEqual([]);
   });
 });
 
@@ -562,5 +753,82 @@ describe('a FRESH DI office shows its Mission zones by default; the user choice 
     expect(adapter.getSetting('pixel-agents.showAreas', true)).toBe(false); // why a handshake default could not work
     initDiDefaults(adapter, false);
     expect(adapter.getSetting('pixel-agents.showAreas', false)).toBe(true); // recorded once at creation
+  });
+});
+
+describe('diDeliveryRequest: checked here, then handed ONCE to the delivery relay, never acted on here (b2b)', () => {
+  const ID = 'prd-0123456789abcdef01234567';
+  const msg = { type: 'diDeliveryRequest', seq: 3, op: 'status', deliveryId: ID };
+  const ctxWith = (deliveryRequest?: (m: Record<string, unknown>, s: (x: Record<string, unknown>) => void) => void) => ({
+    store: new AgentStateStore(),
+    cache: EMPTY_CACHE,
+    extensionVersion: 'test',
+    ...(deliveryRequest ? { deliveryRequest } : {}),
+  });
+
+  it('a valid diDeliveryRequest is HANDLED by handing it, exactly once, to the delivery relay', () => {
+    const seen: unknown[] = [];
+    const send = vi.fn();
+    const disposition = handleDiClientMessage(msg, send, ctxWith((m, s) => seen.push([m, s])));
+    expect(disposition).toBe('handled');
+    expect(seen).toEqual([[msg, send]]);
+    expect(send).not.toHaveBeenCalled(); // the relay answers, not the dispatcher
+  });
+
+  // ROUND 48: this test used to assert SILENCE here ("nothing is sent"), pinning a violation of the contract's EXACTLY ONE reply. It now
+  // asserts the requirement: exactly one reply, correlated by seq and op, saying nothing was changed.
+  it('with no delivery relay in this office it is refused, and EXACTLY ONE correlated unavailable reply is sent', () => {
+    const send = vi.fn();
+    expect(handleDiClientMessage(msg, send, ctxWith())).toEqual({ refused: 'no delivery adapter in this office' });
+    expect(send.mock.calls).toEqual([
+      [
+        {
+          type: 'diDeliveryReply',
+          seq: 3,
+          op: 'status',
+          state: 'unavailable',
+          problem: 'delivery_not_configured',
+          reason: 'This office was started without a delivery adapter.',
+          answer: null,
+        },
+      ],
+    ]);
+  });
+
+  // OWED ITEM 1: this test used to send { op: 'advance' } and expect a reply naming op 'status', an op the message never carried. The
+  // correlation domain now holds here as it does for diMissionRequest: a malformed message whose type, seq and op are valid gets EXACTLY
+  // ONE refusal carrying ITS OWN seq and op; one whose seq or op is not valid cannot be correlated, and gets no reply.
+  it('a malformed diDeliveryRequest inside the correlation domain is refused before the relay, with EXACTLY ONE refusal carrying its own seq and op', () => {
+    const toRelay = vi.fn();
+    const send = vi.fn();
+    const disposition = handleDiClientMessage(
+      { ...msg, deliveryId: 'prd-0123' },
+      send,
+      ctxWith(toRelay),
+    );
+    expect(
+      typeof disposition === 'object' && disposition !== null && 'refused' in disposition,
+    ).toBe(true);
+    expect(toRelay).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toMatchObject({
+      type: 'diDeliveryReply',
+      seq: 3,
+      op: 'status',
+      state: 'refused',
+      problem: 'request_invalid',
+      answer: null,
+    });
+  });
+
+  it('a diDeliveryRequest whose op is not one of the two cannot be correlated: it is refused, with NO reply and nothing invented', () => {
+    const toRelay = vi.fn();
+    const send = vi.fn();
+    const disposition = handleDiClientMessage({ ...msg, op: 'advance' }, send, ctxWith(toRelay));
+    expect(
+      typeof disposition === 'object' && disposition !== null && 'refused' in disposition,
+    ).toBe(true);
+    expect(toRelay).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -2721,7 +2721,7 @@ class ObjectiveExtractionTests(unittest.TestCase):
             self.assertIsNone(hts._objective(value), repr(value))
 
     def test_the_bound_and_its_ellipsis_are_unchanged_for_both_forms(self):
-        self.assertEqual(hts.MAX_OBJECTIVE_CHARS, 160)
+        self.assertEqual(hts.MAX_OBJECTIVE_CHARS, 1024)
         long_goal = "g" * (hts.MAX_OBJECTIVE_CHARS + 40)
         for text in (long_goal, self.formatted({"objective": long_goal})):
             got = hts._objective(text)
@@ -2762,6 +2762,26 @@ class ObjectiveExtractionTests(unittest.TestCase):
         # A bullet BELONGING to a section is never reached: the heading is refused first.
         self.assertIsNone(hts._objective(self.formatted({"objective": "",
                                                          "rules": ["- a rule"]})))
+
+    def test_an_authorized_mission_wrapper_prefers_its_objective_line(self):
+        # A real authorized-Mission wrapper (mn- plus 32 lowercase hex, revision,
+        # proposal digest) puts a long authorization line first. The goal is the
+        # line after the following OBJECTIVE heading and must win over it. A
+        # shorter id is a near-miss and stays the first line; that case is pinned
+        # in test_herdr_task_objective_handoff.
+        auth = ("AUTHORIZED MISSION mn-ba1e47939b4f6b443cd34174b9b1732a (revision 1, "
+                "proposal digest " + "3" * 64 + "). This is the approved Mission "
+                "content only.")
+        goal = "Resolve only Mission 2's remaining D7 and D9 blockers."
+        text = auth + "\n\nOBJECTIVE\n" + goal + "\n\nCONSTRAINTS\n- a"
+        self.assertEqual(hts._objective(text), goal)
+        # An empty objective after the heading is unknown, never the next heading.
+        self.assertIsNone(hts._objective(auth + "\nOBJECTIVE\nCONSTRAINTS\n- a"))
+        self.assertIsNone(hts._objective(auth + "\nOBJECTIVE"))
+        # With no OBJECTIVE heading the first line is used, as before.
+        self.assertEqual(hts._objective(auth + "\nmore"),
+                         hts._objective(auth))
+        self.assertTrue(hts._objective(auth).startswith("AUTHORIZED MISSION "))
 
     def test_only_the_first_goal_line_is_used_and_the_record_is_not_changed(self):
         mission = {"objective": "First line of the goal\nsecond line",

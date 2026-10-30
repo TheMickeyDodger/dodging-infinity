@@ -1003,6 +1003,18 @@ describe('the packaged FIXTURE scripts (packaging/di/fixtures), through the real
       expect(category(r, id).outcome).toBe('unsupported');
   });
 
+  it('reception-v2-partial (pass C, section 7): the same three Missions listed and NOTHING for wf-0006, whose need is therefore not known', async () => {
+    const doc = docOf('reception-v2-partial');
+    expect(doc.label).toMatch(/^FIXTURE .*SYNTHETIC VISUAL TEST/);
+    expect(doc.contract_version).toBe(2);
+    expect(doc.derived_from.sha256).toBe(V2_SHA256);
+    const r = await serve('reception-v2-partial');
+    expect(new Set(r.entries.map((e) => e.missionRef))).toEqual(new Set([M2, M9, WF]));
+    expect(r.entries.some((e) => e.missionRef === 'synthetic_workflow_store:wf-0006')).toBe(false);
+    // the coverage that keeps wf-0006 UNKNOWN rather than "does not need you"
+    for (const id of ['clarification', 'delivery_decision'] as const)
+      expect(category(r, id).outcome).toBe('unsupported');
+  });
   it('reception-v2-unavailable: a FIXTURE-INDUCED unavailable runtime reads as unavailable with its reason', async () => {
     const doc = docOf('reception-v2-unavailable');
     expect(doc.label).toMatch(/^FIXTURE .*fixture-induced.*SYNTHETIC VISUAL TEST/);

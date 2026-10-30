@@ -2363,6 +2363,8 @@ class BoundConstantPinTests(unittest.TestCase):
             "WITHDRAWAL_KEY_VALIDITY_SECONDS": 604800,
             # Task 8: the longest an operator-attested approval stays valid.
             "MAX_ATTESTED_APPROVAL_VALIDITY_SECONDS": 900,
+            # (c): the longest reason a change request records.
+            "MAX_CHANGE_REQUEST_REASON_CHARS": 2000,
             # Proof contract bounds (Mission State).
             "MAX_PROOF_REQUIREMENTS": 32,
             "MAX_REQUIRED_ARTIFACTS": 64,
@@ -2571,6 +2573,13 @@ class BoundConstantPinTests(unittest.TestCase):
             # for MAX_LISTED_REQUESTS, a plain alias with no partner in another language:
             # that alias was dropped and its users use the original.)
             "MAX_RESPONSE_BYTES": 4194304,
+        },
+        # Owner decision (b): the office delivery adapter's loopback interface,
+        # its body bound, nesting bound and per-socket read timeout.
+        "office_delivery/http_adapter.py": {
+            "MAX_BODY_BYTES": 4096,
+            "MAX_JSON_DEPTH": 4,
+            "REQUEST_TIMEOUT_SECONDS": 10,
         },
         # Item 4: the progression pass. At most this many Missions are
         # examined per pass; more eligible ones are reached by rotation and the
@@ -2818,6 +2827,10 @@ class BoundConstantPinTests(unittest.TestCase):
             # Round 23: a listed filter-driver name, bounded in the office's
             # unit (UTF-16 code units).
             "MAX_FILTER_NAME_CHARS": 64,
+            # The workspace witness's projected-field bound (display truncation). Its declared counterpart,
+            # herdr/observe.py's _OBSERVE_MAX_STRING (200), is NOT checked here: this sweep cannot see it (herdr/ is
+            # excluded and the name is underscored), so drift is detectable on this side only.
+            "TASK_FIELD_MAX_CHARS": 200,
         },
         # Query contract v2: the contract's own bounds and the read-only
         # Mission State composer's, pinned by exact value.
@@ -2874,7 +2887,12 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_ALIAS_CHARS": 128,
             "MAX_ROOT_PATH_CHARS": 4096,
             # Display only: the objective line's length, never identity.
-            "MAX_OBJECTIVE_CHARS": 160,
+            "MAX_OBJECTIVE_CHARS": 1024,
+        },
+        # The parent's `task-complete` waits at most this long for the registry lock (held by a spawn or a follow-on
+        # dispatch) before it refuses, by name, having changed nothing. Completion is serialized with dispatch admission.
+        "herdctl.py": {
+            "COMPLETION_LOCK_WAIT_SECONDS": 30,
         },
     }
 

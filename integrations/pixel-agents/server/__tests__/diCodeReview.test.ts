@@ -196,6 +196,34 @@ describe('the request: EXACTLY an admitted reference', () => {
     expect(parseCodeReviewRead(file())).toEqual(fileRequest(exported(), 'src/app.py'));
   });
 
+  // ROUND 16: a read may NAME ITSELF with one optional, opaque `requestId`; the office echoes it. The shapes stay closed: the same five or seven keys plus
+  // this ONE optional key, a bounded token. It carries no authority and the backend is never given it (see the DiOffice tests below).
+  it('accepts the same two shapes WITH one optional opaque requestId, and carries it on the reference', () => {
+    expect(parseCodeReviewRead({ ...overview(), requestId: 'r1.7' })).toEqual({ ...overviewRequest(), requestId: 'r1.7' });
+    expect(parseCodeReviewRead({ ...file(), requestId: 'abc-DEF_0.9' })).toEqual({ ...fileRequest(exported(), 'src/app.py'), requestId: 'abc-DEF_0.9' });
+    expect(parseCodeReviewRead({ ...overview(), requestId: 'x'.repeat(64) })?.requestId).toBe('x'.repeat(64));
+  });
+
+  it('a request WITHOUT a requestId is still served exactly as before (the legacy shape; the recorded fixtures carry none)', () => {
+    expect(parseCodeReviewRead(overview())).toEqual(overviewRequest());
+    expect('requestId' in (parseCodeReviewRead(overview()) as object)).toBe(false);
+  });
+
+  it('refuses a requestId that is not a bounded opaque token, and still refuses every other extra key', () => {
+    const cases: Array<[string, Raw]> = [
+      ['a number', { ...overview(), requestId: 7 }],
+      ['an empty id', { ...overview(), requestId: '' }],
+      ['an over-long id', { ...overview(), requestId: 'x'.repeat(65) }],
+      ['an id with a space', { ...overview(), requestId: 'a b' }],
+      ['an id with a slash', { ...overview(), requestId: 'a/b' }],
+      ['an id with a control character', { ...overview(), requestId: 'a\u0000b' }],
+      ['an id that is an object', { ...overview(), requestId: {} }],
+      ['a second extra key beside a valid id', { ...overview(), requestId: 'r1', extra: 1 }],
+      ['a path beside a valid id', { ...overview(), requestId: 'r1', path: '/etc/passwd' }],
+    ];
+    for (const [label, msg] of cases) expect(parseCodeReviewRead(msg), label).toBeNull();
+  });
+
   it('refuses everything else, unread', () => {
     const cases: Array<[string, Raw]> = [
       ['an extra key', { ...overview(), extra: 1 }],
@@ -222,6 +250,12 @@ describe('the request: EXACTLY an admitted reference', () => {
     for (const [label, msg] of cases) {
       expect(parseCodeReviewRead(msg), label).toBeNull();
     }
+  });
+
+  it('the backend is asked the closed query and nothing else, whatever id the read carried (the id is for the office and the asking client only)', () => {
+    const named = { ...fileRequest(exported(), 'src/app.py'), requestId: 'r1.7' };
+    expect(codeReview.backendQuery(named)).toEqual(codeReview.backendQuery(fileRequest(exported(), 'src/app.py')));
+    expect(Object.keys(codeReview.backendQuery({ ...overviewRequest(), requestId: 'r1.7' })).sort()).toEqual(['missionRef', 'taskId']);
   });
 
   it('the backend is asked the closed query and nothing else', () => {
@@ -745,6 +779,27 @@ describe('an answer that is not EXACTLY right is never relayed', () => {
   });
 });
 
+/** The keys of a diCodeReview answer, exactly (the schema's required list): what a read that carried no id is answered with. With an id there is one more, `requestId`. */
+const ANSWER_KEYS = [
+  'comparison',
+  'decidedBy',
+  'detail',
+  'file',
+  'fileId',
+  'listing',
+  'memberRef',
+  'missionRef',
+  'observedAt',
+  'overview',
+  'problem',
+  'snapshot',
+  'state',
+  'target',
+  'taskId',
+  'type',
+  'view',
+].sort();
+
 describe('DiOffice.readCodeReview — one bounded read, relayed only to the asking client', () => {
   const ENDPOINT: DiscoveryResult = { ok: true, endpoint: { port: 1, token: 'secret-not-logged' } };
   let clockMs = 0;
@@ -797,6 +852,146 @@ describe('DiOffice.readCodeReview — one bounded read, relayed only to the aski
     headers: {},
     body,
     bodyProblem: null,
+  });
+
+  // ROUND 16: the answer names the read it answers, on EVERY path, so a client can tell which of two reads of the same reference an answer is for. The
+  // office refuses a second read IMMEDIATELY (that reply arrives first), so a refusal without the id would leave a hole at the message that starts the sequence.
+  it('the answer ECHOES the requestId, the backend is never given it, and the id never reaches the log', async () => {
+    const raw = exported();
+    const backend = vi.fn(async (_e: unknown, _q: unknown) => http200(clone(overviewAnswer(raw))));
+    const o = await office(backend);
+    const sent: Raw[] = [];
+    await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1.7' }), (m) => sent.push(m));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ state: 'observed', requestId: 'r1.7' });
+    expect(backend.mock.calls[0][1]).toEqual({ missionRef: overviewRequest().missionRef, taskId: overviewRequest().taskId }); // no id
+    expect(JSON.stringify(backend.mock.calls)).not.toContain('r1.7');
+    expect(logs.join('\n')).not.toContain('r1.7');
+    o.stop();
+  });
+
+  it('an id the BACKEND supplies is never relayed: its answer is invalid, and the id on the refusal is the one the CLIENT sent', async () => {
+    const raw = exported();
+    const o = await office(async () => http200({ ...clone(overviewAnswer(raw)), requestId: 'invented-by-the-backend' }));
+    const sent: Raw[] = [];
+    await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) => sent.push(m));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ state: 'refused', problem: 'backend_answer_invalid', requestId: 'r1' });
+    expect(JSON.stringify(sent)).not.toContain('invented-by-the-backend');
+    const bare = await office(async () => http200({ ...clone(overviewAnswer(raw)), requestId: 'invented-by-the-backend' }));
+    const sentBare: Raw[] = [];
+    await bare.readCodeReview(messageOf(overviewRequest()), (m) => sentBare.push(m));
+    expect(sentBare[0].state).toBe('refused');
+    expect('requestId' in sentBare[0]).toBe(false);
+    o.stop();
+    bare.stop();
+  });
+
+  it('a read WITHOUT an id is answered WITHOUT one (no key is added): the legacy path is unchanged', async () => {
+    const raw = exported();
+    const o = await office(async () => http200(clone(overviewAnswer(raw))));
+    const sent: Raw[] = [];
+    await o.readCodeReview(messageOf(overviewRequest()), (m) => sent.push(m));
+    expect(sent[0].state).toBe('observed');
+    expect('requestId' in sent[0]).toBe(false);
+    expect(Object.keys(sent[0]).sort()).toEqual(ANSWER_KEYS); // the key is ABSENT, not present with an undefined value
+    o.stop();
+  });
+
+  // The field is optional in the answer too: a read that carried no id is answered by a message with exactly the seventeen keys it always had. The
+  // key is ABSENT (an in-process consumer doing an exact key-set check, as our own closed-shape tests do, would see a stray key if it were merely
+  // undefined, and only serialisation would hide it). One test per path.
+  describe('a read WITHOUT an id is answered with NO requestId key on every path (absent, not present-and-undefined)', () => {
+    it('read_in_progress', async () => {
+      const raw = exported();
+      let release: (r: BackendResult) => void = () => undefined;
+      const o = await office(() => new Promise<BackendResult>((resolve) => (release = resolve)));
+      const sent: Raw[] = [];
+      const first = o.readCodeReview(messageOf(overviewRequest()), (m) => sent.push(m));
+      await o.readCodeReview(messageOf(overviewRequest()), (m) => sent.push(m));
+      expect(sent[0]).toMatchObject({ problem: 'read_in_progress' });
+      expect(Object.keys(sent[0]).sort()).toEqual(ANSWER_KEYS);
+      release(http200(clone(overviewAnswer(raw))));
+      await first;
+      o.stop();
+    });
+
+    it('read_rate_limited', async () => {
+      const raw = exported();
+      const o = await office(async () => http200(clone(overviewAnswer(raw))));
+      const sent: Raw[] = [];
+      await o.readCodeReview(messageOf(overviewRequest()), (m) => sent.push(m));
+      await o.readCodeReview(messageOf(overviewRequest()), (m) => sent.push(m));
+      expect(sent[1]).toMatchObject({ problem: 'read_rate_limited' });
+      expect(Object.keys(sent[1]).sort()).toEqual(ANSWER_KEYS);
+      o.stop();
+    });
+
+    it('an admission refusal', async () => {
+      const o = await office(async () => http200({}));
+      const sent: Raw[] = [];
+      await o.readCodeReview(messageOf({ ...overviewRequest(), missionRef: 'mc-1:mn-' + 'f'.repeat(32) }), (m) => sent.push(m));
+      expect(sent[0].state).toBe('refused');
+      expect(Object.keys(sent[0]).sort()).toEqual(ANSWER_KEYS);
+      o.stop();
+    });
+
+    it('a backend failure', async () => {
+      const o = await office(async () => ({ kind: 'transport_error', problem: 'backend_unreachable' }) as BackendResult);
+      const sent: Raw[] = [];
+      await o.readCodeReview(messageOf(overviewRequest()), (m) => sent.push(m));
+      expect(sent[0]).toMatchObject({ problem: 'backend_unavailable' });
+      expect(Object.keys(sent[0]).sort()).toEqual(ANSWER_KEYS);
+      o.stop();
+    });
+  });
+
+  describe('EVERY refusal path echoes the id (one test per path, so a path that stops echoing is named by its own test)', () => {
+    it('read_in_progress: the second read is refused AT ONCE and names WHICH read was refused; the first read\'s answer names the first', async () => {
+      const raw = exported();
+      let release: (r: BackendResult) => void = () => undefined;
+      const backend = vi.fn(() => new Promise<BackendResult>((resolve) => (release = resolve)));
+      const o = await office(backend);
+      const sent: Raw[] = [];
+      const first = o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) => sent.push(m));
+      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r2' }), (m) => sent.push(m)); // refused AT ONCE, and it arrives first
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({ problem: 'read_in_progress', requestId: 'r2' });
+      release(http200(clone(overviewAnswer(raw))));
+      await first;
+      expect(sent[1]).toMatchObject({ state: 'observed', requestId: 'r1' }); // the old read's answer names the OLD read
+      o.stop();
+    });
+
+    it('read_rate_limited: a read straight after another is refused and names itself', async () => {
+      const raw = exported();
+      const o = await office(async () => http200(clone(overviewAnswer(raw))));
+      const sent: Raw[] = [];
+      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r1' }), (m) => sent.push(m));
+      await o.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r3' }), (m) => sent.push(m)); // the interval has not passed
+      expect(sent[1]).toMatchObject({ problem: 'read_rate_limited', requestId: 'r3' });
+      o.stop();
+    });
+
+    it('an admission refusal (a Mission the office does not list) names the read it refused', async () => {
+      const o = await office(async () => http200({}));
+      const sent: Raw[] = [];
+      await o.readCodeReview(
+        messageOf({ ...overviewRequest(), missionRef: 'mc-1:mn-' + 'f'.repeat(32), requestId: 'r4' }),
+        (m) => sent.push(m),
+      );
+      expect(sent[0]).toMatchObject({ state: 'refused', requestId: 'r4' });
+      expect(sent[0].problem).not.toBe('read_in_progress');
+      o.stop();
+    });
+
+    it('a backend failure names the read it failed', async () => {
+      const failing = await office(async () => ({ kind: 'transport_error', problem: 'backend_unreachable' }) as BackendResult);
+      const sent: Raw[] = [];
+      await failing.readCodeReview(messageOf({ ...overviewRequest(), requestId: 'r5' }), (m) => sent.push(m));
+      expect(sent[0]).toMatchObject({ problem: 'backend_unavailable', requestId: 'r5' });
+      failing.stop();
+    });
   });
 
   it('the overview reaches only the requesting socket, as data, asking the closed query', async () => {
@@ -1053,6 +1248,128 @@ describe('the dispatcher, the projected state and the relayed message', () => {
     } as never);
     expect(noReader).toMatchObject({ refused: expect.stringContaining('no code review reader') });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  // THE CONTRACT (core/asyncapi.yaml, DiCodeReviewRead.requestId): the read's id is "echoed in the one diCodeReview it sends for this read, on every
+  // path, a refusal included". Found by the reception-v2 preview: the office OFFERED a review whose task id ("SYNTHETIC-task-direct") the read
+  // grammar refuses, refused the page's read unread, and sent nothing, so the page waited on "Reading the files." with no end. A read the parser
+  // refuses whose SHAPE is exactly a read's is answered with ONE refusal echoing what was sent (what the page matches an answer by); any other
+  // shape cannot be named and gets nothing, as an uncorrelatable delivery request gets nothing.
+  it("a read refused UNREAD gets ONE correlated office refusal (reference_not_admitted) when it is exactly a read's shape, and nothing otherwise", () => {
+    const readCodeReview = vi.fn();
+    const ctx = {
+      store: new AgentStateStore(),
+      cache: {} as never,
+      extensionVersion: 'test',
+      readCodeReview,
+    };
+    const MISSION = 'synthetic_mission_core:mn-00000000000000000000000000000002';
+    const read: Raw = {
+      type: 'diCodeReviewRead',
+      missionRef: MISSION,
+      memberRef: `${MISSION}#SYNTHETIC-task-direct#executor1`,
+      taskId: 'SYNTHETIC-task-direct',
+      listing: 'a'.repeat(64),
+      requestId: 'w.1',
+    };
+    const refused = {
+      state: 'refused',
+      decidedBy: 'office',
+      problem: 'reference_not_admitted',
+      detail: 'the read is not exactly an admitted reference',
+    };
+    const empty = { target: null, comparison: null, overview: null, file: null, observedAt: null };
+    const answerTo = (msg: Raw): unknown[] => {
+      const send = vi.fn();
+      const result = handleDiClientMessage(msg, send, ctx as never);
+      expect(result).toMatchObject({
+        refused: expect.stringContaining('is not exactly an admitted reference'),
+      });
+      return send.mock.calls.map((c) => c[0]);
+    };
+
+    // the overview read the reception-v2 page sends: ONE answer, the reference and the request id exactly as sent
+    expect(answerTo(read)).toEqual([
+      {
+        type: 'diCodeReview',
+        missionRef: MISSION,
+        memberRef: read.memberRef,
+        taskId: 'SYNTHETIC-task-direct',
+        listing: read.listing,
+        snapshot: null,
+        fileId: null,
+        view: 'overview',
+        requestId: 'w.1',
+        ...refused,
+        ...empty,
+      },
+    ]);
+    // one file's read: the view, the snapshot and the file id are echoed too
+    const fileRead = {
+      ...read,
+      snapshot: 'b'.repeat(64),
+      fileId: `rf-${'c'.repeat(32)}`,
+      requestId: 'w.2',
+    };
+    expect(answerTo(fileRead)).toEqual([
+      {
+        type: 'diCodeReview',
+        missionRef: MISSION,
+        memberRef: read.memberRef,
+        taskId: 'SYNTHETIC-task-direct',
+        listing: read.listing,
+        snapshot: fileRead.snapshot,
+        fileId: fileRead.fileId,
+        view: 'file',
+        requestId: 'w.2',
+        ...refused,
+        ...empty,
+      },
+    ]);
+    // a read that named itself with no id is answered with no id (absence is not a wildcard on the page, so it is not invented here)
+    const { requestId: _unnamed, ...anonymous } = read;
+    const unnamedAnswer = answerTo(anonymous);
+    expect(unnamedAnswer).toHaveLength(1);
+    expect('requestId' in (unnamedAnswer[0] as Raw)).toBe(false);
+    // a FINISHED Mission's read (no member): answered with the empty member the contract gives a Mission-level answer
+    const missionRead = {
+      type: 'diCodeReviewMissionRead',
+      missionRef: MISSION,
+      taskId: 'SYNTHETIC-task-direct',
+      listing: read.listing,
+      requestId: 'w.3',
+    };
+    expect(answerTo(missionRead)).toEqual([
+      {
+        type: 'diCodeReview',
+        missionRef: MISSION,
+        memberRef: '',
+        taskId: 'SYNTHETIC-task-direct',
+        listing: read.listing,
+        snapshot: null,
+        fileId: null,
+        view: 'overview',
+        requestId: 'w.3',
+        ...refused,
+        ...empty,
+      },
+    ]);
+    // LENGTH IS NOT SHAPE: the catalog projection does not bound an offer's strings, so an over-long task id is still answered
+    expect(answerTo({ ...read, taskId: 'x'.repeat(300), requestId: 'w.4' })).toHaveLength(1);
+
+    // NOT a read's shape: nothing can be named, so nothing is sent
+    for (const [why, msg] of [
+      ['a request id that is not the bounded token', { ...read, requestId: 'not a token!' }],
+      ['a reference value that is not a string', { ...read, taskId: 7 }],
+      ['a missing key', (({ listing: _l, ...rest }) => rest)(read)],
+      ['an extra key', { ...read, path: '/' }],
+      ['a snapshot without its file id', { ...read, snapshot: 'b'.repeat(64) }],
+      ['a Mission-level read carrying a member', { ...missionRead, memberRef: read.memberRef }],
+    ] as const) {
+      expect(answerTo(msg as Raw), why).toEqual([]);
+    }
+    // and the reader is never asked for a read refused unread
+    expect(readCodeReview).not.toHaveBeenCalled();
   });
 
   it('the office state projects the offer on each member', () => {
