@@ -70,6 +70,7 @@
     "test/diScanPanel.test.ts",
     "test/diScanRail.test.ts",
     "test/diScanMissionDetails.test.ts",
+    "test/diScanMinimize.test.ts",
     "test/diInterRendered.test.ts",
     "test/diScanFace.test.ts",
     "test/diScanComposition.test.ts",

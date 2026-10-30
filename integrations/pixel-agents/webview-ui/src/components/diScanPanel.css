@@ -1617,6 +1617,9 @@
 }
 .di-rail-foot {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding-top: 10px;
   border-top: 1px solid var(--di-scan-line);
 }
