@@ -2887,7 +2887,7 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_ALIAS_CHARS": 128,
             "MAX_ROOT_PATH_CHARS": 4096,
             # Display only: the objective line's length, never identity.
-            "MAX_OBJECTIVE_CHARS": 160,
+            "MAX_OBJECTIVE_CHARS": 1024,
         },
         # The parent's `task-complete` waits at most this long for the registry lock (held by a spawn or a follow-on
         # dispatch) before it refuses, by name, having changed nothing. Completion is serialized with dispatch admission.

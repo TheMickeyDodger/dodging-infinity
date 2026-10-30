@@ -754,6 +754,38 @@
   line-height: 35px;
   color: var(--di-scan-text);
 }
+/* Mission details: the full objective scrolls INSIDE the card (no character cap); the heading and the foot stay fixed. */
+.di-scan-details-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 10px;
+  margin-bottom: 6px;
+}
+.di-scan-details-body:focus-visible {
+  outline: 2px solid var(--di-scan-well-edge);
+  outline-offset: 4px;
+}
+.di-scan-card .di-scan-details-body p.di-scan-details-text {
+  white-space: pre-line;
+}
+.di-scan-details-body::-webkit-scrollbar {
+  width: 10px;
+  background: var(--di-details-scroll-track);
+}
+.di-scan-details-body::-webkit-scrollbar-thumb {
+  background: var(--di-details-scroll-thumb);
+  border: 2px solid var(--di-details-scroll-track);
+  border-radius: 6px;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .di-scan-details-body {
+    scrollbar-color: var(--di-details-scroll-thumb) var(--di-details-scroll-track);
+  }
+}
 .di-scan-card-foot {
   display: flex;
   align-items: center;

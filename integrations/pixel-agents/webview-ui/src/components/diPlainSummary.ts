@@ -157,12 +157,8 @@ export function plainMissionDescription(text: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   if (!usableTitle(body.replace(/\n/g, ' '))) return '';
-  const max = 320;
-  if (body.length <= max) return body;
-  const room = body.slice(0, max - 1);
-  const space = room.lastIndexOf(' ');
-  const kept = space > max / 2 ? room.slice(0, space) : room;
-  return `${kept.replace(/[\s,;:—–-]+$/, '')}…`;
+  // Full text, no character cap: Mission details scrolls inside its card, and the Home detail card clamps with CSS (-webkit-line-clamp).
+  return body;
 }
 
 // ── short refs ─────────────────────────────────────────────────────────────────────────────────

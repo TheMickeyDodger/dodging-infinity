@@ -2721,7 +2721,7 @@ class ObjectiveExtractionTests(unittest.TestCase):
             self.assertIsNone(hts._objective(value), repr(value))
 
     def test_the_bound_and_its_ellipsis_are_unchanged_for_both_forms(self):
-        self.assertEqual(hts.MAX_OBJECTIVE_CHARS, 160)
+        self.assertEqual(hts.MAX_OBJECTIVE_CHARS, 1024)
         long_goal = "g" * (hts.MAX_OBJECTIVE_CHARS + 40)
         for text in (long_goal, self.formatted({"objective": long_goal})):
             got = hts._objective(text)

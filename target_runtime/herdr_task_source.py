@@ -123,7 +123,7 @@ BINDINGS_FILE = snapshot_module.BINDINGS_FILE
 ROOT_KEY_HEX = 12
 #: The display objective: the task description's first non-empty line,
 #: bounded (a description is a whole prompt). Display only, never identity.
-MAX_OBJECTIVE_CHARS = 160
+MAX_OBJECTIVE_CHARS = 1024
 #: The Mission bridge's handoff (target_runtime/mission_bridge.py
 #: ``handoff_text``), which a bridge-dispatched child records as its task
 #: description: its first line begins with the prefix
@@ -498,7 +498,9 @@ def _objective(description):
     that, under the same absence rule: unknown (``None``) when there is none, or
     when it is itself a heading, of either format (the bridge template's next
     heading follows an empty objective). The bridge's first line is authority
-    only, so without this the bounded first line kept ``<prefix> This is …``.
+    only, so without this the bounded first line is that authority line (at
+    the old 160-character cap it ended ``<prefix> This is …``; a real handoff
+    prefix now fits the catalog cap whole).
     A first line with the prefix but NO ``OBJECTIVE`` next is returned as before.
 
     Any other FIRST line is returned exactly as before. The only comparisons

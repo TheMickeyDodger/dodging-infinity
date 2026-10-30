@@ -2,7 +2,8 @@
 
 The Mission bridge hands a Herdr child a FIXED template (``target_runtime.mission_bridge.handoff_text``). Its first line is authority only: ``AUTHORIZED MISSION <id> (revision <n>, proposal digest
 <64 hex>). This is the approved Mission content only, ...``; the goal follows in an ``OBJECTIVE`` section. The child records the handoff as its task description, and the Herdr-task catalog source
-(``target_runtime.herdr_task_source._objective``) took the description's FIRST non-empty line, cut at 160 characters, so the office received ``<prefix> This is …`` and titled the Mission "This is …".
+(``target_runtime.herdr_task_source._objective``) took the description's FIRST non-empty line, bounded at ``MAX_OBJECTIVE_CHARS``. At the old 160-character cap that line was cut to ``<prefix> This is …``;
+a real authority line now fits the 1024 catalog cap whole. Either way the first-line rule titles the Mission from the authority line, not the goal.
 
 What this pins (owner ruling, plain-English naming, 2026-10-28):
   * the bridge template yields the line after its OBJECTIVE heading, bounded as before;
@@ -46,16 +47,27 @@ class HandoffObjectiveTests(unittest.TestCase):
 
     def test_the_bridge_handoff_yields_its_goal_not_its_authority_line(self):
         text = handoff("Fix the SYNTHETIC login timeout so sessions stay alive.\nKeep the API unchanged.")
-        # the precondition, and the defect: the first line is authority, and the old rule kept "... This is …"
-        self.assertTrue(text.splitlines()[0].startswith("AUTHORIZED MISSION " + MISSION_ID))
-        self.assertTrue(first_line_before(text).endswith("This is …"))
-        self.assertEqual(hts._objective(text), "Fix the SYNTHETIC login timeout so sessions stay alive.")
+        authority = text.splitlines()[0]
+        goal = "Fix the SYNTHETIC login timeout so sessions stay alive."
+        # The first line is authority. The first-line rule keeps that line.
+        # A real handoff prefix fits the 1024 catalog cap, so it is no longer
+        # cut to "This is …"; it is still not the goal.
+        self.assertTrue(authority.startswith("AUTHORIZED MISSION " + MISSION_ID))
+        self.assertIn("This is the approved Mission content only", authority)
+        self.assertLessEqual(len(authority), hts.MAX_OBJECTIVE_CHARS)
+        self.assertFalse(authority.endswith("…"))
+        self.assertEqual(first_line_before(text), authority)
+        self.assertNotEqual(first_line_before(text), goal)
+        self.assertEqual(hts._objective(text), goal)
 
     def test_a_long_goal_line_is_bounded_as_before_and_a_two_digit_revision_is_the_same_template(self):
-        goal = "Rework the SYNTHETIC panel " + "and its layout " * 20
+        unit = "and its layout "
+        goal = "Rework the SYNTHETIC panel " + unit * (hts.MAX_OBJECTIVE_CHARS // len(unit) + 2)
+        self.assertGreater(len(goal.strip()), hts.MAX_OBJECTIVE_CHARS)
         got = hts._objective(handoff(goal, revision=12))
         self.assertEqual(len(got), hts.MAX_OBJECTIVE_CHARS)
         self.assertTrue(got.endswith("…"))
+        self.assertTrue(got.startswith("Rework the SYNTHETIC panel "))
         self.assertTrue(goal.strip().startswith(got[:-1]))
 
     def test_a_missing_or_heading_only_objective_is_unknown_never_a_heading_or_the_authority_line(self):
