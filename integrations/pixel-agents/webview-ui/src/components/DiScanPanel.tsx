@@ -163,8 +163,9 @@ const TRASH_KEEPS =
   'Deletes this Mission’s reasoning, transcripts and logs: DI’s copies, the herd’s own terminal history, and the providers’ own session transcripts. Keeps the summary and the approval record. If any part cannot be deleted, it says what remains.';
 /** Said where this build does not read a Mission's approval, repository, stall and log facts (owed by Stage 4). */
 const STATE_NOT_READ =
-  'Approvals, repository requests, stalls and logs are not read in this layout preview.';
-const TRASH_NOT_CONNECTED = 'Deleting a Mission is not connected in this layout preview.';
+  'Approvals, repository requests, stalls and logs are not reported for this Mission.';
+const TRASH_NOT_CONNECTED =
+  'The office does not delete Missions. Deletion stays outside this office.';
 const TRASH_LABEL = 'Hold to delete this Mission’s data';
 /** Where Mission details goes Back to: the page it was opened from (CONTROL-MAP M1). */
 type DiScanOrigin = 'list' | 'missions' | 'reception';
@@ -1304,7 +1305,7 @@ function Stage({
               </div>
               <p className="di-scan-stage-note di-scan-tree-note">
                 {placeholder.kind === 'not_read'
-                  ? 'Files are not read in this layout preview.'
+                  ? 'Files are not listed until a code review is offered for this Mission.'
                   : placeholder.kind === 'reading'
                     ? 'Reading the files.'
                     : 'No files are shown.'}

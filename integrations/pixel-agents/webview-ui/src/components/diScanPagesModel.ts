@@ -43,7 +43,7 @@ export const DI_TEAM_UNAVAILABLE = 'Team Missions are part of Paid and are not a
 export const DI_MISSIONS_FOOTER =
   'dodging-infinity is the harness for every Mission. Finished Missions archive after 30 days.';
 export const DI_MISSIONS_EMPTY = 'No Missions yet. Missions you start appear here.';
-export const DI_STALLS_NOT_READ = 'Stalls are not read in this layout preview.';
+export const DI_STALLS_NOT_READ = 'Stalls are not reported by this catalog.';
 
 const finished = (row: DiScanRow): boolean =>
   row.tab === 'merged' || row.tab === 'closed' || row.pills.some((pill) => pill.tone === 'merged');
