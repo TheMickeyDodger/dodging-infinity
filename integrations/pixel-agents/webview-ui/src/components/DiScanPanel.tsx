@@ -39,14 +39,13 @@ import {
   DI_EVIDENCE_LABEL,
   DI_EVIDENCE_NOT_AVAILABLE,
   DI_EVIDENCE_NOT_LISTED,
-  DI_HERDR_DELIVERY_NOTE,
   DI_MISSIONS_READ,
   DI_SCAN_MISSION_VIEWS,
   DI_SCAN_PAGE_VIEWS,
   DI_SCAN_TABS,
-  herdrDeliverySteps,
   knownTrue,
   linkedDeliverySteps,
+  lockedDeliverySteps,
   openAttentionCount,
   railOrchestrators,
   scanThread,
@@ -666,19 +665,15 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
     if (real && setLinked !== undefined) setLinked(target);
   }, [real, setLinked, target]);
   const wired = target !== null && session !== null;
-  // A Herdr task with no linked delivery is not a layout preview of Commit/Push.
-  const herdrUnlinked = row.sourceKind === 'herdr_task' && target === null;
   const linkWords = link !== undefined && link.kind !== 'linked' ? link.words : null;
   // the session acts for THIS Mission only while its one id is this Mission's link
   const current = session !== null && target !== null && enteredId(session.state) === target;
   const blocked = session === null || session.state.pending !== null || session.state.unvouched !== null;
   const steps = wired
     ? linkedDeliverySteps(current && session !== null ? session.state.view : null)
-    : herdrUnlinked
-      ? herdrDeliverySteps()
-      : linkWords !== null
-        ? herdrDeliverySteps().map((step) => ({ ...step, reason: linkWords }))
-        : deliverySteps(row.delivery);
+    : linkWords !== null
+      ? lockedDeliverySteps(linkWords)
+      : deliverySteps(row.delivery);
   return (
     <section
       className="di-scan-delivery"
@@ -768,17 +763,14 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
           )}
         </>
       )}
-      {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28).
-          A Herdr task with no linked delivery does not end in a pull request from this office. */}
-      {!herdrUnlinked && (
-        <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
-          {DI_DELIVERY_END}
-        </p>
-      )}
+      {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28). */}
+      <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
+        {DI_DELIVERY_END}
+      </p>
       {/* the layout note describes layout-only controls: a wired Delivery draws none; a real unlinked Mission says the catalog's reason */}
       {!wired && (
         <p className="di-scan-stage-note" id="di-scan-delivery-note">
-          {herdrUnlinked ? DI_HERDR_DELIVERY_NOTE : linkWords !== null ? linkWords : LAYOUT_NOTE}
+          {linkWords !== null ? linkWords : LAYOUT_NOTE}
         </p>
       )}
     </section>
@@ -1148,7 +1140,7 @@ function Stage({
                 className="di-scan-icon-button"
                 aria-label="More"
                 disabled
-                title="More options are not in this layout preview."
+                title="More options are not available in this office."
               >
                 <MoreIcon />
               </button>
@@ -1558,9 +1550,11 @@ function Stage({
         <div className="di-scan-comments-view" data-testid="di-scan-comments-view">
           <h1 className="di-scan-comments-title">Comments</h1>
           <p className="di-scan-comments-sub">{row.title}</p>
-          {thread.kind === 'sample' && (
+          {(thread.kind === 'sample' || thread.kind === 'read') && (
             <>
-              <span className="di-scan-fixture-tag">Sample thread (fixture)</span>
+              {thread.kind === 'sample' && (
+                <span className="di-scan-fixture-tag">Sample thread (fixture)</span>
+              )}
               <ol className="di-scan-thread" data-testid="di-scan-thread">
                 {thread.thread.map((comment) => (
                   <li key={comment.id} className="di-scan-comment">
@@ -1578,12 +1572,19 @@ function Stage({
               </ol>
             </>
           )}
+          {thread.kind === 'unavailable' && row.sourceKind === 'herdr_task' && (
+            <p className="di-scan-stage-note" data-testid="di-scan-comments-herdr">
+              {thread.reason}
+            </p>
+          )}
           {/* X3 (gap 10, D-6, D106): Free has no composer, not even a disabled one, and no claim about a history it
-              cannot read; the label is the whole statement */}
-          <p className="di-scan-comments-paid" data-testid="di-scan-comments-paid">
-            <span className="di-scan-comments-paid-tag">Paid</span>
-            {DI_COMMENTS_PAID}
-          </p>
+              cannot read; the label is the whole statement. A Herdr task's comments are its recorded review. */}
+          {row.sourceKind !== 'herdr_task' && (
+            <p className="di-scan-comments-paid" data-testid="di-scan-comments-paid">
+              <span className="di-scan-comments-paid-tag">Paid</span>
+              {DI_COMMENTS_PAID}
+            </p>
+          )}
         </div>
       )}
     </div>

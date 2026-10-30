@@ -29,7 +29,10 @@ package), called once per response. Without one, every workflow mission says no
 store is registered; a callable that raises or returns the wrong shape makes the
 workflow missions ``unlinked_reader_failed``, never a crash. A mission of any
 other model (Mission Core included) is ``unlinked_model_not_recorded`` either
-way.
+way, except when ``repository_delivery`` is set: a mission of
+``contract_v2.REPOSITORY_LINK_MODEL`` is linked by its workspace origin
+(``repository_url_of``) against ``delivery_repositories``, or says why it
+is not.
 
 The whole response is validated by ``contract_v2.validate_response_v2``
 before it is returned: an assembly defect is a raised ``ContractError``,
@@ -391,7 +394,8 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
                 registry_directory=None, registry_bytes=None,
                 observed_roots=None, confirmed_bindings=None, compose=None,
                 budget=None, runtime_agents=None, delivery_presentations=None,
-                delivery_links=None):
+                delivery_links=None, delivery_repositories=None,
+                repository_url_of=None, repository_delivery=False):
     """One version 2 response over an already loaded (and validated)
     registry. ``runtime_agents``: as ``query.assemble``.
     ``delivery_presentations``: None (not registered) or a callable taking
@@ -405,7 +409,12 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
     when the store is unavailable (``target_runtime.mission_state.
     DeliveryLinksReader.bindings``); every mission then carries its
     ``delivery_link`` (``contract_v2.mission_delivery_link``), and a failure of
-    the hook is ``unlinked_reader_failed``, never a crash. ``observed_roots``
+    the hook is ``unlinked_reader_failed``, never a crash.
+    ``repository_delivery``: when set, a mission of
+    ``contract_v2.REPOSITORY_LINK_MODEL`` is addressed by repository.
+    ``delivery_repositories`` returns ``{identity: [delivery ids]}``
+    (or None when the store is unavailable). ``repository_url_of(mission)``
+    returns that task's workspace origin identity, or None. ``observed_roots``
     and ``confirmed_bindings``: see
     ``roster.classify``; ``compose``: see the module; ``budget``: this
     pass's ``PassBudget`` (the owner's, of its SHARED refresh budget; a
@@ -437,12 +446,36 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
                              compose)
     inspection = _inspection(source_blocks)
     unavailable, bound = _delivery_bindings(delivery_links)
+    repositories = None
+    if repository_delivery and unavailable is None:
+        repositories, repo_unavailable = _repository_bindings(
+            delivery_repositories)
+        if repo_unavailable is not None:
+            unavailable = repo_unavailable
+            bound = None
     holders = {}
     for mission in missions:
         if mission["lifecycle"]["model"] == (
                 contract.LIFECYCLE_MODEL_WORKFLOW_STORE):
             holders[mission["native_id"]] = holders.get(
                 mission["native_id"], 0) + 1
+    resolved_urls = {}
+    repository_holders = {}
+    if repository_delivery:
+        for mission in missions:
+            if mission["lifecycle"]["model"] != contract_v2.REPOSITORY_LINK_MODEL:
+                continue
+            url = None
+            if unavailable is None and repository_url_of is not None:
+                try:
+                    url = repository_url_of(mission)
+                except Exception:                          # noqa: BLE001
+                    url = None
+            if type(url) is not str or not url:
+                url = None
+            resolved_urls[mission["mission_ref"]] = url
+            if url is not None:
+                repository_holders[url] = repository_holders.get(url, 0) + 1
     for mission in missions:
         mission["mission_state"] = states[mission["mission_ref"]]
         mission["admitted_artifacts"] = {
@@ -450,7 +483,11 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
                 mission, kinds[mission["source_id"]], chain_reading)}
         mission["workflow_phase"] = contract_v2.workflow_phase(mission)
         mission["delivery_link"] = contract_v2.mission_delivery_link(
-            mission, unavailable, bound, holders, inspection)
+            mission, unavailable, bound, holders, inspection,
+            repository_url=resolved_urls.get(mission["mission_ref"]),
+            by_repository=repositories,
+            repository_holders=repository_holders,
+            repository_addressable=repository_delivery)
     registry = query_module._registry_block(
         contract.HEALTH_FRESH, None, len(registry_document["sources"]),
         registry_directory, registry_bytes)
@@ -492,6 +529,30 @@ def _delivery_bindings(hook):
     return None, bound
 
 
+def _repository_bindings(hook):
+    """``(map or None, unavailable or None)`` for Herdr repository links.
+
+    The map is ``{repository identity: [delivery ids]}``. A missing hook is
+    an empty map (the store was read and no record named a repository). A
+    hook that raises, or returns anything but that map, is
+    ``unlinked_reader_failed``. None from the hook is
+    ``unlinked_store_unavailable``."""
+    if hook is None:
+        return {}, None
+    try:
+        bound = hook()
+    except Exception:                                      # noqa: BLE001
+        return None, contract_v2.MISSION_LINK_READER_FAILED
+    if bound is None:
+        return None, contract_v2.MISSION_LINK_STORE_UNAVAILABLE
+    if type(bound) is not dict or not all(
+            type(identity) is str and type(ids) is list and ids
+            and all(type(one) is str for one in ids)
+            for identity, ids in bound.items()):
+        return None, contract_v2.MISSION_LINK_READER_FAILED
+    return bound, None
+
+
 def _inspection(source_blocks):
     """Whether every registered workflow-store source was read fresh: only
     then is "no registered Mission has this workflow id" a known fact."""
@@ -521,7 +582,8 @@ def query_v2(source_registry, runtime_snapshot, chain_observation, now,
              max_age_seconds=contract.DEFAULT_MAX_AGE_SECONDS, readers=None,
              observed_roots=None, confirmed_bindings=None, compose=None,
              budget=None, runtime_agents=None, delivery_presentations=None,
-             delivery_links=None):
+             delivery_links=None, delivery_repositories=None,
+             repository_url_of=None, repository_delivery=False):
     """``query.query`` for version 2: a registry that cannot be loaded
     degrades explicitly (its own health and problem, no sources, no
     missions) instead of raising or reading as empty."""
@@ -552,4 +614,7 @@ def query_v2(source_registry, runtime_snapshot, chain_observation, now,
                        max_age_seconds, readers, source_registry.directory,
                        size, observed_roots, confirmed_bindings, compose,
                        budget, runtime_agents, delivery_presentations,
-                       delivery_links=delivery_links)
+                       delivery_links=delivery_links,
+                       delivery_repositories=delivery_repositories,
+                       repository_url_of=repository_url_of,
+                       repository_delivery=repository_delivery)

@@ -3275,6 +3275,10 @@ assert _ms_import_rows == sorted([
     ('mission_sources', ('contract_v2', 'fileread', 'sources')),
     ('pr_delivery', ('authorization', 'mission_parent')),
     ('target_runtime', ('prepare',)), ('target_runtime', ('state_artifact',)),
+    # Herdr delivery linkage: the workspace origin identity, a bounded local
+    # config read. No git process, no delivery write.
+    ('target_runtime.workspace_origin', (
+        'origin_repository_url', 'repository_identity')),
 ], key=repr), _ms_import_rows
 _ms_attributes = {}
 for _node in ast.walk(_ms_tree):

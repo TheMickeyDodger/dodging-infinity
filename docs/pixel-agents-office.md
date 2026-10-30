@@ -21,9 +21,10 @@ catalog links (see "Delivery links on Missions" under [Launch](#launch), which n
 adapter names eligible behind a local confirmation, with the adapter's two notes shown as it wrote
 them. No delivery id is typed there, and no other delivery can be chosen. Accepting CI results is not
 connected. A Mission Core Mission, or any Mission without such a link, shows why no delivery is read
-and offers nothing to confirm. A plain Herdr task is the same limit, said as itself: delivery
-records name workflow Missions only, so Commit, Push and Open pull request are not offered and are
-not described as a layout preview. The catalog's delivery store is not shown to be the one the adapter
+and offers nothing to confirm. A plain Herdr task is linked when its workspace origin matches one
+delivery record's repository. Commit, Push and Open pull request then use the same confirmation as a
+workflow Mission. They are not a layout preview, and they are not offered when no delivery is linked.
+The catalog's delivery store is not shown to be the one the adapter
 reads: if the adapter has no record of a linked delivery, its refusal is shown as it answered. A
 separate panel where a delivery id is typed is kept for test harnesses only, with no product entry (owner
 decision, 2026-10-29): the office does not draw it, and Delivery under Swarm is the product's delivery view. Everything else here is
@@ -38,9 +39,10 @@ Codex Outer Operator. The office is not the Phase 11 Visual Mission OS of the
 
 What a rebuilt office reads from the catalog, and what still needs a process on the machine:
 
-- **Code Diff** is offered for an active Mission Core assignment and for an active Herdr task whose binding is bound. The scan Code Diff follows that offer. It is not a layout preview. A review the office does not offer says the office's reason. Reading the diff still needs the catalog backend (`/code_review`) restarted from this tree.
-- **Evidence and review** for a Herdr task come from the task's `.herd/state` review when the capture observes the workspace. No review recorded is `not_recorded`. Herdr tasks still have no Mission Core artifact bodies.
-- **Delivery** is read only when the catalog links one delivery record. That link is still workflow Missions only. A Herdr task says so. Commit, push and opening a pull request still go through the office delivery adapter when you start it (`--delivery-adapter-discovery`); the office itself does not commit, push, merge or deploy.
+- **Code Diff** is offered for an active Mission Core assignment and for an active Herdr task whose binding is bound, including when no team member is live: the diff is the task workspace. The scan Code Diff follows that offer. It is not a layout preview. A review the office does not offer says the office's reason. Reading the diff still needs the catalog backend (`/code_review`) restarted from this tree.
+- **Comments** on a Herdr task are that task's recorded review (reviewer, round, verdict, declared findings). Nothing recorded stays unrecorded. They are not a Paid-sharing thread and not a layout preview.
+- **Evidence and review** for a Herdr task come from the task's `.herd/state` review when the capture observes the workspace. No review recorded is `not_recorded`. No Mission Core artifact bodies are recorded for a Herdr task; that section says so, and the review section is the recorded review.
+- **Delivery** is read when the catalog links one delivery record. A workflow Mission links by the record's Mission binding. A Herdr task links when its workspace origin matches one delivery record's repository. Commit, push and opening a pull request still go through the office delivery adapter when you start it (`--delivery-adapter-discovery`), and still require that adapter's confirmation. The office itself does not commit, push, merge or deploy, and it does not start Herdr.
 - **Reception** reads Herdr task failure (`FAILED`, `ERROR`) as a blocker and a completed Herdr task with no approving review as results ready for review. Clarification requests are still not in the catalog. Recover, answering, and accepting CI stay outside this office and say which connection they need.
 - **Herdr** in the sidebar and on a Mission opens the documented terminal path (`herdctl` from your checkout). The office does not start Herdr.
 - **Connections** are not in this build.
@@ -186,13 +188,16 @@ node dist/di-cli.js --state-dir /absolute/office-state \
   by the one valid record whose own Mission binding names its workflow id, while every workflow
   source was read and no other Mission holds that id. Two matching records are ambiguous, and none
   is chosen. A Mission Core Mission is never linked: no delivery record names one, so its link is
-  "not known", not "none". A plain Herdr task is never linked for the same reason (delivery records
-  name workflow ids, not Herdr task ids); the office says that, and does not draw Commit and Push as
-  if a layout preview had simply not read them. Without the flag, every workflow Mission says that
-  no store is registered; a Mission Core Mission and a Herdr task still say their link is not known
-  when the catalog omits `delivery_link`. A link names which delivery's status may be read; it
+  "not known", not "none". A plain Herdr task is linked when repository addressing is on and its
+  workspace origin matches exactly one delivery record's repository (`record_repository_binding`).
+  No readable origin is `unlinked_repository_not_recorded`. Two records, or two Herdr tasks, sharing
+  that repository are ambiguous and none is chosen. Without the flag, every workflow Mission and
+  every addressable Herdr task says that no store is registered; a Mission Core Mission still says
+  its link is not known. A catalog that did not address repositories still reports
+  `unlinked_model_not_recorded` for a Herdr task. A link names which delivery's status may be read; it
   authorizes nothing, and the office delivery adapter is not shown to read the same store. Mission
-  details reads a linked delivery under Swarm (see the delivery adapter, above).
+  details reads a linked delivery under Swarm (see the delivery adapter, above). Commit, push and
+  opening a pull request use that adapter's existing confirmation.
 - **Runtime source.** The bridge needs `--discover-roots` or at least one
   `--herd-root PATH`; without one it refuses to start (exit 2).
 - **Discovery file.** The bridge publishes `{url, port, token}` atomically and no-clobber as a

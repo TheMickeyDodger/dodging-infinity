@@ -510,9 +510,10 @@ export type DiMissionDeliveryLinkState =
   | 'unlinked_no_record'
   | 'unlinked_ambiguous'
   | 'unlinked_sources_incomplete'
-  | 'unlinked_id_not_addressable';
+  | 'unlinked_id_not_addressable'
+  | 'unlinked_repository_not_recorded';
 
-export type DiMissionDeliveryLinkBasis = 'record_mission_binding';
+export type DiMissionDeliveryLinkBasis = 'record_mission_binding' | 'record_repository_binding';
 
 export interface DiTaskChain {
   chain: string;

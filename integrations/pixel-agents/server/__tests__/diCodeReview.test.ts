@@ -38,6 +38,7 @@ import {
   CODE_REVIEW_MIN_INTERVAL_MS,
   CODE_REVIEW_PROBLEMS,
   CODE_REVIEW_REQUEST_TIMEOUT_MS,
+  herdrWorkspaceReviewOffer,
   isSafeReviewPath,
   listingToken,
   OFFICE_REVIEW_PROBLEMS,
@@ -430,6 +431,13 @@ describe('the offer: an active, bound Mission Core assignment or Herdr task, for
     expect(
       reviewOfferFor({ ...mission, sourceKind: 'herdr_task', bindingState: 'unverified' }, member),
     ).toMatchObject({ state: 'unavailable', reason: 'assignment_not_bound', listing: null });
+    // a bound active Herdr workspace is offered even when the member is not live
+    const quiet = herdrWorkspaceReviewOffer({ ...mission, sourceKind: 'herdr_task' });
+    expect(quiet.state).toBe('offered');
+    if (quiet.state === 'offered') expect(quiet.listing).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      herdrWorkspaceReviewOffer({ ...mission, sourceKind: 'herdr_task', bindingState: 'unverified' }),
+    ).toMatchObject({ state: 'unavailable', reason: 'assignment_not_bound' });
     // a workflow record and an unrecognized kind are not reviewed
     for (const sourceKind of ['workflow_store', 'unrecognized'] as const) {
       expect(reviewOfferFor({ ...mission, sourceKind }, member), sourceKind).toMatchObject({

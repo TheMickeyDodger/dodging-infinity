@@ -1454,8 +1454,11 @@ function projectWorkflowPhase(
 
 /**
  * The declared `missions[].delivery_link` (contract v2): STRICT when present — closed keys, a declared state, and the producer's
- * own rule: exactly the non-workflow_authority Missions are `unlinked_model_not_recorded`; a linked Mission carries ONE id of the
- * ceremony's shape and the declared basis; an unlinked one carries neither. ABSENT → nothing (the caller omits the key).
+ * own rule. A workflow Mission is never `unlinked_model_not_recorded` and links only by `record_mission_binding`. A Herdr task
+ * may be that state (a catalog that did not address repositories) or any other delivery-link state, and links only by
+ * `record_repository_binding`. Every other model is `unlinked_model_not_recorded`. `unlinked_repository_not_recorded` is Herdr
+ * only. A linked Mission carries ONE id of the ceremony's shape and the declared basis; an unlinked one carries neither.
+ * ABSENT → nothing (the caller omits the key).
  */
 function projectDeliveryLink(
   m: Json,
@@ -1468,15 +1471,28 @@ function projectDeliveryLink(
   exactKeys(link, MISSION_DELIVERY_LINK_KEYS, at);
   const state = member(MISSION_DELIVERY_LINK_STATES, link.state, `${at}.state`);
   const workflow = model.known && model.value === WORKFLOW_STORE_MODEL;
-  if (workflow === (state === 'unlinked_model_not_recorded')) {
+  const herdr = model.known && model.value === HERDR_TASK_MODEL;
+  if (state === 'unlinked_model_not_recorded') {
+    if (workflow) malformed(`${at}: a workflow Mission is not unlinked_model_not_recorded`);
+  } else if (!workflow && !herdr) {
     malformed(`${at}: exactly the Missions whose model no delivery record names are unlinked_model_not_recorded`);
+  }
+  if (state === 'unlinked_repository_not_recorded' && !herdr) {
+    malformed(`${at}: unlinked_repository_not_recorded is a Herdr task whose workspace origin was not read`);
   }
   if (state === 'linked') {
     const id = link.delivery_id;
     if (typeof id !== 'string' || !MISSION_DELIVERY_ID.test(id)) {
       malformed(`${at}.delivery_id is not one delivery id of the shape a ceremony mints`);
     }
-    return { state, deliveryId: id, basis: member(MISSION_DELIVERY_LINK_BASES, link.basis, `${at}.basis`) };
+    const basis = member(MISSION_DELIVERY_LINK_BASES, link.basis, `${at}.basis`);
+    if (basis === 'record_mission_binding' && !workflow) {
+      malformed(`${at}: record_mission_binding links a workflow Mission`);
+    }
+    if (basis === 'record_repository_binding' && !herdr) {
+      malformed(`${at}: record_repository_binding links a Herdr task`);
+    }
+    return { state, deliveryId: id, basis };
   }
   if (link.delivery_id !== null || link.basis !== null) {
     malformed(`${at}: an unlinked Mission carries no delivery id and no basis`);

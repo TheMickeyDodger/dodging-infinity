@@ -346,7 +346,7 @@ export function presentEvidenceLibrary(
           ? 'historical_identity_unexpected'
           : 'historical_identity_not_established';
   const contentReads = herdr
-    ? 'herdr_task_has_no_artifact_bodies'
+    ? 'artifact_bodies_not_recorded'
     : !missionCore
       ? 'source_kind_has_no_artifact_content'
       : !input.officeLive

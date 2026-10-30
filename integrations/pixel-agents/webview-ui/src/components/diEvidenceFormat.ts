@@ -97,8 +97,8 @@ const REFUSALS: Readonly<Record<string, string>> = {
   content_read_in_progress: 'the backend is busy with another read',
   no_fresh_catalog_answer: 'nothing currently corroborates the Mission',
   source_kind_has_no_artifact_content: 'this source kind has no artifact content',
-  herdr_task_has_no_artifact_bodies:
-    'a Herdr task has no Mission Core artifact bodies; a recorded review is in the review section',
+  artifact_bodies_not_recorded:
+    'no artifact bodies are recorded for this Herdr task; the review section is the recorded review',
   mission_binding_not_bound: 'the Mission is not currently bound',
   mission_task_or_workspace_unresolved: 'the Mission task or workspace is unresolved',
   mission_state_not_observed: 'the Mission State was not observed',

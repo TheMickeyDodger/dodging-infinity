@@ -325,6 +325,7 @@ class CatalogService(object):
         self._composer = None
         self._presentations = None
         self._delivery_links = None
+        self._delivery_repositories = None
         self._mission_state = None
         if contract_version != 1:
             # Imported HERE, only when a version 2 owner is built: a
@@ -352,9 +353,10 @@ class CatalogService(object):
             # Mission says no store is registered (Mission Core is not known
             # either way).
             if delivery_store is not None:
-                self._delivery_links = (
-                    mission_state_module.DeliveryLinksReader(
-                        delivery_store, clock).bindings)
+                reader = mission_state_module.DeliveryLinksReader(
+                    delivery_store, clock)
+                self._delivery_links = reader.bindings
+                self._delivery_repositories = reader.repositories
         self._registry = registry_module.SourceRegistry(registry_directory)
         self._clock = clock
         self._monotonic = monotonic or time.monotonic
@@ -904,7 +906,10 @@ class CatalogService(object):
             budget=budget.pass_budget(),
             runtime_agents=_runtime_agents_hook(observation, native),
             delivery_presentations=self._presentations,
-            delivery_links=self._delivery_links),
+            delivery_links=self._delivery_links,
+            delivery_repositories=self._delivery_repositories,
+            repository_url_of=self._mission_state.repository_url_for_mission,
+            repository_delivery=True),
             deadline)
         if "response" not in outcome:
             return catalog_answer(requested_at, None, outcome["problem"],

@@ -382,7 +382,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -751,7 +751,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -1118,7 +1118,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -1485,7 +1485,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -1852,7 +1852,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -2219,7 +2219,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -2586,7 +2586,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -2953,7 +2953,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -3320,7 +3320,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -3687,7 +3687,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -4055,7 +4055,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -4422,7 +4422,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -4789,7 +4789,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -5156,7 +5156,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -5523,7 +5523,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -5890,7 +5890,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -6257,7 +6257,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -6624,7 +6624,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -6991,7 +6991,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -7358,7 +7358,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -7725,7 +7725,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -8092,7 +8092,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -8459,7 +8459,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -8826,7 +8826,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -9193,7 +9193,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -9560,7 +9560,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -9927,7 +9927,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -10294,7 +10294,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -10661,7 +10661,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -11028,7 +11028,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -11395,7 +11395,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -11762,7 +11762,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -12129,7 +12129,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -12496,7 +12496,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -12863,7 +12863,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -13230,7 +13230,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -13597,7 +13597,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -13964,7 +13964,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -14052,7 +14052,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000000-dddddd",
             "listing": null
           },
@@ -14331,7 +14331,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -14419,7 +14419,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000001-dddddd",
             "listing": null
           },
@@ -14698,7 +14698,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -14786,7 +14786,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000002-dddddd",
             "listing": null
           },
@@ -15065,7 +15065,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -15153,7 +15153,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000003-dddddd",
             "listing": null
           },
@@ -15432,7 +15432,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -15520,7 +15520,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000004-dddddd",
             "listing": null
           },
@@ -15799,7 +15799,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -15887,7 +15887,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000005-dddddd",
             "listing": null
           },
@@ -16166,7 +16166,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -16254,7 +16254,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000006-dddddd",
             "listing": null
           },
@@ -16533,7 +16533,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -16621,7 +16621,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000007-dddddd",
             "listing": null
           },
@@ -16900,7 +16900,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -16988,7 +16988,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000008-dddddd",
             "listing": null
           },
@@ -17267,7 +17267,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -17355,7 +17355,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000009-dddddd",
             "listing": null
           },
@@ -17634,7 +17634,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -17722,7 +17722,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000010-dddddd",
             "listing": null
           },
@@ -18001,7 +18001,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -18089,7 +18089,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000011-dddddd",
             "listing": null
           },
@@ -18368,7 +18368,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -18456,7 +18456,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261001-000012-dddddd",
             "listing": null
           },
@@ -18735,7 +18735,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -18823,7 +18823,7 @@
           },
           "codeReview": {
             "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "reason": "assignment_not_bound",
             "taskId": "20261017-133442-bbbbbb",
             "listing": null
           },
@@ -19102,7 +19102,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -19466,10 +19466,10 @@
             ]
           },
           "codeReview": {
-            "state": "unavailable",
-            "reason": "not_a_mission_core_record",
+            "state": "offered",
+            "reason": null,
             "taskId": "20261017-150121-aaaaaa",
-            "listing": null
+            "listing": "bc745deb3140f0afaee89eec6dbf42ae1ad7182bb8b5d648f4e9b7924b06469c"
           },
           "v2": {
             "projected": true,
@@ -19746,7 +19746,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -20113,7 +20113,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -20480,7 +20480,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -20847,7 +20847,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -21215,7 +21215,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -21582,7 +21582,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -21949,7 +21949,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -22316,7 +22316,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -22683,7 +22683,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -23050,7 +23050,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",
@@ -23417,7 +23417,7 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "herdr_task_has_no_artifact_bodies"
+              "reason": "artifact_bodies_not_recorded"
             },
             "artifacts": {
               "state": "not_recorded",

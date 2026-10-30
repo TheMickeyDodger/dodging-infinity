@@ -67,6 +67,7 @@ from mission_sources import contract_v2, fileread, sources
 from pr_delivery import authorization, mission_parent
 from target_runtime import prepare as prepare_module
 from target_runtime import state_artifact
+from target_runtime.workspace_origin import origin_repository_url, repository_identity
 
 #: The delivery store file (``pr_delivery.store.STORE_FILE_NAME``) and its
 #: own schema version; re-declared, pinned equal by test, because this
@@ -935,6 +936,38 @@ class DeliveryLinksReader(object):
             if workflow_id is not None:
                 bound.setdefault(workflow_id, []).append(delivery_id)
         return bound
+
+    def repositories(self):
+        """``{repository identity: [delivery ids]}`` of the validated records
+        whose ``repository.repository_url`` is a canonical GitHub repository,
+        or None when the store cannot be read (the same failure ``bindings``
+        reports). A record whose URL is not that form is omitted, not a
+        failure of the store. Nothing is written."""
+        try:
+            document = self._records._delivery_document()
+            _validated_deliveries(document)
+        except _Unavailable:
+            return None
+        bound = {}
+        for delivery_id, delivery in document["deliveries"].items():
+            repository = delivery.get("repository")
+            url = repository.get("repository_url") if type(
+                repository) is dict else None
+            identity = repository_identity(url) if type(url) is str else None
+            if identity is not None:
+                bound.setdefault(identity, []).append(delivery_id)
+        return bound
+
+
+def repository_url_for_mission(mission):
+    """The workspace origin identity of a task-native mission, or None.
+
+    Any other model is None without a read. The read is bounded and local
+    (``workspace_origin``); it starts no process. A missing or unreadable
+    origin is None, so the link says the origin was not recorded."""
+    if mission["lifecycle"]["model"] != "herdr.task/1":
+        return None
+    return origin_repository_url(mission["execution"].get("workspace_realpath"))
 
 
 class DeliveryPresentationsReader(object):

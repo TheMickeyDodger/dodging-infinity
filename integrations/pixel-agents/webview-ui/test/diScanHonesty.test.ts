@@ -95,10 +95,10 @@ describe('B-H1: every scan view of a production Mission says what it has not rea
   const MUST_SAY: Record<string, string[]> = {
     mission: [
       'Approvals, repository requests, stalls and logs are not reported for this Mission.',
-      'Delivery records name only workflow Missions.',
+      'Not known: this office’s catalog does not report a delivery link for this Mission.',
     ],
     diff: [DI_DIFF_NOT_READ, 'Files are not listed until a code review is offered for this Mission.'],
-    comments: [DI_COMMENTS_PAID],
+    comments: ['Review comments are not reported for this Herdr task.'],
     missions: ['Not recorded', '>not read<'],
     reception: [DI_EARLIER_NOT_READ],
     new: [DI_RECENT_NOT_READ],
@@ -117,10 +117,11 @@ describe('B-H1: every scan view of a production Mission says what it has not rea
     expect(html).not.toContain('di-scan-statusbar');
     expect(html).not.toContain('aria-label="Copy the diff"');
   });
-  it('Comments in Free says only that Comments are Paid and unavailable: no thread, no claim about a history', () => {
+  it('Comments on a Herdr task says the review was not reported: no thread, no Paid label, no claim of none', () => {
     const view = /data-testid="di-scan-comments-view"[\s\S]*$/.exec(render('comments'))?.[0] ?? '';
-    expect(view).toContain(DI_COMMENTS_PAID);
-    expect(view).not.toMatch(/di-scan-thread|No comments|no comments/);
+    expect(view).toContain('Review comments are not reported for this Herdr task.');
+    expect(view).not.toContain(DI_COMMENTS_PAID);
+    expect(view).not.toMatch(/di-scan-thread|No comments|no comments|Layout preview/);
   });
   it('the SAMPLE diff carries every status fact itself (encoding, line ending, indent): the view defaults none', () => {
     const html = render('diff', { rows: [DI_SCAN_LOCK[0]!] });

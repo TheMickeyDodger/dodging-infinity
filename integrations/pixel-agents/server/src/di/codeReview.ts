@@ -534,6 +534,52 @@ export function missionListingToken(
  * backend still decides, and says why when it refuses (the record may not be unique, the workspace may not name the run). An ACTIVE Mission is
  * offered per member (`reviewOfferFor`), never here.
  */
+/**
+ * A bound, active Herdr task's workspace, offered as a Mission-level code review even when no member is live.
+ * The diff is the task workspace's, which the review route already reads from the catalog execution. A finished
+ * Herdr task is not this offer (it is not a Mission Core historical execution).
+ */
+export function herdrWorkspaceReviewOffer(mission: MissionPresentation): ReviewOffer {
+  const taskId = mission.evidence?.execution.taskId ?? null;
+  const no = (reason: ReviewUnavailableReason): ReviewOffer => ({
+    state: 'unavailable',
+    reason,
+    taskId,
+    listing: null,
+  });
+  if (mission.sourceKind !== 'herdr_task') return no('not_a_mission_core_record');
+  if (mission.v2 === null) return no('contract_version_1_office');
+  if (!mission.standingKnown || mission.standing !== 'active') return no('assignment_not_active');
+  if (mission.bindingState !== 'bound') return no('assignment_not_bound');
+  if (mission.evidence === null || mission.evidence.currency !== 'current') return no('task_not_observed');
+  if (taskId === null) return no('task_not_observed');
+  return {
+    state: 'offered',
+    reason: null,
+    taskId,
+    listing: herdrWorkspaceListingToken(mission, taskId),
+  };
+}
+
+/** The token for a Herdr workspace review. Tagged so it never equals a member-bound or finished-Mission token. */
+export function herdrWorkspaceListingToken(mission: MissionPresentation, taskId: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify([
+        'herdr-workspace',
+        mission.missionRef,
+        mission.sourceId,
+        mission.nativeId,
+        taskId,
+        mission.bindingState,
+        mission.standing,
+      ]),
+      'utf8',
+    )
+    .digest('hex');
+}
+
 export function missionReviewOfferFor(mission: MissionPresentation): ReviewOffer {
   const library = mission.evidence;
   const no = (reason: ReviewUnavailableReason): ReviewOffer => ({
@@ -581,7 +627,8 @@ export function admitAgainstView(view: OfficeView, ref: CodeReviewRef): Admissio
   const mission = found[0];
   // A Mission-level reference names no member: it is admitted by the Mission's own offer and token, and by nothing a member says.
   if (ref.level === 'mission') {
-    const own = missionReviewOfferFor(mission);
+    const own =
+      mission.sourceKind === 'herdr_task' ? herdrWorkspaceReviewOffer(mission) : missionReviewOfferFor(mission);
     if (own.state !== 'offered') {
       return refuse('review_not_offered', `no review is offered for this Mission (${own.reason})`);
     }

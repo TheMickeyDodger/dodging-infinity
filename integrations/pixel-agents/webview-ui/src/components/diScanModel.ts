@@ -192,11 +192,15 @@ export type DiScanDeliveryLink =
   | { kind: 'unlinked'; state: string; words: string }
   | { kind: 'not_reported'; words: string };
 
-/** The basis of a link, in words: the only rule the producer links by (`record_mission_binding`). */
+/** The basis of a workflow link, in words (`record_mission_binding`). */
 export const DI_DELIVERY_LINKED = 'Linked by the delivery record’s own Mission binding. A link names which delivery is read here; it authorizes nothing.';
+/** The basis of a Herdr link, in words (`record_repository_binding`). */
+export const DI_DELIVERY_LINKED_REPOSITORY =
+  'Linked because this workspace’s origin matches one delivery record’s repository. A link names which delivery is read here; it authorizes nothing.';
 /** Each unlinked state's reason, in words (the producer's meanings: core/asyncapi.yaml DiMissionDeliveryLinkState). */
 export const DI_DELIVERY_UNLINKED: Readonly<Record<string, string>> = {
-  unlinked_model_not_recorded: 'Not known: delivery records name only workflow Missions, so no delivery is linked to a Mission of this kind.',
+  unlinked_model_not_recorded:
+    'Not known: delivery records do not name a Mission of this kind, so no delivery is linked.',
   unlinked_store_not_registered: 'Not known: the catalog has no delivery store registered.',
   unlinked_store_unavailable: 'Not known: the catalog’s delivery store could not be read, or a record in it did not validate.',
   unlinked_reader_failed: 'Not known: the catalog’s delivery link reader failed.',
@@ -204,6 +208,8 @@ export const DI_DELIVERY_UNLINKED: Readonly<Record<string, string>> = {
   unlinked_ambiguous: 'More than one delivery record names this Mission, or another Mission has its id; none is chosen.',
   unlinked_sources_incomplete: 'Not known: a workflow source was not read, so this Mission’s id is not known to be unique.',
   unlinked_id_not_addressable: 'The one record that names this Mission has a delivery id of a shape this office cannot address.',
+  unlinked_repository_not_recorded:
+    'This Herdr task’s workspace has no origin URL this office could read, so no delivery is linked.',
 };
 export const DI_DELIVERY_LINK_NOT_REPORTED = 'Not known: this office’s catalog does not report a delivery link for this Mission.';
 
@@ -212,7 +218,8 @@ function deliveryLinkOf(mission: DiMission): DiScanDeliveryLink {
   const link = mission.v2.projected ? mission.v2.deliveryLink : undefined;
   if (link === undefined) return { kind: 'not_reported', words: DI_DELIVERY_LINK_NOT_REPORTED };
   if (link.state === 'linked' && typeof link.deliveryId === 'string') {
-    return { kind: 'linked', deliveryId: link.deliveryId, words: DI_DELIVERY_LINKED };
+    const words = link.basis === 'record_repository_binding' ? DI_DELIVERY_LINKED_REPOSITORY : DI_DELIVERY_LINKED;
+    return { kind: 'linked', deliveryId: link.deliveryId, words };
   }
   const words = DI_DELIVERY_UNLINKED[link.state];
   return {
@@ -394,6 +401,11 @@ export interface DiScanRow {
   decision?: DiScanDecision | null;
   /** The office lists an evidence library for this Mission (the record's own `evidence` block). Absent: none is listed (the specimen lists none). */
   evidenceListed?: boolean;
+  /**
+   * A Herdr task's review thread, from the evidence library's recorded review. Absent: this row is not a Herdr task
+   * (Comments stays the Paid label). A Herdr task always carries one, including when the review was not reported.
+   */
+  reviewThread?: DiScanThreadSource;
   /** The Missions table's columns. Absent: none of them is recorded. */
   table?: DiScanTableFacts;
 }
@@ -830,6 +842,7 @@ export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { 
       },
       decision: refs !== null ? { requestRef: refs.length === 1 ? refs[0]! : null, count: refs.length } : null,
       evidenceListed: mission.evidence !== undefined,
+      ...(mission.sourceKind === 'herdr_task' ? { reviewThread: herdrReviewThread(mission) } : {}),
       // The office record carries no owner or repos: the table says "Not recorded" (none is invented). The four-step phase is the specimen's alone; a real row shows the producer's DECLARED
       // workflow phase as its own word (`declared`), with its absences kept apart. Last activity is the record's own update time on the office clock, when both are recorded.
       table: {
@@ -1476,7 +1489,7 @@ export type DiScanDiffSource =
   // asked, and the office or the backend refused: the route's own problem, in words
   | { kind: 'refused'; reason: string; title: string; detail: string };
 
-export const DI_DIFF_NOT_READ = 'This Mission’s code diff is not read in this layout preview.';
+export const DI_DIFF_NOT_READ = 'This office has not said whether a code review is offered for this Mission.';
 /** An offered review has not returned a listing yet. Not a layout preview, and not an empty diff. */
 export const DI_DIFF_READING = 'Reading this Mission’s working tree now.';
 
@@ -1549,12 +1562,47 @@ export const DI_COMMENTS_PAID =
  */
 export type DiScanThreadSource =
   | { kind: 'sample'; thread: readonly DiScanComment[] }
+  | { kind: 'read'; thread: readonly DiScanComment[] }
   | { kind: 'unavailable'; reason: string };
 
+/** A Herdr task whose evidence library was not on the office message. */
+export const DI_HERDR_COMMENTS_UNREPORTED = 'Review comments are not reported for this Herdr task.';
+/** The library was read and records no review. */
+export const DI_HERDR_COMMENTS_NOT_RECORDED = 'A review is not recorded for this Herdr task.';
+
+function herdrReviewThread(mission: DiMission): DiScanThreadSource {
+  const reviews = mission.evidence?.reviews;
+  if (reviews === undefined) return { kind: 'unavailable', reason: DI_HERDR_COMMENTS_UNREPORTED };
+  if (reviews.state === 'observed' && reviews.items.length > 0) {
+    return {
+      kind: 'read',
+      thread: reviews.items.map((review, index) => {
+        const findings =
+          review.findings.state === 'present' ? review.findings.items.map((item) => item.summary).join(' ') : '';
+        const verdict = review.verdict ?? review.protocolToken ?? 'Review recorded';
+        const author = review.reviewerLogical ?? review.reviewerAgent ?? 'the recorded reviewer';
+        return {
+          id: `review-${review.round ?? index}`,
+          author,
+          palette: index % 6,
+          when: review.round !== null ? `Round ${review.round}` : '',
+          text: findings !== '' ? `${verdict}. ${findings}` : verdict,
+        };
+      }),
+    };
+  }
+  if (reviews.state === 'known_empty' || reviews.state === 'not_recorded') {
+    return { kind: 'unavailable', reason: DI_HERDR_COMMENTS_NOT_RECORDED };
+  }
+  const why = reviews.reason ? `${reviews.state}: ${reviews.reason}` : reviews.state;
+  return { kind: 'unavailable', reason: `Review comments are not available for this Herdr task (${why}).` };
+}
+
 export function scanThread(row: DiScanRow): DiScanThreadSource {
-  return row.id === 'lock-next-panel'
-    ? { kind: 'sample', thread: DI_SCAN_LOCK_THREAD }
-    : { kind: 'unavailable', reason: DI_COMMENTS_PAID };
+  if (row.id === 'lock-next-panel') return { kind: 'sample', thread: DI_SCAN_LOCK_THREAD };
+  if (row.reviewThread !== undefined) return row.reviewThread;
+  if (row.sourceKind === 'herdr_task') return { kind: 'unavailable', reason: DI_HERDR_COMMENTS_UNREPORTED };
+  return { kind: 'unavailable', reason: DI_COMMENTS_PAID };
 }
 
 /**
@@ -1627,13 +1675,10 @@ const rank = (stage: DiDeliveryStage): number =>
 export const DI_DELIVERY_NOT_READ = 'Delivery state is not read in this layout preview.';
 
 /**
- * A Herdr task is not a workflow Mission. Delivery records name workflow ids only, so Commit,
- * Push and Open pull request are not a layout preview waiting to be wired: they do not apply.
+ * Stopping stays outside this office. Said on the control itself, so the screen does not call the
+ * connected Code Diff, Comments and Evidence routes a layout preview.
  */
-export const DI_HERDR_DELIVERY =
-  'Delivery records name only workflow Missions. This Herdr task has no delivery to commit, push, or open from here.';
-export const DI_HERDR_DELIVERY_NOTE =
-  'The office does not commit, push, or open a pull request for a Herdr task. A delivery link, when the catalog reports one, is shown above.';
+export const DI_STOP_NOT_CONNECTED = 'Stopping a Mission is not connected in this office.';
 
 /**
  * The four Delivery steps (gap 2), each offered only when the canonical state matches (gap 3) and otherwise locked with a plain reason. CHANGED BY THE OWNER RULING (2026-10-28): the former fifth
@@ -1698,15 +1743,15 @@ export function deliverySteps(delivery: DiScanDelivery): DiDeliveryStepView[] {
   });
 }
 
-/** Commit, Push, Open pull request and Accept CI, each locked with the Herdr explanation. */
-export function herdrDeliverySteps(): DiDeliveryStepView[] {
+/** The four Delivery steps, each locked with one stated reason (a real Mission that is not linked). */
+export function lockedDeliverySteps(reason: string): DiDeliveryStepView[] {
   const steps: Array<[DiDeliveryStepId, string]> = [
     ['commit', 'Commit'],
     ['push', 'Push'],
     ['pr', 'Open pull request'],
     ['accept_ci', 'Accept CI results'],
   ];
-  return steps.map(([id, label]) => ({ id, label, gate: 'locked', reason: DI_HERDR_DELIVERY }));
+  return steps.map(([id, label]) => ({ id, label, gate: 'locked', reason }));
 }
 
 /** M8: a wired step's words (a linked Mission, read through Mission details' session). Each names WHO established it (round 58). */
@@ -1776,7 +1821,14 @@ export interface DiStateActionView {
 export function stateActions(facts: DiScanStateFacts): DiStateActionView[] {
   // an action is offered only for a fact READ as true; an unread (null) fact offers nothing and claims nothing
   const out: DiStateActionView[] = [];
-  if (knownTrue(facts.running)) out.push({ id: 'stop', label: 'Hold to stop', hold: true });
+  if (knownTrue(facts.running)) {
+    out.push({
+      id: 'stop',
+      label: 'Hold to stop',
+      hold: true,
+      ...(facts.source === 'record' ? { reason: DI_STOP_NOT_CONNECTED } : {}),
+    });
+  }
   if (facts.awaitingApproval === true)
     out.push(
       ...(facts.source === 'record'
