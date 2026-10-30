@@ -87,6 +87,13 @@ npm run test:webview -- test/di          # DI webview suites
 npm run test:package-contract
 ```
 
+In CI (`.github/workflows/pixel-validation.yml`) the webview suite runs as four parallel shards
+balanced by measured per-file time (`scripts/pixel-ui-shards.mjs`, timings in
+`scripts/pixel-ui-test-durations.json`); files stay serial inside each shard. The required check is
+the final `Pixel validation` job, which passes only when `Pixel checks` and all four shards pass.
+To run one shard locally: `cd webview-ui && npm test -- $(node ../scripts/pixel-ui-shards.mjs --shard 1 --of 4)`.
+When a UI test file grows a lot slower, refresh its seconds in the timings file so the shards stay even.
+
 The bridge's tests are the repository's ordinary Python suites, for example
 `tests/test_catalog.py`, `tests/test_catalog_http.py` and `tests/test_catalog_v2.py`
 ([CONTRIBUTING.md](../CONTRIBUTING.md#running-the-test-suite)).
