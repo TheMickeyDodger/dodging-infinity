@@ -145,6 +145,20 @@ test('a proposal digest is never the title, and the goal after the handoff prefi
   );
 });
 
+test('a catalog-truncated handoff lead ("… This is …") is never the title', () => {
+  const digest = '3033dab9ca1127b3a8dc907fcbbfbeb522aa461d3035277ff41413fa58820bcb';
+  const cut = `AUTHORIZED MISSION mn-ba1e47939b4f6b443cd34174b9b1732 (revision 1, proposal digest ${digest}). This is …`;
+  assert.deepEqual(missionTitle(withObjective(cut)), { kind: 'placeholder', text: MISSION_TITLE_PLACEHOLDER });
+  for (const fragment of ['This is …', 'This is the appr…', 'This is the approved Mission...']) {
+    assert.equal(missionTitle(withObjective(fragment)).kind, 'placeholder', fragment);
+  }
+  // A real objective that happens to start "This is" is still a title.
+  assert.equal(
+    missionTitle(withObjective('This is a plan to speed up Pixel CI.')).text,
+    'This is a plan to speed up Pixel CI',
+  );
+});
+
 test('with nothing meaningful left, the title is an honest placeholder — never a made-up summary', () => {
   for (const boiler of [
     'AUTHORIZED MISSION',
