@@ -1,35 +1,22 @@
 /**
- * Item 4 — the DI server's side of the Mission request panel.
- *
- * Three layers, strongest last:
+ * Item 4 — the DI server's side of the Mission request panel, with no socket and no process:
  *  1. the closed grammar of `diMissionRequest` (hostile input is refused before anything is sent);
- *  2. the handler and the panel client against in-process HTTP stand-ins (reply mapping, the
- *     honesty of a failure that leaves a write's outcome unknown, the bound on calls in flight,
- *     and that the bearer token and a person's words never reach a log line);
- *  3. the REAL request panel adapter — `dimission_panel`'s HTTP adapter, controller, journal,
- *     restricted conversation, local request surface, Mission Core, operator-attested approval and
- *     `MissionBridge` — driven through the real handler. Only the Codex process, the process the
- *     bridge would spawn and the team's observed state are scripted (tests/_panel_e2e_server.py),
- *     which is what no test can have for real. Nothing here is evidence of a live provider or Herdr.
+ *  2. the reply mapping, and the handler with an injected request function in place of the panel
+ *     client (the honesty of a failure that leaves a write's outcome unknown, the bound on calls in
+ *     flight, and that the bearer token and a person's words never reach a log line);
+ *  3. the office's dispatch of a `diMissionRequest`.
+ *
+ * The panel client against an in-process HTTP stand-in, and the REAL request panel adapter driven
+ * through the real handler, are in diMissionRequestsTransport.test.ts. The request-panel repair
+ * moved them there unchanged and did not run them; that file's header says what that leaves unknown.
  */
-import { type ChildProcessWithoutNullStreams, spawn } from 'child_process';
-import * as fs from 'fs';
-import * as http from 'http';
-import type { AddressInfo } from 'net';
-import * as os from 'os';
-import * as path from 'path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { DiMissionRequestReply } from '../../core/src/messages.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { handleDiClientMessage } from '../src/di/diClientMessages.js';
 import type { PanelCall, PanelResult } from '../src/di/missionPanelClient.js';
-import {
-  isPanelRoute,
-  MAX_PANEL_REQUEST_BODY_BYTES,
-  MAX_PANEL_RESPONSE_BYTES,
-  requestPanel,
-} from '../src/di/missionPanelClient.js';
+import { isPanelRoute } from '../src/di/missionPanelClient.js';
 import {
   DiMissionRequests,
   MAX_CONCURRENT_PANEL_CALLS,
@@ -63,6 +50,34 @@ const decide = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
   repositoryUrl: 'https://github.com/Example/Repo',
   ...extra,
 });
+
+/**
+ * Which operations may change the record, by what each adapter route DOES (mission_panel/http_adapter.py and service.py), not by
+ * its name. The four GET routes read. The seven POST routes may change the record; among them, offer records the frozen offer,
+ * and checkApproval attests an approval of unknown outcome.
+ */
+const READS = ['refresh', 'conversation', 'request', 'result'] as const;
+const WRITES = ['offer', 'turn', 'submit', 'decide', 'checkApproval', 'withdraw', 'run'] as const;
+type Op = (typeof READS)[number] | (typeof WRITES)[number];
+const FIELDS: Record<Exclude<Op, 'decide'>, Record<string, unknown>> = {
+  refresh: {},
+  conversation: { conversationId: CONV },
+  request: { requestRef: REF },
+  result: { requestRef: REF },
+  offer: { requestRef: REF },
+  turn: { text: 'hello' },
+  submit: { turnId: TURN, digest: DIGEST },
+  checkApproval: { requestRef: REF },
+  withdraw: { requestRef: REF, missionId: MISSION, revision: 1, digest: DIGEST },
+  run: { requestRef: REF, command: 'dispatch' },
+};
+const message = (op: Op, seq = 9): Record<string, unknown> =>
+  op === 'decide' ? decide({ seq }) : { type: 'diMissionRequest', seq, op, ...FIELDS[op] };
+const parsedAs = (op: Op): Extract<ReturnType<typeof parseMissionRequest>, { ok: true }> => {
+  const parsed = parseMissionRequest(message(op));
+  if (!parsed.ok) throw new Error(`fixture ${op}`);
+  return parsed;
+};
 
 describe('parseMissionRequest: a closed grammar', () => {
   const good: Array<[string, Record<string, unknown>, PanelCall]> = [
@@ -454,15 +469,40 @@ describe('replyFromPanel: what the adapter said, and what a failure leaves unkno
     expect(reply.answer).toEqual({ details: {} });
   });
 
-  it('a body that is not an object, or a non-200, is refused with the status, not trusted', () => {
-    expect(replyFromPanel(parsed, http200('text'))).toMatchObject({
-      state: 'refused',
-      problem: 'adapter_http_200',
-    });
-    expect(replyFromPanel(parsed, http200([1]))).toMatchObject({
-      state: 'refused',
-      problem: 'adapter_http_200',
-    });
+  it('an answer at 200 that states no boolean ok is UNREADABLE: unknown for a write, unavailable for a read, never a refusal', () => {
+    const unreadable: Array<[string, PanelResult]> = [
+      ['text', http200('text')],
+      ['an array', http200([1])],
+      ['null', http200(null)],
+      ['{}', http200({})],
+      ['ok "true"', http200({ ok: 'true', problem: 'mission_panel_display_stale' })],
+      ['ok 1', http200({ ok: 1 })],
+      ['ok null', http200({ ok: null })],
+      ['not JSON', { kind: 'http', status: 200, body: undefined, bodyProblem: 'body_not_json' }],
+    ];
+    for (const [what, result] of unreadable) {
+      for (const op of WRITES) {
+        const out = replyFromPanel(parsedAs(op), result);
+        expect(out, `${op}, ${what}`).toMatchObject({
+          seq: 9,
+          op,
+          state: 'unknown',
+          problem: 'panel_answer_unreadable',
+          answer: null,
+        });
+        expect(out.reason, `${op}, ${what}`).toMatch(/not known/);
+        expect(out.reason, `${op}, ${what}`).not.toMatch(/Nothing was (sent|applied|changed)/);
+      }
+      for (const op of READS) {
+        expect(replyFromPanel(parsedAs(op), result), `${op}, ${what}`).toMatchObject({
+          state: 'unavailable',
+          problem: 'panel_answer_unreadable',
+        });
+      }
+    }
+  });
+
+  it('a non-200 is refused with its status, not trusted', () => {
     expect(
       replyFromPanel(parsed, {
         kind: 'http',
@@ -492,19 +532,59 @@ describe('replyFromPanel: what the adapter said, and what a failure leaves unkno
     ).toMatchObject({ state: 'unavailable', problem: 'panel_credentials_rejected' });
   });
 
-  it('a transport failure AFTER the send says the outcome is unknown; refused-to-connect says nothing was sent', () => {
-    const unreachable = replyFromPanel(parsed, {
-      kind: 'transport_error',
-      problem: 'panel_unreachable',
-    });
-    expect(unreachable).toMatchObject({ state: 'unavailable', problem: 'panel_unreachable' });
-    expect(unreachable.reason).toMatch(/Nothing was sent/);
-    for (const problem of ['panel_timeout', 'panel_network_error'] as const) {
-      const unknown = replyFromPanel(parsed, { kind: 'transport_error', problem });
-      expect(unknown.state).toBe('unavailable');
-      expect(unknown.reason).toMatch(/not known/);
-      expect(unknown.reason).toMatch(/read the record again/);
-      expect(unknown.reason).not.toMatch(/Nothing was (sent|applied)/);
+  it('a transport failure AFTER a write was sent is UNKNOWN; one before anything was sent, or on a read, is unavailable', () => {
+    for (const op of [...WRITES, ...READS]) {
+      for (const problem of ['panel_unreachable', 'panel_request_invalid'] as const) {
+        const out = replyFromPanel(parsedAs(op), { kind: 'transport_error', problem });
+        expect(out, `${op}, ${problem}`).toMatchObject({ state: 'unavailable', problem });
+        expect(out.reason, `${op}, ${problem}`).toMatch(/Nothing was sent/);
+        expect(out.reason, `${op}, ${problem}`).not.toMatch(/not (running|listening)/);
+      }
+    }
+    for (const problem of ['panel_timeout', 'panel_network_error', 'panel_response_too_large'] as const) {
+      for (const op of WRITES) {
+        const out = replyFromPanel(parsedAs(op), { kind: 'transport_error', problem });
+        expect(out, `${op}, ${problem}`).toMatchObject({ state: 'unknown', problem, answer: null });
+        expect(out.reason, `${op}, ${problem}`).toMatch(/not known/);
+        expect(out.reason, `${op}, ${problem}`).toMatch(/read the record again/);
+        expect(out.reason, `${op}, ${problem}`).not.toMatch(/Nothing was (sent|applied|changed)/);
+      }
+      for (const op of READS) {
+        const out = replyFromPanel(parsedAs(op), { kind: 'transport_error', problem });
+        expect(out, `${op}, ${problem}`).toMatchObject({ state: 'unavailable', problem });
+        // A read changes nothing, so it is not worded as a write of unknown outcome.
+        expect(out.reason, `${op}, ${problem}`).not.toMatch(/not known/);
+      }
+    }
+  });
+
+  it("the panel's own report of an error, or of an oversized answer, after it handled a WRITE is UNKNOWN in this office's words; on a read it stays a refusal", () => {
+    // The adapter's own wording for each (mission_panel/http_adapter.py); the byte count is illustrative.
+    const answers = [
+      ['mission_panel_internal', 'the panel hit an unexpected error; nothing is shown as changed'],
+      [
+        'mission_panel_response_too_large',
+        'the answer was larger than the 1000 bytes this panel sends, so it was refused instead of being cut',
+      ],
+    ] as const;
+    for (const [problem, said] of answers) {
+      const result = http200({ ok: false, problem, reason: said, details: {} });
+      for (const op of WRITES) {
+        const out = replyFromPanel(parsedAs(op), result);
+        expect(out, `${op}, ${problem}`).toMatchObject({ seq: 9, op, state: 'unknown', problem });
+        expect(out.reason, `${op}, ${problem}`).toMatch(/not known/);
+        expect(out.reason, `${op}, ${problem}`).not.toContain(said);
+        expect(out.reason, `${op}, ${problem}`).not.toMatch(
+          /Nothing was (sent|applied|changed)|nothing is shown as changed/i,
+        );
+      }
+      for (const op of READS) {
+        expect(replyFromPanel(parsedAs(op), result), `${op}, ${problem}`).toMatchObject({
+          state: 'refused',
+          problem,
+          reason: said,
+        });
+      }
     }
   });
 });
@@ -579,13 +659,15 @@ describe('DiMissionRequests: the handler', () => {
     expect(calls).toEqual([]);
   });
 
-  it('with the discovery file unreadable the panel is "not running", nothing is sent', async () => {
+  it('with the discovery file unusable nothing is sent, and the reply claims neither that the panel is running nor that it is not', async () => {
     await make(ok, '/disc.json', () => ({ ok: false, problem: 'discovery_absent' })).handle(
       { type: 'diMissionRequest', seq: 1, op: 'refresh' },
       send,
     );
     expect(sent[0]).toMatchObject({ state: 'unavailable', problem: 'panel_discovery_unavailable' });
     expect(sent[0].reason).toMatch(/discovery_absent/);
+    expect(sent[0].reason).toMatch(/discovery file/);
+    expect(sent[0].reason).not.toMatch(/not (running|listening)|is running(?! is not known)/);
     expect(calls).toEqual([]);
   });
 
@@ -630,14 +712,52 @@ describe('DiMissionRequests: the handler', () => {
     expect(sent.at(-1)).toMatchObject({ seq: 300, state: 'ok' });
   });
 
-  it('a thrown request is an "unknown outcome" answer, never a thrown error', async () => {
+  it('a thrown request is an "unknown outcome" answer for a write and "unavailable" for a read, never a thrown error', async () => {
+    const thrower = async (): Promise<PanelResult> => {
+      throw new Error('socket exploded /Users/x/secret');
+    };
     await expect(
-      make(async () => {
-        throw new Error('socket exploded /Users/x/secret');
-      }).handle({ type: 'diMissionRequest', seq: 2, op: 'turn', text: 'hello' }, send),
+      make(thrower).handle({ type: 'diMissionRequest', seq: 2, op: 'turn', text: 'hello' }, send),
     ).resolves.toBeUndefined();
-    expect(sent[0]).toMatchObject({ state: 'unavailable', problem: 'panel_network_error' });
-    expect(JSON.stringify(sent[0])).not.toContain('/Users/');
+    expect(sent[0]).toMatchObject({
+      seq: 2,
+      op: 'turn',
+      state: 'unknown',
+      problem: 'panel_network_error',
+    });
+    await make(thrower).handle({ type: 'diMissionRequest', seq: 3, op: 'refresh' }, send);
+    expect(sent[1]).toMatchObject({
+      seq: 3,
+      op: 'refresh',
+      state: 'unavailable',
+      problem: 'panel_network_error',
+    });
+    expect(JSON.stringify(sent)).not.toContain('/Users/');
+  });
+
+  it('a message outside the correlation domain (no valid type, seq and op) gets no reply and nothing is sent; one inside it gets exactly one correlated refusal', async () => {
+    for (const bad of [
+      { type: 'diMissionRequest', op: 'refresh' },
+      { type: 'diMissionRequest', seq: -1, op: 'refresh' },
+      { type: 'diMissionRequest', seq: '1', op: 'refresh' },
+      { type: 'diMissionRequest', seq: 1, op: 'exec' },
+      { type: 'diMissionRequest', seq: 1 },
+      { type: 'other', seq: 1, op: 'refresh' },
+    ]) {
+      await make(ok).handle(bad, send);
+    }
+    expect(sent).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(logs.filter((l) => l.includes('mission request refused'))).toHaveLength(6);
+    await make(ok).handle({ type: 'diMissionRequest', seq: 8, op: 'refresh', path: '/etc' }, send);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      seq: 8,
+      op: 'refresh',
+      state: 'refused',
+      problem: 'request_invalid',
+    });
+    expect(calls).toEqual([]);
   });
 
   it("never logs the token, a person's words, a typed reply or the adapter's answer", async () => {
@@ -681,535 +801,57 @@ describe('handleDiClientMessage: diMissionRequest', () => {
     }
     expect(seen).toHaveLength(1);
   });
-  it('is refused when this office has no panel relay', () => {
+  it('is answered "unavailable: not configured", once and correlated, when this office has no panel relay', () => {
+    const replies: Array<Record<string, unknown>> = [];
     expect(
-      handleDiClientMessage(
-        { type: 'diMissionRequest', seq: 1, op: 'refresh' },
-        () => undefined,
-        ctxBase,
-      ),
+      handleDiClientMessage(decide({ seq: 4 }), (m) => void replies.push(m), ctxBase),
     ).toMatchObject({ refused: 'no request panel in this office' });
-  });
-});
-
-describe('requestPanel: the client (in-process HTTP stand-in)', () => {
-  let server: http.Server;
-  let port = 0;
-  let seen: Array<{ req: http.IncomingMessage; body: string }> = [];
-  let respond: (req: http.IncomingMessage, res: http.ServerResponse) => void;
-  beforeEach(async () => {
-    seen = [];
-    respond = (_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end('{"ok":true}');
-    };
-    server = http.createServer((req, res) => {
-      const chunks: Buffer[] = [];
-      req.on('data', (c: Buffer) => chunks.push(c));
-      req.on('end', () => {
-        seen.push({ req, body: Buffer.concat(chunks).toString('utf-8') });
-        respond(req, res);
-      });
-    });
-    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
-    port = (server.address() as AddressInfo).port;
-  });
-  afterEach(async () => {
-    await new Promise<void>((r) => server.close(() => r()));
-  });
-
-  it('a GET carries the bearer, a Host naming the same listener, no Origin, no cookie, no body', async () => {
-    const result = await requestPanel({ port, token: TOKEN }, { method: 'GET', path: '/overview' });
-    expect(result).toMatchObject({ kind: 'http', status: 200, body: { ok: true } });
-    const { req, body } = seen[0];
-    expect(req.method).toBe('GET');
-    expect(req.headers.authorization).toBe(`Bearer ${TOKEN}`);
-    expect(req.headers.host).toBe(`127.0.0.1:${port}`);
-    expect(req.headers.origin).toBeUndefined();
-    expect(req.headers.cookie).toBeUndefined();
-    expect(req.headers['content-length']).toBeUndefined();
-    expect(body).toBe('');
-  });
-
-  it('a POST sends exactly its JSON with an exact Content-Length', async () => {
-    await requestPanel(
-      { port, token: TOKEN },
-      {
-        method: 'POST',
-        path: '/conversations/turn',
-        body: { conversation_id: null, text: 'héllo 😀' },
-      },
-    );
-    const { req, body } = seen[0];
-    expect(req.headers['content-type']).toBe('application/json');
-    expect(Number(req.headers['content-length'])).toBe(Buffer.byteLength(body));
-    expect(JSON.parse(body)).toEqual({ conversation_id: null, text: 'héllo 😀' });
-  });
-
-  it('refuses locally, before any socket, what the adapter would refuse', async () => {
-    const before = seen.length;
-    const refusals = await Promise.all([
-      requestPanel({ port, token: TOKEN }, { method: 'GET', path: '/catalog' }),
-      requestPanel({ port, token: TOKEN }, { method: 'POST', path: '/overview', body: {} }),
-      requestPanel({ port, token: TOKEN }, { method: 'POST', path: '/conversations/turn' }),
-      requestPanel({ port, token: TOKEN }, { method: 'GET', path: '/overview', body: { a: 1 } }),
-      requestPanel(
-        { port, token: TOKEN },
-        {
-          method: 'POST',
-          path: '/conversations/turn',
-          body: { text: 'x'.repeat(MAX_PANEL_REQUEST_BODY_BYTES) },
-        },
-      ),
-    ]);
-    for (const r of refusals)
-      expect(r).toEqual({ kind: 'transport_error', problem: 'panel_request_invalid' });
-    expect(seen.length).toBe(before);
-  });
-
-  it('bounds the response it will read', async () => {
-    respond = (_req, res) => {
-      res.writeHead(200);
-      res.end('x'.repeat(MAX_PANEL_RESPONSE_BYTES + 10));
-    };
-    expect(
-      await requestPanel({ port, token: TOKEN }, { method: 'GET', path: '/overview' }),
-    ).toEqual({ kind: 'transport_error', problem: 'panel_response_too_large' });
-  });
-
-  it('a silent adapter is a timeout (outcome unknown); a closed port is unreachable (nothing sent)', async () => {
-    respond = () => undefined;
-    expect(
-      await requestPanel({ port, token: TOKEN }, { method: 'GET', path: '/overview' }, 150),
-    ).toEqual({ kind: 'transport_error', problem: 'panel_timeout' });
-    const closed = http.createServer();
-    await new Promise<void>((r) => closed.listen(0, '127.0.0.1', () => r()));
-    const dead = (closed.address() as AddressInfo).port;
-    await new Promise<void>((r) => closed.close(() => r()));
-    expect(
-      await requestPanel({ port: dead, token: TOKEN }, { method: 'GET', path: '/overview' }),
-    ).toEqual({ kind: 'transport_error', problem: 'panel_unreachable' });
-  });
-
-  it('a non-JSON body is reported as such, not parsed into something else', async () => {
-    respond = (_req, res) => {
-      res.writeHead(200);
-      res.end('<html>');
-    };
-    expect(
-      await requestPanel({ port, token: TOKEN }, { method: 'GET', path: '/overview' }),
-    ).toMatchObject({ kind: 'http', status: 200, bodyProblem: 'body_not_json' });
-  });
-});
-
-// ── the REAL adapter ────────────────────────────────────────────────────────────────────────────
-
-const REPO_ROOT = path.resolve(__dirname, '../../../..');
-const HARNESS = path.join(REPO_ROOT, 'tests', '_panel_e2e_server.py');
-
-class Harness {
-  private child: ChildProcessWithoutNullStreams | null = null;
-  private lines: string[] = [];
-  private waiters: Array<(line: string) => void> = [];
-  private buffer = '';
-  readonly tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'di-e2e-'));
-  readonly discovery = path.join(this.tmp, 'disc', 'panel.json');
-  stderr = '';
-
-  async start(): Promise<void> {
-    this.child = spawn(
-      'python3',
-      [HARNESS, '--work-dir', path.join(this.tmp, 'w'), '--discovery-file', this.discovery],
-      {
-        env: { ...process.env, PYTHONPATH: REPO_ROOT, PYTHONDONTWRITEBYTECODE: '1' },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      },
-    );
-    this.child.stdout.on('data', (d: Buffer) => {
-      this.buffer += d.toString('utf-8');
-      let i: number;
-      while ((i = this.buffer.indexOf('\n')) >= 0) {
-        const line = this.buffer.slice(0, i);
-        this.buffer = this.buffer.slice(i + 1);
-        const waiter = this.waiters.shift();
-        if (waiter) waiter(line);
-        else this.lines.push(line);
-      }
-    });
-    this.child.stderr.on('data', (d: Buffer) => {
-      this.stderr += d.toString('utf-8');
-    });
-    const hello = JSON.parse(await this.line(30_000)) as { endpoint: string };
-    if (hello.endpoint !== 'mission_panel_e2e')
-      throw new Error(`unexpected startup: ${JSON.stringify(hello)}`);
-  }
-
-  private line(timeoutMs: number): Promise<string> {
-    const queued = this.lines.shift();
-    if (queued !== undefined) return Promise.resolve(queued);
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(
-        () =>
-          reject(
-            new Error(`harness silent for ${timeoutMs} ms; stderr: ${this.stderr.slice(0, 1500)}`),
-          ),
-        timeoutMs,
-      );
-      this.waiters.push((l) => {
-        clearTimeout(timer);
-        resolve(l);
-      });
-    });
-  }
-
-  async control(command: Record<string, unknown>): Promise<Record<string, unknown>> {
-    this.child?.stdin.write(`${JSON.stringify(command)}\n`);
-    return JSON.parse(await this.line(30_000)) as Record<string, unknown>;
-  }
-
-  async stop(): Promise<void> {
-    const child = this.child;
-    if (!child) return;
-    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-    if (child.exitCode === null) {
-      try {
-        child.stdin.write('{"op":"stop"}\n');
-      } catch {
-        /* already gone */
-      }
-      const timer = setTimeout(() => child.kill('SIGTERM'), 10_000);
-      await exited;
-      clearTimeout(timer);
-    }
-    this.child = null;
-  }
-
-  token(): string {
-    return (JSON.parse(fs.readFileSync(this.discovery, 'utf-8')) as { token: string }).token;
-  }
-}
-
-describe('REAL request panel adapter, through the real handler', { timeout: 90_000 }, () => {
-  let harness: Harness;
-  let panel: DiMissionRequests;
-  let seq = 0;
-  const logs: string[] = [];
-  const replies: DiMissionRequestReply[] = [];
-
-  const ask = async (fields: Record<string, unknown>): Promise<DiMissionRequestReply> => {
-    let got: DiMissionRequestReply | null = null;
-    await panel.handle({ type: 'diMissionRequest', seq: ++seq, ...fields }, (m) => {
-      got = m as unknown as DiMissionRequestReply;
-    });
-    if (got === null) throw new Error('no reply');
-    const reply: DiMissionRequestReply = got;
-    expect(reply.seq).toBe(seq);
-    replies.push(reply);
-    return reply;
-  };
-  type Json = Record<string, any>;
-  const answer = (r: DiMissionRequestReply): Json => (r.answer ?? {}) as Json;
-
-  const settled = async (conversationId: string): Promise<Json> => {
-    for (let i = 0; i < 120; i++) {
-      const view = answer(await ask({ op: 'conversation', conversationId }));
-      if (view.turns.at(-1).state !== 'RESERVED') return view.turns.at(-1);
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    throw new Error('the conversation turn never settled');
-  };
-
-  const PROPOSAL = {
-    objective: 'Make the readiness probe stable under load',
-    target_context: 'the readiness subsystem',
-    requested_scope: 'the probe and its tests; no schema change',
-    requested_action_scope: ['repository_read', 'engineering_change'],
-  };
-  const reply = (text: string): string =>
-    `${text}\n\n\`\`\`mission-proposal\n${JSON.stringify(PROPOSAL)}\n\`\`\`\n`;
-
-  beforeAll(async () => {
-    harness = new Harness();
-    await harness.start();
-    panel = new DiMissionRequests(harness.discovery, { log: (l) => logs.push(l) });
-  }, 60_000);
-  afterAll(async () => {
-    await harness.stop();
-    // Only the directory this harness made, by its exact path, directly under the temp root.
-    if (path.dirname(harness.tmp) === os.tmpdir() && /^di-e2e-[A-Za-z0-9]{6}$/.test(path.basename(harness.tmp))) {
-      fs.rmSync(harness.tmp, { recursive: true, force: true });
-    }
-  });
-
-  it('walks request -> clarification -> exact proposal -> decision -> dispatch -> verified result', async () => {
-    expect(answer(await ask({ op: 'refresh' })).requests).toEqual([]);
-    await harness.control({ op: 'provider', reply: 'Which probe do you mean?' });
-    const first = answer(await ask({ op: 'turn', text: 'make the probe stable' })).turn as Json;
-    const clarifying = await settled(first.conversation_id);
-    expect(clarifying).toMatchObject({
-      state: 'COMPLETED',
-      draft: null,
-      provider_text: 'untrusted',
-    });
-    await harness.control({ op: 'provider', reply: reply('The readiness probe.') });
-    const second = answer(
-      await ask({
-        op: 'turn',
-        conversationId: first.conversation_id,
-        text: 'the readiness probe, no schema change',
-      }),
-    ).turn as Json;
-    const drafted = await settled(first.conversation_id);
-    expect(second.sequence).toBe(2);
-    expect(drafted.draft.proposal.requested_action_scope).toEqual([
-      'engineering_change',
-      'repository_read',
-    ]);
-    expect((await harness.control({ op: 'state' })).requests).toBe(0); // a draft is not of record
-
-    const submitted = answer(
-      await ask({
-        op: 'submit',
-        turnId: drafted.turn_id,
-        digest: drafted.draft.proposal_digest_sha256,
-      }),
-    );
-    const view = submitted.request as Json;
-    expect(view.lifecycle.stage).toBe('of_record');
-    expect(view.proposal_digest_sha256).toBe(drafted.draft.proposal_digest_sha256);
-    const ref = view.request_ref as string;
-
-    const offer = answer(await ask({ op: 'offer', requestRef: ref }));
-    expect(offer).toMatchObject({ reply: 'approve', revision: 1, mission_id: view.mission_id });
-    // A second window is shown the SAME frozen offer, with the same absolute expiry.
-    const sameOffer = answer(await ask({ op: 'offer', requestRef: ref }));
-    expect(sameOffer.offer_digest_sha256).toBe(offer.offer_digest_sha256);
-    expect(sameOffer.expires_at).toBe(offer.expires_at);
-    const bind = {
-      requestRef: ref,
-      missionId: offer.mission_id,
-      revision: offer.revision,
-      digest: offer.proposal_digest_sha256,
-      offerDigest: offer.offer_digest_sha256,
-      expiresAt: offer.expires_at,
-      scope: offer.approved_action_scope,
-      deliveryTargets: offer.approved_delivery_targets,
-      repositoryUrl: offer.repository_url,
-    };
-
-    const notYet = await ask({ op: 'decide', ...bind, reply: 'yes, go ahead' });
-    expect(notYet).toMatchObject({
-      state: 'refused',
-      problem: 'local_request_reply_not_affirmative',
-    });
-    expect((await harness.control({ op: 'state' })).authorizations).toBe(0);
-    const stale = await ask({ op: 'decide', ...bind, digest: '0'.repeat(64), reply: 'approve' });
-    expect(stale).toMatchObject({ state: 'refused', problem: 'mission_panel_display_stale' });
-    expect(answer(stale).details).toMatchObject({
-      display_invalid: true,
-      binding: 'offer_tampered',
-    });
-    // The same offer with a different expiry is tampering too: the retained offer is the truth.
-    const moved = await ask({
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toMatchObject({
+      type: 'diMissionRequestReply',
+      seq: 4,
       op: 'decide',
-      ...bind,
-      expiresAt: (offer.expires_at as number) + 600,
-      reply: 'approve',
-    });
-    expect(answer(moved).details).toMatchObject({ binding: 'offer_tampered' });
-
-    const approved = answer(await ask({ op: 'decide', ...bind, reply: 'approve' }));
-    expect(approved.request.lifecycle).toMatchObject({
-      stage: 'approved',
-      approval_expires_at: offer.expires_at,
-    });
-    expect(approved.request.lifecycle.provenance.proof).toBe(
-      'operator_attested_not_independently_verified',
-    );
-    const again = answer(await ask({ op: 'decide', ...bind, reply: 'approve' }));
-    expect(again.decision.idempotent).toBe(true);
-    expect(await harness.control({ op: 'state' })).toMatchObject({
-      authorizations: 1,
-      spawn_calls: 0,
-    });
-
-    const started = answer(await ask({ op: 'run', requestRef: ref, command: 'dispatch' }));
-    expect(started.request.lifecycle.stage).toBe('dispatched');
-    expect(started.request.lifecycle.detail).toMatch(/exactly once/);
-    const dup = await ask({ op: 'run', requestRef: ref, command: 'dispatch' });
-    expect(dup).toMatchObject({ state: 'refused', problem: 'mission_panel_action_not_offered' });
-    await harness.control({ op: 'team', status: 'RUNNING' });
-    expect(
-      answer(await ask({ op: 'run', requestRef: ref, command: 'observe' })).request.lifecycle.stage,
-    ).toBe('running');
-    const early = await ask({ op: 'run', requestRef: ref, command: 'verify' });
-    expect(early).toMatchObject({ state: 'refused', problem: 'mission_panel_action_not_offered' });
-    await harness.control({ op: 'artifacts', request_ref: ref });
-    await harness.control({ op: 'team', status: 'COMPLETE' });
-    const done = answer(await ask({ op: 'run', requestRef: ref, command: 'verify' }));
-    expect(done.request.lifecycle.stage).toBe('verified');
-    const result = answer(await ask({ op: 'result', requestRef: ref }));
-    expect(result).toMatchObject({
-      recoverable: true,
-      delivered: false,
-      delivery_authority: 'none',
-    });
-    expect(result.result_text).toContain('readiness probe fix landed');
-    expect(await harness.control({ op: 'state' })).toMatchObject({
-      spawn_calls: 1,
-      authorizations: 1,
-      requests: 1,
+      state: 'unavailable',
+      problem: 'panel_not_configured',
+      answer: null,
     });
   });
 
-  it('a withdrawal is a withdrawal, and a restart loses the key honestly', async () => {
-    await harness.control({ op: 'provider', reply: reply('Proposal A.') });
-    const t = answer(await ask({ op: 'turn', text: 'another change' })).turn as Json;
-    const d = await settled(t.conversation_id);
-    const v = answer(
-      await ask({ op: 'submit', turnId: d.turn_id, digest: d.draft.proposal_digest_sha256 }),
-    ).request as Json;
-    const bind = {
-      requestRef: v.request_ref,
-      missionId: v.mission_id,
-      revision: v.revision,
-      digest: v.proposal_digest_sha256,
-    };
-    await harness.control({ op: 'restart' });
-    const noKey = await ask({ op: 'withdraw', ...bind });
-    expect(noKey).toMatchObject({
-      state: 'refused',
-      problem: 'mission_panel_withdrawal_key_unavailable',
-    });
-    expect(answer(await ask({ op: 'request', requestRef: v.request_ref })).lifecycle.stage).toBe(
-      'of_record',
-    );
-  });
-
-  it('a withdrawn proposal is closed and is called withdrawn, never denied', async () => {
-    await harness.control({ op: 'provider', reply: reply('Proposal B.') });
-    const t = answer(await ask({ op: 'turn', text: 'a third change' })).turn as Json;
-    const d = await settled(t.conversation_id);
-    const v = answer(
-      await ask({ op: 'submit', turnId: d.turn_id, digest: d.draft.proposal_digest_sha256 }),
-    ).request as Json;
-    const out = answer(
-      await ask({
-        op: 'withdraw',
-        requestRef: v.request_ref,
-        missionId: v.mission_id,
-        revision: v.revision,
-        digest: v.proposal_digest_sha256,
-      }),
-    );
-    expect(out.request.lifecycle.stage).toBe('withdrawn');
-    expect(JSON.stringify(out.request.lifecycle)).not.toMatch(/den(y|ied|ial)/i);
-    const stalePost = await ask({
-      op: 'decide',
-      requestRef: v.request_ref,
-      missionId: v.mission_id,
-      revision: v.revision,
-      digest: v.proposal_digest_sha256,
-      reply: 'approve',
-      offerDigest: '8'.repeat(64),
-      expiresAt: 4_000_000_000,
-      scope: ['engineering_change', 'repository_read'],
-      deliveryTargets: [],
-      repositoryUrl: 'https://github.com/Example/Repo',
-    });
-    // No offer was ever issued for this digest: refused as a stale display, before any authority.
-    expect(stalePost).toMatchObject({ state: 'refused', problem: 'mission_panel_display_stale' });
-    expect(answer(stalePost).details).toMatchObject({ binding: 'offer_unknown' });
-  });
-
-  it('an unreadable provider turn is shown as uncertain and is never retried', async () => {
-    const before = (await harness.control({ op: 'state' })).codex_calls as number;
-    await harness.control({ op: 'provider', fail: 'garbage' });
-    const t = answer(await ask({ op: 'turn', text: 'this will be unreadable' })).turn as Json;
-    const settledTurn = await settled(t.conversation_id);
-    expect(settledTurn.state).toBe('UNCERTAIN');
-    expect(settledTurn.assistant_text).toBeNull();
-    expect((await harness.control({ op: 'state' })).codex_calls).toBe(before + 1);
-  });
-
-  it('the worst conversation the panel accepts crosses the relay inside the bound, and says what it left out', async () => {
-    // Round 27 F2. Fifty turns, each with a user text and an assistant text at the accepted maximum
-    // (8000 characters), seeded through the REAL journal's own validation. Astral characters are four bytes
-    // raw and twelve ASCII-escaped; control characters are six once JSON-escaped. A character count cannot
-    // tell these apart: only the serialized BYTES that cross the relay can.
-    const endpoint = JSON.parse(fs.readFileSync(harness.discovery, 'utf-8')) as { port: number };
-    const rawBytes = (conversationId: string): Promise<{ declared: number; actual: number }> =>
-      new Promise((resolve, reject) => {
-        http
-          .get(
-            {
-              host: '127.0.0.1',
-              port: endpoint.port,
-              path: `/conversations/${conversationId}`,
-              headers: {
-                Authorization: `Bearer ${harness.token()}`,
-                Host: `127.0.0.1:${endpoint.port}`,
-              },
-            },
-            (res) => {
-              const chunks: Buffer[] = [];
-              res.on('data', (c: Buffer) => chunks.push(c));
-              res.on('end', () =>
-                resolve({
-                  declared: Number(res.headers['content-length']),
-                  actual: Buffer.concat(chunks).length,
-                }),
-              );
-            },
-          )
-          .on('error', reject);
+  it('answers a malformed message inside the correlation domain exactly once, correlated, and one outside it not at all; neither reaches the relay', () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const ctx = { ...ctxBase, missionRequest: (m: Record<string, unknown>) => void seen.push(m) };
+    const inDomain: Array<[Record<string, unknown>, string]> = [
+      [{ type: 'diMissionRequest', seq: 1, op: 'refresh', path: '/etc' }, 'refresh'],
+      [{ type: 'diMissionRequest', seq: 2, op: 'run', requestRef: REF, command: 'rm' }, 'run'],
+      [decide({ seq: 3, reply: '' }), 'decide'],
+    ];
+    for (const [msg, op] of inDomain) {
+      const replies: Array<Record<string, unknown>> = [];
+      expect(handleDiClientMessage(msg, (m) => void replies.push(m), ctx)).toMatchObject({
+        refused: expect.stringContaining('diMissionRequest'),
       });
-    for (const character of ['astral', 'control'] as const) {
-      const seeded = await harness.control({ op: 'seed_turns', turns: 50, character });
-      const conversationId = seeded.conversation_id as string;
-      // 1. The raw bytes the adapter really sends.
-      const raw = await rawBytes(conversationId);
-      expect(raw.declared, character).toBe(raw.actual);
-      expect(raw.actual, character).toBeLessThanOrEqual(MAX_PANEL_RESPONSE_BYTES);
-      expect(raw.actual, `${character}: a worst case, not a toy`).toBeGreaterThan(1024 * 1024);
-      // 2. Through the real relay: readable, typed, and honest about the cut.
-      const reply = await ask({ op: 'conversation', conversationId });
-      expect(reply.state, character).toBe('ok');
-      const view = answer(reply);
-      expect(view.turns_total).toBe(50);
-      expect(view.turns_shown + view.turns_omitted).toBe(50);
-      expect(view.turns_omitted, `${character}: 50 maximal turns cannot all fit`).toBeGreaterThan(0);
-      expect(view.turns_truncated).toBe(true);
-      // WHICH bound cut, with real counts: here every omitted turn was left out by the byte budget.
-      expect(view.turns_omitted_by_byte_limit).toBe(view.turns_omitted);
-      expect(view.turns_omitted_by_turn_limit).toBe(0);
-      console.info(
-        `MEASURED ${character} x50 through the relay: raw_response_bytes=${raw.actual} ` +
-          `content_length=${raw.declared} bound=${MAX_PANEL_RESPONSE_BYTES} shown=${view.turns_shown} ` +
-          `omitted=${view.turns_omitted} (by bytes=${view.turns_omitted_by_byte_limit}, by turn bound=${view.turns_omitted_by_turn_limit})`,
-      );
-      expect(view.turns).toHaveLength(view.turns_shown);
-      // The newest turn is always shown, whole: nothing inside a turn is cut.
-      const newest = view.turns.at(-1);
-      expect(newest.sequence).toBe(50);
-      expect([...newest.user_text]).toHaveLength(8000);
-      expect([...newest.assistant_text]).toHaveLength(8000);
+      expect(replies, op).toHaveLength(1);
+      expect(replies[0], op).toMatchObject({
+        type: 'diMissionRequestReply',
+        seq: msg.seq,
+        op,
+        state: 'refused',
+        problem: 'request_invalid',
+        answer: null,
+      });
     }
-  });
-
-  it('never exposes the bearer token to a client, in any reply or any log line', async () => {
-    const token = harness.token();
-    const everything = JSON.stringify(replies) + logs.join('\n');
-    expect(everything).not.toContain(token);
-    expect(everything).not.toContain('Bearer');
-    expect(everything).not.toMatch(/lc-[0-9a-f]{64}/); // a withdrawal key
-    expect(everything).not.toContain(harness.tmp); // no private path
-  });
-
-  it('after the panel stops it is "not running", with nothing sent', async () => {
-    await harness.stop();
-    expect(fs.existsSync(harness.discovery)).toBe(false);
-    const gone = await ask({ op: 'refresh' });
-    expect(gone).toMatchObject({ state: 'unavailable', problem: 'panel_discovery_unavailable' });
+    for (const msg of [
+      { type: 'diMissionRequest', seq: -1, op: 'refresh' },
+      { type: 'diMissionRequest', op: 'refresh' },
+      { type: 'diMissionRequest', seq: 1, op: 'exec' },
+      { type: 'diMissionRequest', seq: 1.5, op: 'refresh' },
+    ]) {
+      const replies: Array<Record<string, unknown>> = [];
+      expect(handleDiClientMessage(msg, (m) => void replies.push(m), ctx)).toMatchObject({
+        refused: expect.stringContaining('diMissionRequest'),
+      });
+      expect(replies, JSON.stringify(msg)).toEqual([]);
+    }
+    expect(seen).toEqual([]);
   });
 });

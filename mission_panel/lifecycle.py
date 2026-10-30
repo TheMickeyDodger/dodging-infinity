@@ -8,10 +8,12 @@ as given and offers only ``actions``; the service refuses anything else again.
 
 What the wording will not do:
 
-- call a withdrawal a denial. The attested lane is APPROVE-ONLY and ordinary
-  ``approve`` is always refused, so no authenticated decision-maker exists to
-  record a denial. Withdrawing is the requester taking a pending proposal back;
-  it is permanently closed, and a revision is a SEPARATE replacement record;
+- call a withdrawal a decision. Ordinary ``approve`` is always refused. The
+  attested lane carries the person's approval and, by owner decision (c),
+  their decline, rejection or change request, each recorded by Mission Core;
+  those are named only when Mission Core holds the outcome THIS panel relayed.
+  Withdrawing is the requester taking a pending proposal back; it is
+  permanently closed, and a revision is a SEPARATE replacement record;
 - present an approval as a verified person. It is an operator attestation: the
   panel relays what was typed, and DI did not verify who typed it;
 - claim an exactly-once effect. A recorded start is durable INTENT written
@@ -30,9 +32,19 @@ STAGES = (
     "approval_uncertain", "approved", "approved_elsewhere", "expired",
     "dispatch_uncertain", "dispatched", "running", "pending_proof", "verified",
     "blocked", "run_cancelled", "closed_elsewhere", "unreadable",
+    # (c): the outcome this panel relayed, as Mission Core recorded it.
+    "declined", "rejected", "changes_requested", "outcome_uncertain",
 )
+# "decide" offers every decision the person may take on the proposal shown:
+# approve (the typed word), decline, reject or request changes.
 ACTIONS = ("decide", "withdraw", "check_approval", "dispatch", "observe",
            "reconcile", "verify", "result")
+# (c): what each relayed outcome is called, and the state it leaves.
+OUTCOME_WORDS = {
+    store_module.OUTCOME_DECLINE: "decline",
+    store_module.OUTCOME_REJECT: "rejection",
+    store_module.OUTCOME_REQUEST_CHANGES: "change request",
+}
 
 PROVENANCE = dict(surface_module.PROVENANCE_LABEL)
 
@@ -90,6 +102,12 @@ def _derive_unstarted(status, attestation, capability_held, run_available,
             notice = ("The last approval attempt was refused by Mission Core"
                       " (%s); nothing was approved."
                       % ((attestation.get("outcome") or {}).get("problem")))
+        outcome = status.get("attested_outcome")
+        if outcome is not None and outcome["state"] == store_module.ATTESTED_REFUSED:
+            notice = _join(notice, "The last %s was refused by Mission Core (%s);"
+                           " nothing was recorded." % (
+                               OUTCOME_WORDS[outcome["kind"]],
+                               (outcome.get("outcome") or {}).get("problem")))
         actions = ["decide"]
         if capability_held:
             actions.append("withdraw")
@@ -102,7 +120,8 @@ def _derive_unstarted(status, attestation, capability_held, run_available,
             "This proposal is of record: Mission Core holds it as revision %d"
             " with digest %s. Nothing has been approved and nothing has"
             " started. Approving is a separate step you take here by typing the"
-            " word approve; the proposal can also be withdrawn."
+            " word approve. You can instead decline it, reject it for good, or"
+            " ask for changes; the proposal can also be withdrawn."
             % (revision, digest),
             actions=actions, notice=notice)
     # AUTHORIZED, no run intent yet.
@@ -138,6 +157,49 @@ def _derive_unstarted(status, attestation, capability_held, run_available,
     stage = "approved" if attested else "approved_elsewhere"
     return _view(stage, label, detail, actions=actions, notice=notice,
                  approval_expires_at=expires, attested=attested)
+
+
+def _derive_outcome(status):
+    """(c): the outcome THIS panel relayed, when Mission Core's record agrees
+    with it; None otherwise (a DENIED Mission with no such outcome was closed
+    elsewhere, and is said so further on)."""
+    outcome = status.get("attested_outcome")
+    if outcome is None or outcome["state"] == store_module.ATTESTED_REFUSED:
+        return None
+    mission_state = status["run"]["lifecycle_state"]
+    words = OUTCOME_WORDS[outcome["kind"]]
+    if outcome["state"] in (store_module.ATTESTED_RESERVED,
+                            store_module.ATTESTED_HOLD):
+        return _view(
+            "outcome_uncertain", "Outcome unknown",
+            "Your %s was recorded as intended, but whether Mission Core applied"
+            " it is not known. It is not applied again. Choosing the same"
+            " outcome again on the same proposal only reconciles it from"
+            " Mission Core's own record." % words,
+            actions=(["decide"] if mission_state
+                     == mission_record.STATE_AWAITING_DECISION else []),
+            attested=True)
+    if mission_state != store_module.OUTCOME_RESULTING_STATES[outcome["kind"]]:
+        return None
+    recorded = ("Mission Core recorded it as an operator attestation of your"
+                " choice relayed by this panel; DI did not verify who chose it.")
+    if outcome["kind"] == store_module.OUTCOME_DECLINE:
+        return _view(
+            "declined", "Declined",
+            "You declined this proposal. %s Nothing was approved and nothing"
+            " started. Submit a new proposal to ask again." % recorded,
+            attested=True)
+    if outcome["kind"] == store_module.OUTCOME_REJECT:
+        return _view(
+            "rejected", "Rejected",
+            "You rejected this proposal, and that is final: it can never be"
+            " approved, revised or started. %s Submit a new proposal to ask for"
+            " something else." % recorded, terminal=True, attested=True)
+    return _view(
+        "changes_requested", "Changes requested",
+        "You asked for changes to this proposal, with your reason. %s Nothing"
+        " was approved and nothing started. Submit the revised proposal as a new"
+        " request; this one stays as it is." % recorded, attested=True)
 
 
 def _join(*parts):
@@ -192,6 +254,9 @@ def derive(status, lineage, now, capability_held, run_available,
             " of it did not finish. No decision can be taken on this proposal."
             " Withdraw again to complete it.",
             actions=["withdraw"] if capability_held else [])
+    derived = _derive_outcome(status)
+    if derived is not None:
+        return derived
     run = status["run"]
     attestation = status.get("attested_approval")
     mission_state = run["lifecycle_state"]

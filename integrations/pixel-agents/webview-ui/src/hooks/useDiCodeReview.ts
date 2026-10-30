@@ -7,10 +7,11 @@
  * shows: the connection or the office state is not trusted, the assignment moved, or the agent is
  * gone. A diff is never kept on screen under a label that says it is current.
  */
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer } from 'react';
 
-import type { DiCodeReview, DiOfficeState } from '../../../core/src/messages.js';
+import type { DiOfficeState } from '../../../core/src/messages.js';
 import type {
+  DiCodeReviewFeed,
   ReviewRequest,
   ReviewSession,
   ReviewTargetRef,
@@ -18,9 +19,11 @@ import type {
 import {
   clearedReasonFor,
   CLOSED_SESSION,
+  createRequestIds,
   isRetryable,
   nextRequest,
   reduceSession,
+  reviewReadMessage,
 } from '../components/diCodeReviewModel.js';
 
 /** How long a "not this instant" refusal waits before the read is asked again. */
@@ -37,24 +40,21 @@ export interface DiCodeReviewControl {
   select: (path: string | null) => void;
 }
 
-/** The wire message for a request (a reference only). */
-export function readMessage(target: ReviewTargetRef, request: ReviewRequest) {
-  const base = {
-    type: 'diCodeReviewRead' as const,
-    missionRef: target.missionRef,
-    memberRef: target.memberRef,
-    taskId: target.taskId,
-    listing: target.listing,
-  };
-  return request.kind === 'overview'
-    ? base
-    : { ...base, snapshot: request.snapshot, fileId: request.fileId };
+/**
+ * Every read names itself. ONE allocator for the life of the page, shared by every session this hook ever opens: ids never repeat across close, reopen
+ * and reads still outstanding. (Per-session counting would hand a reopened session the id of the previous session's outstanding read.)
+ */
+const nextRequestId = createRequestIds('w');
+
+/** The wire message for a request (a reference only): the model's `reviewReadMessage`, a member-bound read or a Mission-level one by the target's kind. */
+export function readMessage(target: ReviewTargetRef, request: ReviewRequest, requestId?: string) {
+  return reviewReadMessage(target, request, requestId);
 }
 
 export function useDiCodeReview(
   officeState: DiOfficeState | null,
   clientReason: string | null,
-  latestAnswer: DiCodeReview | null,
+  answers: DiCodeReviewFeed,
 ): DiCodeReviewControl {
   const [session, dispatch] = useReducer(reduceSession, CLOSED_SESSION);
 
@@ -62,18 +62,18 @@ export function useDiCodeReview(
   useEffect(() => {
     const request = nextRequest(session);
     if (request === null || session.target === null) return;
-    dispatch({ type: 'asked', request });
-    transport.send(readMessage(session.target, request));
+    const id = nextRequestId();
+    dispatch({ type: 'asked', request, target: session.target, id });
+    transport.send(readMessage(session.target, request, id));
   }, [session]);
 
-  // Each answer is applied by the reducer, which ignores any that does not answer the request in
-  // flight for THIS target. The same message object is never applied twice.
-  const applied = useRef<DiCodeReview | null>(null);
-  useEffect(() => {
-    if (latestAnswer === null || applied.current === latestAnswer) return;
-    applied.current = latestAnswer;
-    dispatch({ type: 'answer', answer: latestAnswer, nowMs: Date.now() });
-  }, [latestAnswer]);
+  // EVERY answer reaches the reducer, in the order it arrived, whatever a render batches: the feed
+  // delivers each one and keeps none, and the reducer ignores any that does not answer the request in
+  // flight for THIS target. (A latest-value slot lost one of two answers handled before a render.)
+  useEffect(
+    () => answers.subscribe((answer) => dispatch({ type: 'answer', answer, nowMs: Date.now() })),
+    [answers],
+  );
 
   // A refusal that only means "not this instant" (the office reads at a bounded rate, one at a
   // time) is asked again shortly, by itself: the reader should never have to click for it.
@@ -88,7 +88,7 @@ export function useDiCodeReview(
   useEffect(() => {
     if (session.target === null || session.cleared !== null) return;
     const reason = clearedReasonFor(clientReason, officeState, session.target);
-    if (reason !== null) dispatch({ type: 'clear', reason });
+    if (reason !== null) dispatch({ type: 'clear', reason, target: session.target });
   }, [session.target, session.cleared, clientReason, officeState]);
 
   const open = useCallback((target: ReviewTargetRef) => dispatch({ type: 'open', target }), []);

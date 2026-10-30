@@ -11,11 +11,15 @@ one bounded, no-follow read of the registered store file through the store's
 OWN load boundary (``mission.store.accept_loaded_document``) and whose
 ``lock`` and ``save`` REFUSE. The delivery layer is reached through ONE
 call, ``validated_receipt`` (pure validation of a document this module
-loaded), and, for the delivery-presentations reader at the end of this
-module, ``validated_attestation`` (the same unchanged validation, returning
-only the proposal digest a record attests) and the pure
-``delivery_proposal_digest``; never an attesting, recording or transport
-path. Nothing here writes, registers, mints, reserves or repairs anything.
+loaded), and, for the two store readers at the end of this module, ONE
+``validated_attestation`` call (the same unchanged validation, returning only
+the delivery id and the proposal digest a record attests) that both share
+through ``_validated_deliveries``, and the pure ``delivery_proposal_digest``.
+The delivery-presentations reader counts attested proposal digests; the
+delivery-links reader groups delivery ids by the workflow id each validated
+record's own ``mission`` binding names. Never an attesting, recording or
+transport path. Nothing here writes, registers, mints, reserves or repairs
+anything.
 
 THE CURSOR IS SAMPLED FIRST. ``sample`` reads each registered Mission Core
 store ONCE (load 1) BEFORE the runtime capture and before ANY report is
@@ -851,6 +855,77 @@ def _link(binding_mission, workflow_missions, inspection):
             "authorization_digest": contract_v2.AUTHORIZATION_NOT_COMPARABLE}
 
 
+def _validated_deliveries(document):
+    """Every record of ONE loaded delivery store document, validated once for
+    both readers below: each is first checked to be plain canonical data,
+    then validated by the delivery layer's UNCHANGED validator through
+    ``mission_parent.validated_attestation`` (this module's one such call).
+    Returns ``[(delivery id, attested proposal digest or None, workflow id or
+    None)]``, the workflow id being the one the record's own ``mission``
+    binding names, read only after that record validated (it is one of the
+    authority keys the record's authority digest covers). Raises
+    ``_Unavailable("delivery_store_invalid")`` when the document is not the
+    expected shape or ANY record is malformed or tampered; nothing of a
+    record is echoed."""
+    deliveries = document["deliveries"]
+    if sorted(document) != ["deliveries", "pr_delivery_store_schema_version"] or (
+            not _is_version(document["pr_delivery_store_schema_version"],
+                            DELIVERY_STORE_SCHEMA_VERSION)) or (
+                len(deliveries) > MAX_DELIVERY_RECORDS):
+        raise _Unavailable("delivery_store_invalid")
+    validated = []
+    for delivery_key in deliveries:
+        delivery = deliveries[delivery_key]
+        # Before ANY validation call (which computes digests of its own):
+        # plain canonical data only, so none of them can meet a value it
+        # refuses.
+        if not _plain_canonical(delivery):
+            raise _Unavailable("delivery_store_invalid")
+        try:
+            delivery_id, digest = mission_parent.validated_attestation(
+                delivery)
+        except authorization.AuthorizationError:
+            raise _Unavailable("delivery_store_invalid")
+        if delivery_id != delivery_key:
+            raise _Unavailable("delivery_store_invalid")
+        binding = delivery["mission"]
+        validated.append((delivery_id, digest, None if binding is None
+                          else binding["workflow_id"]))
+    return validated
+
+
+class DeliveryLinksReader(object):
+    """The read-only reader behind every version 2 Mission's
+    ``delivery_link`` (``contract_v2.mission_delivery_link``), over the
+    registered PR delivery store (the SAME directory ``MissionStateComposer``
+    reads, loaded through its existing ``_delivery_document``; nothing is
+    discovered). Built only when a store is registered.
+
+    ``bindings`` returns ``{workflow id: [delivery ids]}`` of the records
+    whose own sealed ``mission`` binding names a workflow, after EVERY record
+    validated (``_validated_deliveries``). It returns None, never an empty
+    map, when the store is missing, unreadable, not private, too large, not
+    JSON, not the expected shape, or holds any record that does not
+    validate. The ids are only grouped, never counted, chosen or ordered by
+    age: the link rule, and its strict multiplicity, is the contract's.
+    Nothing here writes, registers, mints, reserves or repairs anything."""
+
+    def __init__(self, delivery_store, clock):
+        self._records = MissionStateComposer(clock, delivery_store)
+
+    def bindings(self):
+        try:
+            validated = _validated_deliveries(
+                self._records._delivery_document())
+        except _Unavailable:
+            return None
+        bound = {}
+        for delivery_id, _digest, workflow_id in validated:
+            if workflow_id is not None:
+                bound.setdefault(workflow_id, []).append(delivery_id)
+        return bound
+
+
 class DeliveryPresentationsReader(object):
     """The explicitly registered, READ-ONLY reader of the Grok Bot's delivery
     PRESENTATIONS, for query contract version 2, over two directories the
@@ -973,27 +1048,9 @@ class DeliveryPresentationsReader(object):
             document = self._records._delivery_document()
         except _Unavailable:
             raise _Unavailable("delivery_store_unreadable")
-        deliveries = document["deliveries"]
-        if sorted(document) != ["deliveries", "pr_delivery_store_schema_version"] or (
-                not _is_version(document["pr_delivery_store_schema_version"],
-                                DELIVERY_STORE_SCHEMA_VERSION)) or (
-                    len(deliveries) > MAX_DELIVERY_RECORDS):
-            raise _Unavailable("delivery_store_invalid")
         counts = {}
-        for delivery_key in deliveries:
-            delivery = deliveries[delivery_key]
-            # Before ANY validation call (which computes digests of its own):
-            # plain canonical data only, so none of them can meet a value it
-            # refuses.
-            if not _plain_canonical(delivery):
-                raise _Unavailable("delivery_store_invalid")
-            try:
-                delivery_id, digest = mission_parent.validated_attestation(
-                    delivery)
-            except authorization.AuthorizationError:
-                raise _Unavailable("delivery_store_invalid")
-            if delivery_id != delivery_key:
-                raise _Unavailable("delivery_store_invalid")
+        for _delivery_id, digest, _workflow_id in _validated_deliveries(
+                document):
             if digest is not None:
                 counts[digest] = counts.get(digest, 0) + 1
         return counts

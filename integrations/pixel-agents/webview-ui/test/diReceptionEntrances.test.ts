@@ -5,11 +5,15 @@
  * live Mission data and this is integration over source (the App from Vite's dev server), not the
  * production package.
  *
- * Proves: the in-world desk, the keyboard-reachable desk target and the sidebar entry open the SAME
- * dialog; the receptionist is drawn beside real agents without being one; the world desk target never
- * shows over the Map; and a Reception opened while the Map is already open OWNS the keyboard (arrows go to
- * its cards, Escape closes Reception and not the Map, focus is restored) — the Map's isolation resumes
- * once the dialog closes.
+ * Proves: the inbox has ONE entrance, in the panel chrome (here the operational list's Reception entry; on the
+ * product face it is the rail's, diScanFace.test.ts), and NOTHING in the world opens it: no desk target is drawn,
+ * no control outside the chrome names Reception, and real clicks across the whole visible world, the desk and the
+ * receptionist included, never open it (D-10, CONTROL-MAP "Reception left-rail only"; this SUPERSEDES the former
+ * three-entrance test, in which the desk, its keyboard target and the sidebar entry all opened the inbox). The
+ * receptionist is still drawn beside real agents without being one; the one entrance stays the only one before,
+ * during and after the Map; and a Reception opened while the Map is already open OWNS the keyboard (arrows go to
+ * its cards, Escape closes Reception and not the Map, focus is restored), the Map's isolation resuming once the
+ * dialog closes.
  *
  * Browser: the installed Chrome (playwright-core, channel `chrome`), else Playwright's Chromium; with
  * neither, every test is skipped with an explicit message.
@@ -28,6 +32,7 @@ import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 
 import type { DiOfficeState } from '../../core/src/messages.ts';
+import { clickAcrossWorld } from './helpers/worldClickProbe.ts';
 
 const STEPS_MS = 120_000;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -107,7 +112,6 @@ beforeEach(async (ctx) => {
 }, STEPS_MS);
 
 const p = () => page!;
-const CHIP = '[data-testid="di-reception-target"]';
 const INBOX = '[data-testid="di-reception-inbox"]';
 const OPEN = '[data-testid="di-open-reception"]';
 const MAP = '[data-testid="world-map"]';
@@ -133,8 +137,7 @@ async function boot(): Promise<void> {
     undefined,
     { timeout: 60_000 },
   );
-  await p().waitForSelector(CHIP, { timeout: 30_000 });
-  await p().waitForSelector(OPEN);
+  await p().waitForSelector(OPEN, { timeout: 30_000 });
 }
 const active = (selector: string) =>
   p().evaluate((s) => document.activeElement?.matches(s) ?? false, selector);
@@ -153,12 +156,37 @@ async function pressEnterOn(selector: string) {
   await p().keyboard.press('Enter');
 }
 
+/** Every control OUTSIDE the panel chrome (and outside the open inbox itself) whose words or label name Reception. */
+const receptionOpenersOutsideChrome = () =>
+  p().evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('button, [role="button"], a[href]')]
+      .filter(
+        (el) =>
+          el.closest('[data-testid="di-office-panel"]') === null &&
+          el.closest('[data-testid="di-reception-inbox"]') === null &&
+          /reception/i.test(
+            `${el.innerText} ${el.getAttribute('aria-label') ?? ''} ${el.getAttribute('title') ?? ''}`,
+          ),
+      )
+      .map((el) => el.getAttribute('data-testid') ?? el.tagName),
+  );
+
+// Superseded and replaced (D-10, CONTROL-MAP locked rules "Reception left-rail only", Mission text "Reception is
+// left-rail navigation only"): the former test proved THREE entrances (the desk in the world, its keyboard target and
+// the sidebar entry). The rule is now ONE entrance in the chrome, and none in the world.
 test(
-  'the desk in the world, the keyboard desk target and the sidebar entry open ONE and the same inbox; the receptionist stands beside real agents without being one',
+  'SINGLE ENTRANCE (D-10): the inbox opens from the panel chrome entry only; nothing in the world opens it, the desk and the receptionist included; the receptionist still stands beside real agents without being one',
   async () => {
     await boot();
     const state = await p().evaluate(() => {
-      const o = (window as unknown as { __diHarnessOffice: { characters: Map<number, { isReceptionist?: boolean }>; receptionist: { isReceptionist: boolean; id: number } | null } }).__diHarnessOffice;
+      const o = (
+        window as unknown as {
+          __diHarnessOffice: {
+            characters: Map<number, { isReceptionist?: boolean }>;
+            receptionist: { isReceptionist: boolean; id: number } | null;
+          };
+        }
+      ).__diHarnessOffice;
       return {
         agents: o.characters.size,
         receptionist: o.receptionist?.isReceptionist === true,
@@ -169,53 +197,58 @@ test(
     assert.equal(state.receptionist, true, 'and the receptionist is drawn');
     assert.equal(state.receptionistInAgentMap, false, 'but it is not one of them');
 
-    // sidebar
+    // the one entrance opens the inbox, and closing it returns focus there
     await pressEnterOn(OPEN);
     await p().waitForSelector(INBOX);
-    const viaSidebar = await dialog();
-    assert.equal(viaSidebar.count, 1);
+    assert.equal((await dialog()).count, 1);
     await p().keyboard.press('Escape');
     await p().waitForSelector(INBOX, { state: 'detached' });
-    assert.ok(await active(OPEN), 'focus returns to the sidebar entry');
+    assert.ok(await active(OPEN), 'focus returns to the entrance');
 
-    // the keyboard desk target
-    await pressEnterOn(CHIP);
-    await p().waitForSelector(INBOX);
-    const viaChip = await dialog();
-    assert.equal(viaChip.count, 1);
-    assert.equal(viaChip.html, viaSidebar.html, 'the same dialog, not a second inbox');
-    await p().keyboard.press('Escape');
-    await p().waitForSelector(INBOX, { state: 'detached' });
-    assert.ok(await active(CHIP), 'focus returns to the desk target');
+    // nothing in the world offers to open it
+    assert.equal(
+      await p().locator('[data-testid="di-reception-target"]').count(),
+      0,
+      'no desk target is drawn',
+    );
+    assert.deepEqual(
+      await receptionOpenersOutsideChrome(),
+      [],
+      'no control outside the chrome names Reception',
+    );
 
-    // a click on the desk or the receptionist in the world itself (probe down from the label)
-    const b = (await p().locator(CHIP).boundingBox())!;
-    let opened = false;
-    for (let dy = 2; dy < 420 && !opened; dy += 3) {
-      await p().mouse.click(b.x + b.width / 2, b.y + b.height + dy);
-      opened = (await p().locator(INBOX).count()) > 0;
-    }
-    assert.ok(opened, 'a click on the desk or the receptionist opened the inbox');
-    const viaWorld = await dialog();
-    assert.equal(viaWorld.count, 1);
-    assert.equal(viaWorld.html, viaSidebar.html, 'the same dialog');
-    await p().keyboard.press('Escape');
-    await p().waitForSelector(INBOX, { state: 'detached' });
-    assert.ok(await active(CHIP));
+    // and real clicks across the whole visible world (left of the docked panel) never open it
+    const panel = (await p().locator('[data-testid="di-office-panel"]').boundingBox())!;
+    const probe = await clickAcrossWorld(
+      p(),
+      { left: 0, top: 0, right: panel.x, bottom: 1000 },
+      24,
+    );
+    assert.ok(probe.clicks > 500, `the world was probed (${probe.clicks} clicks)`);
+    // every click probed the WORLD (pass C: a Mission opened by a click is undone before the next one)
+    assert.equal(probe.worldClicks, probe.clicks, `every probe click landed on the world (${probe.worldClicks} of ${probe.clicks})`);
+    console.info(`WORLD PROBE (%s): %d clicks, %d on the world, %d opened a Mission, the first at click %s`, 'operational face', probe.clicks, probe.worldClicks, probe.missionsOpened, String(probe.firstMissionAt));
+    assert.equal(probe.inboxOpened, false, 'no click in the world opened the inbox');
   },
   STEPS_MS,
 );
 
+// Superseded and replaced (D-10): the former test kept the world desk target off the open Map. There is no desk target;
+// what must hold through the Map is that the chrome entrance stays the only one.
 test(
-  'the world desk target never shows over the Map, and comes back when the Map closes',
+  'SINGLE ENTRANCE (D-10): the chrome entrance is the only Reception opener before, during and after the Map',
   async () => {
     await boot();
-    assert.equal(await p().locator(CHIP).count(), 1, 'present over the world');
+    const entrances = () => p().locator(OPEN).count();
+    assert.equal(await entrances(), 1);
+    assert.deepEqual(await receptionOpenersOutsideChrome(), []);
     await openMap();
-    assert.equal(await p().locator(CHIP).count(), 0, 'not drawn over (or through) the open Map');
+    assert.equal(await entrances(), 1, 'still reachable while the Map is open');
+    assert.deepEqual(await receptionOpenersOutsideChrome(), [], 'the Map adds no opener');
     await p().keyboard.press('Escape');
     await p().waitForSelector(MAP, { state: 'detached' });
-    await p().waitForSelector(CHIP);
+    assert.equal(await entrances(), 1);
+    assert.deepEqual(await receptionOpenersOutsideChrome(), []);
   },
   STEPS_MS,
 );

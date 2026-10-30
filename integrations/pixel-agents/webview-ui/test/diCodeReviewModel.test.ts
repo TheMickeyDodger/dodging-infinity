@@ -504,6 +504,15 @@ describe('plain words: every code the system can say has some', () => {
     expect(Object.keys(model.UNAVAILABLE_WORDS).sort()).toEqual([...REVIEW_UNAVAILABLE_REASONS].sort());
     expect(model.unavailableWords(null)).toContain('not offered');
   });
+  it('a read the office refused unread (reference_not_admitted) has words of its own: no read-history, offer or referent claim, not retried', () => {
+    expect(
+      model.problemWords('reference_not_admitted', 'the read is not exactly an admitted reference'),
+    ).toEqual({
+      title: 'The office could not admit this read',
+      body: 'The office could not accept the request for this review.',
+      retry: false,
+    });
+  });
   it('an unknown refusal code still shows the detail it was given', () => {
     expect(model.problemWords('brand_new_code', 'because').body).toBe('because');
     expect(model.problemWords(null, null).title).toContain('could not be read');
@@ -1003,7 +1012,13 @@ describe('the fixture these tests stand on is the one the server suite pinned', 
     // reception projection gained the delivery source; the ONLY differences from the previous bytes are the
     // intended D1 additive kinds (evidence/p2a/s3-golden-diff-classification-2.log). The backend fixture it is
     // projected from, pinned below, is unchanged.
-    expect(digest).toBe('6306f19ba61994a8dddfb1b5398c8d237ad3d98e00854308f4c6a1c5f3a11bdc');
+    // CHANGED IN I3 (was 6306f19b…): regenerated through the same documented mode after every listed Mission gained the Mission-level `codeReview` offer
+    // (`DiMission.codeReview`, the finished-Mission review). The ONLY difference from the previous bytes is that additive block on each Mission (insertions
+    // only, no line removed or changed: five blocks, 30 lines, in this file). The backend fixture it is projected from, pinned below, is unchanged.
+    // CHANGED IN S3 (was 15eaa3ed…): regenerated through the same documented mode after the wire gained the producer's declared workflow phase (`DiMissionV2.workflowPhase`, present only when the v2 block
+    // is projected). The ONLY difference from the previous bytes is that additive object on each Mission's v2 block (insertions only, no line removed or changed: five blocks of six lines, 30 lines, in
+    // this file, every added line inside one of them). The backend fixture it is projected from, pinned below, is unchanged.
+    expect(digest).toBe('3ef9b99ec72ec83f92f910843d55c5e363965f53d89eef6a85e44fb68d5440e3');
     // the backend fixture's hash is pinned in server/__tests__/diCodeReview.test.ts; the export names it
     expect(doc.derived_from.sha256).toBe('ad29c7dcf1b8b3d7bc764db9ac9f0717efacbed2c98fb98e2786170b8325ab25');
   });

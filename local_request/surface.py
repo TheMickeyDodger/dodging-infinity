@@ -48,6 +48,18 @@ What each operation does, exactly:
   per request, applied only in the call that reserved it. An unknown
   outcome is a HOLD: a later call only reconciles Mission Core's durable
   record (APPLIED if it shows the decision) and never applies or mints.
+- ``attest_decline`` / ``attest_rejection`` / ``attest_change_request``
+  (owner decision (c)): the Outer Operator relays the person's chosen
+  NON-APPROVAL outcome on exactly the proposal shown (Mission, revision and
+  digest), as an ATTESTATION under the same ``OPERATOR_ATTESTED_CONTEXT``
+  and with the same provenance and residual risk. Each is applied through its
+  own narrow Mission Core entry point: a decline is the existing non-terminal
+  DENY, a rejection the terminal REJECTED, a change request the non-terminal
+  CHANGES_REQUESTED with the person's readable reason recorded verbatim
+  (checked before anything is read or written). One outcome per request, and
+  never beside an attested approval unless one of them was refused; the
+  same RESERVED / APPLIED / REFUSED / HOLD discipline as the approval. None
+  of them is a withdrawal, and none can be withdrawn afterwards.
 - ``cancel``: requires the request's control capability, which only its
   creator received. Knowing a request_ref or a Mission id is never
   enough. It is in scope only while the Mission is the caller's own
@@ -158,6 +170,8 @@ PROBLEM_BINDING_MISMATCH = "local_request_binding_mismatch"
 PROBLEM_ATTESTATION_CONFLICT = "local_request_attestation_conflict"
 PROBLEM_ATTESTATION_REFUSED = "local_request_attestation_refused"
 PROBLEM_ATTESTATION_HOLD = "local_request_attestation_hold"
+# (c): a change request relayed without a readable reason.
+PROBLEM_CHANGE_REQUEST_REASON = "local_request_change_request_reason"
 
 APPROVAL_REASON = "approval refused: " + mission_record.UNAUTHENTICATED_REFUSAL_DETAIL
 OUT_OF_SCOPE_REASON = (
@@ -175,6 +189,13 @@ HOLD_REASON = (
     " no authorization exists. To abandon it, cancel the request with its"
     " control capability (which withdraws the proposal in Mission Core) and"
     " propose again"
+)
+OUTCOME_HOLD_REASON = (
+    "HOLD: the attested outcome's result is unknown (Mission Core could not be"
+    " read, or a write failed and may or may not have committed). Nothing more"
+    " will be applied or minted for this request. Only reconciliation against"
+    " Mission Core's durable record can resolve it; relaying the same outcome"
+    " again only reconciles."
 )
 CANCELLED_REASON = (
     "this local request is CANCELLED, a durable terminal state of this"
@@ -371,8 +392,11 @@ def run_status(mission, state_projection):
         "paused": paused,
         "pause_statement": RUN_PAUSE_STATEMENT if paused else None,
         "external_work_suspended": False,
+        # A run's terminal outcome is its last lifecycle reason. (c): a
+        # REJECTED Mission is terminal by a decision and has no run lifecycle.
         "outcome": (lifecycle[-1]["reason"]
-                    if state in mission_record.TERMINAL_STATES else None),
+                    if state in mission_record.TERMINAL_STATES and lifecycle
+                    else None),
         # Recorded observations of the bound target, with their times: never
         # a claim about now. ``first_observation`` is the HISTORICAL one that
         # moved the run to RUNNING; ``latest_observation`` is the most recent
@@ -430,6 +454,18 @@ class LocalRequestRefusal(Exception):
 
 def _refuse(problem, reason, **details):
     raise LocalRequestRefusal(problem, reason, **details)
+
+
+def require_readable_reason(reason):
+    """(c): a change request's reason, checked with Mission Core's own rule
+    before anything is read or written; refused as this surface's
+    ``PROBLEM_CHANGE_REQUEST_REASON``. The panel calls it too, first."""
+    problem = mission_record.change_request_reason_problem(reason)
+    if problem is not None:
+        _refuse(PROBLEM_CHANGE_REQUEST_REASON,
+                "a change request needs a readable reason: the reason %s;"
+                " nothing was recorded" % problem)
+    return reason
 
 
 def approval_refusal_details():
@@ -618,6 +654,7 @@ class LocalRequestSurface(object):
             "mission_observation": None,
             "mission_observation_problem": None,
             "attested_approval": copy.deepcopy(entry.get("attested_approval")),
+            "attested_outcome": copy.deepcopy(entry.get("attested_outcome")),
         }
         if entry["mission_id"] is None:
             result["mission_observation_problem"] = PROBLEM_UNCONFIRMED
@@ -1060,6 +1097,16 @@ class LocalRequestSurface(object):
                 return self._reconcile_unresolved(document, entry, request_ref)
             else:
                 self._require_current_binding(binding)
+                # (c): one attested result per request. An outcome applied
+                # already left the proposal not pending (refused just above);
+                # one of UNKNOWN result may not have, and still leaves nothing
+                # to approve here.
+                prior = entry.get("attested_outcome")
+                if prior is not None and prior["state"] != store_module.ATTESTED_REFUSED:
+                    _refuse(PROBLEM_ATTESTATION_CONFLICT,
+                            "request %s already holds a %s attested %s; nothing"
+                            " was recorded" % (request_ref, prior["state"],
+                                               prior["kind"]))
                 decision_id = self._missions.mint_decision_id(
                     OPERATOR_ATTESTED_CONTEXT)
                 entry["attested_approval"] = {
@@ -1171,6 +1218,198 @@ class LocalRequestSurface(object):
             "binding": copy.deepcopy(attestation["binding"]),
             "decision_id": attestation["decision_id"],
             "authorization_id": attestation["outcome"]["authorization_id"],
+            "idempotent": idempotent,
+            "provenance_label": dict(PROVENANCE_LABEL),
+            "residual_risk": mission_record.OPERATOR_ATTESTED_RESIDUAL_RISK,
+            "evidence_status": store_module.EVIDENCE_STATUS,
+            "delivery_authority": DELIVERY_AUTHORITY, "dispatch": DISPATCH,
+        }
+
+    # -- operator-attested non-approval outcomes (owner decision (c)) -----
+
+    def attest_decline(self, request_ref, mission_id, revision,
+                       proposal_digest_sha256, relay_ref):
+        """Relay the person's DECLINE of exactly this proposal: Mission Core's
+        existing non-terminal DENY, carried by the operator attestation."""
+        return self._attest_outcome(
+            store_module.OUTCOME_DECLINE,
+            lambda decision_id: self._missions.apply_operator_attested_decline(
+                OPERATOR_ATTESTED_CONTEXT, decision_id, mission_id, revision,
+                proposal_digest_sha256),
+            request_ref, mission_id, revision, proposal_digest_sha256,
+            relay_ref, None)
+
+    def attest_rejection(self, request_ref, mission_id, revision,
+                         proposal_digest_sha256, relay_ref):
+        """Relay the person's REJECTION of exactly this proposal: the
+        terminal state REJECTED."""
+        return self._attest_outcome(
+            store_module.OUTCOME_REJECT,
+            lambda decision_id: self._missions.apply_operator_attested_rejection(
+                OPERATOR_ATTESTED_CONTEXT, decision_id, mission_id, revision,
+                proposal_digest_sha256),
+            request_ref, mission_id, revision, proposal_digest_sha256,
+            relay_ref, None)
+
+    def attest_change_request(self, request_ref, mission_id, revision,
+                              proposal_digest_sha256, reason, relay_ref):
+        """Relay the person's CHANGE REQUEST on exactly this proposal, with
+        their readable reason: the non-terminal state CHANGES_REQUESTED. A
+        revised proposal is a NEW request; nothing here submits one."""
+        return self._attest_outcome(
+            store_module.OUTCOME_REQUEST_CHANGES,
+            lambda decision_id: self._missions.apply_operator_attested_change_request(
+                OPERATOR_ATTESTED_CONTEXT, decision_id, mission_id, revision,
+                proposal_digest_sha256, reason),
+            request_ref, mission_id, revision, proposal_digest_sha256,
+            relay_ref, reason)
+
+    def _attest_outcome(self, kind, apply, request_ref, mission_id, revision,
+                        proposal_digest_sha256, relay_ref, reason):
+        """One attested outcome per request, applied ONLY in the call that
+        reserved its decision id. A repeat of an APPLIED one returns it; a
+        repeat of a RESERVED or HOLD one only reconciles Mission Core's
+        durable record and never applies or mints."""
+        # An explicit target, always: never guess which proposal was meant.
+        if not isinstance(request_ref, str) or not request_ref or not isinstance(
+            mission_id, str
+        ) or not mission_id:
+            _refuse(PROBLEM_AMBIGUOUS,
+                    "an explicit request_ref and Mission id are required; an"
+                    " outcome is never applied to a guessed proposal")
+        if kind == store_module.OUTCOME_REQUEST_CHANGES:
+            require_readable_reason(reason)
+        if not isinstance(relay_ref, str) or len(relay_ref) > (
+            store_module.MAX_RELAY_REF_CHARS
+        ):
+            _refuse(PROBLEM_BAD_REQUEST, "relay_ref must be a short string")
+        binding = {"mission_id": mission_id, "revision": revision,
+                   "proposal_digest_sha256": proposal_digest_sha256}
+        with self._store.lock():
+            document = self._store.load()
+            entry = self._record(document, request_ref)
+            if entry["state"] == store_module.STATE_CANCELLED:
+                _refuse(PROBLEM_CANCELLED, CANCELLED_REASON, request_ref=request_ref)
+            if entry["mission_id"] is None:
+                _refuse(PROBLEM_UNCONFIRMED,
+                        "the proposal is not confirmed in Mission Core yet")
+            if mission_id != entry["mission_id"]:
+                _refuse(PROBLEM_MISATTRIBUTED,
+                        "request %s is bound to mission %s, not %s"
+                        % (request_ref, entry["mission_id"], mission_id))
+            approval = entry.get("attested_approval")
+            if approval is not None and approval["state"] != store_module.ATTESTED_REFUSED:
+                _refuse(PROBLEM_ATTESTATION_CONFLICT,
+                        "request %s already holds a %s attested approval;"
+                        " nothing was recorded" % (request_ref, approval["state"]))
+            existing = entry.get("attested_outcome")
+            if existing is not None and existing["state"] != store_module.ATTESTED_REFUSED:
+                if (existing["kind"], existing["binding"], existing["reason"]) != (
+                    kind, binding, reason
+                ):
+                    _refuse(PROBLEM_ATTESTATION_CONFLICT,
+                            "request %s already holds a %s attested %s with a"
+                            " different content; nothing was recorded"
+                            % (request_ref, existing["state"], existing["kind"]))
+                if existing["state"] == store_module.ATTESTED_APPLIED:
+                    return self._attested_outcome_result(request_ref, entry, True)
+                return self._reconcile_unresolved_outcome(document, entry,
+                                                          request_ref)
+            self._require_pending_binding(binding, kind)
+            decision_id = self._missions.mint_decision_id(OPERATOR_ATTESTED_CONTEXT)
+            entry["attested_outcome"] = {
+                "state": store_module.ATTESTED_RESERVED, "kind": kind,
+                "decision_id": decision_id, "binding": binding,
+                "reason": reason, "relay_ref": relay_ref,
+                "attested_at": self._now(), "outcome": None,
+                "provenance_label": dict(PROVENANCE_LABEL),
+                "residual_risk": mission_record.OPERATOR_ATTESTED_RESIDUAL_RISK,
+                "evidence_status": store_module.EVIDENCE_STATUS,
+            }
+            self._store.save(document)
+            # The FIRST and only application, in the same call that reserved.
+            attestation = entry["attested_outcome"]
+            try:
+                outcome = apply(decision_id)
+            except mission_record.MissionError as exc:
+                recorded = self._decision_recorded(mission_id, decision_id)
+                if recorded is None:
+                    attestation["state"] = store_module.ATTESTED_HOLD
+                    self._store.save(document)
+                    _refuse(PROBLEM_ATTESTATION_HOLD, OUTCOME_HOLD_REASON,
+                            request_ref=request_ref, decision_id=decision_id)
+                if recorded is False:
+                    attestation["state"] = store_module.ATTESTED_REFUSED
+                    attestation["outcome"] = {"resulting_state": None,
+                                              "problem": exc.problem}
+                    self._store.save(document)
+                    _refuse(PROBLEM_ATTESTATION_REFUSED,
+                            "Mission Core refused the attested %s: %s" % (kind, exc),
+                            mission_problem=exc.problem, request_ref=request_ref)
+                outcome = {"state": recorded["outcome"]["resulting_state"]}
+            except Exception:
+                # The commit may or may not have landed: HOLD, never a refusal
+                # and never non-application.
+                attestation["state"] = store_module.ATTESTED_HOLD
+                self._store.save(document)
+                _refuse(PROBLEM_ATTESTATION_HOLD, OUTCOME_HOLD_REASON,
+                        request_ref=request_ref, decision_id=decision_id)
+            attestation["state"] = store_module.ATTESTED_APPLIED
+            attestation["outcome"] = {"resulting_state": outcome["state"],
+                                      "problem": None}
+            self._store.save(document)
+            return self._attested_outcome_result(request_ref, entry, False)
+
+    def _require_pending_binding(self, binding, kind):
+        """The outcome names the proposal Mission Core holds pending now."""
+        mission = self._mission(binding["mission_id"])["record"]
+        current = mission["revisions"][-1]
+        for ok, why in (
+            (mission["state"] == mission_record.STATE_AWAITING_DECISION
+             and mission.get("withdrawal") is None, "mission is not pending"),
+            (binding["revision"] == current["revision"], "stale revision"),
+            (binding["proposal_digest_sha256"] == current["proposal_digest_sha256"],
+             "proposal digest does not match the current revision"),
+        ):
+            if not ok:
+                _refuse(PROBLEM_BINDING_MISMATCH,
+                        "attested %s refused: %s" % (kind, why),
+                        mission_id=binding["mission_id"])
+
+    def _reconcile_unresolved_outcome(self, document, entry, request_ref):
+        """A RESERVED or HOLD outcome seen by a later call: reconciled only from
+        an EXISTING durable decision; otherwise it stays on HOLD and nothing is
+        applied or minted. Absence is never read as non-application."""
+        attestation = entry["attested_outcome"]
+        recorded = self._decision_recorded(entry["mission_id"],
+                                           attestation["decision_id"])
+        if recorded:
+            attestation["state"] = store_module.ATTESTED_APPLIED
+            attestation["outcome"] = {
+                "resulting_state": recorded["outcome"]["resulting_state"],
+                "problem": None}
+            self._store.save(document)
+            result = self._attested_outcome_result(request_ref, entry, True)
+            result["reconciled_from_durable_record"] = True
+            return result
+        if attestation["state"] != store_module.ATTESTED_HOLD:
+            attestation["state"] = store_module.ATTESTED_HOLD
+            self._store.save(document)
+        _refuse(PROBLEM_ATTESTATION_HOLD, OUTCOME_HOLD_REASON,
+                request_ref=request_ref, decision_id=attestation["decision_id"])
+
+    def _attested_outcome_result(self, request_ref, entry, idempotent):
+        attestation = entry["attested_outcome"]
+        return {
+            "ok": True,
+            "status": "%s_by_operator_attestation" % attestation["kind"],
+            "request_ref": request_ref,
+            "mission_id": entry["mission_id"],
+            "kind": attestation["kind"],
+            "binding": copy.deepcopy(attestation["binding"]),
+            "decision_id": attestation["decision_id"],
+            "resulting_state": attestation["outcome"]["resulting_state"],
+            "reason": attestation["reason"],
             "idempotent": idempotent,
             "provenance_label": dict(PROVENANCE_LABEL),
             "residual_risk": mission_record.OPERATOR_ATTESTED_RESIDUAL_RISK,

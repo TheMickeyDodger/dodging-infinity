@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DI app scan face harness (FIXTURE)</title>
+    <!-- FIXTURE / TEST ONLY: the REAL app entry, unmodified, on the PRODUCT face (the scan panel with its navigation
+         rail), which di-app.html deliberately does not show. The probe only records the App's own OfficeState. -->
+  </head>
+  <body>
+    <script>
+      window.__DI_OFFICE_PANEL_FACE = 'scan';
+    </script>
+    <div id="root"></div>
+    <script type="module" src="./diAppProbe.ts"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

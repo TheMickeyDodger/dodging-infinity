@@ -365,9 +365,10 @@ export function teamRoles(mission: DiMission): string[] {
 }
 
 /**
- * A Mission's one-line label for headings and pickers: missionHeadline() — the existing bounded,
- * VERBATIM rule (objective cut at its declared bound, then the short id) — except where the source
- * gave no goal, which is said as exactly that. A header is never presented as a goal.
+ * A Mission's one-line VERBATIM label: missionHeadline() — the existing bounded rule (objective cut at
+ * its declared bound, then the short id) — except where the source gave no goal, which is said as
+ * exactly that. A header is never presented as a goal. No primary name uses it: headings and the
+ * Mission picker are named by missionTitle (diPlainSummary.ts), their ids kept secondary.
  */
 export function missionLabel(mission: DiMission): string {
   return missionObjective(mission).kind === 'goal'

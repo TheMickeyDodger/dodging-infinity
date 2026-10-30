@@ -276,8 +276,8 @@ describe('the stylesheet keeps its promises', () => {
     expect(css).toMatch(/\.di-rv-diff-pane \{[\s\S]*?min-width: 0;/);
     expect(css).toMatch(/\.di-rv-body \{[\s\S]*?min-height: 0;/);
   });
-  it('uses the reading faces: a system sans for text and a monospace for code, never the pixel font', () => {
-    expect(css).toContain('--rv-font-ui: system-ui');
+  it('uses the reading faces: Inter then the system sans for text (Home token, CONTROL-MAP locked rules) and a monospace for code, never the pixel font', () => {
+    expect(css).toContain('--rv-font-ui: Inter, system-ui');
     expect(css).toContain('--rv-font-code: ui-monospace');
     expect(css).not.toMatch(/FS Pixel Sans/);
     expect(css).toMatch(/\.di-rv \*,[\s\S]*?font-family: inherit;/);

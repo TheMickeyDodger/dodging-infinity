@@ -171,8 +171,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261014-000000-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -1364,8 +1376,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261014-000000-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -2566,8 +2590,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261014-000000-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",
@@ -3821,8 +3857,20 @@
                 }
               ]
             },
+            "codeReview": {
+              "state": "unavailable",
+              "reason": "assignment_not_finished",
+              "taskId": "20261014-000000-aaaaaa",
+              "listing": null
+            },
             "v2": {
               "projected": true,
+              "workflowPhase": {
+                "state": "not_applicable",
+                "phase": null,
+                "unrecognized": null,
+                "problem": "lifecycle_model_has_no_workflow_phase"
+              },
               "taskChains": [
                 {
                   "chain": "direct",

@@ -126,6 +126,7 @@ export function ZoomControls({ zoom, onZoomChange, buttons = true }: ZoomControl
       {showLevel && (
         <div
           className="absolute top-10 left-1/2 -translate-x-1/2 z-10 pixel-panel pb-4 px-16 text-lg select-none pointer-events-none"
+          data-testid="world-zoom-level"
           style={{
             opacity: fadeOut ? 0 : 1,
             transition: `opacity ${ZOOM_LEVEL_FADE_DURATION_SEC}s ease-out`,

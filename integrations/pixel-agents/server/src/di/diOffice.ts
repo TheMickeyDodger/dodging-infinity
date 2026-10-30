@@ -48,6 +48,7 @@ import {
   officeRefusal as reviewOfficeRefusal,
   parseCodeReviewAnswer,
   parseCodeReviewRead,
+  parseMissionReviewRead,
 } from './codeReview.js';
 import {
   admitAgainstView,
@@ -326,7 +327,9 @@ export class DiOffice {
     msg: Record<string, unknown>,
     send: (message: Record<string, unknown>) => void,
   ): Promise<void> {
-    const ref = parseCodeReviewRead(msg);
+    // Two reference kinds, one read: a member-bound reference (an active assignment) or a Mission-level one (a finished Mission). Each parser accepts
+    // only its own message type, so exactly one can apply.
+    const ref = parseCodeReviewRead(msg) ?? parseMissionReviewRead(msg);
     if (ref === null) return;
     const reply = (m: ReturnType<typeof reviewOfficeRefusal>): void =>
       send(m as unknown as Record<string, unknown>);

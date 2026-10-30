@@ -112,6 +112,15 @@ body:has(.di-mr[data-covering='true']:not([hidden])) .di-fixture-banner {
   border-left: 0;
 }
 
+/* On the scan face, an open screen (Mission details, a nested screen, a rail page such as New Mission) lifts the whole scan panel to z 43 (diScanPanel.css,
+   data-stage='open'), and its stage spans the window from the rail's edge. A workspace docked BESIDE (z 21) then sat UNDER that stage, and a pointer could not
+   reach its controls ("Close requests" at 1440 x 900, from either New Mission entrance). The stage is meant to stay under the workspace, so while a scan screen
+   is open the workspace beside it takes the covering workspace's layer: above the open stage (43), below the greeter's bubble and every dialog (45 and up).
+   Pinned by diMissionRequestStacking.test.ts and, by a real pointer click, by diScanRequestCloseBrowser.test.ts. */
+body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true']) {
+  z-index: 44;
+}
+
 .di-mr *,
 .di-mr *::before,
 .di-mr *::after {

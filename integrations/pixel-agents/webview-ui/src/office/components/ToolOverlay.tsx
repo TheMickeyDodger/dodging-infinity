@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import {
@@ -48,6 +48,12 @@ interface ToolOverlayProps {
   diLabelFor?: (id: number) => string;
   /** DI mode only: the compact title (logical · provider) shown instead of the raw Mission ref. */
   diTitleFor?: (id: number) => string | null;
+  /**
+   * AC-4.4-26, DI scan face only: the Mission a character's label opens (its own; a sub-agent its parent's), or null when it
+   * has none (a runtime agent). With `onOpenMission`, such a label is a BUTTON that opens that Mission. Absent: labels are text.
+   */
+  diMissionFor?: (id: number) => { title: string } | null;
+  onOpenMission?: (id: number) => void;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -89,6 +95,17 @@ function getFuelColor(ratio: number): string {
   return CONTEXT_GAUGE_COLOR_OK;
 }
 
+/**
+ * AC-4.4-26, hover to label (reviewer round 8): a Mission label shown because its agent is HOVERED must be reachable and
+ * clickable. Two things stood in the way, both on the same gesture: the hover-only label took no pointer events (its Open
+ * Mission button inherits that), and the canvas clears the hover the moment the pointer leaves the sprite (including onto
+ * the label, a sibling above the canvas), which removed the label before the pointer arrived. So a Mission label now
+ * (1) takes the pointer while it is drawn, (2) is HELD while the pointer is on it, and (3) lingers this long after the
+ * pointer leaves the sprite, so the pointer can cross the short gap between the sprite and its label. Only labels of a
+ * character that has a Mission (the scan face); every other label is untouched.
+ */
+const MISSION_LABEL_GRACE_MS = 400;
+
 export function ToolOverlay({
   officeState,
   agents,
@@ -102,17 +119,36 @@ export function ToolOverlay({
   alwaysShowOverlay,
   diLabelFor,
   diTitleFor,
+  diMissionFor,
+  onOpenMission,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
+  // Hover to label (see MISSION_LABEL_GRACE_MS): the Mission label the pointer is ON (held), the agent whose label is still inside its
+  // grace window, and the bookkeeping behind both. The clock and the refs are touched ONLY here, in the per-frame effect and in the
+  // label's own pointer handlers, never during render.
+  const [heldLabelId, setHeldLabelId] = useState<number | null>(null);
+  const [graceId, setGraceId] = useState<number | null>(null);
+  const heldRef = useRef<number | null>(null);
+  const lastHover = useRef<{ id: number; at: number } | null>(null);
   useEffect(() => {
     let rafId = 0;
     const tick = () => {
+      const hovered = officeState.hoveredAgentId;
+      const now = performance.now();
+      if (hovered !== null) lastHover.current = { id: hovered, at: now };
+      else if (heldRef.current !== null) lastHover.current = { id: heldRef.current, at: now };
+      const last = lastHover.current;
+      const grace =
+        hovered === null && last !== null && now - last.at < MISSION_LABEL_GRACE_MS
+          ? last.id
+          : null;
+      setGraceId((g) => (g === grace ? g : grace));
       setTick((n) => n + 1);
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [officeState]);
 
   const el = containerRef.current;
   if (!el) return null;
@@ -140,8 +176,15 @@ export function ToolOverlay({
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
 
+        // a character with a Mission has a clickable Mission label (scan face), held while the pointer is on it and for a short grace
+        const hasMissionLabel =
+          diLabelFor !== undefined &&
+          onOpenMission !== undefined &&
+          (diMissionFor?.(id) ?? null) !== null;
+        const labelHeld = hasMissionLabel && (heldLabelId === id || graceId === id);
+
         // Only show for hovered or selected agents (unless always-show is on)
-        if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
+        if (!alwaysShowOverlay && !isSelected && !isHovered && !labelHeld) return null;
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -153,9 +196,12 @@ export function ToolOverlay({
         // (the panel would cover the bubble). Render an empty positioned marker
         // so overlay counts stay stable and hover/select can still bring the
         // panel back. When always-show is off, the early return above already
-        // keeps the panel hidden for idle agents.
+        // keeps the panel hidden for idle agents. A Mission label that is HELD
+        // (the pointer is on it, or crossing to it) is the exception: it is
+        // being reached for, so it stays; a Done agent nobody is reaching for
+        // still resolves to its checkmark alone.
         const isDone = ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
-        if (isDone && !isSelected && !isHovered) {
+        if (isDone && !isSelected && !isHovered && !labelHeld) {
           return (
             <div
               key={id}
@@ -222,6 +268,8 @@ export function ToolOverlay({
         // which keys its zone); the complete refs stay in the inspector. Normal Pixel unchanged.
         const diTitle = isDi && !isSub ? (diTitleFor?.(id) ?? null) : null;
         const subtitle = isDi ? null : ch.folderName;
+        // AC-4.4-26: the label of a character with a Mission is a button opening THAT Mission (scan face only)
+        const missionLabel = isDi && onOpenMission ? (diMissionFor?.(id) ?? null) : null;
         const hasExtraLines = !!(diTitle || subtitle || teamRoleLabel);
 
         // Context gauge. Every agent gets one — lead, teammate, adopted,
@@ -237,14 +285,33 @@ export function ToolOverlay({
             style={{
               left: screenX,
               top: screenY - (hasExtraLines ? 34 : 28),
-              pointerEvents: isSelected ? 'auto' : 'none',
+              // a Mission label takes the pointer wherever it is drawn (selected, hovered, held or always shown), or the
+              // hover-only label could not be clicked at all (its Open Mission button inherits this value)
+              pointerEvents: isSelected || missionLabel !== null ? 'auto' : 'none',
               opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
               zIndex: isSelected ? 42 : 41,
             }}
             data-testid="agent-overlay"
             data-agent-id={id}
+            onMouseEnter={
+              missionLabel !== null
+                ? () => {
+                    heldRef.current = id;
+                    setHeldLabelId(id);
+                  }
+                : undefined
+            }
+            onMouseLeave={
+              missionLabel !== null
+                ? () => {
+                    lastHover.current = null;
+                    if (heldRef.current === id) heldRef.current = null;
+                    setHeldLabelId((held) => (held === id ? null : held));
+                  }
+                : undefined
+            }
           >
-            <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
+            <div className="relative flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
               {dotColor && (
                 <span
                   className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission && !hasWaiting && !officeState.reducedMotion ? 'pixel-pulse' : ''}`}
@@ -288,6 +355,20 @@ export function ToolOverlay({
                   </span>
                 )}
               </div>
+              {missionLabel !== null && (
+                // AC-4.4-26: the whole label opens THIS character's Mission; the text above stays as it is
+                <button
+                  type="button"
+                  className="di-mission-label"
+                  data-testid="di-mission-label"
+                  aria-label={`Open Mission ${missionLabel.title}`}
+                  title={`Open Mission ${missionLabel.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenMission?.(id);
+                  }}
+                />
+              )}
               {isSelected && !isSub && !isDi && (
                 <Button
                   variant="ghost"

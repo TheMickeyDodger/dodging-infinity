@@ -103,6 +103,10 @@ const WORLD_OVERLAYS: Layer[] = [
   // 30 is the stage inside the dock. 43 is the dock itself while Mission details (or a nested
   // screen) is open, so it covers agent labels (41/42) and stays under the covering workspace (44).
   { file: 'components/diScanPanel.css', what: 'the scan click-in stage', z: [30, 43] },
+  // Pass C item 5: the scan face's world-controls disclosure (the chevron at the world's top-right). DECIDED to sit BELOW the
+  // covering workspace: it is a world control like the left strip, one above that strip (30) so the strip never paints over it,
+  // and under the click-in stage while open (43), which covers the world it belongs to.
+  { file: 'index.css', what: "the world's controls disclosure (scan face)", z: [31] },
 ];
 
 /** The intro bubble, modals, notices and dialog backdrops: they must sit ABOVE the covering workspace. */
@@ -129,6 +133,15 @@ const ABOVE_THE_WORKSPACE: Layer[] = [
 
 const BESIDE = ruleLayer('.di-mr');
 const COVERING = ruleLayer(".di-mr[data-covering='true']");
+/** The workspace beside the panel while a scan screen is open (the Close repair): it must sit above the open scan stage. */
+const BESIDE_SCAN_OPEN = ruleLayer("body:has(.di-scan[data-stage='open']) .di-mr:not([data-covering='true'])");
+/** The scan panel's layer while a screen is open, read from where it is stated. */
+const SCAN_STAGE_OPEN = (() => {
+  const rule = /(?:^|\n)\.di-scan\[data-stage='open'\] \{([\s\S]*?)\n\}/.exec(read('components/diScanPanel.css'));
+  const z = rule ? /z-index:\s*(\d+)\s*;/.exec(rule[1]) : null;
+  if (!z) throw new Error("the rule .di-scan[data-stage='open'] states no z-index");
+  return Number(z[1]);
+})();
 const HIGHEST_OVERLAY = Math.max(...WORLD_OVERLAYS.flatMap((l) => l.z));
 const LOWEST_ABOVE = Math.min(...ABOVE_THE_WORKSPACE.flatMap((l) => l.z));
 
@@ -147,6 +160,12 @@ describe('the workspace sits in the window’s layers: above the world overlays 
   it('beside the side panel it stays at a low layer (it covers none of the overlays there)', () => {
     expect(BESIDE).toBe(21);
     expect(BESIDE).toBeLessThan(COVERING);
+  });
+
+  it('on the scan face, while a screen is open, the workspace beside takes the covering layer, ABOVE the open scan stage, so its controls stay reachable by pointer', () => {
+    // the open stage spans the window from the rail's edge; under it, "Close requests" could not be clicked at 1440 x 900 (diScanRequestCloseBrowser.test.ts)
+    expect(BESIDE_SCAN_OPEN).toBe(COVERING);
+    expect(BESIDE_SCAN_OPEN).toBeGreaterThan(SCAN_STAGE_OPEN);
   });
 
   it('covering the window, it is above EVERY world overlay (the legend, the agents’ labels, the controls)', () => {
@@ -237,7 +256,7 @@ describe('the workspace sits in the window’s layers: above the world overlays 
     }
     const unclassified: string[] = [];
     for (const file of walk(src)) {
-      if (file === 'components/diMissionRequest.css') continue; // the workspace's own two layers, read above
+      if (file === 'components/diMissionRequest.css') continue; // the workspace's own layers (beside, covering, and beside while a scan screen is open), read above by selector
       for (const z of layersIn(file)) {
         if (z <= BESIDE) continue; // at or below the beside workspace: below it in both layouts
         if (!classified.get(file)?.has(z))

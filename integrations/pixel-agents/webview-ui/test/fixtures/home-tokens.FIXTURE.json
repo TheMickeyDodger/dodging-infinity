@@ -1,0 +1,8 @@
+{
+  "note": "The Home design's colour literals, written by hand from the locked sources: reconciled-free-ui-v3/01-home.jpg (RECONCILE.md) and CONTROL-MAP.md 'Locked rules'. They live here, not in TS, because the project's colour rule (pixel-agents/no-inline-colors) objects to colour text in test source. White is the near-white text purple must carry.",
+  "bg": "#0d0f1b",
+  "purple": "#552df0",
+  "warm": "#e6e2d6",
+  "muted": "#8b919e",
+  "white": "#ffffff"
+}

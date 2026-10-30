@@ -130,8 +130,11 @@ function serve(ws: WebSocket) {
     const msg = JSON.parse(String(data)) as Record<string, unknown>;
     if (msg.type === 'diCodeReviewRead') {
       requests.push(msg);
-      const reply = replyFor(msg);
-      if (reply === null) return;
+      const found = replyFor(msg);
+      if (found === null) return;
+      // The real office ECHOES the id the read carried, on every answer it sends (an observation and every refusal), taking it from the REQUEST (never from
+      // the answer), and adds no key to the answer to a read that carried none. This rule is the one the SERVER test pins; it is not decided here.
+      const reply = typeof msg.requestId === 'string' ? { ...found, requestId: msg.requestId } : found;
       const send = () => ws.readyState === ws.OPEN && ws.send(JSON.stringify(reply));
       if (replyDelayMs > 0) setTimeout(send, replyDelayMs);
       else send();
@@ -457,7 +460,9 @@ test(
     await p().waitForSelector(T('di-review-dialog'));
     await p().waitForSelector(T('di-review-tree'), { timeout: 20_000 });
     assert.equal(requests.length, 1);
-    assert.deepEqual(Object.keys(requests[0]).sort(), ['listing', 'memberRef', 'missionRef', 'taskId', 'type']);
+    // The closed overview shape: the five reference keys plus the ONE opaque id the read names itself with (still an exact key set, not a subset check).
+    assert.deepEqual(Object.keys(requests[0]).sort(), ['listing', 'memberRef', 'missionRef', 'requestId', 'taskId', 'type']);
+    assert.match(String(requests[0].requestId), /^[A-Za-z0-9._-]{1,64}$/);
     assert.equal(requests[0].type, 'diCodeReviewRead');
     assert.equal(requests[0].missionRef, REF.missionRef);
     assert.equal(requests[0].listing, REF.listing);
@@ -493,7 +498,8 @@ test(
     await openReview();
     await openFile('src/app.py');
     const file = requests.find((r) => r.fileId !== undefined)!;
-    assert.deepEqual(Object.keys(file).sort(), ['fileId', 'listing', 'memberRef', 'missionRef', 'snapshot', 'taskId', 'type']);
+    assert.deepEqual(Object.keys(file).sort(), ['fileId', 'listing', 'memberRef', 'missionRef', 'requestId', 'snapshot', 'taskId', 'type']);
+    assert.match(String(file.requestId), /^[A-Za-z0-9._-]{1,64}$/);
     assert.equal(file.snapshot, doc.replies.overview.snapshot);
     await p().waitForSelector(T('di-review-line'));
     const lines = await p().$$eval(T('di-review-line'), (els) =>
@@ -1570,7 +1576,7 @@ test(
     for (const r of requests) {
       assert.equal(r.type, 'diCodeReviewRead');
       for (const [key, value] of Object.entries(r)) {
-        assert.ok(['type', 'missionRef', 'memberRef', 'taskId', 'listing', 'snapshot', 'fileId'].includes(key), `key ${key}`);
+        assert.ok(['type', 'missionRef', 'memberRef', 'taskId', 'listing', 'snapshot', 'fileId', 'requestId'].includes(key), `key ${key}`);
         assert.equal(typeof value, 'string');
         // an identifier, never a path, a root, a ref or an option
         assert.doesNotMatch(String(value), /[/\\]|\.\.|^-/, `${key} looks like a path or option`);
@@ -1588,6 +1594,10 @@ test(
         assert.ok(Array.isArray(entry.i) && entry.i.length === 5 && typeof entry.s === 'string');
       }
     }
+    // Every read names itself with an opaque id of its own (a bounded token, never a path), so an answer can be matched to the read it answers.
+    const ids = requests.map((r) => String(r.requestId));
+    for (const id of ids) assert.match(id, /^[A-Za-z0-9._-]{1,64}$/, 'the id is a bounded opaque token');
+    assert.equal(new Set(ids).size, ids.length, 'no two reads share an id');
     assert.deepEqual(otherMessages, [], `no other message type was sent: ${otherMessages.join()}`);
     // The only other traffic is the entry's read-only overview ping, in exactly its one shape.
     for (const ping of overviewPings) assert.ok(isOverviewPing(ping), JSON.stringify(ping));

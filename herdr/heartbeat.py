@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import sys
 import time
@@ -52,11 +53,15 @@ def _save_task(
     herd: HerdrInstance,
     task: dict,
 ) -> None:
+    # A temporary file in the SAME directory, then a rename: a reader sees the old whole file or the new whole one (see tasks.save_task).
     path = _task_path(herd)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    temporary = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+
+    temporary.write_text(
         json.dumps(task, indent=2) + "\n"
     )
+    os.replace(temporary, path)
 
 
 def heartbeat_message(

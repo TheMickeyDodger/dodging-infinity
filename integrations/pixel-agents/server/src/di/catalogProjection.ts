@@ -30,6 +30,8 @@ import type {
   LifecycleModel,
   MemberClassification,
   MemberReason,
+  MissionDeliveryLinkBasis,
+  MissionDeliveryLinkState,
   QueryContractVersion,
   RuntimeAgentsState,
   RuntimeAssignmentState,
@@ -70,6 +72,10 @@ import {
   MAX_DELIVERY_PRESENTATIONS,
   MEMBER_CLASSIFICATIONS,
   MEMBER_REASONS,
+  MISSION_DELIVERY_ID,
+  MISSION_DELIVERY_LINK_BASES,
+  MISSION_DELIVERY_LINK_KEYS,
+  MISSION_DELIVERY_LINK_STATES,
   QUERY_CONTRACT,
   RESPONSE_KEYS,
   RESPONSE_KEYS_V2,
@@ -591,12 +597,23 @@ export type WorkflowPhaseView =
   | { state: 'not_applicable'; problem: string }
   | { state: 'not_reported' };
 
+/**
+ * contract v2 — the DECLARED delivery link of one Mission (`missions[].delivery_link`, mission_sources.contract_v2). A linked
+ * Mission carries ONE delivery id, of the shape a ceremony mints, with the rule that linked it; an unlinked one carries neither,
+ * only the producer's reason. It selects which delivery's status may be read and authorizes nothing.
+ */
+export type MissionDeliveryLinkView =
+  | { state: 'linked'; deliveryId: string; basis: MissionDeliveryLinkBasis }
+  | { state: Exclude<MissionDeliveryLinkState, 'linked'>; deliveryId: null; basis: null };
+
 export interface MissionV2View {
   taskChains: TaskChainView[];
   childrenRecord: ChildrenRecordView;
   missionState: MissionStateView;
   canonicalReview: CanonicalReviewView;
   workflowPhase: WorkflowPhaseView;
+  /** ABSENT (the key is omitted, never defaulted) when the producer's answer predates `delivery_link`. */
+  deliveryLink?: MissionDeliveryLinkView;
 }
 
 export type MissionNative =
@@ -1435,6 +1452,38 @@ function projectWorkflowPhase(
   return malformed(`${at}.state is not a declared state`);
 }
 
+/**
+ * The declared `missions[].delivery_link` (contract v2): STRICT when present — closed keys, a declared state, and the producer's
+ * own rule: exactly the non-workflow_authority Missions are `unlinked_model_not_recorded`; a linked Mission carries ONE id of the
+ * ceremony's shape and the declared basis; an unlinked one carries neither. ABSENT → nothing (the caller omits the key).
+ */
+function projectDeliveryLink(
+  m: Json,
+  where: string,
+  model: Classified<LifecycleModel>,
+): MissionDeliveryLinkView | null {
+  if (!('delivery_link' in m)) return null;
+  const at = `${where}.delivery_link`;
+  const link = obj(m.delivery_link, at);
+  exactKeys(link, MISSION_DELIVERY_LINK_KEYS, at);
+  const state = member(MISSION_DELIVERY_LINK_STATES, link.state, `${at}.state`);
+  const workflow = model.known && model.value === WORKFLOW_STORE_MODEL;
+  if (workflow === (state === 'unlinked_model_not_recorded')) {
+    malformed(`${at}: exactly the Missions whose model no delivery record names are unlinked_model_not_recorded`);
+  }
+  if (state === 'linked') {
+    const id = link.delivery_id;
+    if (typeof id !== 'string' || !MISSION_DELIVERY_ID.test(id)) {
+      malformed(`${at}.delivery_id is not one delivery id of the shape a ceremony mints`);
+    }
+    return { state, deliveryId: id, basis: member(MISSION_DELIVERY_LINK_BASES, link.basis, `${at}.basis`) };
+  }
+  if (link.delivery_id !== null || link.basis !== null) {
+    malformed(`${at}: an unlinked Mission carries no delivery id and no basis`);
+  }
+  return { state, deliveryId: null, basis: null };
+}
+
 function projectMissionV2(
   m: Json,
   where: string,
@@ -1547,7 +1596,13 @@ function projectMissionV2(
       findings: projectFindings(review),
     },
     workflowPhase: projectWorkflowPhase(m, where, model),
+    ...deliveryLinkIfDeclared(projectDeliveryLink(m, where, model)),
   };
+}
+
+/** The key only when the producer declared a link: an answer that predates the field gets no key at all, never a default. */
+function deliveryLinkIfDeclared(link: MissionDeliveryLinkView | null): { deliveryLink?: MissionDeliveryLinkView } {
+  return link === null ? {} : { deliveryLink: link };
 }
 
 function projectMission(raw: unknown, where: string, version: QueryContractVersion): MissionView {

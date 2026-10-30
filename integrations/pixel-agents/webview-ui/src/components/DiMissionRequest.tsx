@@ -39,14 +39,16 @@ import {
   useLastContentFocus,
 } from './diMinimize.js';
 import { DiMinimizedChip } from './DiMinimizedTray.js';
-import type { MrTab, MrTurn, MrView } from './diMissionRequestModel.js';
+import type { MrRequest, MrTab, MrTurn, MrView } from './diMissionRequestModel.js';
 import {
   actionPending,
   agoWords,
+  changeReasonProblem,
   composerProblem,
   countdownWords,
   COVERING_WORDS,
   decisionBlockedWords,
+  decisionPending,
   isDecisionWord,
   isPending,
   layoutFor,
@@ -54,13 +56,17 @@ import {
   MR_DRAFTING_NOTE,
   MR_FIXTURE_SHORT,
   MR_FIXTURE_WORDS,
+  MR_MAX_CHANGE_REASON_CHARS,
   MR_NAME,
   MR_TAGLINE,
   offeredActions,
   offerState,
   omittedWords,
+  outcomeAvailable,
+  outcomeRequest,
   plainTitle,
   progressionWords,
+  rejectArmed,
   remainingSeconds,
   replyWithoutFencedBlocks,
   replyWithoutQuestionsBlock,
@@ -71,6 +77,7 @@ import {
   turnStateWords,
   twoColumnReading,
   waitingOf,
+  withdrawArmed,
 } from './diMissionRequestModel.js';
 import {
   Digest,
@@ -632,7 +639,7 @@ const ACTION_HINTS: Record<string, string> = {
   check_approval: 'Reads Mission Core. It never applies an approval again.',
 };
 
-function DecisionBlock({
+export function DecisionBlock({
   view,
   control,
   nowMs,
@@ -648,7 +655,8 @@ function DecisionBlock({
   const offer = view.offer;
   const status = offerState(view, server);
   const exact = isDecisionWord(state.typed);
-  const held = actionPending(state, 'decide', ref);
+  // (c): an approval and the three non-approval outcomes hold one another while any is waiting.
+  const held = decisionPending(state, ref);
   const reading = isPending(state, 'offer', ref);
   // A proposal whose rules cannot be shown in full is never approved from here (round 27 F1).
   const blocked = decisionBlockedWords(view);
@@ -807,7 +815,125 @@ function DecisionBlock({
           Approve
         </Act>
       </div>
+      <OutcomeChoices view={view} control={control} server={server} held={held} />
     </section>
+  );
+}
+
+/**
+ * (c), owner decision: the person may instead DECLINE, REJECT or REQUEST CHANGES on the same proposal and offer. Each is
+ * available exactly when the model says the window may send it; Reject is final, so it takes a second, explicit step.
+ * Round 61: that step is the MODEL's arm, formed for exactly the request, proposal and offer shown, never a bare flag here:
+ * the confirmation shows, and Reject is sent, only while it is still exactly what is shown.
+ */
+function OutcomeChoices({
+  view,
+  control,
+  server,
+  held,
+}: {
+  view: MrView;
+  control: DiMissionRequestControl;
+  server: number | null;
+  held: boolean;
+}) {
+  const { state } = control;
+  const confirmingReject = rejectArmed(state, view);
+  const can = (op: 'decline' | 'reject' | 'requestChanges'): boolean =>
+    outcomeRequest(state, op, server) !== null;
+  const reasonHint = changeReasonProblem(state.changeReason);
+  const reasonHintId = 'di-mr-change-reason-hint';
+  return (
+    <div className="di-mr-box" data-tone="info" data-testid="di-mr-outcomes">
+      <h4>Or do not approve it</h4>
+      <p>
+        Each of these is recorded the way an approval is: as an operator attestation of your choice,
+        not independently verified.
+      </p>
+      <p className="di-mr-hint">
+        Declining records that you did not approve this proposal. Nothing starts, and it is not
+        final: a new proposal can be submitted.
+      </p>
+      <div className="di-mr-actions">
+        <Act testId="di-mr-decline" onAct={control.decline} available={can('decline')} held={held}>
+          Decline
+        </Act>
+      </div>
+      <label htmlFor="di-mr-change-reason">
+        What should change (recorded exactly as you write it)
+      </label>
+      <textarea
+        id="di-mr-change-reason"
+        data-testid="di-mr-change-reason"
+        maxLength={MR_MAX_CHANGE_REASON_CHARS}
+        rows={3}
+        value={state.changeReason}
+        aria-describedby={reasonHintId}
+        onChange={(event) => control.setChangeReason(event.target.value)}
+      />
+      <p id={reasonHintId} className="di-mr-hint" data-testid="di-mr-change-reason-hint">
+        {reasonHint ??
+          'Asking for changes records your reason. Nothing starts; the revised proposal is submitted as a new request.'}
+      </p>
+      <div className="di-mr-actions">
+        <Act
+          testId="di-mr-request-changes"
+          onAct={control.requestChanges}
+          available={can('requestChanges')}
+          held={held}
+          describedBy={reasonHintId}
+        >
+          Ask for changes
+        </Act>
+      </div>
+      {confirmingReject ? (
+        <div className="di-mr-box" data-tone="block" data-testid="di-mr-reject-confirming">
+          <p>
+            <strong>Rejecting is final.</strong> This proposal can never be approved, revised or
+            started afterwards.
+          </p>
+          <div className="di-mr-actions">
+            <Act
+              testId="di-mr-reject-confirm"
+              onAct={control.reject}
+              available={can('reject')}
+              held={held}
+              danger
+            >
+              Confirm: reject for good
+            </Act>
+            <Act testId="di-mr-reject-cancel" onAct={control.disarmReject}>
+              Keep it
+            </Act>
+          </div>
+        </div>
+      ) : (
+        <div className="di-mr-actions">
+          <Act
+            testId="di-mr-reject"
+            onAct={control.armReject}
+            available={outcomeAvailable(state, 'reject', server)}
+            held={held}
+            danger
+          >
+            Reject for good…
+          </Act>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** (c): a recorded change request's reason, shown back as the person's own words, inert. Nothing when there is none. */
+export function ChangeRequestReason({ request }: { request: MrRequest }) {
+  const outcome = request.outcome;
+  if (outcome === null || outcome.kind !== 'request_changes' || outcome.reason === null)
+    return null;
+  return (
+    <div className="di-mr-box" data-tone="info">
+      <h4>Your reason for asking for changes</h4>
+      <Untrusted text={outcome.reason} testId="di-mr-change-reason-recorded" content />
+    </div>
   );
 }
 
@@ -817,7 +943,11 @@ function countdownLeft(seconds: number): string {
   return minutes > 0 ? `${minutes} min ${seconds % 60} s` : `${seconds} s`;
 }
 
-function WithdrawBlock({
+/**
+ * Withdraw, with its confirmation. Round 61 sweep: the confirmation is the MODEL's arm, formed for exactly the request and
+ * proposal shown (a withdrawal is permanent), never a bare flag here that would outlive a selection change.
+ */
+export function WithdrawBlock({
   view,
   control,
   canRevise,
@@ -828,7 +958,7 @@ function WithdrawBlock({
 }) {
   const { state } = control;
   const ref = view.displayed.requestRef;
-  const [confirming, setConfirming] = useState(false);
+  const confirming = withdrawArmed(state, view);
   const askRef = useRef<HTMLButtonElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
   const keepRef = useRef<HTMLButtonElement | null>(null);
@@ -865,7 +995,7 @@ function WithdrawBlock({
             if (event.key === 'Escape') {
               event.stopPropagation();
               event.preventDefault();
-              setConfirming(false);
+              control.disarmWithdraw();
             }
           }}
         >
@@ -891,7 +1021,7 @@ function WithdrawBlock({
               type="button"
               ref={keepRef}
               data-testid="di-mr-withdraw-keep"
-              onClick={() => setConfirming(false)}
+              onClick={control.disarmWithdraw}
             >
               No, keep it
             </button>
@@ -904,7 +1034,7 @@ function WithdrawBlock({
             ref={askRef}
             data-danger="true"
             data-testid="di-mr-withdraw"
-            onClick={() => setConfirming(true)}
+            onClick={control.armWithdraw}
           >
             Withdraw this proposal
           </button>
@@ -1109,6 +1239,7 @@ function Detail({
           </p>
         )}
       </div>
+      <ChangeRequestReason request={view.latest} />
       <details className="di-mr-refs" data-testid="di-mr-refs">
         <summary data-testid="di-mr-refs-summary">Exact references (technical)</summary>
         <div className="di-mr-refs-body">

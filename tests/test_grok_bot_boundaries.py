@@ -1138,9 +1138,11 @@ class IntegrationPinTests(unittest.TestCase):
         # widening as test_static pin 6): the read-only Mission State
         # composer takes the delivery layer's pure receipt VALIDATION in ONE
         # import statement; its calls are pinned in test_static (12h).
+        # Owner decision (b), the same widening as test_static pin 6: the ONE office adapter; its constraints are pinned by name in tests/test_office_delivery.py.
         self.assertEqual(importers, {"herdr/guards.py": 1,
                                      "grok_bot/delivery.py": 1,
-                                     "target_runtime/mission_state.py": 1})
+                                     "target_runtime/mission_state.py": 1,
+                                     "office_delivery/adapter.py": 1})
 
     def test_the_tunnel_tool_imports_no_pr_delivery_and_is_on_no_mcp_tool(self):
         from grok_bot import mcp

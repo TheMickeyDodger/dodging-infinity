@@ -258,8 +258,9 @@ def validate_reservation(value, location):
     record.require_member(value["kind"], RESERVATION_KINDS, location + ".kind")
     context = record.context_from_dict(value["context"], location + ".context")
     if value["kind"] == RESERVATION_KIND_DECISION:
-        # A decision id is reserved only for an authenticated or an
-        # approve-only (operator-attested) kind; never the unauthenticated one.
+        # A decision id is reserved only for an authenticated or the
+        # operator-attested kind (its approval and, by owner decision (c), its
+        # decline, rejection or change request); never the unauthenticated one.
         record.require_decision_reservation_context(context, location + ".context")
     elif value["kind"] != RESERVATION_KIND_REQUEST:
         # A state-operation id needs an authenticated kind.

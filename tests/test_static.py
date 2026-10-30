@@ -1671,9 +1671,18 @@ for path in product_files + sorted((R / 'herdr').glob('*.py')):
 # Query contract v2 (Lead D5, deliberate and minimal): the read-only Mission
 # State composer takes the delivery layer's pure receipt VALIDATION, in ONE
 # import statement; what it may call is pinned in (12h).
+# Owner decision (b), 2026-10-28 (owner-decisions.md; the approved proposal
+# reports/owner-delivery-bridge-premise-correction-20261029.md, item 3): plus
+# office_delivery/adapter.py, the ONE office adapter, in exactly ONE import
+# statement (of authorization, boundary, cli and machine). It reads status and
+# performs ONE confirmed step through the expected-step guard (advance_once with
+# expected=). It never mints, revokes or runs every step, never constructs a
+# transport, machine, store or boundary, and builds its machine only through the
+# factory it is given. tests/test_office_delivery.py pins that by name.
 assert pr_delivery_importers == {'herdr/guards.py': 1,
                                  'grok_bot/delivery.py': 1,
-                                 'target_runtime/mission_state.py': 1}, (
+                                 'target_runtime/mission_state.py': 1,
+                                 'office_delivery/adapter.py': 1}, (
     'only the git guard may reach the delivery package',
     pr_delivery_importers,
 )
@@ -3480,6 +3489,7 @@ assert _cr_imports == sorted([
     (None, 'hashlib'), (None, 'json'), (None, 'os'), (None, 're'),
     ('mission_sources', 'contract'), ('mission_sources', 'registry'),
     ('target_runtime', 'git_transport'), ('target_runtime', 'prepare'),
+    ('target_runtime', 'run_association'),
     ('target_runtime', 'state_artifact')], key=repr), _cr_imports
 _CR_FILESYSTEM_CALLS = {'lstat', 'isdir', 'realpath', 'isabs', 'dirname',
                         'basename', 'join'}
@@ -3495,6 +3505,51 @@ for _node in ast.walk(_cr_tree):
             _node.value, ast.Name) and _node.value.id == 'os':
         assert _node.attr in _CR_FILESYSTEM_CALLS | {'path', 'sep'}, (
             CODE_REVIEW_FILE, _node.lineno, _node.attr)
+
+# (12o) Run association: target_runtime/run_association.py, the TWO PURE
+#       helpers (handoff_prefix, names_this_run) the live code review's
+#       finished-Mission witness shares with the Mission bridge, pinned
+#       STRUCTURALLY: it imports NOTHING (no import, no from-import), it
+#       defines exactly those two functions and one ``__all__`` naming them,
+#       every name it loads that it does not bind itself is one of the
+#       builtins below, it calls nothing but those builtins, the two helpers
+#       and the methods ``get`` and ``startswith``, and it has no global or
+#       nonlocal statement, no lambda and no attribute beyond those two
+#       methods. The Mission bridge re-exports both under their own names.
+RUN_ASSOCIATION_FILE = 'target_runtime/run_association.py'
+_ra_tree = ast.parse((R / RUN_ASSOCIATION_FILE).read_text())
+assert not [n for n in ast.walk(_ra_tree)
+            if isinstance(n, (ast.Import, ast.ImportFrom))], (
+    RUN_ASSOCIATION_FILE, 'imports nothing')
+assert [type(n).__name__ for n in _ra_tree.body] == [
+    'Expr', 'Assign', 'FunctionDef', 'FunctionDef'], RUN_ASSOCIATION_FILE
+assert [n.name for n in _ra_tree.body if isinstance(n, ast.FunctionDef)] == [
+    'handoff_prefix', 'names_this_run'], RUN_ASSOCIATION_FILE
+assert ast.literal_eval(_ra_tree.body[1].value) == (
+    'handoff_prefix', 'names_this_run'), RUN_ASSOCIATION_FILE
+_RA_BUILTINS = frozenset({'bool', 'dict', 'int', 'isinstance', 'str'})
+_RA_METHODS = frozenset({'get', 'startswith'})
+for _node in ast.walk(_ra_tree):
+    assert not isinstance(_node, (ast.Global, ast.Nonlocal, ast.Lambda)), (
+        RUN_ASSOCIATION_FILE, _node.lineno)
+    if isinstance(_node, ast.Attribute):
+        assert _node.attr in _RA_METHODS, (
+            RUN_ASSOCIATION_FILE, _node.lineno, _node.attr)
+    if isinstance(_node, ast.Call):
+        _fn = _node.func
+        _name = (_fn.id if isinstance(_fn, ast.Name)
+                 else _fn.attr if isinstance(_fn, ast.Attribute) else None)
+        assert _name in _RA_BUILTINS | _RA_METHODS | {'handoff_prefix'}, (
+            RUN_ASSOCIATION_FILE, _node.lineno, _name)
+_ra_bound = {a.arg for n in ast.walk(_ra_tree)
+             if isinstance(n, ast.FunctionDef) for a in n.args.args}
+_ra_bound |= {n.id for n in ast.walk(_ra_tree)
+              if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+_ra_bound |= {'handoff_prefix', 'names_this_run', '__all__'}
+_ra_loaded = {n.id for n in ast.walk(_ra_tree)
+              if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+assert _ra_loaded - _ra_bound <= _RA_BUILTINS, (
+    RUN_ASSOCIATION_FILE, sorted(_ra_loaded - _ra_bound - _RA_BUILTINS))
 
 # (12m) Item 4 (DI World request panel): THREE mission_panel modules import
 #       Mission Core's record module, deliberate and exact, and NOTHING else of
@@ -3549,7 +3604,10 @@ for _rel, _names in PANEL_MISSION_READERS.items():
 #           holds no principal context and applies no decision;
 #       (2) the effect-bearing calls on the request surface exist ONLY in the
 #           named controller functions: attest_approval (the person's typed
-#           exact word, relayed) in decide and check_approval; run_command in
+#           exact word, relayed) in decide and check_approval; attest_decline,
+#           attest_rejection and attest_change_request (the non-approval
+#           outcome the person chose, relayed on the exact offer shown; owner
+#           decision (c)) in decline, reject and request_changes; run_command in
 #           run; cancel in withdraw and _submit_reserved; submit in
 #           _submit_reserved; advance (the progression pass's bridge step, which
 #           never dispatches) in progress.py's _advance_one. No other module of
@@ -3575,6 +3633,11 @@ PANEL_FORBIDDEN_NAMES = frozenset({
 PANEL_FORBIDDEN_CALL_PREFIXES = ('record_', 'mint_', 'apply_', 'issue_')
 PANEL_EFFECT_CALLS = {
     'attest_approval': {('service.py', 'decide'), ('service.py', 'check_approval')},
+    # Owner decision (c): the person's chosen non-approval outcome, each from its
+    # one named relay function; Mission Core validates and records the result.
+    'attest_decline': {('service.py', 'decline')},
+    'attest_rejection': {('service.py', 'reject')},
+    'attest_change_request': {('service.py', 'request_changes')},
     'run_command': {('service.py', 'run')},
     'cancel': {('service.py', 'withdraw'), ('service.py', '_submit_reserved')},
     'submit': {('service.py', '_submit_reserved')},

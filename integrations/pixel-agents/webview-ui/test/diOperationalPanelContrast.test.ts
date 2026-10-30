@@ -209,8 +209,8 @@ describe('the stylesheet keeps its promises', () => {
     expect(outside).not.toMatch(/\banimation(-[a-z]+)?\s*:/);
     expect(outside).not.toContain('@keyframes');
   });
-  it('uses the reading faces: a system sans for text and a monospace for identifiers, never the pixel font', () => {
-    expect(css).toContain('--op-font-ui: system-ui');
+  it('uses the reading faces: Inter then the system sans for text (Home token, CONTROL-MAP locked rules) and a monospace for identifiers, never the pixel font', () => {
+    expect(css).toContain('--op-font-ui: Inter, system-ui');
     expect(css).toContain('--op-font-code:');
     expect(css).toContain('ui-monospace');
     expect(css).not.toMatch(/FS Pixel Sans/);

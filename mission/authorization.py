@@ -561,6 +561,9 @@ def reconcile_mission_history(document, mission):
         )
         if problem is not None:
             return _history("%s: %s" % (where, problem))
+        # (c): a rejection is terminal, so no decision ever follows one.
+        if state == record.STATE_REJECTED:
+            return _history("%s follows a rejection, which is terminal" % where)
         if decision["revision"] != revision:
             return _history("%s names revision %d but the mission was at"
                             " revision %d when it was applied"
@@ -624,6 +627,19 @@ def reconcile_mission_history(document, mission):
                                     decision["decision_id"], revision,
                                     decision["decided_at"]))
             state = record.STATE_DENIED
+            expected_outcome = (state, revision, [])
+        elif kind in ("REJECT", "REQUEST_CHANGES"):
+            # (c): an attested rejection or change request, from a pending
+            # proposal only. Neither issues, revokes or records authority, so
+            # neither has a ledger entry.
+            if state != record.STATE_AWAITING_DECISION:
+                return _history("%s is a %s while the mission was %s"
+                                % (where, kind, state))
+            if outcome["authorization_id"] is not None:
+                return _history("%s is a %s that names an authorization"
+                                % (where, kind))
+            state = (record.STATE_REJECTED if kind == "REJECT"
+                     else record.STATE_CHANGES_REQUESTED)
             expected_outcome = (state, revision, [])
         elif kind == "EDIT":
             superseded = revision

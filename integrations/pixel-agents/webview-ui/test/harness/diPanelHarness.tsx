@@ -261,6 +261,8 @@ function p2aOverview(): MrOverview | null {
     terminal: false,
     actions: actions as MrOverview['requests'][number]['actions'],
     notice: null,
+    attestedAt: null,
+    cancelledAt: null,
   });
   return {
     serverNow: 1_800_000_000,

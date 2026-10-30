@@ -339,7 +339,7 @@ test('hiding is local to the view and returns on a reload', async () => {
   assert.equal((await cards()).length, before);
 });
 
-test('hiding a MERGED decision card (Mission + request panel) hides it, counts it, resurfaces on new content, and changes no source', async () => {
+test('hiding a MERGED decision card (Mission + request panel) hides it from the list, still counts it, resurfaces on new content, and changes no source', async () => {
   const seam = (await ids())!;
   const MERGED = `${CARD}[data-entry-kind="mission"][data-entry-key*="authorization"][data-entry-key*="${seam.coreNativeId}"]`;
   const hideIt = () => p().locator(MERGED).locator('button', { hasText: 'Hide in this view' }).click();
@@ -351,14 +351,15 @@ test('hiding a MERGED decision card (Mission + request panel) hides it, counts i
   assert.equal(await headline(), `${expected} need attention`);
   const sourcesBefore = await p().evaluate(() => JSON.stringify(window.__diHarness.current()));
   await hideIt();
-  // the card is gone, the request panel's request did not come back as a card of its own, and the counts moved by one
+  // the card is gone from the LIST and the request panel's request did not come back as a card of its own; the NUMBER of things that need the person did not move, in the dialog or the sidebar, because
+  // hiding is a view preference that resolves and dismisses nothing (and the notice says the entry is hidden here and still counted)
   assert.equal(await p().locator(MERGED).count(), 0, 'Hide removes the merged card');
   const afterHide = await cards();
   assert.equal(afterHide.length, expected - 1);
   assert.equal(afterHide.filter((c) => c.kind === 'panel' && c.key.includes(seam.decisionRequest)).length, 0);
-  assert.match((await p().textContent('[data-testid="di-reception-hidden"]'))!, /1 hidden in this view only/);
-  assert.equal(await headline(), `${expected - 1} need attention`, 'attention is reduced');
-  assert.match((await sidebar())!, new RegExp(`${expected - 1} need attention`), 'and so is the sidebar count');
+  assert.match((await p().textContent('[data-testid="di-reception-hidden"]'))!, /1 hidden in this view only, and still counted in the number above/);
+  assert.equal(await headline(), `${expected} need attention`, 'the count is unchanged by hiding');
+  assert.match((await sidebar())!, new RegExp(`${expected} need attention`), 'and so is the sidebar count');
   // hiding is a view preference: no canonical source changed
   assert.equal(await p().evaluate(() => JSON.stringify(window.__diHarness.current())), sourcesBefore);
   // Show hidden reveals it again

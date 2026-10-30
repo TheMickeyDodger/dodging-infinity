@@ -46,7 +46,8 @@ export type ServerMessage =
   | AmbientSpritesLoaded
   | DiEvidenceContent
   | DiCodeReview
-  | DiMissionRequestReply;
+  | DiMissionRequestReply
+  | DiDeliveryReply;
 
 export type ClientMessage =
   | WebviewReady
@@ -76,7 +77,9 @@ export type ClientMessage =
   | SaveDiSeatPreferences
   | DiEvidenceRead
   | DiCodeReviewRead
-  | DiMissionRequest;
+  | DiCodeReviewMissionRead
+  | DiMissionRequest
+  | DiDeliveryRequest;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -426,6 +429,7 @@ export interface DiMission {
   v2: DiMissionV2;
   herdrTask?: DiHerdrTask;
   evidence?: DiEvidenceLibrary;
+  codeReview?: DiCodeReviewOffer;
 }
 
 export interface DiMemberList {
@@ -473,12 +477,42 @@ export interface DiCodeReviewOffer {
 export type DiCodeReviewOfferState = 'offered' | 'unavailable';
 
 export interface DiMissionV2 {
+  workflowPhase?: DiWorkflowPhase;
+  deliveryLink?: DiMissionDeliveryLink;
   projected: boolean;
   taskChains: DiTaskChain[];
   childrenRecord: DiChildrenRecord;
   missionState: DiMissionStateSummary;
   canonicalReview: DiCanonicalReview;
 }
+
+export interface DiWorkflowPhase {
+  state: DiWorkflowPhaseState;
+  phase: string | null;
+  unrecognized: string | null;
+  problem: string | null;
+}
+
+export type DiWorkflowPhaseState = 'observed' | 'not_applicable' | 'not_reported';
+
+export interface DiMissionDeliveryLink {
+  state: DiMissionDeliveryLinkState;
+  deliveryId: string | null;
+  basis: DiMissionDeliveryLinkBasis | null;
+}
+
+export type DiMissionDeliveryLinkState =
+  | 'linked'
+  | 'unlinked_model_not_recorded'
+  | 'unlinked_store_not_registered'
+  | 'unlinked_store_unavailable'
+  | 'unlinked_reader_failed'
+  | 'unlinked_no_record'
+  | 'unlinked_ambiguous'
+  | 'unlinked_sources_incomplete'
+  | 'unlinked_id_not_addressable';
+
+export type DiMissionDeliveryLinkBasis = 'record_mission_binding';
 
 export interface DiTaskChain {
   chain: string;
@@ -1066,6 +1100,7 @@ export interface DiCodeReview {
   overview: DiCodeReviewOverview | null;
   file: DiCodeReviewFile | null;
   observedAt: number | null;
+  requestId?: string;
 }
 
 export type DiCodeReviewView = 'overview' | 'file';
@@ -1178,10 +1213,27 @@ export type DiMissionRequestOp =
   | 'submit'
   | 'decide'
   | 'checkApproval'
+  | 'decline'
+  | 'reject'
+  | 'requestChanges'
   | 'withdraw'
   | 'run';
 
-export type DiMissionRequestState = 'ok' | 'refused' | 'unavailable';
+export type DiMissionRequestState = 'ok' | 'refused' | 'unavailable' | 'unknown';
+
+export interface DiDeliveryReply {
+  type: 'diDeliveryReply';
+  seq: number;
+  op: DiDeliveryOp;
+  state: DiDeliveryState;
+  problem: string | null;
+  reason: string | null;
+  answer: Record<string, any> | null;
+}
+
+export type DiDeliveryOp = 'status' | 'advanceOnce';
+
+export type DiDeliveryState = 'ok' | 'refused' | 'unavailable' | 'unknown';
 
 export interface WebviewReady {
   type: 'webviewReady';
@@ -1328,6 +1380,17 @@ export interface DiCodeReviewRead {
   listing: string;
   snapshot?: string;
   fileId?: string;
+  requestId?: string;
+}
+
+export interface DiCodeReviewMissionRead {
+  type: 'diCodeReviewMissionRead';
+  missionRef: string;
+  taskId: string;
+  listing: string;
+  snapshot?: string;
+  fileId?: string;
+  requestId?: string;
 }
 
 export interface DiMissionRequest {
@@ -1349,4 +1412,22 @@ export interface DiMissionRequest {
   repositoryUrl?: string | null;
   command?: string;
   supersedes?: string | null;
+  reason?: string;
 }
+
+export interface DiDeliveryRequest {
+  type: 'diDeliveryRequest';
+  seq: number;
+  op: DiDeliveryOp;
+  deliveryId: string;
+  confirmation?: DiDeliveryConfirmation;
+}
+
+export interface DiDeliveryConfirmation {
+  delivery_id: string;
+  revision: number;
+  candidate_identity_digest_sha256: string;
+  step: DiDeliveryStep;
+}
+
+export type DiDeliveryStep = 'BASE_REFRESH' | 'COMMIT' | 'PUSH' | 'PR_CREATE';

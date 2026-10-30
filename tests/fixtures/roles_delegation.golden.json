@@ -1,0 +1,605 @@
+{
+ "1/1": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "1/5": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1",
+    "executor2",
+    "reviewer2",
+    "executor3",
+    "reviewer3",
+    "executor4",
+    "reviewer4",
+    "executor5",
+    "reviewer5"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "executor2",
+    "executor3",
+    "executor4",
+    "executor5",
+    "lead1",
+    "reviewer1",
+    "reviewer2",
+    "reviewer3",
+    "reviewer4",
+    "reviewer5",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "2/3": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "executor1",
+    "reviewer1",
+    "executor2",
+    "reviewer2",
+    "executor3",
+    "reviewer3"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "executor2",
+    "executor3",
+    "lead1",
+    "lead2",
+    "reviewer1",
+    "reviewer2",
+    "reviewer3",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "3/1": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "lead3",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "lead2",
+    "lead3",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "a list": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `leads`/`pods` are not integers.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be integers",
+   "raises": "ValueError"
+  }
+ },
+ "a word": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `leads`/`pods` are not integers.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be integers",
+   "raises": "ValueError"
+  }
+ },
+ "absent": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "an object": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `leads`/`pods` are not integers.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be integers",
+   "raises": "ValueError"
+  }
+ },
+ "at the health cap": {
+  "follow_on": {
+   "head": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "lead3",
+    "lead4",
+    "lead5",
+    "lead6"
+   ],
+   "returns_count": 3001,
+   "sha256": "5aa8670e591032598e4ccae4962ca13fca497ea21a5d4719277ff4f208e3afcc",
+   "tail": [
+    "executor999",
+    "reviewer999",
+    "executor1000",
+    "reviewer1000"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "head": [
+    "executor1",
+    "executor10",
+    "executor100",
+    "executor1000",
+    "executor101",
+    "executor102",
+    "executor103"
+   ],
+   "returns_count": 3001,
+   "sha256": "98b10475b9f8a63033c0f77ecc330530425b6a95acbad9d6fbab26656c8b75d0",
+   "tail": [
+    "reviewer997",
+    "reviewer998",
+    "reviewer999",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "booleans": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "empty object": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "extra keys are ignored": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1",
+    "executor2",
+    "reviewer2"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "executor2",
+    "lead1",
+    "reviewer1",
+    "reviewer2",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "float truncates": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "lead2",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "infinity": {
+  "follow_on": {
+   "check": null,
+   "message": "cannot convert float infinity to integer",
+   "raises": "OverflowError"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be integers",
+   "raises": "ValueError"
+  }
+ },
+ "just over the cap, leads": {
+  "follow_on": {
+   "head": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "lead3",
+    "lead4",
+    "lead5",
+    "lead6"
+   ],
+   "returns_count": 1004,
+   "sha256": "601d7d37614f8042c3e35788a3842eb4a46991b38df2e5fd7f002cb2bb47fcce",
+   "tail": [
+    "lead1000",
+    "lead1001",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be at most 1000",
+   "raises": "ValueError"
+  }
+ },
+ "just over the cap, pods": {
+  "follow_on": {
+   "head": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1",
+    "executor2",
+    "reviewer2",
+    "executor3"
+   ],
+   "returns_count": 2004,
+   "sha256": "53d832f5747de91208f66e8b7a4daa77a13d726e26d28fb4354ce017d7d1430f",
+   "tail": [
+    "executor1000",
+    "reviewer1000",
+    "executor1001",
+    "reviewer1001"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be at most 1000",
+   "raises": "ValueError"
+  }
+ },
+ "large but allocatable": {
+  "follow_on": {
+   "head": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "lead3",
+    "lead4",
+    "lead5",
+    "lead6"
+   ],
+   "returns_count": 100003,
+   "sha256": "86f9b9b9d07165b7ec2b0a4d5532aaecc66eb2ec70d8656e1f89fa817a8e175c",
+   "tail": [
+    "lead99999",
+    "lead100000",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be at most 1000",
+   "raises": "ValueError"
+  }
+ },
+ "leads only": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "lead3",
+    "lead4",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "lead2",
+    "lead3",
+    "lead4",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "nan": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `leads`/`pods` are not integers.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be integers",
+   "raises": "ValueError"
+  }
+ },
+ "negative": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "none": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `orchestration` is not an object.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "null count": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `leads`/`pods` are not integers.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration.leads`/`orchestration.pods` in herd.config.json must be integers",
+   "raises": "ValueError"
+  }
+ },
+ "orchestration is a list": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `orchestration` is not an object.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration` in herd.config.json is not a JSON object",
+   "raises": "ValueError"
+  }
+ },
+ "orchestration is a number": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `orchestration` is not an object.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration` in herd.config.json is not a JSON object",
+   "raises": "ValueError"
+  }
+ },
+ "orchestration is a string": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `orchestration` is not an object.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration` in herd.config.json is not a JSON object",
+   "raises": "ValueError"
+  }
+ },
+ "orchestration is true": {
+  "follow_on": {
+   "check": "child_config_invalid",
+   "message": "Follow-on dispatch refused (child_config_invalid): The child's `orchestration` is not an object.",
+   "raises": "FollowOnRefused"
+  },
+  "health": {
+   "check": null,
+   "message": "`orchestration` in herd.config.json is not a JSON object",
+   "raises": "ValueError"
+  }
+ },
+ "pods only": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1",
+    "executor2",
+    "reviewer2",
+    "executor3",
+    "reviewer3",
+    "executor4",
+    "reviewer4"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "executor2",
+    "executor3",
+    "executor4",
+    "lead1",
+    "reviewer1",
+    "reviewer2",
+    "reviewer3",
+    "reviewer4",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "strings": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "lead2",
+    "executor1",
+    "reviewer1",
+    "executor2",
+    "reviewer2",
+    "executor3",
+    "reviewer3"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "executor2",
+    "executor3",
+    "lead1",
+    "lead2",
+    "reviewer1",
+    "reviewer2",
+    "reviewer3",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ },
+ "zero": {
+  "follow_on": {
+   "returns": [
+    "supervisor",
+    "lead1",
+    "executor1",
+    "reviewer1"
+   ],
+   "type": "list"
+  },
+  "health": {
+   "returns": [
+    "executor1",
+    "lead1",
+    "reviewer1",
+    "supervisor"
+   ],
+   "type": "set"
+  }
+ }
+}

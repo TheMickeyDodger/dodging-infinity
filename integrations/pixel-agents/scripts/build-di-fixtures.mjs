@@ -56,6 +56,36 @@ const v2Answer = JSON.parse(v2Bytes.toString('utf-8'));
 const derivedFromV2 = { path: relative(ROOT, V2_ANSWER), sha256: V2_ANSWER_SHA256 };
 
 /**
+ * reception-v2's edits (shared by reception-v2-partial): Mission Core 0002 carries a HARD blocker, a contradiction with an
+ * evidence_contradicted hold and a COMPLETE task report; workflow wf-0005 declares NEEDS_REAUTHORIZATION.
+ */
+function receptionV2Edits({ m2, wf }) {
+  const report = m2.mission_state.report;
+  report.blockers.value = {
+    active: [
+      {
+        blocker_id: 'bk-fixture-0001',
+        key: 'synthetic-fixture-blocker',
+        severity: 'HARD',
+        opened_at: 999990,
+      },
+    ],
+    hard_active: true,
+  };
+  Object.assign(report.completion, {
+    reported_complete: true,
+    contradicted: true,
+    holds: [
+      'evidence_contradicted',
+      'hard_blocker_active',
+      'no_canonical_closure',
+      'proof_not_satisfied',
+    ],
+  });
+  wf.lifecycle.state = 'NEEDS_REAUTHORIZATION';
+}
+
+/**
  * The emitted v2 answer with its three Missions (Mission Core 0002, 0009; workflow_store wf-0005),
  * edited, then given `missions[].workflow_phase` EXACTLY as the current producer declares it
  * (mission_sources/contract_v2.py `workflow_phase`): that historical emission predates the field.
@@ -318,30 +348,42 @@ const fixtures = [
       {
         kind: 'catalog',
         timing: 'fresh',
-        envelope: v2Envelope(({ m2, wf }) => {
-          const report = m2.mission_state.report;
-          report.blockers.value = {
-            active: [
-              {
-                blocker_id: 'bk-fixture-0001',
-                key: 'synthetic-fixture-blocker',
-                severity: 'HARD',
-                opened_at: 999990,
-              },
-            ],
-            hard_active: true,
-          };
-          Object.assign(report.completion, {
-            reported_complete: true,
-            contradicted: true,
-            holds: [
-              'evidence_contradicted',
-              'hard_blocker_active',
-              'no_canonical_closure',
-              'proof_not_satisfied',
-            ],
-          });
-          wf.lifecycle.state = 'NEEDS_REAUTHORIZATION';
+        envelope: v2Envelope(receptionV2Edits),
+      },
+    ],
+  },
+  {
+    // pass C (section 7): the same attention records PLUS one Mission the desk lists nothing for, so a Needs-you count
+    // is a FLOOR ("N+") the way partial real data makes it: some Missions known to need the person, one not known.
+    fixture_id: 'reception-v2-partial',
+    label:
+      'FIXTURE — reception-v2-partial: attention records for three Missions and none for a fourth, at contract v2 — ' +
+      'SYNTHETIC VISUAL TEST',
+    description:
+      'reception-v2 (the same three attention records), plus a fourth Mission the reception desk lists nothing for: ' +
+      'workflow wf-0006, a copy of wf-0005 whose declared phase is PREPARED (its run not started, nothing to ' +
+      'reauthorize). This catalog does not report clarification or delivery decisions, so whether wf-0006 needs the ' +
+      'person is NOT KNOWN: a Needs-you count over these four Missions is a floor ("3+"), never 3 and never 4. ' +
+      'Run it with --contract-version 2. ' +
+      RECEPTION_NOTE,
+    contract_version: 2,
+    derived_from: derivedFromV2,
+    after_last: 'hold',
+    frames: [
+      {
+        kind: 'catalog',
+        timing: 'fresh',
+        envelope: v2Envelope((parts) => {
+          receptionV2Edits(parts);
+          const { e, wf } = parts;
+          const w6 = clone(wf);
+          w6.native_id = 'wf-0006';
+          w6.mission_ref = 'synthetic_workflow_store:wf-0006';
+          w6.objective = 'SYNTHETIC v2 fixture workflow with nothing listed for you';
+          w6.lifecycle.state = 'PREPARED';
+          e.response.missions.push(w6);
+          const store = e.response.sources.find((src) => src.source_id === wf.source_id);
+          store.record_count += 1;
         }),
       },
     ],

@@ -7,7 +7,7 @@
  * is not offered, the reason is said in words — an absent button never leaves the reader guessing.
  */
 import type { DiMember } from '../../../core/src/messages.js';
-import type { ReviewTargetRef } from './diCodeReviewModel.js';
+import type { ReviewSession, ReviewTargetRef } from './diCodeReviewModel.js';
 import { reviewNotOfferedConsequence } from './diCodeReviewModel.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 
@@ -15,6 +15,15 @@ import { DI_FOCUS_RING } from './diNavigation.js';
 export interface DiCodeReviewAccess {
   /** Open a review; `opener` is where focus returns when it closes. */
   open: (target: ReviewTargetRef, opener: HTMLElement) => void;
+  /**
+   * Stage 4, the scan face: the SAME session, read by the nested Code Diff editor instead of the modal. `begin` opens it for the
+   * offered reference, `end` closes it, `choose` selects a listed file by path. The faces never both show it (App mounts the modal
+   * only for the operational face).
+   */
+  session?: ReviewSession;
+  begin?: (target: ReviewTargetRef) => void;
+  end?: () => void;
+  choose?: (path: string | null) => void;
 }
 
 export function DiCodeReviewEntry({

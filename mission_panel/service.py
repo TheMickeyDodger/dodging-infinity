@@ -11,7 +11,12 @@ execution engine:
 - decision: the surface's ``attest_approval``. It takes the person's TYPED
   reply (the exact affirmative, checked before anything is read or written)
   bound to the displayed Mission, revision and digest. Ordinary ``approve``
-  stays refused. Nothing a provider wrote reaches this call;
+  stays refused. Nothing a provider wrote reaches this call. By owner
+  decision (c) the person may instead decline, reject or request changes:
+  ``decline``, ``reject`` and ``request_changes`` relay that choice on the
+  exact offer shown, through the surface's ``attest_decline``,
+  ``attest_rejection`` and ``attest_change_request``; a change request's
+  readable reason is checked first;
 - run: the surface's ``run_command`` over the existing ``MissionBridge``.
 
 Every window offers only what ``mission_panel.lifecycle`` derives from the
@@ -95,6 +100,9 @@ _DIGEST = re.compile(r"[0-9a-f]{64}")
 _ATTESTATION_KEYS = ("state", "attested_at", "relayed_reply", "binding",
                      "outcome", "provenance_label", "residual_risk",
                      "evidence_status")
+# (c): what a window shows of the relayed non-approval outcome.
+_OUTCOME_KEYS = ("kind", "state", "reason", "attested_at", "binding", "outcome",
+                 "provenance_label", "residual_risk", "evidence_status")
 _RUN_KEYS = (
     "phase", "lifecycle_state", "hold", "hold_statement", "paused",
     "pause_statement", "external_work_suspended", "outcome",
@@ -251,7 +259,9 @@ class PanelService(object):
             pass
         observation = status.get("mission_observation") or {}
         attested = status.get("attested_approval") or {}
-        binding = attested.get("binding") or {}
+        # (c): an outcome binds the revision and digest the person decided on, too.
+        binding = (status.get("attested_outcome") or {}).get("binding") or attested.get(
+            "binding") or {}
         revision = binding.get("revision") or observation.get("revision") or 1
         digest = binding.get("proposal_digest_sha256") or entry[
             "proposal_digest_sha256"]
@@ -302,6 +312,7 @@ class PanelService(object):
             verification_ready=self._readiness(status),
             progression=self.progression())
         attested = status.get("attested_approval")
+        outcome = status.get("attested_outcome")
         run = status.get("run")
         return {
             "ok": True, "request_ref": request_ref,
@@ -314,6 +325,8 @@ class PanelService(object):
             "attestation": None if attested is None else dict(
                 (k, copy.deepcopy(attested.get(k))) for k in _ATTESTATION_KEYS
                 if k in attested),
+            "outcome": None if outcome is None else dict(
+                (k, copy.deepcopy(outcome.get(k))) for k in _OUTCOME_KEYS if k in outcome),
             "run": None if run is None else dict(
                 (k, copy.deepcopy(run.get(k))) for k in _RUN_KEYS if k in run),
             "start_cause": (self._start_cause(entry, status)
@@ -331,6 +344,13 @@ class PanelService(object):
     def _summary(self, entry):
         status = self._surface.status(entry["request_ref"])
         view = self._view(entry, status)
+        # R12: the two action times the per-request view already holds, so a page that reads only the overview can
+        # say which requests have a RECORDED approval attestation or withdrawal and when. They say THAT a record was
+        # written and WHEN, not who acted: attested_at is stamped when the attestation record is first RESERVED,
+        # before Mission Core applies it, so it does not say the approval took effect. None when the view holds none.
+        # Nothing else is added.
+        attested = view["attestation"]
+        cancelled = view["cancellation"]
         return {
             "request_ref": view["request_ref"], "mission_id": view["mission_id"],
             "revision": view["revision"], "created_at": view["created_at"],
@@ -338,6 +358,10 @@ class PanelService(object):
             "proposal_digest_sha256": view["proposal_digest_sha256"],
             "lifecycle": dict((k, view["lifecycle"][k]) for k in (
                 "stage", "label", "terminal", "actions", "notice")),
+            "attested_at": None if attested is None else attested.get(
+                "attested_at"),
+            "cancelled_at": None if cancelled is None else cancelled.get(
+                "cancelled_at"),
         }
 
     def capabilities(self):
@@ -732,15 +756,16 @@ class PanelService(object):
             applied = self._surface.status(request_ref)["attested_approval"]
             return self._decided(request_ref, applied, False)
 
-    def _expired(self, expires_at):
+    def _expired(self, expires_at, done="approved"):
         """The window the person was shown is over. Nothing about the offer changed, so the
         display is NOT invalid: reading the offer again gives a fresh window to decide in."""
         _refuse(PROBLEM_OFFER_EXPIRED,
-                "the approval window you were shown has passed. Nothing about the proposal"
-                " changed and nothing was approved. Read the offer again for a new window",
+                "the decision window you were shown has passed. Nothing about the proposal"
+                " changed and nothing was %s. Read the offer again for a new window" % done,
                 expires_at=expires_at, server_now=self._clock(), display_invalid=False)
 
-    def _stale(self, request_ref, mission_id, revision, digest, binding, **extra):
+    def _stale(self, request_ref, mission_id, revision, digest, binding, done="approved",
+               **extra):
         current = None
         try:
             presented = self._surface.present(request_ref)
@@ -751,8 +776,8 @@ class PanelService(object):
             pass
         _refuse(PROBLEM_STALE_DISPLAY,
                 "the proposal shown is not the one Mission Core now holds (%s);"
-                " nothing was approved. Read the current proposal and decide on"
-                " that" % binding,
+                " nothing was %s. Read the current proposal and decide on"
+                " that" % (binding, done),
                 binding=binding, display_invalid=True, current=current,
                 displayed={"mission_id": mission_id, "revision": revision,
                            "proposal_digest_sha256": digest}, **extra)
@@ -774,6 +799,125 @@ class PanelService(object):
                 attested["relayed_reply"], RELAY_REF)
             applied = self._surface.status(request_ref)["attested_approval"]
             return self._decided(request_ref, applied, True)
+
+    # -- the non-approval outcomes (owner decision (c)) --------------------------------
+    #
+    # The person's decline, rejection or change request, relayed on EXACTLY the offer they
+    # were shown, compared with the retained offer and the current record as ``decide``
+    # compares it. Each makes its one surface call from its own function. Mission Core
+    # validates and records the result; this panel holds no context and applies nothing.
+
+    def decline(self, request_ref, mission_id, revision, proposal_digest_sha256,
+                offer_digest_sha256, expires_at, action_scope, delivery_targets,
+                repository_url):
+        """Record the person's DECLINE: Mission Core's existing non-terminal DENY."""
+        submitted, offer_digest = self._outcome_args(
+            request_ref, mission_id, revision, proposal_digest_sha256, offer_digest_sha256,
+            expires_at, action_scope, delivery_targets, repository_url)
+        with self._lock_for(request_ref):
+            shown = self._shown_offer(submitted, offer_digest, store_module.OUTCOME_DECLINE)
+            result = self._surface.attest_decline(
+                request_ref, shown["mission_id"], shown["revision"],
+                shown["proposal_digest_sha256"], RELAY_REF)
+        return self._outcome_decided(request_ref, result)
+
+    def reject(self, request_ref, mission_id, revision, proposal_digest_sha256,
+               offer_digest_sha256, expires_at, action_scope, delivery_targets,
+               repository_url):
+        """Record the person's REJECTION: the terminal state REJECTED."""
+        submitted, offer_digest = self._outcome_args(
+            request_ref, mission_id, revision, proposal_digest_sha256, offer_digest_sha256,
+            expires_at, action_scope, delivery_targets, repository_url)
+        with self._lock_for(request_ref):
+            shown = self._shown_offer(submitted, offer_digest, store_module.OUTCOME_REJECT)
+            result = self._surface.attest_rejection(
+                request_ref, shown["mission_id"], shown["revision"],
+                shown["proposal_digest_sha256"], RELAY_REF)
+        return self._outcome_decided(request_ref, result)
+
+    def request_changes(self, request_ref, mission_id, revision, proposal_digest_sha256,
+                        offer_digest_sha256, expires_at, action_scope, delivery_targets,
+                        repository_url, reason):
+        """Record the person's CHANGE REQUEST and its readable reason (checked first,
+        before anything is read or written)."""
+        surface_module.require_readable_reason(reason)
+        submitted, offer_digest = self._outcome_args(
+            request_ref, mission_id, revision, proposal_digest_sha256, offer_digest_sha256,
+            expires_at, action_scope, delivery_targets, repository_url)
+        with self._lock_for(request_ref):
+            shown = self._shown_offer(submitted, offer_digest,
+                                      store_module.OUTCOME_REQUEST_CHANGES)
+            result = self._surface.attest_change_request(
+                request_ref, shown["mission_id"], shown["revision"],
+                shown["proposal_digest_sha256"], reason, RELAY_REF)
+        return self._outcome_decided(request_ref, result)
+
+    def _outcome_args(self, request_ref, mission_id, revision, proposal_digest_sha256,
+                      offer_digest_sha256, expires_at, action_scope, delivery_targets,
+                      repository_url):
+        self._request_ref(request_ref)
+        mission_id, revision, digest = self._binding_args(
+            mission_id, revision, proposal_digest_sha256)
+        expires_at, action_scope, delivery_targets, repository_url = self._offer_args(
+            expires_at, action_scope, delivery_targets, repository_url)
+        submitted = {
+            "request_ref": request_ref, "mission_id": mission_id, "revision": revision,
+            "proposal_digest_sha256": digest, "repository_url": repository_url,
+            "action_scope": action_scope, "delivery_targets": delivery_targets,
+            "expires_at": expires_at}
+        return submitted, self._digest(offer_digest_sha256)
+
+    def _shown_offer(self, submitted, offer_digest, kind):
+        """Called under the request lock. The offer the person was shown, checked as
+        ``decide`` checks it: the retained offer, then Mission Core's current record. When
+        this same outcome is already held for the request, the submitted binding is returned
+        unchecked: the surface then only returns or reconciles what it holds, and refuses a
+        different content."""
+        request_ref = submitted["request_ref"]
+        mission_id, revision = submitted["mission_id"], submitted["revision"]
+        digest = submitted["proposal_digest_sha256"]
+        held = self._surface.status(request_ref).get("attested_outcome")
+        if held is not None and held["kind"] == kind and held["state"] != (
+            store_module.ATTESTED_REFUSED
+        ):
+            return submitted
+        done = "recorded"
+        retained = self._journal.offer(offer_digest)
+        if retained is None:
+            if submitted["expires_at"] <= self._clock():
+                self._expired(submitted["expires_at"], done)
+            self._stale(request_ref, mission_id, revision, digest, BINDING_OFFER_UNKNOWN, done)
+        if any(retained[k] != v for k, v in submitted.items()):
+            self._stale(request_ref, mission_id, revision, digest, BINDING_OFFER_TAMPERED, done)
+        try:
+            binding = self._surface.binding_status(
+                request_ref, mission_id, revision, digest, retained["expires_at"])["binding"]
+        except surface_module.LocalRequestRefusal as exc:
+            if exc.problem != surface_module.PROBLEM_CANCELLED:
+                raise
+            self._stale(request_ref, mission_id, revision, digest, BINDING_WITHDRAWN, done,
+                        surface_problem=exc.problem)
+        if binding != store_module.BINDING_MATCHES:
+            if binding == store_module.BINDING_EXPIRED:
+                self._expired(retained["expires_at"], done)
+            self._stale(request_ref, mission_id, revision, digest, binding, done)
+        presented = self._surface.present(request_ref)
+        if retained["action_scope"] != sorted(presented["approved_action_scope"]):
+            self._stale(request_ref, mission_id, revision, digest, BINDING_SCOPE_MISMATCH, done)
+        if retained["delivery_targets"] != sorted(presented["approved_delivery_targets"]):
+            self._stale(request_ref, mission_id, revision, digest, BINDING_TARGETS_MISMATCH,
+                        done)
+        if retained["repository_url"] != presented["proposal"]["repository_url"]:
+            self._stale(request_ref, mission_id, revision, digest,
+                        BINDING_REPOSITORY_MISMATCH, done)
+        return retained
+
+    def _outcome_decided(self, request_ref, result):
+        return {"ok": True,
+                "outcome": {"kind": result["kind"],
+                            "resulting_state": result["resulting_state"],
+                            "idempotent": result["idempotent"]},
+                "request": self.request_view(request_ref)}
 
     # -- withdrawal --------------------------------------------------------------------
 

@@ -18,6 +18,8 @@ Routes (nothing else exists):
     POST /conversations/turn           POST /proposals/submit
     POST /requests/<lr-ref>/offer      (issue or re-read the frozen decision offer)
     POST /requests/<lr-ref>/decide     POST /requests/<lr-ref>/check-approval
+    POST /requests/<lr-ref>/decline    POST /requests/<lr-ref>/reject
+    POST /requests/<lr-ref>/request-changes   (owner decision (c): the exact offer shown)
     POST /requests/<lr-ref>/withdraw   POST /requests/<lr-ref>/run
 
 Access boundary, checked on every request before anything is read:
@@ -99,6 +101,9 @@ _ROUTES = (
     ("POST", re.compile(r"/proposals/submit"), "submit"),
     ("POST", re.compile(r"/requests/" + _REF + r"/decide"), "decide"),
     ("POST", re.compile(r"/requests/" + _REF + r"/check-approval"), "check_approval"),
+    ("POST", re.compile(r"/requests/" + _REF + r"/decline"), "decline"),
+    ("POST", re.compile(r"/requests/" + _REF + r"/reject"), "reject"),
+    ("POST", re.compile(r"/requests/" + _REF + r"/request-changes"), "request_changes"),
     ("POST", re.compile(r"/requests/" + _REF + r"/withdraw"), "withdraw"),
     ("POST", re.compile(r"/requests/" + _REF + r"/run"), "run"),
 )
@@ -113,6 +118,16 @@ _BODY_KEYS = {
                 "offer_digest_sha256", "expires_at", "approved_action_scope",
                 "approved_delivery_targets", "repository_url"), ()),
     "check_approval": ((), ()),
+    # (c): the exact offer shown, without a typed word; a change request adds its reason.
+    "decline": (("mission_id", "revision", "proposal_digest_sha256",
+                 "offer_digest_sha256", "expires_at", "approved_action_scope",
+                 "approved_delivery_targets", "repository_url"), ()),
+    "reject": (("mission_id", "revision", "proposal_digest_sha256",
+                "offer_digest_sha256", "expires_at", "approved_action_scope",
+                "approved_delivery_targets", "repository_url"), ()),
+    "request_changes": (("mission_id", "revision", "proposal_digest_sha256",
+                         "offer_digest_sha256", "expires_at", "approved_action_scope",
+                         "approved_delivery_targets", "repository_url", "reason"), ()),
     "withdraw": (("mission_id", "revision", "proposal_digest_sha256"), ()),
     "run": (("command",), ()),
 }
@@ -349,6 +364,16 @@ class PanelRequestHandler(http.server.BaseHTTPRequestHandler):
                 body["repository_url"])
         if name == "check_approval":
             return service.check_approval(groups[0])
+        if name in ("decline", "reject", "request_changes"):
+            offer = (groups[0], body["mission_id"], body["revision"],
+                     body["proposal_digest_sha256"], body["offer_digest_sha256"],
+                     body["expires_at"], body["approved_action_scope"],
+                     body["approved_delivery_targets"], body["repository_url"])
+            if name == "decline":
+                return service.decline(*offer)
+            if name == "reject":
+                return service.reject(*offer)
+            return service.request_changes(*offer, body["reason"])
         if name == "withdraw":
             return service.withdraw(groups[0], body["mission_id"], body["revision"],
                                     body["proposal_digest_sha256"])

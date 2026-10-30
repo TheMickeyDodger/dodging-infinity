@@ -279,24 +279,34 @@ class BRecordTests(unittest.TestCase):
         # wired. The run transitions are now wired deliberately: RUNNING is
         # reachable from AUTHORIZED only, COMPLETED from RUNNING only, the
         # terminal states have no way out, and CLOSED stays unreachable.
+        # INTENTIONAL PIN CHANGE ((c), owner decision on the three non-approval
+        # outcomes): REJECTED (terminal) and CHANGES_REQUESTED (back to
+        # AWAITING_DECISION only by a new revision) are reachable from
+        # AWAITING_DECISION only, as decision transitions. DENIED and the run
+        # transitions are unchanged.
         states = mission_record.MISSION_STATES
         for name in ("AWAITING_DECISION", "AUTHORIZED", "DENIED", "RUNNING",
-                     "BLOCKED", "COMPLETED", "CLOSED", "CANCELLED"):
+                     "BLOCKED", "COMPLETED", "CLOSED", "CANCELLED",
+                     "REJECTED", "CHANGES_REQUESTED"):
             self.assertIn(name, states)
         transitions = mission_record.ALLOWED_TRANSITIONS
         self.assertEqual(set(transitions), set(states))
         self.assertEqual(transitions["AWAITING_DECISION"],
-                         frozenset(("AUTHORIZED", "DENIED")))
+                         frozenset(("AUTHORIZED", "DENIED", "REJECTED",
+                                    "CHANGES_REQUESTED")))
         self.assertEqual(transitions["AUTHORIZED"], frozenset((
             "AWAITING_DECISION", "RUNNING", "BLOCKED", "CANCELLED")))
         self.assertEqual(transitions["DENIED"],
                          frozenset(("AWAITING_DECISION",)))
+        self.assertEqual(transitions["CHANGES_REQUESTED"],
+                         frozenset(("AWAITING_DECISION",)))
         self.assertEqual(transitions["RUNNING"],
                          frozenset(("COMPLETED", "BLOCKED", "CANCELLED")))
-        for terminal in ("BLOCKED", "COMPLETED", "CLOSED", "CANCELLED"):
+        for terminal in ("BLOCKED", "COMPLETED", "CLOSED", "CANCELLED",
+                         "REJECTED"):
             self.assertEqual(transitions[terminal], frozenset())
         self.assertEqual(mission_record.TERMINAL_STATES,
-                         ("BLOCKED", "COMPLETED", "CANCELLED"))
+                         ("BLOCKED", "COMPLETED", "CANCELLED", "REJECTED"))
         targets = set().union(*transitions.values())
         self.assertNotIn("CLOSED", targets)
         self.assertEqual(
@@ -311,8 +321,11 @@ class BRecordTests(unittest.TestCase):
             if (source, target) not in (
                 ("AWAITING_DECISION", "AUTHORIZED"),
                 ("AWAITING_DECISION", "DENIED"),
+                ("AWAITING_DECISION", "REJECTED"),
+                ("AWAITING_DECISION", "CHANGES_REQUESTED"),
                 ("AUTHORIZED", "AWAITING_DECISION"),
-                ("DENIED", "AWAITING_DECISION"))))
+                ("DENIED", "AWAITING_DECISION"),
+                ("CHANGES_REQUESTED", "AWAITING_DECISION"))))
         with self.assertRaises(mission_record.MissionError) as ctx:
             mission_record.validate_transition("AWAITING_DECISION", "RUNNING")
         self.assertEqual(ctx.exception.problem,
@@ -5640,9 +5653,12 @@ class UUnauthenticatedKindIsProposalOnlyTests(ServiceFixture):
         # The withdrawal marker adds no lifecycle state. INTENTIONAL PIN
         # CHANGE (Task 8 increment 2): the reachable set now includes the
         # run states B5 pins; the withdrawal still reaches none of them.
+        # INTENTIONAL PIN CHANGE ((c)): REJECTED and CHANGES_REQUESTED are
+        # reachable by a decision; the withdrawal reaches neither.
         self.assertEqual(mission_record.REACHABLE_STATES,
                          ("AWAITING_DECISION", "AUTHORIZED", "DENIED",
-                          "RUNNING", "BLOCKED", "COMPLETED", "CANCELLED"))
+                          "RUNNING", "BLOCKED", "COMPLETED", "CANCELLED",
+                          "REJECTED", "CHANGES_REQUESTED"))
         again = self.service.withdraw_proposal(mission_id, request_id, self.KEY,
                                                self.unauth)
         self.assertTrue(again["idempotent"])

@@ -146,7 +146,7 @@ const chip = async (ref: string) =>
       };
     });
 
-test('a header-only objective is said plainly and source-qualified; status and team still render and the row stays selectable', async () => {
+test('a header-only objective is headed plainly ("No goal reported"), its source-qualified note kept as secondary detail; status and team still render and the row stays selectable', async () => {
   assert.ok(B_REF);
   await mutateMission(B_REF, {
     objective: { state: 'observed', value: 'OBJECTIVE', reason: null },
@@ -154,8 +154,11 @@ test('a header-only objective is said plainly and source-qualified; status and t
   const c = card(B_REF);
   const objective = c.locator(T('di-mission-objective'));
   assert.equal(await objective.getAttribute('data-goal'), 'none');
+  // CHANGED IN NAMING (a), 2026-10-28 (owner ruling: no source id or state code in a primary label): the card's line is the headline "No goal reported"; the source-qualified note stays as
+  // secondary detail, in the line's tooltip and in full in the inspector (asserted below).
+  assert.equal((await objective.innerText()).trim(), 'No goal reported');
   assert.match(
-    (await objective.innerText()).trim(),
+    (await objective.getAttribute('title')) ?? '',
     /^No goal reported: mc exported only the section header “OBJECTIVE”, not a goal\.$/,
   );
   // Nothing was substituted for the goal: no description, title, ref or role text stands in for it.
@@ -170,11 +173,13 @@ test('a header-only objective is said plainly and source-qualified; status and t
     /^4 of 4 members observed running · 4 terminals busy$/,
   );
   // The picker says the same, honestly, and keeps the source identity.
+  // CHANGED IN THE NAMING REMAINDER, 2026-10-29: the primary words are the headline alone; the short source-qualified ref follows
+  // in parentheses, as it does for every Mission with a goal. EDITED HERE AND NOT RUN (a browser-driven file).
   const option = await p().$eval(
     `${T('di-mission-select')} option[value="${B_REF}"]`,
     (el) => (el as HTMLOptionElement).text,
   );
-  assert.match(option, /^No goal reported: /);
+  assert.match(option, /^No goal reported \(/);
   // Still selectable and inspectable: the inspector shows the export verbatim and the COMPLETE ref.
   await c.locator(T('di-open-inspector-mission')).click();
   await p().waitForSelector('[role="dialog"]');
@@ -186,7 +191,8 @@ test('a header-only objective is said plainly and source-qualified; status and t
   assert.equal(await p().$eval(T('di-mission-qualifier'), (el) => el.textContent), B_REF);
   const dialog = await p().$eval('[role="dialog"]', (el) => (el as HTMLElement).innerText);
   assert.match(dialog, /objective as exported\s+“OBJECTIVE”/);
-  assert.match(dialog, /No goal reported/);
+  // the source-qualified note IN FULL (a bare "No goal reported" would also match the headline)
+  assert.match(dialog, /No goal reported: mc exported only the section header “OBJECTIVE”, not a goal\./);
 });
 
 test('two Missions whose teams share every member name stay two records: selection never swaps them', async () => {
