@@ -326,13 +326,44 @@ class Required6RouteMatrix(HerdrFixture):
         mission = self.by_ref(answer)[self.ref(TASK_N, team.root)]
         self.assertEqual(mission["mission_state"]["state"],
                          v2.MISSION_STATE_NOT_APPLICABLE)
-        self.assertEqual(mission["admitted_artifacts"]["canonical_review"][
-            "state"], v2.REVIEW_NOT_APPLICABLE)
+        review = mission["admitted_artifacts"]["canonical_review"]
+        # The workspace was observed and the task records no review round.
+        self.assertEqual((review["state"], review["problem"]),
+                         (v2.REVIEW_NOT_RECORDED, None))
         self.assertEqual(mission["workflow_phase"]["state"],
                          v2.WORKFLOW_PHASE_NOT_APPLICABLE)
         self.assertEqual(len(mission["members"]), 4)
         self.assertEqual(self.runtime(answer)["counts"][
             "represented_by_teams"], 4)
+        v2.validate_response_v2(answer["response"])
+
+    def test_route_2_under_contract_v2_a_recorded_review_is_admitted(self):
+        team = self.team("w5r", TASK_N)
+        reviews = os.path.join(team.root, ".herd", "state", "reviews")
+        os.makedirs(reviews)
+        path = os.path.join(reviews, "%s-round-01.md" % TASK_N)
+        with open(path, "wb") as handle:
+            handle.write(
+                b"# Reviewer round 1\n\n"
+                b"Reviewer: `reviewer1` / `pod-reviewer1`\n\n"
+                b"Protocol token: `APPROVE`\n\n"
+                b"## Transcript\nTRANSCRIPT-CANARY-NEVER-PROJECTED\n")
+        os.chmod(path, 0o644)
+        self.write(os.path.join(team.root, ".herd", "state"), "task.json", {
+            "version": 1, "id": TASK_N, "status": "ACTIVE",
+            "description": "SYNTHETIC task", "repo": team.root,
+            "started_at": NOW, "review_rounds": 1,
+            "last_review_decision": "APPROVE", "last_review_file": path,
+        })
+        self.register_native(self.herd_registry({"w5r": team.root}))
+        answer = self.answer(self.owner(team.rows, version=2))
+        review = self.by_ref(answer)[self.ref(TASK_N, team.root)][
+            "admitted_artifacts"]["canonical_review"]
+        self.assertEqual(review["state"], v2.REVIEW_ADMITTED)
+        self.assertEqual(review["verdict"], "APPROVE")
+        self.assertEqual(review["record"]["reviewer_logical"], "reviewer1")
+        self.assertNotIn("TRANSCRIPT-CANARY-NEVER-PROJECTED",
+                         json.dumps(review))
         v2.validate_response_v2(answer["response"])
 
     def test_route_1_bootstrap_only_forms_no_team(self):
@@ -2810,6 +2841,33 @@ class ObjectiveExtractionTests(unittest.TestCase):
         self.assertEqual(headings[0], hts._MISSION_OBJECTIVE_HEADING)
         self.assertEqual(set(headings), set(hts._MISSION_SECTION_HEADINGS))
         self.assertEqual(len(hts._MISSION_SECTION_HEADINGS), 5)
+
+
+class HerdrReviewBindingTests(unittest.TestCase):
+    """A plain Herdr task's review is bound to its own task id. A Mission
+    Core claim still wins, and a contested root is not read."""
+
+    def bind(self, expected, contested, task, root="/ws"):
+        return runtime_snapshot.review_expected_task_id(
+            expected, contested, root, task)
+
+    def test_an_unclaimed_root_uses_the_task_records_own_id(self):
+        self.assertEqual(self.bind({}, [], {"id": TASK_N}), TASK_N)
+
+    def test_a_mission_core_claim_wins_over_the_task_record(self):
+        self.assertEqual(
+            self.bind({"/ws": "20261017-150121-bbbbbb"}, [], {"id": TASK_N}),
+            "20261017-150121-bbbbbb")
+
+    def test_a_contested_root_is_not_read(self):
+        self.assertIsNone(self.bind({}, ["/ws"], {"id": TASK_N}))
+
+    def test_without_a_contested_list_an_unclaimed_root_is_not_read(self):
+        self.assertIsNone(self.bind({}, None, {"id": TASK_N}))
+
+    def test_a_task_record_without_an_id_binds_nothing(self):
+        self.assertIsNone(self.bind({}, [], {"status": "ACTIVE"}))
+        self.assertIsNone(self.bind({}, [], None))
 
 
 if __name__ == "__main__":
