@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Herdr Missions use the same Code Diff, review, and Reception the catalog already has (Pixel Agents DI office).** An active Herdr task with a bound workspace is offered a code review of that workspace. A recorded review under `.herd/state` is shown; none recorded stays empty. Reception treats a failed Herdr task as a blocker and a completed task with no approving review as results ready for review. Delivery still names workflow Missions only, and says so. Herdr in the sidebar is the documented `herdctl` terminal path; this office does not start it, commit, push, merge, or deploy. Connections are not in this build. See [`docs/pixel-agents-office.md`](docs/pixel-agents-office.md).
 - **The request workspace matches the side panel (Pixel Agents DI office).** Ask and Requests now read as part of the same product as the side
   panel: its palette, type scale, lines and controls; a compact header with quiet tabs; one persistent context area (never dismissable) instead
   of two tall banners; short You / Assistant labels with the drafting-versus-decision note said once; and counts that name what they count
