@@ -400,6 +400,30 @@ async function offerReview(memberRef: string, taskId: string, listing: string) {
   );
 }
 
+/** A later projection: the drawn member's review is no longer offered (assignment not active). */
+async function withholdReview(memberRef: string, taskId: string) {
+  await p().evaluate(
+    ([ref, task]) =>
+      (
+        window as unknown as {
+          __diHarness: { update: (f: (s: DiOfficeState) => DiOfficeState) => void };
+        }
+      ).__diHarness.update((s) => {
+        for (const m of s.missions.missions)
+          for (const x of m.members.members)
+            if (x.memberRef === ref)
+              x.codeReview = {
+                state: 'unavailable',
+                reason: 'assignment_not_active',
+                taskId: task,
+                listing: null,
+              };
+        return s;
+      }),
+    [memberRef, taskId] as const,
+  );
+}
+
 async function selectDrawnMemberByFind() {
   const { member } = drawnMember;
   assert.notEqual(await tabTo(T('di-find-input')), null);
@@ -678,10 +702,14 @@ test('the dock offers its doorways in view on INITIAL selection at every viewpor
 });
 
 test('the dock offers its doorways in view on INITIAL selection at every viewport: a member whose code review is NOT offered', async () => {
+  // The fixture's first drawn member is a bound, live Herdr task, so the office offers a review.
+  // This case is the dock after a later projection withdraws that offer.
+  const { member } = drawnMember;
   for (const vp of DOCK_VIEWPORTS) {
     await p().setViewportSize(vp);
     await p().goto(url, { waitUntil: 'domcontentloaded' });
     await p().waitForSelector(T('di-office-panel'), { timeout: 30_000 });
+    await withholdReview(member.memberRef, member.taskId.value!);
     await selectDrawnMemberByFind();
     await assertDockDoorways(`${vp.width}x${vp.height} member, review not offered`, [
       'di-open-inspector-selection',

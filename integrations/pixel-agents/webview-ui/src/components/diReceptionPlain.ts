@@ -85,6 +85,14 @@ export const PLAIN_CAUSES: Readonly<Record<string, PlainCause>> = {
     happened: 'The task source reports this Mission complete.',
     why: 'That is a report, not a verification: Mission Core has not verified success, so a person should review it.',
   },
+  herdr_task_failed: {
+    happened: 'The Herdr task record reports a failed status.',
+    why: 'The task did not succeed, so a person should look at what the record reports.',
+  },
+  herdr_task_complete_unreviewed: {
+    happened: 'The Herdr task record is complete and has no approving review yet.',
+    why: 'Finished work with no approving review still needs a person to review it.',
+  },
 };
 
 const GENERIC_WHY = 'The source reports something here that a person should look at.';
