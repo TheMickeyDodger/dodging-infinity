@@ -335,13 +335,15 @@ class VocabularyTests(Contained):
             "unlinked_store_not_registered", "unlinked_store_unavailable",
             "unlinked_reader_failed", "unlinked_no_record",
             "unlinked_ambiguous", "unlinked_sources_incomplete",
-            "unlinked_id_not_addressable"))
-        self.assertEqual(v2.MISSION_LINK_BASES, ("record_mission_binding",))
+            "unlinked_id_not_addressable",
+            "unlinked_repository_not_recorded"))
+        self.assertEqual(v2.MISSION_LINK_BASES, (
+            "record_mission_binding", "record_repository_binding"))
 
     def test_no_basis_names_an_engineering_task_a_receipt_or_a_newest_pick(
             self):
         # the bases iterated are asserted first: a loop over nothing asserts nothing
-        self.assertEqual(len(v2.MISSION_LINK_BASES), 1)
+        self.assertEqual(len(v2.MISSION_LINK_BASES), 2)
         for basis in v2.MISSION_LINK_BASES:
             for word in ("task", "engineering", "receipt", "attest",
                          "newest", "latest"):
@@ -593,6 +595,84 @@ class PresentationsRegressionTests(Contained):
         block = self.block([DOTS, tampered(ID_A, W1, W2)])
         self.assertEqual((block["state"], block["problem"]),
                          ("unavailable", "delivery_store_invalid"))
+
+
+class HerdrRepositoryLinkTests(Contained):
+    """A Herdr task links to the one delivery record whose repository is its
+    workspace origin. Mission Core stays unrecorded. Addressing off keeps the
+    previous Herdr state."""
+
+    def herdr(self):
+        return {"lifecycle": {"model": "herdr.task/1"}, "native_id": "t@k",
+                "mission_ref": "h:t"}
+
+    def link(self, **kwargs):
+        args = {"repository_url": None, "by_repository": {},
+                "repository_holders": {}, "repository_addressable": True}
+        args.update(kwargs)
+        return v2.mission_delivery_link(
+            self.herdr(), None, {}, {}, v2.INSPECTION_COMPLETE, **args)
+
+    def test_a_unique_repository_links_the_herdr_task(self):
+        minted = record(ID_A, None)
+        from target_runtime.workspace_origin import repository_identity
+        key = repository_identity(minted["repository"]["repository_url"])
+        self.assertIsNotNone(key)
+        self.assertEqual(
+            self.link(repository_url=key, by_repository={key: [ID_A]},
+                      repository_holders={key: 1}),
+            {"state": "linked", "delivery_id": ID_A,
+             "basis": "record_repository_binding"})
+
+    def test_the_workspace_origin_matches_that_record(self):
+        minted = record(ID_A, None)
+        url = minted["repository"]["repository_url"]
+        workspace = self.private_dir("repo")
+        os.makedirs(os.path.join(workspace, ".git"))
+        self.write_private(
+            os.path.join(workspace, ".git", "config"),
+            '[remote "origin"]\n\turl = %s.git\n' % url)
+        from target_runtime.workspace_origin import (
+            origin_repository_url, repository_identity)
+        identity = repository_identity(url)
+        self.assertEqual(origin_repository_url(workspace), identity)
+        repos = ms.DeliveryLinksReader(
+            self.store([minted]), lambda: NOW).repositories()
+        self.assertEqual(repos, {identity: [ID_A]})
+
+    def test_no_origin_two_records_and_two_tasks_stay_unlinked(self):
+        self.assertEqual(self.link(), {
+            "state": "unlinked_repository_not_recorded",
+            "delivery_id": None, "basis": None})
+        self.assertEqual(self.link(
+            repository_url="k", by_repository={"k": [ID_A, ID_B]},
+            repository_holders={"k": 1})["state"], "unlinked_ambiguous")
+        self.assertEqual(self.link(
+            repository_url="k", by_repository={"k": [ID_A]},
+            repository_holders={"k": 2})["state"], "unlinked_ambiguous")
+        self.assertEqual(self.link(
+            repository_url="k", by_repository={},
+            repository_holders={"k": 1})["state"], "unlinked_no_record")
+
+    def test_mission_core_is_never_linked_by_repository_addressing(self):
+        self.assertEqual(v2.mission_delivery_link(
+            self.herdr(), None, {}, {}, v2.INSPECTION_COMPLETE), {
+                "state": "unlinked_model_not_recorded",
+                "delivery_id": None, "basis": None})
+        core = {"lifecycle": {"model": contract.LIFECYCLE_MODEL_MISSION_CORE},
+                "native_id": "mn", "mission_ref": "m"}
+        self.assertEqual(v2.mission_delivery_link(
+            core, None, {}, {}, v2.INSPECTION_COMPLETE,
+            repository_url="k", by_repository={"k": [ID_A]},
+            repository_holders={"k": 1}, repository_addressable=True)["state"],
+            "unlinked_model_not_recorded")
+
+    def test_no_store_is_not_registered_once_a_herdr_task_can_be_addressed(self):
+        self.assertEqual(v2.mission_delivery_link(
+            self.herdr(), v2.MISSION_LINK_STORE_NOT_REGISTERED, None, {},
+            v2.INSPECTION_COMPLETE, repository_addressable=True), {
+                "state": "unlinked_store_not_registered",
+                "delivery_id": None, "basis": None})
 
 
 class ContainmentTests(Contained):

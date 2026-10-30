@@ -23,7 +23,7 @@ import type {
 import { DI_RUNTIME_AGENTS_MAX_UNVERIFIED } from '../constants.js';
 import type { MissionDeliveryLinkView, UnreportedFact, WorkflowPhaseView } from './catalogProjection.js';
 import type { ReviewOffer } from './codeReview.js';
-import { missionReviewOfferFor, reviewOfferFor } from './codeReview.js';
+import { herdrWorkspaceReviewOffer, missionReviewOfferFor, reviewOfferFor } from './codeReview.js';
 import type {
   MemberPresentation,
   MissionPresentation,
@@ -295,7 +295,10 @@ function chainObservation(view: OfficeView): DiChainObservation {
 }
 
 function missionOffer(m: MissionPresentation): DiCodeReviewOffer {
-  const offer = missionReviewOfferFor(m);
+  const offer =
+    m.sourceKind === 'herdr_task' && m.standing === 'active'
+      ? herdrWorkspaceReviewOffer(m)
+      : missionReviewOfferFor(m);
   return { state: offer.state, reason: offer.reason, taskId: offer.taskId, listing: offer.listing };
 }
 

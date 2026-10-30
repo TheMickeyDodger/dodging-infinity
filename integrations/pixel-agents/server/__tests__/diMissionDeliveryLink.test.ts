@@ -113,8 +113,9 @@ describe('the closed vocabulary is the producer\'s, by exact value', () => {
       'unlinked_ambiguous',
       'unlinked_sources_incomplete',
       'unlinked_id_not_addressable',
+      'unlinked_repository_not_recorded',
     ]);
-    expect([...MISSION_DELIVERY_LINK_BASES]).toEqual(['record_mission_binding']);
+    expect([...MISSION_DELIVERY_LINK_BASES]).toEqual(['record_mission_binding', 'record_repository_binding']);
     expect(MISSION_DELIVERY_ID.test(ID)).toBe(true);
     for (const bad of ['prd-' + 'A'.repeat(24), 'prd-' + '0'.repeat(23), 'prd-' + '0'.repeat(25), ID + '\n', 'legacy-0001']) {
       expect(MISSION_DELIVERY_ID.test(bad), bad).toBe(false);
@@ -162,9 +163,9 @@ describe('as the producer declares it, in the view and on the wire', () => {
   });
 
   it('every unlinked workflow state is relayed as declared, with no id and no basis', () => {
-    expect(MISSION_DELIVERY_LINK_STATES.length).toBe(9);
+    expect(MISSION_DELIVERY_LINK_STATES.length).toBe(10);
     for (const state of MISSION_DELIVERY_LINK_STATES) {
-      if (state === 'linked' || state === 'unlinked_model_not_recorded') continue;
+      if (state === 'linked' || state === 'unlinked_model_not_recorded' || state === 'unlinked_repository_not_recorded') continue;
       const w = wire((raw) => declareLinks(raw, unlinkedRaw(state)));
       expect(v2Of(w[WF]!).deliveryLink, state).toEqual({ state, deliveryId: null, basis: null });
     }
@@ -195,6 +196,14 @@ describe('STRICT when present: the projector refuses what the producer\'s rule f
     ['not an object', (raw) => declareLinks(raw, 'linked')],
     ['a workflow Mission said to be of an unrecorded model', (raw) => declareLinks(raw, NOT_RECORDED)],
     [
+      'a workflow Mission linked by repository',
+      (raw) => declareLinks(raw, { state: 'linked', delivery_id: ID, basis: 'record_repository_binding' }),
+    ],
+    [
+      'a workflow Mission whose origin was not read',
+      (raw) => declareLinks(raw, unlinkedRaw('unlinked_repository_not_recorded')),
+    ],
+    [
       'a Mission Core Mission linked',
       (raw) => {
         declareLinks(raw, unlinkedRaw('unlinked_no_record'));
@@ -213,6 +222,21 @@ describe('STRICT when present: the projector refuses what the producer\'s rule f
   it('the rule\'s own shapes project (the positive control)', () => {
     expect(projected((raw) => declareLinks(raw, linkedRaw(ID))).ok).toBe(true);
     expect(projected((raw) => declareLinks(raw, unlinkedRaw('unlinked_ambiguous'))).ok).toBe(true);
+  });
+
+  it('a Herdr task linked by its workspace repository projects that basis', () => {
+    const v = views((raw) => {
+      const mission = missionRaw(raw, CORE);
+      (mission.lifecycle as { model: string }).model = 'herdr.task/1';
+      mission.delivery_link = { state: 'linked', delivery_id: ID, basis: 'record_repository_binding' };
+      missionRaw(raw, CORE_OTHER).delivery_link = NOT_RECORDED;
+      missionRaw(raw, WF).delivery_link = linkedRaw(ID);
+    });
+    expect(v[CORE]!.v2!.deliveryLink).toEqual({
+      state: 'linked',
+      deliveryId: ID,
+      basis: 'record_repository_binding',
+    });
   });
 
   for (const [name, edit] of refusals) {

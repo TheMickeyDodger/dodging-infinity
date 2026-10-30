@@ -3577,14 +3577,17 @@ components:
       description: |
         Which ONE delivery record, if any, the catalog's registered delivery store links to
         this Mission (`missions[].delivery_link`, contract v2), as the producer DECLARES it,
-        with the rule that linked it. Only a workflow_authority Mission can be linked, and only
-        by the one valid delivery record whose own Mission binding names its workflow id.
-        Mission Core, and every other kind of Mission, is never linked: no delivery record
-        names such a Mission, so its link is not known (never "none"). `deliveryId` is set
-        exactly when `state` is `linked`: one id, of the shape a delivery ceremony mints, never
-        a list or a count. `basis` names the rule that linked it, and is null otherwise.
-        A link selects which delivery's status may be read; it authorizes nothing, and the
-        catalog's store is not shown to be the store the office delivery adapter reads.
+        with the rule that linked it. A workflow_authority Mission is linked by the one valid
+        delivery record whose own Mission binding names its workflow id
+        (`record_mission_binding`). A Herdr task is linked when its workspace origin matches
+        one delivery record's repository (`record_repository_binding`). Mission Core is never
+        linked: no delivery record names one, so its link is not known (never "none").
+        `deliveryId` is set exactly when `state` is `linked`: one id, of the shape a delivery
+        ceremony mints, never a list or a count. `basis` names the rule that linked it, and is
+        null otherwise. A link selects which delivery's status may be read; it authorizes nothing,
+        and the catalog's store is not shown to be the store the office delivery
+        adapter reads. Commit, push and opening a pull request still require that adapter's
+        confirmation.
       type: object
       additionalProperties: false
       required: [state, deliveryId, basis]
@@ -3605,8 +3608,9 @@ components:
         - linked: exactly one valid delivery record in the catalog's registered store names
           this workflow Mission, no other registered Mission holds its id, and every workflow
           source was read.
-        - unlinked_model_not_recorded: not known; delivery records name only workflow Missions,
-          so no delivery can be linked to a Mission of this kind (Mission Core is one).
+        - unlinked_model_not_recorded: not known; delivery records do not name this kind of
+          Mission (Mission Core is one). A Herdr task may still carry this when the catalog
+          did not address repositories.
         - unlinked_store_not_registered: not known; no delivery store is registered with the
           catalog.
         - unlinked_store_unavailable: not known; the registered store could not be read, or a
@@ -3619,6 +3623,8 @@ components:
           Mission's id is not known to be unique.
         - unlinked_id_not_addressable: the one matching record's delivery id is not of the shape
           a ceremony mints, so it cannot be addressed.
+        - unlinked_repository_not_recorded: a Herdr task whose workspace origin was not read,
+          so no delivery is linked. Not "no record".
       type: string
       enum:
         [
@@ -3631,15 +3637,18 @@ components:
           unlinked_ambiguous,
           unlinked_sources_incomplete,
           unlinked_id_not_addressable,
+          unlinked_repository_not_recorded,
         ]
 
     DiMissionDeliveryLinkBasis:
       description: |
-        The rule that linked a Mission to its delivery: record_mission_binding, the delivery
-        record's own sealed Mission binding naming the Mission's workflow id. It is never an
-        engineering task id, an attested receipt or a newest pick.
+        The rule that linked a Mission to its delivery. record_mission_binding: the delivery
+        record's own sealed Mission binding naming the Mission's workflow id.
+        record_repository_binding: the Herdr task's workspace origin matches one delivery
+        record's repository. Neither is an engineering task id, an attested receipt or a
+        newest pick.
       type: string
-      enum: [record_mission_binding]
+      enum: [record_mission_binding, record_repository_binding]
 
     # ── Client message variants ────────────────────────────────────
 

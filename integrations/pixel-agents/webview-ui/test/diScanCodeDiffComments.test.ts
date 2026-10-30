@@ -120,8 +120,8 @@ describe('X2/X3: Comments in Free is a full-width thread and a Paid/unavailable 
     expect(view).not.toMatch(/<textarea|<input|contenteditable|>Send</);
     expect(view).not.toMatch(/Upgrade|Buy|Checkout|Subscribe|Try Paid/i);
   });
-  it('a real Free Mission shows ONLY the Paid/unavailable label: no thread, no sample, no claim about its history (B-H1)', () => {
-    const html = stage(render('comments', productionRow('real', {}), false));
+  it('a real Free Mission that is not a Herdr task shows ONLY the Paid/unavailable label', () => {
+    const html = stage(render('comments', productionRow('real', { sourceKind: 'mission_core' }), false));
     expect(html).not.toContain('data-testid="di-scan-thread"');
     expect(html).not.toContain('fixture');
     expect(html).not.toMatch(/No comments|no comments/);
@@ -129,12 +129,53 @@ describe('X2/X3: Comments in Free is a full-width thread and a Paid/unavailable 
       'Comments are part of Paid team sharing. They are not available in Free.',
     );
   });
+  it('a Herdr task shows its recorded review as comments, and no layout-preview or Paid label', () => {
+    const absent = stage(render('comments', productionRow('real', {}), false));
+    expect(absent).toContain('Review comments are not reported for this Herdr task.');
+    expect(absent).not.toContain('Layout preview');
+    expect(absent).not.toContain('data-testid="di-scan-comments-paid"');
+    expect(absent).not.toMatch(/No comments|no comments/);
+    const recorded = stage(
+      render(
+        'comments',
+        productionRow('real', {
+          evidence: {
+            reviews: {
+              state: 'observed',
+              reason: null,
+              total: 1,
+              items: [
+                {
+                  findings: { state: 'not_recorded', problem: 'findings_legacy_record_predates_field', count: null, items: [], candidateSha256: null, routedAt: null, provenance: null },
+                  round: 4,
+                  reviewerLogical: 'reviewer1',
+                  reviewerAgent: 'pod',
+                  protocolToken: 'APPROVE',
+                  gate: 'parsed',
+                  verdict: 'APPROVE',
+                  currency: 'current',
+                  integrity: 'linkage_corroborated',
+                  candidateApplicability: 'unproven',
+                },
+              ],
+            },
+          },
+        }),
+        false,
+      ),
+    );
+    expect(recorded).toContain('reviewer1');
+    expect(recorded).toContain('APPROVE');
+    expect(recorded).toContain('Round 4');
+    expect(recorded).not.toContain('Layout preview');
+    expect(recorded).not.toContain('data-testid="di-scan-comments-paid"');
+  });
 });
 
 describe('C3/C4 truthfulness (B-H1): an unread diff is said as unread, never as zero; files carry no folder chevron', () => {
   it('a Mission whose diff is not read says so, and draws no status bar, branch or count for it', () => {
     const html = stage(render('diff', productionRow('real', {}), false));
-    expect(html).toContain('This Mission’s code diff is not read in this layout preview.');
+    expect(html).toContain('This office has not said whether a code review is offered for this Mission.');
     expect(html).not.toContain('di-scan-statusbar');
     expect(html).not.toMatch(/0 files changed|\+0|−0|>main<|Diff not recorded/);
   });

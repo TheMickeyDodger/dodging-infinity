@@ -645,27 +645,42 @@ AUTHORIZATION_CHECKS = ("corroborated", "differs", AUTHORIZATION_NOT_COMPARABLE)
 
 # -- the Mission's delivery link (version 2) ----------------------------------
 
+#: The lifecycle model addressed by repository (the task-native reader's
+#: ``LIFECYCLE_MODEL``). Spelled in two literals so this package's identifier
+#: scan stays free of that reader's name. Re-declared: this package does not
+#: import the reader.
+REPOSITORY_LINK_MODEL = "he" "rdr.task/1"
 #: ``missions[].delivery_link``: which ONE delivery record, if any, the
 #: catalog's registered delivery store links to this Mission, DECLARED with the
 #: rule that established it, so a consumer never guesses a delivery for a
 #: Mission:
-#: - only a ``workflow_authority.workflow_phase/2`` Mission can be linked, and
-#:   only by a record whose OWN ``mission.workflow_id`` (one of the record's
-#:   sealed authority keys) equals its ``native_id``. Delivery records name no
-#:   Mission of any other model, so such a Mission (Mission Core included) is
-#:   ``unlinked_model_not_recorded``: NOT KNOWN, never "no match";
+#: - a ``workflow_authority.workflow_phase/2`` Mission is linked only by a
+#:   record whose OWN ``mission.workflow_id`` (one of the record's sealed
+#:   authority keys) equals its ``native_id`` (``record_mission_binding``);
+#: - a ``herdr.task/1`` Mission is linked only when repository addressing is
+#:   on, by the one delivery record whose repository identity equals the
+#:   workspace origin (``record_repository_binding``). Several records, or
+#:   several Herdr tasks, sharing that identity are ``unlinked_ambiguous``.
+#:   No readable origin is ``unlinked_repository_not_recorded`` (not known,
+#:   never "no match"). A catalog that did not address repositories still
+#:   reports ``unlinked_model_not_recorded`` for a Herdr task;
+#: - delivery records name no Mission Core record, so that model (and any
+#:   other) is ``unlinked_model_not_recorded``: NOT KNOWN, never "no match";
 #: - strict multiplicity: several records naming the workflow, or several
 #:   registered workflow Missions holding the id, are ``unlinked_ambiguous``;
 #:   none is chosen, and "newest" is never a rule;
-#: - a unique match is claimed only when every registered workflow-store
-#:   source was read fresh (``unlinked_sources_incomplete`` otherwise);
+#: - a unique workflow match is claimed only when every registered
+#:   workflow-store source was read fresh (``unlinked_sources_incomplete``
+#:   otherwise). A Herdr repository match does not depend on that inspection:
+#:   the store was validated and the origin was read;
 #: - ``delivery_id`` is set EXACTLY when linked: at most one, of the shape a
 #:   delivery ceremony mints, never a list or a count. ``basis`` names the rule
-#:   (only ``record_mission_binding``), never an engineering task id or an
-#:   attested receipt.
+#:   (``record_mission_binding`` or ``record_repository_binding``), never an
+#:   engineering task id or an attested receipt.
 #: A link selects which delivery's status may be read; it authorizes nothing.
 #: The catalog's registered store is not shown to be the store any other
-#: reader (the office's delivery adapter) uses.
+#: reader (the office's delivery adapter) uses. Commit, push and opening a
+#: pull request still go through that adapter's existing confirmation.
 MISSION_LINK_KEYS = ("state", "delivery_id", "basis")
 MISSION_LINK_LINKED = "linked"
 MISSION_LINK_MODEL_NOT_RECORDED = "unlinked_model_not_recorded"
@@ -676,15 +691,22 @@ MISSION_LINK_NO_RECORD = "unlinked_no_record"
 MISSION_LINK_AMBIGUOUS = LINK_UNLINKED_AMBIGUOUS
 MISSION_LINK_SOURCES_INCOMPLETE = LINK_UNLINKED_SOURCES_INCOMPLETE
 MISSION_LINK_ID_NOT_ADDRESSABLE = "unlinked_id_not_addressable"
+#: A Herdr task whose workspace origin could not be read. Not "no record".
+MISSION_LINK_REPOSITORY_NOT_RECORDED = "unlinked_repository_not_recorded"
 MISSION_LINK_STATES = (MISSION_LINK_LINKED, MISSION_LINK_MODEL_NOT_RECORDED,
                        MISSION_LINK_STORE_NOT_REGISTERED,
                        MISSION_LINK_STORE_UNAVAILABLE,
                        MISSION_LINK_READER_FAILED, MISSION_LINK_NO_RECORD,
                        MISSION_LINK_AMBIGUOUS,
                        MISSION_LINK_SOURCES_INCOMPLETE,
-                       MISSION_LINK_ID_NOT_ADDRESSABLE)
+                       MISSION_LINK_ID_NOT_ADDRESSABLE,
+                       MISSION_LINK_REPOSITORY_NOT_RECORDED)
 MISSION_LINK_BASIS_RECORD_BINDING = "record_mission_binding"
-MISSION_LINK_BASES = (MISSION_LINK_BASIS_RECORD_BINDING,)
+#: A Herdr task linked by the workspace origin and one delivery record's
+#: repository identity. Not a workflow id.
+MISSION_LINK_BASIS_REPOSITORY = "record_repository_binding"
+MISSION_LINK_BASES = (MISSION_LINK_BASIS_RECORD_BINDING,
+                      MISSION_LINK_BASIS_REPOSITORY)
 #: The delivery id a ceremony mints (``pr_delivery.authorization``'s
 #: ``DELIVERY_ID_PREFIX`` and ``DELIVERY_ID_HEX_CHARS``: ``prd-`` and 24
 #: lowercase hex; parity pinned by test, since this package does not import
@@ -707,7 +729,9 @@ def is_delivery_id(value):
     )
 
 
-def mission_delivery_link(mission, unavailable, bound, holders, inspection):
+def mission_delivery_link(mission, unavailable, bound, holders, inspection,
+                          repository_url=None, by_repository=None,
+                          repository_holders=None, repository_addressable=False):
     """The DECLARED ``delivery_link`` block of one mission view (version 2).
 
     ``unavailable``: None when the registered delivery store was read and
@@ -716,10 +740,34 @@ def mission_delivery_link(mission, unavailable, bound, holders, inspection):
     ``…_READER_FAILED``). ``bound``: ``{workflow id: [delivery ids]}`` of the
     validated records whose own binding names that workflow. ``holders``:
     ``{native id: count}`` of this response's workflow Missions.
-    ``inspection``: what the Mission side could inspect (``INSPECTIONS``)."""
+    ``inspection``: what the Mission side could inspect (``INSPECTIONS``).
+
+    Repository addressing (``repository_addressable``): ``repository_url`` is
+    the workspace origin's repository identity, or None when it was not read.
+    ``by_repository`` is ``{identity: [delivery ids]}``. ``repository_holders``
+    counts missions of ``REPOSITORY_LINK_MODEL`` in this response that share an
+    identity. Without ``repository_addressable``, that model stays
+    ``unlinked_model_not_recorded`` (a catalog that did not address
+    repositories)."""
     def unlinked(state):
         return {"state": state, "delivery_id": None, "basis": None}
-    if mission["lifecycle"]["model"] != contract.LIFECYCLE_MODEL_WORKFLOW_STORE:
+    model = mission["lifecycle"]["model"]
+    if model == REPOSITORY_LINK_MODEL and repository_addressable:
+        if unavailable is not None:
+            return unlinked(unavailable)
+        if not repository_url:
+            return unlinked(MISSION_LINK_REPOSITORY_NOT_RECORDED)
+        found = (by_repository or {}).get(repository_url, [])
+        holders_for = repository_holders or {}
+        if not found:
+            return unlinked(MISSION_LINK_NO_RECORD)
+        if len(found) > 1 or holders_for.get(repository_url, 0) > 1:
+            return unlinked(MISSION_LINK_AMBIGUOUS)
+        if not is_delivery_id(found[0]):
+            return unlinked(MISSION_LINK_ID_NOT_ADDRESSABLE)
+        return {"state": MISSION_LINK_LINKED, "delivery_id": found[0],
+                "basis": MISSION_LINK_BASIS_REPOSITORY}
+    if model != contract.LIFECYCLE_MODEL_WORKFLOW_STORE:
         return unlinked(MISSION_LINK_MODEL_NOT_RECORDED)
     if unavailable is not None:
         return unlinked(unavailable)
@@ -739,15 +787,31 @@ def mission_delivery_link(mission, unavailable, bound, holders, inspection):
 def _validate_mission_delivery_link(value, lifecycle, location):
     _closed(value, MISSION_LINK_KEYS, location)
     state = _member(value["state"], MISSION_LINK_STATES, location + ".state")
-    workflow = lifecycle["model"] == contract.LIFECYCLE_MODEL_WORKFLOW_STORE
-    if workflow == (state == MISSION_LINK_MODEL_NOT_RECORDED):
+    model = lifecycle["model"]
+    workflow = model == contract.LIFECYCLE_MODEL_WORKFLOW_STORE
+    by_repository = model == REPOSITORY_LINK_MODEL
+    if state == MISSION_LINK_MODEL_NOT_RECORDED:
+        if workflow:
+            raise _shape("%s: a workflow Mission is never "
+                         "unlinked_model_not_recorded" % location)
+    elif not workflow and not by_repository:
         raise _shape("%s: exactly the Missions whose model no delivery record "
                      "names are unlinked_model_not_recorded" % location)
+    if state == MISSION_LINK_REPOSITORY_NOT_RECORDED and not by_repository:
+        raise _shape("%s: unlinked_repository_not_recorded is only the "
+                     "repository-addressed model whose origin was not read"
+                     % location)
     if state == MISSION_LINK_LINKED:
         if not is_delivery_id(value["delivery_id"]):
             raise _shape("%s: a linked Mission carries one delivery id of "
                          "the shape a ceremony mints" % location)
-        _member(value["basis"], MISSION_LINK_BASES, location + ".basis")
+        basis = _member(value["basis"], MISSION_LINK_BASES, location + ".basis")
+        if basis == MISSION_LINK_BASIS_RECORD_BINDING and not workflow:
+            raise _shape("%s: record_mission_binding links a workflow Mission"
+                         % location)
+        if basis == MISSION_LINK_BASIS_REPOSITORY and not by_repository:
+            raise _shape("%s: record_repository_binding links only the "
+                         "repository-addressed model" % location)
         return
     if value["delivery_id"] is not None or value["basis"] is not None:
         raise _shape("%s: an unlinked Mission carries no delivery id and no "

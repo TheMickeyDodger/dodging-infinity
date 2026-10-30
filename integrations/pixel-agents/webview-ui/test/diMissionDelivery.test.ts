@@ -50,7 +50,7 @@ const LINKED_WORDS =
   'Linked by the delivery record’s own Mission binding. A link names which delivery is read here; it authorizes nothing.';
 const WORDS: Record<string, string> = {
   unlinked_model_not_recorded:
-    'Not known: delivery records name only workflow Missions, so no delivery is linked to a Mission of this kind.',
+    'Not known: delivery records do not name a Mission of this kind, so no delivery is linked.',
   unlinked_store_not_registered: 'Not known: the catalog has no delivery store registered.',
   unlinked_store_unavailable:
     'Not known: the catalog’s delivery store could not be read, or a record in it did not validate.',
@@ -62,6 +62,8 @@ const WORDS: Record<string, string> = {
     'Not known: a workflow source was not read, so this Mission’s id is not known to be unique.',
   unlinked_id_not_addressable:
     'The one record that names this Mission has a delivery id of a shape this office cannot address.',
+  unlinked_repository_not_recorded:
+    'This Herdr task’s workspace has no origin URL this office could read, so no delivery is linked.',
 };
 const NOT_REPORTED =
   'Not known: this office’s catalog does not report a delivery link for this Mission.';
@@ -313,6 +315,25 @@ describe("the row carries the producer's link, in words", () => {
     });
   });
 
+  it('a Herdr task linked by repository names that rule, and the layout-preview lock is gone', () => {
+    const row = rows({
+      state: 'linked',
+      deliveryId: ID,
+      basis: 'record_repository_binding',
+    }).find((item) => item.id === HERD)!;
+    expect(row.deliveryLink).toEqual({
+      kind: 'linked',
+      deliveryId: ID,
+      words: 'Linked because this workspace’s origin matches one delivery record’s repository. A link names which delivery is read here; it authorizes nothing.',
+    });
+    const d = section(render(row, control(LINKED_START())));
+    expect(d).toContain('data-testid="di-scan-delivery-read"');
+    expect(d).toContain('workspace’s origin');
+    expect(d).not.toContain('Layout preview');
+    expect(d).not.toContain('delivery records name only workflow');
+    expect(d).not.toContain('This Herdr task has no delivery to commit');
+  });
+
   it('every unlinked state is its own reason; Mission Core is not known', () => {
     for (const [state, words] of Object.entries(WORDS)) {
       const r =
@@ -511,34 +532,26 @@ describe('Delivery under Swarm, NOT linked: the reason, and nothing to read or c
     }
   });
 
-  it('its steps stay locked; a Herdr task says why delivery does not apply, and Mission Core keeps the unread wording', () => {
-    const HERDR_STEP =
-      'Delivery records name only workflow Missions. This Herdr task has no delivery to commit, push, or open from here.';
-    for (const [name, row, session] of cases()) {
+  it('its steps stay locked with the catalog reason; a Herdr task is not locked only because it is a Herdr task', () => {
+    for (const [name, row, session, words] of cases()) {
       const d = section(render(row, session));
       expect(
         stepsOf(d).map((s) => s.gate),
         name,
       ).toEqual(['locked', 'locked', 'locked', 'locked']);
-      const herdr = row.sourceKind === 'herdr_task' && row.deliveryLink?.kind !== 'linked';
       const linkedWords =
         row.deliveryLink && row.deliveryLink.kind !== 'linked' ? row.deliveryLink.words : null;
       for (const s of stepsOf(d)) {
         expect(text(s.body), `${name} ${s.id}`).toContain(
-          herdr
-            ? HERDR_STEP
-            : (linkedWords ?? 'Delivery state is not read in this layout preview.'),
+          linkedWords ?? 'Delivery state is not read in this layout preview.',
         );
       }
-      if (linkedWords !== null) {
-        expect(d, name).not.toContain('Delivery state is not read in this layout preview.');
-      }
-      if (herdr) {
+      if (row.sourceKind === 'herdr_task' && row.deliveryLink?.kind !== 'linked') {
         expect(d, name).not.toContain('Layout preview');
         expect(d, name).not.toContain('Delivery state is not read in this layout preview.');
-        expect(d, name).toContain(
-          'The office does not commit, push, or open a pull request for a Herdr task.',
-        );
+        expect(d, name).not.toContain('delivery records name only workflow Missions');
+        expect(d, name).not.toContain('This Herdr task has no delivery to commit');
+        expect(text(d), name).toContain(words);
       }
     }
   });

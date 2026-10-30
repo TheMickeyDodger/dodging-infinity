@@ -312,7 +312,7 @@ describe('empty, not reported, unsupported, stale, refused and unavailable never
     });
     expect(lib.contentReads).toEqual({
       state: 'unavailable',
-      reason: 'herdr_task_has_no_artifact_bodies',
+      reason: 'artifact_bodies_not_recorded',
     });
   });
 
