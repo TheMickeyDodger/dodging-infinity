@@ -61,6 +61,14 @@ const DIGEST_CLAUSE = /\(\s*revision\s+\d+\s*,\s*proposal digest\s+[0-9a-f]+\s*\
 /** The fixed sentence that follows the handoff prefix. It names no goal. */
 const HANDOFF_LEAD = /^This is the approved Mission content only\b[\s\S]*?(?:\.\s*|$)/i;
 const LONG_HEX = /[0-9a-f]{16,}/i;
+const HANDOFF_LEAD_TEXT = 'this is the approved mission content only';
+/** A cut-off start of the handoff's fixed sentence ("This is …", "This is the appr…"): never a title. */
+function truncatedHandoffLead(text: string): boolean {
+  const m = /^(.*?)\s*(?:…|\.\.\.)\s*$/su.exec(text.trim());
+  if (!m) return false;
+  const head = m[1].replace(/\s+/g, ' ').trim().toLowerCase();
+  return head.length >= 4 && HANDOFF_LEAD_TEXT.startsWith(head);
+}
 const OBJECTIVE_SECTION =
   /(?:^|\n)\s*OBJECTIVE\s*\n+([\s\S]*?)(?=\n\s*(?:TARGET CONTEXT|REQUESTED SCOPE|APPROVED ACTION SCOPE|APPROVED DELIVERY TARGETS|DELIVERY)\b|$)/i;
 
@@ -75,7 +83,8 @@ function stripBoilerplate(line: string): string {
 
 /** Drop the authorization prefix, the digest clause, and the handoff's fixed sentence. */
 function stripAuthority(line: string): string {
-  return stripBoilerplate(line).replace(DIGEST_CLAUSE, ' ').replace(HANDOFF_LEAD, '').replace(/\s{2,}/g, ' ').trim();
+  const rest = stripBoilerplate(line).replace(DIGEST_CLAUSE, ' ').replace(HANDOFF_LEAD, '').replace(/\s{2,}/g, ' ').trim();
+  return truncatedHandoffLead(rest) ? '' : rest;
 }
 
 function usableTitle(sentence: string): boolean {
@@ -83,6 +92,7 @@ function usableTitle(sentence: string): boolean {
   if (LONG_HEX.test(sentence)) return false;
   if (/proposal digest/i.test(sentence)) return false;
   if (/^this is the approved mission content only/i.test(sentence)) return false;
+  if (truncatedHandoffLead(sentence)) return false;
   return true;
 }
 
