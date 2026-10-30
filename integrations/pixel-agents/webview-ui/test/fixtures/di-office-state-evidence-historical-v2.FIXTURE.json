@@ -382,17 +382,17 @@
               },
               "contentReads": {
                 "state": "unavailable",
-                "reason": "source_kind_has_no_artifact_content"
+                "reason": "herdr_task_has_no_artifact_bodies"
               },
               "artifacts": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               },
               "verification": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               },
@@ -403,8 +403,8 @@
                 "items": []
               },
               "receipts": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               }
@@ -1174,21 +1174,15 @@
             "label": "Authorization / reauthorization",
             "statement": "A Mission Core Mission awaiting a human decision (its own pending_decisions fact), or a workflow-authority workflow whose DECLARED phase is NEEDS_REAUTHORIZATION. The two models stay separate: Mission Core has no workflow phase, and nothing about one is read into the other. The display-only lifecycle state is never decided on.",
             "backing": "contract v2: mission_state.report.pending_decisions (awaiting_decision, revision, live_authorization, next_permitted_step), Mission Core records; contract v2: the declared missions[].workflow_phase, workflow_authority.workflow_phase/2 records",
-            "outcome": "partial",
+            "outcome": "known_empty",
             "reason": null,
             "counts": {
               "present": 0,
-              "knownEmpty": 1,
-              "unsupported": 1,
+              "knownEmpty": 2,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "pending_decisions:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 0
           },
           {
@@ -1200,17 +1194,11 @@
             "reason": null,
             "counts": {
               "present": 1,
-              "knownEmpty": 0,
-              "unsupported": 1,
+              "knownEmpty": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "completion:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 1
           },
           {
@@ -1222,17 +1210,11 @@
             "reason": null,
             "counts": {
               "present": 1,
-              "knownEmpty": 0,
-              "unsupported": 1,
+              "knownEmpty": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "completion:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 1
           },
           {
@@ -1998,17 +1980,17 @@
               },
               "contentReads": {
                 "state": "unavailable",
-                "reason": "source_kind_has_no_artifact_content"
+                "reason": "herdr_task_has_no_artifact_bodies"
               },
               "artifacts": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               },
               "verification": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               },
@@ -2019,8 +2001,8 @@
                 "items": []
               },
               "receipts": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               }
@@ -2790,21 +2772,15 @@
             "label": "Authorization / reauthorization",
             "statement": "A Mission Core Mission awaiting a human decision (its own pending_decisions fact), or a workflow-authority workflow whose DECLARED phase is NEEDS_REAUTHORIZATION. The two models stay separate: Mission Core has no workflow phase, and nothing about one is read into the other. The display-only lifecycle state is never decided on.",
             "backing": "contract v2: mission_state.report.pending_decisions (awaiting_decision, revision, live_authorization, next_permitted_step), Mission Core records; contract v2: the declared missions[].workflow_phase, workflow_authority.workflow_phase/2 records",
-            "outcome": "partial",
+            "outcome": "known_empty",
             "reason": null,
             "counts": {
               "present": 0,
-              "knownEmpty": 1,
-              "unsupported": 1,
+              "knownEmpty": 2,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "pending_decisions:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 0
           },
           {
@@ -2816,17 +2792,11 @@
             "reason": null,
             "counts": {
               "present": 1,
-              "knownEmpty": 0,
-              "unsupported": 1,
+              "knownEmpty": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "completion:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 1
           },
           {
@@ -2838,17 +2808,11 @@
             "reason": null,
             "counts": {
               "present": 1,
-              "knownEmpty": 0,
-              "unsupported": 1,
+              "knownEmpty": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "completion:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 1
           },
           {
@@ -3614,17 +3578,17 @@
               },
               "contentReads": {
                 "state": "unavailable",
-                "reason": "source_kind_has_no_artifact_content"
+                "reason": "herdr_task_has_no_artifact_bodies"
               },
               "artifacts": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               },
               "verification": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               },
@@ -3635,8 +3599,8 @@
                 "items": []
               },
               "receipts": {
-                "state": "not_applicable",
-                "reason": "source_kind_has_no_mission_core_evidence",
+                "state": "not_recorded",
+                "reason": null,
                 "total": null,
                 "items": []
               }
@@ -4406,21 +4370,15 @@
             "label": "Authorization / reauthorization",
             "statement": "A Mission Core Mission awaiting a human decision (its own pending_decisions fact), or a workflow-authority workflow whose DECLARED phase is NEEDS_REAUTHORIZATION. The two models stay separate: Mission Core has no workflow phase, and nothing about one is read into the other. The display-only lifecycle state is never decided on.",
             "backing": "contract v2: mission_state.report.pending_decisions (awaiting_decision, revision, live_authorization, next_permitted_step), Mission Core records; contract v2: the declared missions[].workflow_phase, workflow_authority.workflow_phase/2 records",
-            "outcome": "partial",
-            "reason": null,
+            "outcome": "unavailable",
+            "reason": "envelope_not_fresh:expired_locally:response_expired",
             "counts": {
               "present": 0,
-              "knownEmpty": 1,
-              "unsupported": 1,
+              "knownEmpty": 2,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "pending_decisions:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 0
           },
           {
@@ -4432,17 +4390,11 @@
             "reason": null,
             "counts": {
               "present": 1,
-              "knownEmpty": 0,
-              "unsupported": 1,
+              "knownEmpty": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "completion:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 1
           },
           {
@@ -4454,17 +4406,11 @@
             "reason": null,
             "counts": {
               "present": 1,
-              "knownEmpty": 0,
-              "unsupported": 1,
+              "knownEmpty": 1,
+              "unsupported": 0,
               "unavailable": 0
             },
-            "gaps": [
-              {
-                "outcome": "unsupported",
-                "reason": "completion:source_kind_has_no_mission_state",
-                "missions": 1
-              }
-            ],
+            "gaps": [],
             "entriesTotal": 1
           },
           {

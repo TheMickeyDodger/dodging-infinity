@@ -382,17 +382,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -403,8 +403,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -751,17 +751,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -772,8 +772,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -1118,17 +1118,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -1139,8 +1139,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -1485,17 +1485,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -1506,8 +1506,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -1852,17 +1852,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -1873,8 +1873,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -2219,17 +2219,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -2240,8 +2240,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -2586,17 +2586,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -2607,8 +2607,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -2953,17 +2953,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -2974,8 +2974,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -3320,17 +3320,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -3341,8 +3341,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -3687,17 +3687,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -3708,8 +3708,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -4055,17 +4055,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -4076,8 +4076,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -4422,17 +4422,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -4443,8 +4443,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -4789,17 +4789,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -4810,8 +4810,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -5156,17 +5156,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -5177,8 +5177,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -5523,17 +5523,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -5544,8 +5544,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -5890,17 +5890,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -5911,8 +5911,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -6257,17 +6257,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -6278,8 +6278,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -6624,17 +6624,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -6645,8 +6645,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -6991,17 +6991,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -7012,8 +7012,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -7358,17 +7358,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -7379,8 +7379,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -7725,17 +7725,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -7746,8 +7746,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -8092,17 +8092,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -8113,8 +8113,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -8459,17 +8459,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -8480,8 +8480,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -8826,17 +8826,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -8847,8 +8847,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -9193,17 +9193,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -9214,8 +9214,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -9560,17 +9560,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -9581,8 +9581,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -9927,17 +9927,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -9948,8 +9948,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -10294,17 +10294,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -10315,8 +10315,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -10661,17 +10661,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -10682,8 +10682,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -11028,17 +11028,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -11049,8 +11049,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -11395,17 +11395,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -11416,8 +11416,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -11762,17 +11762,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -11783,8 +11783,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -12129,17 +12129,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -12150,8 +12150,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -12496,17 +12496,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -12517,8 +12517,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -12863,17 +12863,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -12884,8 +12884,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -13230,17 +13230,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -13251,8 +13251,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -13597,17 +13597,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -13618,8 +13618,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -13964,17 +13964,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -13985,8 +13985,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -14331,17 +14331,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -14352,8 +14352,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -14698,17 +14698,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -14719,8 +14719,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -15065,17 +15065,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -15086,8 +15086,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -15432,17 +15432,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -15453,8 +15453,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -15799,17 +15799,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -15820,8 +15820,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -16166,17 +16166,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -16187,8 +16187,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -16533,17 +16533,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -16554,8 +16554,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -16900,17 +16900,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -16921,8 +16921,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -17267,17 +17267,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -17288,8 +17288,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -17634,17 +17634,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -17655,8 +17655,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -18001,17 +18001,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -18022,8 +18022,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -18368,17 +18368,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -18389,8 +18389,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -18735,17 +18735,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -18756,8 +18756,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -19102,17 +19102,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -19123,8 +19123,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -19250,10 +19250,10 @@
                 "chain": "direct",
                 "chainTaskId": "20261017-150121-aaaaaa",
                 "codeReview": {
-                  "state": "unavailable",
-                  "reason": "not_a_mission_core_record",
+                  "state": "offered",
+                  "reason": null,
                   "taskId": "20261017-150121-aaaaaa",
-                  "listing": null
+                  "listing": "57871428e8f990f64d67815731298edf29d9114a0c3198ceb4db0a27b4c91e46"
                 }
               },
               {
@@ -19319,10 +19319,10 @@
                 "chain": "direct",
                 "chainTaskId": "20261017-150121-aaaaaa",
                 "codeReview": {
-                  "state": "unavailable",
-                  "reason": "not_a_mission_core_record",
+                  "state": "offered",
+                  "reason": null,
                   "taskId": "20261017-150121-aaaaaa",
-                  "listing": null
+                  "listing": "e7da37c99fb227a88fe247cb3e126e78df0678f765b9fa4e58f31f214c80de56"
                 }
               },
               {
@@ -19388,10 +19388,10 @@
                 "chain": "direct",
                 "chainTaskId": "20261017-150121-aaaaaa",
                 "codeReview": {
-                  "state": "unavailable",
-                  "reason": "not_a_mission_core_record",
+                  "state": "offered",
+                  "reason": null,
                   "taskId": "20261017-150121-aaaaaa",
-                  "listing": null
+                  "listing": "18fe99974b7ef80fe6f1c0c2d19d2e6c7f9d87e69e4c1d397436495032955bfc"
                 }
               },
               {
@@ -19457,10 +19457,10 @@
                 "chain": "direct",
                 "chainTaskId": "20261017-150121-aaaaaa",
                 "codeReview": {
-                  "state": "unavailable",
-                  "reason": "not_a_mission_core_record",
+                  "state": "offered",
+                  "reason": null,
                   "taskId": "20261017-150121-aaaaaa",
-                  "listing": null
+                  "listing": "db5dc71f17f960b6e917ac77fcef3bbd79d3bff13628acef47fae0f6c1fb1e67"
                 }
               }
             ]
@@ -19746,17 +19746,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -19767,8 +19767,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -20113,17 +20113,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -20134,8 +20134,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -20480,17 +20480,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -20501,8 +20501,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -20847,17 +20847,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -20868,8 +20868,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -21215,17 +21215,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -21236,8 +21236,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -21582,17 +21582,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -21603,8 +21603,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -21949,17 +21949,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -21970,8 +21970,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -22316,17 +22316,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -22337,8 +22337,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -22683,17 +22683,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -22704,8 +22704,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -23050,17 +23050,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -23071,8 +23071,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -23417,17 +23417,17 @@
             },
             "contentReads": {
               "state": "unavailable",
-              "reason": "source_kind_has_no_artifact_content"
+              "reason": "herdr_task_has_no_artifact_bodies"
             },
             "artifacts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
             "verification": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             },
@@ -23438,8 +23438,8 @@
               "items": []
             },
             "receipts": {
-              "state": "not_applicable",
-              "reason": "source_kind_has_no_mission_core_evidence",
+              "state": "not_recorded",
+              "reason": null,
               "total": null,
               "items": []
             }
@@ -24277,8 +24277,8 @@
           "reason": null,
           "counts": {
             "present": 1,
-            "knownEmpty": 0,
-            "unsupported": 1,
+            "knownEmpty": 1,
+            "unsupported": 0,
             "unavailable": 62
           },
           "gaps": [
@@ -24296,11 +24296,6 @@
               "outcome": "unavailable",
               "reason": "member_activity:unavailable:binding_unverified:task_record_not_corroborated_by_a_live_session",
               "missions": 13
-            },
-            {
-              "outcome": "unsupported",
-              "reason": "mission_core_blockers:source_kind_has_no_mission_state",
-              "missions": 1
             }
           ],
           "entriesTotal": 1
@@ -24332,21 +24327,15 @@
           "label": "Authorization / reauthorization",
           "statement": "A Mission Core Mission awaiting a human decision (its own pending_decisions fact), or a workflow-authority workflow whose DECLARED phase is NEEDS_REAUTHORIZATION. The two models stay separate: Mission Core has no workflow phase, and nothing about one is read into the other. The display-only lifecycle state is never decided on.",
           "backing": "contract v2: mission_state.report.pending_decisions (awaiting_decision, revision, live_authorization, next_permitted_step), Mission Core records; contract v2: the declared missions[].workflow_phase, workflow_authority.workflow_phase/2 records",
-          "outcome": "partial",
+          "outcome": "known_empty",
           "reason": null,
           "counts": {
             "present": 0,
-            "knownEmpty": 1,
-            "unsupported": 63,
+            "knownEmpty": 64,
+            "unsupported": 0,
             "unavailable": 0
           },
-          "gaps": [
-            {
-              "outcome": "unsupported",
-              "reason": "pending_decisions:source_kind_has_no_mission_state",
-              "missions": 63
-            }
-          ],
+          "gaps": [],
           "entriesTotal": 0
         },
         {
@@ -24354,21 +24343,15 @@
           "label": "Failed verification",
           "statement": "Mission Core reports a contradiction or a withdrawn verified success, or holds contradicted or drifted evidence (evidence_contradicted, candidate_drifted, baseline_drifted — read directly, since Mission Core flags those as contradicted only once a Mission is verified or reported complete), or the canonical review record was refused, is not linkage-corroborated, or carries a parsed REJECT. Not yet verified is not a failure; an unparsed review gate is not a rejection.",
           "backing": "contract v2: mission_state.report.completion (contradicted, closure_verified, verified_success, holds) and admitted_artifacts.canonical_review (state, problem, integrity, gate, verdict)",
-          "outcome": "partial",
+          "outcome": "known_empty",
           "reason": null,
           "counts": {
             "present": 0,
-            "knownEmpty": 1,
-            "unsupported": 63,
+            "knownEmpty": 64,
+            "unsupported": 0,
             "unavailable": 0
           },
-          "gaps": [
-            {
-              "outcome": "unsupported",
-              "reason": "completion:source_kind_has_no_mission_state",
-              "missions": 63
-            }
-          ],
+          "gaps": [],
           "entriesTotal": 0
         },
         {
@@ -24376,21 +24359,15 @@
           "label": "Results ready for review",
           "statement": "The task source reports COMPLETE while Mission Core has not verified success. That is a report — not task, Mission, verification or delivery completion.",
           "backing": "contract v2: mission_state.report.completion (reported_complete, verified_success) with canonical_review gate, task_status and candidate_applicability shown verbatim",
-          "outcome": "partial",
+          "outcome": "known_empty",
           "reason": null,
           "counts": {
             "present": 0,
-            "knownEmpty": 1,
-            "unsupported": 63,
+            "knownEmpty": 64,
+            "unsupported": 0,
             "unavailable": 0
           },
-          "gaps": [
-            {
-              "outcome": "unsupported",
-              "reason": "completion:source_kind_has_no_mission_state",
-              "missions": 63
-            }
-          ],
+          "gaps": [],
           "entriesTotal": 0
         },
         {
