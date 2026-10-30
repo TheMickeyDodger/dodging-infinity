@@ -382,7 +382,7 @@
               },
               "contentReads": {
                 "state": "unavailable",
-                "reason": "herdr_task_has_no_artifact_bodies"
+                "reason": "artifact_bodies_not_recorded"
               },
               "artifacts": {
                 "state": "not_recorded",
@@ -1980,7 +1980,7 @@
               },
               "contentReads": {
                 "state": "unavailable",
-                "reason": "herdr_task_has_no_artifact_bodies"
+                "reason": "artifact_bodies_not_recorded"
               },
               "artifacts": {
                 "state": "not_recorded",
@@ -3578,7 +3578,7 @@
               },
               "contentReads": {
                 "state": "unavailable",
-                "reason": "herdr_task_has_no_artifact_bodies"
+                "reason": "artifact_bodies_not_recorded"
               },
               "artifacts": {
                 "state": "not_recorded",
