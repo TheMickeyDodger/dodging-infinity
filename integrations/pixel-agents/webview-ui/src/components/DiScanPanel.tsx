@@ -39,10 +39,12 @@ import {
   DI_EVIDENCE_LABEL,
   DI_EVIDENCE_NOT_AVAILABLE,
   DI_EVIDENCE_NOT_LISTED,
+  DI_HERDR_DELIVERY_NOTE,
   DI_MISSIONS_READ,
   DI_SCAN_MISSION_VIEWS,
   DI_SCAN_PAGE_VIEWS,
   DI_SCAN_TABS,
+  herdrDeliverySteps,
   knownTrue,
   linkedDeliverySteps,
   openAttentionCount,
@@ -151,7 +153,8 @@ const VIEWS: readonly DiScanView[] = ['list', ...DI_SCAN_MISSION_VIEWS, ...DI_SC
 const LAYOUT_NOTE = DI_LAYOUT_NOTE;
 /** Herdr opens the machine's own terminal on the Mission's herd, where the person types (owner decision 1). */
 const HERDR_REASON =
-  'Herdr opens in your own terminal. That is not connected in this layout preview.';
+  'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.';
+const CONNECTIONS_REASON = 'Connections are not in this build.';
 /**
  * The trash's scope, true at FULL scope (owner decision 2): DI's own Mission data, the herd tools' own terminal history,
  * and the model providers' own session transcripts. The summary and the approval record survive, and a partial delete
@@ -161,8 +164,9 @@ const TRASH_KEEPS =
   'Deletes this Mission’s reasoning, transcripts and logs: DI’s copies, the herd’s own terminal history, and the providers’ own session transcripts. Keeps the summary and the approval record. If any part cannot be deleted, it says what remains.';
 /** Said where this build does not read a Mission's approval, repository, stall and log facts (owed by Stage 4). */
 const STATE_NOT_READ =
-  'Approvals, repository requests, stalls and logs are not read in this layout preview.';
-const TRASH_NOT_CONNECTED = 'Deleting a Mission is not connected in this layout preview.';
+  'Approvals, repository requests, stalls and logs are not reported for this Mission.';
+const TRASH_NOT_CONNECTED =
+  'The office does not delete Missions. Deletion stays outside this office.';
 const TRASH_LABEL = 'Hold to delete this Mission’s data';
 /** Where Mission details goes Back to: the page it was opened from (CONTROL-MAP M1). */
 type DiScanOrigin = 'list' | 'missions' | 'reception';
@@ -662,12 +666,19 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
     if (real && setLinked !== undefined) setLinked(target);
   }, [real, setLinked, target]);
   const wired = target !== null && session !== null;
+  // A Herdr task with no linked delivery is not a layout preview of Commit/Push.
+  const herdrUnlinked = row.sourceKind === 'herdr_task' && target === null;
+  const linkWords = link !== undefined && link.kind !== 'linked' ? link.words : null;
   // the session acts for THIS Mission only while its one id is this Mission's link
   const current = session !== null && target !== null && enteredId(session.state) === target;
   const blocked = session === null || session.state.pending !== null || session.state.unvouched !== null;
   const steps = wired
     ? linkedDeliverySteps(current && session !== null ? session.state.view : null)
-    : deliverySteps(row.delivery);
+    : herdrUnlinked
+      ? herdrDeliverySteps()
+      : linkWords !== null
+        ? herdrDeliverySteps().map((step) => ({ ...step, reason: linkWords }))
+        : deliverySteps(row.delivery);
   return (
     <section
       className="di-scan-delivery"
@@ -757,14 +768,17 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
           )}
         </>
       )}
-      {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28) */}
-      <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
-        {DI_DELIVERY_END}
-      </p>
-      {/* the layout note describes layout-only controls: a wired Delivery draws none */}
+      {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28).
+          A Herdr task with no linked delivery does not end in a pull request from this office. */}
+      {!herdrUnlinked && (
+        <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
+          {DI_DELIVERY_END}
+        </p>
+      )}
+      {/* the layout note describes layout-only controls: a wired Delivery draws none; a real unlinked Mission says the catalog's reason */}
       {!wired && (
         <p className="di-scan-stage-note" id="di-scan-delivery-note">
-          {LAYOUT_NOTE}
+          {herdrUnlinked ? DI_HERDR_DELIVERY_NOTE : linkWords !== null ? linkWords : LAYOUT_NOTE}
         </p>
       )}
     </section>
@@ -889,6 +903,7 @@ function Siblings({
   view: 'diff' | 'comments';
   onView: (view: 'diff' | 'comments') => void;
 }) {
+  const [herdrOpen, setHerdrOpen] = useState(false);
   return (
     <nav className="di-scan-siblings" aria-label="Mission screens" data-testid="di-scan-siblings">
       <button
@@ -904,10 +919,10 @@ function Siblings({
         type="button"
         className="di-scan-sibling"
         data-testid="di-scan-sibling-herdr"
-        // Herdr leaves the app for the machine's own terminal; until that launch is wired it opens nothing
-        disabled
         title={HERDR_REASON}
         aria-describedby="di-scan-sibling-herdr-reason"
+        aria-expanded={herdrOpen}
+        onClick={() => setHerdrOpen((open) => !open)}
       >
         Herdr
       </button>
@@ -923,6 +938,11 @@ function Siblings({
       <span className="di-scan-visually-hidden" id="di-scan-sibling-herdr-reason">
         {HERDR_REASON}
       </span>
+      {herdrOpen && (
+        <p className="di-scan-stage-note" data-testid="di-scan-herdr-open">
+          {HERDR_REASON}
+        </p>
+      )}
     </nav>
   );
 }
@@ -1209,10 +1229,9 @@ function Stage({
               type="button"
               className="di-scan-action di-scan-action-secondary"
               data-testid="di-scan-herdr"
-              // Herdr leaves the app for the machine's own terminal; until that launch is wired it says so, and opens nothing
-              disabled
               title={HERDR_REASON}
               aria-describedby="di-scan-herdr-reason"
+              onClick={() => undefined}
             >
               Herdr
             </button>
@@ -1289,7 +1308,7 @@ function Stage({
               </div>
               <p className="di-scan-stage-note di-scan-tree-note">
                 {placeholder.kind === 'not_read'
-                  ? 'Files are not read in this layout preview.'
+                  ? 'Files are not listed until a code review is offered for this Mission.'
                   : placeholder.kind === 'reading'
                     ? 'Reading the files.'
                     : 'No files are shown.'}
@@ -1686,6 +1705,7 @@ function Rail({
   const badgeText = receptionCount === null ? null : countBadge(count, receptionDoubt);
   const spoken = badgeText === null ? undefined : `Reception, ${receptionHeadline(count, receptionDoubt)}`;
   const here = (page: DiScanView[]) => (page.includes(view) ? 'page' : undefined);
+  const [herdrOpen, setHerdrOpen] = useState(false);
   return (
     <nav
       className="di-rail"
@@ -1815,19 +1835,33 @@ function Rail({
           </button>
         </li>
         <li>
-          <RailUnavailable
-            testid="di-rail-herdr"
-            icon={<HerdIcon />}
-            label="Herdr"
-            reason={HERDR_REASON}
-          />
+          <button
+            type="button"
+            className="di-rail-item"
+            data-testid="di-rail-herdr"
+            title={HERDR_REASON}
+            aria-describedby="di-rail-herdr-reason"
+            aria-expanded={herdrOpen}
+            onClick={() => setHerdrOpen((open) => !open)}
+          >
+            <HerdIcon />
+            Herdr
+          </button>
+          <span className="di-scan-visually-hidden" id="di-rail-herdr-reason">
+            {HERDR_REASON}
+          </span>
+          {herdrOpen && (
+            <p className="di-rail-empty" data-testid="di-rail-herdr-note">
+              {HERDR_REASON}
+            </p>
+          )}
         </li>
         <li>
           <RailUnavailable
             testid="di-rail-connections"
             icon={<LinkIcon />}
             label="Connections"
-            reason="Connections are not part of this build."
+            reason={CONNECTIONS_REASON}
           />
         </li>
       </ul>

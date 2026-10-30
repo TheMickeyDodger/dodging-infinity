@@ -949,6 +949,9 @@ def _project_chains(payload):
     if reading.health != snapshot_contract.HEALTH_FRESH:
         raise _Refused(PROBLEM_SELF_CHECK, reading.problem)
     expected = chains["expected_reviews"]
+    # Absent: the older rule (only an explicit claim binds a review).
+    # Present, even empty: unclaimed roots use their own task id.
+    contested = chains.get("contested_roots")
     entries = []
     for index, (root, files) in enumerate(zip(roots, second)):
         task = files[TASK_FILE][2]
@@ -956,8 +959,9 @@ def _project_chains(payload):
             "root": root, "tier": chains["tiers"][index],
             "task": _root_task(index, task),
             "children": _children_projection(files),
-            "review": review_record.canonical_review(root, task,
-                                                     expected.get(root)),
+            "review": review_record.canonical_review(
+                root, task, review_expected_task_id(
+                    expected, contested, root, task)),
         })
     value = {"schema": chain_contract.CHAIN_OBSERVATION_SCHEMA,
              "version": chain_contract.CHAIN_OBSERVATION_VERSION,
@@ -1223,13 +1227,50 @@ def _discovered_accounts(value, roots, discovered):
     return value
 
 
+def review_expected_task_id(expected, contested, root, task):
+    """The task id a captured root's canonical review is bound to.
+
+    ``contested is None`` keeps the older rule: only a root named in
+    ``expected`` is read. When ``contested`` is present, a root in it is
+    not read (more than one Mission Core record claims it), a root in
+    ``expected`` uses that claim, and any other root uses its own
+    ``task.json`` id. That last case is how a plain Herdr task's review
+    under ``.herd/state/reviews`` is read: the task record is the claim.
+    """
+    if contested is not None and root in contested:
+        return None
+    bound = expected.get(root)
+    if bound is not None:
+        return bound
+    if contested is None or type(task) is not dict:
+        return None
+    own = task.get("id")
+    if (type(own) is not str or not own or "\x00" in own
+            or len(own) > snapshot_contract.MAX_SNAPSHOT_TEXT_CHARS):
+        return None
+    return own
+
+
+def _bounded_root_list(value, name):
+    if (type(value) is not list or len(value) > MAX_HERD_ROOTS or any(
+            type(item) is not str or not item or "\x00" in item
+            or len(item) > MAX_ROOT_PATH_CHARS for item in value)
+            or len(set(value)) != len(value)):
+        raise TypeError("%s must be a list of distinct bounded root paths"
+                        % name)
+
+
 def _require_chains(chains):
     """A chain request's argument, checked before anything starts: None, or
     ``{"expected_reviews": {root: task_id}}`` with at most
-    ``MAX_HERD_ROOTS`` entries of bounded, non-empty strings."""
+    ``MAX_HERD_ROOTS`` entries of bounded, non-empty strings. An optional
+    ``contested_roots`` list names roots that must NOT fall through to their
+    own task id."""
     if chains is None:
         return None
-    if type(chains) is not dict or set(chains) != {"expected_reviews"}:
+    if type(chains) is not dict or not set(chains) <= {
+            "expected_reviews", "contested_roots"} or (
+                "expected_reviews" not in chains):
         raise TypeError("chains must be None or {'expected_reviews': {...}}")
     expected = chains["expected_reviews"]
     if type(expected) is not dict or len(expected) > MAX_HERD_ROOTS or any(
@@ -1239,6 +1280,8 @@ def _require_chains(chains):
             for k, v in expected.items()):
         raise TypeError("expected_reviews must map bounded root paths to"
                         " task ids")
+    if "contested_roots" in chains:
+        _bounded_root_list(chains["contested_roots"], "contested_roots")
     return chains
 
 
@@ -1278,7 +1321,7 @@ def _chain_accounts(value, roots, discovered):
     return value
 
 
-def _chain_plan(value, roots, over_capacity, account, expected_reviews):
+def _chain_plan(value, roots, over_capacity, account, chains_request):
     """``(captured, digests, projection_chains)`` from a checked chain
     first pass, and the root account filled in (data only)."""
     available = [a for a in value["discovered"] if "digests" in a]
@@ -1309,10 +1352,13 @@ def _chain_plan(value, roots, over_capacity, account, expected_reviews):
         "unavailable": [a["root"] for a in value["children"]
                         if "digests" not in a],
         "over_capacity": list(value["child_over_capacity"])}
-    return captured, digests, {"tiers": tiers,
-                               "expected_reviews": dict(expected_reviews),
-                               "unavailable": unavailable,
-                               "over_capacity": over}
+    planned = {"tiers": tiers,
+               "expected_reviews": dict(chains_request["expected_reviews"]),
+               "unavailable": unavailable,
+               "over_capacity": over}
+    if "contested_roots" in chains_request:
+        planned["contested_roots"] = list(chains_request["contested_roots"])
+    return captured, digests, planned
 
 
 def _stable_names_accepted(value, stable_names):
@@ -1387,8 +1433,7 @@ def _capture_work(roots, argv, observed_at, phase, discovered=(),
                                "chain first pass value is not one account"
                                " per root")
             captured, before, projection_chains = _chain_plan(
-                value, roots, over_capacity, account,
-                chains["expected_reviews"])
+                value, roots, over_capacity, account, chains)
             if not captured:
                 return Capture(None, PROBLEM_NO_ROOT_OBSERVABLE,
                                "no registered, discovered or recorded child"

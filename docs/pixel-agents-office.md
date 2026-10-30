@@ -21,7 +21,9 @@ catalog links (see "Delivery links on Missions" under [Launch](#launch), which n
 adapter names eligible behind a local confirmation, with the adapter's two notes shown as it wrote
 them. No delivery id is typed there, and no other delivery can be chosen. Accepting CI results is not
 connected. A Mission Core Mission, or any Mission without such a link, shows why no delivery is read
-and offers nothing to confirm. The catalog's delivery store is not shown to be the one the adapter
+and offers nothing to confirm. A plain Herdr task is the same limit, said as itself: delivery
+records name workflow Missions only, so Commit, Push and Open pull request are not offered and are
+not described as a layout preview. The catalog's delivery store is not shown to be the one the adapter
 reads: if the adapter has no record of a linked delivery, its refusal is shown as it answered. A
 separate panel where a delivery id is typed is kept for test harnesses only, with no product entry (owner
 decision, 2026-10-29): the office does not draw it, and Delivery under Swarm is the product's delivery view. Everything else here is
@@ -33,6 +35,16 @@ and optional, not today's mobile interface) and R1 are separate and are not part
 the mobile surface is Grok Bot ([docs/grok-bot.md](grok-bot.md)), which hands requests to the
 Codex Outer Operator. The office is not the Phase 11 Visual Mission OS of the
 [roadmap](roadmap.md#phases-10-and-11), which remains last.
+
+What a rebuilt office reads from the catalog, and what still needs a process on the machine:
+
+- **Code Diff** is offered for an active Mission Core assignment and for an active Herdr task whose binding is bound. The scan Code Diff follows that offer. It is not a layout preview. A review the office does not offer says the office's reason. Reading the diff still needs the catalog backend (`/code_review`) restarted from this tree.
+- **Evidence and review** for a Herdr task come from the task's `.herd/state` review when the capture observes the workspace. No review recorded is `not_recorded`. Herdr tasks still have no Mission Core artifact bodies.
+- **Delivery** is read only when the catalog links one delivery record. That link is still workflow Missions only. A Herdr task says so. Commit, push and opening a pull request still go through the office delivery adapter when you start it (`--delivery-adapter-discovery`); the office itself does not commit, push, merge or deploy.
+- **Reception** reads Herdr task failure (`FAILED`, `ERROR`) as a blocker and a completed Herdr task with no approving review as results ready for review. Clarification requests are still not in the catalog. Recover, answering, and accepting CI stay outside this office and say which connection they need.
+- **Herdr** in the sidebar and on a Mission opens the documented terminal path (`herdctl` from your checkout). The office does not start Herdr.
+- **Connections** are not in this build.
+- **Orchestrator status** uses a bound active Herdr task's standing, and a workflow Mission's declared phase, when no team member is confirmed live.
 
 The office has two halves:
 
@@ -174,11 +186,13 @@ node dist/di-cli.js --state-dir /absolute/office-state \
   by the one valid record whose own Mission binding names its workflow id, while every workflow
   source was read and no other Mission holds that id. Two matching records are ambiguous, and none
   is chosen. A Mission Core Mission is never linked: no delivery record names one, so its link is
-  "not known", not "none". Without the flag, every workflow Mission says that no store is
-  registered; a Mission Core Mission still says its link is not known. A link names which
-  delivery's status may be read; it authorizes nothing, and the office delivery adapter is not
-  shown to read the same store. Mission details reads a linked delivery under Swarm (see the
-  delivery adapter, above).
+  "not known", not "none". A plain Herdr task is never linked for the same reason (delivery records
+  name workflow ids, not Herdr task ids); the office says that, and does not draw Commit and Push as
+  if a layout preview had simply not read them. Without the flag, every workflow Mission says that
+  no store is registered; a Mission Core Mission and a Herdr task still say their link is not known
+  when the catalog omits `delivery_link`. A link names which delivery's status may be read; it
+  authorizes nothing, and the office delivery adapter is not shown to read the same store. Mission
+  details reads a linked delivery under Swarm (see the delivery adapter, above).
 - **Runtime source.** The bridge needs `--discover-roots` or at least one
   `--herd-root PATH`; without one it refuses to start (exit 2).
 - **Discovery file.** The bridge publishes `{url, port, token}` atomically and no-clobber as a
@@ -647,13 +661,19 @@ herdr agent list ───┘     dicatalog_http.py                             
   `reviewer_agent`, `protocol_token`. The one other review read is the round's
   reviewer-declared findings record, a sibling file written by the local review gate; see
   [Reviewer-declared findings](#reviewer-declared-findings). It is not the transcript either.
+  A plain Herdr task uses that same preamble when the capture observes its workspace: the
+  review is bound to the task record's own id. No review recorded is `not_recorded`. A
+  workspace the capture did not observe is `unavailable`, with that reason. Herdr tasks
+  still have no Mission Core artifact library; those sections say they are not reported,
+  and artifact bodies are not read for them.
 - **What it writes.** Registration writes only its registry. The adapter writes only its own
   discovery file. Neither ever writes a store.
 - **Routes.** `GET /catalog`, `GET /diagnostics`, `GET /healthz`, `GET /artifact` and
   `GET /code_review`, and nothing else. `GET /artifact` returns one recorded artifact's text for
   the evidence library. It takes an admitted reference (Mission, artifact id, listing cursor),
-  never a path. `GET /code_review` returns the read-only view of an active assignment's workspace,
-  or of a COMPLETED Mission's recorded workspace when its execution is established and the
+  never a path.   `GET /code_review` returns the read-only view of an active assignment's workspace
+  (a Mission Core record or a Herdr task whose binding is bound),
+  or of a COMPLETED Mission Core Mission's recorded workspace when its execution is established and the
   workspace names the run (see [Live code review](#live-code-review)); it takes a Mission and a task id, and for one
   file the snapshot and file id the overview listed. Never a path, a ref or a git option. All
   routes are loopback-only (`127.0.0.1`), behind one bearer token compared in constant time,
@@ -946,20 +966,24 @@ overview, a searchable tree of the changed files and a unified or side-by-side d
 only. It never edits, stages, applies, reverts, commits, dispatches, approves, opens a shell or
 sends anything but a read.
 
-**Who is offered it.** Two cases, asked by two different references. (1) A live member of the
+**Who is offered it.** Three cases, asked by two different references. (1) A live member of the
 DIRECT task of a Mission Core Mission whose standing is `active` and whose binding is `bound`:
-the review is opened from the agent. (2) A **COMPLETED** Mission, as a whole, in the Mission's
+the review is opened from the agent. (2) The same, for a plain Herdr task (`herdr.task/1`) whose
+standing is `active` and whose binding is `bound`: the workspace is that task's bound
+`workspace_realpath`, and `/code_review` is asked with the Herdr mission ref
+(`<source>:<task id>@<root key>`). An unbound Herdr task is not offered, and the page says the
+workspace is not confirmed. (3) A **COMPLETED** Mission Core Mission, as a whole, in the Mission's
 Code Diff: offered only when the office lists the Mission's historical recorded execution as
 **established** in a current listing, and read only when the backend also finds that execution
 unique and unchanged and the recorded workspace's own task record names this run. It is asked
-for by a Mission-level reference that names no agent. A plain Herdr task is not a Mission Core
-record, a child-task member does not work in the Mission's workspace, a v1 office corroborates
-no workspace, and a BLOCKED, CANCELLED or CLOSED Mission is not offered a review. A finished
-Mission is read **as the workspace is now**, with ownership checked at one instant (and again at
-the end of the read): a root since reused for other work is refused, not shown. Where a review
-is not offered or is refused, the page says why in words. The target comes from the canonical
-record: the renderer never supplies a root, a ref, a pathspec or a git option, and similar
-names or paths are not identity.
+for by a Mission-level reference that names no agent. A finished Herdr task is not that historical
+Mission Core execution, so it is not offered as a finished Mission. A child-task member does not
+work in the Mission's workspace, a v1 office corroborates no workspace, and a BLOCKED, CANCELLED
+or CLOSED Mission is not offered a review. A finished Mission Core Mission is read **as the
+workspace is now**, with ownership checked at one instant (and again at the end of the read): a
+root since reused for other work is refused, not shown. Where a review is not offered or is
+refused, the page says why in words. The target comes from the catalog record: the renderer never
+supplies a root, a ref, a pathspec or a git option, and similar names or paths are not identity.
 
 **What is compared, exactly.** The working tree of the assignment's own worktree against the
 commit its `HEAD` names (branch or detached HEAD, the commit's object id shown), as observed at a

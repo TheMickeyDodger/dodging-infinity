@@ -1,11 +1,13 @@
 """Live code review (item 3, original 20): a READ-ONLY view of what is changed
 in the workspace of a currently ACTIVE assignment.
 
-What a caller names: a Mission ref (``<source_id>:mn-<hex>``) and the task id
-it was shown (``task_id``), then, for one file, the snapshot it was shown and
-the file id the overview listed. Never a path, a root, a ref, a pathspec or a
-git option: the workspace comes from the canonical record, every path from
-git's own listing of that workspace.
+What a caller names: a Mission ref and the task id it was shown
+(``task_id``), then, for one file, the snapshot it was shown and the file id
+the overview listed. A Mission Core ref is ``<source_id>:mn-<hex>``. A plain
+Herdr task ref is ``<source_id>:<task_id>@<root key>``. Never a path, a root,
+a ref, a pathspec or a git option: the workspace comes from the catalog
+record's bound ``workspace_realpath``, every path from git's own listing of
+that workspace.
 
 ELIGIBILITY is a different question from the evidence library's. That one
 asks whether a recorded artifact may be shown; this one asks whether an
@@ -13,9 +15,10 @@ assignment is ACTIVE NOW. Before any git process starts, all of this must
 hold or the answer REFUSES with its own code:
 
 - the owner's last refreshed answer is fresh and lists the Mission exactly
-  once, as a Mission Core record whose standing is ``active`` and whose
-  binding is ``bound`` (the catalog's existing corroboration: a fresh runtime
-  snapshot, its task observed once at its own workspace);
+  once, as a Mission Core record OR a plain Herdr task (``herdr.task/1``)
+  whose standing is ``active`` and whose binding is ``bound`` (the catalog's
+  existing corroboration: a fresh runtime snapshot, its task observed once
+  at its own workspace);
 - its execution is resolved and consistent, and its task is EXACTLY the task
   the caller was shown (an assignment replaced by another task in the same
   workspace is a different assignment: ``assignment_task_changed``);
@@ -219,7 +222,17 @@ MAX_FILTER_NAME_CHARS = 64
 
 #: The request grammar. ``catalog_http`` re-declares it (it may not import
 #: this module); parity is pinned by test.
-MISSION_REF_PATTERN = r"[a-z0-9][a-z0-9._-]{0,63}:mn-[0-9a-f]{32}"
+#: Mission Core (``source:mn-<32 hex>``) or a plain Herdr task
+#: (``source:<task id>@<12 hex root key>``, ``herdr_task_source.root_key``).
+#: Artifact content stays Mission-Core-only; this pattern is the review
+#: route's own.
+MISSION_REF_PATTERN = (
+    r"[a-z0-9][a-z0-9._-]{0,63}:(?:mn-[0-9a-f]{32}"
+    r"|[0-9]{8}-[0-9]{6}-[0-9a-f]{6}@[0-9a-f]{12})"
+)
+#: A plain Herdr task's lifecycle model (``herdr_task_source.LIFECYCLE_MODEL``).
+#: Re-declared: this module does not import the task-native reader.
+HERDR_TASK_MODEL = "herdr.task/1"
 TASK_ID_PATTERN = r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}"
 SNAPSHOT_PATTERN = r"[0-9a-f]{64}"
 FILE_ID_PATTERN = r"rf-[0-9a-f]{32}"
@@ -546,12 +559,16 @@ def _corroborated(answer, freshness, now, mission_ref, task_id, finished=None,
         raise _Refused(PROBLEM_MISSION_AMBIGUOUS, "the last catalog answer"
                        " lists this Mission more than once")
     mission = listed[0]
-    if mission["lifecycle"]["model"] != contract.LIFECYCLE_MODEL_MISSION_CORE:
-        raise _Refused(PROBLEM_SOURCE_KIND, "only a Mission Core record names"
-                       " an assignment with a bound workspace; this one is %s"
-                       % mission["lifecycle"]["model"])
+    model = mission["lifecycle"]["model"]
+    herdr = model == HERDR_TASK_MODEL
+    if model != contract.LIFECYCLE_MODEL_MISSION_CORE and not herdr:
+        raise _Refused(PROBLEM_SOURCE_KIND, "only a Mission Core record or a"
+                       " Herdr task names an assignment with a bound"
+                       " workspace; this one is %s" % model)
     if mission["lifecycle"]["standing"] != contract.STANDING_ACTIVE:
-        if finished is not None and mission["lifecycle"][
+        # A finished Herdr task is not a Mission Core historical execution.
+        # The finished provider stays on the Mission Core path.
+        if (not herdr) and finished is not None and mission["lifecycle"][
                 "standing"] == contract.STANDING_TERMINAL:
             return _finished(answer, finished, accounting, mission_ref,
                              task_id)

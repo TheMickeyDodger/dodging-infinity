@@ -70,14 +70,15 @@ const sentence = (text: string) => {
 const SAMPLE_DATA = 'Sample data (fixture)';
 /** Reasons for the controls drawn but not connected in this layout stage (each owed by Stage 4). */
 const REASON = {
-  decide: 'Deciding a proposal is not connected in this layout preview.',
-  answer: 'Answering a Mission is not connected in this layout preview.',
+  decide: 'Deciding a proposal needs the request workspace. This office does not decide it here.',
+  answer:
+    'Answering a Mission needs the request workspace. This office does not send an answer from here.',
   recover:
-    'Recover is not connected in this layout preview. Recover restarts the work only; it never approves, dispatches or delivers.',
-  acceptCi: 'Accepting CI results is not connected in this layout preview.',
-  logs: 'Logs and checks are not read in this layout preview.',
-  addRepo: 'Choosing repos is not connected in this layout preview.',
-  addFiles: 'Attaching files is not connected in this layout preview.',
+    'Recover needs a restart route that is not connected in this office. Recover restarts the work only; it never approves, dispatches or delivers.',
+  acceptCi: 'Accepting CI results is not connected in this office.',
+  logs: 'Logs and checks are not reported by this catalog.',
+  addRepo: 'Choosing repos is not connected in this office.',
+  addFiles: 'Attaching files is not connected in this office.',
   notListed: 'This Mission is not listed in this office.',
   noWorkspace: 'Mission requests are not available in this office',
 } as const;
@@ -191,7 +192,12 @@ function Phase({ phase }: { phase: DiScanPhase }) {
 function DeclaredPhase({ declared }: { declared: DiScanDeclaredPhase }) {
   const { text, why } = declaredPhaseWords(declared);
   return (
-    <span className="di-phase-declared" data-testid="di-phase-declared" data-kind={declared.kind} title={why ?? undefined}>
+    <span
+      className="di-phase-declared"
+      data-testid="di-phase-declared"
+      data-kind={declared.kind}
+      title={why ?? undefined}
+    >
       <span className="di-phase-word">{text}</span>
       {why !== null && <span className="di-scan-visually-hidden">{` ${why}`}</span>}
     </span>
@@ -662,7 +668,6 @@ export function ReceptionPage({
           All
         </button>
       </div>
-      <p className="di-page-note">{DI_LAYOUT_NOTE}</p>
       {reception.cards.length === 0 ? (
         <div className="di-page-empty" data-testid="di-reception-empty">
           {reception.empty.map((line) => (

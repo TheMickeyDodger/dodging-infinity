@@ -33,12 +33,10 @@ import {
   languageFor,
   languageName,
   problemWords,
-  reviewNotOfferedConsequence,
   shortOid,
   showsDiff,
   stateWords,
   truncationWords,
-  unavailableWords,
   visibleSegments,
 } from './diCodeReviewModel.js';
 import type {
@@ -49,7 +47,7 @@ import type {
   DiScanRow,
   DiScanTreeEntry,
 } from './diScanModel.js';
-import { scanDiff } from './diScanModel.js';
+import { DI_DIFF_READING, scanDiff } from './diScanModel.js';
 import type { DiScanCountDoubt } from './diScanPagesModel.js';
 import { countBadge } from './diScanPagesModel.js';
 
@@ -254,7 +252,10 @@ function fileRecord(entry: DiCodeReviewEntry, session: ReviewSession): DiScanDif
     // overview too), whose words explain why. A read that observed a state that normally HAS lines (`text`, `submodule`) and returned none is a state the
     // route cannot emit: a DEFENSIVE path, and its bare state word ("Text") would explain nothing, so it says what was observed instead.
     const words = showsDiff(file.state)
-      ? { title: 'No lines to show', body: 'The route read this file and returned no changed lines for it, so there is nothing to draw. It gave no reason.' }
+      ? {
+          title: 'No lines to show',
+          body: 'The route read this file and returned no changed lines for it, so there is nothing to draw. It gave no reason.',
+        }
       : observed;
     return {
       path,
@@ -327,7 +328,11 @@ function readSource(session: ReviewSession): DiScanDiffSource {
   const detached = target.branch === null && target.detached;
   const branch = target.branch !== null ? target.branch : detached ? 'Detached' : 'Branch unknown';
   const branchTitle =
-    target.branch !== null ? target.branch : detached ? `Detached HEAD at ${target.head}` : 'Branch unknown';
+    target.branch !== null
+      ? target.branch
+      : detached
+        ? `Detached HEAD at ${target.head}`
+        : 'Branch unknown';
   const files = listing.totals.files;
   const filesChanged = `${files === 0 ? 'no changes found' : `${files} ${files === 1 ? 'file' : 'files'} changed`}${session.stale ? ' when read' : ''}`;
 
@@ -373,23 +378,15 @@ function readSource(session: ReviewSession): DiScanDiffSource {
 }
 
 /**
- * What the scan Code Diff shows for `row`, given the one review `session` (null where no reader exists). The specimen first; then
- * the office's own statement about whether a review is offered; then the session, only if it is THIS Mission's.
+ * What the scan Code Diff shows for `row`, given the one review `session` (null where no reader exists). The specimen, an
+ * unavailable offer and an office that said nothing are settled by `scanDiff`. An offered review (a bound workspace) is never
+ * the layout-preview stub: without a matching session it is being read, and a session is shown only when it is THIS Mission's.
  */
 export function scanDiffFor(row: DiScanRow, session: ReviewSession | null): DiScanDiffSource {
-  const specimen = scanDiff(row);
-  if (specimen.kind === 'sample') return specimen;
+  const base = scanDiff(row);
+  if (base.kind !== 'reading') return base;
   const offer = row.reviewOffer;
-  if (offer.kind === 'unknown') return specimen;
-  if (offer.kind === 'unavailable') {
-    return {
-      kind: 'unavailable',
-      reason: reviewNotOfferedConsequence(offer.reason),
-      title: 'Code review is not offered',
-      detail: unavailableWords(offer.reason),
-    };
-  }
-  if (session === null) return specimen;
+  if (offer.kind !== 'offered' || session === null) return base;
   const target = session.target;
   // THE GUARD (Mission switch): one session serves every Mission the reader visits, so it is this row's only if it was opened for THIS
   // Mission and for the reference the office offers now. Anything else is another Mission's (or a stale listing's) and is never shown.
@@ -401,7 +398,7 @@ export function scanDiffFor(row: DiScanRow, session: ReviewSession | null): DiSc
     target.taskId !== offer.target.taskId ||
     target.listing !== offer.target.listing
   ) {
-    return { kind: 'reading', reason: 'Reading this Mission’s working tree now.' };
+    return { kind: 'reading', reason: DI_DIFF_READING };
   }
   if (session.cleared !== null) {
     const said = clearedWords(session.cleared);
@@ -412,5 +409,5 @@ export function scanDiffFor(row: DiScanRow, session: ReviewSession | null): DiSc
     const said = problemWords(session.refusal.problem, session.refusal.detail);
     return { kind: 'refused', reason: said.title, title: said.title, detail: said.body };
   }
-  return { kind: 'reading', reason: 'Reading this Mission’s working tree now.' };
+  return { kind: 'reading', reason: DI_DIFF_READING };
 }

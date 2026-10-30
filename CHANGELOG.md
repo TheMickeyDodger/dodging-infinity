@@ -3,6 +3,19 @@
 ## Unreleased
 
 - **Minimize the office side panel from the scan rail (Pixel Agents DI office).** Minimize used to be the Home logo, and only that logo. Opening Mission details, Code Diff, Comments, Evidence, or a rail page covers the Home header, so the panel could not be collapsed from the screen you were reading. Minimize now sits on the navigation rail, which stays beside those screens, and Restore brings the same screen back. Presentation only: nothing is sent, decided, or started.
+- **Herdr Missions use the same Code Diff, review, and Reception the catalog already has (Pixel Agents DI office).** An active Herdr task with a bound workspace is offered a code review of that workspace. A recorded review under `.herd/state` is shown; none recorded stays empty. Reception treats a failed Herdr task as a blocker and a completed task with no approving review as results ready for review. Delivery still names workflow Missions only, and says so. Herdr in the sidebar is the documented `herdctl` terminal path; this office does not start it, commit, push, merge, or deploy. Connections are not in this build. See [`docs/pixel-agents-office.md`](docs/pixel-agents-office.md).
+- **Free UI for the Pixel Agents DI office: Mission titles and a scrollable Mission details.** The office you open shows the scan face.
+  Its reading surfaces (the side panel, dialogs, cards, and the request workspace) use Inter on the Home navy, with purple as a fill
+  behind near-white text. Those colours, and the Mission details scrollbar, are defined once in
+  `integrations/pixel-agents/webview-ui/src/index.css` `:root` (`--di-bg`, `--di-accent`, `--di-details-scroll-thumb`,
+  `--di-details-scroll-track`). The pixel world keeps FS Pixel Sans. A Mission title is a verbatim slice of the objective. When the
+  catalog record is an authorized-Mission handoff, the display objective is the line under `OBJECTIVE`. A cut-off handoff lead
+  (`This is …`) is refused as a title, and a real objective that begins with those words is kept. Mission details keeps its heading
+  and footer in place and scrolls the objective inside the card, with its line breaks. The panel applies no character cap of its own.
+  The catalog display bound, `MAX_OBJECTIVE_CHARS` in `target_runtime/herdr_task_source.py`, is 1024 characters, display only.
+  Constraints and acceptance criteria are not catalog fields. Pixel validation remains the gate job of that name; the UI suite runs
+  as four parallel shards beside Pixel checks. This records what the office shows. It does not mark a Mission complete, and the office
+  remains a browser package. See the README, "A calm overview and a full-size details view".
 - **The request workspace matches the side panel (Pixel Agents DI office).** Ask and Requests now read as part of the same product as the side
   panel: its palette, type scale, lines and controls; a compact header with quiet tabs; one persistent context area (never dismissable) instead
   of two tall banners; short You / Assistant labels with the drafting-versus-decision note said once; and counts that name what they count

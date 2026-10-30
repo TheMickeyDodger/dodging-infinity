@@ -630,8 +630,10 @@ class PolicyTests(Bounded):
         self.assertEqual(declared["task_id"], code_review.TASK_ID_PATTERN)
         self.assertEqual(declared["snapshot"], code_review.SNAPSHOT_PATTERN)
         self.assertEqual(declared["file_id"], code_review.FILE_ID_PATTERN)
-        self.assertEqual(code_review.MISSION_REF_PATTERN,
-                         artifact_content.MISSION_REF_PATTERN)
+        self.assertNotEqual(code_review.MISSION_REF_PATTERN,
+                            artifact_content.MISSION_REF_PATTERN)
+        self.assertIn("mn-[0-9a-f]{32}", code_review.MISSION_REF_PATTERN)
+        self.assertIn("@[0-9a-f]{12}", code_review.MISSION_REF_PATTERN)
 
     def test_every_untracked_reader_status_is_mapped(self):
         statuses = set(prepare_module.INSTRUCTION_STATUSES) - {
@@ -691,7 +693,11 @@ class OfficeParityTests(Bounded):
         self.assertEqual(patterns["fileId"], code_review.FILE_ID_PATTERN)
         reference = text.split("export const ARTIFACT_REFERENCE_GRAMMAR", 1)[1]
         mission = re.search(r"missionRef: /\^(.*)\$/", reference).group(1)
-        self.assertEqual(mission, code_review.MISSION_REF_PATTERN)
+        self.assertEqual(mission, artifact_content.MISSION_REF_PATTERN)
+        review_ref = re.search(
+            r"export const CODE_REVIEW_MISSION_REF =\s*/\^(.*)\$/;", text)
+        self.assertIsNotNone(review_ref)
+        self.assertEqual(review_ref.group(1), code_review.MISSION_REF_PATTERN)
 
     def test_the_closed_enumerations_are_the_same_lists(self):
         text = self.ts("codeReview.ts")

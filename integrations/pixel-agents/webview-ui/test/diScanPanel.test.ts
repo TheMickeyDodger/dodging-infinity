@@ -222,7 +222,9 @@ test('mission details, the code diff and comments open from the locked row; Herd
   assert.equal(mission.includes('data-testid="di-scan-pane"'), false);
   assert.equal(mission.includes('Ask Codex to do anything'), false);
   assert.equal(mission.includes('Focus terminal'), false);
-  assert.match(mission, /<button[^>]*data-testid="di-scan-herdr"[^>]*disabled=""/);
+  assert.match(mission, /data-testid="di-scan-herdr"/);
+  assert.doesNotMatch(mission, /<button[^>]*data-testid="di-scan-herdr"[^>]*disabled=""/);
+  assert.match(mission, /herdctl/);
 
   const comments = renderToStaticMarkup(
     createElement(DiScanPanel, {

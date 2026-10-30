@@ -476,9 +476,11 @@ test('the partial view is one plain sentence with its consequence; the exact lim
   const s = fresh();
   const limits = viewLimits(s)!;
   assert.equal(limits.summary, 'This view may not show everything that needs attention.');
+  // Authorization, failed verification and results ready for review are known empty for this
+  // Herdr office, so they are not a partial report. What the office still does not report is
+  // clarification and a separate delivery decision.
   assert.deepEqual(limits.items, [
     'Not reported by this office: clarification, delivery awaiting a separate decision.',
-    'Only partly reported: authorization / reauthorization, failed verification, results ready for review.',
   ]);
   s.coverage.linkedChildRoles = 'not_covered';
   const both = viewLimits(s)!;

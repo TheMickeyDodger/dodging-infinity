@@ -46,6 +46,13 @@ export const ARTIFACT_REFERENCE_GRAMMAR = {
 } as const;
 
 /**
+ * Mission Core (`source:mn-<32 hex>`) or a plain Herdr task
+ * (`source:<task id>@<12 hex root key>`). Artifact reads stay Mission-Core-only.
+ */
+export const CODE_REVIEW_MISSION_REF =
+  /^[a-z0-9][a-z0-9._-]{0,63}:(?:mn-[0-9a-f]{32}|[0-9]{8}-[0-9]{6}-[0-9a-f]{6}@[0-9a-f]{12})$/;
+
+/**
  * The ONLY things /code_review may be asked (the backend's own grammar, re-declared; parity pinned
  * by tests/test_code_review.py): the Mission and the task the client was shown, and for ONE file
  * the snapshot the overview carried and the file id it listed. No path, root, ref or option.
@@ -57,7 +64,7 @@ export interface CodeReviewQuery {
   fileId?: string;
 }
 export const CODE_REVIEW_GRAMMAR = {
-  missionRef: ARTIFACT_REFERENCE_GRAMMAR.missionRef,
+  missionRef: CODE_REVIEW_MISSION_REF,
   taskId: /^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$/,
   snapshot: /^[0-9a-f]{64}$/,
   fileId: /^rf-[0-9a-f]{32}$/,
