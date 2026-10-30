@@ -498,7 +498,9 @@ def _objective(description):
     that, under the same absence rule: unknown (``None``) when there is none, or
     when it is itself a heading, of either format (the bridge template's next
     heading follows an empty objective). The bridge's first line is authority
-    only, so without this the bounded first line kept ``<prefix> This is …``.
+    only, so without this the bounded first line is that authority line (at
+    the old 160-character cap it ended ``<prefix> This is …``; a real handoff
+    prefix now fits the catalog cap whole).
     A first line with the prefix but NO ``OBJECTIVE`` next is returned as before.
 
     Any other FIRST line is returned exactly as before. The only comparisons
