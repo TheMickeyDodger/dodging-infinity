@@ -380,6 +380,11 @@ export interface DiScanRow {
   delivery: DiScanDelivery;
   /** M8: a real Mission's delivery link (see DiScanDeliveryLink). Absent: the specimen. */
   deliveryLink?: DiScanDeliveryLink;
+  /**
+   * The office's source kind (`herdr_task`, `mission_core`, …). Absent on the labelled specimen.
+   * Delivery uses it so a Herdr task does not wear the layout-preview lock.
+   */
+  sourceKind?: string;
   /** The state Mission details draws its state actions against. */
   state: DiScanStateFacts;
   /**
@@ -812,6 +817,7 @@ export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { 
       // The record carries no delivery stage; M8 reads ONE linked delivery's status in Mission details, through its own session.
       delivery: { source: 'not_read', stage: null },
       deliveryLink: deliveryLinkOf(mission),
+      sourceKind: mission.sourceKind,
       // "running" is read from the record, and "awaiting a decision" from the request panel when one of its requests waiting for `decide` ties to this Mission. Every other fact is NOT
       // read, so it is null, never false: the panel must not turn an unread fact into "nothing is waiting" (the request panel lists only its own requests, so no tie is not "no decision").
       state: {
@@ -1621,6 +1627,15 @@ const rank = (stage: DiDeliveryStage): number =>
 export const DI_DELIVERY_NOT_READ = 'Delivery state is not read in this layout preview.';
 
 /**
+ * A Herdr task is not a workflow Mission. Delivery records name workflow ids only, so Commit,
+ * Push and Open pull request are not a layout preview waiting to be wired: they do not apply.
+ */
+export const DI_HERDR_DELIVERY =
+  'Delivery records name only workflow Missions. This Herdr task has no delivery to commit, push, or open from here.';
+export const DI_HERDR_DELIVERY_NOTE =
+  'The office does not commit, push, or open a pull request for a Herdr task. A delivery link, when the catalog reports one, is shown above.';
+
+/**
  * The four Delivery steps (gap 2), each offered only when the canonical state matches (gap 3) and otherwise locked with a plain reason. CHANGED BY THE OWNER RULING (2026-10-28): the former fifth
  * step, "Hold to merge" (AC-4.6-48, AC-4.6-40), is removed; there is no merge step, and DI_DELIVERY_END follows the steps as a statement.
  */
@@ -1681,6 +1696,17 @@ export function deliverySteps(delivery: DiScanDelivery): DiDeliveryStepView[] {
       return { id: step.id, label: step.label, gate: 'ready', reason: '' };
     return { id: step.id, label: step.label, gate: 'locked', reason: step.locked(stage) };
   });
+}
+
+/** Commit, Push, Open pull request and Accept CI, each locked with the Herdr explanation. */
+export function herdrDeliverySteps(): DiDeliveryStepView[] {
+  const steps: Array<[DiDeliveryStepId, string]> = [
+    ['commit', 'Commit'],
+    ['push', 'Push'],
+    ['pr', 'Open pull request'],
+    ['accept_ci', 'Accept CI results'],
+  ];
+  return steps.map(([id, label]) => ({ id, label, gate: 'locked', reason: DI_HERDR_DELIVERY }));
 }
 
 /** M8: a wired step's words (a linked Mission, read through Mission details' session). Each names WHO established it (round 58). */

@@ -39,10 +39,12 @@ import {
   DI_EVIDENCE_LABEL,
   DI_EVIDENCE_NOT_AVAILABLE,
   DI_EVIDENCE_NOT_LISTED,
+  DI_HERDR_DELIVERY_NOTE,
   DI_MISSIONS_READ,
   DI_SCAN_MISSION_VIEWS,
   DI_SCAN_PAGE_VIEWS,
   DI_SCAN_TABS,
+  herdrDeliverySteps,
   knownTrue,
   linkedDeliverySteps,
   openAttentionCount,
@@ -662,12 +664,19 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
     if (real && setLinked !== undefined) setLinked(target);
   }, [real, setLinked, target]);
   const wired = target !== null && session !== null;
+  // A Herdr task with no linked delivery is not a layout preview of Commit/Push.
+  const herdrUnlinked = row.sourceKind === 'herdr_task' && target === null;
+  const linkWords = link !== undefined && link.kind !== 'linked' ? link.words : null;
   // the session acts for THIS Mission only while its one id is this Mission's link
   const current = session !== null && target !== null && enteredId(session.state) === target;
   const blocked = session === null || session.state.pending !== null || session.state.unvouched !== null;
   const steps = wired
     ? linkedDeliverySteps(current && session !== null ? session.state.view : null)
-    : deliverySteps(row.delivery);
+    : herdrUnlinked
+      ? herdrDeliverySteps()
+      : linkWords !== null
+        ? herdrDeliverySteps().map((step) => ({ ...step, reason: linkWords }))
+        : deliverySteps(row.delivery);
   return (
     <section
       className="di-scan-delivery"
@@ -757,14 +766,17 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
           )}
         </>
       )}
-      {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28) */}
-      <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
-        {DI_DELIVERY_END}
-      </p>
-      {/* the layout note describes layout-only controls: a wired Delivery draws none */}
+      {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28).
+          A Herdr task with no linked delivery does not end in a pull request from this office. */}
+      {!herdrUnlinked && (
+        <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
+          {DI_DELIVERY_END}
+        </p>
+      )}
+      {/* the layout note describes layout-only controls: a wired Delivery draws none; a real unlinked Mission says the catalog's reason */}
       {!wired && (
         <p className="di-scan-stage-note" id="di-scan-delivery-note">
-          {LAYOUT_NOTE}
+          {herdrUnlinked ? DI_HERDR_DELIVERY_NOTE : linkWords !== null ? linkWords : LAYOUT_NOTE}
         </p>
       )}
     </section>

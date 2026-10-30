@@ -94,7 +94,10 @@ const INVENTED = [
 describe('B-H1: every scan view of a production Mission says what it has not read, and invents nothing', () => {
   /** view -> the not-read (or unavailable) words that view must SAY. */
   const MUST_SAY: Record<string, string[]> = {
-    mission: ['Approvals, repository requests, stalls and logs are not read in this layout preview.', DI_DELIVERY_NOT_READ],
+    mission: [
+      'Approvals, repository requests, stalls and logs are not read in this layout preview.',
+      'Delivery records name only workflow Missions.',
+    ],
     diff: [DI_DIFF_NOT_READ, 'Files are not read in this layout preview.'],
     comments: [DI_COMMENTS_PAID],
     missions: ['Not recorded', '>not read<'],
