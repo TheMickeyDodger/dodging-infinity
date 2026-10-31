@@ -7,8 +7,8 @@ review preamble. It lives in its own subtree,
 [`integrations/pixel-agents/`](../integrations/pixel-agents/), with its own Node.js
 dependency and build boundary.
 
-It observes; it does not control, with TWO deliberate, bounded exceptions. Each is opt-in, and
-each is a process you start yourself. The first is the **Codex Orchestrator** request panel (see
+It observes; it does not control, with THREE deliberate, bounded exceptions, each opt-in. The
+first two are each a process you start yourself. The first is the **Codex Orchestrator** request panel (see
 [Requesting Missions](#requesting-missions-the-codex-orchestrator)), where you ask for work, decide
 on an exact proposal yourself, and start it. The second, with `--delivery-adapter-discovery`, is the
 office delivery adapter (`didelivery_office.py`). The office relays to it a status read, and a
@@ -21,15 +21,21 @@ catalog links (see "Delivery links on Missions" under [Launch](#launch), which n
 adapter names eligible behind a local confirmation, with the adapter's two notes shown as it wrote
 them. No delivery id is typed there, and no other delivery can be chosen. Accepting CI results is not
 connected. A Mission Core Mission, or any Mission without such a link, shows why no delivery is read
-and offers nothing to confirm. A plain Herdr task is linked when its workspace origin matches one
-delivery record's repository. Commit, Push and Open pull request then use the same confirmation as a
-workflow Mission. They are not a layout preview, and they are not offered when no delivery is linked.
+and offers nothing to confirm. A plain Herdr task is linked when one delivery record's sealed worktree
+directory and sealed task id are both its own (see [Delivery links on Missions](#delivery-links-on-missions)).
+Commit, Push and Open pull request then use the same confirmation as a workflow Mission. They are not a
+layout preview, and they are not offered when no delivery is linked, nor for a link an older catalog made
+by the workspace origin alone.
 The catalog's delivery store is not shown to be the one the adapter
 reads: if the adapter has no record of a linked delivery, its refusal is shown as it answered. A
 separate panel where a delivery id is typed is kept for test harnesses only, with no product entry (owner
-decision, 2026-10-29): the office does not draw it, and Delivery under Swarm is the product's delivery view. Everything else here is
-read-only. The office does not spawn Herdr (the panel's own bridge asks Herdr, after your explicit
-Start), mark Missions complete, create Git authority, deploy, or rewrite durable state.
+decision, 2026-10-29): the office does not draw it, and Delivery under Swarm is the product's delivery view. The
+third is the **Herdr terminal** (see [Herdr terminal](#herdr-terminal)). It needs no second process, but it is off
+unless the office is started with `--herdr-bin`, `--herdr-home` and `--herdr-socket`. With them, a click on Herdr
+focuses the Mission's herd workspace in Herdr and opens a Terminal.app window running the `herdr` client. The
+office types nothing into any pane or terminal. Everything else here is read-only. The office does not start
+Herdr's server or any agent (the panel's own bridge asks Herdr, after your explicit Start), mark Missions
+complete, create Git authority, deploy, or rewrite durable state.
 It is a browser package only: there is no native wrapper, no signing or notarization, and no
 controls beyond that panel. Dots (future
 and optional, not today's mobile interface) and R1 are separate and are not part of it. Today
@@ -42,9 +48,9 @@ What a rebuilt office reads from the catalog, and what still needs a process on 
 - **Code Diff** is offered for an active Mission Core assignment and for an active Herdr task whose binding is bound, including when no team member is live: the diff is the task workspace. The scan Code Diff follows that offer. It is not a layout preview. A review the office does not offer says the office's reason. Reading the diff still needs the catalog backend (`/code_review`) restarted from this tree.
 - **Comments** on a Herdr task are that task's recorded review (reviewer, round, verdict, declared findings). Nothing recorded stays unrecorded. They are not a Paid-sharing thread and not a layout preview.
 - **Evidence and review** for a Herdr task come from the task's `.herd/state` review when the capture observes the workspace. No review recorded is `not_recorded`. No Mission Core artifact bodies are recorded for a Herdr task; that section says so, and the review section is the recorded review.
-- **Delivery** is read when the catalog links one delivery record. A workflow Mission links by the record's Mission binding. A Herdr task links when its workspace origin matches one delivery record's repository. Commit, push and opening a pull request still go through the office delivery adapter when you start it (`--delivery-adapter-discovery`), and still require that adapter's confirmation. The office itself does not commit, push, merge or deploy, and it does not start Herdr.
+- **Delivery** is read when the catalog links one delivery record. A workflow Mission links by the record's Mission binding. A Herdr task links when one delivery record's sealed worktree directory and task id are both its own. Commit, push and opening a pull request still go through the office delivery adapter when you start it (`--delivery-adapter-discovery`), and still require that adapter's confirmation. The office itself does not commit, push, merge or deploy, and it starts no Herdr server or agent. Its one terminal route is the [Herdr terminal](#herdr-terminal).
 - **Reception** reads Herdr task failure (`FAILED`, `ERROR`) as a blocker and a completed Herdr task with no approving review as results ready for review. Clarification requests are still not in the catalog. Recover, answering, and accepting CI stay outside this office and say which connection they need.
-- **Herdr** in the sidebar and on a Mission opens the documented terminal path (`herdctl` from your checkout). The office does not start Herdr.
+- **Herdr** in the rail, on a Mission, and beside Code Diff and Comments is the [Herdr terminal](#herdr-terminal). The office's own answer for that Mission enables it; a click focuses the herd's workspace in Herdr and opens a Terminal.app window running `herdr`. Started without `--herdr-bin`, `--herdr-home` and `--herdr-socket`, it stays disabled and says which flags it needs.
 - **Connections** are not in this build.
 - **Orchestrator status** uses a bound active Herdr task's standing, and a workflow Mission's declared phase, when no team member is confirmed live.
 
@@ -183,18 +189,105 @@ node dist/di-cli.js --state-dir /absolute/office-state \
   reason. It covers the Grok Bot route only: a proposal presented straight from the command line
   (`present-dots`) is not stored anywhere, so it cannot appear. When the flag is not given, Reception
   labels it "not reported" and does not show it as "none".
+<a id="delivery-links-on-missions"></a>
+
 - **Delivery links on Missions.** With `--delivery-store DIR`, each version 2 Mission also says
   which ONE delivery record, if any, that store links to it. Only a workflow Mission can be linked:
   by the one valid record whose own Mission binding names its workflow id, while every workflow
   source was read and no other Mission holds that id. Two matching records are ambiguous, and none
   is chosen. A Mission Core Mission is never linked: no delivery record names one, so its link is
-  "not known", not "none". A plain Herdr task is linked when repository addressing is on and its
-  workspace origin matches exactly one delivery record's repository (`record_repository_binding`).
-  No readable origin is `unlinked_repository_not_recorded`. Two records, or two Herdr tasks, sharing
-  that repository are ambiguous and none is chosen. Without the flag, every workflow Mission and
-  every addressable Herdr task says that no store is registered; a Mission Core Mission still says
-  its link is not known. A catalog that did not address repositories still reports
-  `unlinked_model_not_recorded` for a Herdr task. A link names which delivery's status may be read; it
+  "not known", not "none". A plain Herdr task is linked when task-worktree addressing is on and exactly one
+  delivery record SEALS both the directory of this task's own worktree (`repository.git_dir_realpath`)
+  and this task's id (`workflow_identity.engineering_task_id`): that exact task in that exact worktree
+  (`record_task_worktree_binding`). The shared origin is NOT the key. Every worktree of one origin shares
+  it, which used to let one task steal another worktree's record or hide its own (each sibling reported
+  ambiguous). The worktree identity is the per-worktree directory only, never the shared common
+  directory, which would collapse the worktrees back into one. A task with no task id, or whose worktree
+  has no readable directory, is `unlinked_task_worktree_not_recorded` (not known, never "none").
+  Two records, or two catalog rows, with the same task and worktree are ambiguous and none is chosen.
+  Without the flag, every workflow Mission and every addressable Herdr task says that no store is
+  registered; a Mission Core Mission still says its link is not known. A catalog that did not address task
+  worktrees still reports `unlinked_model_not_recorded` for a Herdr task.
+
+  **An older catalog's origin-only link is a weaker claim and is treated as one.** Before this, a Herdr
+  task was linked by its workspace origin alone (`record_repository_binding`,
+  `unlinked_repository_not_recorded`). That rule can select another worktree's or another task's record.
+  A current catalog no longer sends it, and its validator refuses it. This office still READS it from an
+  older catalog, as its own kind: the delivery is shown for reference with the origin-only wording, and
+  this window reads nothing from it and offers Commit, Push and Open pull request on nothing from it (the
+  steps read "Not offered"). A basis this office does not recognise is not guessed at: nothing is linked,
+  nothing is read, and the person is told it is not known.
+
+  **Creating a delivery record for a Herdr task.** A Herdr task's Delivery, when this window acts on no
+  delivery for it, shows the read-only facts the EXISTING human ceremony needs (`delivery_handoff`): the
+  repository, the task, the worktree directory, whether HEAD is on a named branch, and whether the task
+  has the evidence the ceremony collects (a COMPLETE task and the latest canonical APPROVE, validated by
+  the existing collector `herdr/delivery_evidence.py`; its refusal reason is shown verbatim and nothing is
+  synthesized). The staged candidate a pull-request ceremony needs is always "not determined here", and
+  the workflow id is always yours to supply (a Herdr task has no workflow-store workflow id). Nothing here
+  says a record is "ready": an empty list of blockers is not a promise. For a task on a detached HEAD with
+  no COMPLETE and no APPROVE it says the ceremony would stop for exactly those reasons; a named branch
+  and the staged candidate are what a delivery you separately approve would require, and this window does
+  neither. It also shows ONE exact route to run in your own terminal. The route is a subshell that stops
+  at the first failure, runs from your Herdr engine checkout (you edit its `ENGINE` line), names the
+  task's repository explicitly, writes its evidence to a new directory made for the run, and passes
+  `--expect-task-id` so the collector itself refuses unless the task current in that repository is the one
+  the route was prepared for (a route saved for task A and run after task B completed refuses instead of
+  sealing B's identity). The office runs nothing, stages nothing and approves nothing; the ceremony asks
+  you to confirm in your terminal, and creating a record stays distinct from authorizing a delivery.
+
+  **Where a record made from a task comes back.** The ceremony seals the worktree directory and the task
+  id into the record, and the catalog links by exactly that pair, so a record made from this task in this
+  worktree is the one this task links to. No second binding exists. The statement is made ONLY from the
+  producer's explicit declaration (`delivery_handoff.link_basis`, stated whether or not anything is
+  linked, since an unlinked link's own basis is null), and it is conditioned on the store: the ceremony
+  always writes to the per-user default delivery store
+  (`~/Library/Application Support/DodgingInfinity/telegram`) and has no option to choose another, while
+  the catalog reads the store it was started with (`--delivery-store`). This office has not shown they are
+  the same directory, so it does not promise the link: start the catalog with `--delivery-store` set to
+  that default store. A legacy origin-only link or declaration refuses the claim, and silence (an older
+  catalog sends no handoff block) or an unrecognised declaration is "not known".
+
+  **Unresolved roster identities are shown as unresolved.** In Mission details a role whose roster member
+  is `replaced`, `disappeared` or `ambiguous`, or `present` but not counted live by the office, or in a
+  state this window does not recognise, is drawn with a dashed, dimmed avatar and its own label ("Replaced
+  by another session", "Not in the live listing", "Identity ambiguous", "Not counted live", "Identity
+  unrecognised") and no activity shown as observed. Only a member the office classifies `present` AND
+  counts live is shown as confirmed. When a role is listed twice, the confirmed listing takes the seat.
+
+  **Unresolved runtime records that are not roster members are listed too.** The swarm above is built from the
+  roster only, so a runtime identity record that never became a roster member used to vanish from this
+  window when the task had no observed roster members. Mission details (and the list card) now list, by name,
+  every runtime record found under that Mission's workspace (`rootRef` is the Mission's own reference, the
+  join the office itself uses) whose identity is not verified, with its own label: "Identity not verified",
+  "Identity ambiguous", "Identity could not be checked" (or "Identity unrecognised" for a state this window
+  does not know). These stay three different facts. The listing says no more than the catalog does: the record
+  is not promoted into the roster, is not drawn, shows no role, no task membership, no activity and no live
+  look, and its words say its role and task membership are not established and that this window does not show
+  it as a team member or as working (it does not claim the record is not a member: membership that is not
+  established is not membership that is absent). An agent's own claim of which task it serves is not used to
+  attach it. NOTHING is suppressed against a roster member, because the roster and the runtime record each
+  report their own unresolved state and their own reason, and dropping either would lose what the catalog
+  reported (a roster `replaced` with reason `session_changed` beside a runtime `unavailable` with reason
+  `listing_unreadable` are two different facts). Both records are shown, each with its own label and its own
+  reason code beside it (the roster's on the swarm role, the runtime record's in the listing; the plain
+  sentence for a code this window has no sentence for is generic, so the code itself is shown). Where the
+  record and a roster member name the same live session, the record's words say the roster lists that
+  session too, with its own state and reason; where the roster lists it as confirmed, they say the two
+  records disagree. Showing one agent on two lines, each with what the catalog said, is the honest error;
+  a lost state or reason is not, and no identity is inferred to make the lines merge. A name or a pane
+  never relates two records (either outlives the session in it, and an unresolved record often names no
+  session at all). The operational face holds to the same strength: its runtime-agent and "can't be linked to
+  a role" lines (the dock, the inspector, the kind labels and the navigation details) say the agent is "not
+  shown as a team member", and never "not a team member", because neither a verified identity nor an
+  unconfirmed task reference establishes membership or its absence; each line keeps the assignment-record
+  state it already carried, that it is an assignment record rather than activity, and, for a record that
+  cannot be linked, that it is not drawn. The same applies to the runtime zone's label ("Runtime agents (not
+  shown as team members)") and to the server's one-sentence runtime summary ("N runtime agent(s) with a
+  verified identity, not shown as team members; M listed without a verified identity"): a verified identity
+  establishes the identity, not the absence of membership, so the sentence says what is shown. Both are label
+  and prose strings only; no schema, state or behaviour changed. Records that are rooted at no
+  Mission are not shown in this window; they remain in the operational face's "Other agents" list. A link names which delivery's status may be read; it
   authorizes nothing, and the office delivery adapter is not shown to read the same store. Mission
   details reads a linked delivery under Swarm (see the delivery adapter, above). Commit, push and
   opening a pull request use that adapter's existing confirmation.
@@ -210,6 +303,10 @@ node dist/di-cli.js --state-dir /absolute/office-state \
 - **One-shot read.** Instead of a listener,
   `python3 -B dicatalog.py query --registry "$EX/registry" --discover-roots --wait-seconds 25`
   prints one answer line.
+- **Herdr terminal (opt-in).** `--herdr-bin FILE --herdr-home DIR --herdr-socket FILE` on the OFFICE, all
+  three or none, each a plain absolute path. They turn on the Herdr control: see
+  [Herdr terminal](#herdr-terminal). The catalog bridge needs `--discover-roots` for the catalog to verify
+  a role's runtime identity at all (also explained there).
 
 Recovery after a killed office, profiles, and the full limits are in
 [`packaging/di/README.txt`](../integrations/pixel-agents/packaging/di/README.txt).
@@ -637,6 +734,191 @@ the opener's own output is discarded because it can echo the address.
   recorder, so no real browser opened. The Linux branch was exercised on macOS with a
   stand-in `xdg-open`, not on a Linux host.
 
+## Herdr terminal
+
+On a click, the office asks macOS to open a **Terminal.app** window that runs the `herdr` client, after it has
+asked Herdr to focus the workspace of that Mission's herd. It is the office's third bounded exception to "it
+observes; it does not control". It is opt-in, a person's click is its only trigger, and it sends nothing into any
+pane or terminal: you type, the office does not.
+
+**Turning it on.** Start the office with all three flags, or none:
+
+```bash
+node dist/di-cli.js --state-dir /abs/office-state --backend-discovery "$EX/runtime-v2/backend-discovery.json" \
+  --herdr-bin /Users/you/.local/bin/herdr \
+  --herdr-home /Users/you \
+  --herdr-socket /Users/you/.config/herdr/herdr.sock
+```
+
+- Each is a **plain absolute path**: letters, digits, `.`, `_` and `-` in each segment, no space, no `.` or `..`
+  segment, no trailing slash. A value that is not is **refused, never repaired**, and the message names the flag.
+  Some but not all three, and the office refuses to start and names what is missing. The socket must lie inside
+  the home.
+- Nothing is searched for or defaulted: not from `PATH`, not from the environment, not from another checkout.
+- Every Herdr command the office runs gets `HOME` and `HERDR_SOCKET_PATH` set to your two values, and
+  `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `HERDR_SESSION` and `HERDR_CLIENT_SOCKET_PATH` removed. Those inherited
+  variables override `HOME`, and every Herdr pane carries the live server's socket, so without this the office
+  would reach whichever server it happened to inherit.
+- Without the flags the Herdr buttons are disabled and their note names the three flags. That note is the office's
+  answer, not a stock sentence.
+
+**What the control does.**
+
+1. When you open a Mission, the office asks its server whether a launch is available (`status`). That is a
+   **read**: it runs the same checks as a launch and writes, focuses and opens nothing. The Herdr buttons (in the
+   rail, on Mission details, and beside Code Diff and Comments) are enabled only when the answer is yes. When it
+   is no, they are disabled and show the real reason, with **Check again**. Nothing polls.
+2. A click sends `launch`. The checks run again, and only then, in this order, the office:
+   1. writes one launcher file, `<state-dir>/herdr-launchers/herdr-attach-<hex>.command`: a short script that
+      checks its own window is large enough, and only then starts plain `herdr` under the confined environment
+      above (see [The window's size](#the-windows-size-herdr-sizes-one-shared-session-to-its-smallest-client)).
+      The directory must be a real directory that you own, with no group or other access, and it and the file are
+      checked **physically** against the office's state root before anything is created or written (see below);
+      the office creates the directory owner-only when it is first needed and never removes the files;
+   2. asks Herdr to **focus the herd's workspace** (`herdr workspace focus <id>`), then reads it back
+      (`herdr workspace get <id>`);
+   3. only if Herdr's own answer says that workspace is focused, asks macOS to open Terminal.app on the launcher.
+
+   **Focus comes first and is required.** If the window opened while Herdr was still showing some other workspace,
+   a person who started typing would be typing into an unrelated agent. So if focus cannot be established the
+   office refuses to open anything and says so (and says the launcher file was written and not used). If the focus
+   was established and the open then fails, it says the view *did* move and nothing opened. Focusing moves the
+   operator's own view on a shared server. The office does nothing else to the herd: it creates, renames, closes,
+   splits, moves, resizes and zooms nothing, and never stops or reloads the server.
+3. One request runs at a time, and a second launch within three seconds is refused, so a double click is one window.
+
+**Where the launcher may be written.** The launcher directory and file are inside the office's state root, and
+that is decided by the office's existing state-write guard, not by a second check: before the directory is
+looked at or created, and again once it exists, and for the launcher file immediately before it is written, the
+path's parent is resolved *physically* (through every symbolic link on the way) and must lie inside the validated
+physical state root; a directory or file that is itself a symbolic link is refused. So a state root, a
+`herdr-launchers` directory or an ancestor redirected elsewhere after the office started is refused, nothing is
+created or written outside the root, and the answer says the launcher directory is unusable. Asking whether a
+launch is available (`status`) never creates anything.
+
+### The window's size: Herdr sizes one shared session to its smallest client
+
+Herdr runs **one session shared by every client attached to it, and sizes it to the smallest of them**. That is
+Herdr's behaviour; it is not the office's to change and the office does not try to. A new Terminal window is
+usually far smaller than the one already showing the herd, so attaching it as it opens would shrink every pane of
+the herd you are using. This was measured on this machine on 2026-10-30 by the project's Supervisor, not by the
+office: a live herd's pane area was 162 x 46 cells, and about 54 x 10 after a default-size Terminal window attached
+to the same session.
+
+What the office does about it, before any window exists:
+
+1. **It works out the size it will ask for, in admission.** It reads Herdr's read-only `api snapshot`, takes the
+   pane area of that workspace (the largest extent if it has several layouts), and requires a window of
+   `x + width + 2` columns by `y + height + 2` rows: the far edge of the area plus a margin of 2 and 2. For the
+   area above (starting at column 26, row 1) that is **190 x 49**. The margin is an *allowance*, not a
+   measurement: Herdr reports the pane area and where it starts, but not the size of the terminal that holds it
+   or how much room its borders take on the far sides. Asking for a window that is somewhat larger than needed
+   cannot shrink the session.
+2. **If it cannot establish that size, it opens nothing.** An unreadable or non-JSON snapshot, no layout for the
+   workspace, or an area that is missing, empty, fractional, negative or past a sanity bound (1000 x 500) is
+   refused as `geometry_unknown`, with the reason, before the launcher is written, the workspace focused or
+   anything opened. A window of unknown adequacy is how the herd was shrunk.
+3. **The launcher checks its own window before it starts Herdr.** It
+   - *reads* the window's size (`stty size`; it is never used to set one);
+   - if the window is smaller than required, writes one standard terminal request, `ESC [ 8 ; rows ; cols t`
+     ("resize this window"), to its own output, asking for the larger of the current size and the required size
+     in each dimension, so it only ever asks for a **larger** window;
+   - measures again, up to 40 times a tenth of a second apart, while the terminal catches up;
+   - starts plain `herdr` under the confined environment **only if the size it measured is at least the required
+     size**. Otherwise it does not start Herdr: it prints the size it measured and the size it needs and why, and
+     waits. Press Return after making the window larger and it measures again; close the window to give up. A
+     size it cannot read at all is reported as unreadable, never guessed.
+
+**This changes an earlier statement.** The launcher used to be exactly one command, `herdr`. It is not any more:
+it is a short script whose *last* act is still that same plain `herdr` command (no `--session`, no extra
+argument). This is consistent with the owner rule that the office types nothing into the window: nothing is
+sent to a pane or to a terminal's *input*, no keystroke, prompt or text is put anywhere a program or a person
+would read it as typed, and the person types everything. The one new thing the launcher writes is the resize
+request, to its own output, where the terminal program reads it as a request about its own window; it is not
+input to any process. It also sets no size itself and reports no size it did not measure: there is no `stty rows`
+or `stty cols`, no `COLUMNS` or `LINES`, and no pseudo-terminal size call, so no invented or oversized dimensions
+are presented to Herdr. The launcher starts Herdr only when its own `stty size` read reported at least the
+required size; what that read says about the real window is the terminal's word, which no test here has
+seen. A test over the launcher's text pins all of this, and runs the generated script against stand-in `stty`,
+`sleep` and `herdr` programs for every branch (already large enough, asked to grow, never grows, unreadable,
+Return pressed). Those stand-ins say whatever the test tells them, so they show the script's logic, not any
+terminal's behaviour.
+
+**What this does and does not guarantee.**
+
+- It guarantees, by construction and by those tests, that the launcher **does not start Herdr in a window it
+  measured smaller than the required size, or could not measure**, and that it never asks for a smaller window
+  than it found.
+- It does **not** guarantee that Terminal.app carries out the resize request. That is **unobserved**: nothing in
+  the office or its tests opened a Terminal window or measured one. Terminals may ignore the request, and a
+  screen too small for the required size cannot satisfy it; in both cases the window says so and Herdr is not
+  started.
+- It does not guarantee that the herd keeps its size. Any other, smaller client that is attached now or attaches
+  later still shrinks the shared session; that is Herdr's rule.
+- It does not guarantee that the required size is exactly what Herdr needs (the margin is an allowance).
+- The office never sees the window. What it reports is that a window was *asked to open* and *asked to grow to at
+  least* that size; not that it grew, and not that Herdr started in it.
+
+**Which Mission, which herd.**
+
+- The Mission must be a plain Herdr task (`herdr.task/1`) that is **active**, in a live catalog answer. A
+  cancelled, aborted, completed or errored task is not selectable, and its button says why.
+- The workspace is taken from **Herdr's own live listing row** for the session that was just matched, at the
+  moment of the click. It is never configured, never hard-coded and never copied from a recorded state.
+- The matched session must appear in Herdr's live list **exactly once**; not at all, or twice, is refused.
+- A role is found in one of two places the catalog lists a task's roles. A role the Mission's team has not claimed
+  is a *runtime agent*. A role the team roster already holds is a *member*, and the catalog then leaves it out of
+  the runtime agents. So for a normal, healthy, bound task the runtime agents are **empty** and the roster holds the
+  roles. The office reads both, prefers a verified runtime agent, and says which one vouched:
+  - **runtime identity verified**: the catalog's verdict for the role, decided over two source passes with the
+    role's working directory corroborated;
+  - **team roster, session confirmed**: the roster lists the role as `present`, reason `session_confirmed`, on this
+    task's own (`direct`) chain, the office counts it live, and its recorded and live sessions are equal. This is
+    **one comparison of two session ids, not a runtime-identity verification**, and the office never words it as one.
+    A roster entry that is `replaced`, `ambiguous`, `disappeared`, on a child chain, unconfirmed, or with sessions
+    that differ is refused, with the roster's own classification and reason.
+- **Runtime identity needs two source passes.** The catalog records a role's runtime identity as verified only
+  from two passes, and records the second only when the catalog bridge runs with `--discover-roots`. Without it
+  the runtime-agents block is `unavailable` with `role_records_read_in_one_source_pass_only`, and nothing is
+  verified. `--discover-roots` stays bounded by the registry: it reads the roots the registry's sources name. When
+  the catalog cannot read a task's roles, the office quotes the catalog's own problem code rather than saying the
+  task has none.
+
+**Why Terminal.app, and not Ghostty.** Observed on this machine on 2026-10-30, with an identical harmless probe
+launcher: Terminal 2.15 (`open -a Terminal <file>.command`) **ran** it, with its input a real terminal
+(`TERM_PROGRAM=Apple_Terminal`). Ghostty 1.3.1 (`open -a Ghostty <file>.command`) **exited with status 0 and logged
+that it received the file, but never ran it**. An opener that exits 0 is not evidence a launcher ran, so Ghostty is
+not offered. iTerm is not installed here and was not tried. The office opens
+`/usr/bin/open -a /System/Applications/Utilities/Terminal.app <launcher>` and waits only for the opener's own exit,
+for at most ten seconds, never for the window: exit 0 is reported as *asked to open*, and no exit in time as *may not
+have opened*, which is neither a success nor a failure.
+
+**What it says, and what it never says.** The reply states only what each receipt supports:
+
+| It says | Because |
+|---|---|
+| the terminal was **asked to open** (or *may not have opened*) | the opener exited 0 (or had not finished) |
+| the workspace is **focused** | Herdr's own read-back said so |
+| the pane is **matched as identity evidence only** | it is the live row whose session matched; matching focuses nothing, and no pane is ever focused (`herdr pane focus` moves to a neighbouring pane) |
+| which basis vouched for the role | the two bases above, in different words |
+| the window is **asked to grow to at least C x R** cells, and Herdr is started in it only if it really is that large | the office worked the figure out from Herdr's snapshot; it has not seen the window |
+
+It never says that the Herdr client has attached, that the herd is on screen, or that the keyboard works. Those are
+a person's observation at the window; nothing in the office makes or records them.
+
+**It sends no input.** The Herdr commands the office runs are `agent list` and `api snapshot` (both read-only),
+`workspace focus <id>` and `workspace get <id>`. A test scans all of `server/src` for every way of sending a key, a
+prompt or text to a pane or terminal, and the Herdr modules are named in it so the scan cannot quietly drop them.
+`workspace focus` is a call on Herdr's socket API, not terminal input. The one process module the Herdr route may
+import is `herdrProcess.ts`, and only for `execFile` and `spawn` from `child_process`: a test pins that exact
+import, so a second process module or an aliased or destructured route to `process` there is refused.
+
+**Limits, said plainly.** macOS and Terminal.app only. Whether the Herdr client actually attaches in the window,
+whether the keyboard works there, and whether Terminal.app grows the window when asked (so the herd keeps its
+size) are **not** proven by the office or by its tests, which use stand-ins for Herdr, the opener and the
+terminal's size; those observations are owed to a person at the window. `herdr workspace focus` was exercised only
+against such stand-ins. The launcher files accumulate in `<state-dir>/herdr-launchers/` until you delete them.
+
 ## Architecture and trust boundary
 
 ```text
@@ -690,17 +972,26 @@ herdr agent list ───┘     dicatalog_http.py                             
 request panel, described in [Requesting Missions](#requesting-missions-the-codex-orchestrator), is
 relayed one closed message type, `diMissionRequest`. The office delivery adapter is relayed one
 closed message type, `diDeliveryRequest`, with two operations: a status read and one confirmed
-step. Neither token is ever held in the browser, and the catalog bridge below stays read-only.)
+step. Neither token is ever held in the browser, and the catalog bridge below stays read-only. The
+[Herdr terminal](#herdr-terminal) is a third closed message type, `diHerdrRequest`, with two
+operations: a status read and a launch.)
 
 - **What it reads.** It reads the bridge's discovery file and polls `GET /catalog`. It never
   starts, supervises or restarts the bridge; a missing discovery file is shown as
   unavailable.
 - **What it serves.** It binds `127.0.0.1` only and serves the production webview and one
   WebSocket. A socket without the per-launch token is closed before any office data is sent.
-  There is no hook route, no consent flow, no terminal or launch path, no model invocation
+  There is no hook route, no consent flow, no terminal INPUT path (the Herdr terminal opens a window
+  and types nothing), no model invocation
   and no external asset directory.
 - **What it writes.** Only its own state directory: settings, layout, seats and its access
-  file.
+  file, and, when the Herdr terminal is on, launcher files in `herdr-launchers/` inside it
+  (owner-only; the office never removes them).
+- **What it runs.** Nothing, unless the Herdr terminal is on. Then, only for a status read or a
+  person's click, it runs three Herdr commands (`agent list`, `workspace focus <id>`,
+  `workspace get <id>`) and `/usr/bin/open`, with no shell. The entry has exactly one
+  process-starting module (`server/src/di/herdrProcess.ts`), pinned by name in a test, along with
+  who may import it and a ban on the usual ways of reaching `child_process` without importing it.
 
 **What it shows is what was reported.**
 

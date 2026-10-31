@@ -38,6 +38,7 @@ const TARGET = {
   home: '/opt/proof/root',
   socketPath: '/opt/proof/root/.config/herdr/herdr.sock',
   launcherDir: '/opt/proof/root/launchers',
+  terminal: 'terminal',
 };
 const LAUNCHER_NAME = 'a1b2c3d4e5f6a7b8c9d0e1f2';
 const LAUNCHER = `${TARGET.launcherDir}/herdr-attach-${LAUNCHER_NAME}.command`;
@@ -64,6 +65,9 @@ const LISTING = JSON.stringify({
   },
 });
 
+/** Herdr's read-only snapshot for the same workspace: the pane area the launcher's required window size is derived from (A12). */
+const SNAPSHOT = JSON.stringify({ result: { snapshot: { layouts: [{ workspace_id: 'w9', tab_id: 'w9:t1', area: { x: 26, y: 1, width: 162, height: 46 } }] } } });
+
 /** Stand-in module tables for the recorder, with each original kept so a test can see it restored. */
 function standIns(): {
   tables: SendRecorderTargets;
@@ -75,19 +79,30 @@ function standIns(): {
   };
   const childProcess: Record<string, unknown> = {};
   for (const name of RECORDED_PROCESS_APIS) childProcess[name] = inert(name);
+  // The launch route runs four Herdr commands: the read-only agent list, the read-only `api snapshot` (the window size, A12), `workspace focus <id>` and the `workspace get <id>` read-back that confirms it.
+  // Each gets the answer Herdr gives.
   childProcess.execFile = (
     _file: string,
-    _args: string[],
+    args: string[],
     _options: unknown,
     callback: (e: Error | null, out: string, err: string) => void,
   ) => {
-    queueMicrotask(() => callback(null, LISTING, ''));
+    const out =
+      args[0] === 'workspace' && args[1] === 'get'
+        ? JSON.stringify({ result: { workspace: { workspace_id: args[2], focused: true } } })
+        : args[0] === 'workspace'
+          ? '{}'
+          : args[0] === 'api'
+            ? SNAPSHOT
+            : LISTING;
+    queueMicrotask(() => callback(null, out, ''));
     return {};
   };
+  // The opener exits with status 0 once started: the route waits for the opener's own exit, never for a window.
   childProcess.spawn = () => {
     const child = {
-      once(event: string, listener: () => void) {
-        if (event === 'spawn') queueMicrotask(listener);
+      once(event: string, listener: (...a: unknown[]) => void) {
+        if (event === 'exit') queueMicrotask(() => listener(0, null));
         return child;
       },
       unref() {},
@@ -333,7 +348,11 @@ describe('the launch goes through the recorder', () => {
       .filter(([seq]: [number]) => seq < start)
       .map(([, cls]: [number, string]) => cls);
     expect(before.filter((cls: string) => cls === 'resolution').length).toBe(1);
-    expect(before.filter((cls: string) => cls === 'launch').length).toBe(2);
+    // The recorder's exact matches are unchanged: the launcher file write is still the one 'launch' entry. The route's NEWER steps (the read-only snapshot, workspace focus, its read-back, and the opener now
+    // given the Terminal application by absolute path rather than by name) are not among those exact matches, so they are recorded as 'process', conservatively, and all of them before the typing window.
+    expect(before.filter((cls: string) => cls === 'launch').length).toBe(1);
+    expect(before.filter((cls: string) => cls === 'process').length).toBe(4);
+    expect(classes.filter(([seq]: [number]) => seq > start).map(([, cls]: [number, string]) => cls)).not.toContain('process');
   });
 });
 
@@ -387,7 +406,11 @@ describe('the typing window', () => {
     const e = evidence[0];
     expect(e.launch.launched).toBe(true);
     expect(e.launch.session).toBe('sess-proof-1');
-    expect(e.launch.paneId).toBe('w9:p2');
+    // the pane of the live row that matched the session: identity evidence, which focuses nothing (the field was `paneId` before it was named for what it is)
+    expect(e.launch.matchedPaneId).toBe('w9:p2');
+    expect(e.launch.paneFocus).toBe('not_performed');
+    expect(e.launch.workspaceId).toBe('w9');
+    expect(e.launch.focus).toEqual({ state: 'focused', workspaceId: 'w9' });
     expect(e.launch.launcher).toBe(LAUNCHER);
     expect(e.target).toEqual(TARGET);
     expect(Array.isArray(e.limits)).toBe(true);

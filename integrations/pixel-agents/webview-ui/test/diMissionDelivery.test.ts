@@ -15,7 +15,9 @@
  *    and no step; the section says the two stores are not shown to be one.
  *  - Specimen rows are unchanged; Accept CI stays unconnected; there is no merge or hold word anywhere in Delivery.
  */
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,9 +25,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import type { DiDeliveryReply, DiMission, DiOfficeState } from '../../core/src/messages.ts';
+import type { DiDeliveryReply, DiMission, DiMissionDeliveryHandoff, DiOfficeState } from '../../core/src/messages.ts';
 import * as model from '../src/components/diDeliveryModel.ts';
-import { DI_SCAN_LOCK, type DiScanRow, scanRowsFromOffice } from '../src/components/diScanModel.ts';
+import { deliveryActionTarget, DI_SCAN_LOCK, type DiScanRow, returnPathClaim, scanRowsFromOffice, shellWord } from '../src/components/diScanModel.ts';
 import { DiScanPanel } from '../src/components/DiScanPanel.tsx';
 import type { DiDeliveryControl } from '../src/hooks/useDiDelivery.ts';
 
@@ -64,7 +66,13 @@ const WORDS: Record<string, string> = {
     'The one record that names this Mission has a delivery id of a shape this office cannot address.',
   unlinked_repository_not_recorded:
     'This Herdr task’s workspace has no origin URL this office could read, so no delivery is linked.',
+  unlinked_task_worktree_not_recorded:
+    'This Herdr task has no task id, or its worktree has no git directory this office could read, so no delivery is linked. This is not the same as no record.',
 };
+const TASK_WORKTREE_WORDS =
+  'Linked because one delivery record was made for this task, in this task’s own worktree: its sealed task id and its sealed worktree are both this task’s. A link names which delivery is read here; it authorizes nothing.';
+const LEGACY_WORDS =
+  'Linked because this workspace’s origin matches one delivery record’s repository. A link names which delivery is read here; it authorizes nothing. This older catalog matches by origin only, which every worktree of that origin shares, so this does not show the record was made for this task or this worktree. It is shown for reference only. This window does not read its status or offer Commit, Push or Open pull request on it, because it may belong to another task or another worktree. A catalog that links by task and worktree is needed before this office acts on a delivery for this task.';
 const NOT_REPORTED =
   'Not known: this office’s catalog does not report a delivery link for this Mission.';
 const NO_SESSION = 'This window has no delivery session, so this delivery is not read here.';
@@ -194,6 +202,34 @@ function rows(
   }
   return scanRowsFromOffice(state);
 }
+/** The herd Mission AS a Herdr task (the model the producer pairs the task-and-worktree link with), with `link`. */
+function herdrRows(link: Link, handoff?: DiMissionDeliveryHandoff): DiScanRow[] {
+  const state = structuredClone(historical.states.live);
+  for (const mission of state.missions.missions) {
+    if (mission.missionRef === HERD) {
+      mission.lifecycleModel = 'herdr.task/1';
+      mission.v2 = { ...mission.v2, deliveryLink: link, ...(handoff === undefined ? {} : { deliveryHandoff: handoff }) };
+    }
+  }
+  return scanRowsFromOffice(state);
+}
+/** An observed handoff block as the producer emits it (a fixture's own state: nothing here is this mission's). */
+const HANDOFF = (over: Partial<DiMissionDeliveryHandoff> = {}): DiMissionDeliveryHandoff => ({
+  state: 'observed',
+  linkBasis: 'record_task_worktree_binding',
+  repository: "/work/my wt's tree",
+  engineeringTaskId: 'task-a',
+  gitDirRealpath: '/main/.git/worktrees/wt',
+  branch: { state: 'named', ref: 'refs/heads/feature/p1' },
+  evidence: { state: 'collected', reason: null },
+  stagedCandidate: 'not_determined',
+  workflowId: 'human_supplied',
+  blockers: [],
+  ...over,
+});
+const NO_RECORD: Link = { state: 'unlinked_no_record', deliveryId: null, basis: null };
+const handoffSection = (html: string) => /<section[^>]*data-testid="di-scan-delivery-handoff"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
+const herdrRow = (link: Link, handoff?: DiMissionDeliveryHandoff) => herdrRows(link, handoff).find((item) => item.id === HERD)!;
 const linkedRow = (id = ID) =>
   rows({ state: 'linked', deliveryId: id, basis: 'record_mission_binding' }).find(
     (r) => r.id === HERD,
@@ -315,23 +351,92 @@ describe("the row carries the producer's link, in words", () => {
     });
   });
 
-  it('a Herdr task linked by repository names that rule, and the layout-preview lock is gone', () => {
-    const row = rows({
+  // The two scenarios below are SEPARATE tests on purpose, never one parameterised case over two bases: a shared body lets the canonical
+  // path's expectations leak onto the legacy one, which is exactly how a legacy origin-only link could pass while being wrong.
+  it('SCENARIO 1, a CURRENT catalog: a Herdr task linked by task and worktree says so, is read, and is offered its step', () => {
+    const row = herdrRows({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }).find((item) => item.id === HERD)!;
+    expect(row.deliveryLink).toEqual({ kind: 'linked', deliveryId: ID, words: TASK_WORKTREE_WORDS });
+    expect(deliveryActionTarget(row.deliveryLink)).toBe(ID);
+    const d = section(render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer())))));
+    expect(text(d)).toContain(`The delivery linked to this Mission: ${ID}. ${TASK_WORKTREE_WORDS}`);
+    expect(d).toContain('data-testid="di-scan-delivery-read"');
+    expect(stepsOf(d).map((x) => x.gate)).not.toContain('withheld');
+    expect(stepsOf(d).map((x) => x.gate)).not.toContain('unlinked');
+    expect(text(d)).not.toContain('origin only');
+    expect(d).not.toContain('Layout preview');
+  });
+
+  it('SCENARIO 2, an OLDER catalog with this window: an origin-only link is shown for reference and acted on by NOTHING', () => {
+    const row = herdrRows({ state: 'linked', deliveryId: ID, basis: 'record_repository_binding' }).find((item) => item.id === HERD)!;
+    // it is its own kind, never `linked`
+    expect(row.deliveryLink).toEqual({ kind: 'origin_only', deliveryId: ID, words: LEGACY_WORDS });
+    // THE BEHAVIOUR: the delivery session is given no id, so it can read nothing and act on nothing
+    expect(deliveryActionTarget(row.deliveryLink)).toBeNull();
+    // the most hostile case: the session ALREADY holds this very delivery's status with an eligible step and a confirmation
+    const d = section(render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer())))));
+    expect(d).not.toContain('data-testid="di-scan-delivery-read"');
+    expect(d).not.toContain('data-testid="di-dl-confirm"');
+    expect(d).not.toContain('data-testid="di-dl-advance"');
+    expect(d).not.toMatch(/<input\b/);
+    expect(d).not.toContain('data-testid="di-scan-delivery-scope"');
+    expect(stepsOf(d).map((x) => x.gate)).toEqual(['withheld', 'withheld', 'withheld', 'withheld']);
+    for (const step of stepsOf(d)) {
+      expect(text(step.body)).toContain('Not offered');
+      expect(text(step.body)).not.toContain('Locked');
+      expect(text(step.body)).not.toContain('Ready');
+    }
+    // the words: the id is named as a reference, the legacy wording and the refusal are there, and nothing says it is THIS task's record
+    expect(text(d)).toContain(`A delivery matched by this workspace’s origin only: ${ID}.`);
+    expect(text(d)).toContain(LEGACY_WORDS);
+    expect(text(d)).not.toContain('The delivery linked to this Mission');
+    expect(text(d)).not.toContain(TASK_WORKTREE_WORDS);
+    expect(text(d)).not.toContain('made for this task, in this task’s own worktree');
+    expect(text(d)).not.toContain('Eligible now');
+    expect(d).not.toContain('Layout preview');
+  });
+
+  it('B4: a Herdr task\'s "no record" and "ambiguous" name its task and worktree; a workflow Mission\'s words are unchanged', () => {
+    const HERDR_NO_RECORD =
+      'No delivery record in the catalog’s delivery store was made for this task in this worktree. A record made from another worktree, or for another task, is not this task’s.';
+    const HERDR_AMBIGUOUS =
+      'More than one delivery record was made for this task in this worktree, or the catalog lists this task and worktree more than once; none is chosen.';
+    for (const [state, words] of [
+      ['unlinked_no_record', HERDR_NO_RECORD],
+      ['unlinked_ambiguous', HERDR_AMBIGUOUS],
+    ] as const) {
+      const herdr = herdrRows({ state, deliveryId: null, basis: null }).find((item) => item.id === HERD)!;
+      expect(herdr.deliveryLink, state).toEqual({ kind: 'unlinked', state, words });
+      // neither speaks of a Mission's id, a "Mission binding", or a shared origin: those are not this task's causes
+      expect(words).not.toMatch(/another Mission has its id|names this Mission|origin/);
+      const workflow = rows({ state, deliveryId: null, basis: null }).find((item) => item.id === HERD)!;
+      expect(workflow.deliveryLink, state).toEqual({ kind: 'unlinked', state, words: WORDS[state]! });
+    }
+  });
+
+  it('an unknown basis is NOT guessed at: nothing is linked, nothing is read, and the person is told it is not known', () => {
+    const row = herdrRows({
       state: 'linked',
       deliveryId: ID,
-      basis: 'record_repository_binding',
+      basis: 'record_canonical_worktree_binding' as unknown as Link['basis'],
     }).find((item) => item.id === HERD)!;
     expect(row.deliveryLink).toEqual({
-      kind: 'linked',
-      deliveryId: ID,
-      words: 'Linked because this workspace’s origin matches one delivery record’s repository. A link names which delivery is read here; it authorizes nothing.',
+      kind: 'unlinked',
+      state: 'linked_basis_not_recognised',
+      words: 'Not known: this office was told a delivery is linked by a rule this window does not recognise, so it does not show that delivery as this Mission’s.',
     });
-    const d = section(render(row, control(LINKED_START())));
-    expect(d).toContain('data-testid="di-scan-delivery-read"');
-    expect(d).toContain('workspace’s origin');
-    expect(d).not.toContain('Layout preview');
-    expect(d).not.toContain('delivery records name only workflow');
-    expect(d).not.toContain('This Herdr task has no delivery to commit');
+    expect(deliveryActionTarget(row.deliveryLink)).toBeNull();
+    const d = section(render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer())))));
+    expect(d).not.toContain('data-testid="di-scan-delivery-read"');
+    expect(d).not.toContain('data-testid="di-dl-confirm"');
+    expect(text(d)).not.toContain(ID);
+  });
+
+  it('only a `linked` link is ever an id the delivery session may act on (the decision point, over every kind)', () => {
+    expect(deliveryActionTarget(undefined)).toBeNull();
+    expect(deliveryActionTarget({ kind: 'not_reported', words: 'w' })).toBeNull();
+    expect(deliveryActionTarget({ kind: 'unlinked', state: 'unlinked_no_record', words: 'w' })).toBeNull();
+    expect(deliveryActionTarget({ kind: 'origin_only', deliveryId: ID, words: 'w' })).toBeNull();
+    expect(deliveryActionTarget({ kind: 'linked', deliveryId: ID, words: 'w' })).toBe(ID);
   });
 
   it('every unlinked state is its own reason; Mission Core is not known', () => {
@@ -532,13 +637,13 @@ describe('Delivery under Swarm, NOT linked: the reason, and nothing to read or c
     }
   });
 
-  it('its steps stay locked with the catalog reason; a Herdr task is not locked only because it is a Herdr task', () => {
+  it('its steps say no delivery is linked, with the catalog reason (not "Locked": that states a gate); a Herdr task is not shown a layout-preview lock only because it is a Herdr task', () => {
     for (const [name, row, session, words] of cases()) {
       const d = section(render(row, session));
       expect(
         stepsOf(d).map((s) => s.gate),
         name,
-      ).toEqual(['locked', 'locked', 'locked', 'locked']);
+      ).toEqual(Array(4).fill(row.deliveryLink?.kind === 'linked' ? 'locked' : 'unlinked'));
       const linkedWords =
         row.deliveryLink && row.deliveryLink.kind !== 'linked' ? row.deliveryLink.words : null;
       for (const s of stepsOf(d)) {
@@ -554,6 +659,405 @@ describe('Delivery under Swarm, NOT linked: the reason, and nothing to read or c
         expect(text(d), name).toContain(words);
       }
     }
+  });
+});
+
+// ── THE DELIVERY HANDOFF: how a record is created for a Herdr task, reachable from the task's own Delivery, never prose ────────────────────
+// Each scenario is its OWN test. The return-path statement is a decision made in behaviour (returnPathClaim) from the producer's EXPLICIT
+// declaration, so a fresh task with NO record is told how its record comes back; legacy and unknown are refused; silence is not a declaration.
+const CANONICAL_CLAIM =
+  'If the record is written to the delivery store this catalog reads, a record made from this task, in this task’s worktree, comes back to THIS task: this catalog links a Herdr task by its worktree’s git directory and its task id, and the ceremony seals both into the record.';
+const STORE_SETUP =
+  ' The ceremony always writes to the per-user default delivery store (~/Library/Application Support/DodgingInfinity/telegram) and has no option to choose another; this catalog reads the store it was started with (--delivery-store). This office has not shown they are the same directory, so it does not promise the link: start the catalog with --delivery-store set to that default store, or the record will not appear here.';
+const CANONICAL_RETURN = CANONICAL_CLAIM + STORE_SETUP;
+const LEGACY_RETURN =
+  'This office cannot promise that a record made from this task comes back to this task: this catalog links a Herdr task by its workspace origin only, which every worktree of that origin shares, so it can show another worktree’s or another task’s record here.';
+const NOT_KNOWN_RETURN =
+  'Not known: this catalog does not say how it links a Herdr task to a delivery record, so this office does not promise that a record made from this task comes back to this task.';
+
+describe('the delivery handoff: a FRESH task with no record is told how to create one, and how it comes back', () => {
+  it("SCENARIO fresh no-record task, current producer: the facts, the exact command in the person's own terminal, and the canonical return path", () => {
+    const d = render(herdrRow(NO_RECORD, HANDOFF()), control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer()))));
+    const h = handoffSection(d);
+    expect(h).not.toBe('');
+    expect(text(h)).toContain("Repository /work/my wt's tree");
+    expect(text(h)).toContain('Task task-a');
+    expect(text(h)).toContain('Worktree git directory /main/.git/worktrees/wt');
+    expect(text(h)).toContain('Branch on refs/heads/feature/p1');
+    expect(text(h)).toContain('Evidence a COMPLETE task and the latest canonical APPROVE were found');
+    expect(text(h)).toContain('Staged candidate not determined here');
+    expect(text(h)).toContain('Workflow id you supply it: a Herdr task has no workflow id of its own');
+    // the EXACT command, pre-filled with this task's real repository path (one safe shell word), the human's own values left as placeholders
+    const command = /<pre[^>]*data-testid="di-scan-delivery-handoff-command"[^>]*>([\s\S]*?)<\/pre>/.exec(h)![1]!.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+    expect(command).toBe(
+      [
+        '(',
+        '  set -eu',
+        "  ENGINE='<path to your Herdr engine checkout: the directory that contains herdctl.py and pr_delivery/>'",
+        "  REPO='/work/my wt'\\''s tree'",
+        "  TASK='task-a'",
+        '  EVIDENCE="$(mktemp -d "${TMPDIR:-/tmp}/herd-evidence-$TASK.XXXXXX")/evidence.json"',
+        '  cd "$ENGINE"',
+        '  python3 herdctl.py delivery-evidence --repo "$REPO" --expect-task-id "$TASK" > "$EVIDENCE"',
+        "  python3 -m pr_delivery authorize --repo \"$REPO\" --workflow-id '<your workflow id>' --herd-evidence \"$EVIDENCE\" \\",
+        "    --verification-log '<path to your green verification log>' --verification-command '<the command that produced it>' \\",
+        "    --verification-exit-status 0 --title '<pull request title>'",
+        ')',
+      ].join('\n'),
+    );
+    expect(text(h)).toContain('Edit the ENGINE line first. The route runs from your Herdr engine checkout');
+    expect(text(h)).toContain('stops at the first failure');
+    expect(text(h)).toContain('refuses unless the task current in that repository is task-a');
+    expect(text(h)).toContain('This office runs nothing, stages nothing, changes no branch and approves nothing');
+    expect(text(h)).toContain('that is not a promise it will accept this worktree');
+    expect(text(h)).not.toMatch(/\bready\b|may be created|can be created|go ahead|approved/i);
+    expect(h).toContain('data-return-path="canonical"');
+    expect(text(h)).toContain(CANONICAL_RETURN);
+    expect(d).not.toContain('data-testid="di-scan-delivery-read"');
+    expect(d).not.toContain('data-testid="di-dl-confirm"');
+    expect(deliveryActionTarget(herdrRow(NO_RECORD, HANDOFF()).deliveryLink)).toBeNull();
+  });
+
+  it("SCENARIO this mission's own situation, from a fixture: detached HEAD, no COMPLETE and no APPROVE are stated as the real reasons, in the collector's words", () => {
+    const reason = "task 20261030-144734-e1b5c9 status is 'ACTIVE', not COMPLETE";
+    const h = handoffSection(
+      render(
+        herdrRow(NO_RECORD, HANDOFF({ branch: { state: 'detached', ref: null }, evidence: { state: 'refused', reason }, blockers: ['head_detached', 'evidence_not_collected'] })),
+        control(LINKED_START()),
+      ),
+    );
+    expect(text(h)).toContain('Branch HEAD is detached (no named branch)');
+    expect(text(h)).toContain(`Evidence the collector refuses: ${reason}`);
+    expect(text(h)).toContain('As things stand the ceremony would stop:');
+    expect(text(h)).toContain('HEAD is detached, and the ceremony needs a named branch checked out (it stops with “HEAD is not on a named branch”)');
+    expect(text(h)).toContain('the task has no collectable evidence (a COMPLETE task and the latest canonical APPROVE)');
+    expect(text(h)).toContain('Putting a named branch in place, and staging the exact candidate for a pull request, are what a delivery you separately approve would require. This window does neither.');
+    expect(text(h)).not.toMatch(/\bready\b/i);
+    expect(text(h)).not.toContain('that is not a promise');
+  });
+
+  it('SCENARIO no store registered, current producer: still the canonical statement, with the honest condition that nothing can link yet', () => {
+    const h = handoffSection(render(herdrRow({ state: 'unlinked_store_not_registered', deliveryId: null, basis: null }, HANDOFF()), control(LINKED_START())));
+    expect(h).toContain('data-return-path="canonical"');
+    expect(text(h)).toContain(CANONICAL_RETURN + ' The catalog has no readable delivery store right now, so nothing can link until it does.');
+  });
+});
+
+// ── THE PREPARED ROUTE, EXECUTED. The route is a command for the person's own terminal; its guarantees are properties of what it DOES, so it is
+// run here under /bin/sh against STAND-IN programs (a python3 that records its arguments and its working directory, and plays the collector's
+// refusals). The real collector and the real ceremony are never started: the stand-in directory is the only thing on PATH that is called python3.
+describe('the prepared route, executed: it stops on failure, names where it runs, writes task-scoped evidence and refuses a different task', () => {
+  const PLACEHOLDER = '<path to your Herdr engine checkout: the directory that contains herdctl.py and pr_delivery/>';
+  const REPO_PATH = "/work/my wt's tree";
+
+  function routeOf(): string {
+    const row = herdrRow(NO_RECORD, HANDOFF());
+    const command = row.deliveryHandoff?.command;
+    if (command === null || command === undefined) throw new Error('no route was prepared');
+    return command;
+  }
+
+  /** A scratch world: an engine directory, a stand-in bin, a log, a TMPDIR, and a directory the person is "in" that is none of those. */
+  function world() {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'herdroute-')));
+    const dirs = { root, engine: path.join(root, 'engine'), bin: path.join(root, 'bin'), tmp: path.join(root, 'tmp'), elsewhere: path.join(root, 'elsewhere') };
+    for (const d of [dirs.engine, dirs.bin, dirs.tmp, dirs.elsewhere]) fs.mkdirSync(d);
+    const log = path.join(root, 'calls.log');
+    fs.writeFileSync(
+      path.join(dirs.bin, 'python3'),
+      [
+        '#!/bin/sh',
+        'echo "pwd=$(pwd)" >> "$STUB_LOG"',
+        'echo "argv=$*" >> "$STUB_LOG"',
+        'case "$1" in',
+        '  herdctl.py)',
+        '    expect=""',
+        '    while [ "$#" -gt 0 ]; do [ "$1" = "--expect-task-id" ] && expect="$2"; shift; done',
+        '    [ "${STUB_COLLECTOR_FAIL:-0}" = 1 ] && { echo "delivery evidence unavailable: stub failure" >&2; exit 1; }',
+        '    if [ "$expect" != "$STUB_CURRENT_TASK" ]; then echo "the current task is $STUB_CURRENT_TASK, not the expected $expect" >&2; exit 1; fi',
+        '    echo "{\\"engineering_complete\\":{\\"task_id\\":\\"$expect\\"}}"',
+        '    ;;',
+        '  -m)',
+        '    echo "AUTHORIZE-RAN" >> "$STUB_LOG"',
+        '    ;;',
+        'esac',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    return { ...dirs, log };
+  }
+  function run(w: ReturnType<typeof world>, command: string, env: Record<string, string> = {}) {
+    const edited = command.replace(PLACEHOLDER, w.engine);
+    const result = spawnSync('/bin/sh', ['-c', edited], {
+      cwd: w.elsewhere,
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: { PATH: `${w.bin}:/usr/bin:/bin`, TMPDIR: w.tmp, STUB_LOG: w.log, STUB_CURRENT_TASK: 'task-a', ...env },
+    });
+    const calls = fs.existsSync(w.log) ? fs.readFileSync(w.log, 'utf8') : '';
+    return { status: result.status, stderr: result.stderr, calls };
+  }
+  const cleanup = (w: { root: string }) => {
+    if (/^herdroute-/.test(path.basename(w.root)) && path.dirname(w.root) === fs.realpathSync(os.tmpdir())) fs.rmSync(w.root, { recursive: true, force: true });
+  };
+
+  it('WHERE IT RUNS: from the engine checkout whatever directory the person is in, naming the task\'s own repository on both steps', () => {
+    const w = world();
+    try {
+      const out = run(w, routeOf());
+      expect(out.status).toBe(0);
+      const pwds = [...out.calls.matchAll(/^pwd=(.*)$/gm)].map((m) => m[1]);
+      expect(pwds).toEqual([w.engine, w.engine]); // both steps ran in the engine checkout, not in `elsewhere`
+      const argvs = [...out.calls.matchAll(/^argv=(.*)$/gm)].map((m) => m[1]!);
+      expect(argvs[0]).toContain(`herdctl.py delivery-evidence --repo ${REPO_PATH} --expect-task-id task-a`);
+      expect(argvs[1]).toContain(`-m pr_delivery authorize --repo ${REPO_PATH} --workflow-id <your workflow id>`);
+    } finally {
+      cleanup(w);
+    }
+  });
+
+  it('EVIDENCE: a NEW directory made for the run and named for the task, shared by both steps, never a file in the current directory', () => {
+    const w = world();
+    try {
+      const out = run(w, routeOf());
+      expect(out.status).toBe(0);
+      const collectorTarget = fs.readdirSync(w.tmp).filter((n) => n.startsWith('herd-evidence-task-a.'));
+      expect(collectorTarget).toHaveLength(1);
+      const evidence = path.join(w.tmp, collectorTarget[0]!, 'evidence.json');
+      expect(JSON.parse(fs.readFileSync(evidence, 'utf8'))).toEqual({ engineering_complete: { task_id: 'task-a' } });
+      expect(out.calls).toContain(`--herd-evidence ${evidence}`);
+      expect(fs.readdirSync(w.elsewhere)).toEqual([]); // nothing was written where the person was
+      expect(fs.readdirSync(w.engine)).toEqual([]);
+      // two runs never share evidence (no collision, no stale file picked up)
+      run(w, routeOf());
+      expect(fs.readdirSync(w.tmp).filter((n) => n.startsWith('herd-evidence-task-a.'))).toHaveLength(2);
+    } finally {
+      cleanup(w);
+    }
+  });
+
+  it('STOPS ON FAILURE: when the collector fails the ceremony is NEVER run', () => {
+    const w = world();
+    try {
+      const out = run(w, routeOf(), { STUB_COLLECTOR_FAIL: '1' });
+      expect(out.status).not.toBe(0);
+      expect(out.stderr).toContain('stub failure');
+      expect(out.calls).toContain('herdctl.py delivery-evidence');
+      expect(out.calls).not.toContain('AUTHORIZE-RAN');
+      expect(out.calls).not.toContain('pr_delivery');
+    } finally {
+      cleanup(w);
+    }
+  });
+
+  it('THE IDENTITY HAZARD: prepared for task A, run when task B is current, it REFUSES: the ceremony never runs and nothing of B is sealed', () => {
+    const w = world();
+    try {
+      const out = run(w, routeOf(), { STUB_CURRENT_TASK: 'task-b' });
+      expect(out.status).not.toBe(0);
+      expect(out.stderr).toContain('not the expected task-a');
+      expect(out.calls).toContain('--expect-task-id task-a');
+      expect(out.calls).not.toContain('AUTHORIZE-RAN');
+      const dirs = fs.readdirSync(w.tmp).filter((n) => n.startsWith('herd-evidence-task-a.'));
+      for (const d of dirs) expect(fs.readFileSync(path.join(w.tmp, d, 'evidence.json'), 'utf8')).toBe(''); // no evidence for B was written
+    } finally {
+      cleanup(w);
+    }
+  });
+
+  it('an unedited ENGINE line stops the route before anything runs', () => {
+    const w = world();
+    try {
+      const result = spawnSync('/bin/sh', ['-c', routeOf()], {
+        cwd: w.elsewhere,
+        encoding: 'utf8',
+        env: { PATH: `${w.bin}:/usr/bin:/bin`, TMPDIR: w.tmp, STUB_LOG: w.log, STUB_CURRENT_TASK: 'task-a' },
+      });
+      expect(result.status).not.toBe(0);
+      expect(fs.existsSync(w.log)).toBe(false); // neither stand-in was called
+    } finally {
+      cleanup(w);
+    }
+  });
+
+  it('the route runs in a subshell: it can end the route but never the person\'s own shell', () => {
+    const command = routeOf();
+    expect(command.startsWith('(\n  set -eu\n')).toBe(true);
+    expect(command.endsWith('\n)')).toBe(true);
+  });
+
+  it('a mission with NO current task gets no route at all (there is no task to bind the evidence to)', () => {
+    const row = herdrRow(NO_RECORD, HANDOFF({ engineeringTaskId: null, blockers: ['task_id_not_recorded'] }));
+    expect(row.deliveryHandoff).toMatchObject({ kind: 'observed', command: null, guards: null });
+    expect(handoffSection(render(row, control(LINKED_START())))).not.toContain('data-testid="di-scan-delivery-handoff-command"');
+  });
+});
+
+describe('the canonical return path is CONDITIONED on the store, never promised across two stores nobody showed to be one', () => {
+  it('the canonical wording opens with the condition and names the ceremony\'s default store, the catalog\'s flag, and that sameness is not shown', () => {
+    const claim = returnPathClaim(undefined, HANDOFF());
+    expect(claim.kind).toBe('canonical');
+    expect(claim.words.startsWith('If the record is written to the delivery store this catalog reads,')).toBe(true);
+    expect(claim.words).toContain('The ceremony always writes to the per-user default delivery store (~/Library/Application Support/DodgingInfinity/telegram) and has no option to choose another');
+    expect(claim.words).toContain('this catalog reads the store it was started with (--delivery-store)');
+    expect(claim.words).toContain('This office has not shown they are the same directory, so it does not promise the link');
+    expect(claim.words).toContain('start the catalog with --delivery-store set to that default store, or the record will not appear here');
+    // and it never states the link unconditionally
+    expect(claim.words).not.toMatch(/^A record made from this task/);
+  });
+
+  it('the condition is on EVERY canonical statement, with or without a readable store', () => {
+    for (const state of ['unlinked_no_record', 'unlinked_store_not_registered', 'unlinked_store_unavailable', 'unlinked_reader_failed']) {
+      const claim = returnPathClaim({ kind: 'unlinked', state, words: 'w' }, HANDOFF());
+      expect(claim.kind, state).toBe('canonical');
+      expect(claim.words, state).toContain('This office has not shown they are the same directory');
+    }
+  });
+
+  it('the legacy and not-known refusals carry no promise and no store condition to mistake for one', () => {
+    const legacy = returnPathClaim({ kind: 'origin_only', deliveryId: ID, words: 'w' }, HANDOFF());
+    const unknown = returnPathClaim(undefined, undefined);
+    for (const claim of [legacy, unknown]) {
+      expect(claim.words).not.toContain('comes back to THIS task');
+      expect(claim.words).not.toContain('--delivery-store');
+    }
+  });
+});
+
+describe('the delivery handoff: the three return-path behaviours are distinct in BEHAVIOUR, each its own scenario', () => {
+  it('SCENARIO canonical-linked: the record is acted on, so there is no creation section', () => {
+    const row = herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF());
+    const d = render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer()))));
+    expect(handoffSection(d)).toBe('');
+    expect(d).toContain('data-testid="di-scan-delivery-read"');
+    expect(returnPathClaim(row.deliveryLink, HANDOFF()).kind).toBe('canonical');
+  });
+
+  it('SCENARIO legacy-linked (origin only): the section says it cannot promise, whatever the producer ALSO declares', () => {
+    const row = herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_repository_binding' }, HANDOFF());
+    expect(row.deliveryLink?.kind).toBe('origin_only');
+    const h = handoffSection(render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer())))));
+    expect(h).toContain('data-return-path="legacy"');
+    expect(text(h)).toContain(LEGACY_RETURN);
+    expect(text(h)).not.toContain(CANONICAL_RETURN);
+    expect(text(h)).not.toContain('comes back to THIS task');
+  });
+
+  it('SCENARIO legacy producer, unlinked, which DECLARES the origin-only basis: refused, not canonical', () => {
+    const h = handoffSection(render(herdrRow(NO_RECORD, HANDOFF({ linkBasis: 'record_repository_binding' })), control(LINKED_START())));
+    expect(h).toContain('data-return-path="legacy"');
+    expect(text(h)).toContain(LEGACY_RETURN);
+    expect(text(h)).not.toContain(CANONICAL_RETURN);
+  });
+
+  it('SCENARIO an older producer that sends NO handoff block at all: nothing is invented, no command, and the claim is NOT KNOWN (silence is not a declaration)', () => {
+    const row = herdrRow(NO_RECORD);
+    expect(row.deliveryHandoff).toMatchObject({ kind: 'not_reported', command: null });
+    const h = handoffSection(render(row, control(LINKED_START())));
+    expect(h).toContain('data-return-path="not_known"');
+    expect(text(h)).toContain(NOT_KNOWN_RETURN);
+    expect(text(h)).toContain('Not known: this catalog did not report the facts needed to prepare a delivery record for this task, so none are shown and no command is prepared.');
+    expect(text(h)).not.toContain(CANONICAL_RETURN);
+    expect(h).not.toContain('data-testid="di-scan-delivery-handoff-command"');
+  });
+
+  it('SCENARIO an unrecognised or empty declaration fails closed: never the stronger reading', () => {
+    for (const linkBasis of ['record_something_new', 'record_task_worktree_binding ', 'RECORD_TASK_WORKTREE_BINDING', null]) {
+      const h = handoffSection(render(herdrRow(NO_RECORD, HANDOFF({ linkBasis })), control(LINKED_START())));
+      expect(h, String(linkBasis)).toContain('data-return-path="not_known"');
+      expect(text(h), String(linkBasis)).not.toContain(CANONICAL_RETURN);
+    }
+  });
+
+  it('the decision itself, over every input: only the exact canonical declaration, with no origin-only evidence, earns the canonical statement', () => {
+    const none = undefined;
+    const unlinked = { kind: 'unlinked', state: 'unlinked_no_record', words: 'w' } as const;
+    const origin = { kind: 'origin_only', deliveryId: ID, words: 'w' } as const;
+    const cases: Array<[string, Parameters<typeof returnPathClaim>[0], Parameters<typeof returnPathClaim>[1], string]> = [
+      ['declared canonical, no link row', none, HANDOFF(), 'canonical'],
+      ['declared canonical, unlinked', unlinked, HANDOFF(), 'canonical'],
+      ['declared canonical, linked origin-only', origin, HANDOFF(), 'legacy'],
+      ['declared legacy', unlinked, HANDOFF({ linkBasis: 'record_repository_binding' }), 'legacy'],
+      ['declared nothing', unlinked, HANDOFF({ linkBasis: null }), 'not_known'],
+      ['declared unrecognised', unlinked, HANDOFF({ linkBasis: 'x' }), 'not_known'],
+      ['no block', unlinked, none, 'not_known'],
+      ['block not reported', unlinked, HANDOFF({ state: 'not_reported', linkBasis: null }), 'not_known'],
+      ['block not applicable', unlinked, HANDOFF({ state: 'not_applicable', linkBasis: null }), 'not_known'],
+      ['no block, origin-only link', origin, none, 'legacy'],
+    ];
+    for (const [name, link, block, expected] of cases) expect(returnPathClaim(link, block).kind, name).toBe(expected);
+  });
+
+  it('shellWord makes ONE safe shell word of any path: spaces and single quotes are never interpreted', () => {
+    expect(shellWord('/a/b')).toBe("'/a/b'");
+    expect(shellWord('/a b/c')).toBe("'/a b/c'");
+    expect(shellWord("/it's")).toBe("'/it'\\''s'");
+    expect(shellWord('/$(rm -rf x)`id`;&')).toBe("'/$(rm -rf x)`id`;&'");
+  });
+
+  it('a Mission that is not a Herdr task has no handoff section at all', () => {
+    const row = rows({ state: 'unlinked_no_record', deliveryId: null, basis: null }).find((item) => item.id === HERD)!;
+    expect(row.deliveryHandoff).toBeUndefined();
+    expect(handoffSection(render(row, control(LINKED_START())))).toBe('');
+  });
+});
+
+// ── THE "READY" GUARD, OVER THE WHOLE PANEL. A claim that a delivery or a record is ready would be just as false anywhere on the page as in the
+// handoff section: the staged candidate cannot be determined here, and an empty list of blockers is not a promise. So the WHOLE rendered panel
+// (the Mission details page and the list page, with the rail, header, swarm, delivery and notes) is read in every state this change adds, and
+// it must carry no ready, mint, go-ahead or approved claim. The one legitimate "Ready" is a step's gate word when the delivery ADAPTER's own
+// answer made a step eligible, which only a wired canonical link with a read status can show; none of the states below can.
+describe('no state of the whole panel claims that a delivery or a record is ready', () => {
+  const withoutCommand = (html: string) => html.replace(/<pre[^>]*data-testid="di-scan-delivery-handoff-command"[\s\S]*?<\/pre>/, '');
+  const CASES: Array<[string, () => DiScanRow]> = [
+    ['a fresh no-record task, canonical declaration', () => herdrRow(NO_RECORD, HANDOFF())],
+    ['this mission\'s own shape: detached, evidence refused', () => herdrRow(NO_RECORD, HANDOFF({ branch: { state: 'detached', ref: null }, evidence: { state: 'refused', reason: "task t status is 'ACTIVE', not COMPLETE" }, blockers: ['head_detached', 'evidence_not_collected'] }))],
+    ['nothing stops it (an empty blocker list)', () => herdrRow(NO_RECORD, HANDOFF({ blockers: [] }))],
+    ['no readable delivery store', () => herdrRow({ state: 'unlinked_store_not_registered', deliveryId: null, basis: null }, HANDOFF())],
+    ['an origin-only link from an older catalog', () => herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_repository_binding' }, HANDOFF())],
+    ['a legacy declaration', () => herdrRow(NO_RECORD, HANDOFF({ linkBasis: 'record_repository_binding' }))],
+    ['an older catalog with no handoff block', () => herdrRow(NO_RECORD)],
+    ['an unrecognised declaration', () => herdrRow(NO_RECORD, HANDOFF({ linkBasis: 'record_something_new' }))],
+    ['an unrecognised link basis', () => herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_canonical_worktree_binding' as unknown as Link['basis'] }, HANDOFF())],
+    ['a workflow Mission, unlinked', () => rows({ state: 'unlinked_no_record', deliveryId: null, basis: null }).find((item) => item.id === HERD)!],
+  ];
+  const FORBIDDEN = /\bready\b|\bmint|\bgo ahead\b|\bapproved\b|may be created|can be created|will be created/i;
+
+  for (const view of ['mission', 'list'] as const) {
+    it.each(CASES)(`${view} view, %s: no ready, mint or go-ahead claim anywhere on the page, and no step is Ready`, (_name, make) => {
+      const row = make();
+      const html = renderToStaticMarkup(
+        createElement(DiScanPanel, { rows: [row], initialSelectedId: row.id, initialView: view, onMinimize: noop, missionDelivery: control(LINKED_START()) }),
+      );
+      const all = text(withoutCommand(html));
+      expect(all, 'the page must render something').not.toBe('');
+      expect(all).not.toMatch(FORBIDDEN);
+      expect(html).not.toContain('data-gate="ready"');
+    });
+  }
+
+  it('the guard bites: a "ready" sentence anywhere on the page would be caught (it is not scoped to one section)', () => {
+    expect('Everything is ready to go').toMatch(FORBIDDEN);
+    expect('This delivery may be created now').toMatch(FORBIDDEN);
+    expect('The record is minted').toMatch(FORBIDDEN);
+    expect('Not a promise: nothing listed stops it').not.toMatch(FORBIDDEN);
+  });
+
+  it('the one legitimate "Ready" is the adapter\'s own eligible step on a wired canonical link, and the page says where it came from', () => {
+    const row = herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF());
+    const html = renderToStaticMarkup(
+      createElement(DiScanPanel, {
+        rows: [row],
+        initialSelectedId: row.id,
+        initialView: 'mission',
+        onMinimize: noop,
+        missionDelivery: control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer()))),
+      }),
+    );
+    expect(html).toContain('data-gate="ready"');
+    expect(text(html)).toContain('Eligible now, as the record states it.');
+    expect(handoffSection(html)).toBe(''); // and no creation section beside an acted-on record
   });
 });
 

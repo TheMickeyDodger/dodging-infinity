@@ -59,6 +59,8 @@ let page: Page | null = null;
 let url = '';
 let unavailable: string | null = null;
 let socket: WebSocket | null = null;
+/** Every message the page has sent on its socket since the last boot. */
+const received: Array<Record<string, unknown>> = [];
 let resolveConnected: (ws: WebSocket) => void = () => undefined;
 
 beforeAll(async () => {
@@ -76,7 +78,10 @@ beforeAll(async () => {
     }
     wss!.handleUpgrade(req, sock, head, (ws) =>
       ws.on('message', (data) => {
-        if ((JSON.parse(String(data)) as { type?: string }).type === 'webviewReady') {
+        const message = JSON.parse(String(data)) as Record<string, unknown>;
+        // everything the page sends is kept, so a test can answer a request the real app made (the Herdr control's, for one) and can say what was NOT sent
+        received.push(message);
+        if (message.type === 'webviewReady') {
           socket = ws;
           resolveConnected(ws);
         }
@@ -123,6 +128,7 @@ const box = async (selector: string): Promise<Box> => {
 
 /** Open the App on the scan face at 1440 x 900, hand it the shipped world and the fixture, and wait until it is drawn. */
 async function boot(options: { fakeClock?: boolean; seed?: number } = {}): Promise<void> {
+  received.length = 0;
   const connected = new Promise<WebSocket>((resolve) => (resolveConnected = resolve));
   page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -342,18 +348,95 @@ test(
   STEPS_MS,
 );
 
+/** The next diHerdrRequest of this op the page sent after index `after` of `received`; fails if none comes. */
+async function herdrRequestAfter(op: 'status' | 'launch', after: number): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const found = received.slice(after).find((m) => m.type === 'diHerdrRequest' && m.op === op);
+    if (found) return found;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`the page sent no diHerdrRequest ${op}`);
+}
+const herdrAnswer = (over: Record<string, unknown> = {}) => ({
+  agent: 'he-exec1',
+  // the shape the native gate faces: a healthy bound task, whose role is found in the team roster
+  identityBasis: 'team_roster_session_confirmed',
+  workspaceId: 'w6V',
+  // the window the launcher will ask for, derived by the office from Herdr's snapshot (A12): said as a requirement
+  windowMinCols: 190,
+  windowMinRows: 49,
+  workspaceFocus: 'not_performed',
+  matchedPaneId: 'w6V:p3',
+  paneFocus: 'not_performed',
+  terminal: 'terminal',
+  terminalLabel: 'Terminal',
+  terminalState: null,
+  ...over,
+});
+
 test(
-  'A4: a Mission opened from the rail shows its details beside the rail; Herdr states the terminal path and no in-app terminal exists',
+  'A4: a Mission opened from the rail shows its details beside the rail; Herdr is enabled by the office and asks it to open a terminal, and no in-app terminal exists',
   async () => {
     await boot();
     await p().click('[data-testid="di-rail-orchestrator"]');
     await p().waitForSelector('[data-testid="di-scan-stage"][data-view="mission"]');
     const stage = await box('[data-testid="di-scan-stage"]');
     assert.equal(stage.x, RAIL_PX);
-    assert.equal(await p().locator('[data-testid="di-scan-herdr"]').isDisabled(), false);
-    const herdr = (await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim();
-    assert.match(herdr, /herdctl/);
-    assert.match(herdr, /does not start it/);
+    const missionRef = await p().locator('[data-testid="di-scan-stage"]').getAttribute('data-mission-ref');
+    assert.ok(missionRef, 'the stage names its Mission');
+
+    // THE REAL HOOK, AGAINST A STAND-IN OFFICE. Opening the Mission asks the office whether a launch is available: a status, which is a read.
+    const status = await herdrRequestAfter('status', 0);
+    assert.deepEqual(status, { type: 'diHerdrRequest', seq: status.seq, op: 'status', missionRef });
+    // until the office answers, Herdr is disabled and says it is checking: nothing has been assumed
+    assert.equal(await p().locator('[data-testid="di-scan-herdr"]').isDisabled(), true);
+    assert.match((await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim(), /Checking whether Herdr can open for this Mission/);
+    assert.equal(received.filter((m) => m.type === 'diHerdrRequest' && m.op === 'launch').length, 0, 'no launch was sent before the office said one is available');
+
+    // the office says a launch is available: Herdr is enabled and says what a click does
+    socket!.send(JSON.stringify({ type: 'diHerdrReply', seq: status.seq, op: 'status', state: 'ok', problem: null, reason: null, answer: herdrAnswer() }));
+    await p().waitForFunction(() => !(document.querySelector('[data-testid="di-scan-herdr"]') as HTMLButtonElement).disabled);
+    const available = (await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim();
+    assert.match(available, /Opens Terminal on this Mission's herd\. It first asks Herdr to focus workspace w6V, and types nothing into any pane or terminal\./);
+    assert.doesNotMatch(available, /herdctl|does not start it/);
+    // the basis that vouched is on the page as what it is: a roster confirmation, not a runtime-identity verification
+    assert.match(available, /found in the catalog's team roster with its recorded and live sessions equal \(a roster confirmation, not a runtime-identity verification\)/);
+    assert.doesNotMatch(available, /runtime identity for the role is verified/);
+    // the window requirement is on the page as a requirement with its reason, and nothing says the window got there
+    assert.match(available, /Herdr sizes its shared session to its smallest client, so the window is asked to grow to at least 190 x 49 cells, and Herdr is started in it only if the window really is that large/);
+    assert.doesNotMatch(available, /was resized|is large enough|now fits/i);
+
+    // the click sends ONE closed launch request, and nothing else
+    const before = received.length;
+    await p().click('[data-testid="di-scan-herdr"]');
+    const launch = await herdrRequestAfter('launch', before);
+    assert.deepEqual(launch, { type: 'diHerdrRequest', seq: launch.seq, op: 'launch', missionRef });
+    assert.equal(await p().locator('[data-testid="di-scan-herdr"]').isDisabled(), true, 'disabled while the launch is in flight');
+
+    // the office's refusal is shown with its real words, and nothing is claimed
+    const refusal = 'Nothing was opened: Workspace focus was not established, and Herdr\'s call failed, so nothing is known to have moved. The launcher was written at /x/herdr-attach-a1b2.command and was not used.';
+    socket!.send(JSON.stringify({ type: 'diHerdrReply', seq: launch.seq, op: 'launch', state: 'refused', problem: 'focus_not_established', reason: refusal, answer: null }));
+    await p().waitForFunction((words) => document.querySelector('[data-testid="di-scan-herdr-reason"]')?.textContent?.includes(words) === true, 'Nothing was opened: Workspace focus was not established');
+    assert.equal((await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).includes('The launcher was written at /x/herdr-attach-a1b2.command'), true);
+
+    // a second click, and a success: the words are what was established and no more
+    const again = received.length;
+    await p().click('[data-testid="di-scan-herdr"]');
+    const second = await herdrRequestAfter('launch', again);
+    socket!.send(
+      JSON.stringify({ type: 'diHerdrReply', seq: second.seq, op: 'launch', state: 'ok', problem: null, reason: null, answer: herdrAnswer({ workspaceFocus: 'focused', terminalState: 'opened' }) }),
+    );
+    await p().waitForFunction(() => document.querySelector('[data-testid="di-scan-herdr-reason"]')?.textContent?.includes('Herdr reported workspace w6V focused') === true);
+    const done = (await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim();
+    assert.match(done, /Terminal was asked to open the Herdr launcher/);
+    assert.match(done, /at least 190 x 49 cells/);
+    assert.doesNotMatch(done, /attach|keyboard|typing works/i);
+
+    // everything the Herdr control ever sent was a status or a launch: there is no message that types, prompts or sends a key
+    const herdrOps = received.filter((m) => m.type === 'diHerdrRequest').map((m) => m.op);
+    assert.deepEqual([...new Set(herdrOps)].sort(), ['launch', 'status']);
+    assert.equal(received.filter((m) => /key|input|prompt|text/i.test(String(m.type))).length, 0);
     const terminal = await p().evaluate(
       () =>
         document.querySelectorAll(

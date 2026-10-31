@@ -107,6 +107,7 @@ from mission_sources import contract_v2 as v2  # noqa: E402
 from mission_sources import query_v2  # noqa: E402
 from mission_sources import sources as sources_module  # noqa: E402
 from pr_delivery import authorization as delivery_auth  # noqa: E402
+from target_runtime import delivery_handoff  # noqa: E402
 from target_runtime import mission_state as ms  # noqa: E402
 
 NOW = 1_800_000_000
@@ -336,18 +337,39 @@ class VocabularyTests(Contained):
             "unlinked_reader_failed", "unlinked_no_record",
             "unlinked_ambiguous", "unlinked_sources_incomplete",
             "unlinked_id_not_addressable",
-            "unlinked_repository_not_recorded"))
+            "unlinked_task_worktree_not_recorded"))
         self.assertEqual(v2.MISSION_LINK_BASES, (
-            "record_mission_binding", "record_repository_binding"))
+            "record_mission_binding", "record_task_worktree_binding"))
+
+    def test_the_older_origin_only_values_are_neither_produced_nor_accepted(
+            self):
+        # Origin-only matching is a WEAKER claim than the task-worktree one
+        # (every worktree of an origin shares it). The producer must not make
+        # it again, and its validator must refuse it, so it can never be
+        # confused with the stronger association.
+        self.assertNotIn("record_repository_binding", v2.MISSION_LINK_BASES)
+        self.assertNotIn("unlinked_repository_not_recorded",
+                         v2.MISSION_LINK_STATES)
 
     def test_no_basis_names_an_engineering_task_a_receipt_or_a_newest_pick(
             self):
         # the bases iterated are asserted first: a loop over nothing asserts nothing
         self.assertEqual(len(v2.MISSION_LINK_BASES), 2)
+        # An exact allow-list, not a general relaxation: the ONLY basis that
+        # may name a task is the Herdr task's own (its sealed task id and its
+        # worktree together; the workflow Mission is never linked on one).
+        # No basis may name a receipt, an attestation, or a newest/latest pick.
+        names_a_task = ("record_task_worktree_binding",)
         for basis in v2.MISSION_LINK_BASES:
-            for word in ("task", "engineering", "receipt", "attest",
-                         "newest", "latest"):
+            for word in ("receipt", "attest", "newest", "latest"):
                 self.assertNotIn(word, basis.lower(), basis)
+            for word in ("task", "engineering"):
+                if basis in names_a_task:
+                    continue
+                self.assertNotIn(word, basis.lower(), basis)
+        self.assertEqual(
+            [b for b in v2.MISSION_LINK_BASES if "task" in b.lower()],
+            list(names_a_task))
 
     def test_the_delivery_id_shape_is_exactly_the_ceremony_shape(self):
         samples = (ID_A, DOTS["delivery_id"], "prd-" + "A" * 24,
@@ -597,64 +619,171 @@ class PresentationsRegressionTests(Contained):
                          ("unavailable", "delivery_store_invalid"))
 
 
-class HerdrRepositoryLinkTests(Contained):
-    """A Herdr task links to the one delivery record whose repository is its
-    workspace origin. Mission Core stays unrecorded. Addressing off keeps the
-    previous Herdr state."""
+class WorktreeFixtures(Contained):
+    """Real worktree layouts of one origin, records minted FROM them, Herdr
+    task views over them, and the catalog's own composition over all three.
+    Hermetic: no process is started, nothing outside this test's temporary
+    directory is read or written."""
+
+    #: the origin the golden record was minted for: every worktree here shares it
+    ORIGIN = TERMINAL["repository"]["repository_url"]
+
+    def layout(self):
+        """A main clone and two worktrees of it, as git lays them out on
+        disk (no process is started): ``.git`` directory with the origin in
+        its config; each worktree's ``.git`` FILE naming its own gitdir under
+        ``.git/worktrees``, which points back with ``commondir``."""
+        main = self.private_dir("main")
+        os.makedirs(os.path.join(main, ".git"))
+        self.write_private(os.path.join(main, ".git", "config"),
+                           '[remote "origin"]\n\turl = %s.git\n' % self.ORIGIN)
+        out = {}
+        for name in ("wt-a", "wt-b"):
+            workspace = self.private_dir(name)
+            gitdir = os.path.join(main, ".git", "worktrees", name)
+            os.makedirs(gitdir)
+            self.write_private(os.path.join(gitdir, "commondir"), "../..\n")
+            self.write_private(os.path.join(workspace, ".git"),
+                               "gitdir: %s\n" % gitdir)
+            out[name] = (workspace, os.path.realpath(gitdir))
+        return out
+
+    def minted(self, delivery_id, git_dir, task_id):
+        """A VALID record (the delivery layer's own ``new_authorization``)
+        minted FROM the worktree whose git dir is ``git_dir`` for the Herdr
+        task ``task_id``: those two sealed fields are what the ceremony
+        itself records."""
+        mode = TERMINAL["mode"]
+        authority = dict((key, copy.deepcopy(TERMINAL[key]))
+                         for key in delivery_auth.authority_keys(mode)
+                         if key not in ("schema_version", "delivery_id"))
+        authority["mission"] = None
+        authority["repository"]["git_dir_realpath"] = git_dir
+        authority["workflow_identity"]["engineering_task_id"] = task_id
+        return delivery_auth.new_authorization(delivery_id, authority, NOW)
+
+    def herdr_view(self, workspace, task_id, source_id="hd"):
+        from target_runtime import herdr_task_source as hts
+        source = {"source_id": source_id, "producer": "synthetic"}
+        return hts._view(source, [workspace], os.path.realpath(workspace),
+                         {"id": task_id, "status": "IN_PROGRESS"})
+
+    def composed(self, records, views):
+        """The catalog's composition with ITS real hooks, over a store holding
+        ``records`` and a task-native source holding ``views``."""
+        reader = ms.DeliveryLinksReader(self.store(records), lambda: NOW)
+        base = self.fresh_dir("answer")
+        by_source = {}
+        for view in views:
+            by_source.setdefault(view["source_id"], []).append(view)
+        registered = []
+        for source_id in sorted(by_source):
+            store_dir = os.path.join(base, "sources", source_id)
+            os.makedirs(store_dir, mode=0o700)
+            registered.append({
+                "source_id": source_id, "kind": contract.KIND_TASK_NATIVE,
+                "store_dir": store_dir, "producer": "local_request",
+                "max_age_seconds": 60, "registered_at": NOW})
+
+        def read(source, now, budget):
+            return sources_module._reading(
+                source, now, contract.HEALTH_FRESH, None,
+                by_source[source["source_id"]])
+
+        registry = StubRegistry(os.path.join(base, "registry"), {
+            "mission_sources_registry_schema_version": 1,
+            "sources": registered})
+        response = query_v2.query_v2(
+            registry, empty_snapshot(), empty_chains(), NOW,
+            readers={contract.KIND_TASK_NATIVE: read},
+            delivery_links=reader.bindings,
+            delivery_task_worktrees=reader.task_worktrees,
+            task_worktree_of=ms.task_worktree_for_mission,
+            task_worktree_delivery=True,
+            delivery_handoff_of=delivery_handoff.handoff_for_mission)
+        self.response = response
+        return self.links(response)
+
+
+class HerdrTaskWorktreeLinkTests(WorktreeFixtures):
+    """A Herdr task links to the one delivery record that seals ITS OWN task id
+    and ITS OWN worktree's git directory. The origin is never the key. Mission
+    Core stays unrecorded. Addressing off keeps the previous Herdr state."""
+
+    KEY = ("/repo/.git/worktrees/wt-a", "task-a")
 
     def herdr(self):
         return {"lifecycle": {"model": "herdr.task/1"}, "native_id": "t@k",
                 "mission_ref": "h:t"}
 
     def link(self, **kwargs):
-        args = {"repository_url": None, "by_repository": {},
-                "repository_holders": {}, "repository_addressable": True}
+        args = {"task_worktree": None, "by_task_worktree": {},
+                "task_worktree_holders": {}, "task_worktree_addressable": True}
         args.update(kwargs)
         return v2.mission_delivery_link(
             self.herdr(), None, {}, {}, v2.INSPECTION_COMPLETE, **args)
 
-    def test_a_unique_repository_links_the_herdr_task(self):
-        minted = record(ID_A, None)
-        from target_runtime.workspace_origin import repository_identity
-        key = repository_identity(minted["repository"]["repository_url"])
-        self.assertIsNotNone(key)
+    def test_a_unique_task_and_worktree_links_the_herdr_task(self):
         self.assertEqual(
-            self.link(repository_url=key, by_repository={key: [ID_A]},
-                      repository_holders={key: 1}),
+            self.link(task_worktree=self.KEY, by_task_worktree={self.KEY: [ID_A]},
+                      task_worktree_holders={self.KEY: 1}),
             {"state": "linked", "delivery_id": ID_A,
-             "basis": "record_repository_binding"})
+             "basis": "record_task_worktree_binding"})
 
-    def test_the_workspace_origin_matches_that_record(self):
-        minted = record(ID_A, None)
-        url = minted["repository"]["repository_url"]
-        workspace = self.private_dir("repo")
-        os.makedirs(os.path.join(workspace, ".git"))
-        self.write_private(
-            os.path.join(workspace, ".git", "config"),
-            '[remote "origin"]\n\turl = %s.git\n' % url)
-        from target_runtime.workspace_origin import (
-            origin_repository_url, repository_identity)
-        identity = repository_identity(url)
-        self.assertEqual(origin_repository_url(workspace), identity)
-        repos = ms.DeliveryLinksReader(
-            self.store([minted]), lambda: NOW).repositories()
-        self.assertEqual(repos, {identity: [ID_A]})
+    def test_the_reader_keys_records_by_their_sealed_worktree_and_task(self):
+        minted = self.minted(
+            ID_A, "/repo/.git/worktrees/wt-a", "task-a")
+        self.assertEqual(
+            ms.DeliveryLinksReader(self.store([minted]), lambda: NOW)
+            .task_worktrees(), {self.KEY: [ID_A]})
+        # the origin is in the record, and is NOT a key
+        self.assertIn("repository_url", minted["repository"])
 
-    def test_no_origin_two_records_and_two_tasks_stay_unlinked(self):
+    def test_the_mission_key_is_its_own_worktree_git_dir_and_task_id(self):
+        wt = self.layout()
+        view = self.herdr_view(wt["wt-a"][0], "task-a")
+        self.assertEqual(ms.task_worktree_for_mission(view),
+                         (wt["wt-a"][1], "task-a"))
+        # a plain clone: its own .git directory
+        clone = self.private_dir("clone")
+        os.makedirs(os.path.join(clone, ".git"))
+        from target_runtime.workspace_origin import workspace_git_dir
+        self.assertEqual(workspace_git_dir(clone),
+                         os.path.realpath(os.path.join(clone, ".git")))
+        # not a model it addresses, no task, no git directory
+        self.assertIsNone(ms.task_worktree_for_mission(workflow_view("w")))
+        idle = dict(view, execution=dict(view["execution"], task_id=None))
+        self.assertIsNone(ms.task_worktree_for_mission(idle))
+        bare = self.private_dir("bare")
+        self.assertIsNone(workspace_git_dir(bare))
+        self.assertIsNone(workspace_git_dir("relative/path"))
+        self.assertIsNone(workspace_git_dir(None))
+
+    def test_no_key_two_records_and_two_tasks_stay_unlinked(self):
         self.assertEqual(self.link(), {
-            "state": "unlinked_repository_not_recorded",
+            "state": "unlinked_task_worktree_not_recorded",
             "delivery_id": None, "basis": None})
+        for bad in (("", "task-a"), ("/g", ""), ("/g",), "task-a", ["/g", "t"]):
+            self.assertEqual(self.link(task_worktree=bad)["state"],
+                             "unlinked_task_worktree_not_recorded", repr(bad))
+        key = ("/g", "t")
         self.assertEqual(self.link(
-            repository_url="k", by_repository={"k": [ID_A, ID_B]},
-            repository_holders={"k": 1})["state"], "unlinked_ambiguous")
+            task_worktree=key, by_task_worktree={key: [ID_A, ID_B]},
+            task_worktree_holders={key: 1})["state"], "unlinked_ambiguous")
         self.assertEqual(self.link(
-            repository_url="k", by_repository={"k": [ID_A]},
-            repository_holders={"k": 2})["state"], "unlinked_ambiguous")
+            task_worktree=key, by_task_worktree={key: [ID_A]},
+            task_worktree_holders={key: 2})["state"], "unlinked_ambiguous")
         self.assertEqual(self.link(
-            repository_url="k", by_repository={},
-            repository_holders={"k": 1})["state"], "unlinked_no_record")
+            task_worktree=key, by_task_worktree={},
+            task_worktree_holders={key: 1})["state"], "unlinked_no_record")
+        # a record for the SAME worktree but ANOTHER task, or the same task in
+        # ANOTHER worktree, is not this task's
+        self.assertEqual(self.link(
+            task_worktree=key, by_task_worktree={("/g", "other"): [ID_A],
+                                                 ("/h", "t"): [ID_B]},
+            task_worktree_holders={key: 1})["state"], "unlinked_no_record")
 
-    def test_mission_core_is_never_linked_by_repository_addressing(self):
+    def test_mission_core_is_never_linked_by_task_worktree_addressing(self):
         self.assertEqual(v2.mission_delivery_link(
             self.herdr(), None, {}, {}, v2.INSPECTION_COMPLETE), {
                 "state": "unlinked_model_not_recorded",
@@ -663,16 +792,143 @@ class HerdrRepositoryLinkTests(Contained):
                 "native_id": "mn", "mission_ref": "m"}
         self.assertEqual(v2.mission_delivery_link(
             core, None, {}, {}, v2.INSPECTION_COMPLETE,
-            repository_url="k", by_repository={"k": [ID_A]},
-            repository_holders={"k": 1}, repository_addressable=True)["state"],
+            task_worktree=("/g", "t"), by_task_worktree={("/g", "t"): [ID_A]},
+            task_worktree_holders={("/g", "t"): 1},
+            task_worktree_addressable=True)["state"],
             "unlinked_model_not_recorded")
 
     def test_no_store_is_not_registered_once_a_herdr_task_can_be_addressed(self):
         self.assertEqual(v2.mission_delivery_link(
             self.herdr(), v2.MISSION_LINK_STORE_NOT_REGISTERED, None, {},
-            v2.INSPECTION_COMPLETE, repository_addressable=True), {
+            v2.INSPECTION_COMPLETE, task_worktree_addressable=True), {
                 "state": "unlinked_store_not_registered",
                 "delivery_id": None, "basis": None})
+
+
+class TwoWorktreesOfOneOriginTests(WorktreeFixtures):
+    """THE DEFECT, through the product's own composition (the catalog's real
+    hooks: ``DeliveryLinksReader.repositories``, ``repository_url_for_mission``,
+    ``query_v2``), over two REAL worktree layouts of ONE origin.
+
+    Two Herdr tasks in two worktrees of one origin must each link to the
+    record minted from THEIR OWN worktree, and neither may steal or obscure
+    the other's delivery. Genuine ambiguity still refuses."""
+
+    def test_each_task_links_to_the_record_from_its_own_worktree(self):
+        wt = self.layout()
+        record_a = self.minted(ID_A, wt["wt-a"][1], "task-a")
+        record_b = self.minted(ID_B, wt["wt-b"][1], "task-b")
+        view_a = self.herdr_view(wt["wt-a"][0], "task-a")
+        view_b = self.herdr_view(wt["wt-b"][0], "task-b")
+        links = self.composed([record_a, record_b], [view_a, view_b])
+        self.assertEqual(links[view_a["mission_ref"]]["state"], "linked",
+                         "task A is OBSCURED by the sibling worktree's record")
+        self.assertEqual(links[view_a["mission_ref"]]["delivery_id"], ID_A)
+        self.assertEqual(links[view_b["mission_ref"]]["state"], "linked",
+                         "task B is OBSCURED by the sibling worktree's record")
+        self.assertEqual(links[view_b["mission_ref"]]["delivery_id"], ID_B)
+
+    def test_a_record_from_a_sibling_worktree_is_never_stolen(self):
+        wt = self.layout()
+        record_b = self.minted(ID_B, wt["wt-b"][1], "task-b")
+        view_a = self.herdr_view(wt["wt-a"][0], "task-a")
+        links = self.composed([record_b], [view_a])
+        self.assertEqual(links[view_a["mission_ref"]],
+                         unlinked("unlinked_no_record"),
+                         "task A STOLE the record minted from worktree B")
+
+    def test_a_record_for_another_task_in_the_same_worktree_is_not_this_tasks(
+            self):
+        wt = self.layout()
+        record_old = self.minted(ID_C, wt["wt-a"][1], "task-old")
+        view_a = self.herdr_view(wt["wt-a"][0], "task-a")
+        links = self.composed([record_old], [view_a])
+        self.assertEqual(links[view_a["mission_ref"]],
+                         unlinked("unlinked_no_record"),
+                         "a record for a different task was linked here")
+
+    def mission_of(self, view):
+        return [m for m in self.response["missions"]
+                if m["mission_ref"] == view["mission_ref"]][0]
+
+    def test_a_FRESH_task_with_no_record_still_declares_how_its_record_would_come_back(self):
+        # The primary creation case: nothing is linked (the link's own basis is null by contract), yet the producer states the basis it links
+        # by, so the return path can be told BEFORE any record exists. No circularity: the declaration does not depend on a match.
+        wt = self.layout()
+        view = self.herdr_view(wt["wt-a"][0], "task-a")
+        links = self.composed([], [view])
+        self.assertEqual(links[view["mission_ref"]], unlinked("unlinked_no_record"))
+        block = self.mission_of(view)["delivery_handoff"]
+        self.assertEqual(block["state"], "observed")
+        self.assertEqual(block["link_basis"], "record_task_worktree_binding")
+        self.assertEqual(block["git_dir_realpath"], wt["wt-a"][1])
+        self.assertEqual(block["engineering_task_id"], "task-a")
+        self.assertEqual(block["staged_candidate"], "not_determined")
+
+    def test_THE_RETURN_PATH_a_record_made_from_this_task_in_this_worktree_is_the_one_this_task_links_to(self):
+        # The ceremony seals repository.git_dir_realpath and workflow_identity.engineering_task_id. The mission now SURFACES the same two values,
+        # so the return path is checkable in the catalog's own output, and the link follows from them.
+        wt = self.layout()
+        view = self.herdr_view(wt["wt-a"][0], "task-a")
+        record = self.minted(ID_A, wt["wt-a"][1], "task-a")
+        links = self.composed([record], [view])
+        block = self.mission_of(view)["delivery_handoff"]
+        self.assertEqual(
+            (block["git_dir_realpath"], block["engineering_task_id"]),
+            (record["repository"]["git_dir_realpath"], record["workflow_identity"]["engineering_task_id"]))
+        self.assertEqual(links[view["mission_ref"]], {
+            "state": "linked", "delivery_id": ID_A,
+            "basis": block["link_basis"]})
+        # and a sibling worktree's record, sealing ITS pair, is not this task's even though the origin is shared
+        other = self.minted(ID_B, wt["wt-b"][1], "task-a")
+        links = self.composed([other], [view])
+        self.assertEqual(links[view["mission_ref"]], unlinked("unlinked_no_record"))
+
+    def test_the_validator_refuses_the_older_origin_only_values_on_a_herdr_task(
+            self):
+        wt = self.layout()
+        view_a = self.herdr_view(wt["wt-a"][0], "task-a")
+        self.composed([self.minted(ID_A, wt["wt-a"][1], "task-a")], [view_a])
+        response = self.response
+        mission = response["missions"][0]
+        self.assertEqual(mission["delivery_link"], {
+            "state": "linked", "delivery_id": ID_A,
+            "basis": "record_task_worktree_binding"})
+        v2.validate_response_v2(response)  # the product's own shape is accepted
+        for name, link in (
+                ("the origin-only basis", {"state": "linked",
+                                           "delivery_id": ID_A,
+                                           "basis": "record_repository_binding"}),
+                ("the origin-only state", unlinked(
+                    "unlinked_repository_not_recorded")),
+                ("an unknown basis", {"state": "linked", "delivery_id": ID_A,
+                                      "basis": "record_worktree_maybe"}),
+                ("the task-worktree basis on a workflow Mission", None)):
+            value = copy.deepcopy(response)
+            if link is None:
+                value["missions"][0]["lifecycle"]["model"] = (
+                    contract.LIFECYCLE_MODEL_WORKFLOW_STORE)
+            else:
+                value["missions"][0]["delivery_link"] = link
+            with self.assertRaises(contract.ContractError, msg=name):
+                v2.validate_response_v2(value)
+
+    def test_genuine_ambiguity_still_refuses_and_never_picks(self):
+        wt = self.layout()
+        first = self.minted(ID_A, wt["wt-a"][1], "task-a")
+        second = self.minted(ID_B, wt["wt-a"][1], "task-a")
+        view_a = self.herdr_view(wt["wt-a"][0], "task-a")
+        links = self.composed([first, second], [view_a])
+        self.assertEqual(links[view_a["mission_ref"]]["state"],
+                         "unlinked_ambiguous")
+        self.assertIsNone(links[view_a["mission_ref"]]["delivery_id"])
+        other = self.herdr_view(wt["wt-a"][0], "task-a", source_id="hd2")
+        links = self.composed([self.minted(ID_C, wt["wt-a"][1], "task-a")],
+                              [view_a, other])
+        self.assertEqual(links[view_a["mission_ref"]]["state"],
+                         "unlinked_ambiguous")
+        self.assertEqual(links[other["mission_ref"]]["state"],
+                         "unlinked_ambiguous")
 
 
 class ContainmentTests(Contained):

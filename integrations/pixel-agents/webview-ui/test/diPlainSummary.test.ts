@@ -259,21 +259,39 @@ test('a runtime agent’s meaning names its assignment record as exactly that �
   const a = runtimeAgent((x) => x.identityVerified && x.assignmentState === 'unassigned');
   assert.equal(
     runtimeAgentMeaning(a),
-    'Not a team member: no current Mission is on record for it. That is an assignment record, not its activity.',
+    'Not shown as a team member: no current Mission is on record for it. That is an assignment record, not its activity.',
   );
   assert.equal(
     runtimeAgentMeaning({ ...a, assignmentState: 'unverified_reference' }),
-    'Not a team member: a task is on record for it, but it is not confirmed that it belongs to it.',
+    'Not shown as a team member: a task is on record for it, but it is not confirmed that it belongs to it.',
   );
   assert.equal(
     runtimeAgentMeaning({ ...a, assignmentState: 'unrecognized:paused' }),
-    'Not a team member: its assignment record is in a state this view does not recognise, so whether it has a task is unknown.',
+    'Not shown as a team member: its assignment record is in a state this view does not recognise, so whether it has a task is unknown.',
   );
   for (const state of ['unassigned', 'unverified_reference', 'unrecognized:x', ''])
     assert.doesNotMatch(
       runtimeAgentMeaning({ ...a, assignmentState: state }),
       /\b(idle|free|available|done|finished)\b/i,
     );
+});
+
+
+test('a runtime agent’s meaning never asserts NON-membership where membership is only unestablished, and keeps every fact it carried', () => {
+  const a = runtimeAgent((x) => x.identityVerified && x.assignmentState === 'unassigned');
+  // [assignment state, the fact its sentence must keep]
+  const cases: Array<[string, RegExp]> = [
+    ['unassigned', /no current Mission is on record for it\. That is an assignment record, not its activity\./],
+    ['unverified_reference', /a task is on record for it, but it is not confirmed that it belongs to it\./],
+    ['unrecognized:paused', /its assignment record is in a state this view does not recognise, so whether it has a task is unknown\./],
+    ['', /a state this view does not recognise/],
+  ];
+  for (const [state, fact] of cases) {
+    const words = runtimeAgentMeaning({ ...a, assignmentState: state });
+    assert.match(words, /^Not shown as a team member: /, `"${state}" says what is SHOWN`);
+    assert.match(words, fact, `"${state}" keeps its fact`);
+    assert.doesNotMatch(words, /\bnot a team member\b|\bis not a member\b|\bnon-member\b/i, `"${state}" never asserts non-membership`);
+  }
 });
 
 test('an agent not linked to its role is never shown busy, whatever its terminal reports', () => {

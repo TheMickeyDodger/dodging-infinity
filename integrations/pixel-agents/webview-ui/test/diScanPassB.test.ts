@@ -205,7 +205,10 @@ test(
     expect(await stageView(page)).toBe('comments');
     expect(await count(page, `${sel('di-scan-thread')} li`)).toBe(4);
     expect(await page.locator(`${sel('di-scan-comments-view')} textarea, ${sel('di-scan-comments-view')} input`).count()).toBe(0);
-    expect(await page.isDisabled(sel('di-scan-sibling-herdr'))).toBe(false);
+    // Package A: Herdr is enabled only by the office's answer for the Mission. This layout harness mounts the panel with no Herdr control, so the button is disabled and says that
+    // (the control answered, asked and clicked in a real browser: diScanFace.test.ts, A4).
+    expect(await page.isDisabled(sel('di-scan-sibling-herdr'))).toBe(true);
+    expect(await page.getAttribute(sel('di-scan-sibling-herdr'), 'title')).toBe('The Herdr control is not connected to this view, so nothing can be opened from here.');
 
     await page.click(sel('di-scan-sibling-diff'));
     expect(await stageView(page)).toBe('diff');

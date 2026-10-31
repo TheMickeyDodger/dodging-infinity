@@ -22,6 +22,7 @@ import type {
   HerdrAttachTarget,
   HerdrLaunchResult,
   HerdrRoleBinding,
+  HerdrRuntimeIdentity,
   NodeLaunchApis,
 } from './herdrLaunch.js';
 import { createHerdrLauncher, nodeHerdrLaunchEffects } from './herdrLaunch.js';
@@ -44,6 +45,7 @@ export const ATTACH_PROOF = {
     home: ROOT,
     socketPath: `${ROOT}/.config/herdr/herdr.sock`,
     launcherDir: `${ROOT}/launchers`,
+    terminal: 'terminal',
   } satisfies HerdrAttachTarget,
   bindingFile: `${EVIDENCE_DIR}/binding.json`,
   evidenceDir: EVIDENCE_DIR,
@@ -122,7 +124,7 @@ export function parseProofBinding(text: string): HerdrRoleBinding | null {
     agent: v.agent,
     session: v.session,
     paneId: v.paneId,
-    identity: { state: state as HerdrRoleBinding['identity']['state'], reason: identity.reason },
+    identity: { state: state as HerdrRuntimeIdentity['state'], reason: identity.reason },
   };
 }
 

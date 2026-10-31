@@ -18,6 +18,7 @@ import { DI_SCAN_LOCK } from '../src/components/diScanModel.ts';
 import type { DiScanReception } from '../src/components/diScanPagesModel.ts';
 import { DiScanPanel, type DiScanPanelProps } from '../src/components/DiScanPanel.tsx';
 import { DI_RAIL_WIDTH_PX } from '../src/constants.ts';
+import { herdrControl } from './herdrControlStub.ts';
 
 const noop = () => undefined;
 /** A reception source whose count is `n` (the page and the badge both read it). */
@@ -167,17 +168,56 @@ describe('PRESENTATION: entries behave truthfully (A2)', () => {
       'aria-current="page"',
     );
   });
-  it('Herdr opens its documented terminal note; Connections stay out of this build', () => {
-    const r = rail(render());
-    const herdr = tag(r, 'di-rail-herdr');
-    const herdrReason =
-      'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.';
-    expect(herdr).not.toContain('disabled');
-    expect(herdr).toContain(`title="${herdrReason}"`);
-    expect(r).toContain(`>${herdrReason}</span>`);
-    const connections = tag(r, 'di-rail-connections');
+  it('Connections stay out of this build', () => {
+    const connections = tag(rail(render()), 'di-rail-connections');
     expect(connections).toContain('disabled=""');
     expect(connections).toContain('title="Connections are not in this build."');
+  });
+  // Package A: the rail's Herdr used to open a static note ("This office does not start it", "the documented command is herdctl"), which stopped being true: a click now asks the office server to focus the Mission's
+  // herd workspace and open a terminal. Its enabled state and its words come from the control's state for the Mission whose screen is open, and the rail names no Mission of its own.
+  describe('Herdr is enabled and worded by the control\'s answer for the open Mission (Package A)', () => {
+    const MISSION = DI_SCAN_LOCK[0].id;
+    const open = (herdr?: ReturnType<typeof herdrControl>) =>
+      rail(render({ initialView: 'mission', initialSelectedId: MISSION, ...(herdr ? { herdr } : {}) }));
+
+    it('with no control wired it is disabled and says that, instead of a note about another tool', () => {
+      const r = open();
+      const herdr = tag(r, 'di-rail-herdr');
+      expect(herdr).toContain('disabled=""');
+      expect(herdr).toContain('title="The Herdr control is not connected to this view, so nothing can be opened from here."');
+      expect(r).not.toMatch(/herdctl|does not start it/);
+    });
+
+    it('with a control but no Mission open it is disabled and says to open a Mission', () => {
+      const r = rail(render({ herdr: herdrControl(MISSION) }));
+      expect(tag(r, 'di-rail-herdr')).toContain('disabled=""');
+      expect(tag(r, 'di-rail-herdr')).toContain("title=\"Open a Mission to use Herdr: it opens a terminal on that Mission&#x27;s herd.\"");
+    });
+
+    it('where the server said a launch is available it is enabled and says what a click does: the workspace it focuses first, the pane as identity evidence only, nothing typed', () => {
+      const r = open(herdrControl(MISSION));
+      expect(tag(r, 'di-rail-herdr')).not.toContain('disabled');
+      const words = /Opens Terminal on this Mission&#x27;s herd\. It first asks Herdr to focus workspace w6V, and types nothing into any pane or terminal\. Pane w6V:p3 is matched as identity evidence only; no pane is focused\./;
+      expect(tag(r, 'di-rail-herdr')).toMatch(words);
+      expect(r).toMatch(words);
+    });
+
+    it('where the server refused, it is disabled and shows the server\'s own reason, with the Mission open, not a generic line', () => {
+      const reason = 'Nothing was opened: this Herdr task is ABORTED (terminal), not active, so no herd is offered for it.';
+      const r = open(herdrControl(MISSION, { check: { kind: 'unavailable', problem: 'no_binding', reason } }));
+      expect(tag(r, 'di-rail-herdr')).toContain('disabled=""');
+      expect(tag(r, 'di-rail-herdr')).toContain(`title="${reason}"`);
+      expect(text(r, 'di-rail-herdr-note')).toBe(reason);
+    });
+
+    it('while the server is being asked it is disabled and busy, and after a launch it shows the result without claiming an attach or a working keyboard', () => {
+      const checking = open(herdrControl(MISSION, { check: { kind: 'checking' } }));
+      expect(tag(checking, 'di-rail-herdr')).toContain('disabled=""');
+      expect(tag(checking, 'di-rail-herdr')).toContain('aria-busy="true"');
+      const done = open(herdrControl(MISSION, { launch: { kind: 'opened', workspaceId: 'w6V', windowMinCols: 190, windowMinRows: 49, matchedPaneId: 'w6V:p3', terminalLabel: 'Terminal', terminalState: 'opened' } }));
+      expect(text(done, 'di-rail-herdr-note')).toMatch(/Herdr reported workspace w6V focused, then Terminal was asked to open the Herdr launcher/);
+      expect(done).not.toMatch(/attach|keyboard|typing works/i);
+    });
   });
   // Superseded in pass B: New Orchestrator opened the existing request workspace directly. It now opens the drawn New
   // Mission page (gap 1, CONTROL-MAP G1, lead Q1), which is always drawable, so the entry is never disabled; the page

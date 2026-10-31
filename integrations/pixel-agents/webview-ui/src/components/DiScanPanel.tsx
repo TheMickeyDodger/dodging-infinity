@@ -16,26 +16,32 @@ import type { DiDeliveryControl } from '../hooks/useDiDelivery.js';
 import type { ReviewSession, ReviewTargetRef } from './diCodeReviewModel.js';
 import { DiDeliveryStatus } from './DiDeliveryEntry.js';
 import { enteredId } from './diDeliveryModel.js';
+import type { DiHerdrControl, HerdrControlView } from './diHerdrModel.js';
+import { herdrControlView } from './diHerdrModel.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 import { scanDiffFor } from './diScanDiffRead.js';
 import type {
   DiDeliveryStepView,
   DiScanAvatar,
+  DiScanDeliveryHandoff,
   DiScanDiffLine,
   DiScanFact,
   DiScanMissionsRead,
   DiScanPill,
   DiScanRow,
   DiScanTab,
+  DiScanUnresolvedAgent,
   DiScanView,
 } from './diScanModel.js';
 import {
   decideSeveral,
+  deliveryActionTarget,
   deliverySteps,
   DI_COMMENTS_PAID,
   DI_DECIDE_UNAVAILABLE,
   DI_DECIDE_WHAT,
   DI_DELIVERY_END,
+  DI_DELIVERY_HANDOFF_RUNS_NOTHING,
   DI_EVIDENCE_LABEL,
   DI_EVIDENCE_NOT_AVAILABLE,
   DI_EVIDENCE_NOT_LISTED,
@@ -45,12 +51,12 @@ import {
   DI_SCAN_TABS,
   knownTrue,
   linkedDeliverySteps,
-  lockedDeliverySteps,
   openAttentionCount,
   railOrchestrators,
   scanThread,
   stateActions,
   trashGate,
+  unlinkedDeliverySteps,
   unreadStateFacts,
   visibleScanRows,
 } from './diScanModel.js';
@@ -140,6 +146,11 @@ export interface DiScanPanelProps {
    * delivery the catalog links to the shown Mission. Absent: no delivery is read here, and Delivery says why.
    */
   missionDelivery?: DiDeliveryControl | null;
+  /**
+   * The Herdr control (useDiHerdr): the office server opens a terminal on the shown Mission's herd when the person clicks Herdr. Every Herdr button reads its enabled state and its words from this control's
+   * state for the Mission, and a click asks the control to launch. Absent: the Herdr buttons are drawn disabled and say that no control is connected to this view; they open nothing.
+   */
+  herdr?: DiHerdrControl | null;
 }
 
 /** The list hides nothing (there is no hide gesture; V-6). */
@@ -150,9 +161,13 @@ const VIEWS: readonly DiScanView[] = ['list', ...DI_SCAN_MISSION_VIEWS, ...DI_SC
 
 /** Said beside every action drawn at this stage (Stage 2 is layout only; Stage 4 wires the routes). */
 const LAYOUT_NOTE = DI_LAYOUT_NOTE;
-/** Herdr opens the machine's own terminal on the Mission's herd, where the person types (owner decision 1). */
-const HERDR_REASON =
-  'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.';
+/**
+ * Herdr opens the machine's own terminal on the Mission's herd, where the person types (owner decision 1). The words and the enabled state of every Herdr button come from the control's state for the Mission
+ * (diHerdrModel.ts herdrControlView), not from a constant: this office DOES start that terminal, on a click, when the server says a launch is available.
+ */
+function herdrViewFor(herdr: DiHerdrControl | null | undefined, missionRef: string | null): HerdrControlView {
+  return herdrControlView(herdr?.state ?? null, missionRef);
+}
 const CONNECTIONS_REASON = 'Connections are not in this build.';
 /**
  * The trash's scope, true at FULL scope (owner decision 2): DI's own Mission data, the herd tools' own terminal history,
@@ -178,11 +193,15 @@ const GATE_WORD: Record<DiDeliveryStepView['gate'], string> = {
   ready: 'Ready',
   locked: 'Locked',
   done: 'Done',
+  unlinked: 'No delivery linked',
+  withheld: 'Not offered',
 };
 const GATE_TONE: Record<DiDeliveryStepView['gate'], string> = {
   ready: 'needs',
   locked: 'idle',
   done: 'pass',
+  unlinked: 'idle',
+  withheld: 'idle',
 };
 
 const CODE_KEYS = new Set(['export', 'function', 'const', 'let', 'while', 'return']);
@@ -240,14 +259,66 @@ function Pills({ pills, fill = false }: { pills: readonly DiScanPill[]; fill?: b
 
 function Avatar({ member, large = false }: { member: DiScanAvatar; large?: boolean }) {
   const art = assetUrl(member.palette);
+  const unresolved = member.identity !== undefined && member.identity.kind === 'unresolved';
+  const size = large ? 'di-scan-avatar di-scan-avatar-lg' : 'di-scan-avatar';
   return (
     <span
-      className={large ? 'di-scan-avatar di-scan-avatar-lg' : 'di-scan-avatar'}
+      className={unresolved ? `${size} di-scan-avatar-unresolved` : size}
+      data-identity={unresolved ? 'unresolved' : undefined}
       data-bust={art.bust ? 'true' : 'sheet'}
       style={{ backgroundImage: `url("${art.url}")` }}
       role="img"
       aria-label={member.name}
     />
+  );
+}
+
+/** The label of an UNRESOLVED identity, beside the role. A confirmed member gets no label (nothing to flag); the states stay distinct by `data-identity`. */
+function IdentityLabel({ member }: { member: DiScanAvatar }) {
+  const identity = member.identity;
+  if (identity === undefined || identity.kind === 'confirmed') return null;
+  return (
+    <>
+      <span className="di-scan-identity" data-testid="di-scan-identity" data-identity={identity.state} title={identity.words}>
+        {identity.label}
+      </span>
+      {identity.reason !== null && (
+        <span className="di-scan-identity-reason" data-testid="di-scan-identity-reason">
+          ({identity.reason})
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * Running agents recorded for a Mission whose identity is NOT resolved and who are not roster members: LISTED, by name, each with its own state
+ * label (unverified, ambiguous and could-not-be-checked stay three different facts). Not drawn: no avatar, no activity, no live look.
+ */
+function UnresolvedAgents({ agents, compact = false }: { agents: readonly DiScanUnresolvedAgent[]; compact?: boolean }) {
+  if (agents.length === 0) return null;
+  return (
+    <div className="di-scan-unresolved" data-testid="di-scan-unresolved-agents">
+      {!compact && <p className="di-scan-stage-note">Unresolved runtime records found under this Mission’s workspace (not shown as team members, not drawn):</p>}
+      <ul className="di-scan-unresolved-list">
+        {agents.map((agent) => (
+          <li key={agent.agentRef} className="di-scan-unresolved-agent" data-testid="di-scan-unresolved-agent" data-runtime-identity={agent.state}>
+            <span className="di-scan-name">{agent.name}</span>
+            <span className="di-scan-identity" data-testid="di-scan-unresolved-label">
+              {agent.label}
+            </span>
+            <span className="di-scan-identity-reason" data-testid="di-scan-unresolved-reason">
+              ({agent.reasonCode})
+            </span>
+            {!compact && (
+              <span className="di-scan-note" data-testid="di-scan-unresolved-words">
+                {agent.words} {agent.reason}.
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -658,21 +729,23 @@ function Fact({ fact, testid }: { fact: DiScanFact; testid: string }) {
 function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl | null }) {
   const link = row.deliveryLink;
   const real = link !== undefined;
-  const target = link?.kind === 'linked' ? link.deliveryId : null;
+  const target = deliveryActionTarget(link);
   const setLinked = session?.setLinked;
   // Mission details' session follows the shown Mission's link: its ONE id is this Mission's linked delivery, or none
   useEffect(() => {
     if (real && setLinked !== undefined) setLinked(target);
   }, [real, setLinked, target]);
   const wired = target !== null && session !== null;
+  // an origin-only (legacy) link is NOT the session's id (`target` is null for it above): nothing is read or offered on it
   const linkWords = link !== undefined && link.kind !== 'linked' ? link.words : null;
+  const withheld = link?.kind === 'origin_only';
   // the session acts for THIS Mission only while its one id is this Mission's link
   const current = session !== null && target !== null && enteredId(session.state) === target;
   const blocked = session === null || session.state.pending !== null || session.state.unvouched !== null;
   const steps = wired
     ? linkedDeliverySteps(current && session !== null ? session.state.view : null)
     : linkWords !== null
-      ? lockedDeliverySteps(linkWords)
+      ? unlinkedDeliverySteps(linkWords, withheld)
       : deliverySteps(row.delivery);
   return (
     <section
@@ -690,7 +763,11 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
       </div>
       {link !== undefined && (
         <p className="di-scan-stage-note" data-testid="di-scan-delivery-link">
-          {link.kind === 'linked' ? `The delivery linked to this Mission: ${link.deliveryId}. ${link.words}` : link.words}
+          {link.kind === 'linked'
+            ? `The delivery linked to this Mission: ${link.deliveryId}. ${link.words}`
+            : link.kind === 'origin_only'
+              ? `A delivery matched by this workspace’s origin only: ${link.deliveryId}. ${link.words}`
+              : link.words}
         </p>
       )}
       {target !== null && session === null && (
@@ -763,6 +840,9 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
           )}
         </>
       )}
+      {/* A Herdr task with no delivery this window acts on: how a record is created through the EXISTING human ceremony. The office runs
+          nothing and approves nothing; it shows status facts and the exact command to run in the person's own terminal. */}
+      {row.deliveryHandoff !== undefined && !wired && <DeliveryHandoff handoff={row.deliveryHandoff} />}
       {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28). */}
       <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
         {DI_DELIVERY_END}
@@ -773,6 +853,51 @@ function Delivery({ row, session }: { row: DiScanRow; session: DiDeliveryControl
           {linkWords !== null ? linkWords : LAYOUT_NOTE}
         </p>
       )}
+    </section>
+  );
+}
+
+/**
+ * A Herdr task's delivery HANDOFF: the observed facts (each with its reason), what stands in the way as things stand, the exact command for the
+ * person's OWN terminal, and where a record made from this task would come back. Status only: it confers nothing and is never "ready".
+ */
+function DeliveryHandoff({ handoff }: { handoff: DiScanDeliveryHandoff }) {
+  return (
+    <section className="di-scan-delivery-handoff" data-testid="di-scan-delivery-handoff" aria-labelledby="di-scan-delivery-handoff-heading">
+      <h3 id="di-scan-delivery-handoff-heading" className="di-scan-section-heading">
+        Creating a delivery record for this task
+      </h3>
+      {handoff.facts.length > 0 && (
+        <dl className="di-scan-delivery-handoff-facts" data-testid="di-scan-delivery-handoff-facts">
+          {handoff.facts.map((fact) => (
+            <div key={fact.id} className="di-scan-delivery-handoff-fact" data-fact={fact.id}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <p className="di-scan-stage-note" data-testid="di-scan-delivery-handoff-blockers">
+        {handoff.blockers}
+      </p>
+      {handoff.command !== null && (
+        <>
+          {handoff.guards !== null && (
+            <p className="di-scan-stage-note" data-testid="di-scan-delivery-handoff-guards">
+              {handoff.guards}
+            </p>
+          )}
+          <pre className="di-scan-delivery-handoff-command" data-testid="di-scan-delivery-handoff-command" tabIndex={0}>
+            {handoff.command}
+          </pre>
+          <p className="di-scan-stage-note" data-testid="di-scan-delivery-handoff-runs-nothing">
+            {DI_DELIVERY_HANDOFF_RUNS_NOTHING}
+          </p>
+        </>
+      )}
+      <p className="di-scan-stage-note" data-testid="di-scan-delivery-handoff-return" data-return-path={handoff.returnPath.kind}>
+        {handoff.returnPath.words}
+      </p>
     </section>
   );
 }
@@ -891,11 +1016,15 @@ function StageFixture({ text }: { text: string | null }) {
 function Siblings({
   view,
   onView,
+  herdr,
+  missionRef,
 }: {
   view: 'diff' | 'comments';
   onView: (view: 'diff' | 'comments') => void;
+  herdr: DiHerdrControl | null | undefined;
+  missionRef: string;
 }) {
-  const [herdrOpen, setHerdrOpen] = useState(false);
+  const hv = herdrViewFor(herdr, missionRef);
   return (
     <nav className="di-scan-siblings" aria-label="Mission screens" data-testid="di-scan-siblings">
       <button
@@ -911,10 +1040,11 @@ function Siblings({
         type="button"
         className="di-scan-sibling"
         data-testid="di-scan-sibling-herdr"
-        title={HERDR_REASON}
+        title={hv.note}
         aria-describedby="di-scan-sibling-herdr-reason"
-        aria-expanded={herdrOpen}
-        onClick={() => setHerdrOpen((open) => !open)}
+        aria-busy={hv.busy}
+        disabled={!hv.enabled}
+        onClick={() => herdr?.launch(missionRef)}
       >
         Herdr
       </button>
@@ -928,11 +1058,12 @@ function Siblings({
         Comments
       </button>
       <span className="di-scan-visually-hidden" id="di-scan-sibling-herdr-reason">
-        {HERDR_REASON}
+        {hv.note}
       </span>
-      {herdrOpen && (
-        <p className="di-scan-stage-note" data-testid="di-scan-herdr-open">
-          {HERDR_REASON}
+      {/* the header is too narrow for a note that is always there: the result of a click is shown here, and the reason a disabled Herdr is disabled is its title and its description */}
+      {hv.outcome && (
+        <p className="di-scan-stage-note" data-testid="di-scan-herdr-open" data-tone={hv.tone}>
+          {hv.note}
         </p>
       )}
     </nav>
@@ -958,6 +1089,7 @@ function Stage({
   renderEvidence,
   fixtureBanner,
   missionDelivery,
+  herdr,
 }: {
   view: 'mission' | 'diff' | 'comments' | 'evidence';
   row: DiScanRow;
@@ -980,7 +1112,17 @@ function Stage({
   fixtureBanner: string | null;
   /** M8: Mission details' own delivery session (null: none). */
   missionDelivery: DiDeliveryControl | null;
+  /** The Herdr control (null: none is wired, and the Herdr buttons say so). */
+  herdr: DiHerdrControl | null;
 }) {
+  // The Herdr buttons are enabled only by the office's own answer for THIS Mission, so that answer is asked for when the Mission is opened (the stage is keyed per Mission), and again when the office
+  // becomes heard from after being lost. It is a READ: it runs the route's admission and opens, focuses and writes nothing. Nothing polls it.
+  const requestHerdrStatus = herdr?.requestStatus;
+  const herdrUnvouched = herdr?.state.unvouched ?? null;
+  useEffect(() => {
+    if (herdrUnvouched === null) requestHerdrStatus?.(row.id);
+  }, [requestHerdrStatus, herdrUnvouched, row.id]);
+  const herdrView = herdrViewFor(herdr, row.id);
   // R10: the evidence screen opens only where the office lists a library for this Mission AND the office can draw it here
   const evidenceLive = row.evidenceListed === true && renderEvidence !== undefined;
   const evidenceReason = evidenceLive
@@ -1098,12 +1240,12 @@ function Stage({
         </div>
         {/* the locked three siblings (Code Diff, Herdr, Comments) stay three: a fourth wraps the Code Diff header to two rows at the locked widths (diScanHeaderRegion), so
             "Evidence and review" is entered from Mission details and returns there */}
-        {view === 'comments' && <Siblings view={view} onView={onView} />}
+        {view === 'comments' && <Siblings view={view} onView={onView} herdr={herdr} missionRef={row.id} />}
         {/* Code Diff: the tabs and the tools are ONE wrapping unit, so a header too narrow for them beside the crumb moves them TOGETHER to their own row (layout only: no role, no
             label, DOM order unchanged; see the rules at "the stage header wraps by content" in diScanPages.css) */}
         {view === 'diff' && (
           <div className="di-scan-header-controls">
-            <Siblings view={view} onView={onView} />
+            <Siblings view={view} onView={onView} herdr={herdr} missionRef={row.id} />
             <div className="di-scan-header-tools">
               {diff && (
                 <>
@@ -1171,7 +1313,7 @@ function Stage({
               {row.description !== '' && <p className="di-scan-details-text">{row.description}</p>}
               {row.handoff !== '' &&
                 row.handoff.split('\n').map((line) => (
-                  <p key={line} className="di-scan-handoff">
+                  <p key={line} className="di-scan-delivery-handoff">
                     {line}
                   </p>
                 ))}
@@ -1197,6 +1339,12 @@ function Stage({
                     <span className="di-scan-card-copy">
                       <span className="di-scan-role">{member.role}</span>
                       <span className="di-scan-name">{displayName(member)}</span>
+                      <IdentityLabel member={member} />
+                      {member.identity !== undefined && member.identity.kind === 'unresolved' && (
+                        <span className="di-scan-note" data-testid="di-scan-identity-words">
+                          {member.identity.words}
+                        </span>
+                      )}
                       {member.note !== '' && <span className="di-scan-note">{member.note}</span>}
                       <Fact fact={member.model} testid="di-scan-model" />
                       <Fact fact={member.provider} testid="di-scan-provider" />
@@ -1206,6 +1354,7 @@ function Stage({
               </ul>
             )}
           </div>
+          <UnresolvedAgents agents={row.unresolvedAgents ?? []} />
           <Delivery row={row} session={missionDelivery} />
           <StateActions row={row} onOpenDecision={onOpenDecision} />
           <div className="di-scan-actions">
@@ -1221,9 +1370,11 @@ function Stage({
               type="button"
               className="di-scan-action di-scan-action-secondary"
               data-testid="di-scan-herdr"
-              title={HERDR_REASON}
+              title={herdrView.note}
               aria-describedby="di-scan-herdr-reason"
-              onClick={() => undefined}
+              aria-busy={herdrView.busy}
+              disabled={!herdrView.enabled}
+              onClick={() => herdr?.launch(row.id)}
             >
               Herdr
             </button>
@@ -1262,8 +1413,23 @@ function Stage({
               className="di-scan-stage-note"
               id="di-scan-herdr-reason"
               data-testid="di-scan-herdr-reason"
+              data-tone={herdrView.tone}
+              aria-live="polite"
             >
-              {HERDR_REASON}
+              {herdrView.note}
+              {herdrView.canRecheck && herdr && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="di-scan-link"
+                    data-testid="di-scan-herdr-recheck"
+                    onClick={() => herdr.requestStatus(row.id)}
+                  >
+                    Check again
+                  </button>
+                </>
+              )}
             </p>
             {evidenceReason !== null && (
               <p
@@ -1675,11 +1841,16 @@ function Rail({
   missionsRead,
   minimizeRef,
   onMinimize,
+  herdr,
+  herdrMissionRef,
 }: {
   rows: readonly DiScanRow[];
   hidden: ReadonlySet<string>;
   view: DiScanView;
   selectedId: string | null;
+  /** The Herdr control, and the ONE Mission the rail's Herdr acts on: the Mission whose screen is open (null: none is, and the entry says so). */
+  herdr: DiHerdrControl | null | undefined;
+  herdrMissionRef: string | null;
   /** The reception source's own count; null: no reception desk (the entry says why). */
   receptionCount: number | null;
   /** Why that count is only a floor (the SAME doubt the Reception header reads, AC-4.7-16); null: whole. */
@@ -1706,7 +1877,7 @@ function Rail({
   const badgeText = receptionCount === null ? null : countBadge(count, receptionDoubt);
   const spoken = badgeText === null ? undefined : `Reception, ${receptionHeadline(count, receptionDoubt)}`;
   const here = (page: DiScanView[]) => (page.includes(view) ? 'page' : undefined);
-  const [herdrOpen, setHerdrOpen] = useState(false);
+  const hv = herdrViewFor(herdr, herdrMissionRef);
   return (
     <nav
       className="di-rail"
@@ -1840,20 +2011,22 @@ function Rail({
             type="button"
             className="di-rail-item"
             data-testid="di-rail-herdr"
-            title={HERDR_REASON}
+            title={hv.note}
             aria-describedby="di-rail-herdr-reason"
-            aria-expanded={herdrOpen}
-            onClick={() => setHerdrOpen((open) => !open)}
+            aria-busy={hv.busy}
+            disabled={!hv.enabled}
+            onClick={() => herdr && herdrMissionRef !== null && herdr.launch(herdrMissionRef)}
           >
             <HerdIcon />
             Herdr
           </button>
           <span className="di-scan-visually-hidden" id="di-rail-herdr-reason">
-            {HERDR_REASON}
+            {hv.note}
           </span>
-          {herdrOpen && (
-            <p className="di-rail-empty" data-testid="di-rail-herdr-note">
-              {HERDR_REASON}
+          {/* shown when a click has a result, and when a Mission is open but Herdr cannot open for it (the reason matters then); the "open a Mission" hint stays in the title and the description */}
+          {(hv.outcome || (!hv.enabled && herdrMissionRef !== null)) && (
+            <p className="di-rail-empty" data-testid="di-rail-herdr-note" data-tone={hv.tone}>
+              {hv.note}
             </p>
           )}
         </li>
@@ -1922,6 +2095,7 @@ export function DiScanPanel({
   fixtureBanner = null,
   openRequest = null,
   missionDelivery = null,
+  herdr = null,
 }: DiScanPanelProps) {
   const [tab, setTab] = useState<DiScanTab>('open');
   const [query, setQuery] = useState('');
@@ -2082,6 +2256,10 @@ export function DiScanPanel({
         missionsRead={missionsRead}
         minimizeRef={minimizeRef}
         onMinimize={onMinimize}
+        herdr={herdr}
+        herdrMissionRef={
+          (view === 'mission' || view === 'diff' || view === 'comments' || view === 'evidence') && selected ? selected.id : null
+        }
       />
       <div ref={rootRef} className="di-scan-body" data-testid="di-scan-panel" data-view={view}>
         {view === 'list' && (
@@ -2250,6 +2428,7 @@ export function DiScanPanel({
                       {shownSelected.description}
                     </p>
                   )}
+                  <UnresolvedAgents agents={shownSelected.unresolvedAgents ?? []} compact />
                   {shownSelected.swarm.length > 0 && (
                     <ul className="di-scan-swarm" data-testid="di-scan-swarm">
                       {shownSelected.swarm.map((member) => (
@@ -2259,6 +2438,7 @@ export function DiScanPanel({
                           <span className="di-scan-member-who">
                             <Avatar member={member} />
                             <span className="di-scan-name">{displayName(member)}</span>
+                            <IdentityLabel member={member} />
                           </span>
                         </li>
                       ))}
@@ -2309,6 +2489,7 @@ export function DiScanPanel({
             renderEvidence={renderEvidence}
             fixtureBanner={fixtureBanner}
             missionDelivery={missionDelivery}
+            herdr={herdr}
           />
         )}
 

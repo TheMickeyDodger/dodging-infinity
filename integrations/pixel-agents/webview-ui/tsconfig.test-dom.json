@@ -86,6 +86,7 @@
     "test/diDeliveryPanel.test.ts",
     "test/diMissionDelivery.test.ts",
     "test/diMissionDeliveryAuthor.test.ts",
+    "test/diScanIdentity.test.ts",
     "test/diMissionOutcomes.test.ts",
     "test/diNamingFallbacks.test.ts"
   ],

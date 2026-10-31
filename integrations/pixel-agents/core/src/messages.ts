@@ -47,7 +47,8 @@ export type ServerMessage =
   | DiEvidenceContent
   | DiCodeReview
   | DiMissionRequestReply
-  | DiDeliveryReply;
+  | DiDeliveryReply
+  | DiHerdrReply;
 
 export type ClientMessage =
   | WebviewReady
@@ -79,7 +80,8 @@ export type ClientMessage =
   | DiCodeReviewRead
   | DiCodeReviewMissionRead
   | DiMissionRequest
-  | DiDeliveryRequest;
+  | DiDeliveryRequest
+  | DiHerdrRequest;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -479,6 +481,7 @@ export type DiCodeReviewOfferState = 'offered' | 'unavailable';
 export interface DiMissionV2 {
   workflowPhase?: DiWorkflowPhase;
   deliveryLink?: DiMissionDeliveryLink;
+  deliveryHandoff?: DiMissionDeliveryHandoff;
   projected: boolean;
   taskChains: DiTaskChain[];
   childrenRecord: DiChildrenRecord;
@@ -511,9 +514,51 @@ export type DiMissionDeliveryLinkState =
   | 'unlinked_ambiguous'
   | 'unlinked_sources_incomplete'
   | 'unlinked_id_not_addressable'
-  | 'unlinked_repository_not_recorded';
+  | 'unlinked_repository_not_recorded'
+  | 'unlinked_task_worktree_not_recorded';
 
-export type DiMissionDeliveryLinkBasis = 'record_mission_binding' | 'record_repository_binding';
+export type DiMissionDeliveryLinkBasis =
+  'record_mission_binding' | 'record_repository_binding' | 'record_task_worktree_binding';
+
+export interface DiMissionDeliveryHandoff {
+  state: DiHandoffState;
+  linkBasis: string | null;
+  repository: string | null;
+  engineeringTaskId: string | null;
+  gitDirRealpath: string | null;
+  branch: DiHandoffBranch | null;
+  evidence: DiHandoffEvidence | null;
+  stagedCandidate: DiHandoffStagedCandidate | null;
+  workflowId: DiHandoffWorkflowId | null;
+  blockers: DiHandoffBlocker[];
+}
+
+export type DiHandoffState = 'observed' | 'not_applicable' | 'not_reported';
+
+export interface DiHandoffBranch {
+  state: DiHandoffBranchState;
+  ref: string | null;
+}
+
+export type DiHandoffBranchState = 'named' | 'detached' | 'unreadable';
+
+export interface DiHandoffEvidence {
+  state: DiHandoffEvidenceState;
+  reason: string | null;
+}
+
+export type DiHandoffEvidenceState = 'collected' | 'refused' | 'unreadable';
+
+export type DiHandoffStagedCandidate = 'not_determined';
+
+export type DiHandoffWorkflowId = 'human_supplied';
+
+export type DiHandoffBlocker =
+  | 'git_dir_not_read'
+  | 'head_detached'
+  | 'head_not_read'
+  | 'evidence_not_collected'
+  | 'task_id_not_recorded';
 
 export interface DiTaskChain {
   chain: string;
@@ -1236,6 +1281,40 @@ export type DiDeliveryOp = 'status' | 'advanceOnce';
 
 export type DiDeliveryState = 'ok' | 'refused' | 'unavailable' | 'unknown';
 
+export interface DiHerdrReply {
+  type: 'diHerdrReply';
+  seq: number;
+  op: DiHerdrOp;
+  state: DiHerdrState;
+  problem: string | null;
+  reason: string | null;
+  answer: DiHerdrAnswer | null;
+}
+
+export type DiHerdrOp = 'status' | 'launch';
+
+export type DiHerdrState = 'ok' | 'refused' | 'unavailable';
+
+export interface DiHerdrAnswer {
+  agent: string;
+  identityBasis: DiHerdrIdentityBasis;
+  windowMinCols: number;
+  windowMinRows: number;
+  workspaceId: string;
+  workspaceFocus: DiHerdrWorkspaceFocus;
+  matchedPaneId: string | null;
+  paneFocus: 'not_performed';
+  terminal: string;
+  terminalLabel: string;
+  terminalState: DiHerdrTerminalState | null;
+}
+
+export type DiHerdrIdentityBasis = 'runtime_identity_verified' | 'team_roster_session_confirmed';
+
+export type DiHerdrWorkspaceFocus = 'focused' | 'not_performed';
+
+export type DiHerdrTerminalState = 'opened' | 'unconfirmed';
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -1432,3 +1511,10 @@ export interface DiDeliveryConfirmation {
 }
 
 export type DiDeliveryStep = 'BASE_REFRESH' | 'COMMIT' | 'PUSH' | 'PR_CREATE';
+
+export interface DiHerdrRequest {
+  type: 'diHerdrRequest';
+  seq: number;
+  op: DiHerdrOp;
+  missionRef: string;
+}

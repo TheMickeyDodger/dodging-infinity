@@ -15,12 +15,19 @@
  * configured" without its flag. (This list omitted the request panel before the delivery
  * flag was added; naming it corrects that older omission.)
  *
+ * It also composes ONE terminal route, the Herdr control (herdrRequests.ts over the launch route in
+ * herdrLaunch.ts), opt-in: it exists only with --herdr-bin, --herdr-home and --herdr-socket, and answers
+ * "not configured", naming them, without. On a person's click it writes one launcher file, focuses the herd's
+ * workspace through Herdr's socket API and asks macOS to open Terminal on the launcher. It sends NO input to any
+ * pane or terminal. herdrProcess.ts is the entry's ONLY process-starting module (pinned by name in
+ * diClientMessages.test.ts).
+ *
  * What it never composes — by construction, not by a disabled branch: no hook
  * provider (so no consent ask and no installer), no AgentRuntime (so no session
  * scanners, transcript watching or ~/.claude reads), no PixelAgentsServer (so no
- * server.json / servers/ discovery publishing), no terminal or launch path, no model
- * invocation, and no external asset directories. It never starts, supervises or owns
- * the backend: it only READS the backend's discovery file, and an absent file is an
+ * server.json / servers/ discovery publishing), no terminal INPUT path (the Herdr route above opens a
+ * window and types nothing), no model invocation, and no external asset directories. It never starts,
+ * supervises or owns the backend: it only READS the backend's discovery file, and an absent file is an
  * honest "unavailable" state.
  *
  * Every file it persists (settings, layout, seats) lands under --state-dir, injected
@@ -59,6 +66,10 @@ import { DiOffice } from './diOffice.js';
 import { makeDiStateWriteGuard, validateDiStateRoot } from './diStateRoot.js';
 import type { FixtureSource } from './fixtureSource.js';
 import { createFixtureSource, readFixtureScript } from './fixtureSource.js';
+import { realLaunchApis } from './herdrProcess.js';
+import { DiHerdrRequests } from './herdrRequests.js';
+import type { HerdrConfig } from './herdrTarget.js';
+import { HERDR_FLAGS, realLauncherDirFs, resolveHerdrConfig } from './herdrTarget.js';
 import { DiMissionRequests } from './missionRequests.js';
 
 export interface DiCliArgs {
@@ -88,7 +99,15 @@ export interface DiCliArgs {
    * delivery request is answered "not configured". Independent of the catalog backend, like the panel's.
    */
   deliveryAdapterDiscovery?: string;
+  /**
+   * The Herdr terminal route's target: --herdr-bin, --herdr-home and --herdr-socket, all three or none (null: the route answers "not configured"). Each is a plain
+   * absolute path and the socket lies inside the home; nothing is defaulted, found on PATH or read from the environment.
+   */
+  herdr: HerdrConfig | null;
 }
+
+/** The directory (inside the state root) the Herdr route writes its launcher files in. */
+export const HERDR_LAUNCHER_DIR_NAME = 'herdr-launchers';
 
 export class DiCliArgsError extends Error {}
 
@@ -113,6 +132,15 @@ const USAGE = `Usage: pixel-agents-di --state-dir <absolute dir> --backend-disco
                                  (didelivery_office.py), READ ONLY. Absolute. Optional: without it
                                  every delivery request is answered as not configured. The token it
                                  holds stays in this server; a browser never sees it.
+  --herdr-bin <file>             The herdr executable. Absolute and plain. With --herdr-home and
+  --herdr-home <dir>             --herdr-socket (all three or none) it turns the office's Herdr
+  --herdr-socket <file>          control on: a click focuses the Mission's herd workspace in the
+                                 Herdr server at that socket, then opens a Terminal window running
+                                 plain herdr. HOME for every Herdr command is --herdr-home, and the
+                                 socket must lie inside it. Each is a plain absolute path (letters,
+                                 digits, '.', '_', '-'). Nothing is searched for or defaulted;
+                                 without them the control stays off and says which flags it needs.
+                                 The office types nothing into any pane or terminal.
   --port, -p <n>                 Loopback port (default: OS-assigned)
   --contract-version <1|2>       The catalog contract version this process reads (default 1).
                                  ONE version per process: a response of any other version is
@@ -144,6 +172,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
   let fixturePreview = false;
   let missionPanelDiscovery: string | undefined;
   let deliveryAdapterDiscovery: string | undefined;
+  const herdrFlags: { bin?: string; home?: string; socket?: string } = {};
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -185,6 +214,13 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
         throw new DiCliArgsError('--delivery-adapter-discovery must be an absolute path');
       }
       deliveryAdapterDiscovery = path.normalize(value);
+    } else if (flag === '--herdr-bin' || flag === '--herdr-home' || flag === '--herdr-socket') {
+      if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
+      i++;
+      // Stored as given: a value that is not already plain and normalised is REFUSED below, never repaired.
+      if (flag === '--herdr-bin') herdrFlags.bin = value;
+      else if (flag === '--herdr-home') herdrFlags.home = value;
+      else herdrFlags.socket = value;
     } else if (flag === '--contract-version') {
       if (value === undefined) throw new DiCliArgsError(`Missing value for ${flag}`);
       i++;
@@ -205,6 +241,9 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
   if (!stateDir || !path.isAbsolute(stateDir)) {
     throw new DiCliArgsError('--state-dir is required and must be an absolute path');
   }
+  const resolvedHerdr = resolveHerdrConfig(herdrFlags);
+  if ('problem' in resolvedHerdr) throw new DiCliArgsError(resolvedHerdr.problem);
+  const herdr = resolvedHerdr.config;
   if (fixtureSource !== undefined) {
     if (backendDiscovery !== undefined) {
       throw new DiCliArgsError(
@@ -222,6 +261,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
       fixturePreview: true,
       missionPanelDiscovery,
       deliveryAdapterDiscovery,
+      herdr,
     };
   }
   if (!backendDiscovery || !path.isAbsolute(backendDiscovery)) {
@@ -235,6 +275,7 @@ export function parseDiArgs(argv: string[]): DiCliArgs | 'help' {
     fixturePreview,
     missionPanelDiscovery,
     deliveryAdapterDiscovery,
+    herdr,
   };
 }
 
@@ -342,6 +383,25 @@ async function main(): Promise<void> {
       ? `[Pixel Agents DI] office delivery adapter discovery (read-only): ${args.deliveryAdapterDiscovery}`
       : '[Pixel Agents DI] office delivery adapter: not configured (--delivery-adapter-discovery)',
   );
+  // The Herdr terminal route. Opt-in: with no --herdr-* flags the relay answers every request "not configured" and names them. It is told the office's
+  // LATEST catalog view at each request (never a copy), and given the real Node APIs by herdrProcess.ts, the entry's one process-starting module.
+  const herdrLauncherDir = path.join(stateRoot, HERDR_LAUNCHER_DIR_NAME);
+  const herdrRequests = new DiHerdrRequests({
+    config: args.herdr,
+    launcherDir: herdrLauncherDir,
+    getView: () => office.getView(),
+    apis: realLaunchApis(),
+    dirFs: realLauncherDirFs(),
+    // The SAME guard the office's other state writes go through, over the SAME validated physical root: not a copy, and not a weaker one.
+    contain: makeDiStateWriteGuard(stateRoot),
+    nowMs: () => Date.now(),
+    log: (line) => console.log(line),
+  });
+  console.log(
+    args.herdr
+      ? `[Pixel Agents DI] Herdr terminal route: on (herdr ${args.herdr.bin}, HOME ${args.herdr.home}, socket ${args.herdr.socketPath}; launchers in ${herdrLauncherDir})`
+      : `[Pixel Agents DI] Herdr terminal route: not configured (${HERDR_FLAGS.join(', ')})`,
+  );
   if (args.fixturePreview)
     console.log(
       '[Pixel Agents DI] FIXTURE PREVIEW: backend is a synthetic fixture stand-in; views are labelled',
@@ -369,6 +429,7 @@ async function main(): Promise<void> {
         readCodeReview: (m, reply) => void office.readCodeReview(m, reply),
         missionRequest: (m, reply) => void missionRequests.handle(m, reply),
         deliveryRequest: (m, reply) => void deliveryRequests.handle(m, reply),
+        herdrRequest: (m, reply) => void herdrRequests.handle(m, reply),
       });
       if (typeof disposition === 'object') {
         // The type and the reason only — never the payload.

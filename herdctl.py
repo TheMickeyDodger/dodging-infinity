@@ -2031,7 +2031,8 @@ def delivery_evidence_cmd(args):
     r = resolve_repo_ref(args.repo)
     from herdr import delivery_evidence
     try:
-        document = delivery_evidence.collect(r)
+        document = delivery_evidence.collect(
+            r, expect_task_id=getattr(args, "expect_task_id", None))
     except delivery_evidence.EvidenceError as exc:
         raise SystemExit(f"delivery evidence unavailable: {exc}")
     print(json.dumps(document, indent=2, sort_keys=True))
@@ -2357,6 +2358,9 @@ def main():
 
     q = sp.add_parser("delivery-evidence")
     q.add_argument("--repo")
+    q.add_argument("--expect-task-id", default=None,
+                   help="refuse (exit non-zero) unless this is the task whose"
+                        " evidence is collected")
     q.set_defaults(fn=delivery_evidence_cmd)
 
     q = sp.add_parser("prompt")

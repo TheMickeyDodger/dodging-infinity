@@ -165,8 +165,10 @@ describe.each([1, 2] as const)('item 07 producer→consumer compatibility (contr
     // Plain words only: no reason code (snake_case) ever reaches the plain line.
     for (const a of office.runtimeAgents.agents) expect(a.plainText).not.toMatch(/[a-z]_[a-z]/);
     expect(office.runtimeAgents.plainStatement).toBe(
-      '8 runtime agent(s) with a verified identity, not team members; 8 listed without a verified identity.',
+      '8 runtime agent(s) with a verified identity, not shown as team members; 8 listed without a verified identity.',
     );
+    // A verified identity establishes the identity, not the absence of membership: the sentence says what is SHOWN.
+    expect(office.runtimeAgents.plainStatement).not.toMatch(/\bnot team members\b/);
   });
 
   it('an expired answer draws NO runtime character', () => {

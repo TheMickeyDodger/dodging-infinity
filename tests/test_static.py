@@ -3275,10 +3275,11 @@ assert _ms_import_rows == sorted([
     ('mission_sources', ('contract_v2', 'fileread', 'sources')),
     ('pr_delivery', ('authorization', 'mission_parent')),
     ('target_runtime', ('prepare',)), ('target_runtime', ('state_artifact',)),
-    # Herdr delivery linkage: the workspace origin identity, a bounded local
-    # config read. No git process, no delivery write.
-    ('target_runtime.workspace_origin', (
-        'origin_repository_url', 'repository_identity')),
+    # Herdr delivery linkage: the task's own worktree git directory, a bounded
+    # local read of its `.git` entry. No git process, no delivery write. The
+    # shared origin is NOT read here any more: every worktree of one origin has
+    # it, which is exactly what made a task steal or obscure a sibling's delivery.
+    ('target_runtime.workspace_origin', ('workspace_git_dir',)),
 ], key=repr), _ms_import_rows
 _ms_attributes = {}
 for _node in ast.walk(_ms_tree):

@@ -408,7 +408,7 @@ export function diRecords(state: DiOfficeState): DiRecord[] {
       characterId: agent.characterId,
       title: `${agent.logical} · ${agent.agent} · ${rootLabel(agent)}`,
       detail: agent.identityVerified
-        ? `runtime agent, not a team member · source ${agent.sourceId} · ${drawnText(agent.characterId)}`
+        ? `runtime agent, not shown as a team member · source ${agent.sourceId} · ${drawnText(agent.characterId)}`
         : `runtime identity ${plainIdentityState(agent.identityState)}; role/task membership not established · source ${agent.sourceId} · not drawn`,
       sourceId: agent.sourceId,
       missionRef: null,
