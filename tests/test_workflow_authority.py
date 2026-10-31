@@ -2857,6 +2857,15 @@ class BoundConstantPinTests(unittest.TestCase):
             # (re-declared from the delivery store's own bound and pinned
             # equal to it by test).
             "MAX_DELIVERY_PRESENTATIONS": 16,
+            # The longest reason text a task-bound delivery handoff may carry.
+            "MAX_HANDOFF_REASON_CHARS": 400,
+        },
+        "target_runtime/delivery_handoff.py": {
+            # The task-bound delivery handoff: the bytes of a head ref it
+            # reads, the review entries it may scan, and its reason text.
+            "MAX_HEAD_BYTES": 512,
+            "MAX_REVIEW_ENTRIES": 2048,
+            "MAX_REASON_CHARS": 400,
         },
         "target_runtime/mission_state.py": {
             "MAX_DELIVERY_STORE_BYTES": 4194304,
