@@ -926,8 +926,8 @@ def _validate_delivery_handoff(value, lifecycle, location):
         return
     if value["link_basis"] != MISSION_LINK_BASIS_TASK_WORKTREE:
         raise _shape("%s.link_basis must declare the basis this producer links "
-                     "a Herdr task by, %s" % (location,
-                                              MISSION_LINK_BASIS_TASK_WORKTREE))
+                     "an engineering task by, %s" % (
+                         location, MISSION_LINK_BASIS_TASK_WORKTREE))
     _text(value["repository"], location + ".repository")
     task_id = _text(value["engineering_task_id"],
                     location + ".engineering_task_id", True)
@@ -956,8 +956,8 @@ def _validate_delivery_handoff(value, lifecycle, location):
         raise _shape("%s.staged_candidate is always not_determined here"
                      % location)
     if value["workflow_id"] != HANDOFF_WORKFLOW_ID_HUMAN_SUPPLIED:
-        raise _shape("%s.workflow_id is always human_supplied for a Herdr task"
-                     % location)
+        raise _shape("%s.workflow_id is always human_supplied for an "
+                     "engineering task" % location)
     if value["blockers"] != expected_handoff_blockers(
             task_id, git_dir, branch_state, evidence_state):
         raise _shape("%s.blockers are not what the observed facts imply"

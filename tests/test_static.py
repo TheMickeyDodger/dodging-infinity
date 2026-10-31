@@ -2714,6 +2714,9 @@ MISSION_SOURCES_ALLOWED_CONSUMERS = frozenset({
     # workspace (contract, registry only, plus the git boundary and the
     # hardened file reader); its exact imports are pinned in (12k).
     'target_runtime/code_review.py',
+    # Delivery handoff: the read-only facts shown before a human ceremony
+    # (contract_v2 only). Exact imports are pinned in (12p).
+    'target_runtime/delivery_handoff.py',
 })
 # Within the package, only the reader may import mission; every other module
 # stays mission-free.
@@ -3101,9 +3104,11 @@ for _node in ast.walk(_catalog_tree):
             # Item 3 adds the live code review's one read, imported lazily by
             # the owner's code_review method (pinned in 12k); the catalog
             # still imports no git boundary itself.
+            # The delivery handoff is imported lazily inside the version 2
+            # owner (pinned in 12p): bounded reads, no process, no write.
             assert {a.name for a in _node.names} <= {
-                'artifact_content', 'code_review', 'herdr_task_source',
-                'mission_state', 'runtime_snapshot'}, (
+                'artifact_content', 'code_review', 'delivery_handoff',
+                'herdr_task_source', 'mission_state', 'runtime_snapshot'}, (
                     CATALOG_FILE, _node.lineno)
     if isinstance(_node, ast.Import):
         for _alias in _node.names:
@@ -3128,6 +3133,14 @@ assert not [n for n in _catalog_tree.body if isinstance(n, ast.ImportFrom)
 assert len([n for n in ast.walk(_catalog_tree)
             if isinstance(n, ast.ImportFrom)
             and any(a.name == 'mission_state' for a in n.names)]) == 1
+# The handoff reader is imported ONLY inside that same version 2 owner,
+# never at module level, so a version 1 process does not load it.
+assert not [n for n in _catalog_tree.body if isinstance(n, ast.ImportFrom)
+            and any(a.name == 'delivery_handoff' for a in n.names)], (
+    'catalog.py must not import delivery_handoff at module level')
+assert len([n for n in ast.walk(_catalog_tree)
+            if isinstance(n, ast.ImportFrom)
+            and any(a.name == 'delivery_handoff' for a in n.names)]) == 1
 
 # (12g) target_runtime/catalog_http.py: the passive loopback HTTP adapter
 #       over the catalog owner reaches nothing but that owner:
@@ -3510,6 +3523,55 @@ for _node in ast.walk(_cr_tree):
             _node.value, ast.Name) and _node.value.id == 'os':
         assert _node.attr in _CR_FILESYSTEM_CALLS | {'path', 'sep'}, (
             CODE_REVIEW_FILE, _node.lineno, _node.attr)
+
+# (12p) Delivery handoff: target_runtime/delivery_handoff.py, the read-only
+#       facts a person needs before the existing human ceremony, pinned
+#       STRUCTURALLY: exactly these imports (from mission_sources only
+#       contract_v2, and from that module only the task-worktree link basis);
+#       it opens nothing itself (state bytes come through the hardened
+#       state_artifact reader, HEAD through prepare's bounded instruction
+#       read); and it calls no write, replace, rename, unlink, mkdir, chmod,
+#       link, spawn, kill, Popen, save or lock, and no record_* / mint_* /
+#       apply_* / attest* / reserve* name. Its filesystem calls are a bounded
+#       directory scan and plain-path checks.
+DELIVERY_HANDOFF_FILE = 'target_runtime/delivery_handoff.py'
+_dh_tree = ast.parse((R / DELIVERY_HANDOFF_FILE).read_text())
+_dh_import_rows = sorted(
+    [(None, tuple(a.name for a in n.names)) for n in ast.walk(_dh_tree)
+     if isinstance(n, ast.Import)]
+    + [(n.module, tuple(a.name for a in n.names)) for n in ast.walk(_dh_tree)
+       if isinstance(n, ast.ImportFrom)], key=repr)
+assert _dh_import_rows == sorted([
+    (None, ('os',)),
+    ('herdr', ('delivery_evidence',)),
+    ('mission_sources', ('contract_v2',)),
+    ('target_runtime', ('prepare',)),
+    ('target_runtime', ('state_artifact',)),
+    ('target_runtime.workspace_origin', ('workspace_git_dir',)),
+], key=repr), _dh_import_rows
+_dh_attributes = {}
+for _node in ast.walk(_dh_tree):
+    if isinstance(_node, ast.Attribute) and isinstance(_node.value, ast.Name):
+        _dh_attributes.setdefault(_node.value.id, set()).add(_node.attr)
+assert _dh_attributes.get('contract_v2') == {
+    'MISSION_LINK_BASIS_TASK_WORKTREE'}, _dh_attributes.get('contract_v2')
+assert _dh_attributes.get('delivery_evidence') == {
+    'EvidenceError', 'evaluate'}, _dh_attributes.get('delivery_evidence')
+assert _dh_attributes.get('state_artifact') == {'read_state_artifact'}, (
+    _dh_attributes.get('state_artifact'))
+assert _dh_attributes.get('prepare_module') == {
+    'INSTRUCTION_ABSENT', 'INSTRUCTION_READ', 'read_workspace_instruction'}, (
+    _dh_attributes.get('prepare_module'))
+assert _dh_attributes.get('os') <= {'path', 'scandir'}, (
+    _dh_attributes.get('os'))
+for _node in ast.walk(_dh_tree):
+    if isinstance(_node, ast.Call):
+        _name = getattr(_node.func, 'id', getattr(_node.func, 'attr', None))
+        assert _name not in RUNTIME_SNAPSHOT_FORBIDDEN_CALLS | {'lock'}, (
+            DELIVERY_HANDOFF_FILE, _node.lineno, _name)
+        assert not (_name or '').startswith(
+            ('record_', 'mint_', 'apply_', 'attest', 'reserve')), (
+            DELIVERY_HANDOFF_FILE, _node.lineno, _name)
 
 # (12o) Run association: target_runtime/run_association.py, the TWO PURE
 #       helpers (handoff_prefix, names_this_run) the live code review's
