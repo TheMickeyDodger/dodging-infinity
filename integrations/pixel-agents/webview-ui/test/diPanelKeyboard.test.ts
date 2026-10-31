@@ -168,9 +168,16 @@ test('Tab reaches a runtime agent row; Enter selects it on the map and in the in
   assert.ok(agent, `the focused row names a verified runtime agent: ${label}`);
   await p().keyboard.press('Enter');
   const shown = await inspectorShows('di-selected-runtime-agent', agent.agent);
-  assert.match(shown, /Not a team member/);
+  assert.match(shown, /Not shown as a team member/);
+  assert.doesNotMatch(shown, /\bnot a team member\b/i);
   assert.equal(await selectedId(), agent.characterId);
   assert.equal(await cameraId(), agent.characterId); // the Map route: the camera follows it
+  // The inspector's heading names the kind with the same strength: not SHOWN as a team member.
+  await p().click('[data-testid="di-open-inspector-selection"]');
+  await p().waitForSelector('[data-testid="di-inspector-kind"]');
+  const kind = (await text('di-inspector-kind')) ?? '';
+  assert.match(kind, /Agent, not shown as a team member/);
+  assert.doesNotMatch(kind, /\bnot a team member\b/i);
 });
 
 test('arrow keys, Home and End move between runtime rows; Space selects', async () => {
@@ -305,6 +312,9 @@ test('the unverified listing: every record listed, reachable by keyboard, opened
   const shown = await inspectorShows('di-selected-unverified', 'can’t be safely linked');
   assert.match(shown, /Not drawn/);
   assert.match(shown, /can’t be safely linked to its recorded role/);
+  // The dock states the link is not established and then claims no more than that: not SHOWN as a team member.
+  assert.match(shown, /Not drawn; not shown as a team member\./);
+  assert.doesNotMatch(shown, /\bnot a team member\b/i);
   assert.equal(await selectedId(), null, 'an unverified record never becomes a drawn selection');
   const record = rowAgent(unverified, label);
   assert.ok(record);
@@ -317,6 +327,9 @@ test('the unverified listing: every record listed, reachable by keyboard, opened
   await p().click('[data-testid="di-open-inspector-selection"]');
   await p().waitForSelector('[data-testid="di-inspector-selected"]');
   assert.match((await text('di-inspector-now')) ?? '', /can’t be safely linked/);
+  const inspectorFace = (await text('di-inspector-selected')) ?? '';
+  assert.match(inspectorFace, /Not drawn; not shown as a team member\./);
+  assert.doesNotMatch(inspectorFace, /\bnot a team member\b/i);
   await p().click('[data-testid="di-inspector-record"] > summary');
   await p().waitForSelector('[data-testid="di-inspector-unverified"]');
   // The labelled disclosure is "Everything recorded" (one step): the record is inside it, and

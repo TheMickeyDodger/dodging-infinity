@@ -128,6 +128,7 @@ components:
         - $ref: '#/components/schemas/DiCodeReview'
         - $ref: '#/components/schemas/DiMissionRequestReply'
         - $ref: '#/components/schemas/DiDeliveryReply'
+        - $ref: '#/components/schemas/DiHerdrReply'
       discriminator: type
 
     ClientMessage:
@@ -163,6 +164,7 @@ components:
         - $ref: '#/components/schemas/DiCodeReviewMissionRead'
         - $ref: '#/components/schemas/DiMissionRequest'
         - $ref: '#/components/schemas/DiDeliveryRequest'
+        - $ref: '#/components/schemas/DiHerdrRequest'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -1339,6 +1341,163 @@ components:
     DiDeliveryState:
       type: string
       enum: [ok, refused, unavailable, unknown]
+
+    DiHerdrRequest:
+      description: |
+        DI office only (the Herdr terminal route): ONE closed request about the Herdr terminal for ONE
+        Mission, answered by the office SERVER, which alone holds the Herdr target the office was
+        started with (--herdr-bin, --herdr-home, --herdr-socket). `seq` is a number the client
+        chooses; the reply echoes it with `op`. Each `op` takes exactly these four fields and no
+        others, and anything else is refused: `status` (is a launch available for this Mission
+        right now: the same admission checks as a launch, with NO effect: nothing is written,
+        focused or opened) and `launch` (open a macOS Terminal window running plain `herdr`, after
+        focusing the herd's workspace through Herdr's socket API). `missionRef` is matched against
+        the office's own latest catalog view; it is never a path, a pane, a workspace or an
+        argument. There is no op that sends a key, a prompt or text to any pane or terminal, and
+        none that creates, renames, closes, splits, moves, resizes or zooms anything. One whose
+        type, seq and op are valid is answered with exactly one diHerdrReply to the asking
+        connection only; one without a valid seq or op gets no reply (see DiHerdrReply).
+      type: object
+      additionalProperties: false
+      required: [type, seq, op, missionRef]
+      properties:
+        type:
+          const: diHerdrRequest
+        seq:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        op:
+          $ref: '#/components/schemas/DiHerdrOp'
+        missionRef:
+          type: string
+          minLength: 1
+          maxLength: 104
+
+    DiHerdrOp:
+      type: string
+      enum: [status, launch]
+
+    DiHerdrState:
+      type: string
+      enum: [ok, refused, unavailable]
+
+    DiHerdrTerminalState:
+      type: string
+      enum: [opened, unconfirmed]
+
+    DiHerdrWorkspaceFocus:
+      type: string
+      enum: [focused, not_performed]
+
+    DiHerdrIdentityBasis:
+      description: |
+        What vouched for the Mission's role the route anchored on, two DIFFERENT claims of different strength
+        that are never mapped onto each other. `runtime_identity_verified`: the catalog's runtime-identity
+        verdict for the role is `verified` (two source passes, the role's working directory corroborated).
+        `team_roster_session_confirmed`: the role is listed in the Mission's team roster as `present` with
+        reason `session_confirmed`, on this task's own (`direct`) chain, with its recorded and live sessions
+        equal: one comparison of two session ids, which is NOT a runtime-identity verification. In both
+        cases the route also requires that Herdr's own live list names that session exactly once.
+        Neither is an attach and neither says the keyboard works.
+      type: string
+      enum: [runtime_identity_verified, team_roster_session_confirmed]
+
+    DiHerdrAnswer:
+      description: |
+        What a successful `status` or `launch` established, each fact only as strong as its receipt,
+        and NEVER an attach or a working keyboard: that proof is a person's, made at a real terminal.
+        `workspaceId` is the workspace Herdr's live listing names for the session that matched the
+        Mission's verified identity: the workspace a launch targets (status) or targeted (launch).
+        `workspaceFocus`: `focused` ONLY on a launch, and only because Herdr's own read-back said
+        that workspace is focused; `not_performed` on a status (nothing was focused). `matchedPaneId`
+        is the pane of the matched live row: IDENTITY EVIDENCE and a read handle, and matching it
+        focuses nothing. `paneFocus` is always `not_performed`: no pane is ever focused (herdr pane
+        focus moves to a neighbouring pane). `terminalState`: null on a status; on a launch,
+        `opened` means the macOS opener exited with status 0 (the terminal application was ASKED to
+        open the launcher), `unconfirmed` means the opener had not finished within its bound. Neither
+        means the Herdr client attached or accepts keystrokes.
+      type: object
+      additionalProperties: false
+      required: [agent, identityBasis, workspaceId, windowMinCols, windowMinRows, workspaceFocus, matchedPaneId, paneFocus, terminal, terminalLabel, terminalState]
+      properties:
+        agent:
+          type: string
+          maxLength: 256
+        identityBasis:
+          $ref: '#/components/schemas/DiHerdrIdentityBasis'
+        windowMinCols:
+          description: |
+            The width, in character cells, that the launcher REQUIRES of its own real window before it
+            starts Herdr in it: the far edge of the herd's pane area as Herdr's read-only snapshot reports
+            it, plus a small allowance for chrome Herdr does not report. A REQUIREMENT, not an achievement:
+            the launcher asks the terminal to grow that window, measures the real size, and starts Herdr
+            only if the window really is this large. No size is ever set or reported by the office.
+          type: integer
+          minimum: 1
+          maximum: 1000
+        windowMinRows:
+          description: The height, in character cells, required in the same way as `windowMinCols`.
+          type: integer
+          minimum: 1
+          maximum: 500
+        workspaceId:
+          type: string
+          maxLength: 64
+        workspaceFocus:
+          $ref: '#/components/schemas/DiHerdrWorkspaceFocus'
+        matchedPaneId:
+          type: [string, 'null']
+          maxLength: 64
+        paneFocus:
+          const: not_performed
+        terminal:
+          type: string
+          maxLength: 32
+        terminalLabel:
+          type: string
+          maxLength: 64
+        terminalState:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiHerdrTerminalState'
+
+    DiHerdrReply:
+      description: |
+        DI office only: the answer to one diHerdrRequest, to the asking connection only, correlated by
+        `seq` and `op`. THE CORRELATION DOMAIN: every diHerdrRequest whose type, seq and op are valid
+        gets exactly one, a malformed one and one sent to an office without Herdr targeting included.
+        A message without a valid seq or op cannot be correlated: it gets no reply, and no seq or op
+        is invented for it. `state`:
+        ok: `answer` carries what was established (see DiHerdrAnswer).
+        refused: the route or this office refused, with the code (`problem`) and the real words
+        (`reason`) of whichever side refused. A refusal says what was and was not done: an
+        admission refusal wrote, focused and opened NOTHING; `focus_not_established` and
+        `launch_failed` name the launcher file they left and whether the operator's view moved.
+        unavailable: this office was started without Herdr targeting (`reason` names the flags it
+        is waiting for); nothing was attempted.
+      type: object
+      additionalProperties: false
+      required: [type, seq, op, state, problem, reason, answer]
+      properties:
+        type:
+          const: diHerdrReply
+        seq:
+          type: integer
+        op:
+          $ref: '#/components/schemas/DiHerdrOp'
+        state:
+          $ref: '#/components/schemas/DiHerdrState'
+        problem:
+          type: [string, 'null']
+          maxLength: 80
+        reason:
+          type: [string, 'null']
+          maxLength: 2000
+        answer:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/DiHerdrAnswer'
 
     DiCodeReviewRead:
       description: |
@@ -3133,7 +3292,9 @@ components:
         the field (with `projected: false`) is how that is said, and no phase value stands in
         for it. `deliveryLink` is the producer's DECLARED per-Mission delivery link; it is
         present only when the backend's answer carries one (an answer that predates the field
-        has none, and nothing stands in for it).
+        has none, and nothing stands in for it). `deliveryHandoff` is the producer's DECLARED
+        read-only facts for the existing human delivery ceremony; it is present only when the
+        backend's answer carries one, and its absence is NOT a declaration of anything.
       type: object
       additionalProperties: false
       required: [projected, taskChains, childrenRecord, missionState, canonicalReview]
@@ -3142,6 +3303,8 @@ components:
           $ref: '#/components/schemas/DiWorkflowPhase'
         deliveryLink:
           $ref: '#/components/schemas/DiMissionDeliveryLink'
+        deliveryHandoff:
+          $ref: '#/components/schemas/DiMissionDeliveryHandoff'
         projected:
           type: boolean
         taskChains:
@@ -3579,9 +3742,13 @@ components:
         this Mission (`missions[].delivery_link`, contract v2), as the producer DECLARES it,
         with the rule that linked it. A workflow_authority Mission is linked by the one valid
         delivery record whose own Mission binding names its workflow id
-        (`record_mission_binding`). A Herdr task is linked when its workspace origin matches
-        one delivery record's repository (`record_repository_binding`). Mission Core is never
-        linked: no delivery record names one, so its link is not known (never "none").
+        (`record_mission_binding`). A Herdr task is linked when one delivery record's sealed
+        worktree git directory and sealed engineering task id are both its own
+        (`record_task_worktree_binding`): that exact task in that exact worktree, never the shared
+        origin. An older producer linked a Herdr task by its workspace origin alone
+        (`record_repository_binding`); that is a different, weaker claim and is never read as the
+        task-and-worktree one. Mission Core is never linked: no delivery record names one, so its
+        link is not known (never "none").
         `deliveryId` is set exactly when `state` is `linked`: one id, of the shape a delivery
         ceremony mints, never a list or a count. `basis` names the rule that linked it, and is
         null otherwise. A link selects which delivery's status may be read; it authorizes nothing,
@@ -3602,6 +3769,113 @@ components:
             - $ref: '#/components/schemas/DiMissionDeliveryLinkBasis'
             - type: 'null'
 
+    DiMissionDeliveryHandoff:
+      description: |
+        The READ-ONLY facts a person needs before running the existing human delivery ceremony for
+        a Herdr task (`missions[].delivery_handoff`, contract v2). It confers nothing: there is no
+        "ready" field, the exact staged candidate a pull-request ceremony needs is always
+        `not_determined` here, and a Herdr task has no workflow-store workflow id, so `workflowId`
+        is always `human_supplied`. `state`: observed (the facts below), not_applicable (this kind
+        of Mission has no handoff) or not_reported (the producer could not say: unknown, never
+        "none"). `linkBasis` is the basis the producer DECLARES it links a Herdr task by, stated
+        whether or not anything is linked (a link's own basis is null when unlinked): only the exact
+        value `record_task_worktree_binding` declares that a record made from this task in this
+        worktree comes back to this task. Its absence, or any other value, is not a declaration.
+        `branch.state` named requires `refs/heads/<name>` (what the ceremony requires); detached is
+        a bare object id. `evidence` is the existing collector's own verdict, its refusal reason
+        verbatim: collected, refused (its rule said no) or unreadable (a limit of this read). The
+        blockers are exactly what the facts imply.
+      type: object
+      additionalProperties: false
+      required:
+        [state, linkBasis, repository, engineeringTaskId, gitDirRealpath, branch, evidence, stagedCandidate, workflowId, blockers]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiHandoffState'
+        linkBasis:
+          type: [string, 'null']
+          maxLength: 80
+        repository:
+          type: [string, 'null']
+        engineeringTaskId:
+          type: [string, 'null']
+        gitDirRealpath:
+          type: [string, 'null']
+        branch:
+          oneOf:
+            - $ref: '#/components/schemas/DiHandoffBranch'
+            - type: 'null'
+        evidence:
+          oneOf:
+            - $ref: '#/components/schemas/DiHandoffEvidence'
+            - type: 'null'
+        stagedCandidate:
+          oneOf:
+            - $ref: '#/components/schemas/DiHandoffStagedCandidate'
+            - type: 'null'
+        workflowId:
+          oneOf:
+            - $ref: '#/components/schemas/DiHandoffWorkflowId'
+            - type: 'null'
+        blockers:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/DiHandoffBlocker'
+
+    DiHandoffState:
+      description: observed (the facts), not_applicable (this kind of Mission has no handoff) or not_reported (the producer could not say).
+      type: string
+      enum: [observed, not_applicable, not_reported]
+
+    DiHandoffStagedCandidate:
+      description: The exact staged candidate a pull-request ceremony needs cannot be determined without a git process, so it is always not_determined here.
+      type: string
+      enum: [not_determined]
+
+    DiHandoffWorkflowId:
+      description: A Herdr task has no workflow-store workflow id, so the ceremony's workflow id is supplied by the person.
+      type: string
+      enum: [human_supplied]
+
+    DiHandoffBlocker:
+      description: What the observed facts imply stands in the way of the ceremony; the list is exactly what the facts imply, and an empty list is not permission.
+      type: string
+      enum: [git_dir_not_read, head_detached, head_not_read, evidence_not_collected, task_id_not_recorded]
+
+    DiHandoffBranchState:
+      type: string
+      enum: [named, detached, unreadable]
+
+    DiHandoffEvidenceState:
+      type: string
+      enum: [collected, refused, unreadable]
+
+    DiHandoffBranch:
+      description: HEAD of the task's worktree. named only for a refs/heads/ branch; detached is a bare object id; unreadable is anything else.
+      type: object
+      additionalProperties: false
+      required: [state, ref]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiHandoffBranchState'
+        ref:
+          type: [string, 'null']
+
+    DiHandoffEvidence:
+      description: |
+        The existing collector's verdict on the task's COMPLETE plus latest canonical APPROVE, its refusal reason verbatim and bounded.
+        unreadable is a limit of the bounded read, never the collector's verdict.
+      type: object
+      additionalProperties: false
+      required: [state, reason]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiHandoffEvidenceState'
+        reason:
+          type: [string, 'null']
+          maxLength: 400
+
     DiMissionDeliveryLinkState:
       description: |
         The producer's declared states of a Mission's delivery link, each a different fact:
@@ -3610,7 +3884,7 @@ components:
           source was read.
         - unlinked_model_not_recorded: not known; delivery records do not name this kind of
           Mission (Mission Core is one). A Herdr task may still carry this when the catalog
-          did not address repositories.
+          did not address task worktrees.
         - unlinked_store_not_registered: not known; no delivery store is registered with the
           catalog.
         - unlinked_store_unavailable: not known; the registered store could not be read, or a
@@ -3618,13 +3892,17 @@ components:
         - unlinked_reader_failed: not known; the catalog's link reader failed.
         - unlinked_no_record: no delivery record in the registered store names this workflow.
         - unlinked_ambiguous: several records name this workflow, or several registered
-          Missions hold its id; none is chosen.
+          Missions hold its id; or, for a Herdr task, several records seal this task and
+          worktree, or the catalog lists this task and worktree more than once; none is chosen.
         - unlinked_sources_incomplete: not known; a workflow source was not read, so this
           Mission's id is not known to be unique.
         - unlinked_id_not_addressable: the one matching record's delivery id is not of the shape
           a ceremony mints, so it cannot be addressed.
-        - unlinked_repository_not_recorded: a Herdr task whose workspace origin was not read,
-          so no delivery is linked. Not "no record".
+        - unlinked_repository_not_recorded: LEGACY, from an older producer only: a Herdr task whose
+          workspace origin was not read, so no delivery is linked. Not "no record". A current
+          producer does not send it.
+        - unlinked_task_worktree_not_recorded: a Herdr task with no task id, or whose worktree git
+          directory was not read, so no delivery is linked. Not "no record".
       type: string
       enum:
         [
@@ -3638,17 +3916,22 @@ components:
           unlinked_sources_incomplete,
           unlinked_id_not_addressable,
           unlinked_repository_not_recorded,
+          unlinked_task_worktree_not_recorded,
         ]
 
     DiMissionDeliveryLinkBasis:
       description: |
         The rule that linked a Mission to its delivery. record_mission_binding: the delivery
         record's own sealed Mission binding naming the Mission's workflow id.
-        record_repository_binding: the Herdr task's workspace origin matches one delivery
-        record's repository. Neither is an engineering task id, an attested receipt or a
-        newest pick.
+        record_task_worktree_binding: the delivery record's sealed worktree git directory and
+        sealed engineering task id are both the Herdr task's own. record_repository_binding:
+        LEGACY, from an older producer only; the Herdr task's workspace origin matched one
+        delivery record's repository, which every worktree of that origin shares, so it does NOT
+        say the record was made for this task or this worktree. A current producer does not send
+        it, and a client must not present it as the task-and-worktree link. None is an attested
+        receipt or a newest pick.
       type: string
-      enum: [record_mission_binding, record_repository_binding]
+      enum: [record_mission_binding, record_repository_binding, record_task_worktree_binding]
 
     # ── Client message variants ────────────────────────────────────
 

@@ -452,7 +452,7 @@ MISSION_VIEW_KEYS = ("mission_ref", "source_id", "native_id", "lifecycle",
                      "execution", "native")
 MISSION_KEYS_V2 = MISSION_VIEW_KEYS + (
     "binding", "members", "task_chains", "children_record", "mission_state",
-    "admitted_artifacts", "workflow_phase", "delivery_link")
+    "admitted_artifacts", "workflow_phase", "delivery_link", "delivery_handoff")
 
 # -- the declared workflow phase (version 2) ----------------------------------
 
@@ -645,11 +645,11 @@ AUTHORIZATION_CHECKS = ("corroborated", "differs", AUTHORIZATION_NOT_COMPARABLE)
 
 # -- the Mission's delivery link (version 2) ----------------------------------
 
-#: The lifecycle model addressed by repository (the task-native reader's
-#: ``LIFECYCLE_MODEL``). Spelled in two literals so this package's identifier
-#: scan stays free of that reader's name. Re-declared: this package does not
-#: import the reader.
-REPOSITORY_LINK_MODEL = "he" "rdr.task/1"
+#: The lifecycle model addressed by its own task and worktree (the task-native
+#: reader's ``LIFECYCLE_MODEL``). Spelled in two literals so this package's
+#: identifier scan stays free of that reader's name. Re-declared: this package
+#: does not import the reader.
+TASK_LINK_MODEL = "he" "rdr.task/1"
 #: ``missions[].delivery_link``: which ONE delivery record, if any, the
 #: catalog's registered delivery store links to this Mission, DECLARED with the
 #: rule that established it, so a consumer never guesses a delivery for a
@@ -657,13 +657,23 @@ REPOSITORY_LINK_MODEL = "he" "rdr.task/1"
 #: - a ``workflow_authority.workflow_phase/2`` Mission is linked only by a
 #:   record whose OWN ``mission.workflow_id`` (one of the record's sealed
 #:   authority keys) equals its ``native_id`` (``record_mission_binding``);
-#: - a ``herdr.task/1`` Mission is linked only when repository addressing is
-#:   on, by the one delivery record whose repository identity equals the
-#:   workspace origin (``record_repository_binding``). Several records, or
-#:   several Herdr tasks, sharing that identity are ``unlinked_ambiguous``.
-#:   No readable origin is ``unlinked_repository_not_recorded`` (not known,
-#:   never "no match"). A catalog that did not address repositories still
-#:   reports ``unlinked_model_not_recorded`` for a Herdr task;
+#: - a ``herdr.task/1`` Mission is linked only when task-worktree addressing
+#:   is on, by the one delivery record whose SEALED
+#:   ``repository.git_dir_realpath`` is the git directory of THIS task's own
+#:   worktree AND whose SEALED ``workflow_identity.engineering_task_id`` is
+#:   THIS task's id (``record_task_worktree_binding``): that exact task in that
+#:   exact worktree. The shared origin is never the key: every worktree of one
+#:   origin shares it, which is how a task stole or obscured a sibling's
+#:   delivery. Several records, or several catalog rows, with the same task and
+#:   worktree are ``unlinked_ambiguous``; none is chosen. A task or worktree
+#:   that could not be read is ``unlinked_task_worktree_not_recorded`` (not
+#:   known, never "no match"). The older origin-only basis
+#:   (``record_repository_binding``) and state
+#:   (``unlinked_repository_not_recorded``) are NOT produced or accepted
+#:   here: they are a different, weaker claim, and a consumer that still reads
+#:   them from an older producer must not present them as this association. A
+#:   catalog that did not address task worktrees still reports
+#:   ``unlinked_model_not_recorded`` for a Herdr task;
 #: - delivery records name no Mission Core record, so that model (and any
 #:   other) is ``unlinked_model_not_recorded``: NOT KNOWN, never "no match";
 #: - strict multiplicity: several records naming the workflow, or several
@@ -671,12 +681,14 @@ REPOSITORY_LINK_MODEL = "he" "rdr.task/1"
 #:   none is chosen, and "newest" is never a rule;
 #: - a unique workflow match is claimed only when every registered
 #:   workflow-store source was read fresh (``unlinked_sources_incomplete``
-#:   otherwise). A Herdr repository match does not depend on that inspection:
+#:   otherwise). A Herdr task-worktree match does not depend on that inspection:
 #:   the store was validated and the origin was read;
 #: - ``delivery_id`` is set EXACTLY when linked: at most one, of the shape a
 #:   delivery ceremony mints, never a list or a count. ``basis`` names the rule
-#:   (``record_mission_binding`` or ``record_repository_binding``), never an
-#:   engineering task id or an attested receipt.
+#:   (``record_mission_binding`` or ``record_task_worktree_binding``). A
+#:   workflow Mission is never linked on an engineering task id or an attested
+#:   receipt; only the Herdr task, whose OWN id that is, is linked on it, and
+#:   only together with its worktree.
 #: A link selects which delivery's status may be read; it authorizes nothing.
 #: The catalog's registered store is not shown to be the store any other
 #: reader (the office's delivery adapter) uses. Commit, push and opening a
@@ -691,8 +703,9 @@ MISSION_LINK_NO_RECORD = "unlinked_no_record"
 MISSION_LINK_AMBIGUOUS = LINK_UNLINKED_AMBIGUOUS
 MISSION_LINK_SOURCES_INCOMPLETE = LINK_UNLINKED_SOURCES_INCOMPLETE
 MISSION_LINK_ID_NOT_ADDRESSABLE = "unlinked_id_not_addressable"
-#: A Herdr task whose workspace origin could not be read. Not "no record".
-MISSION_LINK_REPOSITORY_NOT_RECORDED = "unlinked_repository_not_recorded"
+#: A Herdr task with no task id or whose worktree git directory could not be
+#: read. Not "no record".
+MISSION_LINK_TASK_WORKTREE_NOT_RECORDED = "unlinked_task_worktree_not_recorded"
 MISSION_LINK_STATES = (MISSION_LINK_LINKED, MISSION_LINK_MODEL_NOT_RECORDED,
                        MISSION_LINK_STORE_NOT_REGISTERED,
                        MISSION_LINK_STORE_UNAVAILABLE,
@@ -700,13 +713,15 @@ MISSION_LINK_STATES = (MISSION_LINK_LINKED, MISSION_LINK_MODEL_NOT_RECORDED,
                        MISSION_LINK_AMBIGUOUS,
                        MISSION_LINK_SOURCES_INCOMPLETE,
                        MISSION_LINK_ID_NOT_ADDRESSABLE,
-                       MISSION_LINK_REPOSITORY_NOT_RECORDED)
+                       MISSION_LINK_TASK_WORKTREE_NOT_RECORDED)
 MISSION_LINK_BASIS_RECORD_BINDING = "record_mission_binding"
-#: A Herdr task linked by the workspace origin and one delivery record's
-#: repository identity. Not a workflow id.
-MISSION_LINK_BASIS_REPOSITORY = "record_repository_binding"
+#: A Herdr task linked by the delivery record's sealed worktree git directory
+#: AND sealed engineering task id, both equal to the task's own. Not a workflow
+#: id, and NOT the older origin-only ``record_repository_binding`` (a weaker
+#: claim this producer no longer makes).
+MISSION_LINK_BASIS_TASK_WORKTREE = "record_task_worktree_binding"
 MISSION_LINK_BASES = (MISSION_LINK_BASIS_RECORD_BINDING,
-                      MISSION_LINK_BASIS_REPOSITORY)
+                      MISSION_LINK_BASIS_TASK_WORKTREE)
 #: The delivery id a ceremony mints (``pr_delivery.authorization``'s
 #: ``DELIVERY_ID_PREFIX`` and ``DELIVERY_ID_HEX_CHARS``: ``prd-`` and 24
 #: lowercase hex; parity pinned by test, since this package does not import
@@ -729,9 +744,17 @@ def is_delivery_id(value):
     )
 
 
+def is_task_worktree_key(value):
+    """Whether ``value`` is a task-worktree key: ``(git dir realpath, task id)``,
+    two non-empty strings. Anything else is no key."""
+    return (type(value) is tuple and len(value) == 2
+            and all(type(part) is str and part for part in value))
+
+
 def mission_delivery_link(mission, unavailable, bound, holders, inspection,
-                          repository_url=None, by_repository=None,
-                          repository_holders=None, repository_addressable=False):
+                          task_worktree=None, by_task_worktree=None,
+                          task_worktree_holders=None,
+                          task_worktree_addressable=False):
     """The DECLARED ``delivery_link`` block of one mission view (version 2).
 
     ``unavailable``: None when the registered delivery store was read and
@@ -742,31 +765,33 @@ def mission_delivery_link(mission, unavailable, bound, holders, inspection,
     ``{native id: count}`` of this response's workflow Missions.
     ``inspection``: what the Mission side could inspect (``INSPECTIONS``).
 
-    Repository addressing (``repository_addressable``): ``repository_url`` is
-    the workspace origin's repository identity, or None when it was not read.
-    ``by_repository`` is ``{identity: [delivery ids]}``. ``repository_holders``
-    counts missions of ``REPOSITORY_LINK_MODEL`` in this response that share an
-    identity. Without ``repository_addressable``, that model stays
-    ``unlinked_model_not_recorded`` (a catalog that did not address
-    repositories)."""
+    Task-worktree addressing (``task_worktree_addressable``):
+    ``task_worktree`` is the mission's own ``(git dir realpath, task id)``, or
+    None when either was not read. ``by_task_worktree`` is
+    ``{(git dir realpath, task id): [delivery ids]}`` over the records' sealed
+    fields. ``task_worktree_holders`` counts missions of ``TASK_LINK_MODEL`` in
+    this response that share a key. The origin is never part of it. Without
+    ``task_worktree_addressable``, that model stays
+    ``unlinked_model_not_recorded`` (a catalog that did not address task
+    worktrees)."""
     def unlinked(state):
         return {"state": state, "delivery_id": None, "basis": None}
     model = mission["lifecycle"]["model"]
-    if model == REPOSITORY_LINK_MODEL and repository_addressable:
+    if model == TASK_LINK_MODEL and task_worktree_addressable:
         if unavailable is not None:
             return unlinked(unavailable)
-        if not repository_url:
-            return unlinked(MISSION_LINK_REPOSITORY_NOT_RECORDED)
-        found = (by_repository or {}).get(repository_url, [])
-        holders_for = repository_holders or {}
+        if not is_task_worktree_key(task_worktree):
+            return unlinked(MISSION_LINK_TASK_WORKTREE_NOT_RECORDED)
+        found = (by_task_worktree or {}).get(task_worktree, [])
+        holders_for = task_worktree_holders or {}
         if not found:
             return unlinked(MISSION_LINK_NO_RECORD)
-        if len(found) > 1 or holders_for.get(repository_url, 0) > 1:
+        if len(found) > 1 or holders_for.get(task_worktree, 0) > 1:
             return unlinked(MISSION_LINK_AMBIGUOUS)
         if not is_delivery_id(found[0]):
             return unlinked(MISSION_LINK_ID_NOT_ADDRESSABLE)
         return {"state": MISSION_LINK_LINKED, "delivery_id": found[0],
-                "basis": MISSION_LINK_BASIS_REPOSITORY}
+                "basis": MISSION_LINK_BASIS_TASK_WORKTREE}
     if model != contract.LIFECYCLE_MODEL_WORKFLOW_STORE:
         return unlinked(MISSION_LINK_MODEL_NOT_RECORDED)
     if unavailable is not None:
@@ -789,18 +814,19 @@ def _validate_mission_delivery_link(value, lifecycle, location):
     state = _member(value["state"], MISSION_LINK_STATES, location + ".state")
     model = lifecycle["model"]
     workflow = model == contract.LIFECYCLE_MODEL_WORKFLOW_STORE
-    by_repository = model == REPOSITORY_LINK_MODEL
+    by_task_worktree = model == TASK_LINK_MODEL
     if state == MISSION_LINK_MODEL_NOT_RECORDED:
         if workflow:
             raise _shape("%s: a workflow Mission is never "
                          "unlinked_model_not_recorded" % location)
-    elif not workflow and not by_repository:
+    elif not workflow and not by_task_worktree:
         raise _shape("%s: exactly the Missions whose model no delivery record "
                      "names are unlinked_model_not_recorded" % location)
-    if state == MISSION_LINK_REPOSITORY_NOT_RECORDED and not by_repository:
-        raise _shape("%s: unlinked_repository_not_recorded is only the "
-                     "repository-addressed model whose origin was not read"
-                     % location)
+    if state == MISSION_LINK_TASK_WORKTREE_NOT_RECORDED and not (
+            by_task_worktree):
+        raise _shape("%s: unlinked_task_worktree_not_recorded is only the "
+                     "task-addressed model whose task or worktree was not "
+                     "read" % location)
     if state == MISSION_LINK_LINKED:
         if not is_delivery_id(value["delivery_id"]):
             raise _shape("%s: a linked Mission carries one delivery id of "
@@ -809,13 +835,133 @@ def _validate_mission_delivery_link(value, lifecycle, location):
         if basis == MISSION_LINK_BASIS_RECORD_BINDING and not workflow:
             raise _shape("%s: record_mission_binding links a workflow Mission"
                          % location)
-        if basis == MISSION_LINK_BASIS_REPOSITORY and not by_repository:
-            raise _shape("%s: record_repository_binding links only the "
-                         "repository-addressed model" % location)
+        if basis == MISSION_LINK_BASIS_TASK_WORKTREE and not by_task_worktree:
+            raise _shape("%s: record_task_worktree_binding links only the "
+                         "task-addressed model" % location)
         return
     if value["delivery_id"] is not None or value["basis"] is not None:
         raise _shape("%s: an unlinked Mission carries no delivery id and no "
                      "basis" % location)
+
+
+# -- the Mission's delivery HANDOFF (version 2) -----------------------------------
+
+#: ``missions[].delivery_handoff``: the READ-ONLY facts a person needs before they run the EXISTING human delivery ceremony for a Herdr task,
+#: each observed with its reason (``target_runtime.delivery_handoff`` builds it; this package does not import that module, so the vocabulary is
+#: re-declared here and its parity is pinned by test). It CONFERS NOTHING: it is a status read, never permission, never "ready". The staged
+#: candidate a ``pull_request`` ceremony needs cannot be determined without a git process, so it is ALWAYS ``not_determined``, and a Herdr
+#: task has no workflow-store workflow id, so ``workflow_id`` is ALWAYS ``human_supplied``. ``blockers`` is recomputed from the facts by the
+#: validator: a producer cannot send fewer than its own facts imply. ``not_applicable``: this model has no handoff. ``not_reported``: this
+#: producer could not say (unknown, never "none"). A catalog that predates the block carries no key at all. ``link_basis`` is the basis this
+#: producer links a Herdr task by, DECLARED here whether or not anything is linked (an unlinked ``delivery_link.basis`` is null by contract):
+#: it is what lets a task with NO record yet be told how its record would come back, and it is the only thing that does. Its absence is not a
+#: declaration.
+HANDOFF_KEYS = ("state", "link_basis", "repository", "engineering_task_id",
+                "git_dir_realpath", "branch", "evidence", "staged_candidate",
+                "workflow_id", "blockers")
+HANDOFF_STATE_OBSERVED = "observed"
+HANDOFF_STATE_NOT_APPLICABLE = "not_applicable"
+HANDOFF_STATE_NOT_REPORTED = "not_reported"
+HANDOFF_STATES = (HANDOFF_STATE_OBSERVED, HANDOFF_STATE_NOT_APPLICABLE,
+                  HANDOFF_STATE_NOT_REPORTED)
+HANDOFF_BRANCH_KEYS = ("state", "ref")
+HANDOFF_BRANCH_STATES = ("named", "detached", "unreadable")
+HANDOFF_EVIDENCE_KEYS = ("state", "reason")
+HANDOFF_EVIDENCE_STATES = ("collected", "refused", "unreadable")
+HANDOFF_STAGED_NOT_DETERMINED = "not_determined"
+HANDOFF_WORKFLOW_ID_HUMAN_SUPPLIED = "human_supplied"
+HANDOFF_BLOCKERS = ("git_dir_not_read", "head_detached", "head_not_read",
+                    "evidence_not_collected", "task_id_not_recorded")
+MAX_HANDOFF_REASON_CHARS = 400
+
+
+def handoff_empty(state):
+    """A handoff block that carries no facts (``not_applicable`` or ``not_reported``)."""
+    return {"state": state, "link_basis": None, "repository": None,
+            "engineering_task_id": None,
+            "git_dir_realpath": None, "branch": None, "evidence": None,
+            "staged_candidate": None, "workflow_id": None, "blockers": []}
+
+
+def mission_delivery_handoff(mission, hook):
+    """The ``delivery_handoff`` block of one mission view: ``not_applicable`` for a model without one, ``not_reported`` when a Herdr task has no
+    reader or the reader failed (unknown, never "none"), else the reader's block (validated with the whole response)."""
+    if mission["lifecycle"]["model"] != TASK_LINK_MODEL:
+        return handoff_empty(HANDOFF_STATE_NOT_APPLICABLE)
+    if hook is None:
+        return handoff_empty(HANDOFF_STATE_NOT_REPORTED)
+    try:
+        return hook(mission)
+    except Exception:                                      # noqa: BLE001
+        return handoff_empty(HANDOFF_STATE_NOT_REPORTED)
+
+
+def expected_handoff_blockers(task_id, git_dir, branch_state, evidence_state):
+    """The blockers the observed facts imply, in the fixed order of ``HANDOFF_BLOCKERS``."""
+    found = set()
+    if git_dir is None:
+        found.add("git_dir_not_read")
+    if branch_state == "detached":
+        found.add("head_detached")
+    elif branch_state == "unreadable":
+        found.add("head_not_read")
+    if evidence_state != "collected":
+        found.add("evidence_not_collected")
+    if task_id is None:
+        found.add("task_id_not_recorded")
+    return [b for b in HANDOFF_BLOCKERS if b in found]
+
+
+def _validate_delivery_handoff(value, lifecycle, location):
+    _closed(value, HANDOFF_KEYS, location)
+    state = _member(value["state"], HANDOFF_STATES, location + ".state")
+    by_task = lifecycle["model"] == TASK_LINK_MODEL
+    if (state == HANDOFF_STATE_NOT_APPLICABLE) == by_task:
+        raise _shape("%s: exactly a model without a handoff is not_applicable"
+                     % location)
+    if state != HANDOFF_STATE_OBSERVED:
+        if value != handoff_empty(state):
+            raise _shape("%s: a %s handoff carries no facts and no blockers"
+                         % (location, state))
+        return
+    if value["link_basis"] != MISSION_LINK_BASIS_TASK_WORKTREE:
+        raise _shape("%s.link_basis must declare the basis this producer links "
+                     "an engineering task by, %s" % (
+                         location, MISSION_LINK_BASIS_TASK_WORKTREE))
+    _text(value["repository"], location + ".repository")
+    task_id = _text(value["engineering_task_id"],
+                    location + ".engineering_task_id", True)
+    git_dir = _text(value["git_dir_realpath"],
+                    location + ".git_dir_realpath", True)
+    branch = value["branch"]
+    _closed(branch, HANDOFF_BRANCH_KEYS, location + ".branch")
+    branch_state = _member(branch["state"], HANDOFF_BRANCH_STATES,
+                           location + ".branch.state")
+    ref = _text(branch["ref"], location + ".branch.ref", True)
+    if (branch_state == "named") != (ref is not None) or (
+            ref is not None and not ref.startswith("refs/heads/")):
+        raise _shape("%s.branch: exactly a named branch carries its refs/heads/ ref"
+                     % location)
+    evidence = value["evidence"]
+    _closed(evidence, HANDOFF_EVIDENCE_KEYS, location + ".evidence")
+    evidence_state = _member(evidence["state"], HANDOFF_EVIDENCE_STATES,
+                             location + ".evidence.state")
+    reason = _text(evidence["reason"], location + ".evidence.reason", True)
+    if (evidence_state == "collected") != (reason is None):
+        raise _shape("%s.evidence: exactly collected evidence carries no reason"
+                     % location)
+    if reason is not None and len(reason) > MAX_HANDOFF_REASON_CHARS:
+        raise _shape("%s.evidence.reason is over its bound" % location)
+    if value["staged_candidate"] != HANDOFF_STAGED_NOT_DETERMINED:
+        raise _shape("%s.staged_candidate is always not_determined here"
+                     % location)
+    if value["workflow_id"] != HANDOFF_WORKFLOW_ID_HUMAN_SUPPLIED:
+        raise _shape("%s.workflow_id is always human_supplied for an "
+                     "engineering task" % location)
+    if value["blockers"] != expected_handoff_blockers(
+            task_id, git_dir, branch_state, evidence_state):
+        raise _shape("%s.blockers are not what the observed facts imply"
+                     % location)
 
 
 def delivery_presentations_block(state, problem, delivery_store, total,
@@ -1630,6 +1776,8 @@ def validate_mission_v2(value, location):
                              location + ".workflow_phase")
     _validate_mission_delivery_link(value["delivery_link"], value["lifecycle"],
                                     location + ".delivery_link")
+    _validate_delivery_handoff(value["delivery_handoff"], value["lifecycle"],
+                               location + ".delivery_handoff")
     _closed(value["execution"], EXECUTION_KEYS, location + ".execution")
     _validate_binding(value["binding"], location + ".binding")
     for index, member in enumerate(_list(

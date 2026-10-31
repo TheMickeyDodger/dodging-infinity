@@ -9,8 +9,10 @@
 import type {
   DiMember,
   DiMission,
+  DiMissionDeliveryHandoff,
   DiObservedValue,
   DiOfficeState,
+  DiRuntimeAgent,
 } from '../../../core/src/messages.js';
 import {
   reviewNotOfferedConsequence,
@@ -18,6 +20,7 @@ import {
   unavailableWords,
 } from './diCodeReviewModel.js';
 import type { DlStep, DlView } from './diDeliveryModel.js';
+import { plainIdentityReason } from './diNavigation.js';
 import { missionObjective, missionStatus } from './diOperationalStatus.js';
 import { missionTitle, plainMissionDescription, shortMissionRefs } from './diPlainSummary.js';
 import type { PanelSource } from './diReceptionItems.js';
@@ -142,7 +145,113 @@ export interface DiScanFact {
   text: string;
 }
 
+/**
+ * Whether a role's identity is CONFIRMED live or UNRESOLVED, kept as distinct states (never collapsed into each other or into a generic
+ * "unknown"). Confirmed only when the office classifies the roster member `present` AND counts it live. Every other state is shown, labelled as
+ * unresolved, and is never drawn with the live look or given an observed activity: an unresolved identity is not a live verified participant.
+ */
+export type DiScanIdentity =
+  | { kind: 'confirmed' }
+  | {
+      kind: 'unresolved';
+      state: 'replaced' | 'disappeared' | 'ambiguous' | 'not_counted_live' | 'unrecognised';
+      /** The short label shown beside the role. */
+      label: string;
+      /** The sentence behind it: what the last observation showed, and that nothing is confirmed. */
+      words: string;
+      /** The reason code the roster itself reported for this state, unedited (null only when the roster gave none). Shown beside the label. */
+      reason: string | null;
+    };
+
+/**
+ * An UNRESOLVED RUNTIME RECORD: a record of a running agent found under a Mission's workspace whose identity the office did not resolve, and which
+ * is not a roster member (so the swarm, which is built from the roster only, cannot show it). Without this listing such a record vanished from the
+ * scan face entirely: the same filtered-away trap as the Package A binding gap, the other way round. It is shown as exactly what it is, and no more:
+ *  - NOT promoted into the roster, and no task or role membership is stated for it (an unverified record's link to a role binding is, in the
+ *    catalog's own words, not established, so even its recorded role name is not shown);
+ *  - NOT drawn: no avatar, no activity, no live look, and nothing in its words says it is confirmed, verified or running;
+ *  - the states stay DISTINCT: unverified, ambiguous and could-not-be-checked are three different facts, never merged into each other or into a
+ *    generic "unknown".
+ */
+export interface DiScanUnresolvedAgent {
+  agentRef: string;
+  /** The record's own recorded name (never a cast character). */
+  name: string;
+  state: 'unverified' | 'ambiguous' | 'unavailable' | 'unrecognised';
+  label: string;
+  words: string;
+  /** The office's own reason for the state, in plain words (a generic sentence for a code this window has no sentence for). */
+  reason: string;
+  /** The reason code the runtime record itself reported, unedited. Shown beside the label, so a generic plain sentence never hides it. */
+  reasonCode: string;
+}
+
+const UNRESOLVED_AGENT_WORDS: Readonly<Record<DiScanUnresolvedAgent['state'], readonly [string, string]>> = {
+  unverified: ['Identity not verified', 'A runtime record found under this Mission’s workspace. Its identity is not verified, and its role and task membership are not established. It is not shown as a team member and is not shown as working.'],
+  ambiguous: ['Identity ambiguous', 'A runtime record found under this Mission’s workspace. Which listed agent it is could not be decided, and its role and task membership are not established. It is not shown as a team member and is not shown as working.'],
+  unavailable: ['Identity could not be checked', 'A runtime record found under this Mission’s workspace. The office could not check its identity, and its role and task membership are not established. It is not shown as a team member and is not shown as working.'],
+  unrecognised: ['Identity unrecognised', 'A runtime record found under this Mission’s workspace. This window does not recognise the identity state the office reported for it, and its role and task membership are not established. It is not shown as a team member and is not shown as working.'],
+};
+
+/**
+ * Whether a runtime record names the same LIVE SESSION as a roster member, the one piece of evidence that they describe the same agent (a name or
+ * a pane is not evidence: either outlives a session, and an unresolved record often names no session at all). It is used ONLY to say so beside the
+ * record. It never removes anything: NO record is ever suppressed against a roster member, because the two sides report their own unresolved state
+ * and their own reason, and dropping either loses what the catalog reported (a roster `replaced` with reason `session_changed` beside a runtime
+ * `unavailable` with reason `listing_unreadable` are two different facts). Deduplication is not a requirement here; visible, truthfully labelled
+ * unresolved identities are. Showing one agent on two lines, each with what the catalog said, is the honest error; a lost state or reason is not.
+ */
+function sameLiveSession(member: DiMember, agent: DiRuntimeAgent): boolean {
+  const memberSession = member.sessionLive.state === 'observed' ? member.sessionLive.value : null;
+  return agent.session !== null && memberSession !== null && agent.session === memberSession;
+}
+
+/** What is said when the roster lists a record's live session too, with its own unresolved state: both records are shown, each with its own state and reason. */
+const UNRESOLVED_AGENT_SAME_SESSION =
+  ' The roster lists this same live session too, with its own state and reason; both records are shown.';
+
+/** What is said when the roster and the runtime records disagree about ONE live session: both are shown, and the person is told they disagree. */
+const UNRESOLVED_AGENT_CONFLICT =
+  ' The roster lists this same session as a confirmed member; the two records disagree, and both are shown.';
+
+/**
+ * The unresolved runtime records found under ONE Mission: those whose root record is this Mission (`rootRef` = the Mission's own reference, the
+ * join the office itself uses; an agent's own claim of which task it serves is NOT used, since for an unverified record that claim is exactly what
+ * is not established), and whose identity is not `verified`. NONE is suppressed against a roster member: where the roster lists the same live
+ * session, both are shown, each with its own state and reason, and the record's words say so (and, for a CONFIRMED member, that the two records
+ * disagree). A verified record is not listed (its identity is resolved). Unresolved is anything else, including a state this window does not
+ * recognise and the contradiction of `verified` with `identityVerified` false: never the stronger reading.
+ */
+export function unresolvedAgentsFor(mission: DiMission, agents: readonly DiRuntimeAgent[]): DiScanUnresolvedAgent[] {
+  const out: DiScanUnresolvedAgent[] = [];
+  for (const agent of agents) {
+    if (agent.rootRef !== mission.missionRef) continue;
+    if (agent.identityVerified === true && agent.identityState === 'verified') continue;
+    // Never suppressed. A same-session roster member only adds a cross-reference to the record's words.
+    const sameSession = mission.members.members.filter((member) => sameLiveSession(member, agent));
+    const disagrees = sameSession.some((member) => identityOfMember(member).kind === 'confirmed');
+    const alsoListed = sameSession.length > 0 && !disagrees;
+    const state: DiScanUnresolvedAgent['state'] =
+      agent.identityState === 'unverified' || agent.identityState === 'ambiguous' || agent.identityState === 'unavailable'
+        ? agent.identityState
+        : 'unrecognised';
+    const [label, words] = UNRESOLVED_AGENT_WORDS[state];
+    out.push({
+      agentRef: agent.agentRef,
+      name: agent.logical.trim() !== '' ? agent.logical : agent.agent,
+      state,
+      label,
+      words: disagrees ? words + UNRESOLVED_AGENT_CONFLICT : alsoListed ? words + UNRESOLVED_AGENT_SAME_SESSION : words,
+      reason: plainIdentityReason(agent.identityReason),
+      reasonCode: agent.identityReason,
+    });
+  }
+  return out;
+}
+
 export interface DiScanAvatar {
+  /** Confirmed live, or unresolved in one of its distinct states. Absent only on the labelled specimen (a layout sample, not an observation). */
+  identity?: DiScanIdentity;
   role: string;
   name: string;
   /** Bust index 0–3, or a character sheet index when no bust exists. */
@@ -189,14 +298,216 @@ export interface DiScanDelivery {
  */
 export type DiScanDeliveryLink =
   | { kind: 'linked'; deliveryId: string; words: string }
+  /**
+   * LEGACY, from an OLDER catalog that linked a Herdr task by its workspace origin alone (`record_repository_binding`). That rule can select ANOTHER worktree's or another task's record, so this is NOT a link in the
+   * sense above: the id is shown for reference and NOTHING is done with it. It never reaches the delivery session (no status read,
+   * no Commit, Push or Open pull request), and no sentence about "this task's record" is written for it.
+   */
+  | { kind: 'origin_only'; deliveryId: string; words: string }
   | { kind: 'unlinked'; state: string; words: string }
   | { kind: 'not_reported'; words: string };
 
+/**
+ * THE ONE DECISION POINT for what the delivery session may read and act on: the delivery id of a `linked` link, and NOTHING else. An
+ * `origin_only` link (a legacy, origin-matched record that may belong to another task or worktree), an unlinked state and an unreported
+ * link are all null, so the session is given no id: no status read, no Commit, Push or Open pull request. Mission details' Delivery calls
+ * only this. A new kind of link is therefore inert until it is named here.
+ */
+export function deliveryActionTarget(link: DiScanDeliveryLink | undefined): string | null {
+  return link !== undefined && link.kind === 'linked' ? link.deliveryId : null;
+}
+
+/**
+ * THE DELIVERY HANDOFF: what a person needs to see, and the exact command to run in THEIR OWN terminal, to create a delivery record for a
+ * Herdr task through the EXISTING human ceremony. The office runs nothing, stages nothing, changes no branch and approves nothing; this is
+ * a status read plus a prepared command, and it is NEVER worded as ready (the staged candidate cannot be determined here).
+ */
+export type DiReturnPath =
+  /** The producer EXPLICITLY declares the canonical association: a record made from this task in this worktree comes back to THIS task. */
+  | { kind: 'canonical'; words: string }
+  /** Origin-only evidence (declared or linked): it can select another worktree's or task's record, so NO task-specific promise is made. */
+  | { kind: 'legacy'; words: string }
+  /** Silence, an older producer, or an unrecognised declaration: fail closed. The stronger reading is never guessed. */
+  | { kind: 'not_known'; words: string };
+
+export interface DiScanDeliveryHandoff {
+  kind: 'observed' | 'not_reported';
+  /** One plain line per observed fact (label, value). */
+  facts: ReadonlyArray<{ id: string; label: string; value: string }>;
+  /** What stands in the way as things stand, or the plain statement that nothing listed does (which is NOT a promise). Never "ready". */
+  blockers: string;
+  /**
+   * The exact route for the person's OWN terminal, pre-filled with this task's real repository path AND task id; null when the producer
+   * reported no facts or the mission has no task to bind it to. One subshell that stops at the first failure.
+   */
+  command: string | null;
+  /** What the route guarantees (where it runs, where its evidence goes, that it stops, which task it is bound to); null with no command. */
+  guards: string | null;
+  returnPath: DiReturnPath;
+}
+
+export const DI_DELIVERY_HANDOFF_ENGINE_PLACEHOLDER =
+  '<path to your Herdr engine checkout: the directory that contains herdctl.py and pr_delivery/>';
+export const DI_DELIVERY_HANDOFF_NOT_REPORTED =
+  'Not known: this catalog did not report the facts needed to prepare a delivery record for this task, so none are shown and no command is prepared.';
+export const DI_DELIVERY_HANDOFF_RUNS_NOTHING =
+  'Run these in your own terminal. This office runs nothing, stages nothing, changes no branch and approves nothing; the ceremony asks you to confirm in your terminal.';
+export const DI_DELIVERY_HANDOFF_NO_PROMISE =
+  'Nothing listed above stops the ceremony from starting, but that is not a promise it will accept this worktree: whether the exact staged candidate exists is not determined here.';
+export const DI_DELIVERY_HANDOFF_FUTURE =
+  'Putting a named branch in place, and staging the exact candidate for a pull request, are what a delivery you separately approve would require. This window does neither.';
+export const DI_RETURN_CANONICAL =
+  'If the record is written to the delivery store this catalog reads, a record made from this task, in this task’s worktree, comes back to THIS task: this catalog links a Herdr task by its worktree’s git directory and its task id, and the ceremony seals both into the record.';
+/**
+ * The store condition, always stated with the canonical claim. The ceremony has NO option to choose its store: it writes to the per-user default
+ * (pr_delivery.cli.build_machine), while the catalog reads the directory it was started with (--delivery-store). Two valid stores that are not
+ * the same one would leave the record unlinked while a plain promise said otherwise, so the promise is conditional and the setup is named.
+ */
+export const DI_RETURN_STORE_SETUP =
+  ' The ceremony always writes to the per-user default delivery store (~/Library/Application Support/DodgingInfinity/telegram) and has no option to choose another; this catalog reads the store it was started with (--delivery-store). This office has not shown they are the same directory, so it does not promise the link: start the catalog with --delivery-store set to that default store, or the record will not appear here.';
+export const DI_RETURN_STORE =
+  ' The catalog has no readable delivery store right now, so nothing can link until it does.';
+export const DI_RETURN_LEGACY =
+  'This office cannot promise that a record made from this task comes back to this task: this catalog links a Herdr task by its workspace origin only, which every worktree of that origin shares, so it can show another worktree’s or another task’s record here.';
+export const DI_RETURN_NOT_KNOWN =
+  'Not known: this catalog does not say how it links a Herdr task to a delivery record, so this office does not promise that a record made from this task comes back to this task.';
+/** The link states in which the catalog has no delivery store it can read, so no record can link yet. */
+const DI_NO_STORE_STATES: ReadonlySet<string> = new Set(['unlinked_store_not_registered', 'unlinked_store_unavailable', 'unlinked_reader_failed']);
+const DI_CANONICAL_BASIS = 'record_task_worktree_binding';
+const DI_LEGACY_BASIS = 'record_repository_binding';
+
+/**
+ * THE RETURN-PATH DECISION, in behaviour and not only in wording. The canonical statement is EARNED from the producer's EXPLICIT declaration
+ * (`deliveryHandoff.linkBasis`), independent of whether any record matches, so a fresh task with no record can be told how its record comes back.
+ * Absence of a declaration is not a declaration. Order: origin-only evidence (a legacy link, or a legacy declaration) refuses first; then the
+ * exact canonical declaration earns the statement; every other case (no block, not observed, no basis, an unrecognised basis) is not known.
+ */
+export function returnPathClaim(link: DiScanDeliveryLink | undefined, handoff: DiMissionDeliveryHandoff | undefined): DiReturnPath {
+  if (link !== undefined && link.kind === 'origin_only') return { kind: 'legacy', words: DI_RETURN_LEGACY };
+  if (handoff === undefined || handoff.state !== 'observed' || handoff.linkBasis === null) return { kind: 'not_known', words: DI_RETURN_NOT_KNOWN };
+  if (handoff.linkBasis === DI_LEGACY_BASIS) return { kind: 'legacy', words: DI_RETURN_LEGACY };
+  if (handoff.linkBasis !== DI_CANONICAL_BASIS) return { kind: 'not_known', words: DI_RETURN_NOT_KNOWN };
+  const noStore = link !== undefined && link.kind === 'unlinked' && DI_NO_STORE_STATES.has(link.state);
+  return { kind: 'canonical', words: DI_RETURN_CANONICAL + DI_RETURN_STORE_SETUP + (noStore ? DI_RETURN_STORE : '') };
+}
+
+/** A path as one single-quoted shell word: nothing in it is ever interpreted by the person's shell. */
+export function shellWord(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * THE ROUTE, as one subshell for the person's own terminal. It is deterministic about where it runs and what it uses, and it stops:
+ *  - `set -eu` inside `( ... )`: the FIRST failure ends the route (and only the route, never the person's shell), so a failed collection can
+ *    never be followed by the ceremony;
+ *  - `cd "$ENGINE"`: `python3 -m pr_delivery` and `herdctl.py` need a known module context, so it names the engine checkout (the office cannot
+ *    know where it is; a placeholder left unedited fails the `cd` and stops);
+ *  - `--repo "$REPO"` on both steps: the repository is this task's own, never the directory the person happens to be in;
+ *  - the evidence goes to a NEW private directory made for this run and named for the task (`mktemp -d`), never a shared `herd-evidence.json`
+ *    that another task could overwrite or a stale one could stand in for;
+ *  - `--expect-task-id "$TASK"`: the collector itself refuses unless the task that is current in $REPO is the one this was prepared for, at the
+ *    moment it runs, so a route saved for task A and run after task B completed cannot seal B's identity into a record believed to be A's.
+ * Quoting: every pre-filled value is one single-quoted shell word; `$` forms are left to the shell on purpose.
+ */
+export function deliveryRoute(repository: string, taskId: string): string {
+  return [
+    '(',
+    '  set -eu',
+    `  ENGINE='${DI_DELIVERY_HANDOFF_ENGINE_PLACEHOLDER}'`,
+    `  REPO=${shellWord(repository)}`,
+    `  TASK=${shellWord(taskId)}`,
+    '  EVIDENCE="$(mktemp -d "${TMPDIR:-/tmp}/herd-evidence-$TASK.XXXXXX")/evidence.json"',
+    '  cd "$ENGINE"',
+    '  python3 herdctl.py delivery-evidence --repo "$REPO" --expect-task-id "$TASK" > "$EVIDENCE"',
+    '  python3 -m pr_delivery authorize --repo "$REPO" --workflow-id \'<your workflow id>\' --herd-evidence "$EVIDENCE" \\',
+    '    --verification-log \'<path to your green verification log>\' --verification-command \'<the command that produced it>\' \\',
+    '    --verification-exit-status 0 --title \'<pull request title>\'',
+    ')',
+  ].join('\n');
+}
+
+export function deliveryRouteGuards(taskId: string): string {
+  return `Edit the ENGINE line first. The route runs from your Herdr engine checkout (python3 -m needs the directory that holds pr_delivery/), names this task’s repository explicitly, stops at the first failure, writes its evidence to a new directory made for this run, and refuses unless the task current in that repository is ${taskId}.`;
+}
+
+const BLOCKER_WORDS: Readonly<Record<string, string>> = {
+  git_dir_not_read: 'this task’s worktree has no git directory this office could read',
+  head_detached: 'HEAD is detached, and the ceremony needs a named branch checked out (it stops with “HEAD is not on a named branch”)',
+  head_not_read: 'this worktree’s HEAD could not be read',
+  evidence_not_collected: 'the task has no collectable evidence (a COMPLETE task and the latest canonical APPROVE)',
+  task_id_not_recorded: 'this mission has no current task to collect evidence for',
+};
+
+function deliveryHandoffOf(mission: DiMission, link: DiScanDeliveryLink): DiScanDeliveryHandoff | undefined {
+  if (mission.lifecycleModel !== 'herdr.task/1') return undefined;
+  const block = mission.v2.projected ? mission.v2.deliveryHandoff : undefined;
+  const returnPath = returnPathClaim(link, block);
+  if (block === undefined || block.state !== 'observed' || block.repository === null) {
+    return { kind: 'not_reported', facts: [], blockers: DI_DELIVERY_HANDOFF_NOT_REPORTED, command: null, guards: null, returnPath };
+  }
+  const branch = block.branch;
+  const evidence = block.evidence;
+  const facts: Array<{ id: string; label: string; value: string }> = [
+    { id: 'repository', label: 'Repository', value: block.repository },
+    { id: 'task', label: 'Task', value: block.engineeringTaskId ?? 'not recorded' },
+    { id: 'git_dir', label: 'Worktree git directory', value: block.gitDirRealpath ?? 'not read' },
+    {
+      id: 'branch',
+      label: 'Branch',
+      value:
+        branch === null || branch.state === 'unreadable'
+          ? 'HEAD could not be read'
+          : branch.state === 'detached'
+            ? 'HEAD is detached (no named branch)'
+            : `on ${branch.ref ?? 'a named branch'}`,
+    },
+    {
+      id: 'evidence',
+      label: 'Evidence',
+      value:
+        evidence === null
+          ? 'not reported'
+          : evidence.state === 'collected'
+            ? 'a COMPLETE task and the latest canonical APPROVE were found'
+            : evidence.state === 'refused'
+              ? `the collector refuses: ${evidence.reason ?? 'no reason given'}`
+              : `could not be read here: ${evidence.reason ?? 'no reason given'}`,
+    },
+    { id: 'staged', label: 'Staged candidate', value: 'not determined here' },
+    { id: 'workflow', label: 'Workflow id', value: 'you supply it: a Herdr task has no workflow id of its own' },
+  ];
+  const stops = block.blockers.map((b) => BLOCKER_WORDS[b] ?? b);
+  const blockers = stops.length > 0 ? `As things stand the ceremony would stop: ${stops.join('; ')}. ${DI_DELIVERY_HANDOFF_FUTURE}` : DI_DELIVERY_HANDOFF_NO_PROMISE;
+  // A route is prepared only for a task it can be bound to: with no current task there is nothing to bind the evidence to.
+  const taskId = block.engineeringTaskId;
+  const command = taskId === null ? null : deliveryRoute(block.repository, taskId);
+  const guards = taskId === null ? null : deliveryRouteGuards(taskId);
+  return { kind: 'observed', facts, blockers, command, guards, returnPath };
+}
+
 /** The basis of a workflow link, in words (`record_mission_binding`). */
 export const DI_DELIVERY_LINKED = 'Linked by the delivery record’s own Mission binding. A link names which delivery is read here; it authorizes nothing.';
-/** The basis of a Herdr link, in words (`record_repository_binding`). */
+/**
+ * The basis of a Herdr link from the CURRENT producer, in words (`record_task_worktree_binding`): the delivery record's sealed task id
+ * AND sealed worktree git directory are both this task's own. This is the only wording that says "made for this task, in this worktree".
+ */
+export const DI_DELIVERY_LINKED_TASK_WORKTREE =
+  'Linked because one delivery record was made for this task, in this task’s own worktree: its sealed task id and its sealed worktree are both this task’s. A link names which delivery is read here; it authorizes nothing.';
+/**
+ * LEGACY, `record_repository_binding` only, sent by an OLDER catalog. The first sentence is true of THAT basis and of no other, so this
+ * string stays attached to it and is never used for the task-and-worktree link. The second sentence says what that basis cannot show.
+ */
 export const DI_DELIVERY_LINKED_REPOSITORY =
-  'Linked because this workspace’s origin matches one delivery record’s repository. A link names which delivery is read here; it authorizes nothing.';
+  'Linked because this workspace’s origin matches one delivery record’s repository. A link names which delivery is read here; it authorizes nothing. This older catalog matches by origin only, which every worktree of that origin shares, so this does not show the record was made for this task or this worktree.';
+/**
+ * What an origin-only link adds to its legacy wording: the BEHAVIOUR it gets. It is enforced in `DiScanPanel`'s `Delivery` (an `origin_only`
+ * link is never the delivery session's id) and pinned by test; this sentence says so to the person.
+ */
+export const DI_DELIVERY_ORIGIN_ONLY_NOT_ACTED =
+  'It is shown for reference only. This window does not read its status or offer Commit, Push or Open pull request on it, because it may belong to another task or another worktree. A catalog that links by task and worktree is needed before this office acts on a delivery for this task.';
+/** A linked answer whose basis this window does not know: nothing is shown as linked, and no stronger reading is guessed. */
+export const DI_DELIVERY_BASIS_UNKNOWN =
+  'Not known: this office was told a delivery is linked by a rule this window does not recognise, so it does not show that delivery as this Mission’s.';
 /** Each unlinked state's reason, in words (the producer's meanings: core/asyncapi.yaml DiMissionDeliveryLinkState). */
 export const DI_DELIVERY_UNLINKED: Readonly<Record<string, string>> = {
   unlinked_model_not_recorded:
@@ -210,18 +521,48 @@ export const DI_DELIVERY_UNLINKED: Readonly<Record<string, string>> = {
   unlinked_id_not_addressable: 'The one record that names this Mission has a delivery id of a shape this office cannot address.',
   unlinked_repository_not_recorded:
     'This Herdr task’s workspace has no origin URL this office could read, so no delivery is linked.',
+  unlinked_task_worktree_not_recorded:
+    'This Herdr task has no task id, or its worktree has no git directory this office could read, so no delivery is linked. This is not the same as no record.',
+};
+/**
+ * What a Herdr task's two MODEL-DEPENDENT unlinked states say instead of the workflow wording above (every other state's words are the
+ * same for both). A Herdr task has no workflow id, and no id is shared: the real causes are its own task and worktree.
+ */
+export const DI_DELIVERY_UNLINKED_HERDR: Readonly<Record<string, string>> = {
+  unlinked_no_record:
+    'No delivery record in the catalog’s delivery store was made for this task in this worktree. A record made from another worktree, or for another task, is not this task’s.',
+  unlinked_ambiguous:
+    'More than one delivery record was made for this task in this worktree, or the catalog lists this task and worktree more than once; none is chosen.',
 };
 export const DI_DELIVERY_LINK_NOT_REPORTED = 'Not known: this office’s catalog does not report a delivery link for this Mission.';
 
 /** A real Mission's delivery link, from the wire's v2 block; nothing is inferred when the block or the field is absent. */
+function deliveryHandoffRowPart(mission: DiMission): { deliveryHandoff?: DiScanDeliveryHandoff } {
+  const handoff = deliveryHandoffOf(mission, deliveryLinkOf(mission));
+  return handoff === undefined ? {} : { deliveryHandoff: handoff };
+}
+
 function deliveryLinkOf(mission: DiMission): DiScanDeliveryLink {
   const link = mission.v2.projected ? mission.v2.deliveryLink : undefined;
   if (link === undefined) return { kind: 'not_reported', words: DI_DELIVERY_LINK_NOT_REPORTED };
   if (link.state === 'linked' && typeof link.deliveryId === 'string') {
-    const words = link.basis === 'record_repository_binding' ? DI_DELIVERY_LINKED_REPOSITORY : DI_DELIVERY_LINKED;
+    // the wording is chosen by the basis the producer DECLARED, one string per basis; a basis not named here is NOT guessed at (it would
+    // be read as the strongest one): nothing is shown as linked and the person is told it is not known
+    if (link.basis === 'record_repository_binding') {
+      return { kind: 'origin_only', deliveryId: link.deliveryId, words: `${DI_DELIVERY_LINKED_REPOSITORY} ${DI_DELIVERY_ORIGIN_ONLY_NOT_ACTED}` };
+    }
+    const words =
+      link.basis === 'record_mission_binding'
+        ? DI_DELIVERY_LINKED
+        : link.basis === 'record_task_worktree_binding'
+          ? DI_DELIVERY_LINKED_TASK_WORKTREE
+          : null;
+    if (words === null) return { kind: 'unlinked', state: 'linked_basis_not_recognised', words: DI_DELIVERY_BASIS_UNKNOWN };
     return { kind: 'linked', deliveryId: link.deliveryId, words };
   }
-  const words = DI_DELIVERY_UNLINKED[link.state];
+  // a Herdr task is told by its lifecycle model (the model the producer pairs the link rules with), not by where it was read from
+  const herdrTask = mission.lifecycleModel === 'herdr.task/1';
+  const words = (herdrTask ? DI_DELIVERY_UNLINKED_HERDR[link.state] : undefined) ?? DI_DELIVERY_UNLINKED[link.state];
   return {
     kind: 'unlinked',
     state: link.state,
@@ -387,6 +728,10 @@ export interface DiScanRow {
   delivery: DiScanDelivery;
   /** M8: a real Mission's delivery link (see DiScanDeliveryLink). Absent: the specimen. */
   deliveryLink?: DiScanDeliveryLink;
+  /** Running agents recorded for this Mission whose identity is not resolved and who are not roster members. Absent on the specimen. */
+  unresolvedAgents?: readonly DiScanUnresolvedAgent[];
+  /** A Herdr task's delivery HANDOFF (what to run to create a record, and what stands in the way). Absent for any other kind of Mission and for the specimen. */
+  deliveryHandoff?: DiScanDeliveryHandoff;
   /**
    * The office's source kind (`herdr_task`, `mission_core`, …). Absent on the labelled specimen.
    * Delivery uses it so a Herdr task does not wear the layout-preview lock.
@@ -558,8 +903,9 @@ function swarmFor(mission: DiMission): DiScanAvatar[] {
 }
 
 function betterSeat(next: DiMember, prev: DiMember): boolean {
+  // a role's seat goes to the member the office CONFIRMS before any that is drawn or has a pane: a replaced or vanished listing never outranks the live one
   const score = (member: DiMember) =>
-    (member.characterId !== null ? 2 : 0) + (paneText(member) !== '' ? 1 : 0);
+    (identityOfMember(member).kind === 'confirmed' ? 4 : 0) + (member.characterId !== null ? 2 : 0) + (paneText(member) !== '' ? 1 : 0);
   return score(next) > score(prev);
 }
 
@@ -672,14 +1018,52 @@ export function providerFact(provider: string): DiScanFact {
 
 const NOT_RECORDED: DiObservedValue = { state: 'not_recorded', value: null, reason: null };
 
+/**
+ * A roster member's identity as the swarm shows it. Confirmed means `present` AND counted live by the office. Each other classification is its
+ * own unresolved state with its own words (the roster's, as the last observation recorded them), and `present` that the office does not count
+ * live is its own state too, carrying the office's reason: it is not "confirmed" and not a generic unknown.
+ */
+export function identityOfMember(member: DiMember): DiScanIdentity {
+  const classification = member.classification;
+  if (classification === 'present') {
+    if (member.live === true) return { kind: 'confirmed' };
+    const why = member.notLiveReason ?? 'no reason was given';
+    return {
+      kind: 'unresolved',
+      state: 'not_counted_live',
+      label: 'Not counted live',
+      words: `The last observation matched this role’s recorded session, but the office does not count it live (${why}). It is not confirmed running.`,
+      reason: member.notLiveReason,
+    };
+  }
+  const words: Record<string, readonly [DiScanIdentityState, string, string]> = {
+    replaced: ['replaced', 'Replaced by another session', 'In the last observation a different live session carried this name, so it is not this member. Nothing is confirmed for this role.'],
+    disappeared: ['disappeared', 'Not in the live listing', 'In the last observation no listed agent carried this name. Nothing is confirmed for this role.'],
+    ambiguous: ['ambiguous', 'Identity ambiguous', 'In the last observation which listed agent is this member could not be decided. Nothing is confirmed for this role.'],
+  };
+  const found = words[classification];
+  if (found !== undefined) return { kind: 'unresolved', state: found[0], label: found[1], words: found[2], reason: member.reason };
+  return {
+    kind: 'unresolved',
+    state: 'unrecognised',
+    label: 'Identity unrecognised',
+    words: 'This window does not recognise the identity state the office reported for this role. Nothing is confirmed.',
+    reason: member.reason,
+  };
+}
+type DiScanIdentityState = Extract<DiScanIdentity, { kind: 'unresolved' }>['state'];
+
 function avatarFromMember(member: DiMember, index: number): DiScanAvatar {
   const key = member.role.toLowerCase();
   const name = plainAgentName(
     member.role,
     member.logical.trim() !== '' ? member.logical : member.agent,
   );
-  const note = noteForActivity(member.activity);
+  const identity = identityOfMember(member);
+  // a recorded activity is shown as an OBSERVATION only for a confirmed member: for an unresolved one it would read as a live participant at work
+  const note = identity.kind === 'confirmed' ? noteForActivity(member.activity) : '';
   return {
+    identity,
     role: roleLabel(member.role),
     name,
     palette: ROLE_CAST[key]?.palette ?? index % 6,
@@ -803,6 +1187,7 @@ export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { 
   const doubt = state.reception ? receptionDoubt(state.reception) : { text: [], codes: [] };
   const shorts = shortMissionRefs(state.missions.missions);
   const waiting = decisionsByMission(panel, state.missions.missions);
+  const runtimeAgents = state.runtimeAgents?.agents ?? [];
   return state.missions.missions.map((mission) => {
     const refs = waiting.get(mission.missionRef) ?? null;
     const status = missionStatus(mission, state);
@@ -829,6 +1214,8 @@ export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { 
       // The record carries no delivery stage; M8 reads ONE linked delivery's status in Mission details, through its own session.
       delivery: { source: 'not_read', stage: null },
       deliveryLink: deliveryLinkOf(mission),
+      ...deliveryHandoffRowPart(mission),
+      unresolvedAgents: unresolvedAgentsFor(mission, runtimeAgents),
       sourceKind: mission.sourceKind,
       // "running" is read from the record, and "awaiting a decision" from the request panel when one of its requests waiting for `decide` ties to this Mission. Every other fact is NOT
       // read, so it is null, never false: the panel must not turn an unread fact into "nothing is waiting" (the request panel lists only its own requests, so no tie is not "no decision").
@@ -1651,8 +2038,12 @@ export const DI_DELIVERY_END = 'Delivery ends with an open pull request.';
 export interface DiDeliveryStepView {
   id: DiDeliveryStepId;
   label: string;
-  /** ready: the canonical state matches this step; locked: it does not (see reason); done: already past it. */
-  gate: 'ready' | 'locked' | 'done';
+  /**
+   * ready: the canonical state matches this step; locked: it does not (see reason); done: already past it; unlinked: no delivery is linked
+   * to this Mission at all (so there is no gate to be locked behind: the reason says whether none exists or it is not known); withheld: an
+   * origin-only (legacy) link names a delivery this office will not act on for this task (the reason says why).
+   */
+  gate: 'ready' | 'locked' | 'done' | 'unlinked' | 'withheld';
   /** Why it is locked, or what was done. Empty while ready. */
   reason: string;
 }
@@ -1743,15 +2134,15 @@ export function deliverySteps(delivery: DiScanDelivery): DiDeliveryStepView[] {
   });
 }
 
-/** The four Delivery steps, each locked with one stated reason (a real Mission that is not linked). */
-export function lockedDeliverySteps(reason: string): DiDeliveryStepView[] {
+/** The four Delivery steps of a real Mission that is not linked: none is "locked" (that would state a gate); each says no delivery is linked, with the one stated reason. */
+export function unlinkedDeliverySteps(reason: string, withheld = false): DiDeliveryStepView[] {
   const steps: Array<[DiDeliveryStepId, string]> = [
     ['commit', 'Commit'],
     ['push', 'Push'],
     ['pr', 'Open pull request'],
     ['accept_ci', 'Accept CI results'],
   ];
-  return steps.map(([id, label]) => ({ id, label, gate: 'locked', reason }));
+  return steps.map(([id, label]) => ({ id, label, gate: withheld ? 'withheld' : 'unlinked', reason }));
 }
 
 /** M8: a wired step's words (a linked Mission, read through Mission details' session). Each names WHO established it (round 58). */

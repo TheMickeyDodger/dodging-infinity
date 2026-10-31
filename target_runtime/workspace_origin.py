@@ -10,6 +10,7 @@ suffix-free canonical URL, the same identity a delivery record's
 """
 
 import os
+import stat
 
 from workflow_authority import canonical
 
@@ -39,6 +40,49 @@ def origin_repository_url(workspace):
         return _origin(workspace)
     except (OSError, UnicodeError, ValueError):
         return None
+
+
+def workspace_git_dir(workspace):
+    """The realpath of the git directory THIS workspace owns, or None.
+
+    For a plain clone that is its ``.git`` directory; for a linked worktree it
+    is the per-worktree directory its ``.git`` file names (``.git/worktrees/
+    <name>``), which is NOT shared with the other worktrees of the same origin.
+    It is the value a delivery record seals as ``repository.git_dir_realpath``.
+    Read-only, bounded and local, like ``origin_repository_url``: no process is
+    started, and a workspace with no readable git directory is None, never a
+    guess."""
+    try:
+        return _workspace_git_dir(workspace)
+    except (OSError, UnicodeError, ValueError):
+        return None
+
+
+def _workspace_git_dir(workspace):
+    if type(workspace) is not str or not os.path.isabs(workspace):
+        return None
+    git_path = os.path.join(os.path.realpath(workspace), ".git")
+    if os.path.isdir(git_path):
+        return os.path.realpath(git_path)
+    if not os.path.isfile(git_path):
+        return None
+    return _gitdir(git_path, _read_guarded(git_path))
+
+
+def _read_guarded(path):
+    """The text of a small regular file, read the guarded way: ONE O_NOFOLLOW | O_NONBLOCK open (a symlink is refused, and a FIFO opens instead
+    of waiting for a writer so the check below actually runs), an fstat of the DESCRIPTOR that must say regular file, and a read of at most
+    the bound plus one byte from that same descriptor. Raises OSError or ValueError, which the callers treat as "not read"."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("not a regular file")
+        data = os.read(descriptor, _MAX_CONFIG_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    if len(data) > _MAX_CONFIG_BYTES:
+        raise ValueError("git file is over the read bound")
+    return data.decode("utf-8")
 
 
 def _origin(workspace):

@@ -12,7 +12,8 @@
  * root (see stateRoot.ts), or READ by an admitted reference (evidence, code review).
  *
  * TWO deliberate, bounded exceptions, each relayed by the server (which alone holds its token) to
- * a loopback adapter a person starts; this module never decides anything:
+ * a loopback adapter a person starts; this module never decides anything. (A THIRD, the Herdr
+ * terminal route, is not a relay to an adapter; it is described after these two.)
  *
  * - item 4, Mission requests: `diMissionRequest`. It is not passive: it can submit a proposal,
  *   relay a person's typed decision (or, by owner decision (c), their decline, rejection or change
@@ -25,6 +26,12 @@
  *   `advanceOnce`, which asks the office delivery adapter for AT MOST ONE step, carrying the exact
  *   binding of that step as the adapter displayed it. pr_delivery's expected-step guard, not this
  *   module, admits or refuses it before any effect. No op advances further, revokes, mints or retries.
+ * - The Herdr terminal route: `diHerdrRequest`. Two closed operations: `status`, which runs the route's
+ *   admission and does nothing, and `launch`, which (only after that admission) writes one launcher file,
+ *   focuses the herd's workspace through Herdr's socket API and asks macOS to open a Terminal window on the
+ *   launcher. It sends no keystroke, prompt or text to any pane or terminal (diNoTerminalInput.test.ts
+ *   scans for that over this code). It exists only when the office was started with the Herdr flags; the
+ *   one process-starting module in the entry's closure is herdrProcess.ts (pinned by name in the tests).
  */
 
 import type { AmbientSpriteSheet } from '../../../core/src/messages.js';
@@ -42,6 +49,11 @@ import { invalidRequestReply, notConfiguredReply, parseDeliveryRequest } from '.
 import { validateDiLayout, validateDiSeats, validateDiVersion } from './diInputLimits.js';
 import { readDiSeatPreferences, writeDiSeatPreferences } from './diSeatPreferencesPersistence.js';
 import { parseEvidenceRead } from './evidenceContent.js';
+import {
+  invalidRequestReply as invalidHerdrReply,
+  notConfiguredReply as herdrNotConfiguredReply,
+  parseHerdrRequest,
+} from './herdrRequests.js';
 import {
   invalidMissionRequestReply,
   panelNotConfiguredReply,
@@ -76,6 +88,10 @@ export interface DiMessageContext {
    * connection only, with one adapter request at most; absent, the message is refused.
    */
   deliveryRequest?: (msg: Record<string, unknown>, send: DiSend) => void;
+  /**
+   * The Herdr terminal route (DiHerdrRequests.handle). It answers the asking connection only, after the route's own admission checks; absent, the message is answered "not configured".
+   */
+  herdrRequest?: (msg: Record<string, unknown>, send: DiSend) => void;
 }
 
 /** What the handler did with one message (returned for tests and diagnostics). */
@@ -99,6 +115,7 @@ export const DI_HANDLED_MESSAGE_TYPES = [
   'diCodeReviewMissionRead',
   'diMissionRequest',
   'diDeliveryRequest',
+  'diHerdrRequest',
 ] as const;
 
 /**
@@ -323,6 +340,23 @@ export function handleDiClientMessage(
         return { refused: 'no delivery adapter in this office' };
       }
       ctx.deliveryRequest(msg, send);
+      return 'handled';
+    }
+
+    // The Herdr terminal route: one of two closed operations (`status`, a read with no effect; `launch`), relayed to the route. The shape is checked HERE and again by the relay. Every diHerdrRequest whose
+    // type, seq and op are valid gets EXACTLY ONE correlated reply (the relay sends it, or this case does when the office refuses the message itself); one without a valid seq or op gets none.
+    case 'diHerdrRequest': {
+      const parsed = parseHerdrRequest(msg);
+      if (!parsed.ok) {
+        const refusal = invalidHerdrReply(parsed);
+        if (refusal !== null) send(refusal as unknown as Record<string, unknown>);
+        return { refused: `diHerdrRequest ${parsed.reason}` };
+      }
+      if (!ctx.herdrRequest) {
+        send(herdrNotConfiguredReply(parsed) as unknown as Record<string, unknown>);
+        return { refused: 'no Herdr route in this office' };
+      }
+      ctx.herdrRequest(msg, send);
       return 'handled';
     }
 

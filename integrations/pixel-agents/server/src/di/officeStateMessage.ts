@@ -11,6 +11,7 @@ import type {
   DiEvidenceLibrary,
   DiMember,
   DiMission,
+  DiMissionDeliveryHandoff,
   DiMissionDeliveryLink,
   DiMissionV2,
   DiObservationState,
@@ -21,7 +22,12 @@ import type {
   DiWorkflowPhase,
 } from '../../../core/src/messages.js';
 import { DI_RUNTIME_AGENTS_MAX_UNVERIFIED } from '../constants.js';
-import type { MissionDeliveryLinkView, UnreportedFact, WorkflowPhaseView } from './catalogProjection.js';
+import type {
+  MissionDeliveryHandoffView,
+  MissionDeliveryLinkView,
+  UnreportedFact,
+  WorkflowPhaseView,
+} from './catalogProjection.js';
 import type { ReviewOffer } from './codeReview.js';
 import { herdrWorkspaceReviewOffer, missionReviewOfferFor, reviewOfferFor } from './codeReview.js';
 import type {
@@ -241,6 +247,24 @@ function missionV2(m: MissionPresentation): DiMissionV2 {
     canonicalReview: { ...m.v2.canonicalReview },
     // The producer's DECLARED delivery link, copied as projected; ABSENT when the answer carries none (never defaulted).
     ...(m.v2.deliveryLink === undefined ? {} : { deliveryLink: deliveryLinkOnWire(m.v2.deliveryLink) }),
+    // The producer's DECLARED read-only handoff facts, copied as projected; ABSENT when the answer carries none (never defaulted).
+    ...(m.v2.deliveryHandoff === undefined ? {} : { deliveryHandoff: deliveryHandoffOnWire(m.v2.deliveryHandoff) }),
+  };
+}
+
+/** The declared handoff on the wire: the same facts, copied. It confers nothing and is never "ready". */
+function deliveryHandoffOnWire(h: MissionDeliveryHandoffView): DiMissionDeliveryHandoff {
+  return {
+    state: h.state,
+    linkBasis: h.linkBasis,
+    repository: h.repository,
+    engineeringTaskId: h.engineeringTaskId,
+    gitDirRealpath: h.gitDirRealpath,
+    branch: h.branch === null ? null : { state: h.branch.state, ref: h.branch.ref },
+    evidence: h.evidence === null ? null : { state: h.evidence.state, reason: h.evidence.reason },
+    stagedCandidate: h.stagedCandidate,
+    workflowId: h.workflowId,
+    blockers: [...h.blockers],
   };
 }
 

@@ -32,4 +32,4 @@ export const TRANSPORT_STATE_DISCONNECTED = 'disconnected';
 // assigns it as the character's folder) and the webview (which builds the zone); never a Mission.
 
 export const DI_RUNTIME_ZONE_REF = 'di:runtime-agents';
-export const DI_RUNTIME_ZONE_LABEL = 'Runtime agents (not team members)';
+export const DI_RUNTIME_ZONE_LABEL = 'Runtime agents (not shown as team members)';

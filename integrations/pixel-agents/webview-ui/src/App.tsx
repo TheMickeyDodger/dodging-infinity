@@ -57,6 +57,7 @@ import { diDockFor } from './diPanelLayout.js';
 import { useCityPresentation } from './hooks/useCityPresentation.js';
 import { useDiCodeReview } from './hooks/useDiCodeReview.js';
 import { useDiDelivery } from './hooks/useDiDelivery.js';
+import { useDiHerdr } from './hooks/useDiHerdr.js';
 import { useDiMissionRequest } from './hooks/useDiMissionRequest.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
@@ -375,6 +376,11 @@ function App() {
    * harnesses only, with no product entry (owner decision, 2026-10-29), so App starts no session for it.
    */
   const missionDelivery = useDiDelivery(diClientReason, 'linked');
+  /**
+   * The Herdr control: the scan face's Herdr buttons are enabled by the office server's own answer for the shown Mission, and a click asks the server to open a terminal on that Mission's herd.
+   * It sends nothing by itself (a status read when a Mission opens, a launch on a click) and sends no key, prompt or text to any pane or terminal.
+   */
+  const herdr = useDiHerdr(diClientReason);
   const missionOpener = useRef<HTMLElement | null>(null);
   const openMission = mission.open;
   const readConversation = mission.openConversation;
@@ -1293,6 +1299,7 @@ function App() {
                 review={reviewAccess}
                 mission={missionAccess}
                 missionDelivery={missionDelivery}
+                herdr={herdr}
                 receptionInbox={receptionInbox}
                 presentation={officeFace}
                 worldOpen={worldOpen}

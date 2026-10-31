@@ -67,7 +67,7 @@ from mission_sources import contract_v2, fileread, sources
 from pr_delivery import authorization, mission_parent
 from target_runtime import prepare as prepare_module
 from target_runtime import state_artifact
-from target_runtime.workspace_origin import origin_repository_url, repository_identity
+from target_runtime.workspace_origin import workspace_git_dir
 
 #: The delivery store file (``pr_delivery.store.STORE_FILE_NAME``) and its
 #: own schema version; re-declared, pinned equal by test, because this
@@ -937,12 +937,20 @@ class DeliveryLinksReader(object):
                 bound.setdefault(workflow_id, []).append(delivery_id)
         return bound
 
-    def repositories(self):
-        """``{repository identity: [delivery ids]}`` of the validated records
-        whose ``repository.repository_url`` is a canonical GitHub repository,
-        or None when the store cannot be read (the same failure ``bindings``
-        reports). A record whose URL is not that form is omitted, not a
-        failure of the store. Nothing is written."""
+    def task_worktrees(self):
+        """``{(git dir realpath, engineering task id): [delivery ids]}`` of
+        the validated records, keyed by the TWO fields each record SEALS about
+        where it was minted and for which task: ``repository.git_dir_realpath``
+        (the git directory of the worktree the ceremony ran in) and
+        ``workflow_identity.engineering_task_id`` (the task whose COMPLETE and
+        APPROVE it gathered). Both lie inside the record's digest. Returns
+        None when the store cannot be read (the same failure ``bindings``
+        reports). A record that does not carry both as non-empty strings is
+        omitted, not a failure of the store. The repository's origin is NOT
+        part of the key: every worktree of one origin shares it, which is how a
+        task used to steal or obscure a sibling worktree's delivery. The ids
+        are only grouped, never counted, chosen or ordered by age. Nothing is
+        written."""
         try:
             document = self._records._delivery_document()
             _validated_deliveries(document)
@@ -951,23 +959,36 @@ class DeliveryLinksReader(object):
         bound = {}
         for delivery_id, delivery in document["deliveries"].items():
             repository = delivery.get("repository")
-            url = repository.get("repository_url") if type(
+            identity = delivery.get("workflow_identity")
+            git_dir = repository.get("git_dir_realpath") if type(
                 repository) is dict else None
-            identity = repository_identity(url) if type(url) is str else None
-            if identity is not None:
-                bound.setdefault(identity, []).append(delivery_id)
+            task_id = identity.get("engineering_task_id") if type(
+                identity) is dict else None
+            if (type(git_dir) is str and git_dir
+                    and type(task_id) is str and task_id):
+                bound.setdefault((git_dir, task_id), []).append(delivery_id)
         return bound
 
 
-def repository_url_for_mission(mission):
-    """The workspace origin identity of a task-native mission, or None.
+def task_worktree_for_mission(mission):
+    """``(git dir realpath, task id)`` of a task-native mission, or None.
 
-    Any other model is None without a read. The read is bounded and local
-    (``workspace_origin``); it starts no process. A missing or unreadable
-    origin is None, so the link says the origin was not recorded."""
+    The two values are the mission's OWN: the git directory of the worktree it
+    runs in (``workspace_origin.workspace_git_dir`` over its workspace) and its
+    task id. Any other model is None without a read. The read is bounded and
+    local and starts no process. A task with no id (a root with no current
+    task) or a workspace with no readable git directory is None, so the link
+    says the task or worktree was not recorded."""
     if mission["lifecycle"]["model"] != "herdr.task/1":
         return None
-    return origin_repository_url(mission["execution"].get("workspace_realpath"))
+    execution = mission["execution"]
+    task_id = execution.get("task_id")
+    if type(task_id) is not str or not task_id:
+        return None
+    git_dir = workspace_git_dir(execution.get("workspace_realpath"))
+    if git_dir is None:
+        return None
+    return (git_dir, task_id)
 
 
 class DeliveryPresentationsReader(object):

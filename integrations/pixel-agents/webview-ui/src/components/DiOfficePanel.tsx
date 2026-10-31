@@ -27,6 +27,7 @@ import {
 import { DiDeliveryEntry } from './DiDeliveryEntry.js';
 import type { DiEvidenceAccess } from './DiEvidenceLibrary.js';
 import { DiEvidenceLibrary } from './DiEvidenceLibrary.js';
+import type { DiHerdrControl } from './diHerdrModel.js';
 import type { DiKeptView } from './diMinimize.js';
 import {
   focusExposed,
@@ -161,6 +162,11 @@ interface DiOfficePanelProps {
    * typed). Passed to the scan face's Delivery under Swarm. Absent: Delivery says this window has no delivery session.
    */
   missionDelivery?: DiDeliveryControl | null;
+  /**
+   * The Herdr control (owned by App): the scan face's Herdr buttons read their state from it and a click asks the office server to open a terminal on the shown Mission's herd. Absent: the
+   * Herdr buttons are drawn disabled and say no control is connected.
+   */
+  herdr?: DiHerdrControl | null;
   /**
    * The reception inbox seam (owned by App): ONE dialog, opened from the panel chrome only (the rail's
    * Reception on the scan face, the attention entry on the operational list). Absent: the attention line
@@ -345,7 +351,7 @@ function OnTheMap({
 
 /**
  * item 07/09: a selected RUNTIME agent (verified identity), in FULL — plain outcome first (what is
- * verified, what is not), then that it is not a team member, where it is, and the facts no source
+ * verified, what is not), then that it is not shown as a team member, where it is, and the facts no source
  * reports; the raw identifiers and reasons behind a labelled disclosure. feature13: rendered in the
  * inspector; the dock shows the concise summary (DockRuntimeAgent).
  */
@@ -438,7 +444,7 @@ export function SelectedUnverified({
         {plainIdentityReason(agent.identityReason)}.
       </div>
       <div className="text-text-muted">
-        A name, pane, workspace or timestamp does not establish that link. Not a team member.
+        A name, pane, workspace or timestamp does not establish that link. Not shown as a team member.
       </div>
       <UnreportedFacts
         model={RUNTIME_UNREPORTED}
@@ -504,7 +510,7 @@ function OpenInspectorButton({
 }
 
 /**
- * feature13 — the Selected dock's CONCISE runtime agent: who it is, that it is not a team member,
+ * feature13 — the Selected dock's CONCISE runtime agent: who it is, that it is not shown as a team member,
  * its observed state and where it is; everything else is in the inspector.
  */
 function DockRuntimeAgent({
@@ -586,7 +592,7 @@ function DockUnverified({
         {freshness.current
           ? 'An agent with this name is running'
           : 'An agent with this name was running at the last observation'}
-        , but it can’t be safely linked to its recorded role. Not drawn; not a team member.
+        , but it can’t be safely linked to its recorded role. Not drawn; not shown as a team member.
       </div>
       {/* The doorway comes right after the caveat and BEFORE the details: the dock scrolls on its
           own, so an action placed last can be out of sight on initial selection. */}
@@ -1764,7 +1770,7 @@ function OfficeInspector({
     record?.target.kind === 'member'
       ? 'Team member'
       : record?.target.kind === 'runtime'
-        ? 'Agent, not a team member'
+        ? 'Agent, not shown as a team member'
         : record?.target.kind === 'unverified'
           ? 'Agent that can’t be linked to a role'
           : 'Mission';
@@ -1939,8 +1945,8 @@ function OfficeInspector({
                 {agentNow(record.target.agent)}
               </p>
               <div>
-                Why: {plainIdentityReason(record.target.agent.identityReason)}. Not drawn; not a
-                team member.
+                Why: {plainIdentityReason(record.target.agent.identityReason)}. Not drawn; not
+                shown as a team member.
               </div>
               <PlainFreshness
                 freshness={runtimeFreshness}
@@ -2224,7 +2230,7 @@ function SelectionGone({
 const KIND_LABEL: Record<DiRecordTarget['kind'], string> = {
   mission: 'Mission',
   member: 'Team member',
-  runtime: 'Runtime agent (not a team member)',
+  runtime: 'Runtime agent (not shown as a team member)',
   unverified: 'Not verified (not drawn)',
 };
 
@@ -2368,6 +2374,7 @@ function DiOfficePanelBody({
   mission = null,
   delivery = null,
   missionDelivery = null,
+  herdr = null,
   receptionInbox = null,
   presentation = 'operational',
   onOpenSettings,
@@ -2833,6 +2840,7 @@ function DiOfficePanelBody({
             onReviewChoose={review?.choose}
             // M8: Delivery under Swarm reads the ONE delivery the catalog links to the shown Mission, through its own session
             missionDelivery={missionDelivery}
+            herdr={herdr}
           />
         </aside>
         {/* no inbox dialog on the scan face: the rail's Reception page is its one entrance (lead Q2, D-10) */}

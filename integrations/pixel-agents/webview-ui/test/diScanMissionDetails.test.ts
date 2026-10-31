@@ -20,6 +20,7 @@ import { DI_SCAN_LOCK, type DiScanRow, type DiScanView } from '../src/components
 import { DiScanPanel } from '../src/components/DiScanPanel.tsx';
 import { DI_RAIL_WIDTH_PX } from '../src/constants.ts';
 import { productionRow } from './helpers/productionRow.ts';
+import { AVAILABLE, herdrControl } from './herdrControlStub.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** The trash's scope sentence, as owner decision 2 requires it (copied here, never read from the code under test). */
@@ -259,14 +260,75 @@ describe('PRESENTATION: the trash (D-1, AC-4.4-29/-30/-32), disabled at this sta
 });
 
 describe('A4: no in-app Herdr terminal remains (GAP-RESOLUTIONS 9, 11, 13; supersedes the v3 05-herdr pane grid)', () => {
-  it('the Herdr button keeps its place but is disabled, with its plain reason, and opens no nested screen', () => {
+  // Package A: the Herdr button keeps its place and opens no nested screen, but it is no longer a button with a static note about another tool. A click asks the office server to focus the Mission's herd
+  // workspace and open the machine's own terminal. It is enabled only by the office's answer for the Mission, and its words are that answer's.
+  const withControl = (options?: Parameters<typeof herdrControl>[1]) =>
+    renderToStaticMarkup(
+      createElement(DiScanPanel, {
+        rows: [building],
+        initialSelectedId: building.id,
+        initialView: 'mission' as DiScanView,
+        onMinimize: noop,
+        herdr: herdrControl(building.id, options),
+      }),
+    );
+
+  it('the Herdr button keeps its place and opens no nested screen; with no control wired it is disabled and says nothing is connected', () => {
     const html = render(building);
     const herdr = tag(html, 'di-scan-herdr');
-    expect(herdr).not.toContain('disabled');
+    expect(herdr).toContain('disabled=""');
     expect(herdr).toContain('aria-describedby="di-scan-herdr-reason"');
-    expect(block(html, 'di-scan-herdr-reason')).toContain(
-      'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.',
-    );
+    expect(block(html, 'di-scan-herdr-reason')).toContain('The Herdr control is not connected to this view, so nothing can be opened from here.');
+    expect(html).not.toMatch(/herdctl|does not start it|Herdr runs in your own terminal/);
+  });
+  it('where the office said a launch is available it is enabled, and the note says what a click does: focus the workspace first, the pane as identity evidence only, nothing typed', () => {
+    const html = withControl();
+    expect(tag(html, 'di-scan-herdr')).not.toContain('disabled');
+    const note = block(html, 'di-scan-herdr-reason');
+    expect(note).toContain('Opens Terminal on this Mission&#x27;s herd. It first asks Herdr to focus workspace w6V, and types nothing into any pane or terminal.');
+    expect(note).toContain('Pane w6V:p3 is matched as identity evidence only; no pane is focused.');
+    expect(note).not.toContain('data-testid="di-scan-herdr-recheck"');
+  });
+  it('the note says which basis vouched for the herd, in different words for a verified runtime identity and for a team-roster confirmation, never one for the other', () => {
+    const runtime = block(withControl(), 'di-scan-herdr-reason');
+    expect(runtime).toContain('The catalog&#x27;s runtime identity for the role is verified');
+    expect(runtime).not.toContain('team roster');
+    const roster = block(withControl({ check: { ...AVAILABLE, identityBasis: 'team_roster_session_confirmed' } }), 'di-scan-herdr-reason');
+    expect(roster).toContain('The role was found in the catalog&#x27;s team roster with its recorded and live sessions equal (a roster confirmation, not a runtime-identity verification)');
+    expect(roster).not.toContain('runtime identity for the role is verified');
+  });
+  it('where the office refused, it is disabled and the note is the office\'s own reason, with a way to ask again', () => {
+    const reason = 'Herdr is not set up in this office: it was started without --herdr-bin, --herdr-home, --herdr-socket. Nothing was attempted.';
+    const html = withControl({ check: { kind: 'unavailable', problem: 'herdr_not_configured', reason } });
+    expect(tag(html, 'di-scan-herdr')).toContain('disabled=""');
+    const note = block(html, 'di-scan-herdr-reason');
+    expect(note).toContain(reason);
+    expect(note).toContain('data-testid="di-scan-herdr-recheck"');
+  });
+  it('before the office has answered it is disabled and says it has not been checked; while it is being asked it says so and is busy', () => {
+    const unknown = withControl({ check: { kind: 'unknown' } });
+    expect(tag(unknown, 'di-scan-herdr')).toContain('disabled=""');
+    expect(block(unknown, 'di-scan-herdr-reason')).toContain('has not been checked yet');
+    const checking = withControl({ check: { kind: 'checking' } });
+    expect(tag(checking, 'di-scan-herdr')).toContain('aria-busy="true"');
+    expect(block(checking, 'di-scan-herdr-reason')).toContain('Checking whether Herdr can open for this Mission');
+  });
+  it('after a launch the note reports exactly what was established: focused as Herdr reported it, the terminal asked to open, no attach and no keyboard claim', () => {
+    const opened = withControl({ launch: { kind: 'opened', workspaceId: 'w6V', windowMinCols: 190, windowMinRows: 49, matchedPaneId: 'w6V:p3', terminalLabel: 'Terminal', terminalState: 'opened' } });
+    const note = block(opened, 'di-scan-herdr-reason');
+    expect(note).toContain('Herdr reported workspace w6V focused, then Terminal was asked to open the Herdr launcher.');
+    expect(note).toContain('nothing was typed into any pane or terminal');
+    expect(opened).not.toMatch(/attach|keyboard|typing works/i);
+    const refused = withControl({
+      launch: { kind: 'refused', problem: 'focus_not_established', reason: 'Nothing was opened: Workspace focus was not established, and Herdr&#x27;s call failed.' },
+    });
+    expect(block(refused, 'di-scan-herdr-reason')).toContain('Nothing was opened: Workspace focus was not established');
+    expect(tag(refused, 'di-scan-herdr')).not.toContain('disabled');
+  });
+  it('the markup is wired to the click: the enabled button is the only one that can launch, and a disabled one carries the disabled attribute', () => {
+    expect(tag(withControl(), 'di-scan-herdr')).not.toContain('disabled');
+    expect(tag(withControl({ check: { kind: 'unavailable', problem: 'not_live', reason: 'x' } }), 'di-scan-herdr')).toContain('disabled=""');
+    expect(tag(withControl({ launch: { kind: 'launching' } }), 'di-scan-herdr')).toContain('disabled=""');
   });
   it('no view renders a pane grid, a prompt or terminal chrome', () => {
     for (const view of ['list', 'mission', 'diff', 'comments'] as const) {

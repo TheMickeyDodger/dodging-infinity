@@ -325,7 +325,8 @@ class CatalogService(object):
         self._composer = None
         self._presentations = None
         self._delivery_links = None
-        self._delivery_repositories = None
+        self._delivery_task_worktrees = None
+        self._delivery_handoff = None
         self._mission_state = None
         if contract_version != 1:
             # Imported HERE, only when a version 2 owner is built: a
@@ -338,6 +339,11 @@ class CatalogService(object):
             # The same module, kept for the live code review's finished-
             # execution provider (``_finished_execution``): no second import.
             self._mission_state = mission_state_module
+            # The read-only delivery HANDOFF facts of a Herdr task, imported
+            # here for the same reason (a version 2 owner only): bounded
+            # reads, no process, no write, and it confers nothing.
+            from target_runtime import delivery_handoff as delivery_handoff_module
+            self._delivery_handoff = delivery_handoff_module.handoff_for_mission
             # D1: the explicitly registered, read-only reader of the Grok
             # Bot's delivery presentations; it lives in the same module as the
             # composer above (one lazy import, nothing new), and is built only
@@ -356,7 +362,7 @@ class CatalogService(object):
                 reader = mission_state_module.DeliveryLinksReader(
                     delivery_store, clock)
                 self._delivery_links = reader.bindings
-                self._delivery_repositories = reader.repositories
+                self._delivery_task_worktrees = reader.task_worktrees
         self._registry = registry_module.SourceRegistry(registry_directory)
         self._clock = clock
         self._monotonic = monotonic or time.monotonic
@@ -907,9 +913,10 @@ class CatalogService(object):
             runtime_agents=_runtime_agents_hook(observation, native),
             delivery_presentations=self._presentations,
             delivery_links=self._delivery_links,
-            delivery_repositories=self._delivery_repositories,
-            repository_url_of=self._mission_state.repository_url_for_mission,
-            repository_delivery=True),
+            delivery_task_worktrees=self._delivery_task_worktrees,
+            task_worktree_of=self._mission_state.task_worktree_for_mission,
+            task_worktree_delivery=True,
+            delivery_handoff_of=self._delivery_handoff),
             deadline)
         if "response" not in outcome:
             return catalog_answer(requested_at, None, outcome["problem"],

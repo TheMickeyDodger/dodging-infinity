@@ -333,7 +333,12 @@ export const DELIVERY_AUTHORIZATION_CHECKS = ['corroborated', 'differs', 'not_co
  * contract v2 — `missions[].delivery_link`, which ONE delivery record (if any) the catalog's registered delivery store links to
  * a Mission, DECLARED by the producer with the rule that established it (mission_sources/contract_v2.py MISSION_LINK_KEYS /
  * MISSION_LINK_STATES / MISSION_LINK_BASES). A workflow_authority Mission is linked by `record_mission_binding`. A Herdr task
- * is linked by `record_repository_binding` when repository addressing is on. Mission Core stays `unlinked_model_not_recorded`.
+ * is linked by `record_task_worktree_binding` when task-worktree addressing is on: the record's sealed worktree git dir AND sealed
+ * engineering task id are both the task's own. An OLDER producer linked a Herdr task by `record_repository_binding` (the workspace
+ * origin alone, which every worktree of that origin shares) and reported `unlinked_repository_not_recorded`; both stay VALID here so
+ * an older catalog is still read, but they are a DIFFERENT, WEAKER claim and are never presented as the task-and-worktree link (the
+ * wording is chosen by the basis; see diScanModel.ts). A basis or state outside these lists refuses the whole answer. Mission Core
+ * stays `unlinked_model_not_recorded`.
  * `delivery_id` is set exactly when linked, of the shape a ceremony mints. ADDITIVE: an answer from a producer that predates
  * the field carries no key, and then nothing is projected (never a default). These names are distinct from DELIVERY_LINK_*,
  * which belong to a delivery PRESENTATION's link to a Mission.
@@ -350,8 +355,47 @@ export const MISSION_DELIVERY_LINK_STATES = [
   'unlinked_sources_incomplete',
   'unlinked_id_not_addressable',
   'unlinked_repository_not_recorded',
+  'unlinked_task_worktree_not_recorded',
 ] as const;
-export const MISSION_DELIVERY_LINK_BASES = ['record_mission_binding', 'record_repository_binding'] as const;
+export const MISSION_DELIVERY_LINK_BASES = [
+  'record_mission_binding',
+  'record_repository_binding',
+  'record_task_worktree_binding',
+] as const;
+/**
+ * contract v2 — `missions[].delivery_handoff` (mission_sources/contract_v2.py HANDOFF_*): the READ-ONLY facts a person needs before running the
+ * EXISTING human delivery ceremony for a Herdr task. It confers nothing, is never "ready", and always reports the staged candidate as
+ * `not_determined` and the workflow id as `human_supplied`. `link_basis` is the basis the producer DECLARES it links a Herdr task by, stated
+ * whether or not anything is linked (an unlinked link's own basis is null); a client may make the canonical return-path statement only from the
+ * exact canonical value, never from silence (an older producer sends no block) or an unrecognised value. ADDITIVE: an answer from a producer that
+ * predates the block carries no key, and then nothing is projected (never a default).
+ */
+export const MISSION_DELIVERY_HANDOFF_KEYS = [
+  'state',
+  'link_basis',
+  'repository',
+  'engineering_task_id',
+  'git_dir_realpath',
+  'branch',
+  'evidence',
+  'staged_candidate',
+  'workflow_id',
+  'blockers',
+] as const;
+export const MISSION_HANDOFF_STATES = ['observed', 'not_applicable', 'not_reported'] as const;
+export const HANDOFF_BRANCH_STATES = ['named', 'detached', 'unreadable'] as const;
+export const HANDOFF_EVIDENCE_STATES = ['collected', 'refused', 'unreadable'] as const;
+export const HANDOFF_BLOCKERS = [
+  'git_dir_not_read',
+  'head_detached',
+  'head_not_read',
+  'evidence_not_collected',
+  'task_id_not_recorded',
+] as const;
+export const HANDOFF_MAX_REASON_CHARS = 400;
+export const HANDOFF_MAX_BASIS_CHARS = 80;
+/** The ONLY value of `link_basis` that declares the canonical association (the producer's `record_task_worktree_binding`). */
+export const HANDOFF_CANONICAL_LINK_BASIS = 'record_task_worktree_binding';
 /** The delivery id a ceremony mints: `prd-` and 24 lowercase hex (the producer's `is_delivery_id`). */
 export const MISSION_DELIVERY_ID = /^prd-[0-9a-f]{24}$/;
 
@@ -390,5 +434,9 @@ export type DeliveryEntryState = (typeof DELIVERY_ENTRY_STATES)[number];
 export type DeliveryLinkState = (typeof DELIVERY_LINK_STATES)[number];
 export type MissionDeliveryLinkState = (typeof MISSION_DELIVERY_LINK_STATES)[number];
 export type MissionDeliveryLinkBasis = (typeof MISSION_DELIVERY_LINK_BASES)[number];
+export type MissionHandoffState = (typeof MISSION_HANDOFF_STATES)[number];
+export type HandoffBranchState = (typeof HANDOFF_BRANCH_STATES)[number];
+export type HandoffEvidenceState = (typeof HANDOFF_EVIDENCE_STATES)[number];
+export type HandoffBlocker = (typeof HANDOFF_BLOCKERS)[number];
 export type RuntimeIdentityState = (typeof RUNTIME_IDENTITY_STATES)[number];
 export type RuntimeAssignmentState = (typeof RUNTIME_ASSIGNMENT_STATES)[number];

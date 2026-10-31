@@ -4,14 +4,16 @@ WHAT THIS IS
   The Pixel Agents early read-only increment: a pixel-art office that SHOWS what a Dodging
   Infinity (DI) backend reports about Missions, their roles, reports and reviews.
   PASSIVE means: NO Mission, agent or control mutations. It never starts, stops, registers,
-  unregisters or steers anything, and never sends terminal input or invokes a model.
+  unregisters or steers anything, and never sends terminal input or invokes a model. (The one
+  thing it can do to a terminal is OPEN one, on your click, with the third opt-in below; it
+  types nothing into it.)
   It is NOT "writes nothing": it writes its OWN local layout, settings and seats, and its
   per-launch access file, inside its own state dir (your isolated profile) — e.g. when you move
   a desk in the layout editor.
   Consequential action lives in the existing DI, Grok Bot and Codex action routes. They are
   NAMED HERE AS DOCUMENTATION ONLY: this office never invokes them.
-  TWO OPT-IN EXCEPTIONS. With neither of the two flags below, the office has neither connection
-  and everything above holds exactly.
+  THREE OPT-IN EXCEPTIONS. With none of the flags below, the office has none of the three
+  connections and everything above holds exactly.
   The first: --mission-panel-discovery (below) connects the Codex Orchestrator request panel.
   With it, the office RELAYS eleven closed message operations (read, converse, submit a
   proposal, decide, start, observe) to a separate request panel process YOU started
@@ -28,6 +30,19 @@ WHAT THIS IS
   office's server and never reaches the browser. The adapter admits or refuses the step under
   the delivery's own authorization. The office never starts that adapter, holds no delivery
   authority of its own, and has no route to merge, release or deploy.
+  The third: --herdr-bin, --herdr-home and --herdr-socket (below, all three or none) turn on the
+  Herdr terminal. With them, a CLICK on Herdr asks Herdr to focus the Mission's herd workspace and
+  then asks macOS to open a Terminal.app window running the herdr client. It is not a relay to a
+  process you started, and it types nothing into any pane or terminal. It opens Terminal.app only:
+  Ghostty 1.3.1 was observed to accept the launcher file and NOT run it, so it is not offered. It
+  does not claim the client has attached or that the keyboard works; you see that at the window.
+  Herdr sizes its ONE shared session to the smallest client attached, which the office cannot
+  change, so a small new window would shrink the herd you are using. The launcher therefore
+  checks the size of its own window, asks the terminal to make it larger if it is smaller than
+  the size worked out from Herdr's own pane area, and starts herdr only in a window it measured
+  to be that large; otherwise it says so and does not start herdr. The office cannot see the
+  window: whether Terminal.app makes it larger is not proven.
+  See docs/pixel-agents-office.md, "Herdr terminal".
 
 RUN (no install: extract the package and run it)
   Node >= 20. The runtime dependencies are in node_modules/.
@@ -52,6 +67,17 @@ RUN (no install: extract the package and run it)
                         OPTIONAL, absolute path: the office delivery adapter's discovery file,
                         READ ONLY. Absent: every delivery request is answered as not configured.
                         The office never starts, supervises or restarts that adapter
+  --herdr-bin           OPTIONAL (with --herdr-home and --herdr-socket: all three or none), plain
+  --herdr-home          absolute paths: the herdr executable; the HOME every Herdr command runs
+  --herdr-socket        under; and Herdr's API socket, which must lie inside that HOME. A value
+                        that is not a plain absolute path (letters, digits, . _ - in each
+                        segment, no space, no .. segment, no trailing slash) is REFUSED, not
+                        repaired. Nothing is searched for or defaulted. Absent: the Herdr
+                        buttons are disabled and name these three flags. The office never
+                        starts Herdr's server or any agent. For the catalog to verify a role's
+                        runtime identity at all, the catalog bridge must run with
+                        --discover-roots (see "Runtime source required" below); a bound task's roles may be
+                        found in its team roster instead, and the office says which one vouched
 
   The office binds 127.0.0.1 only. It prints the path of its access file, not the URL. Open the
   URL stored in <state-dir>/run/browser-access.json, or run ./pixel (see OPENING A RUNNING

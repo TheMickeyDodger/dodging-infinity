@@ -129,9 +129,11 @@ describe('DI handler: inert types do nothing at all', () => {
     // CHANGED IN b2b (was 29 and 29): diDeliveryRequest (the delivery bridge, DI only: two closed ops, relayed to the office
     //   delivery adapter, at most one step per advanceOnce) is the 30th protocol variant and the 30th declared type, HANDLED.
     //   It was declared only after its dispatch case and its relay existed.
-    expect(variants).toHaveLength(30);
+    // CHANGED IN Package A (was 30 and 30): diHerdrRequest (the Herdr terminal route, DI only: two closed ops, `status` with no effect
+    //   and `launch`) is the 31st protocol variant and the 31st declared type, HANDLED. Declared after its dispatch case and its relay existed.
+    expect(variants).toHaveLength(31);
     const declared = new Set<string>([...DI_HANDLED_MESSAGE_TYPES, ...DI_INERT_MESSAGE_TYPES]);
-    expect(declared.size).toBe(30);
+    expect(declared.size).toBe(31);
     // every protocol variant is declared exactly one way: handled or inert, never both, never neither
     for (const variant of variants) {
       const camel = variant.replace(/^./, (c) => c.toLowerCase());
@@ -259,10 +261,10 @@ describe('DI module graph is free of provider / runtime / scanner / consent code
     expect(closure).toContain('socketPipe.ts');
   });
 
-  // The office composes "no terminal or launch path", by construction: diCli.ts:16 and
-  // docs/pixel-agents-office.md:642 both say so. This pin FAILS ON THE CODE CHANGE that composes a launch
-  // into the office's own closure, which is the occasion to correct those two statements; it does not
-  // check them. It reads MODULE SPECIFIERS from the PARSED source (the TypeScript parser), so line
+  // This pin used to say the office composes "no terminal or launch path", by construction (diCli.ts's header and
+  // docs/pixel-agents-office.md said so), and FAILED ON THE CODE CHANGE that composed a launch into the office's own
+  // closure, which was the occasion to correct those statements (done in Package A: both now describe the Herdr
+  // terminal route). The pin below is the tightened successor. It reads MODULE SPECIFIERS from the PARSED source (the TypeScript parser), so line
   // placement, comments and strings can neither hide an import nor fake one (round 46: a static import
   // after another statement on the same line was invisible to the line-anchored patterns this replaces).
   // Its closure follows every relative VALUE form: static, side-effect, re-export, import-equals, dynamic
@@ -423,15 +425,429 @@ describe('DI module graph is free of provider / runtime / scanner / consent code
     }
   });
 
-  it('the DI entry composes NO terminal or launch path: no process-starting module anywhere in its closure, and herdrLaunch is never reached', () => {
+  // THE ENTRY'S PROCESS BOUNDARY, TIGHTENED (Package A, A4). The Herdr terminal route is the approved exception to "the office starts no process", and the exception is EXACTLY this and nothing wider. It
+  // replaces the earlier blanket pin (no process-starting module anywhere in the closure, and herdrLaunch never reached) with a pin that is STRICTER about everything except the two named things:
+  //   1. ONE module may import a process-starting module, and it is named literally below. A second importer anywhere in the closure fails, under any specifier form `moduleSpecifiers` reads.
+  //   2. The launch route (herdrLaunch.ts) is reached by exactly the two named modules, so a new path to it fails.
+  //   3. The one process module is imported by exactly the composition, so nothing else can obtain process APIs through it.
+  //   4. No escape hatch that would hide a process import from 1 exists ANYWHERE in the closure, the permitted importer included: getBuiltinModule, createRequire (and importing `module`), process.binding,
+  //      process.dlopen, and the module.constructor idiom. Each reaches child_process without an import specifier this scan reads, so a scan that only reads specifiers would pass them.
+  // The allowlist is not "the whole closure"; it is the process-starting module and the launch route. Unrelated modules may come and go without touching it.
+  const PERMITTED_PROCESS_IMPORTER = 'di/herdrProcess.ts';
+  const LAUNCH_ROUTE = 'di/herdrLaunch.ts';
+  const LAUNCH_ROUTE_IMPORTERS = ['di/herdrRequests.ts', 'di/herdrTarget.ts'];
+  const PROCESS_MODULE_IMPORTERS = ['di/diCli.ts'];
+  const ESCAPE_HATCH_NAMES = new Set(['getBuiltinModule', 'createRequire']);
+  const ESCAPE_HATCH_PROCESS_MEMBERS = new Set(['binding', 'dlopen']);
+  const ESCAPE_HATCH_MODULES = new Set(['module', 'node:module']);
+  const GLOBAL_OBJECTS = ['globalThis', 'global'];
+
+  /**
+   * THE PERMITTED IMPORTER'S EXCEPTION IS NOT "THE WHOLE FILE" (review round 3, finding 3). The one file allowed to import a process-starting module is allowed to import exactly what the launch route
+   * needs: ONE static, non-type import of `execFile` and `spawn` (and no other name) from `child_process`. Every other process-module reference in that file, whatever its form (another named import, a
+   * default or namespace import, a side-effect import, a re-export, `import()`, `require()`, `import x = require()`, `cluster`, `node:cluster`, a second `child_process` statement) is a violation, so adding
+   * `import cluster from 'node:cluster'` to it, or widening its import to `exec`, fails.
+   */
+  const REQUIRED_PROCESS_IMPORT = { specifier: 'child_process', form: 'named', names: ['execFile', 'spawn'], typeOnly: false } as const;
+
+  interface ProcessImport {
+    specifier: string;
+    form: 'named' | 'default' | 'namespace' | 'side-effect' | 'reexport' | 'import-equals' | 'dynamic' | 'require';
+    names: string[];
+    typeOnly: boolean;
+  }
+
+  /** Every reference `source` makes to a process-starting module, in every form, read from its syntax tree (comments are not part of it). Type-only forms are reported too, conservatively. */
+  function processImportsIn(source: string): ProcessImport[] {
+    const file = ts.createSourceFile('module.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const found: ProcessImport[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && PROCESS_MODULES.has(node.moduleSpecifier.text)) {
+        const specifier = node.moduleSpecifier.text;
+        const clause = node.importClause;
+        if (clause === undefined) found.push({ specifier, form: 'side-effect', names: [], typeOnly: false });
+        else {
+          const typeOnly = clause.isTypeOnly;
+          if (clause.name !== undefined) found.push({ specifier, form: 'default', names: [clause.name.text], typeOnly });
+          const bindings = clause.namedBindings;
+          if (bindings !== undefined && ts.isNamespaceImport(bindings)) found.push({ specifier, form: 'namespace', names: [bindings.name.text], typeOnly });
+          if (bindings !== undefined && ts.isNamedImports(bindings))
+            found.push({ specifier, form: 'named', names: bindings.elements.map((e) => (e.propertyName ?? e.name).text), typeOnly });
+        }
+      } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier) && PROCESS_MODULES.has(node.moduleSpecifier.text)) {
+        const clause = node.exportClause;
+        found.push({
+          specifier: node.moduleSpecifier.text,
+          form: 'reexport',
+          names: clause !== undefined && ts.isNamedExports(clause) ? clause.elements.map((e) => (e.propertyName ?? e.name).text) : ['*'],
+          typeOnly: node.isTypeOnly,
+        });
+      } else if (
+        ts.isImportEqualsDeclaration(node) &&
+        ts.isExternalModuleReference(node.moduleReference) &&
+        ts.isStringLiteralLike(node.moduleReference.expression) &&
+        PROCESS_MODULES.has(node.moduleReference.expression.text)
+      ) {
+        found.push({ specifier: node.moduleReference.expression.text, form: 'import-equals', names: [node.name.text], typeOnly: node.isTypeOnly });
+      } else if (ts.isCallExpression(node) && node.arguments.length > 0 && ts.isStringLiteralLike(node.arguments[0]) && PROCESS_MODULES.has(node.arguments[0].text)) {
+        if (node.expression.kind === ts.SyntaxKind.ImportKeyword) found.push({ specifier: node.arguments[0].text, form: 'dynamic', names: [], typeOnly: false });
+        else if (ts.isIdentifier(node.expression) && node.expression.text === 'require') found.push({ specifier: node.arguments[0].text, form: 'require', names: [], typeOnly: false });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    return found;
+  }
+
+  /** Whether a process import is exactly the required one: a static, non-type named import of nothing but execFile and spawn from child_process. */
+  const isRequiredProcessImport = (i: ProcessImport): boolean =>
+    i.specifier === REQUIRED_PROCESS_IMPORT.specifier &&
+    i.form === REQUIRED_PROCESS_IMPORT.form &&
+    i.typeOnly === REQUIRED_PROCESS_IMPORT.typeOnly &&
+    i.names.length > 0 &&
+    i.names.every((name) => (REQUIRED_PROCESS_IMPORT.names as readonly string[]).includes(name));
+
+  /**
+   * Every way `source` can reach a process-starting capability WITHOUT a process-module import specifier, as "what", read from its syntax tree (comments are not part of it). It follows ALIASES: `const p =
+   * process` and `p = process` (and aliases of aliases, to a fixed point), `globalThis`/`global` and their aliases and `.process` / `['process']` of any of them, `module` and its aliases; and it reads
+   * DESTRUCTURING (`const { binding } = process`, `{ binding: b }`, the assignment form, and over an alias), and `Reflect.get(process, 'binding')`-style calls. So `const p = process; p.binding(...)` is as
+   * visible as `process.binding(...)`. NOT covered: a name assembled at run time (`process['bind' + 'ing']`), which no static scan can see; the pin says so rather than imply otherwise.
+   */
+  function escapeHatches(source: string): string[] {
+    const file = ts.createSourceFile('module.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const unwrap = (n: ts.Node): ts.Node => {
+      let cur = n;
+      while (ts.isParenthesizedExpression(cur) || ts.isNonNullExpression(cur) || ts.isAsExpression(cur) || ts.isTypeAssertionExpression(cur) || ts.isSatisfiesExpression(cur)) cur = cur.expression;
+      return cur;
+    };
+    const globals = new Set(GLOBAL_OBJECTS);
+    const processes = new Set(['process']);
+    const modules = new Set(['module']);
+    const memberName = (n: ts.Node): string | null =>
+      ts.isPropertyAccessExpression(n) ? n.name.text : ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) ? n.argumentExpression.text : null;
+    const isGlobal = (n: ts.Node): boolean => {
+      const u = unwrap(n);
+      return ts.isIdentifier(u) && globals.has(u.text);
+    };
+    const isProcess = (n: ts.Node): boolean => {
+      const u = unwrap(n);
+      if (ts.isIdentifier(u)) return processes.has(u.text);
+      if (ts.isPropertyAccessExpression(u) || ts.isElementAccessExpression(u)) return memberName(u) === 'process' && isGlobal(u.expression);
+      return false;
+    };
+    const isModule = (n: ts.Node): boolean => {
+      const u = unwrap(n);
+      return ts.isIdentifier(u) && modules.has(u.text);
+    };
+    // aliases, to a fixed point
+    let changed = true;
+    const note = (set: Set<string>, name: string): void => {
+      if (!set.has(name)) {
+        set.add(name);
+        changed = true;
+      }
+    };
+    const alias = (name: string, init: ts.Node): void => {
+      if (isGlobal(init)) note(globals, name);
+      if (isProcess(init)) note(processes, name);
+      if (isModule(init)) note(modules, name);
+    };
+    const collect = (node: ts.Node): void => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) alias(node.name.text, node.initializer);
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(node.left)) alias(node.left.text, node.right);
+      ts.forEachChild(node, collect);
+    };
+    while (changed) {
+      changed = false;
+      collect(file);
+    }
+
+    const found: string[] = [];
+    const hatchMember = (owner: ts.Node, name: string | null): void => {
+      if (name === null) return;
+      if (isProcess(owner) && ESCAPE_HATCH_PROCESS_MEMBERS.has(name)) found.push(`process.${name}`);
+      if (isModule(owner) && name === 'constructor') found.push('module.constructor');
+    };
+    const keyText = (key: ts.Node): string | null => (ts.isIdentifier(key) || ts.isStringLiteralLike(key) ? key.text : null);
+    const visit = (node: ts.Node): void => {
+      if (ts.isIdentifier(node) && ESCAPE_HATCH_NAMES.has(node.text)) found.push(node.text);
+      if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+        const name = memberName(node);
+        hatchMember(node.expression, name);
+        if (name !== null && ESCAPE_HATCH_NAMES.has(name)) found.push(name);
+      }
+      // const { binding } = process;  const { binding: b } = p;  const { dlopen } = globalThis.process;
+      if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && node.initializer) {
+        for (const element of node.name.elements) hatchMember(node.initializer, keyText(element.propertyName ?? element.name));
+      }
+      // ({ binding } = process);  ({ binding: b } = process);
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isObjectLiteralExpression(node.left)) {
+        for (const property of node.left.properties) {
+          if (ts.isShorthandPropertyAssignment(property)) hatchMember(node.right, property.name.text);
+          else if (ts.isPropertyAssignment(property)) hatchMember(node.right, keyText(property.name));
+        }
+      }
+      // Reflect.get(process, 'binding'), Object.getOwnPropertyDescriptor(process, 'dlopen')
+      if (ts.isCallExpression(node) && node.arguments.length > 1) {
+        const owners = node.arguments.filter((a) => isProcess(a) || isModule(a));
+        for (const owner of owners) for (const arg of node.arguments) if (ts.isStringLiteralLike(arg)) hatchMember(owner, arg.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    for (const s of moduleSpecifiers(source)) if (ESCAPE_HATCH_MODULES.has(s.specifier)) found.push(`import of ${s.specifier}`);
+    // the same hatch seen by two of the checks above is one finding
+    return [...new Set(found)];
+  }
+
+  /** The closure-relative paths of the closure's modules that VALUE-import `target` (type-only imports are erased and do not count). */
+  function valueImportersOf(target: string, closure: string[], root: string): string[] {
+    return closure.filter((file) =>
+      relativeImports(fs.readFileSync(path.join(root, file), 'utf-8')).some((specifier) => {
+        const base = path.resolve(path.dirname(path.join(root, file)), specifier);
+        return [base.replace(/\.js$/, '.ts'), base, `${base}.ts`, path.join(base, 'index.ts')].some((candidate) => path.relative(root, candidate) === target);
+      }),
+    );
+  }
+
+  /** Everything the process boundary forbids in the closure of `entry` under `root`; empty when it holds. */
+  function processBoundaryViolations(entry: string, root: string): string[] {
+    const closure = moduleClosure(entry, root);
+    const read = (file: string): string => fs.readFileSync(path.join(root, file), 'utf-8');
+    const violations: string[] = [];
+    for (const file of closure) {
+      const imports = processImportsIn(read(file));
+      if (file !== PERMITTED_PROCESS_IMPORTER) {
+        if (imports.length > 0) violations.push(`${file} imports a process-starting module`);
+      } else {
+        // the exception is the ONE required import, not the file: anything beyond it is named
+        for (const i of imports.filter((entry) => !isRequiredProcessImport(entry))) {
+          const what = i.form === 'named' ? `{ ${i.names.join(', ')} } from ${i.specifier}` : `${i.specifier} (${i.form}${i.typeOnly ? ', type-only' : ''})`;
+          violations.push(`${file} imports ${what}, beyond the required child_process { execFile, spawn }`);
+        }
+      }
+      for (const hatch of escapeHatches(read(file))) violations.push(`${file} uses ${hatch}`);
+    }
+    if (closure.includes(LAUNCH_ROUTE)) {
+      for (const importer of valueImportersOf(LAUNCH_ROUTE, closure, root))
+        if (!LAUNCH_ROUTE_IMPORTERS.includes(importer)) violations.push(`${importer} reaches the launch route`);
+    }
+    if (closure.includes(PERMITTED_PROCESS_IMPORTER)) {
+      for (const importer of valueImportersOf(PERMITTED_PROCESS_IMPORTER, closure, root))
+        if (!PROCESS_MODULE_IMPORTERS.includes(importer)) violations.push(`${importer} reaches the process module`);
+    }
+    return violations.sort();
+  }
+
+  it('the DI entry\'s process boundary holds: the ONE named process-starting module, the launch route reached by exactly its two named importers, the process module reached only by the composition, and no escape hatch', () => {
     const entry = path.join(SRC, 'di/diCli.ts');
     const closure = moduleClosure(entry);
     expect(valueImportClosure(entry).filter((f) => !closure.includes(f))).toEqual([]);
+    // the earlier anchors, unchanged
     expect(closure).toContain('di/diHttpServer.ts');
     expect(closure).toContain('socketPipe.ts');
-    expect(closure).not.toContain('di/herdrLaunch.ts');
-    const importing = closure.filter((f) => importsProcessModule(fs.readFileSync(path.join(SRC, f), 'utf-8')));
-    expect(importing).toEqual([]);
+    // the pin is not vacuous: the two named things are really in the closure, and ARE what imports a process module
+    expect(closure).toContain(LAUNCH_ROUTE);
+    expect(closure).toContain(PERMITTED_PROCESS_IMPORTER);
+    expect(closure.filter((f) => importsProcessModule(fs.readFileSync(path.join(SRC, f), 'utf-8')))).toEqual([PERMITTED_PROCESS_IMPORTER]);
+    // and what the permitted importer imports is EXACTLY the required import: one static named import of execFile and spawn from child_process, nothing more
+    expect(processImportsIn(fs.readFileSync(path.join(SRC, PERMITTED_PROCESS_IMPORTER), 'utf-8'))).toEqual([
+      { specifier: 'child_process', form: 'named', names: ['execFile', 'spawn'], typeOnly: false },
+    ]);
+    expect(valueImportersOf(LAUNCH_ROUTE, closure, SRC).sort()).toEqual([...LAUNCH_ROUTE_IMPORTERS].sort());
+    expect(valueImportersOf(PERMITTED_PROCESS_IMPORTER, closure, SRC)).toEqual(PROCESS_MODULE_IMPORTERS);
+    // the route itself imports no process module and no escape hatch
+    expect(importsProcessModule(fs.readFileSync(path.join(SRC, LAUNCH_ROUTE), 'utf-8'))).toBe(false);
+    expect(closure.flatMap((f) => escapeHatches(fs.readFileSync(path.join(SRC, f), 'utf-8')).map((h) => `${f} uses ${h}`))).toEqual([]);
+    expect(processBoundaryViolations(entry, SRC)).toEqual([]);
+  });
+
+  describe('the process boundary is not vacuous: each way past it FAILS, on a synthetic module graph', () => {
+    // the shape of the real file's one required import: execFile and spawn, named, static, from child_process
+    const permitted = "import { execFile, spawn } from 'child_process';\nexport const start = [execFile, spawn];\n";
+    /** A graph shaped like the real one (di/diCli.ts composing the route and its one process module), plus `extra` files; returns what the boundary says. */
+    function boundary(extra: Record<string, string>, over: Record<string, string> = {}): string[] {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'process-boundary-'));
+      try {
+        const files: Record<string, string> = {
+          'di/diCli.ts': "import { start } from './herdrProcess.js';\nimport { route } from './herdrRequests.js';\nimport { other } from './other.js';\nexport { start, route, other };\n",
+          'di/herdrProcess.ts': permitted,
+          'di/herdrRequests.ts': "import { launch } from './herdrLaunch.js';\nexport const route = launch;\n",
+          'di/herdrTarget.ts': "import { launch } from './herdrLaunch.js';\nexport const target = launch;\n",
+          'di/herdrLaunch.ts': 'export const launch = 1;\n',
+          'di/other.ts': 'export const other = 2;\n',
+          ...extra,
+          ...over,
+        };
+        for (const [name, text] of Object.entries(files)) {
+          fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+          fs.writeFileSync(path.join(root, name), text);
+        }
+        return processBoundaryViolations(path.join(root, 'di/diCli.ts'), root);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+
+    it('the clean graph has no violation (so the cases below fail for their own reason)', () => {
+      expect(boundary({})).toEqual([]);
+    });
+
+    it('a SECOND module importing child_process fails, wherever in the closure it sits, under every specifier form', () => {
+      for (const importText of [
+        "import { exec } from 'child_process';",
+        "import * as cp from 'node:child_process';",
+        "import 'node:child_process';",
+        "export { spawn } from 'child_process';",
+        "const run = () => import('node:child_process');",
+        'const r = () => require(`child_process`);',
+        "import cluster from 'node:cluster';",
+      ]) {
+        expect(boundary({ 'di/other.ts': `${importText}\nexport const other = 2;\n` }), importText).toEqual(['di/other.ts imports a process-starting module']);
+        expect(boundary({ 'deep/probe.ts': `${importText}\nexport const probe = 3;\n`, 'di/other.ts': "import { probe } from '../deep/probe.js';\nexport const other = probe;\n" }), importText).toEqual([
+          'deep/probe.ts imports a process-starting module',
+        ]);
+      }
+    });
+
+    it('the permitted importer\'s NAME is not enough: the same name in another directory is a second importer', () => {
+      // the lookalike IS in the closure (di/other.ts imports it), so it is scanned, and it is not THE permitted file
+      expect(
+        boundary({ 'di/other.ts': "import { start } from '../elsewhere/di/herdrProcess.js';\nexport const other = start;\n", 'elsewhere/di/herdrProcess.ts': permitted }),
+      ).toEqual(['elsewhere/di/herdrProcess.ts imports a process-starting module']);
+    });
+
+    // REVIEW ROUND 3, FINDING 3: the permitted importer's exception is the ONE required import, not the file. These are the overlays that used to pass.
+    describe('the permitted importer is allowed ONLY its required import: any other process reference in that same file FAILS', () => {
+      const START = "export const start = [execFile, spawn];\n";
+      const overlay = (text: string, importLine = "import { execFile, spawn } from 'child_process';\n") => boundary({}, { 'di/herdrProcess.ts': `${importLine}${text}\n${START}` });
+
+      it('the clean required import has no violation', () => {
+        expect(overlay('')).toEqual([]);
+        expect(overlay('', "import { spawn as run, execFile as ef } from 'child_process';\nconst execFile = ef; const spawn = run;\n")).toEqual([]);
+      });
+
+      it("the Reviewer's overlay: `import cluster from 'node:cluster'` added to the permitted file FAILS", () => {
+        expect(overlay("import cluster from 'node:cluster';\nexport const c = cluster;")).toEqual([
+          'di/herdrProcess.ts imports node:cluster (default), beyond the required child_process { execFile, spawn }',
+        ]);
+      });
+
+      it.each([
+        ['cluster, plain', "import cluster from 'cluster';", 'cluster (default)'],
+        ['a namespace import of child_process', "import * as cp from 'child_process';", 'child_process (namespace)'],
+        ['a default import of child_process', "import cp from 'child_process';", 'child_process (default)'],
+        ['a side-effect import of child_process', "import 'child_process';", 'child_process (side-effect)'],
+        ['a second child_process statement, same names', "import { spawn as again } from 'node:child_process';", 'node:child_process'],
+        ['a type-only import of a process module', "import type { ChildProcess } from 'child_process';", 'child_process'],
+        ['a re-export from child_process', "export { fork } from 'child_process';", 'child_process (reexport'],
+        ['a dynamic import()', "export const d = () => import('child_process');", 'child_process (dynamic)'],
+        ['a require()', "export const r = () => require('child_process');", 'child_process (require)'],
+        ['an import-equals require', "import cpq = require('child_process');", 'child_process (import-equals)'],
+      ])('%s FAILS', (_name, line, words) => {
+        const violations = overlay(`${line}\nexport const extra = 1;`);
+        expect(violations.length).toBeGreaterThan(0);
+        expect(violations.every((v) => v.startsWith('di/herdrProcess.ts imports '))).toBe(true);
+        expect(violations.join('\n')).toContain(words);
+      });
+
+      it.each([
+        ['exec', "import { execFile, spawn, exec } from 'child_process';"],
+        ['fork', "import { execFile, spawn, fork } from 'child_process';"],
+        ['execSync', "import { execFile, spawn, execSync } from 'child_process';"],
+        ['spawnSync alone, without the required names', "import { spawnSync } from 'child_process';"],
+      ])('widening the required import with %s FAILS, naming the extra name', (_name, importLine) => {
+        const violations = overlay('', importLine);
+        expect(violations).toHaveLength(1);
+        expect(violations[0]).toMatch(/^di\/herdrProcess\.ts imports \{ .* \} from child_process, beyond the required child_process \{ execFile, spawn \}$/);
+      });
+
+      it('the required import is still checked for its NAMES, not just its specifier', () => {
+        expect(overlay('', "import { execFile } from 'child_process';\nconst spawn = execFile;\n")).toEqual([]);
+        expect(overlay('', "import { exec } from 'child_process';\nconst execFile = exec; const spawn = exec;\n")).toHaveLength(1);
+      });
+    });
+
+    // REVIEW ROUND 3, FINDING 3: aliased and destructured access used to evade the scan.
+    describe('aliased and destructured access to the escape hatches FAILS, as direct access does', () => {
+      it.each([
+        ['a plain alias: const p = process; p.binding()', "const p = process;\nexport const other = p.binding('spawn_sync');\n", 'process.binding'],
+        ['an alias of an alias', "const a = process;\nconst b = a;\nexport const other = b.dlopen;\n", 'process.dlopen'],
+        ['a later assignment alias', "let q: any;\nq = process;\nexport const other = q.binding('x');\n", 'process.binding'],
+        ['an element-access on an alias', "const p = process;\nexport const other = p['binding']('x');\n", 'process.binding'],
+        ['an alias via globalThis', "const g = globalThis;\nexport const other = g.process.binding('x');\n", 'process.binding'],
+        ['globalThis.process directly', "export const other = globalThis.process.dlopen;\n", 'process.dlopen'],
+        ["globalThis['process']", "export const other = globalThis['process'].binding('x');\n", 'process.binding'],
+        ['a parenthesised / cast alias', "const p = (process as any);\nexport const other = p.binding('x');\n", 'process.binding'],
+        ['destructuring: const { binding } = process', "const { binding } = process;\nexport const other = binding('x');\n", 'process.binding'],
+        ['renamed destructuring: { binding: b }', "const { binding: b } = process;\nexport const other = b('x');\n", 'process.binding'],
+        ['destructuring dlopen from globalThis.process', "const { dlopen } = globalThis.process;\nexport const other = dlopen;\n", 'process.dlopen'],
+        ['destructuring from an alias', "const p = process;\nconst { binding } = p;\nexport const other = binding;\n", 'process.binding'],
+        ['assignment destructuring', "let b: any;\n({ binding: b } = process);\nexport const other = b;\n", 'process.binding'],
+        ['shorthand assignment destructuring', "let binding: any;\n({ binding } = process);\nexport const other = binding;\n", 'process.binding'],
+        ['a module alias: m.constructor', "const m = module;\nexport const other = m.constructor._load('child_process');\n", 'module.constructor'],
+        ['destructuring constructor from module', "const { constructor: c } = module;\nexport const other = c;\n", 'module.constructor'],
+        ['Reflect.get on process', "export const other = Reflect.get(process, 'binding');\n", 'process.binding'],
+        ['getOwnPropertyDescriptor on an alias', "const p = process;\nexport const other = Object.getOwnPropertyDescriptor(p, 'dlopen');\n", 'process.dlopen'],
+        ['destructuring getBuiltinModule under another name', "const { getBuiltinModule: g } = process;\nexport const other = g;\n", 'getBuiltinModule'],
+      ])('%s', (_name, text, hatch) => {
+        const violations = boundary({ 'di/other.ts': text });
+        expect(violations, text).toContain(`di/other.ts uses ${hatch}`);
+        expect(violations.every((v) => v.startsWith('di/other.ts')), text).toBe(true);
+      });
+
+      it('the same aliased access in the permitted importer fails too', () => {
+        const violations = boundary({}, { 'di/herdrProcess.ts': `${permitted}const p = process;\nexport const sneaky = p.binding('spawn_sync');\n` });
+        expect(violations).toEqual(['di/herdrProcess.ts uses process.binding']);
+      });
+
+      it('ordinary use of process is NOT a hatch (the real closure uses process.env, process.exit and process.on)', () => {
+        expect(
+          boundary({
+            'di/other.ts': "const p = process;\nconst { env, argv } = process;\nexport const other = [p.env.HOME, env, argv, process.exit, process.on, process.getuid?.(), globalThis.process.pid, module.exports];\n",
+          }),
+        ).toEqual([]);
+      });
+    });
+
+    it('a process import that moves into the route itself, or into any other herdr module, fails', () => {
+      expect(boundary({ 'di/herdrLaunch.ts': "import { spawn } from 'child_process';\nexport const launch = spawn;\n" })).toEqual(['di/herdrLaunch.ts imports a process-starting module']);
+      expect(boundary({ 'di/herdrRequests.ts': "import { spawn } from 'node:child_process';\nexport const route = spawn;\n" })).toEqual(['di/herdrRequests.ts imports a process-starting module']);
+    });
+
+    it('a new path to the launch route fails; a type-only import of it does not (it is erased)', () => {
+      expect(boundary({ 'di/other.ts': "import { launch } from './herdrLaunch.js';\nexport const other = launch;\n" })).toEqual(['di/other.ts reaches the launch route']);
+      expect(boundary({ 'di/other.ts': "import type { launch } from './herdrLaunch.js';\nexport type Other = typeof launch;\nexport const other = 2;\n" })).toEqual([]);
+    });
+
+    it('a new path to the process module fails: only the composition may import it', () => {
+      expect(boundary({ 'di/other.ts': "import { start } from './herdrProcess.js';\nexport const other = start;\n" })).toEqual(['di/other.ts reaches the process module']);
+      expect(boundary({ 'di/herdrRequests.ts': "import { start } from './herdrProcess.js';\nexport const route = start;\n" })).toEqual(['di/herdrRequests.ts reaches the process module']);
+    });
+
+    it.each([
+      ['getBuiltinModule', "export const other = process.getBuiltinModule('node:child_process');\n", 'getBuiltinModule'],
+      ['a bare getBuiltinModule reference', 'const g = process.getBuiltinModule;\nexport const other = g;\n', 'getBuiltinModule'],
+      ['an element-access getBuiltinModule', "export const other = process['getBuiltinModule']('child_process');\n", 'getBuiltinModule'],
+      ['createRequire', "import { createRequire } from 'node:module';\nexport const other = createRequire(import.meta.url)('child_process');\n", 'createRequire'],
+      ['importing the module module at all', "import * as m from 'module';\nexport const other = m;\n", 'import of module'],
+      ['process.binding', "export const other = process.binding('spawn_sync');\n", 'process.binding'],
+      ['process.dlopen', 'export const other = process.dlopen;\n', 'process.dlopen'],
+      ['an element-access process.binding', "export const other = process['binding']('spawn_sync');\n", 'process.binding'],
+      ['module.constructor', "export const other = module.constructor._load('child_process');\n", 'module.constructor'],
+    ])('the escape hatch %s fails, even in a module with no process import specifier', (_name, text, hatch) => {
+      const violations = boundary({ 'di/other.ts': text });
+      expect(violations).toContain(`di/other.ts uses ${hatch}`);
+      expect(violations.every((v) => v.startsWith('di/other.ts'))).toBe(true);
+    });
+
+    it('an escape hatch fails in the PERMITTED importer too: its one exception is the import, nothing else', () => {
+      expect(boundary({}, { 'di/herdrProcess.ts': `${permitted}export const sneaky = process.getBuiltinModule('node:child_process');\n` })).toEqual(['di/herdrProcess.ts uses getBuiltinModule']);
+    });
+
+    it('comments and strings that merely name an escape hatch are not hatches (the scan reads syntax, not text)', () => {
+      expect(boundary({ 'di/other.ts': "// process.getBuiltinModule, createRequire, process.binding, module.constructor\nexport const other = 'process.binding createRequire';\n" })).toEqual([]);
+    });
   });
 });
 
@@ -830,5 +1246,52 @@ describe('diDeliveryRequest: checked here, then handed ONCE to the delivery rela
     ).toBe(true);
     expect(toRelay).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('diHerdrRequest: checked here, then handed ONCE to the Herdr relay, never acted on here (Package A)', () => {
+  const msg = { type: 'diHerdrRequest', seq: 8, op: 'launch', missionRef: 'di_herdr_tasks:task-1@abc123' };
+  const ctxWith = (herdrRequest?: (m: Record<string, unknown>, s: (x: Record<string, unknown>) => void) => void) => ({
+    store: new AgentStateStore(),
+    cache: EMPTY_CACHE,
+    extensionVersion: 'test',
+    ...(herdrRequest ? { herdrRequest } : {}),
+  });
+
+  it('a valid diHerdrRequest is HANDLED by handing it, exactly once, to the Herdr relay; the dispatcher answers nothing itself', () => {
+    const seen: unknown[] = [];
+    const send = vi.fn();
+    expect(handleDiClientMessage(msg, send, ctxWith((m, s) => seen.push([m, s])))).toBe('handled');
+    expect(seen).toEqual([[msg, send]]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('with no Herdr relay in this office it is refused, and EXACTLY ONE correlated "not configured" reply is sent, naming the flags it needs', () => {
+    const send = vi.fn();
+    expect(handleDiClientMessage(msg, send, ctxWith())).toEqual({ refused: 'no Herdr route in this office' });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toMatchObject({ type: 'diHerdrReply', seq: 8, op: 'launch', state: 'unavailable', problem: 'herdr_not_configured', answer: null });
+    for (const flag of ['--herdr-bin', '--herdr-home', '--herdr-socket']) expect(String(send.mock.calls[0][0].reason)).toContain(flag);
+  });
+
+  it('a malformed diHerdrRequest inside the correlation domain is refused before the relay, with EXACTLY ONE refusal carrying its own seq and op', () => {
+    const toRelay = vi.fn();
+    const send = vi.fn();
+    const disposition = handleDiClientMessage({ ...msg, workspaceId: 'w6V' }, send, ctxWith(toRelay));
+    expect(typeof disposition === 'object' && 'refused' in disposition).toBe(true);
+    expect(toRelay).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toMatchObject({ type: 'diHerdrReply', seq: 8, op: 'launch', state: 'refused', problem: 'request_invalid', answer: null });
+  });
+
+  it('a diHerdrRequest whose op is not one of the two (there is no op that sends a key, a prompt or text) is refused with NO reply and nothing invented', () => {
+    for (const op of ['sendKeys', 'prompt', 'focusPane', 'attach']) {
+      const toRelay = vi.fn();
+      const send = vi.fn();
+      const disposition = handleDiClientMessage({ ...msg, op }, send, ctxWith(toRelay));
+      expect(typeof disposition === 'object' && 'refused' in disposition, op).toBe(true);
+      expect(toRelay).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    }
   });
 });

@@ -27,19 +27,52 @@ class EvidenceError(ValueError):
     """The evidence cannot be collected exactly; message actionable."""
 
 
-def collect(repo_root: str | Path, now=None) -> dict:
+def collect(repo_root: str | Path, now=None, expect_task_id=None) -> dict:
+    """Read the task state and the review artifacts under ``repo_root`` (UNBOUNDED reads that follow symlinks after the initial resolve: this
+    is the human ceremony's own local collector) and validate them with ``evaluate``."""
     root = Path(repo_root).resolve()
     task_path = root / TASK_STATE_RELATIVE
     try:
         task_bytes = task_path.read_bytes()
-        task = json.loads(task_bytes)
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
         raise EvidenceError(f"task state unreadable at {task_path}: {exc}")
+    reviews_dir = root / REVIEWS_RELATIVE
+    return evaluate(
+        task_bytes,
+        task_path,
+        lambda: sorted(p.name for p in reviews_dir.iterdir()),
+        lambda name: (reviews_dir / name).read_bytes(),
+        now=now,
+        expect_task_id=expect_task_id,
+    )
+
+
+def evaluate(task_bytes, task_label, list_review_names, read_review, now=None, expect_task_id=None) -> dict:
+    """The VALIDATION of the evidence, over what a caller has already read: the ONE rule for "the current task's COMPLETE plus the latest
+    canonical APPROVE, with artifact digests", shared by ``collect`` and by any caller that must read under its OWN bounds.
+
+    ``task_bytes``: the task record's bytes. ``task_label``: how to name it in a refusal. ``list_review_names()``: the names under the reviews
+    directory; ``read_review(name)``: the bytes of one review artifact. Either raises ``OSError`` when it cannot read; that is reported as
+    this module's own refusal. This function opens nothing and starts nothing; every bound, every symlink rule and every containment rule is
+    the CALLER's, because it is the caller that reads.
+
+    ``expect_task_id``: the task the caller PREPARED this for. When given, a record whose current task is any other is REFUSED, not collected: a
+    route prepared for task A and run later, after task B became current and complete, must not seal B's identity into a record the person
+    believes is A's. The check happens here, where the evidence is made, so it holds at execution time."""
+    try:
+        task = json.loads(task_bytes)
+    except ValueError as exc:
+        raise EvidenceError(f"task state unreadable at {task_label}: {exc}")
     if not isinstance(task, dict):
         raise EvidenceError("task state is not an object")
     task_id = task.get("id")
     if not isinstance(task_id, str) or not task_id:
         raise EvidenceError("task state carries no task id")
+    if expect_task_id is not None and task_id != expect_task_id:
+        raise EvidenceError(
+            f"the current task is {task_id!r}, not the expected {expect_task_id!r};"
+            " refusing to collect evidence for a different task"
+        )
     if task.get("status") != "COMPLETE":
         raise EvidenceError(
             f"task {task_id} status is {task.get('status')!r}, not COMPLETE"
@@ -49,9 +82,8 @@ def collect(repo_root: str | Path, now=None) -> dict:
             f"task {task_id} last review decision is"
             f" {task.get('last_review_decision')!r}, not APPROVE"
         )
-    reviews_dir = root / REVIEWS_RELATIVE
     try:
-        names = sorted(p.name for p in reviews_dir.iterdir())
+        names = list_review_names()
     except OSError as exc:
         raise EvidenceError(f"reviews directory unreadable: {exc}")
     latest = latest_round_for_task(names, task_id)
@@ -64,9 +96,8 @@ def collect(repo_root: str | Path, now=None) -> dict:
             f"task state names review file {recorded_file!r} but the latest"
             f" round on disk is {name!r}; ambiguous"
         )
-    review_path = reviews_dir / name
     try:
-        review_bytes = review_path.read_bytes()
+        review_bytes = read_review(name)
     except OSError as exc:
         raise EvidenceError(f"review artifact unreadable: {exc}")
     # ONE parser for the canonical token (round-01 N2): the same

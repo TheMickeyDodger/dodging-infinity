@@ -26,12 +26,16 @@ import type {
   ChainBindingReason,
   ChainKind,
   Classified,
+  HandoffBlocker,
+  HandoffBranchState,
+  HandoffEvidenceState,
   Health,
   LifecycleModel,
   MemberClassification,
   MemberReason,
   MissionDeliveryLinkBasis,
   MissionDeliveryLinkState,
+  MissionHandoffState,
   QueryContractVersion,
   RuntimeAgentsState,
   RuntimeAssignmentState,
@@ -65,6 +69,11 @@ import {
   DELIVERY_STORE_STATES,
   ENDPOINT,
   ENVELOPE_KEYS,
+  HANDOFF_BLOCKERS,
+  HANDOFF_BRANCH_STATES,
+  HANDOFF_EVIDENCE_STATES,
+  HANDOFF_MAX_BASIS_CHARS,
+  HANDOFF_MAX_REASON_CHARS,
   HEALTH_STATES,
   HERDR_TASK_MODEL,
   LIFECYCLE_MODELS,
@@ -72,10 +81,12 @@ import {
   MAX_DELIVERY_PRESENTATIONS,
   MEMBER_CLASSIFICATIONS,
   MEMBER_REASONS,
+  MISSION_DELIVERY_HANDOFF_KEYS,
   MISSION_DELIVERY_ID,
   MISSION_DELIVERY_LINK_BASES,
   MISSION_DELIVERY_LINK_KEYS,
   MISSION_DELIVERY_LINK_STATES,
+  MISSION_HANDOFF_STATES,
   QUERY_CONTRACT,
   RESPONSE_KEYS,
   RESPONSE_KEYS_V2,
@@ -606,6 +617,24 @@ export type MissionDeliveryLinkView =
   | { state: 'linked'; deliveryId: string; basis: MissionDeliveryLinkBasis }
   | { state: Exclude<MissionDeliveryLinkState, 'linked'>; deliveryId: null; basis: null };
 
+/**
+ * contract v2 — the READ-ONLY delivery HANDOFF facts of one Herdr task (`missions[].delivery_handoff`). It confers nothing and is never "ready".
+ * `linkBasis` is the producer's DECLARATION of the basis it links a Herdr task by (raw, bounded; null unless observed): only the exact canonical
+ * value is a declaration, and anything else is carried unchanged so the client can say it is not known instead of guessing.
+ */
+export interface MissionDeliveryHandoffView {
+  state: MissionHandoffState;
+  linkBasis: string | null;
+  repository: string | null;
+  engineeringTaskId: string | null;
+  gitDirRealpath: string | null;
+  branch: { state: HandoffBranchState; ref: string | null } | null;
+  evidence: { state: HandoffEvidenceState; reason: string | null } | null;
+  stagedCandidate: 'not_determined' | null;
+  workflowId: 'human_supplied' | null;
+  blockers: HandoffBlocker[];
+}
+
 export interface MissionV2View {
   taskChains: TaskChainView[];
   childrenRecord: ChildrenRecordView;
@@ -614,6 +643,8 @@ export interface MissionV2View {
   workflowPhase: WorkflowPhaseView;
   /** ABSENT (the key is omitted, never defaulted) when the producer's answer predates `delivery_link`. */
   deliveryLink?: MissionDeliveryLinkView;
+  /** ABSENT (the key is omitted, never defaulted) when the producer's answer predates `delivery_handoff`. */
+  deliveryHandoff?: MissionDeliveryHandoffView;
 }
 
 export type MissionNative =
@@ -1455,10 +1486,12 @@ function projectWorkflowPhase(
 /**
  * The declared `missions[].delivery_link` (contract v2): STRICT when present — closed keys, a declared state, and the producer's
  * own rule. A workflow Mission is never `unlinked_model_not_recorded` and links only by `record_mission_binding`. A Herdr task
- * may be that state (a catalog that did not address repositories) or any other delivery-link state, and links only by
- * `record_repository_binding`. Every other model is `unlinked_model_not_recorded`. `unlinked_repository_not_recorded` is Herdr
- * only. A linked Mission carries ONE id of the ceremony's shape and the declared basis; an unlinked one carries neither.
- * ABSENT → nothing (the caller omits the key).
+ * may be that state (a catalog that did not address task worktrees) or any other delivery-link state, and links only by
+ * `record_task_worktree_binding` (this producer) or the LEGACY `record_repository_binding` (an older producer: origin only, a
+ * weaker claim that is kept distinct and never promoted). Every other model is `unlinked_model_not_recorded`.
+ * `unlinked_task_worktree_not_recorded` and the legacy `unlinked_repository_not_recorded` are Herdr only. A linked Mission
+ * carries ONE id of the ceremony's shape and the declared basis; an unlinked one carries neither. A basis or state this office
+ * does not know refuses the answer (`member` throws), never a guess at a stronger reading. ABSENT → nothing (the caller omits the key).
  */
 function projectDeliveryLink(
   m: Json,
@@ -1480,6 +1513,9 @@ function projectDeliveryLink(
   if (state === 'unlinked_repository_not_recorded' && !herdr) {
     malformed(`${at}: unlinked_repository_not_recorded is a Herdr task whose workspace origin was not read`);
   }
+  if (state === 'unlinked_task_worktree_not_recorded' && !herdr) {
+    malformed(`${at}: unlinked_task_worktree_not_recorded is a Herdr task whose task or worktree was not read`);
+  }
   if (state === 'linked') {
     const id = link.delivery_id;
     if (typeof id !== 'string' || !MISSION_DELIVERY_ID.test(id)) {
@@ -1491,6 +1527,9 @@ function projectDeliveryLink(
     }
     if (basis === 'record_repository_binding' && !herdr) {
       malformed(`${at}: record_repository_binding links a Herdr task`);
+    }
+    if (basis === 'record_task_worktree_binding' && !herdr) {
+      malformed(`${at}: record_task_worktree_binding links a Herdr task`);
     }
     return { state, deliveryId: id, basis };
   }
@@ -1613,6 +1652,111 @@ function projectMissionV2(
     },
     workflowPhase: projectWorkflowPhase(m, where, model),
     ...deliveryLinkIfDeclared(projectDeliveryLink(m, where, model)),
+    ...deliveryHandoffIfDeclared(projectDeliveryHandoff(m, where, model)),
+  };
+}
+
+/** The key only when the producer declared a handoff: an answer that predates the block gets no key at all, never a default. */
+function deliveryHandoffIfDeclared(handoff: MissionDeliveryHandoffView | null): { deliveryHandoff?: MissionDeliveryHandoffView } {
+  return handoff === null ? {} : { deliveryHandoff: handoff };
+}
+
+/** The blockers the observed facts imply, in the contract's fixed order (the producer's own rule; a client recomputes it). */
+function expectedHandoffBlockers(
+  taskId: string | null,
+  gitDir: string | null,
+  branch: HandoffBranchState,
+  evidence: HandoffEvidenceState,
+): HandoffBlocker[] {
+  const found = new Set<HandoffBlocker>();
+  if (gitDir === null) found.add('git_dir_not_read');
+  if (branch === 'detached') found.add('head_detached');
+  else if (branch === 'unreadable') found.add('head_not_read');
+  if (evidence !== 'collected') found.add('evidence_not_collected');
+  if (taskId === null) found.add('task_id_not_recorded');
+  return HANDOFF_BLOCKERS.filter((b) => found.has(b));
+}
+
+/**
+ * The declared `missions[].delivery_handoff` (contract v2): STRICT when present. `not_applicable` is exactly a model without a handoff;
+ * `observed` and `not_reported` are a Herdr task's. A block that is not observed carries no facts and no blockers. An observed block's
+ * staged candidate is always `not_determined`, its workflow id always `human_supplied`, and its blockers are what its own facts imply:
+ * a producer cannot send fewer. `link_basis` is carried as the producer wrote it (bounded); this projection does NOT decide what it means.
+ * ABSENT → nothing (the caller omits the key).
+ */
+function projectDeliveryHandoff(m: Json, where: string, model: Classified<LifecycleModel>): MissionDeliveryHandoffView | null {
+  if (!('delivery_handoff' in m)) return null;
+  const at = `${where}.delivery_handoff`;
+  const h = obj(m.delivery_handoff, at);
+  exactKeys(h, MISSION_DELIVERY_HANDOFF_KEYS, at);
+  const state = member(MISSION_HANDOFF_STATES, h.state, `${at}.state`);
+  const herdr = model.known && model.value === HERDR_TASK_MODEL;
+  if ((state === 'not_applicable') === herdr) malformed(`${at}: exactly a model without a handoff is not_applicable`);
+  const linkBasis = strOrNull(h.link_basis, `${at}.link_basis`);
+  if (linkBasis !== null && (linkBasis === '' || linkBasis.length > HANDOFF_MAX_BASIS_CHARS)) {
+    malformed(`${at}.link_basis is empty or over its bound`);
+  }
+  if (state !== 'observed') {
+    const blank =
+      linkBasis === null &&
+      h.repository === null &&
+      h.engineering_task_id === null &&
+      h.git_dir_realpath === null &&
+      h.branch === null &&
+      h.evidence === null &&
+      h.staged_candidate === null &&
+      h.workflow_id === null &&
+      Array.isArray(h.blockers) &&
+      h.blockers.length === 0;
+    if (!blank) malformed(`${at}: a ${state} handoff carries no facts and no blockers`);
+    return {
+      state,
+      linkBasis: null,
+      repository: null,
+      engineeringTaskId: null,
+      gitDirRealpath: null,
+      branch: null,
+      evidence: null,
+      stagedCandidate: null,
+      workflowId: null,
+      blockers: [],
+    };
+  }
+  const repository = str(h.repository, `${at}.repository`);
+  const engineeringTaskId = strOrNull(h.engineering_task_id, `${at}.engineering_task_id`);
+  const gitDirRealpath = strOrNull(h.git_dir_realpath, `${at}.git_dir_realpath`);
+  const branchRaw = obj(h.branch, `${at}.branch`);
+  exactKeys(branchRaw, ['state', 'ref'], `${at}.branch`);
+  const branchState = member(HANDOFF_BRANCH_STATES, branchRaw.state, `${at}.branch.state`);
+  const ref = strOrNull(branchRaw.ref, `${at}.branch.ref`);
+  if ((branchState === 'named') !== (ref !== null) || (ref !== null && !ref.startsWith('refs/heads/'))) {
+    malformed(`${at}.branch: exactly a named branch carries its refs/heads/ ref`);
+  }
+  const evidenceRaw = obj(h.evidence, `${at}.evidence`);
+  exactKeys(evidenceRaw, ['state', 'reason'], `${at}.evidence`);
+  const evidenceState = member(HANDOFF_EVIDENCE_STATES, evidenceRaw.state, `${at}.evidence.state`);
+  const reason = strOrNull(evidenceRaw.reason, `${at}.evidence.reason`);
+  if ((evidenceState === 'collected') !== (reason === null)) malformed(`${at}.evidence: exactly collected evidence carries no reason`);
+  if (reason !== null && (reason === '' || reason.length > HANDOFF_MAX_REASON_CHARS)) malformed(`${at}.evidence.reason is empty or over its bound`);
+  if (h.staged_candidate !== 'not_determined') malformed(`${at}.staged_candidate is always not_determined here`);
+  if (h.workflow_id !== 'human_supplied') malformed(`${at}.workflow_id is always human_supplied for a Herdr task`);
+  if (!Array.isArray(h.blockers)) malformed(`${at}.blockers is not a list`);
+  const blockers = h.blockers.map((b, i) => member(HANDOFF_BLOCKERS, b, `${at}.blockers[${i}]`));
+  const expected = expectedHandoffBlockers(engineeringTaskId, gitDirRealpath, branchState, evidenceState);
+  if (blockers.length !== expected.length || blockers.some((b, i) => b !== expected[i])) {
+    malformed(`${at}.blockers are not what the observed facts imply`);
+  }
+  return {
+    state,
+    linkBasis,
+    repository,
+    engineeringTaskId,
+    gitDirRealpath,
+    branch: { state: branchState, ref },
+    evidence: { state: evidenceState, reason },
+    stagedCandidate: 'not_determined',
+    workflowId: 'human_supplied',
+    blockers,
   };
 }
 

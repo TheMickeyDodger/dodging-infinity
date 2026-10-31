@@ -11,7 +11,12 @@
  *
  * WHAT IT DOES NOT ESTABLISH. It does not prove that the app sends no input on every path. Computed or aliased calls (a name assembled at run time, a method reached through a variable or a re-export),
  * strings split across expressions, and subprocess or network routes in general are NOT covered; it guards only the forms above, in the scanned files, on the runs where it runs. It observes no
- * OS-terminal attach: no launch route exists, the Herdr controls stay drawn disabled, and the runtime proof that a person can type while THIS APP sends no input remains owed after this passes.
+ * OS-terminal attach, and the runtime proof that a person can type while THIS APP sends no input remains owed after this passes (it is the Supervisor's native gate, produced nowhere in this code).
+ *
+ * THE HERDR TERMINAL ROUTE IS INSIDE THIS SCAN (Package A). herdrLaunch.ts, herdrProcess.ts, herdrRequests.ts and herdrTarget.ts are under server/src/di and are scanned like every other file; the scan was not
+ * narrowed to excuse them, and the tests below name them so a change to SCANNED_DIRS that dropped them would fail. The route runs three Herdr commands, `agent list`, `workspace focus <id>` and `workspace get <id>`.
+ * `workspace focus` is a socket API call that moves which workspace Herdr shows; it is not terminal input, is none of the forms above, and the detector is shown below NOT to flag it. That is a fact about
+ * what the detector looks for, not an exemption: every input form it does look for is still flagged, in the route's files included.
  *
  * SCOPE: the server (`server/src`, the runtime both surfaces compose). Recorded, not hidden: the same scan over the VS Code editor host finds ONE call, `adapters/vscode/agentManager.ts`
  * `terminal.sendText(...)`, the extension's own agent launcher typing the `claude` launch command into a fresh VS Code terminal it has just created. That is not a herd pane and not the attached OS
@@ -107,6 +112,28 @@ describe('the detector is not vacuous: it finds each forbidden form and ignores 
     expect(inputCallSites(code).length).toBeGreaterThan(0);
   });
 
+  it('flags every input form when it is written the way the Herdr route would write a Herdr command (an argument list, a template, a member call)', () => {
+    for (const code of [
+      "effects.runWorkspaceCommand(bin, ['pane', 'send-keys', paneId, text], env)",
+      "effects.runWorkspaceCommand(bin, ['agent', 'prompt', name, text], env)",
+      'effects.runWorkspaceCommand(bin, [`pane send-text ${id}`], env)',
+      'effects.sendKeys(paneId, text)',
+      "effects.runWorkspaceCommand(bin, ['pane', 'send-input', id, text], env)",
+    ]) {
+      expect(inputCallSites(code).length, code).toBeGreaterThan(0);
+    }
+  });
+
+  it('does NOT flag the Herdr commands the route runs (a read, a workspace focus, a read-back): they are not terminal input, and that is the detector\'s scope, not an exemption', () => {
+    for (const code of [
+      "const LISTING_ARGS = ['agent', 'list'] as const;",
+      "await effects.runWorkspaceCommand(target.herdrBin, ['workspace', 'focus', workspaceId], env);",
+      "await effects.runWorkspaceCommand(target.herdrBin, ['workspace', 'get', workspaceId], env);",
+    ]) {
+      expect(inputCallSites(code), code).toEqual([]);
+    }
+  });
+
   it('does NOT flag a comment that quotes the rule, nor an unrelated "prompt"', () => {
     expect(inputCallSites('// the app never calls pane.send_input or agent.prompt\nconst x = 1;')).toEqual([]);
     expect(inputCallSites('/* pane.send_keys, agent.send_keys */ const consent = { prompt: true }; const p = window.prompt;')).toEqual([]);
@@ -121,6 +148,25 @@ describe('THE SERVER HAS NO TERMINAL-INPUT CALL SITES', () => {
     expect(rel.length).toBeGreaterThan(40);
     for (const known of ['server/src/di/diOffice.ts', 'server/src/di/missionRequests.ts', 'server/src/clientMessageHandler.ts', 'server/src/agentRuntime.ts'])
       expect(rel, `the scan includes ${known}`).toContain(known);
+  });
+
+  it('the scan includes every module of the Herdr terminal route: it was not narrowed to excuse the new path', () => {
+    const rel = files.map((f) => path.relative(ROOT, f));
+    for (const route of [
+      'server/src/di/herdrLaunch.ts',
+      'server/src/di/herdrProcess.ts',
+      'server/src/di/herdrRequests.ts',
+      'server/src/di/herdrTarget.ts',
+    ])
+      expect(rel, `the scan includes ${route}`).toContain(route);
+    expect(SCANNED_DIRS).toEqual(['server/src']);
+  });
+
+  it('no Herdr route module has an input call site, in any form, named on its own (so a failure points at the route)', () => {
+    for (const route of ['herdrLaunch.ts', 'herdrProcess.ts', 'herdrRequests.ts', 'herdrTarget.ts']) {
+      const file = path.join(ROOT, 'server/src/di', route);
+      expect(inputCallSites(fs.readFileSync(file, 'utf-8'), file), route).toEqual([]);
+    }
   });
 
   it('no scanned file calls pane.send_input, send_keys, send_text, agent.send_keys or agent.prompt, in any form', () => {

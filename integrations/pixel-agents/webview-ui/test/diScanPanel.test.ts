@@ -223,8 +223,11 @@ test('mission details, the code diff and comments open from the locked row; Herd
   assert.equal(mission.includes('Ask Codex to do anything'), false);
   assert.equal(mission.includes('Focus terminal'), false);
   assert.match(mission, /data-testid="di-scan-herdr"/);
-  assert.doesNotMatch(mission, /<button[^>]*data-testid="di-scan-herdr"[^>]*disabled=""/);
-  assert.match(mission, /herdctl/);
+  // Package A: Herdr is wired to the office's own answer for the Mission. With no control wired into this view the button is disabled and says
+  // so, and it no longer carries a static note about another tool (the control's states are covered in diScanMissionDetails.test.ts).
+  assert.match(mission, /<button[^>]*data-testid="di-scan-herdr"[^>]*disabled=""/);
+  assert.match(mission, /The Herdr control is not connected to this view/);
+  assert.doesNotMatch(mission, /herdctl/);
 
   const comments = renderToStaticMarkup(
     createElement(DiScanPanel, {

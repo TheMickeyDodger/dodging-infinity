@@ -1,8 +1,8 @@
 /**
  * 06 Code Diff and 07 Comments, a Mission's nested screens (pass B, CONTROL-MAP C1 to C4 and X1 to X3).
  *
- * Code Diff: Back to Mission details, a sibling switch to Comments (Herdr beside it opens the machine's own terminal and
- * is disabled until that launch is wired), a file tree whose files SELECT, and a diff pane of hunks. The working tree is
+ * Code Diff: Back to Mission details, a sibling switch to Comments (Herdr beside it asks the office to open the machine's own
+ * terminal on the Mission's herd, and is enabled only by the office's answer for the Mission), a file tree whose files SELECT, and a diff pane of hunks. The working tree is
  * read only: nothing here edits or commits.
  * Comments (Free): Back, a full-width thread, and in place of a composer a truthful Paid/unavailable label. No working
  * looking control, no upsell (gap 10, D-6, D106). The v3 drawing's Reply and Send are superseded by gap 10.
@@ -21,9 +21,10 @@ import {
 } from '../src/components/diScanModel.ts';
 import { DiScanPanel } from '../src/components/DiScanPanel.tsx';
 import { productionRow } from './helpers/productionRow.ts';
+import { herdrControl } from './herdrControlStub.ts';
 
 const noop = () => undefined;
-const render = (view: DiScanView, row: DiScanRow = DI_SCAN_LOCK[0]!, specimen = true) =>
+const render = (view: DiScanView, row: DiScanRow = DI_SCAN_LOCK[0]!, specimen = true, herdr?: ReturnType<typeof herdrControl>) =>
   renderToStaticMarkup(
     createElement(DiScanPanel, {
       rows: [row],
@@ -31,26 +32,67 @@ const render = (view: DiScanView, row: DiScanRow = DI_SCAN_LOCK[0]!, specimen = 
       initialView: view,
       onMinimize: noop,
       specimen,
+      ...(herdr ? { herdr } : {}),
     }),
   );
 const stage = (html: string) => /data-testid="di-scan-stage"[\s\S]*$/.exec(html)?.[0] ?? '';
 const tag = (html: string, testid: string) =>
   new RegExp(`<[a-z]+[^>]*data-testid="${testid}"[^>]*>`).exec(html)?.[0] ?? '';
-const HERDR =
-  'Herdr runs in your own terminal. This office does not start it. From your Dodging Infinity checkout, the documented command is herdctl.';
+const nav = (html: string) => /<nav[^>]*data-testid="di-scan-siblings"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
 
-describe('C2: Code Diff and Comments switch between each other; Herdr sits beside them, disabled', () => {
+describe("C2: Code Diff and Comments switch between each other; Herdr sits beside them, enabled only by the office's answer", () => {
   for (const view of ['diff', 'comments'] as const) {
     it(`on ${view}: the three siblings, the current one marked`, () => {
-      const html = stage(render(view));
-      const nav = /<nav[^>]*data-testid="di-scan-siblings"[\s\S]*?<\/nav>/.exec(html)?.[0] ?? '';
-      const names = [...nav.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+      const html = stage(render(view, DI_SCAN_LOCK[0]!, true, herdrControl(DI_SCAN_LOCK[0]!.id)));
+      const names = [...nav(html).matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
       expect(names).toEqual(['Code Diff', 'Herdr', 'Comments']);
       const current = view === 'diff' ? 'di-scan-sibling-diff' : 'di-scan-sibling-comments';
-      expect(tag(nav, current)).toContain('aria-current="page"');
-      const herdr = tag(nav, 'di-scan-sibling-herdr');
-      expect(herdr).not.toContain('disabled');
-      expect(herdr).toContain(`title="${HERDR}"`);
+      expect(tag(nav(html), current)).toContain('aria-current="page"');
+    });
+
+    it(`on ${view}: with no Herdr control wired, Herdr is disabled and says nothing is connected, not a note about another tool`, () => {
+      const herdr = tag(nav(stage(render(view))), 'di-scan-sibling-herdr');
+      expect(herdr).toContain('disabled=""');
+      expect(herdr).toContain('title="The Herdr control is not connected to this view, so nothing can be opened from here."');
+      expect(stage(render(view))).not.toMatch(/herdctl|does not start it/);
+    });
+
+    it(`on ${view}: where the office said a launch is available, Herdr is enabled and its description says what a click does`, () => {
+      const html = stage(render(view, DI_SCAN_LOCK[0]!, true, herdrControl(DI_SCAN_LOCK[0]!.id)));
+      expect(tag(nav(html), 'di-scan-sibling-herdr')).not.toContain('disabled');
+      expect(nav(html)).toContain('It first asks Herdr to focus workspace w6V');
+    });
+
+    it(`on ${view}: where the office refused, Herdr is disabled with the office's own reason in its title and description`, () => {
+      const reason = 'Nothing was opened: the recorded session is not in Herdr&#x27;s live agent list now.';
+      const html = stage(
+        render(
+          view,
+          DI_SCAN_LOCK[0]!,
+          true,
+          herdrControl(DI_SCAN_LOCK[0]!.id, {
+            check: { kind: 'unavailable', problem: 'not_live', reason: "Nothing was opened: the recorded session is not in Herdr's live agent list now." },
+          }),
+        ),
+      );
+      expect(tag(nav(html), 'di-scan-sibling-herdr')).toContain('disabled=""');
+      expect(tag(nav(html), 'di-scan-sibling-herdr')).toContain(`title="${reason}"`);
+      expect(nav(html)).toContain(`>${reason}</span>`);
+    });
+
+    it(`on ${view}: after a click the result is shown in the header, and it claims no attach and no working keyboard`, () => {
+      const html = stage(
+        render(
+          view,
+          DI_SCAN_LOCK[0]!,
+          true,
+          herdrControl(DI_SCAN_LOCK[0]!.id, { launch: { kind: 'opened', workspaceId: 'w6V', windowMinCols: 190, windowMinRows: 49, matchedPaneId: null, terminalLabel: 'Terminal', terminalState: 'unconfirmed' } }),
+        ),
+      );
+      expect(nav(html)).toMatch(
+        /data-testid="di-scan-herdr-open"[^>]*>Herdr reported workspace w6V focused\. Terminal was asked to open the Herdr launcher, but the opener had not finished within its time limit/,
+      );
+      expect(nav(html)).not.toMatch(/attach|keyboard|typing works/i);
     });
   }
 });

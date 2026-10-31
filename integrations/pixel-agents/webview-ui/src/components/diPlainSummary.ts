@@ -327,18 +327,19 @@ export function agentNow(agent: DiRuntimeAgent | DiMember): string {
 }
 
 /**
- * What a verified runtime agent's assignment record says, in one plain sentence: it is not a team
- * member, and "no current Mission" is a record of assignment — never of activity. A state this
- * view does not recognise asserts nothing about a task.
+ * What a verified runtime agent's assignment record says, in one plain sentence: it is not SHOWN as a
+ * team member (a verified identity does not establish membership, and neither does a task reference
+ * that is not confirmed, so none of these says it is NOT one), and "no current Mission" is a record of
+ * assignment — never of activity. A state this view does not recognise asserts nothing about a task.
  */
 export function runtimeAgentMeaning(agent: Pick<DiRuntimeAgent, 'assignmentState'>): string {
   switch (agent.assignmentState) {
     case 'unassigned':
-      return 'Not a team member: no current Mission is on record for it. That is an assignment record, not its activity.';
+      return 'Not shown as a team member: no current Mission is on record for it. That is an assignment record, not its activity.';
     case 'unverified_reference':
-      return 'Not a team member: a task is on record for it, but it is not confirmed that it belongs to it.';
+      return 'Not shown as a team member: a task is on record for it, but it is not confirmed that it belongs to it.';
     default:
-      return 'Not a team member: its assignment record is in a state this view does not recognise, so whether it has a task is unknown.';
+      return 'Not shown as a team member: its assignment record is in a state this view does not recognise, so whether it has a task is unknown.';
   }
 }
 

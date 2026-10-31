@@ -17,6 +17,7 @@ import type {
   DiRuntimeAgent,
   DiRuntimeAgents,
 } from '../../core/src/messages.ts';
+import { diRecords } from '../src/components/diNavigation.ts';
 import {
   diAnimationPlan,
   diCharacterLabel,
@@ -32,6 +33,7 @@ import {
   HerdrTaskNote,
   RuntimeAgentsSection,
   SelectedRuntimeAgent,
+  SelectedUnverified,
 } from '../src/components/DiOfficePanel.tsx';
 
 const agent = (over: Partial<DiRuntimeAgent> = {}): DiRuntimeAgent => ({
@@ -69,7 +71,7 @@ const runtime = (
   reported: true,
   state: 'observed',
   problem: null,
-  plainStatement: `${agents.filter((a) => a.identityVerified).length} runtime agent(s) with a verified identity, not team members; 0 listed without a verified identity.`,
+  plainStatement: `${agents.filter((a) => a.identityVerified).length} runtime agent(s) with a verified identity, not shown as team members; 0 listed without a verified identity.`,
   caveat: 'two_pass_agreement_not_atomic_aba_not_detected',
   observedAt: 1800000000,
   firstPassAt: 1800000000,
@@ -142,7 +144,8 @@ test('a verified runtime agent is a character in its OWN zone, keyed by its own 
   ]);
   assert.equal(plan.next.get(41), diRuntimeIdentityKey(agent()));
   assert.notEqual(plan.next.get(41), plan.next.get(7));
-  assert.equal(DI_RUNTIME_ZONE_LABEL, 'Runtime agents (not team members)');
+  assert.equal(DI_RUNTIME_ZONE_LABEL, 'Runtime agents (not shown as team members)');
+  assert.doesNotMatch(DI_RUNTIME_ZONE_LABEL, /\bnot team members\b/); // says what is SHOWN, never a membership negative
 });
 
 test('an unverified runtime agent is never drawn (no characterId reaches the canvas)', () => {
@@ -242,7 +245,7 @@ test('the runtime section: plain outcome first, raw evidence behind a labelled d
   }
 });
 
-test('the selected runtime agent: identity, then NOT a team member; refs only behind the disclosure', () => {
+test('the selected runtime agent: identity, then NOT SHOWN as a team member (never asserted not to be one); refs only behind the disclosure', () => {
   const html = markup(
     createElement(SelectedRuntimeAgent, {
       agent: agent({
@@ -262,7 +265,8 @@ test('the selected runtime agent: identity, then NOT a team member; refs only be
   const details = html.indexOf('data-testid="di-runtime-provenance"');
   assert.ok(details > 0);
   assert.ok(html.indexOf('task membership not verified (root not captured / capacity)') < details);
-  assert.ok(html.indexOf('Not a team member') < details);
+  assert.ok(html.indexOf('Not shown as a team member') < details);
+  assert.doesNotMatch(html, /\bnot a team member\b/i);
   assert.ok(html.indexOf('Recorded task reference (not verified; not membership): t-1') < details);
   assert.ok(html.indexOf('herd:0123456789ab#lead1') > details);
   assert.ok(html.indexOf('root_not_captured_over_capacity') > details);
@@ -294,6 +298,49 @@ test('an unverified row says so in plain words; its reason code appears only in 
   assert.ok(html.indexOf('Runtime identity not verified; not drawn') > details);
   assert.doesNotMatch(plain, /native_identity|runtime_identity_|stable_identity/);
   assert.ok(html.indexOf('native_identity_degraded:identity_stable_identity_mismatch') > details);
+});
+
+test('the selected unverified record says membership is NOT ESTABLISHED and that it is not SHOWN as a team member; it never asserts non-membership', () => {
+  const unverified = agent({
+    agentRef: 'herd:aaaa#executor1',
+    characterId: null,
+    identityVerified: false,
+    identityState: 'unverified',
+    identityReason: 'session_replaced',
+    live: false,
+    notLiveReason: 'runtime_identity_unverified:native_identity_degraded',
+    plainText: 'Runtime identity not verified; not drawn',
+  });
+  const html = markup(createElement(SelectedUnverified, { agent: unverified }));
+  // The two facts the line carried stay: the link is not established, and a name/pane/timestamp does not establish it.
+  assert.match(html, /Not established: its link to the recorded role binding, and so any role or task membership\./);
+  assert.match(html, /does not establish that link\. Not shown as a team member\./);
+  assert.doesNotMatch(html, /\bnot a team member\b/i);
+});
+
+test('the navigation record of a verified runtime agent is not asserted to be a non-member, and an unverified one says membership is not established', () => {
+  const verifiedAgent = agent();
+  const unverifiedAgent = agent({
+    agentRef: 'herd:aaaa#executor1',
+    logical: 'executor1',
+    agent: 'boot00-executor1',
+    characterId: null,
+    identityVerified: false,
+    identityState: 'unverified',
+    live: false,
+    notLiveReason: 'runtime_identity_unverified:native_identity_degraded',
+  });
+  const details = diRecords(state([verifiedAgent, unverifiedAgent]))
+    .filter((r) => r.target.kind === 'runtime' || r.target.kind === 'unverified')
+    .map((r) => [r.target.kind, r.detail] as const);
+  assert.deepEqual(
+    details.map(([kind]) => kind),
+    ['runtime', 'unverified'],
+  );
+  assert.match(details[0]![1], /^runtime agent, not shown as a team member · source herd/);
+  assert.match(details[1]![1], /role\/task membership not established · source herd/);
+  for (const [kind, detail] of details)
+    assert.doesNotMatch(detail, /\bnot a team member\b/i, `${kind} detail never asserts non-membership`);
 });
 
 test('an absent runtime block is said, never rendered as an empty list', () => {

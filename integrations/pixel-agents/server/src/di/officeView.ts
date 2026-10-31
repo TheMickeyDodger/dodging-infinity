@@ -39,6 +39,7 @@ import type {
   CatalogResponseView,
   DeliveryPresentationsView,
   MemberView,
+  MissionDeliveryHandoffView,
   MissionDeliveryLinkView,
   MissionReportView,
   MissionStateView,
@@ -297,6 +298,8 @@ export interface MissionV2Presentation {
   workflowPhase: WorkflowPhaseView;
   /** The producer's DECLARED delivery link (`missions[].delivery_link`), as projected; ABSENT when the answer carries none. */
   deliveryLink?: MissionDeliveryLinkView;
+  /** The producer's DECLARED read-only delivery handoff facts (`missions[].delivery_handoff`), as projected; ABSENT when the answer carries none. */
+  deliveryHandoff?: MissionDeliveryHandoffView;
 }
 
 /**
@@ -691,7 +694,7 @@ function presentRuntimeAgents(
   const plainStatement =
     state !== 'observed'
       ? `Runtime agents: ${state ?? 'unknown'} (${view.problem ?? 'no reason given'}).`
-      : `${verified} runtime agent(s) with a verified identity, not team members` +
+      : `${verified} runtime agent(s) with a verified identity, not shown as team members` +
         `; ${agents.length - verified} listed without a verified identity` +
         (over !== null && over > 0
           ? `; ${over} root(s) over the runtime capture's capacity were not observed`
@@ -1105,6 +1108,16 @@ function presentAttention(
   };
 }
 
+/** The handoff facts, copied (never shared with the projection). */
+function copyHandoff(h: MissionDeliveryHandoffView): MissionDeliveryHandoffView {
+  return {
+    ...h,
+    branch: h.branch === null ? null : { ...h.branch },
+    evidence: h.evidence === null ? null : { ...h.evidence },
+    blockers: [...h.blockers],
+  };
+}
+
 function presentMissionV2(mission: MissionView): MissionV2Presentation | null {
   const v2 = mission.v2;
   if (v2 === null) return null;
@@ -1142,6 +1155,7 @@ function presentMissionV2(mission: MissionView): MissionV2Presentation | null {
     attention: presentAttention(v2.missionState, report.facts),
     workflowPhase: v2.workflowPhase,
     ...(v2.deliveryLink === undefined ? {} : { deliveryLink: { ...v2.deliveryLink } }),
+    ...(v2.deliveryHandoff === undefined ? {} : { deliveryHandoff: copyHandoff(v2.deliveryHandoff) }),
     canonicalReview: {
       state: review.state,
       problem: review.problem,

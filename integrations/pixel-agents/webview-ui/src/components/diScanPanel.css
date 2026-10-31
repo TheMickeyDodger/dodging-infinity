@@ -959,6 +959,93 @@
   font-size: 13px;
   line-height: 1.4;
 }
+/* A Herdr task's delivery handoff: observed facts, then the exact command for the person's own terminal. Tokens only. */
+.di-scan-delivery-handoff {
+  margin: 12px 0 0;
+}
+.di-scan-delivery-handoff-facts {
+  margin: 8px 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--di-scan-well-edge);
+  border-radius: 8px;
+  background: var(--di-scan-well);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.di-scan-delivery-handoff-fact {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  column-gap: 12px;
+  padding: 2px 0;
+}
+.di-scan-delivery-handoff-fact dt {
+  color: var(--di-scan-muted);
+}
+.di-scan-delivery-handoff-fact dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.di-scan-delivery-handoff-command {
+  margin: 8px 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--di-scan-well-edge);
+  border-radius: 8px;
+  background: var(--di-scan-well);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+/* An UNRESOLVED identity: labelled, and never given the live look (dashed, dimmed avatar; a visible label that is not a status dot). */
+.di-scan-avatar-unresolved {
+  opacity: 0.55;
+  outline: 2px dashed var(--di-scan-muted);
+  outline-offset: 1px;
+}
+.di-scan-identity-reason {
+  margin-left: 4px;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+}
+.di-scan-identity {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px dashed var(--di-scan-muted);
+  border-radius: 6px;
+  color: var(--di-scan-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* Running agents recorded for a Mission whose identity is not resolved: a plain list, never an avatar. */
+.di-scan-unresolved {
+  margin: 8px 0 0 8px;
+}
+.di-scan-unresolved-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.di-scan-unresolved-agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--di-scan-muted);
+}
+/* a text button inside a note (Herdr's "Check again"): the note's own type, underlined, no box */
+.di-scan-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .di-scan-state {
   margin-top: 18px;
 }
