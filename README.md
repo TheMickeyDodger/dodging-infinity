@@ -1,3 +1,9 @@
+<video src="assets/demo/DI-demo-v11d.mp4" controls width="100%"></video>
+
+*Illustrative product demo: an open-source governed AI mission. Counter-drone, fixed-wing scenario.*
+
+[Same file](assets/demo/DI-demo-v11d.mp4)
+
 ![Dodging Infinity — AI orchestration and mission control for agents](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/brand/banner.jpeg)
 
 # Dodging Infinity
