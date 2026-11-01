@@ -1,4 +1,6 @@
-<video src="assets/demo/DI-demo-v11d.mp4" controls width="100%"></video>
+[![Illustrative product demo. Counter-drone, fixed-wing scenario.](assets/demo/DI-demo-v11d-poster.jpg)](assets/demo/DI-demo-v11d.mp4)
+
+<video src="assets/demo/DI-demo-v11d.mp4" controls width="100%" poster="assets/demo/DI-demo-v11d-poster.jpg"></video>
 
 *Illustrative product demo: an open-source governed AI mission. Counter-drone, fixed-wing scenario.*
 
