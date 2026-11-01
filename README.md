@@ -1,3 +1,7 @@
+[![A fixed-wing aircraft tracked toward a fence. On screen: Spot incoming drones. Warn before the fence.](assets/demo/DI-demo-v11d-poster.png)](assets/demo/DI-demo-v11d.mp4)
+
+*Illustrative product demo of an open-source governed AI mission.*
+
 ![Dodging Infinity — AI orchestration and mission control for agents](https://raw.githubusercontent.com/TheMickeyDodger/dodging-infinity/84f28e2bc7ed48967d96e8f30c962b03f22c95ac/assets/brand/banner.jpeg)
 
 # Dodging Infinity
