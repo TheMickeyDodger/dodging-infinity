@@ -18,7 +18,7 @@ And the team has a place you can explore. The **Pixel Agents DI office** turns o
 
 *The running DI world. The inspector connects the scene to recorded Missions, agents, and engineering activity.*
 
-[![A fixed-wing aircraft tracked toward a fence. On screen: Spot incoming drones. Warn before the fence.](assets/demo/DI-demo-v11d-poster.png)](assets/demo/DI-demo-v11d.mp4)
+[![A fixed-wing aircraft tracked toward a fence. On screen: Spot incoming drones. Warn before the fence.](assets/demo/DI-demo-v11d-poster.png)](https://cdn.jsdelivr.net/gh/TheMickeyDodger/dodging-infinity@main/assets/demo/DI-demo-v11d.mp4)
 
 *Illustrative product demo of an open-source governed AI mission.*
 
