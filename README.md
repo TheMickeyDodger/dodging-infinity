@@ -14,7 +14,7 @@ Start a Mission from your phone through **Grok Bot**, monitor it, update the wor
 
 The poster below opens a short demo of one governed Mission.
 
-[![A fixed-wing aircraft tracked toward a fence. On screen: Spot incoming drones. Warn before the fence.](assets/demo/DI-demo-v11d-poster.png)](https://cdn.jsdelivr.net/gh/TheMickeyDodger/dodging-infinity@main/assets/demo/DI-demo-v11d.mp4)
+[![A night HUD reads TRACK LOST over a drone and a burning skyline. DODGING INFINITY titles the DI World floorplan: engineers building, reviewers waiting, and QA rigging tests.](assets/demo/DI-demo-v11d-poster.png)](https://cdn.jsdelivr.net/gh/TheMickeyDodger/dodging-infinity@main/assets/demo/DI-demo-v11d.mp4)
 
 *Illustrative product demo of an open-source governed AI mission.*
 
