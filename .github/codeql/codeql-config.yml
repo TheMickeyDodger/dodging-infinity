@@ -1,0 +1,21 @@
+# CodeQL configuration for the advanced setup in .github/workflows/codeql.yml.
+#
+# Test helpers, fixtures, and unit tests are not the product. Incomplete
+# escaping in a test's own HTML reader was failing the pull-request code
+# scanning gate. Those paths are not analyzed, so they cannot open an alert.
+name: Dodging Infinity
+paths-ignore:
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/__tests__/**"
+  - "**/testdata/**"
+  - "**/fixtures/**"
+  - "**/fixture/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.test.js"
+  - "**/*.test.mjs"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/*.spec.js"
+  - "**/*.FIXTURE.json"

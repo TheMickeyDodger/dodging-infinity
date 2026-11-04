@@ -749,8 +749,13 @@ class PanelService(object):
         - now >= the retained expiry is a genuine EXPIRY (``PROBLEM_OFFER_EXPIRED``): nothing
           changed and time passed.
 
-        Two windows cannot produce two approvals: the surface records one decision per request
-        and a second finds it."""
+        Two windows cannot produce two approvals. The decision lock makes
+        the two submits one critical section across processes: the loser
+        blocks until the winner has recorded the approval, then finds that
+        record and returns it. A present() that still observes a Mission
+        which is no longer awaiting a decision, because the approval landed
+        between the binding read and the present, returns that same recorded
+        approval. It does not report "not awaiting a decision"."""
         self._request_ref(request_ref)
         mission_id, revision, digest = self._binding_args(
             mission_id, revision, proposal_digest_sha256)
@@ -765,15 +770,37 @@ class PanelService(object):
                 surface_module.PROBLEM_NOT_AFFIRMATIVE,
                 "the reply is not the exact word %r; nothing was recorded"
                 % DECISION_WORD)
+        with self._surface.decision_lock():
+            return self._decide_locked(
+                request_ref, mission_id, revision, digest, reply, offer_digest,
+                expires_at, action_scope, delivery_targets, repository_url)
+
+    def _recorded_approval(self, request_ref):
+        """The approval already recorded for this request, or None.
+
+        APPLIED is returned as the idempotent already-approved result.
+        RESERVED or HOLD is reconciled against Mission Core and returned
+        the same way when that record exists. A refused attestation is not
+        an approval."""
+        attested = self._surface.status(request_ref).get("attested_approval")
+        if attested is None:
+            return None
+        if attested["state"] == store_module.ATTESTED_APPLIED:
+            return self._decided(request_ref, attested, True)
+        if attested["state"] in (
+            store_module.ATTESTED_RESERVED, store_module.ATTESTED_HOLD
+        ):
+            return self.check_approval(request_ref)
+        return None
+
+    def _decide_locked(self, request_ref, mission_id, revision, digest, reply,
+                       offer_digest, expires_at, action_scope, delivery_targets,
+                       repository_url):
+        """The body of ``decide``, with the cross-process decision lock held."""
         with self._lock_for(request_ref):
-            status = self._surface.status(request_ref)
-            attested = status.get("attested_approval")
-            if attested is not None and attested["state"] == store_module.ATTESTED_APPLIED:
-                return self._decided(request_ref, attested, True)
-            if attested is not None and attested["state"] in (
-                store_module.ATTESTED_RESERVED, store_module.ATTESTED_HOLD
-            ):
-                return self.check_approval(request_ref)
+            recorded = self._recorded_approval(request_ref)
+            if recorded is not None:
+                return recorded
             # 1. The submitted offer against the RETAINED one: the exact offer that was displayed.
             submitted = {
                 "request_ref": request_ref, "mission_id": mission_id, "revision": revision,
@@ -782,9 +809,9 @@ class PanelService(object):
                 "expires_at": expires_at}
             retained = self._journal.offer(offer_digest)
             if retained is None:
-                again = self._surface.status(request_ref).get("attested_approval")
-                if again is not None and again["state"] == store_module.ATTESTED_APPLIED:
-                    return self._decided(request_ref, again, True)       # another window won
+                recorded = self._recorded_approval(request_ref)
+                if recorded is not None:
+                    return recorded                              # another window won
                 if expires_at <= self._clock():
                     self._expired(expires_at)           # an offer that has lapsed and been pruned
                 self._stale(request_ref, mission_id, revision, digest, BINDING_OFFER_UNKNOWN)
@@ -804,14 +831,25 @@ class PanelService(object):
                 self._stale(request_ref, mission_id, revision, digest, BINDING_WITHDRAWN,
                             surface_problem=exc.problem)
             if binding != store_module.BINDING_MATCHES:
-                again = self._surface.status(request_ref).get("attested_approval")
-                if again is not None and again["state"] == store_module.ATTESTED_APPLIED:
-                    return self._decided(request_ref, again, True)    # another window won
+                recorded = self._recorded_approval(request_ref)
+                if recorded is not None:
+                    return recorded                               # another window won
                 if binding == store_module.BINDING_EXPIRED:
                     self._expired(retained["expires_at"])
                 self._stale(request_ref, mission_id, revision, digest, binding)
             # 3. What the digest does not cover, against the CURRENT record.
-            presented = self._surface.present(request_ref)
+            #    present() refuses once the Mission is no longer awaiting a
+            #    decision. That is the loser of a race, not a new error, when
+            #    the approval is already recorded.
+            try:
+                presented = self._surface.present(request_ref)
+            except surface_module.LocalRequestRefusal as exc:
+                if exc.problem != surface_module.PROBLEM_BINDING_MISMATCH:
+                    raise
+                recorded = self._recorded_approval(request_ref)
+                if recorded is not None:
+                    return recorded
+                raise
             mismatch = None
             if retained["action_scope"] != sorted(presented["approved_action_scope"]):
                 mismatch = BINDING_SCOPE_MISMATCH

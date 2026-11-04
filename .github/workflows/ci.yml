@@ -10,38 +10,68 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Path filter
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      reason: ${{ steps.filter.outputs.reason }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Decide which suites this change runs
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: python scripts/ci_path_filter.py
+
   test:
-    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    name: ${{ matrix.check }}
+    needs: [changes]
     runs-on: ${{ matrix.os }}
     # Leave room for hosted-runner timing variance. The hermetic Git
-    # suite runs in its own job, below.
+    # suite runs in its own job, below. Both wait only for the path
+    # filter, then run together.
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      # Pull requests: Ubuntu with Python 3.9 and 3.13, macOS with 3.13.
-      # Pushes to main and manual runs: both OSes with both versions.
-      # Python 3.9 stays on ubuntu-24.04. ubuntu-latest is Ubuntu 26.04,
-      # which has no 3.9 build in actions/python-versions. macOS stays
-      # macos-latest. The hermetic job uses this exact matrix line, and
+      # Pull requests: Ubuntu 24.04 with Python 3.9 and 3.13, macOS 26
+      # with 3.13. Pushes to main and manual runs add macOS 26 with 3.9.
+      # The runner is pinned. The check name stays the context the branch
+      # ruleset requires (`ubuntu-latest / Python 3.13`, `macos-latest /
+      # Python 3.13`), which is not the runner label. Python 3.9 stays on
+      # ubuntu-24.04. ubuntu-latest is Ubuntu 26.04 and has no 3.9 build.
+      # The hermetic job uses this exact matrix line, and
       # tests/test_ci_runner.py checks that the two stay identical.
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","python-version":"3.9","check":"ubuntu-24.04 / Python 3.9"},{"os":"ubuntu-24.04","python-version":"3.13","check":"ubuntu-latest / Python 3.13"},{"os":"macos-26","python-version":"3.13","check":"macos-latest / Python 3.13"}]' || '[{"os":"ubuntu-24.04","python-version":"3.9","check":"ubuntu-24.04 / Python 3.9"},{"os":"ubuntu-24.04","python-version":"3.13","check":"ubuntu-latest / Python 3.13"},{"os":"macos-26","python-version":"3.9","check":"macos-latest / Python 3.9"},{"os":"macos-26","python-version":"3.13","check":"macos-latest / Python 3.13"}]') }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Show why this suite is running or skipped
+        run: echo "${{ needs.changes.outputs.reason }}"
+
       - name: Set up Python
+        if: ${{ needs.changes.outputs.python == 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Show environment
+        if: ${{ needs.changes.outputs.python == 'true' }}
         run: |
           python --version
           git --version
 
       - name: Run unit tests
+        if: ${{ needs.changes.outputs.python == 'true' }}
         shell: bash
         # Every tests/test_*.py file except test_static.py (next step) and
         # test_hermetic_git.py (own job), each in its own interpreter, a
@@ -52,45 +82,90 @@ jobs:
 
       # The next three steps run even when the unit tests failed, so one
       # failing file cannot hide their results. The job still fails. A
-      # cancelled run skips them.
+      # cancelled run skips them. A webview-only change skips them and
+      # this job still reports success under its required check name.
       - name: Run static integration suite
-        if: ${{ !cancelled() }}
+        if: ${{ needs.changes.outputs.python == 'true' && !cancelled() }}
         run: PYTHONPATH="$PWD" python tests/test_static.py
 
       - name: Compile Python sources
-        if: ${{ !cancelled() }}
+        if: ${{ needs.changes.outputs.python == 'true' && !cancelled() }}
         run: python -m py_compile herdctl.py herdr/*.py tests/*.py codexgw.py codex_gateway/*.py tgop.py telegram_operator/*.py workflow_authority/*.py target_runtime/*.py dirun.py operator_session/*.py human_interaction/*.py durable_execution/*.py capability/*.py worker/*.py pr_delivery/*.py mission/*.py coordination/*.py mission_sources/*.py local_request/*.py direquest.py grok_bot/*.py grokbot.py tunnel_control/*.py ditunnel.py dicatalog.py dicatalog_http.py
 
       - name: Check for whitespace errors
-        if: ${{ !cancelled() }}
+        if: ${{ needs.changes.outputs.python == 'true' && !cancelled() }}
         # Against the empty tree, so every tracked file is checked on a
         # clean checkout (a bare `git diff --check` would be vacuous).
         run: git diff --check "$(git hash-object -t tree /dev/null)"
 
   hermetic:
-    name: hermetic Git / ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    name: hermetic Git / ${{ matrix.check }}
+    needs: [changes]
     runs-on: ${{ matrix.os }}
-    # Runs alongside the test job; it has no `needs:`. It has a single
-    # test step, so no step here needs a not-cancelled condition.
+    # Runs alongside the test job; it does not need the test job. It has
+    # a single test step, so no step here needs a not-cancelled condition.
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","python-version":"3.9","check":"ubuntu-24.04 / Python 3.9"},{"os":"ubuntu-24.04","python-version":"3.13","check":"ubuntu-latest / Python 3.13"},{"os":"macos-26","python-version":"3.13","check":"macos-latest / Python 3.13"}]' || '[{"os":"ubuntu-24.04","python-version":"3.9","check":"ubuntu-24.04 / Python 3.9"},{"os":"ubuntu-24.04","python-version":"3.13","check":"ubuntu-latest / Python 3.13"},{"os":"macos-26","python-version":"3.9","check":"macos-latest / Python 3.9"},{"os":"macos-26","python-version":"3.13","check":"macos-latest / Python 3.13"}]') }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Show why this suite is running or skipped
+        run: echo "${{ needs.changes.outputs.reason }}"
+
       - name: Set up Python
+        if: ${{ needs.changes.outputs.python == 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Show environment
+        if: ${{ needs.changes.outputs.python == 'true' }}
         run: |
           python --version
           git --version
 
       - name: Run hermetic Git suite
+        if: ${{ needs.changes.outputs.python == 'true' }}
         run: PYTHONPATH="$PWD" python tests/test_hermetic_git.py
+
+  # The ruleset still requires these two contexts. The real Python 3.9
+  # leg is named ubuntu-24.04 / Python 3.9 and runs on ubuntu-24.04.
+  # These jobs report the old context as success when that leg's job
+  # succeeded, including when the suite was skipped, and fail when it
+  # failed. They do not run the tests again.
+  ruleset-python-39:
+    name: ubuntu-latest / Python 3.9
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Report the pinned Python 3.9 leg under the ruleset's old name
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: |
+          echo "Ruleset context: ubuntu-latest / Python 3.9"
+          echo "The Python 3.9 tests run on ubuntu-24.04 as 'ubuntu-24.04 / Python 3.9'."
+          echo "Python job result: $RESULT"
+          test "$RESULT" = success
+
+  ruleset-hermetic-39:
+    name: hermetic Git / ubuntu-latest / Python 3.9
+    needs: [hermetic]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Report the pinned hermetic 3.9 leg under the ruleset's old name
+        env:
+          RESULT: ${{ needs.hermetic.result }}
+        run: |
+          echo "Ruleset context: hermetic Git / ubuntu-latest / Python 3.9"
+          echo "The hermetic 3.9 tests run on ubuntu-24.04 as 'hermetic Git / ubuntu-24.04 / Python 3.9'."
+          echo "Hermetic job result: $RESULT"
+          test "$RESULT" = success

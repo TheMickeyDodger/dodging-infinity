@@ -1,0 +1,47 @@
+name: Pixel performance budgets
+
+# Frame time and long-task counts from livingCityLoad are machine noise on a
+# pull request. The pull-request suite prints them and does not fail. This
+# nightly run sets PIXEL_PERF_GATE=1, which fails the job when a budget is missed.
+
+on:
+  schedule:
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HUSKY: "0"
+  SCARF_ANALYTICS: "false"
+  DO_NOT_TRACK: "1"
+  CI: "true"
+  PIXEL_PERF_GATE: "1"
+
+jobs:
+  living-city-load:
+    name: Living city load budgets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: integrations/pixel-agents
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "26.5.0"
+          cache: npm
+          cache-dependency-path: integrations/pixel-agents/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --foreground-scripts --no-audit --no-fund --no-update-notifier
+
+      - name: Run the living-city load budgets
+        run: cd webview-ui && npm test -- test/livingCityLoad.test.ts

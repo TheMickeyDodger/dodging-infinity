@@ -131,6 +131,9 @@ async function boot(options: { fakeClock?: boolean; seed?: number } = {}): Promi
   received.length = 0;
   const connected = new Promise<WebSocket>((resolve) => (resolveConnected = resolve));
   page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+  // No wait in this file is allowed to sit until the test's own budget. A selector that
+  // never arrives fails here, with Playwright's error, instead of as "Test timed out in 120000ms".
+  page.setDefaultTimeout(15_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   // a test whose behaviour depends on TIME (the hover grace) installs Playwright's fake clock BEFORE the page loads; time then
   // flows normally until the test pauses it, and from then on moves only when the test advances it (runFor)
@@ -476,9 +479,7 @@ test(
     // Superseded in pass B (lead Q2): the rail entry opened the inbox DIALOG. On the scan face it now opens the
     // FULL-PAGE Reception beside the rail, the dialog is not reachable at all, and Esc returns focus to the rail entry.
     const railEntry = '[data-testid="di-rail"] [data-testid="di-open-reception"]';
-    await p().click(railEntry);
-    await p().waitForSelector('[data-testid="di-scan-stage"][data-view="reception"]');
-    await p().waitForSelector('[data-testid="di-reception-page"]');
+    await openReceptionFromRail(railEntry);
     assert.equal(await p().getAttribute(railEntry, 'aria-current'), 'page');
     const stage = await box('[data-testid="di-scan-stage"]');
     assert.equal(stage.x, RAIL_PX, 'the page sits beside the rail, full height');
@@ -528,6 +529,10 @@ test(
     assert.deepEqual(outside, []);
     assert.equal(await p().locator('[data-testid="di-reception-target"]').count(), 0);
 
+    // The reception page itself is already checked above. What used to die as a 120s test
+    // timeout was this probe: 1,200 real clicks, and a Back whose stage-close wait had no
+    // timeout of its own, so vitest killed the test with no Playwright stack.
+    console.info('SINGLE HOME: Reception page checked; starting the world probe');
     // real clicks across the whole visible world, between the rail and the panel, never open the inbox
     const probe = await clickAcrossWorld(
       p(),
@@ -701,7 +706,34 @@ async function backHome(): Promise<void> {
     () =>
       document.querySelector('[data-testid="di-scan-panel"]')?.getAttribute('data-view') === 'list' &&
       document.querySelector('[data-testid="di-scan-stage"]') === null,
+    undefined,
+    { timeout: 15_000 },
   );
+}
+
+/** The rail's Reception control opens the full-page Reception, or this fails in 15s saying why. */
+async function openReceptionFromRail(railEntry: string): Promise<void> {
+  const button = p().locator(railEntry);
+  await button.waitFor({ state: 'visible', timeout: 15_000 });
+  if (await button.isDisabled()) {
+    const title = (await button.getAttribute('title')) ?? 'no title';
+    throw new Error(
+      `the rail Reception control is disabled (${title}); the office has not reported a reception count, so the click cannot open Reception`,
+    );
+  }
+  await button.click({ timeout: 15_000 });
+  try {
+    await p().waitForSelector('[data-testid="di-scan-stage"][data-view="reception"]', { timeout: 15_000 });
+  } catch {
+    const view = await p()
+      .locator('[data-testid="di-scan-stage"]')
+      .getAttribute('data-view')
+      .catch(() => null);
+    throw new Error(
+      `the rail Reception click did not open the full-page Reception within 15s (stage view=${view ?? 'none'})`,
+    );
+  }
+  await p().waitForSelector('[data-testid="di-reception-page"]', { timeout: 15_000 });
 }
 /** The Mission whose details opened within `ms` (null: none opened), so a failure is an assertion, never a timeout. */
 const openedMission = async (ms = 3_000) => {
@@ -1285,7 +1317,7 @@ async function hoverAgent(id: number): Promise<{ x: number; y: number } | null> 
       const at = { x: b.x + b.width / 2, y: b.y + b.height + dy };
       if (!(await worldPoint(at.x, at.y))) continue;
       await p().mouse.move(at.x, at.y);
-      await p().waitForTimeout(120);
+      await advanceClock(120);
       if ((await hoveredNow()) === id) return at;
     }
   return null;
@@ -1295,8 +1327,33 @@ const pauseClock = async () => {
   const now = await p().evaluate(() => Date.now());
   await p().clock.pauseAt(now + 50);
 };
+/**
+ * Advance the page clock by `ms`. Playwright's `runFor` fires every timer the page scheduled,
+ * and the overlay's animation frame reschedules itself forever. Bound the wall clock so a
+ * clock that never returns fails in 5s with this message, not as a 120s test timeout.
+ */
+async function advanceClock(ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wallMs = Math.max(10_000, ms + 5_000);
+  const wall = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `the page clock did not advance ${ms}ms within ${wallMs}ms; a perpetual animation frame is holding Playwright's fake clock`,
+          ),
+        ),
+      wallMs,
+    );
+  });
+  try {
+    await Promise.race([p().clock.runFor(ms), wall]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 /** Advance the paused clock by `n` frames (16 ms each), firing the animation frames the overlay renders on. */
-const frames = (n: number) => p().clock.runFor(16 * n);
+const frames = (n: number) => advanceClock(16 * n);
 const labelOf = (id: number) =>
   p().locator(`[data-testid="agent-overlay"][data-agent-id="${id}"] [data-testid="di-mission-label"]`);
 
@@ -1323,7 +1380,9 @@ const CLEAN_SUBJECT = { [CORE]: 6, [HERD]: 2 } as Record<string, number>;
 async function bootSeeded(other: string): Promise<void> {
   await boot({ fakeClock: true, seed: SEED });
   await chooseRow(other);
-  await p().waitForTimeout(1500); // the camera settles on the followed agent (the clock still runs here)
+  // Advance the page clock. waitForTimeout under an installed fake clock does not move
+  // that clock, so a camera settle written as a wall-clock wait never resolves.
+  await advanceClock(1500);
 }
 /** Move the real pointer along `points` in steps of at most `stepPx`, ONE frame of page clock per step, calling `each` after every step. */
 async function movePointer(points: Array<{ x: number; y: number }>, stepPx: number, each: (k: number, at: { x: number; y: number }) => Promise<void>): Promise<void> {

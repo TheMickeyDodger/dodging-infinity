@@ -118,6 +118,7 @@ from mission import record as mission_record
 from mission import service as mission_service
 from mission import state as mission_state
 from mission import store as mission_store
+from workflow_authority.atomic import exclusive_store_lock
 from workflow_authority.digest import json_digest
 
 from local_request import store as store_module
@@ -968,6 +969,19 @@ class LocalRequestSurface(object):
             ):
                 pending.append(ref)
         return pending
+
+    def decision_lock(self):
+        """Cross-process lock around one panel decision.
+
+        Two windows are two processes. Each process's own lock does not
+        exclude the other, and the request-store lock covers only the
+        attestation write. The read that the Mission is still awaiting a
+        decision and the apply of that decision have to be one critical
+        section. Otherwise the loser observes a Mission that is no longer
+        awaiting a decision and reports that, instead of the one approval
+        the winner already recorded.
+        """
+        return exclusive_store_lock(self._store.directory, "panel-decision.lock")
 
     def present(self, request_ref=None):
         """Read-only: the ONE exact proposal to show the human. Without a
