@@ -1178,6 +1178,98 @@
   max-width: 380px;
   text-align: right;
 }
+.di-scan-herdr-notes {
+  min-width: 0;
+}
+
+/* Mission details, progressive disclosure: each section leads with ONE short status line; its detail (commands, policy text, store-path explanations, the
+   irreversible Trash details) is a native disclosure, closed by default, whose summary is a quiet, plainly marked control (its own triangle, its words, an
+   underline that is not colour alone). Folded, never removed. Tokens only. */
+.di-scan-status-line {
+  color: var(--di-scan-text);
+}
+.di-scan-more {
+  margin: 6px 0 0 8px;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.di-scan-actions-notes .di-scan-more {
+  margin-left: 0;
+}
+.di-scan-more-summary {
+  width: max-content;
+  max-width: 100%;
+  cursor: pointer;
+  color: var(--di-scan-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.di-scan-more-summary:hover {
+  color: var(--di-scan-text);
+}
+.di-scan-trash-notes .di-scan-more-summary {
+  margin-left: auto;
+}
+.di-scan-more-body {
+  padding: 2px 0 4px;
+}
+.di-scan-more-body > .di-scan-stage-note,
+.di-scan-more-body > .di-scan-delivery-handoff {
+  margin-left: 0;
+}
+.di-scan-more-body ul.di-scan-stage-note {
+  padding-left: 18px;
+}
+.di-scan-trash-notes .di-scan-more-body ul.di-scan-stage-note {
+  padding-left: 0;
+  list-style: none;
+}
+/* A9: folded, the details card is sized by what it shows (one line, its toggle, its foot): the reserved height is the full-text frame's only. It is a flex item of the scrolling
+   Mission column, so it is also never SHRUNK below what it shows (without this its content overflows onto the Swarm: measured, diScanPopulatedDetailsBrowser.test.ts). */
+.di-scan-card[data-expanded='false'] {
+  min-height: 0;
+  flex-shrink: 0;
+}
+/* A8: the details text leads as ONE line, the whole of it in the document (drawn to one line, never cut from the markup); the handoff paragraphs and the roster's
+   per-member detail are folded until their toggle shows them. Each toggle is a plainly marked control (words that say what it shows, an underline). Tokens only. */
+.di-scan-details-body[data-expanded='false'] {
+  overflow: hidden;
+}
+.di-scan-card .di-scan-details-body[data-expanded='false'] p.di-scan-details-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.di-scan-details-body[data-expanded='false'] .di-scan-delivery-handoff {
+  display: none;
+}
+.di-scan-swarm-box[data-expanded='false'] {
+  display: none;
+}
+.di-scan-more-toggle {
+  align-self: flex-start;
+  margin: 6px 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--di-scan-muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.di-scan-more-toggle:hover {
+  color: var(--di-scan-text);
+}
+.di-scan-card .di-scan-more-toggle {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
 
 .di-scan-ide {
   flex: 1;

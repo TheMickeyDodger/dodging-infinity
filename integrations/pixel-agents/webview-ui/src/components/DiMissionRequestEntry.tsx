@@ -29,8 +29,22 @@ export interface DiMissionRequestAccess {
   openConversation?: (conversationId: string, opener: HTMLElement) => void;
   /** Open the workspace on the Requests tab with this request read (a view-only read). */
   openRequest?: (requestRef: string, opener: HTMLElement) => void;
-  /** Put text in the workspace's own Ask draft (its composer state; nothing is sent). New Mission uses it only when that draft is empty (G1/G2). */
+  /** Put text in the workspace's own Ask draft (its composer state; nothing is sent). New Mission's Ask box IS that draft: one composer. */
   setComposer?: (text: string) => void;
+  /** Send the Ask draft as ONE turn of the restricted, read-only conversation (the workspace's own Send): it can be answered with questions or a draft, never with a decision. */
+  sendTurn?: () => void;
+  /** Start a new conversation: the Ask draft and the shown conversation are cleared; nothing is sent. */
+  newConversation?: () => void;
+  /** READ one conversation and show it, WITHOUT opening the workspace (view only; nothing is sent). */
+  readConversation?: (conversationId: string) => void;
+  /** New Mission shows the conversation in place: while `on`, it is read as the open workspace reads it (reads only). */
+  watchConversation?: (on: boolean) => void;
+  /** Whether the workspace is open AND showing (not minimized): its own Ask composer is then on screen. */
+  shown?: boolean;
+  /** Close the workspace (nothing is sent; its draft and conversation are kept); focus goes back to `returnTo` when it is given. */
+  close?: (returnTo: HTMLElement | null) => void;
+  /** Dismiss one notice (the workspace's own list; nothing is sent). */
+  dismiss?: (id: number) => void;
 }
 
 /**

@@ -252,6 +252,10 @@ async function comesBefore(first: string, second: string): Promise<boolean> {
 }
 
 async function linkNoteNames(deliveryId: string): Promise<void> {
+  // CHANGED IN the Free UI streamline (2026-11-04, approved Mission mn-92b246d…, A1): the link note is folded into "Delivery details" (the status line names the linked delivery
+  // by default); it is read as a person reads it, with the detail opened, so it must still be drawn and still name the delivery
+  const more = p().locator(inDelivery('di-scan-delivery-more'));
+  if (!(await more.evaluate((d) => (d as HTMLDetailsElement).open))) await p().click(inDelivery('di-scan-delivery-more-summary'));
   const text = await p().locator(inDelivery('di-scan-delivery-link')).innerText();
   assert.ok(text.includes(deliveryId), `the link note names ${deliveryId}: ${text}`);
 }

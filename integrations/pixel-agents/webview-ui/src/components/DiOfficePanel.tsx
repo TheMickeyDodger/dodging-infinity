@@ -119,6 +119,7 @@ import {
 } from './diReceptionItems.js';
 import { useRovingFocus } from './diRovingFocus.js';
 import { DI_SCAN_LOCK, missionsRead, scanRowsFromOffice } from './diScanModel.js';
+import type { DiNewMissionRequest } from './DiScanPages.js';
 import type { DiReceptionCard } from './diScanPagesModel.js';
 import { receptionFromInbox } from './diScanPagesModel.js';
 import { DiScanPanel } from './DiScanPanel.js';
@@ -2763,20 +2764,39 @@ function DiOfficePanelBody({
         picked?.members.members.find((member) => member.characterId !== null)?.characterId ?? null;
       if (drawn !== null && officeState.characters.has(drawn)) navigateTo(drawn);
     };
-    const openNewMission =
+    // New Mission's "Review requests": the workspace's Requests, where proposals of record are read and decided (a navigation)
+    const openRequests =
       mission !== null && !requestsUnavailable(mission.state)
-        ? (opener: HTMLElement) => mission.open('ask', opener)
+        ? (opener: HTMLElement) => mission.open('requests', opener)
         : undefined;
-    // G1/G2 "Continue in the request workspace": put the ask in the workspace's own Ask draft (only when New Mission found it empty) and open it there; nothing is sent, the workspace stays the
-    // one driver of the request state, and its human gate is where the person decides
-    const setComposer = mission?.setComposer;
-    const continueAsk =
-      mission !== null && !requestsUnavailable(mission.state) && setComposer !== undefined
-        ? (transfer: string | null, opener: HTMLElement) => {
-            if (transfer !== null) setComposer(transfer);
-            mission.open('ask', opener);
+    // New Mission, ONE composer: its Ask box IS the workspace's own Ask draft, its Send the workspace's own drafting turn, and the conversation is shown in
+    // place. Its only routes onward are navigations into the workspace, where Submit, the decision and Start stay. Nothing here is a second driver.
+    // F1 (review round 1): the seam is kept while the panel is NOT available, so the box stays that one draft as typed (Send is held there with the reason);
+    // dropping it swapped the box to a second, page-local text whenever availability changed, hiding one or the other.
+    const newMissionRequest: DiNewMissionRequest | null =
+      mission !== null &&
+      mission.setComposer !== undefined &&
+      mission.sendTurn !== undefined &&
+      mission.newConversation !== undefined &&
+      mission.readConversation !== undefined &&
+      mission.watchConversation !== undefined &&
+      mission.openRequest !== undefined &&
+      mission.close !== undefined &&
+      mission.dismiss !== undefined
+        ? {
+            state: mission.state,
+            setComposer: mission.setComposer,
+            sendTurn: mission.sendTurn,
+            newConversation: mission.newConversation,
+            readConversation: mission.readConversation,
+            watchConversation: mission.watchConversation,
+            openAsk: (opener: HTMLElement) => mission.open('ask', opener),
+            openRequest: mission.openRequest,
+            workspaceShown: mission.shown ?? mission.state.open,
+            closeWorkspace: mission.close,
+            dismiss: mission.dismiss,
           }
-        : undefined;
+        : null;
     // The scan face's ONE Reception is the full page (lead Q2, D-10): it reads an inbox model built with NOTHING hidden
     // (the scan face never hides an action item, AC-4.7-06), and the rail badge reads the same source (AC-4.7-16).
     const scanInbox = buildInbox(state.reception, panelSource, missions.missions, NOTHING_HIDDEN);
@@ -2837,9 +2857,8 @@ function DiOfficePanelBody({
             minimizeRef={minimizeRef}
             onMinimize={minimizePanel}
             onSelect={selectScanRow}
-            onOpenRequestWorkspace={openNewMission}
-            askDraft={mission?.state.composer ?? ''}
-            onContinueAsk={continueAsk}
+            onOpenRequestWorkspace={openRequests}
+            newMissionRequest={newMissionRequest}
             onOpenSettings={onOpenSettings}
             openRequest={worldOpen}
             reception={scanReception}

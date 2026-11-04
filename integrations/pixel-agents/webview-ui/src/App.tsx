@@ -386,6 +386,11 @@ function App() {
   const readConversation = mission.openConversation;
   const readRequest = mission.select;
   const setMissionComposer = mission.setComposer;
+  const sendMissionTurn = mission.sendTurn;
+  const newMissionConversation = mission.newConversation;
+  const watchMissionConversation = mission.watchConversation;
+  const dismissMissionNotice = mission.dismiss;
+  const closeMission = mission.close;
   const missionAccess = useMemo<DiMissionRequestAccess>(
     () => ({
       state: mission.state,
@@ -405,10 +410,35 @@ function App() {
         openMission('requests');
         readRequest(requestRef);
       },
-      // G1/G2: New Mission hands its ask to the panel's own Ask draft (nothing is sent; the panel stays the one driver)
+      // New Mission, ONE composer: its Ask box is the panel's own Ask draft, its Send is the panel's own drafting turn, and it shows that conversation in
+      // place (a read). Submitting, deciding and starting stay in the workspace.
       setComposer: setMissionComposer,
+      sendTurn: sendMissionTurn,
+      newConversation: newMissionConversation,
+      readConversation,
+      watchConversation: watchMissionConversation,
+      // B8: New Mission is ONE screen with ONE composer. It knows when the workspace (and so its own Ask composer) is showing, and entering New Mission closes it;
+      // closing sends nothing and keeps the draft, and focus goes back to where the person entered from
+      shown: mission.state.open && !mission.minimized,
+      close: (returnTo) => {
+        if (returnTo !== null) missionOpener.current = returnTo;
+        closeMission();
+      },
+      dismiss: dismissMissionNotice,
     }),
-    [mission.state, openMission, readConversation, readRequest, setMissionComposer],
+    [
+      mission.state,
+      mission.minimized,
+      closeMission,
+      openMission,
+      readConversation,
+      readRequest,
+      setMissionComposer,
+      sendMissionTurn,
+      newMissionConversation,
+      watchMissionConversation,
+      dismissMissionNotice,
+    ],
   );
   // The reception inbox: ONE dialog with ONE entrance in the chrome (the rail's Reception on the scan face; the
   // operational list's attention entry in the harness face). Nothing in the world opens it (D-10: Reception is

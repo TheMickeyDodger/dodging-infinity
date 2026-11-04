@@ -679,11 +679,11 @@ describe('Delivery under Swarm, NOT linked: the reason, and nothing to read or c
       ).toEqual(Array(4).fill(row.deliveryLink?.kind === 'linked' ? 'locked' : 'unlinked'));
       const linkedWords =
         row.deliveryLink && row.deliveryLink.kind !== 'linked' ? row.deliveryLink.words : null;
-      for (const s of stepsOf(d)) {
-        expect(text(s.body), `${name} ${s.id}`).toContain(
-          linkedWords ?? 'Delivery state is not read in this layout preview.',
-        );
-      }
+      // CHANGED IN the Free UI streamline (2026-11-04, approved Mission mn-92b246d…, A1): a reason all four rows share is said ONCE in the section (the link note, or the
+      // shared step reason, in the Delivery detail), not four times; each row keeps its gate word. The reason is still on the page, in full, and the gate is still not "Locked".
+      const reason = linkedWords ?? 'Delivery state is not read in this layout preview.';
+      expect(text(d).split(reason).length - 1, `${name}: the reason, said once`).toBe(1);
+      for (const s of stepsOf(d)) expect(text(s.body), `${name} ${s.id}`).toContain(row.deliveryLink?.kind === 'linked' ? 'Locked' : 'No delivery linked');
       if (row.sourceKind === 'herdr_task' && row.deliveryLink?.kind !== 'linked') {
         expect(d, name).not.toContain('Layout preview');
         expect(d, name).not.toContain('Delivery state is not read in this layout preview.');
@@ -1165,7 +1165,10 @@ describe('an ARCHIVED Mission is read-only, NOT information-erasing: on the REAL
       expect(h, gone).not.toContain(gone);
     const d = section(html);
     expect(d).not.toContain('data-testid="di-scan-delivery-read"');
-    for (const step of stepsOf(d)) expect(text(step.body), step.id).toContain(DI_DELIVERY_ARCHIVED);
+    // CHANGED IN the Free UI streamline (A1): the archived reason is said ONCE in the section (its archived note, in the Delivery detail), not in each of the four rows;
+    // each row keeps its gate word, Not offered
+    expect(text(d).split(DI_DELIVERY_ARCHIVED).length - 1, 'the archived reason, said once').toBe(1);
+    for (const step of stepsOf(d)) expect(text(step.body), step.id).toContain('Not offered');
   });
   it('NON-ARCHIVED delivery is UNAFFECTED: an active row keeps the shared status view, an ENABLED confirmation box, its Ready step, and no archived words', () => {
     for (const row of [activeHerdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF()), linkedRow()]) {

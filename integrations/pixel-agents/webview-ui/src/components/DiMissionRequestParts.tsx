@@ -6,6 +6,7 @@
  * an attribute. A character that could change what a reader sees (a bidirectional override, a
  * zero-width character, a control byte) is shown as a visible placeholder, never performed.
  */
+import type { ReactNode } from 'react';
 import { Fragment, useId, useState } from 'react';
 
 import { visibleSegments } from './diCodeReviewModel.js';
@@ -202,11 +203,16 @@ export interface SourceIdentity {
   digest: string;
 }
 
-/** The exact references of a proposal: the request, the Mission, the revision and the digest (the whole digest one control away). */
-export function SourceFacts({ source }: { source: SourceIdentity }) {
+/**
+ * The exact references of a proposal: the request, the Mission, the revision and the digest (the whole digest one control away). `standing` replaces the draft
+ * line when a caller knows more of where the draft stands than "not a proposal of record yet" (New Mission's card after a submission); absent, as before.
+ */
+export function SourceFacts({ source, standing }: { source: SourceIdentity; standing?: ReactNode }) {
   return (
     <>
-      {source.requestRef === null ? (
+      {standing !== undefined ? (
+        <p data-testid="di-source-standing">{standing}</p>
+      ) : source.requestRef === null ? (
         <p>A draft in this conversation. It is not a proposal of record yet.</p>
       ) : (
         <p>
@@ -232,6 +238,7 @@ export function ProposalView({
   heading,
   testId = 'di-mr-proposal',
   showSource = true,
+  sourceStanding,
 }: {
   proposal: MrProposal;
   source: SourceIdentity;
@@ -240,6 +247,8 @@ export function ProposalView({
   testId?: string;
   /** False where the exact references are shown in their own disclosure instead of as the last field. */
   showSource?: boolean;
+  /** New Mission's card: the Source line in the tense its submission makes true (see SourceFacts). */
+  sourceStanding?: ReactNode;
 }) {
   return (
     <section className="di-mr-section" aria-label={heading} data-testid={testId}>
@@ -303,7 +312,7 @@ export function ProposalView({
           <div>
             <dt>Source</dt>
             <dd data-testid={`${testId}-source`}>
-              <SourceFacts source={source} />
+              <SourceFacts source={source} standing={sourceStanding} />
             </dd>
           </div>
         )}

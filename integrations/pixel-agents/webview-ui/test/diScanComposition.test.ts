@@ -93,6 +93,25 @@ async function open(view: 'list' | 'mission' | 'diff'): Promise<Page> {
   return page;
 }
 
+/**
+ * CHANGED IN the Free UI streamline (2026-11-04, approved Mission mn-92b246d…: "default each details section to one short status line; disclose ... on demand"; Lead1's scope ruling,
+ * addendum 5: pixel-lock 02 is an inherited pin and does not freeze the Mission DETAILS card or roster geometry). Mission details now opens FOLDED: the description on one line in a card
+ * sized by it, the Swarm as one summary line with its roster on demand. The pixel-lock 02 composition is what the details are SHOWN IN FULL, so these tests open the description and the
+ * roster (the person's own two controls, by click) before they measure it; the reference numbers are unchanged. With DI_STREAMLINE_SHOTS=<dir> the folded and the shown-in-full views
+ * are saved there (before/after evidence).
+ */
+async function showInFull(page: Page): Promise<void> {
+  await page.click('[data-testid="di-scan-details-toggle"]');
+  await page.click('[data-testid="di-scan-swarm-toggle"]');
+  await page.waitForFunction(() => document.querySelector('[data-testid="di-scan-swarm-member"]')?.getClientRects().length !== 0);
+}
+const SHOTS = process.env['DI_STREAMLINE_SHOTS'] ?? null;
+async function shot(page: Page, name: string): Promise<void> {
+  if (SHOTS === null) return;
+  fs.mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: path.join(SHOTS, `${name}.png`) });
+}
+
 const box = (page: Page, selector: string) =>
   page.evaluate((s) => {
     const el = document.querySelector(s);
@@ -151,9 +170,13 @@ test(
 );
 
 test(
-  'V-2 Swarm is four separately outlined cards with gutters (pixel-lock 02 composition), not one outlined container',
+  'V-2 Swarm is four separately outlined cards with gutters (pixel-lock 02 composition), not one outlined container, when the roster is shown',
   async () => {
     const page = await open('mission');
+    // folded (A9): the roster is not drawn until it is asked for, and its summary line is
+    expect(await page.locator('[data-testid="di-scan-swarm-member"]').first().isVisible()).toBe(false);
+    expect(await page.locator('[data-testid="di-scan-swarm-status"]').isVisible()).toBe(true);
+    await showInFull(page);
     const cards = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>('[data-testid="di-scan-swarm-member"]')].map(
         (card) => {
@@ -195,7 +218,7 @@ test(
 );
 
 test(
-  'V-3 above Swarm lines up with pixel-lock 02 at 1672x941, at its type scale',
+  'V-3 above Swarm lines up with pixel-lock 02 at 1672x941 when the details are shown in full, at its type scale; folded, the card is sized by its line',
   async () => {
     const page = await open('mission');
     const near = (got: number | undefined, want: number, what: string) =>
@@ -203,6 +226,20 @@ test(
         Math.abs((got ?? Number.NaN) - want),
         `${what}: ${got} vs reference ${want}`,
       ).toBeLessThanOrEqual(TOLERANCE_PX);
+    // FOLDED (A9.1): the Back button, the pills and the card's TOP are where the reference puts them; the card is sized by its one line, its toggle and its foot (no reserved space)
+    await shot(page, 'composition-1672-01-folded');
+    near((await box(page, '[data-testid="di-scan-back"]'))?.top, REF.boxes.backButton.top, 'folded: Back top');
+    near((await box(page, '[data-testid="di-scan-details"]'))?.top, REF.boxes.detailsCard.top, 'folded: details card top');
+    const folded = await box(page, '[data-testid="di-scan-details"]');
+    expect(folded!.bottom, 'folded: the card is shorter than the full-text frame').toBeLessThan(REF.boxes.detailsCard.bottom);
+    const toggle = await box(page, '[data-testid="di-scan-details-toggle"]');
+    const foot = await box(page, '.di-scan-card-foot');
+    expect(foot!.top - toggle!.bottom, 'folded: no reserved space between the toggle and the foot').toBeLessThanOrEqual(24);
+    expect(foot!.bottom, 'folded: the card holds its foot').toBeLessThanOrEqual(folded!.bottom + 1);
+    expect((await box(page, '.di-scan-swarm-heading'))!.top, 'folded: the Swarm starts below the card').toBeGreaterThanOrEqual(folded!.bottom);
+    // SHOWN IN FULL: the reference composition, as before
+    await showInFull(page);
+    await shot(page, 'composition-1672-02-shown-in-full');
     const back = await box(page, '[data-testid="di-scan-back"]');
     near(back?.top, REF.boxes.backButton.top, 'Back top');
     near(back?.bottom, REF.boxes.backButton.bottom, 'Back bottom');
@@ -214,8 +251,16 @@ test(
     near(card?.bottom, REF.boxes.detailsCard.bottom, 'details card bottom');
     const rule = await box(page, '.di-scan-card-foot');
     near(rule?.top, REF.boxes.detailsCardFootRule, 'details card footer rule');
+    // CHANGED (A9.2): the Swarm's summary line and its roster toggle now sit between the heading and the cards, so the cards' absolute top is no longer the reference's 660;
+    // what is held instead: the cards start directly under the toggle, and the Swarm heading still follows the card at the reference's own distance (card bottom 602 to cards 660,
+    // less the summary line and toggle the roster now follows)
     const swarm = await box(page, '[data-testid="di-scan-swarm-member"]');
-    near(swarm?.top, REF.boxes.swarmCards[0]!.top, 'Swarm cards top');
+    const rosterToggle = await box(page, '[data-testid="di-scan-swarm-toggle"]');
+    const heading = await box(page, '.di-scan-swarm-heading');
+    expect(swarm!.top - rosterToggle!.bottom, 'the roster starts directly under its toggle').toBeGreaterThanOrEqual(0);
+    expect(swarm!.top - rosterToggle!.bottom, 'the roster starts directly under its toggle').toBeLessThanOrEqual(24);
+    expect(heading!.top - card!.bottom, 'the Swarm heading follows the card as in the reference').toBeGreaterThanOrEqual(0);
+    expect(heading!.top - card!.bottom).toBeLessThanOrEqual(REF.boxes.swarmCards[0]!.top - REF.boxes.detailsCard.bottom);
     // the type, at the reference's scale (Inter sizes whose glyphs match the reference's glyph heights)
     const sizes: Array<[string, string]> = [
       ['.di-scan-crumb', 'breadcrumb'],
@@ -247,7 +292,11 @@ test(
     const title = await fontPx(page, '[data-testid="di-scan-mission-title"]');
     expect(title).toBeLessThan(REF.derivedFontPx.title!);
     expect(title).toBeGreaterThanOrEqual(32);
+    // CHANGED (A9.2): the Swarm leads with its summary line on the first screen; its cards are measured shown (a hidden card's box is 0, which would pass for nothing)
+    expect((await box(page, '[data-testid="di-scan-swarm-status"]'))!.top, 'the Swarm summary is on the first screen').toBeLessThan(720);
+    await page.click('[data-testid="di-scan-swarm-toggle"]');
     const swarm = await box(page, '[data-testid="di-scan-swarm-member"]');
+    expect(swarm!.bottom - swarm!.top, 'the cards are drawn').toBeGreaterThan(0);
     expect(swarm!.top, 'the Swarm cards start on the first screen').toBeLessThan(720);
     const cards = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>('[data-testid="di-scan-swarm-member"]')].map(

@@ -228,37 +228,44 @@ test(
 );
 
 test(
-  'G1/G2: Cmd N opens New Mission; Send stays off with the reason that holds; Recent fills the box; the sample proposal opens and returns',
+  'G1/G2: Cmd N opens New Mission; Send stays off with the reason that holds; Recent fills the box; the sample proposal opens IN PLACE and folds again',
   async () => {
     const page = await open('di-scan-view=list');
     await page.keyboard.press('Meta+n');
     expect(await stageView(page)).toBe('new');
     expect(await page.getAttribute(sel('di-rail-new-orchestrator'), 'aria-current')).toBe('page');
-    const send = sel('di-new-continue');
-    expect(await page.isDisabled(send)).toBe(true);
+    // CHANGED IN the Free UI streamline (B1): the control is Send, the request workspace's own drafting turn; HELD (aria-disabled) while it cannot send, with its reason
+    const send = sel('di-new-send');
+    expect(await page.getAttribute(send, 'aria-disabled')).toBe('true');
     expect(await page.getAttribute(send, 'title')).toBe('Type an ask first.');
 
     await page.fill(sel('di-new-ask'), '   ');
     expect(await page.getAttribute(send, 'title')).toBe('Type an ask first.');
     await page.fill(sel('di-new-ask'), 'Add a dark mode toggle');
-    expect(await page.isDisabled(send)).toBe(true);
-    // CHANGED IN G1/G2: this harness mounts no request workspace, so the handoff says it cannot carry the ask there (was "not connected in this layout preview")
+    expect(await page.getAttribute(send, 'aria-disabled')).toBe('true');
+    // this harness mounts no request panel, so Send says nothing can be sent from here
     expect(await page.getAttribute(send, 'title')).toBe(
-      'Mission requests are not available in this office, so the ask cannot be carried to the request workspace.',
+      'Mission requests are not available in this office, so nothing can be sent from here.',
     );
-    // Cmd Return does nothing here (no workspace): still on New Mission, nothing sent
+    // Cmd Return does what Send does, which is nothing here (no panel): still on New Mission, the text kept, nothing drawn as sent
     await page.focus(sel('di-new-ask'));
     await page.keyboard.press('Meta+Enter');
     expect(await stageView(page)).toBe('new');
+    expect(await page.inputValue(sel('di-new-ask'))).toBe('Add a dark mode toggle');
+    expect(await page.locator(sel('di-new-thread')).count()).toBe(0);
 
     await page.click('[data-testid="di-new-recent-ask"] >> text=Update install guide');
     expect(await page.inputValue(sel('di-new-ask'))).toBe('Update install guide');
 
+    // the sample proposal is drawn in place: no screen of its own, no Back, the same page
     await page.click(sel('di-new-sample-proposal'));
-    expect(await stageView(page)).toBe('proposal');
+    expect(await stageView(page)).toBe('new');
+    expect(await page.getAttribute(sel('di-new-sample-proposal'), 'aria-expanded')).toBe('true');
     expect(await text(page, sel('di-proposal-team'))).toContain('claude-opus-5-5');
     expect(await page.locator(`${sel('di-proposal-team')} button, ${sel('di-proposal-team')} select, ${sel('di-proposal-team')} input`).count()).toBe(0);
-    await page.click(sel('di-proposal-back'));
+    await page.click(sel('di-new-sample-proposal'));
+    expect(await page.getAttribute(sel('di-new-sample-proposal'), 'aria-expanded')).toBe('false');
+    expect(await page.locator(sel('di-proposal')).isVisible()).toBe(false);
     expect(await stageView(page)).toBe('new');
     await page.keyboard.press('Escape');
     await page.waitForSelector(sel('di-scan-stage'), { state: 'detached' });
@@ -274,7 +281,7 @@ test(
     const page = await open('di-scan-case=limit&di-scan-view=new');
     // review finding 4: the guard says a held Orchestrator is IN USE (a bound task observed without a confirmed team holds one), never "running"
     expect(await text(page, sel('di-new-limit'))).toContain('15 of 15 Orchestrators are in use');
-    expect(await page.getAttribute(sel('di-new-continue'), 'title')).toBe(
+    expect(await page.getAttribute(sel('di-new-send'), 'title')).toBe(
       '15 of 15 Orchestrators are in use. Finish or stop one to start another.',
     );
     await page.click(sel('di-new-open-missions'));

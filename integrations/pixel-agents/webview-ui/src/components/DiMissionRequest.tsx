@@ -49,6 +49,14 @@ import {
   COVERING_WORDS,
   decisionBlockedWords,
   decisionPending,
+  DI_DRAFT_HEAD,
+  DI_DRAFT_HEAD_SUBMITTED,
+  DI_DRAFT_HEAD_UNKNOWN,
+  DI_DRAFT_NOTHING,
+  DI_DRAFT_SOURCE_SUBMITTED,
+  DI_DRAFT_SOURCE_UNKNOWN,
+  draftRunnableWords,
+  draftStanding,
   isDecisionWord,
   isPending,
   layoutFor,
@@ -229,7 +237,8 @@ function Act({
 // ---------------------------------------------------------------------------------------------
 // the conversation
 
-function DraftCard({
+/** Exported for its render tests (review round 2, item 2): the workspace's own drafted-proposal card. */
+export function DraftCard({
   turn,
   latest,
   control,
@@ -246,13 +255,30 @@ function DraftCard({
   const held = isPending(state, 'submit') || state.unvouched !== null;
   const canSubmit = latest && (submission === null || submission.state === 'REFUSED');
   const revising = state.revising;
+  // Free UI streamline, review round 2 (REPORT section 6, item 2): ONE reading of where the draft stands, the same New Mission's card is written from, and
+  // every statement on this card that says where it stands written from it: the head, the Source facts, the not-runnable line and the submission box. At
+  // HEAD the head was fixed ("not yet a proposal of record") and the Source facts were passed `requestRef: null`, whatever the submission said. Submit, the
+  // decision and Start are unchanged: `canSubmit` is as it was.
+  const standing = draftStanding(submission?.state ?? null, submission?.requestRef ?? null);
+  const submittable = standing === 'draft' || standing === 'refused';
+  const head = standing === 'submitted' ? DI_DRAFT_HEAD_SUBMITTED : standing === 'not_known' ? DI_DRAFT_HEAD_UNKNOWN : DI_DRAFT_HEAD;
+  const sourceStanding =
+    standing === 'submitted' && submission?.requestRef ? (
+      <>
+        {DI_DRAFT_SOURCE_SUBMITTED} <code data-copy="content">{submission.requestRef}</code>.
+      </>
+    ) : standing === 'not_known' ? (
+      DI_DRAFT_SOURCE_UNKNOWN
+    ) : undefined;
   return (
     <div className="di-mr-section" data-testid="di-mr-draft" aria-label="A draft proposal">
-      <p>
-        <strong>A draft, not yet a proposal of record.</strong>{' '}
-        {latest
-          ? 'Read it exactly as written. Submitting it makes it a proposal of record: Mission Core then holds it with a revision and a digest. Submitting approves nothing and starts nothing.'
-          : 'A later draft replaced this one in the conversation.'}
+      <p data-testid="di-mr-draft-head">
+        <strong>{head}</strong>{' '}
+        {!latest
+          ? 'A later draft replaced this one in the conversation.'
+          : submittable
+            ? 'Read it exactly as written. Submitting it makes it a proposal of record: Mission Core then holds it with a revision and a digest. Submitting approves nothing and starts nothing.'
+            : `Read it exactly as written. ${DI_DRAFT_NOTHING}`}
       </p>
       <ProposalView
         proposal={draft.proposal}
@@ -260,16 +286,17 @@ function DraftCard({
         meanings={meanings}
         heading="The proposal, exactly as drafted"
         testId="di-mr-draft-proposal"
+        sourceStanding={sourceStanding}
       />
       {draft.runnableProblem !== null && (
         <div className="di-mr-box" data-tone="warn" data-testid="di-mr-draft-not-runnable">
           <p>
-            <strong>This proposal could not start a run:</strong> {draft.runnableProblem}. You can
-            still record it, but a run would be refused.
+            <strong>This proposal could not start a run:</strong> {draft.runnableProblem}.{' '}
+            {submittable ? 'You can still record it, but a run would be refused.' : draftRunnableWords(standing)}
           </p>
         </div>
       )}
-      {submission?.state === 'SUBMITTED' && submission.requestRef !== null && (
+      {standing === 'submitted' && submission?.requestRef && (
         <div className="di-mr-box" data-tone="ok" data-testid="di-mr-draft-submitted">
           <p>
             Submitted as <code>{submission.requestRef}</code>.{' '}
@@ -283,14 +310,15 @@ function DraftCard({
           </p>
         </div>
       )}
-      {submission?.state === 'RESERVED' && (
+      {standing === 'submitting' && (
         <div className="di-mr-box" data-tone="warn" data-testid="di-mr-draft-submitting">
           <p>
             This draft is being submitted now. It will appear under Requests when it is recorded.
           </p>
         </div>
       )}
-      {submission?.state === 'UNCERTAIN' && (
+      {/* not known: UNCERTAIN, and also a SUBMITTED with no request ref or a state this build does not name (at HEAD those showed no box at all) */}
+      {standing === 'not_known' && submission !== null && (
         <div className="di-mr-box" data-tone="warn" data-testid="di-mr-draft-uncertain">
           <p>
             <strong>Whether this draft was recorded is not known.</strong> It was not submitted
@@ -317,7 +345,7 @@ function DraftCard({
           )}
         </div>
       )}
-      {submission?.state === 'REFUSED' && (
+      {standing === 'refused' && submission !== null && (
         <div className="di-mr-box" data-tone="block" data-testid="di-mr-draft-refused">
           <p>
             This draft was not recorded ({submission.problem ?? 'refused'}). Nothing was changed.
@@ -344,16 +372,19 @@ function DraftCard({
   );
 }
 
-export function TurnView({
+/**
+ * One turn's WORDS, exactly as the workspace draws them: who said what (every word untrusted and inert), the assistant's declared questions with the exact reply
+ * one disclosure away, an older reply's folded technical blocks, the turn's state and a draft that was not valid. No control: the draft card (and its Submit)
+ * belongs to whoever draws the turn. New Mission draws the same words in place with its own test ids (`prefix`) and its own drafting note (`describedBy`).
+ */
+export function TurnWords({
   turn,
-  latestDraftTurn,
-  control,
-  meanings,
+  prefix = 'di-mr',
+  describedBy = 'di-mr-drafting-note',
 }: {
   turn: MrTurn;
-  latestDraftTurn: string | null;
-  control: DiMissionRequestControl;
-  meanings: Record<string, string>;
+  prefix?: 'di-mr' | 'di-new';
+  describedBy?: string;
 }) {
   const stateWords = turnStateWords(turn);
   // The assistant's declared questions read as questions for a person; the exact reply (fence and all) is one disclosure away and is never rewritten.
@@ -372,11 +403,11 @@ export function TurnView({
       ? replyWithoutFencedBlocks(turn.assistantText)
       : null;
   return (
-    <li className="di-mr-turn" data-testid={`di-mr-turn-${turn.sequence}`}>
+    <>
       <div className="di-mr-said" data-who="you">
         <span className="di-mr-who">You</span>
         {turn.reclaimed !== null ? (
-          <p className="di-mr-technical-note" data-testid={`di-mr-reclaimed-${turn.sequence}`}>
+          <p className="di-mr-technical-note" data-testid={`${prefix}-reclaimed-${turn.sequence}`}>
             {turn.reclaimed.outcome === 'deleted'
               ? 'Deleted at the Mission owner’s request: these words are no longer kept.'
               : 'Reclaimed 30 days after the Mission finished: these words are no longer kept.'}
@@ -389,9 +420,9 @@ export function TurnView({
         <div
           className="di-mr-said"
           data-who="assistant"
-          data-testid={`di-mr-assistant-${turn.sequence}`}
+          data-testid={`${prefix}-assistant-${turn.sequence}`}
           // The meaning of an assistant reply (drafting only; not a decision; no authority) is said once above the transcript and offered here, not repeated as a long label.
-          aria-describedby="di-mr-drafting-note"
+          aria-describedby={describedBy}
         >
           <span className="di-mr-who">Assistant</span>
           {prose === null && earlier !== null ? (
@@ -399,11 +430,11 @@ export function TurnView({
               {earlier.prose !== '' && <Untrusted text={earlier.prose} content />}
               <p
                 className="di-mr-technical-note"
-                data-testid={`di-mr-technical-note-${turn.sequence}`}
+                data-testid={`${prefix}-technical-note-${turn.sequence}`}
               >
                 {technicalBlockNote(earlier.blocks)}
               </p>
-              <details data-testid={`di-mr-earlier-reply-${turn.sequence}`}>
+              <details data-testid={`${prefix}-earlier-reply-${turn.sequence}`}>
                 <summary>The exact original reply</summary>
                 <Untrusted text={turn.assistantText} content />
               </details>
@@ -413,7 +444,7 @@ export function TurnView({
           ) : (
             <>
               {prose !== '' && <Untrusted text={prose} content />}
-              <div data-testid={`di-mr-questions-${turn.sequence}`}>
+              <div data-testid={`${prefix}-questions-${turn.sequence}`}>
                 <p>
                   {turn.declaredQuestions.length === 1
                     ? 'The assistant asked a question:'
@@ -421,13 +452,13 @@ export function TurnView({
                 </p>
                 <ol className="di-mr-questions">
                   {turn.declaredQuestions.map((q) => (
-                    <li key={q} data-testid="di-mr-question">
+                    <li key={q} data-testid={`${prefix}-question`}>
                       <Untrusted text={q} content />
                     </li>
                   ))}
                 </ol>
               </div>
-              <details data-testid={`di-mr-raw-reply-${turn.sequence}`}>
+              <details data-testid={`${prefix}-raw-reply-${turn.sequence}`}>
                 <summary>The assistant’s exact reply (technical detail)</summary>
                 <Untrusted text={turn.assistantText} content />
               </details>
@@ -439,7 +470,7 @@ export function TurnView({
         <div
           className="di-mr-box"
           data-tone={turn.state === 'RESERVED' ? 'info' : 'warn'}
-          data-testid={`di-mr-turn-state-${turn.sequence}`}
+          data-testid={`${prefix}-turn-state-${turn.sequence}`}
         >
           <p>{stateWords}</p>
           {turn.outcomeDetail !== null && turn.state !== 'RESERVED' && (
@@ -450,7 +481,7 @@ export function TurnView({
         </div>
       )}
       {turn.draftProblem !== null && (
-        <div className="di-mr-box" data-tone="warn" data-testid="di-mr-draft-problem">
+        <div className="di-mr-box" data-tone="warn" data-testid={`${prefix}-draft-problem`}>
           <p>
             <strong>The assistant tried to propose a Mission, but it was not valid.</strong> Nothing
             was recorded.
@@ -458,6 +489,24 @@ export function TurnView({
           <Untrusted text={turn.draftProblem} content />
         </div>
       )}
+    </>
+  );
+}
+
+export function TurnView({
+  turn,
+  latestDraftTurn,
+  control,
+  meanings,
+}: {
+  turn: MrTurn;
+  latestDraftTurn: string | null;
+  control: DiMissionRequestControl;
+  meanings: Record<string, string>;
+}) {
+  return (
+    <li className="di-mr-turn" data-testid={`di-mr-turn-${turn.sequence}`}>
+      <TurnWords turn={turn} />
       {turn.draft !== null && (
         <DraftCard
           turn={turn}
@@ -1490,10 +1539,17 @@ function Workspace({
     return () => {
       // The opener can be gone, or hidden: the sidebar was hidden (minimized, so still in the page) while the workspace
       // was open. The control that brings the sidebar back is then the sensible, visible place for focus, never <body>.
+      // Free UI streamline, review rounds 1 and 2: the opener can also have LEFT the page (it was on a page the person navigated away from while the workspace
+      // was open beside it); focus then goes to the page now shown, never <body>: its heading where it has one (New Mission, Missions, Reception); else the
+      // scan face's own rescue target for a stage, its Back control (Mission details, Code Diff, Comments: DiScanPanel focuses the same on a page change);
+      // else the rail entry marked as the current page (Home has neither). Measured before this line: all five such routes left focus on <body> (logs/79).
+      const shown = (el: HTMLElement | null) => (el !== null && el.isConnected && el.getClientRects().length > 0 ? el : null);
       const target =
-        back && back.isConnected && back.getClientRects().length > 0
-          ? back
-          : document.querySelector<HTMLElement>('[data-testid="di-office-panel-collapsed"]');
+        shown(back) ??
+        document.querySelector<HTMLElement>('[data-testid="di-office-panel-collapsed"]') ??
+        shown(document.querySelector<HTMLElement>('[data-page-heading="true"]')) ??
+        shown(document.querySelector<HTMLElement>('[data-testid="di-scan-back"]')) ??
+        shown(document.querySelector<HTMLElement>('[data-testid^="di-rail-"][aria-current="page"]'));
       target?.focus();
     };
   }, [returnFocusTo]);

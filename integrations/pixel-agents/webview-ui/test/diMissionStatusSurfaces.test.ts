@@ -39,12 +39,12 @@ import {
   scanRowsFromOffice,
 } from '../src/components/diScanModel.ts';
 import {
-  continueAskReason,
   DI_ORCHESTRATOR_LIMIT,
   DI_TEAM_UNAVAILABLE,
   missionsShown,
   orchestratorUse,
   receptionFromInbox,
+  sendAskReason,
 } from '../src/components/diScanPagesModel.ts';
 import { DiScanPanel } from '../src/components/DiScanPanel.tsx';
 import type { OfficeState } from '../src/office/engine/officeState.ts';
@@ -515,7 +515,7 @@ describe('review finding 4: the Orchestrator capacity guard is a separate input 
     // the guard keeps its strength: every one holds an Orchestrator
     const use = orchestratorUse(rows);
     expect(use).toEqual({ holding: DI_ORCHESTRATOR_LIMIT, notKnown: 0 });
-    expect(continueAskReason('Fix the probe', use, true)).toBe(
+    expect(sendAskReason('Fix the probe', use, 'ready')).toBe(
       `${DI_ORCHESTRATOR_LIMIT} of ${DI_ORCHESTRATOR_LIMIT} Orchestrators are in use. Finish or stop one to start another.`,
     );
     // and the New Mission page refuses on screen
@@ -535,7 +535,7 @@ describe('review finding 4: the Orchestrator capacity guard is a separate input 
       holding: DI_ORCHESTRATOR_LIMIT - 1,
       notKnown: 1,
     });
-    expect(continueAskReason('Fix the probe', orchestratorUse(fourteenAndUnknown), true)).toMatch(
+    expect(sendAskReason('Fix the probe', orchestratorUse(fourteenAndUnknown), 'ready')).toMatch(
       /in use or cannot be checked \(14 in use, 1 cannot be checked\)/,
     );
     const stale = withCopies(DI_ORCHESTRATOR_LIMIT);
@@ -546,10 +546,10 @@ describe('review finding 4: the Orchestrator capacity guard is a separate input 
       notKnown: DI_ORCHESTRATOR_LIMIT,
     });
     expect(
-      continueAskReason('Fix the probe', orchestratorUse(scanRowsFromOffice(stale)), true),
+      sendAskReason('Fix the probe', orchestratorUse(scanRowsFromOffice(stale)), 'ready'),
     ).not.toBeNull();
     const fourteen = orchestratorUse(scanRowsFromOffice(withCopies(DI_ORCHESTRATOR_LIMIT - 1)));
-    expect(continueAskReason('Fix the probe', fourteen, true)).toBeNull();
+    expect(sendAskReason('Fix the probe', fourteen, 'ready')).toBeNull();
   });
   it('a record its OWN PROGRESS closed is still counted by its execution: live workers hold, an office not live is not known (round 3, finding 1)', () => {
     const withProgress = (live: boolean) =>
@@ -575,7 +575,7 @@ describe('review finding 4: the Orchestrator capacity guard is a separate input 
     expect(liveRows.every((r) => r.tab === 'open')).toBe(true);
     expect(liveRows.every((r) => r.status?.status === 'running')).toBe(true);
     expect(orchestratorUse(liveRows)).toEqual({ holding: DI_ORCHESTRATOR_LIMIT, notKnown: 0 });
-    expect(continueAskReason('Fix the probe', orchestratorUse(liveRows), true)).not.toBeNull();
+    expect(sendAskReason('Fix the probe', orchestratorUse(liveRows), 'ready')).not.toBeNull();
     const stale = withProgress(true);
     stale.live = false;
     stale.notLiveReason = 'client_expired:valid_until_passed';
@@ -629,7 +629,7 @@ describe('review finding 4: the Orchestrator capacity guard is a separate input 
       // CHANGED IN Deliverable 2: with no backend retention reading (and no positive basis), they stay with the active Missions, never Archived
       expect(rows.every((r) => r.tab === 'open'), String(live)).toBe(true);
       expect(orchestratorUse(rows), String(live)).toEqual({ holding: 0, notKnown: DI_ORCHESTRATOR_LIMIT });
-      expect(continueAskReason('Fix the probe', orchestratorUse(rows), true), String(live)).toMatch(/cannot be checked \(0 in use, 15 cannot be checked\)/);
+      expect(sendAskReason('Fix the probe', orchestratorUse(rows), 'ready'), String(live)).toMatch(/cannot be checked \(0 in use, 15 cannot be checked\)/);
       const page = renderToStaticMarkup(createElement(DiScanPanel, { rows, initialView: 'new', onMinimize: noop }));
       expect(page, String(live)).toMatch(/data-testid="di-new-limit"/);
     }
@@ -896,7 +896,7 @@ describe('round 5, finding 1 on the guard: workflows BLOCKED after a post-effect
       const rows = scanRowsFromOffice(blocked(live));
       expect(rows.map((r) => r.status?.capacity.bears), String(live)).toEqual(Array(DI_ORCHESTRATOR_LIMIT).fill('not_known'));
       expect(orchestratorUse(rows), String(live)).toEqual({ holding: 0, notKnown: DI_ORCHESTRATOR_LIMIT });
-      expect(continueAskReason('Fix the probe', orchestratorUse(rows), true), String(live)).toMatch(/cannot be checked/);
+      expect(sendAskReason('Fix the probe', orchestratorUse(rows), 'ready'), String(live)).toMatch(/cannot be checked/);
     }
   });
 });

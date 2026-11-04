@@ -12,9 +12,11 @@
        projection (catalogProjection.ts declares a parameter property) and the office-state builders.
        The unadmitted-read composition test is here for the same reason: it IMPORTS the office's code review
        answer (server/src/di/codeReview.ts, whose types reach catalogProjection.ts).
-       The relaxation is therefore confined to this single project and these three tests. */
+       The Herdr line browser test is here for the same reason: it IMPORTS the office's own Herdr replies (server/src/di/herdrRequests.ts, whose relay
+       class declares parameter properties), so the reasons it checks are the server's own words, never a copy.
+       The relaxation is therefore confined to this single project and these four tests. */
     "erasableSyntaxOnly": false
   },
-  "include": ["test/diMissionRequest.test.ts", "test/diMissionDeliveryComposition.test.ts", "test/diCodeReviewUnadmitted.test.ts"],
+  "include": ["test/diMissionRequest.test.ts", "test/diMissionDeliveryComposition.test.ts", "test/diCodeReviewUnadmitted.test.ts", "test/diScanHerdrLineBrowser.test.ts"],
   "exclude": []
 }

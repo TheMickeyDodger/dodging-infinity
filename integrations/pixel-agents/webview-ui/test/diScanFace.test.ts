@@ -397,7 +397,10 @@ test(
     // the office says a launch is available: Herdr is enabled and says what a click does
     socket!.send(JSON.stringify({ type: 'diHerdrReply', seq: status.seq, op: 'status', state: 'ok', problem: null, reason: null, answer: herdrAnswer() }));
     await p().waitForFunction(() => !(document.querySelector('[data-testid="di-scan-herdr"]') as HTMLButtonElement).disabled);
-    const available = (await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim();
+    // CHANGED IN the Free UI streamline (2026-11-04, A1): the visible line is the first statement of what a click does; the office's full words are in the
+    // closed "What Herdr does here" disclosure (`di-scan-herdr-note`), read here as the document holds them, and every assertion on them is kept
+    assert.equal((await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim(), "Opens Terminal on this Mission's herd. It types nothing into any pane or terminal.");
+    const available = ((await p().locator('[data-testid="di-scan-herdr-note"]').textContent()) ?? '').trim();
     assert.match(available, /Opens Terminal on this Mission's herd\. It first asks Herdr to focus workspace w6V, and types nothing into any pane or terminal\./);
     assert.doesNotMatch(available, /herdctl|does not start it/);
     // the basis that vouched is on the page as what it is: a roster confirmation, not a runtime-identity verification
@@ -417,8 +420,9 @@ test(
     // the office's refusal is shown with its real words, and nothing is claimed
     const refusal = 'Nothing was opened: Workspace focus was not established, and Herdr\'s call failed, so nothing is known to have moved. The launcher was written at /x/herdr-attach-a1b2.command and was not used.';
     socket!.send(JSON.stringify({ type: 'diHerdrReply', seq: launch.seq, op: 'launch', state: 'refused', problem: 'focus_not_established', reason: refusal, answer: null }));
-    await p().waitForFunction((words) => document.querySelector('[data-testid="di-scan-herdr-reason"]')?.textContent?.includes(words) === true, 'Nothing was opened: Workspace focus was not established');
-    assert.equal((await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).includes('The launcher was written at /x/herdr-attach-a1b2.command'), true);
+    // CHANGED IN the Free UI streamline (A7): the drawn line says the office refused this launch; its real words, verbatim, are in the on-demand note
+    await p().waitForFunction(() => document.querySelector('[data-testid="di-scan-herdr-reason"]')?.textContent?.trim() === 'The office refused this launch.');
+    assert.equal(((await p().locator('[data-testid="di-scan-herdr-note"]').textContent()) ?? '').trim(), refusal, 'the office\'s refusal, verbatim');
 
     // a second click, and a success: the words are what was established and no more
     const again = received.length;
@@ -428,7 +432,8 @@ test(
       JSON.stringify({ type: 'diHerdrReply', seq: second.seq, op: 'launch', state: 'ok', problem: null, reason: null, answer: herdrAnswer({ workspaceFocus: 'focused', terminalState: 'opened' }) }),
     );
     await p().waitForFunction(() => document.querySelector('[data-testid="di-scan-herdr-reason"]')?.textContent?.includes('Herdr reported workspace w6V focused') === true);
-    const done = (await p().locator('[data-testid="di-scan-herdr-reason"]').innerText()).trim();
+    // the line says what was established; the full words (the window requirement among them) are on demand, as above
+    const done = ((await p().locator('[data-testid="di-scan-herdr-note"]').textContent()) ?? '').trim();
     assert.match(done, /Terminal was asked to open the Herdr launcher/);
     assert.match(done, /at least 190 x 49 cells/);
     assert.doesNotMatch(done, /attach|keyboard|typing works/i);

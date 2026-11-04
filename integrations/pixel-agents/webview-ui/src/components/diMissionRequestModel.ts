@@ -1080,6 +1080,11 @@ export interface MrNotice {
   kind: MrNoticeKind;
   op: DiMissionRequestOp;
   text: string;
+  /**
+   * Free UI streamline, review round 2 (blocker 1, identity): WHICH request this notice answers: its `seq`, and the conversation that request was about
+   * (from the request as sent; a failure reply carries no answer to read an id from). A notice is attributed by this, never by when it arrived.
+   */
+  about?: { seq: number; conversationId: string | null };
 }
 
 export interface MrPending {
@@ -1089,6 +1094,8 @@ export interface MrPending {
   turnId: string | null;
   /** The SOURCE-QUALIFIED Mission an owner's delete is about (round 9: its outcome is shown where the person acted; never keyed by a bare native id). */
   missionRef?: string | null;
+  /** The conversation a `conversation` read or a `turn` was about, as sent (review round 2: a reply, failed or not, is attributed by this). */
+  conversationId?: string | null;
 }
 
 /**
@@ -1118,6 +1125,12 @@ export interface MrConversation {
   limits: { turns: number; bytes: number } | null;
   /** Of the omitted turns, how many the turn bound left out and how many the byte budget did; null if not stated. */
   split: { byTurns: number; byBytes: number } | null;
+  /**
+   * Free UI streamline, review round 2, blocker 1: the `seq` of the read of THIS conversation that last succeeded (a failure of a LATER request of it, by seq,
+   * says it was not read again). Null (or absent) when it has not been read since it became the one shown (a pick clears it, and a turn's answer is not a
+   * read). The only way to tell "read, and empty" from "not read": emptiness says neither.
+   */
+  readSeq?: number | null;
 }
 
 export const EMPTY_CONVERSATION: MrConversation = {
@@ -1247,6 +1260,7 @@ export type MrEvent =
       requestRef: string | null;
       turnId: string | null;
       missionRef?: string | null;
+      conversationId?: string | null;
     }
   | { type: 'reply'; reply: DiMissionRequestReply; nowMs: number };
 
@@ -1605,6 +1619,7 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
           omitted: parsed.omitted,
           limits: parsed.limits,
           split: parsed.split,
+          readSeq: Math.max(reply.seq, next.conversation.readSeq ?? -1),
         },
       };
     }
@@ -1733,6 +1748,8 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
           omitted: next.conversation.id === turn.conversationId ? next.conversation.omitted : 0,
           limits: next.conversation.id === turn.conversationId ? next.conversation.limits : null,
           split: next.conversation.id === turn.conversationId ? next.conversation.split : null,
+          // a turn's answer is not a read of the conversation: the last read (if any, of this same conversation) stands
+          readSeq: next.conversation.id === turn.conversationId ? (next.conversation.readSeq ?? null) : null,
         },
       };
     }
@@ -1846,7 +1863,14 @@ export function reduce(state: MrState, event: MrEvent): MrState {
         nextSeq: Math.max(state.nextSeq, event.seq + 1),
         pending: [
           ...state.pending,
-          { seq: event.seq, op: event.op, requestRef: event.requestRef, turnId: event.turnId, missionRef: event.missionRef ?? null },
+          {
+            seq: event.seq,
+            op: event.op,
+            requestRef: event.requestRef,
+            turnId: event.turnId,
+            missionRef: event.missionRef ?? null,
+            conversationId: event.conversationId ?? null,
+          },
         ],
         deletions:
           event.op === 'deleteLocalData' && event.missionRef
@@ -1854,7 +1878,14 @@ export function reduce(state: MrState, event: MrEvent): MrState {
             : state.deletions,
       };
     case 'reply': {
-      const after = applyReply(state, event.reply, event.nowMs);
+      const applied = applyReply(state, event.reply, event.nowMs);
+      // every notice this reply raised says which request it answers (its seq, and the conversation that request was about)
+      const asked = state.pending.find((p) => p.seq === event.reply.seq);
+      const about = { seq: event.reply.seq, conversationId: asked?.conversationId ?? null };
+      const after =
+        applied.nextNotice === state.nextNotice
+          ? applied
+          : { ...applied, notices: applied.notices.map((n) => (n.id >= state.nextNotice && n.about === undefined ? { ...n, about } : n)) };
       const missionRef = state.pending.find((p) => p.seq === event.reply.seq)?.missionRef ?? null;
       if (event.reply.op !== 'deleteLocalData' || missionRef === null) return after;
       return { ...after, deletions: { ...after.deletions, [missionRef]: deletionOf(event.reply) } };
@@ -2446,3 +2477,46 @@ export function technicalBlockNote(blocks: number): string {
 
 export const COVERING_WORDS =
   'This window is narrow, so the requests cover the office and its panel. Close the requests to use the world again.';
+
+// ---------------------------------------------------------------------------------------------
+// Where a drafted proposal stands (Free UI streamline, review rounds 1 and 2: F5, and REPORT section 6 item 2). ONE reading, and the words every
+// drafted-proposal card is written from (New Mission's card and the workspace's own), so no line on either card says another state than the others.
+
+/** The card's head. Not submitted, being submitted or refused: not yet one. Submitted: it IS one now (the line below names it). Not known: neither is claimed. */
+export const DI_DRAFT_HEAD = 'A draft, not yet a proposal of record.';
+export const DI_DRAFT_HEAD_SUBMITTED = 'This draft was submitted.';
+export const DI_DRAFT_HEAD_UNKNOWN = 'A draft.';
+/** Drafting's own claim, where the draft can no longer be submitted from the workspace (being submitted, submitted, or not known). */
+export const DI_DRAFT_NOTHING = 'Drafting approved nothing and started nothing.';
+
+/**
+ * Where a drafted proposal stands, from its submission as the panel last reported it: ONE reading that every statement on the drafted-proposal card is
+ * written from (F5, review round 1), so no line can say another state than the others. Not submitted, being submitted (RESERVED) and refused are not yet a
+ * proposal of record; SUBMITTED with its request ref is one; UNCERTAIN, SUBMITTED without a ref and any state this build does not know are said as not known.
+ */
+export type DiDraftStanding = 'draft' | 'submitting' | 'submitted' | 'not_known' | 'refused';
+export function draftStanding(submissionState: string | null, requestRef: string | null): DiDraftStanding {
+  if (submissionState === null) return 'draft';
+  if (submissionState === 'RESERVED') return 'submitting';
+  if (submissionState === 'REFUSED') return 'refused';
+  if (submissionState === 'SUBMITTED' && requestRef !== null) return 'submitted';
+  return 'not_known';
+}
+
+/** The card's Source line for a standing (in the proposal's Source facts), where the shared default ("not a proposal of record yet") would not be true. */
+export const DI_DRAFT_SOURCE_SUBMITTED = 'A draft in this conversation, submitted as the proposal of record';
+export const DI_DRAFT_SOURCE_UNKNOWN = 'A draft in this conversation. Whether it was recorded is not known.';
+
+/** The second sentence after "This proposal could not start a run: …", in the tense of the standing. */
+export function draftRunnableWords(standing: DiDraftStanding): string {
+  switch (standing) {
+    case 'submitting':
+      return 'It is being submitted now, but a run of it would be refused.';
+    case 'submitted':
+      return 'It is recorded, but a run of it would be refused.';
+    case 'not_known':
+      return 'Whether it was recorded is not known; a run of it would be refused.';
+    default:
+      return 'It can still be recorded, but a run would be refused.';
+  }
+}
