@@ -543,10 +543,27 @@ test('a Mission’s results are one plain sentence; the exact per-field facts st
   assert.equal(missionResults(bound(fresh())), 'Not reported complete.');
   const done = bound(fresh());
   done.v2.missionState.completion.reportedComplete = true;
-  // The fixture's reported success is false: complete WITHOUT success (as the status reads Failed).
-  assert.equal(missionResults(done), 'Reported complete without success (not verified).');
+  // CHANGED IN round 5 (review finding 2): this used to expect "Reported complete without success (not verified)." That was wrong: reported_success is false
+  // also when the review is missing, pending or stale, or the task report inapplicable (mission/observation.py), an ABSENCE of affirmation, never an unsuccessful
+  // completion. The results line says only what is recorded.
+  // CHANGED AGAIN IN round 6: no "not verified" tail either; reported_success = false supports only "not affirmed", and verification is its own line.
+  assert.equal(missionResults(done), 'Reported complete, but reported success is not affirmed: that is not a failure.');
+  assert.doesNotMatch(missionResults(done), /verif|unsuccessful|\bfailed\b|incomplete/i);
+  assert.doesNotMatch(missionResults(done), /without success/);
   done.v2.missionState.completion.reportedSuccess = null;
+  // verifiedSuccess is THREE-valued (catalogProjection.ts `rb`: anything non-boolean is null). false: verification affirmatively absent, so it may be said
+  assert.equal(done.v2.missionState.completion.verifiedSuccess, false);
   assert.equal(missionResults(done), 'Reported complete; success is not verified.');
+  // round 6: null is NOT KNOWN, never "not verified", whatever reported success says
+  done.v2.missionState.completion.verifiedSuccess = null;
+  assert.equal(missionResults(done), 'Reported complete; whether its success is verified is not recorded.');
+  done.v2.missionState.completion.reportedSuccess = false;
+  assert.equal(missionResults(done), 'Reported complete, but reported success is not affirmed: that is not a failure.');
+  for (const reportedSuccess of [null, false, true]) {
+    done.v2.missionState.completion.reportedSuccess = reportedSuccess;
+    assert.doesNotMatch(missionResults(done), /not verified/, String(reportedSuccess));
+  }
+  done.v2.missionState.completion.reportedSuccess = null;
   done.v2.missionState.completion.verifiedSuccess = true;
   assert.equal(missionResults(done), 'Verified success is recorded.');
   const herd = fresh().missions.missions.find((x) => x.herdrTask)!;

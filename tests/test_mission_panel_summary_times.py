@@ -4,6 +4,9 @@
 recorded), but the summary dropped them, so a page that reads only the overview (the Reception) could not tell which requests had a recorded action today. The change is ADDITIVE and over EXISTING facts: two keys, ``attested_at`` and
 ``cancelled_at``, each None when the view holds none. They record THAT an action was recorded and WHEN; they do not say who performed it, and nothing here adds a handled state, an outcome or an action.
 
+Deliverable 2 adds one more key, ``reclaimed``: the entry's own local-retention marker (``local_request.store.reclaimed_request``), copied as it is. It is always present: None when the entry carries no marker
+(no claim is made), the marker itself when local retention reclaimed the request or its owner deleted it. The two are different facts and are asserted apart.
+
 Hermetic: ``_summary`` is exercised on an instance built without its collaborators, with ``_view`` and the surface replaced by stand-ins, so the test pins exactly the mapping from the view to the summary. It does not
 exercise the real request surface, a store or any git. (The real adapter's own end-to-end walk is the vitest ``diMissionRequests.test.ts``; its early portion, through the recorded decision, is not run by this module.)
 """
@@ -14,9 +17,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from local_request import store as store_module  # noqa: E402
 from mission_panel import service as service_module  # noqa: E402
 
 REF = "lr-" + "a" * 32
+ENTRY = {"request_ref": REF, "proposal": {"objective": "unused"}}
 
 
 def view(attestation=None, cancellation=None):
@@ -33,11 +38,11 @@ class Surface(object):
         return {}
 
 
-def summary_of(shown):
+def summary_of(shown, entry=ENTRY):
     instance = object.__new__(service_module.PanelService)
     instance._surface = Surface()
     instance._view = lambda entry, status=None, with_start_cause=False: shown
-    return instance._summary({"request_ref": REF, "proposal": {"objective": "unused"}})
+    return instance._summary(entry)
 
 
 class SummaryTimesTests(unittest.TestCase):
@@ -62,12 +67,25 @@ class SummaryTimesTests(unittest.TestCase):
         shown = summary_of(view(attestation={"attested_at": 10}, cancellation={"cancelled_at": 20}))
         self.assertEqual((shown["attested_at"], shown["cancelled_at"]), (10, 20))
 
-    def test_the_summary_gains_exactly_these_two_keys_and_invents_no_handled_state(self):
+    def test_the_summary_has_exactly_these_keys_and_invents_no_handled_state(self):
         shown = summary_of(view())
-        self.assertEqual(sorted(shown), sorted(["request_ref", "mission_id", "revision", "created_at", "objective", "proposal_digest_sha256", "lifecycle", "attested_at", "cancelled_at"]))
+        self.assertEqual(sorted(shown), sorted(["request_ref", "mission_id", "revision", "created_at", "objective", "proposal_digest_sha256", "lifecycle", "attested_at", "cancelled_at", "reclaimed"]))
         self.assertEqual(sorted(shown["lifecycle"]), sorted(["stage", "label", "terminal", "actions", "notice"]))
+        # an entry with no retention marker: the key is present and claims nothing
+        self.assertIsNone(shown["reclaimed"])
         for invented in ("handled", "handled_at", "outcome", "decided_by", "attested_by", "approved_by"):
             self.assertNotIn(invented, shown)
+
+    def test_a_retention_marker_on_the_entry_reaches_the_summary_as_recorded(self):
+        # the marker as the store itself writes it, for each outcome it records
+        self.assertEqual(store_module.RECLAIM_OUTCOMES, ("reclaimed", "deleted"))
+        for outcome in store_module.RECLAIM_OUTCOMES:
+            entry = store_module.reclaimed_request(ENTRY, 1_800_000_700, outcome)
+            shown = summary_of(view(), entry)
+            self.assertEqual(shown["reclaimed"], {"reclaimed_at": 1_800_000_700, "outcome": outcome})
+            self.assertIsNot(shown["reclaimed"], entry["reclaimed"], "a copy, never the entry's own object")
+            # and it is told apart from an entry with no marker
+            self.assertIsNone(summary_of(view())["reclaimed"])
 
 
 if __name__ == "__main__":

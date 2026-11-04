@@ -39,8 +39,11 @@ import {
 import { DiMinimizedChip } from './DiMinimizedTray.js';
 import type { DiMissionRequestAccess } from './DiMissionRequestEntry.js';
 import { DiMissionRequestEntry } from './DiMissionRequestEntry.js';
+import type { MrDeletion } from './diMissionRequestModel.js';
 import { requestsUnavailable } from './diMissionRequestModel.js';
 import { DiMissionStateSamples } from './DiMissionStateSamples.js';
+import type { DiMissionStatusResult } from './diMissionStatus.js';
+import { backendNormalWait, missionStatus } from './diMissionStatus.js';
 import { useDiModal } from './diModal.js';
 import type { DiFreshness, DiRecord, DiRecordTarget, DiSelectionMemory } from './diNavigation.js';
 import {
@@ -54,7 +57,6 @@ import {
   plainMemberIdentity,
   plainMissionOutcomes,
   plainNotLive,
-  plainStanding,
   plainUnreported,
   recordByKey,
   recordForCharacter,
@@ -89,13 +91,7 @@ import {
   observedClass,
   WAITING_CLASS,
 } from './diOfficeFormat.js';
-import type { DiOpStatusResult } from './diOperationalStatus.js';
-import {
-  backendNormalWait,
-  memberTerminalNotes,
-  missionObjective,
-  missionStatus,
-} from './diOperationalStatus.js';
+import { memberTerminalNotes, missionObjective } from './diOperationalStatus.js';
 import type { DiAgentPhrase, DiRuntimeGroup } from './diPlainSummary.js';
 import {
   agentNow,
@@ -126,7 +122,7 @@ import { DI_SCAN_LOCK, missionsRead, scanRowsFromOffice } from './diScanModel.js
 import type { DiReceptionCard } from './diScanPagesModel.js';
 import { receptionFromInbox } from './diScanPagesModel.js';
 import { DiScanPanel } from './DiScanPanel.js';
-import { useStickyScrollPad } from './diStickyPad.js';
+import { useScanFaceInsets, useStickyScrollPad } from './diStickyPad.js';
 
 interface DiOfficePanelProps {
   state: DiOfficeState;
@@ -167,6 +163,10 @@ interface DiOfficePanelProps {
    * Herdr buttons are drawn disabled and say no control is connected.
    */
   herdr?: DiHerdrControl | null;
+  /** Deliverable 2: the owner's "Delete local data", relayed to the request panel (absent: no panel). */
+  onDeleteLocalData?: (missionRef: string, missionId: string, displayedState: string, storeIdentity: string | null) => void;
+  /** Deliverable 2, round 9: each Mission's latest owner delete, by Mission id, shown where it was asked (absent: none). */
+  deleteResults?: Readonly<Record<string, MrDeletion>>;
   /**
    * The reception inbox seam (owned by App): ONE dialog, opened from the panel chrome only (the rail's
    * Reception on the scan face, the attention entry on the operational list). Absent: the attention line
@@ -198,7 +198,7 @@ function StatusBadge({
   result,
   withSentence = true,
 }: {
-  result: DiOpStatusResult;
+  result: DiMissionStatusResult;
   withSentence?: boolean;
 }) {
   return (
@@ -1143,7 +1143,7 @@ function MissionCard({
   onOpenInspector,
 }: {
   mission: DiMission;
-  status: DiOpStatusResult;
+  status: DiMissionStatusResult;
   /** The short source-qualified ref (shortMissionRefs): lookalike objectives stay apart. */
   shortRef: string;
   zone: { label: string; color: string } | null;
@@ -1263,6 +1263,12 @@ function MissionCard({
         // Why it is not running is uncertainty that changes the reading: on the face.
         <div className="di-op-status-sentence" data-testid="di-op-status-sentence">
           {status.sentence}
+        </div>
+      )}
+      {/* a qualification of the status (a reported completion whose success is not affirmed) is on the face WHATEVER the status, Running included */}
+      {status.qualification !== null && (
+        <div className="di-op-status-sentence" data-testid="di-op-status-qualification">
+          {status.qualification}
         </div>
       )}
       {memberTerminalNotes(mission).map((note) => (
@@ -1405,7 +1411,7 @@ function MissionInspectorSections({
   reviewStatedFor,
 }: {
   mission: DiMission;
-  status: DiOpStatusResult;
+  status: DiMissionStatusResult;
   evidence: DiEvidenceAccess | null;
   review: DiCodeReviewAccess | null;
   onShow: (id: number) => void;
@@ -1435,6 +1441,11 @@ function MissionInspectorSections({
         <div className="di-op-card-meta">
           <StatusBadge result={status} withSentence={status.status !== 'running'} />
         </div>
+        {status.qualification !== null && (
+          <div className="di-op-status-sentence" data-testid="di-op-status-qualification">
+            {status.qualification}
+          </div>
+        )}
         <div data-testid="di-mission-results">{missionResults(mission)}</div>
         {memberTerminalNotes(mission).map((note) => (
           <div key={note} className="di-op-status-sentence">
@@ -1555,7 +1566,8 @@ function MissionInspectorSections({
           </Row>
           <Row label="in words">
             <span data-testid="di-mission-plain">
-              {plainStanding(mission.standing, mission.lifecycleState)} ·{' '}
+              {/* the status in the contract's own words (never a second wording of the standing); the record's literal stays verbatim beside it */}
+              {status.label} (record state {mission.lifecycleState}) ·{' '}
               {plainBinding(mission.bindingState, mission.bindingReason)} · source{' '}
               {mission.sourceId}
             </span>
@@ -2375,6 +2387,8 @@ function DiOfficePanelBody({
   delivery = null,
   missionDelivery = null,
   herdr = null,
+  onDeleteLocalData,
+  deleteResults,
   receptionInbox = null,
   presentation = 'operational',
   onOpenSettings,
@@ -2491,6 +2505,8 @@ function DiOfficePanelBody({
   // the sticky fixture note covers the top of the panel's scrollport: its height is reserved as scroll-padding so a focused control is never scrolled under it (diStickyPad.ts)
   const noteRef = useRef<HTMLDivElement>(null);
   useStickyScrollPad(noteRef, asideRef, fixtureNote);
+  // the scan face's fixed rail and stage: below fixture mode's label strip, and the panel's own list clear of the rail (diStickyPad.ts)
+  useScanFaceInsets(asideRef, noteRef, presentation === 'scan' && !collapsed, fixtureNote);
   // Shift+Tab scrolls a control to the top of the scrollport and leaves it under the sticky note.
   // scroll-padding does not clear that case in Chrome, so a focus that still intersects the note is moved below it.
   useEffect(() => {
@@ -2803,6 +2819,7 @@ function DiOfficePanelBody({
           data-testid="di-office-panel"
           data-minimized={collapsed ? 'true' : 'false'}
           data-presentation="scan"
+          data-fixture-note={fixtureNote ? 'strip' : undefined}
         >
           {fixtureNote && (
             <div
@@ -2841,6 +2858,9 @@ function DiOfficePanelBody({
             // M8: Delivery under Swarm reads the ONE delivery the catalog links to the shown Mission, through its own session
             missionDelivery={missionDelivery}
             herdr={herdr}
+            onDeleteLocalData={onDeleteLocalData}
+            deleteResults={deleteResults}
+            retained={state.missions.retained ?? null}
           />
         </aside>
         {/* no inbox dialog on the scan face: the rail's Reception page is its one entrance (lead Q2, D-10) */}

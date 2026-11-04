@@ -15,6 +15,7 @@ import type { MrProposal, MrResult } from './diMissionRequestModel.js';
 import {
   JOURNEY,
   journeyIndex,
+  journeyStepLabel,
   linesOf,
   MR_READING_LINES,
   MR_READING_LINES_WIDE,
@@ -393,7 +394,7 @@ export function Journey({ stage }: { stage: string }) {
             aria-current={state === 'now' ? 'step' : undefined}
           >
             {state === 'done' ? 'Done: ' : state === 'now' ? 'Now: ' : 'Next: '}
-            {step.label}
+            {journeyStepLabel(stage, index, at)}
           </li>
         );
       })}

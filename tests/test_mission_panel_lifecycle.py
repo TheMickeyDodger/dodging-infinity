@@ -268,6 +268,32 @@ class RunStages(Derive):
         self.assertIn("target_not_succeeded", view["notice"])
         self.assertIn("stops the run", view["notice"])
 
+    def test_R3c_running_is_a_bound_task_observation_never_a_claim_that_a_team_worked(self):
+        # Mission Core records RUNNING once the bound target task the receipt
+        # names is observed and its record names this run
+        # (target_runtime/mission_bridge.py _observe_run), with no live worker
+        # and no work evidence, and even after that task stopped
+        # (observed_after_stop). The words say what was observed: the task.
+        base = self.overlay_run(self.approved_status(),
+                                phase=surface_module.RUN_PHASE_RUNNING,
+                                lifecycle_state="RUNNING")
+        for label, ready in (
+                ("not determined", None),
+                ("still going", {"ready": False, "target_stopped": False,
+                                 "waiting_for": "target_stopped"}),
+                ("target already stopped", {"ready": False, "target_stopped": True,
+                                            "waiting_for": "target_not_succeeded"})):
+            with self.subTest(case=label):
+                view = self.derive(base, verification_ready=ready)
+                self.assertEqual(view["stage"], "running")
+                self.assertEqual(view["label"], "Task observed")
+                words = view["label"] + " " + view["detail"]
+                self.assertNotIn("Team working", words)
+                self.assertNotIn("observed the team", words)
+                self.assertNotIn("shows the team live", words)
+                self.assertIn("bound task", view["detail"])
+                self.assertIn("not an observation of any worker", view["detail"])
+
     def test_R4_a_verification_blocked_pending_proof_may_be_verified_again_when_ready(self):
         base = self.overlay_run(
             self.approved_status(),

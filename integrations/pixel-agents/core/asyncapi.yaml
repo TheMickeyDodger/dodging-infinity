@@ -1163,12 +1163,33 @@ components:
         reason:
           type: string
           maxLength: 2000
+        displayedState:
+          type: string
+          maxLength: 64
+          description: |
+            Deliverable 2, `deleteLocalData` only (with `missionId`): the Mission state the window
+            DISPLAYED. The panel rechecks it against the record at the moment of action and refuses a
+            stale display; the control on screen is never the gate.
+        missionRef:
+          type: string
+          maxLength: 300
+          description: |
+            Deliverable 2, `deleteLocalData` only: the SOURCE-QUALIFIED Mission the person selected
+            (`<source_id>:<missionId>`, as the catalog lists it). A native id alone never decides
+            which store is acted on: two registered sources may hold the same one.
+        storeIdentity:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: |
+            Deliverable 2, `deleteLocalData` only: the identity of the store that Mission is in, as
+            the catalog reported it (`DiMission.storeIdentity`); null when it reported none. The
+            panel refuses (`source_mismatch`) any store but its own, before resolving the native id.
 
     DiMissionRequestOp:
       type: string
       enum:
         [refresh, conversation, request, offer, result, turn, submit, decide, checkApproval,
-         decline, reject, requestChanges, withdraw, run]
+         decline, reject, requestChanges, withdraw, run, deleteLocalData]
 
     DiMissionRequestReply:
       description: |
@@ -1184,7 +1205,7 @@ components:
         send it), the adapter rejected this office's credentials before acting on it, or the
         request was a READ (refresh, conversation, request or result), which changes nothing.
         unknown: a WRITE only (offer, turn, submit, decide, checkApproval, decline, reject,
-        requestChanges, withdraw or run). The
+        requestChanges, withdraw, run or deleteLocalData). The
         request may have reached the request panel and no usable answer came back: no answer in
         time, a broken connection, an answer too large or unreadable, or the panel reporting an
         unexpected error or an oversized answer after handling it. WHETHER IT TOOK EFFECT IS NOT
@@ -2819,6 +2840,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DiMission'
+        retained:
+          type: array
+          description: |
+            Deliverable 2 (archive health): ONE reading per retention source of the Missions whose
+            record is no longer in its store (a terminal workflow reclaimed whole after 30 days, or
+            pruned by the store's own cap), exactly as local retention holds them. Each reading's
+            `state` is required, so "read, and empty" and "could not be read" are never the same
+            value. Absent: this server does not report them (never "none").
+          items:
+            $ref: '#/components/schemas/DiRetainedSource'
 
     DiMission:
       description: One source-qualified Mission. Strings are verbatim from the backend.
@@ -2886,6 +2917,42 @@ components:
           $ref: '#/components/schemas/DiObservedValue'
         ambiguity:
           $ref: '#/components/schemas/DiObservedValue'
+        runStarted:
+          type: boolean
+          description: |
+            The catalog's own execution fact (`missions[].execution.run_started`), verbatim: whether a
+            run was ever started for this Mission (Mission Core: a recorded start intent; workflow
+            store: a recorded target engine; Herdr task: a current task record). It says a start was
+            RECORDED, never that a team is working now. Absent: this server does not report it (not
+            read, never "not started").
+        cancelQuiescence:
+          type: [string, 'null']
+          description: |
+            Deliverable 2: a Mission Core Mission's recorded cancel quiescence
+            (`missions[].native.cancel_quiescence`, from `run.cancel.quiescence`), verbatim, once the
+            cancel COMPLETED; null while none is recorded. Absent: not reported (never "none"). What
+            it establishes is the office's declared rule (`DI_CAPACITY_RELEASE`), not this field.
+        storeIdentity:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: |
+            Deliverable 2 (target identity): a Mission Core Mission's store identity
+            (`missions[].native.store_identity`: sha256 of the store kind and its real path), so an
+            owner's delete names WHICH store the selected Mission is in. null for any other source,
+            or when not reported.
+        sentHandoffReceipts:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Deliverable 2 (the capacity seam): a workflow-store Mission's count of DURABLE receipts
+            that a handoff revision was sent to its target (`missions[].native.sent_handoff_receipts`,
+            the runtime's dispatch receipts in `receipts`), verbatim. The broker saves one BEFORE
+            every spawn, and the record refuses, never evicts, past its receipt bound, so 0 is a
+            recorded fact that none was ever sent; the backend's retention reads the SAME receipts.
+            null for any other source. Absent: not reported (never 0). What it establishes is the
+            office's declared rule (`DI_CAPACITY_RELEASE`), not this field.
+        retention:
+          $ref: '#/components/schemas/DiMissionRetention'
         members:
           $ref: '#/components/schemas/DiMemberList'
         v2:
@@ -3449,6 +3516,188 @@ components:
           $ref: '#/components/schemas/DiCompletion'
         provenance:
           $ref: '#/components/schemas/DiReportProvenance'
+        progress:
+          $ref: '#/components/schemas/DiMissionProgress'
+
+    DiMissionRetention:
+      description: |
+        Deliverable 2: the BACKEND's local-retention reading of this Mission (`missions[].retention`,
+        mission_sources.contract_v2), computed from the trusted records: whether it is eligible for
+        archive, reclamation and deletion (`eligible`, with the positive `basis` and the source field
+        that supplies it, or the `reason` it is not) and its retention `phase` (`intact` until local
+        retention tracks it; `observed`, `reclaiming`, `reclaimed`, `deleting` or `deleted` after).
+        The office files a Mission Archived by THIS, never by a second rule of its own. `state`:
+        `observed` (read), `not_applicable` (a store DI does not own, such as a Herdr task),
+        `not_reported` (no reader registered) or `unavailable` (the reader failed, with `problem`):
+        none of the last three is ever "intact".
+      type: object
+      additionalProperties: false
+      required: [state, problem, eligible, basis, basisSource, reason, phase, phaseAt, summary, retainedFor]
+      properties:
+        state:
+          type: string
+        problem:
+          type: [string, 'null']
+        eligible:
+          type: [boolean, 'null']
+        basis:
+          type: [string, 'null']
+        basisSource:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+        phase:
+          type: [string, 'null']
+        phaseAt:
+          type: [integer, 'null']
+        summary:
+          oneOf:
+            - $ref: '#/components/schemas/DiRetentionSummary'
+            - type: 'null'
+        retainedFor:
+          type: integer
+          description: How many other Missions a shared conversation is still kept for.
+
+    DiRetentionSummary:
+      description: |
+        The bounded summary local retention keeps after 30 days (never after an owner's delete):
+        the final status and its source, and the verdict, CI results and comments, each a
+        `DiRetentionFact`: its claim (`DiRetentionFactState`: recorded with a bounded `detail`,
+        confirmed absence, not read, unreadable, or not known) and where it was looked for.
+      type: object
+      additionalProperties: false
+      required: [finalState, finalStateSource, verdict, ci, comments]
+      properties:
+        finalState:
+          type: string
+        finalStateSource:
+          type: string
+        verdict:
+          $ref: '#/components/schemas/DiRetentionFact'
+        ci:
+          $ref: '#/components/schemas/DiRetentionFact'
+        comments:
+          $ref: '#/components/schemas/DiRetentionFact'
+
+    DiRetentionFact:
+      type: object
+      additionalProperties: false
+      required: [state, detail, source]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiRetentionFactState'
+        detail:
+          type: [string, 'null']
+        source:
+          type: string
+
+    DiRetentionFactState:
+      description: |
+        Round 10: what a retained fact's state CLAIMS, each a different claim, and only `recorded`
+        carries a `detail`. `recorded`: its source was read and holds this. `not_recorded_locally`:
+        CONFIRMED absence (its source was read and holds none). `not_read`: its source was not
+        consulted (not configured), so nothing is claimed. `unreadable`: its source is there and
+        could not be read, so a record may exist. `not_known`: kept by an earlier version that did
+        not tell these apart, so absence was never established.
+      type: string
+      enum: [recorded, not_recorded_locally, not_read, unreadable, not_known]
+
+    DiRetainedSource:
+      description: |
+        One retention source's archive reading (see `DiMissionList.retained`). `observed`: `total`
+        is the EXACT count of its Missions no longer in their store (`missions` lists at most 128,
+        newest first), and `awaiting` is DISJOINT from it: Missions removed from the store whose
+        summary is owed and not yet captured, with no retention record yet, so `total + awaiting`
+        counts distinct Missions. `unavailable`: it could not be read; `problem` says why, its counts
+        are null (not known, never 0) and it lists nothing.
+      type: object
+      additionalProperties: false
+      required: [sourceId, state, problem, total, awaiting, missions]
+      properties:
+        sourceId:
+          type: string
+        state:
+          $ref: '#/components/schemas/DiRetainedSourceState'
+        problem:
+          type: [string, 'null']
+        total:
+          type: [integer, 'null']
+          minimum: 0
+        awaiting:
+          type: [integer, 'null']
+          minimum: 0
+        missions:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/DiRetainedMission'
+
+    DiRetainedSourceState:
+      description: |
+        Whether one retention source's archive was read (`observed`, with exact counts) or could not be
+        read (`unavailable`, with its problem and no count). Required, so the two are never the same value.
+      type: string
+      enum: [observed, unavailable]
+
+    DiRetainedMission:
+      description: One Mission no longer in its store, as local retention holds it (see `DiRetainedSource`).
+      type: object
+      additionalProperties: false
+      required: [missionRef, sourceId, nativeId, family, phase, phaseAt, summary]
+      properties:
+        missionRef:
+          type: string
+        sourceId:
+          type: string
+        nativeId:
+          type: string
+        family:
+          type: string
+        phase:
+          type: string
+        phaseAt:
+          type: integer
+        summary:
+          oneOf:
+            - $ref: '#/components/schemas/DiRetentionSummary'
+            - type: 'null'
+
+    DiMissionProgress:
+      description: |
+        Mission Core's OWN progress record (`mission_state.report.progress`, mission/observation.py),
+        a lifecycle SEPARATE from the outer Mission state (mission/state.py PROGRESS_STATES:
+        NOT_STARTED, IN_PROGRESS, BLOCKED, COMPLETED, CLOSED_UNSUCCESSFUL, ABANDONED; terminal:
+        COMPLETED, CLOSED_UNSUCCESSFUL, ABANDONED). Terminal progress can close a Mission whose
+        outer state never moved (abandoned before dispatch). It DESCRIBES the record; it is not
+        execution (mission/state.py: "a descriptive progress lifecycle, not execution"), so it never
+        says that work stopped. `state` is how it was observed: `observed` (only for a fact whose
+        `standing` is a current one, verified or reported) with `progress` the literal when it is in
+        that vocabulary, or `progress` null and `unrecognized` the declared value as inert text when
+        it is not; `not_recorded` when the report carries no value; `unavailable` when the source
+        declares the fact unavailable (`reason` its own detail, or progress_unavailable), when its
+        standing is not a current one (progress_standing_not_current), when the report has no
+        progress fact (progress_not_reported) or an unexpected shape (progress_unexpected); and
+        `not_applicable` / `unavailable` with the Mission State's own reason when there is no
+        Mission State report. A RETAINED value beside an unavailable or non-current standing is never
+        carried as `progress`. Absent: this server does not report it.
+      type: object
+      additionalProperties: false
+      required: [state, reason, standing, progress, unrecognized, closureReason]
+      properties:
+        state:
+          $ref: '#/components/schemas/DiObservationState'
+        reason:
+          type: [string, 'null']
+        standing:
+          type: [string, 'null']
+          description: The progress fact's own standing, verbatim (mission/observation.py STANDING_*); null when the report carries no progress fact.
+        progress:
+          type: [string, 'null']
+        unrecognized:
+          type: [string, 'null']
+        closureReason:
+          type: [string, 'null']
+          description: Mission Core's closure reason for terminal progress (mission/state.py CLOSURE_REASON_*), verbatim.
 
     DiReportFact:
       description: |

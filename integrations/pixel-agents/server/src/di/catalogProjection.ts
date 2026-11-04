@@ -36,6 +36,7 @@ import type {
   MissionDeliveryLinkBasis,
   MissionDeliveryLinkState,
   MissionHandoffState,
+  MissionProgressState,
   QueryContractVersion,
   RuntimeAgentsState,
   RuntimeAssignmentState,
@@ -87,6 +88,7 @@ import {
   MISSION_DELIVERY_LINK_KEYS,
   MISSION_DELIVERY_LINK_STATES,
   MISSION_HANDOFF_STATES,
+  MISSION_PROGRESS_STATES,
   QUERY_CONTRACT,
   RESPONSE_KEYS,
   RESPONSE_KEYS_V2,
@@ -401,6 +403,14 @@ export interface MissionReportView {
   }>;
   review: ReportFact<string>;
   task: ReportFact<string>;
+  /**
+   * Mission Core's own progress (`report.progress`): the value classified against MISSION_PROGRESS_STATES (an out-of-vocabulary value stays visible as an unknown
+   * Classified, its raw kept as bounded inert text), and the closure reason verbatim. Null: the report carries no progress fact (a producer that predates it).
+   */
+  progress: ReportFact<{
+    progress: Classified<MissionProgressState>;
+    closureReason: string | null;
+  }> | null;
   candidate: ReportFact<{ artifactDigests: BoundedList; baselineDigest: string | null }>;
   /** reported_* and verified_* are DIFFERENT facts, kept apart. */
   completion: {
@@ -648,8 +658,8 @@ export interface MissionV2View {
 }
 
 export type MissionNative =
-  | { kind: 'mission_core'; cancelRequested: boolean | null; paused: boolean | null }
-  | { kind: 'workflow_store'; ambiguity: string | null }
+  | { kind: 'mission_core'; cancelRequested: boolean | null; paused: boolean | null; cancelQuiescence: string | null; storeIdentity: string | null }
+  | { kind: 'workflow_store'; ambiguity: string | null; sentHandoffReceipts: number | null }
   | { kind: 'herdr_task'; taskRecordVersion: number | null; startedAt: number | null }
   | { kind: 'unrecognized'; raw: unknown };
 
@@ -669,6 +679,8 @@ export interface MissionView {
   missionRef: string;
   sourceId: string;
   nativeId: string;
+  /** Deliverable 2: the backend's local-retention reading (`not_reported` from a v1 or older producer). */
+  retention: RetentionView;
   lifecycle: {
     model: Classified<LifecycleModel>;
     /** Native literal, verbatim and case-preserved. NEVER switch on it. */
@@ -821,6 +833,9 @@ export interface CatalogResponseView {
   runtimeAgents: RuntimeAgentsView;
   /** D1: the Grok delivery presentations block (contract v2 only; absent from older producers). */
   deliveryPresentations: DeliveryPresentationsView;
+  /** Deliverable 2: Missions no longer in their store, as retention holds them (null: not reported). */
+  /** Deliverable 2 (archive health): one reading per retention source; null when not reported (never "none"). */
+  retentionArchive: RetainedSourceView[] | null;
   /** The contract version this response was projected as. */
   contractVersion: QueryContractVersion;
   /** contract v2 chain observation health; null for v1. */
@@ -850,12 +865,25 @@ function projectNative(
   const o = obj(raw, where);
   const b = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
   if (model.known && model.value === MISSION_CORE_MODEL) {
-    return { kind: 'mission_core', cancelRequested: b(o.cancel_requested), paused: b(o.paused) };
+    return {
+      kind: 'mission_core',
+      cancelRequested: b(o.cancel_requested),
+      paused: b(o.paused),
+      // Deliverable 2: the recorded cancel quiescence, verbatim (absent from an older producer: null).
+      cancelQuiescence: typeof o.cancel_quiescence === 'string' ? o.cancel_quiescence : null,
+      // Target identity: which store this Mission is in (absent from an older producer, or not a 64-hex digest: null)
+      storeIdentity: typeof o.store_identity === 'string' && /^[0-9a-f]{64}$/.test(o.store_identity) ? o.store_identity : null,
+    };
   }
   if (model.known && model.value === WORKFLOW_STORE_MODEL) {
     return {
       kind: 'workflow_store',
       ambiguity: typeof o.ambiguity === 'string' ? o.ambiguity : null,
+      // Deliverable 2: the record's durable sent-handoff (dispatch) receipt count, verbatim (absent from an older producer, or not a non-negative integer: null)
+      sentHandoffReceipts:
+        typeof o.sent_handoff_receipts === 'number' && Number.isInteger(o.sent_handoff_receipts) && o.sent_handoff_receipts >= 0
+          ? o.sent_handoff_receipts
+          : null,
     };
   }
   if (model.known && model.value === HERDR_TASK_MODEL) {
@@ -1385,6 +1413,20 @@ function projectReport(raw: unknown): MissionReportView | null {
     ),
     review: reportFact(raw.review, rs),
     task: reportFact(raw.task, rs),
+    progress:
+      'progress' in raw
+        ? reportFact(raw.progress, (v) => {
+            if (!isObject(v)) return null;
+            const classified = classify(MISSION_PROGRESS_STATES, v.progress);
+            return {
+              // an out-of-vocabulary value is kept as bounded inert text (never a guessed state)
+              progress: classified.known
+                ? classified
+                : { known: false, raw: isNil(v.progress) ? null : refText(v.progress) },
+              closureReason: isNil(v.closure_reason) ? null : refText(v.closure_reason),
+            };
+          })
+        : null,
     candidate: reportFact(raw.candidate, (v) =>
       isObject(v)
         ? {
@@ -1765,6 +1807,161 @@ function deliveryLinkIfDeclared(link: MissionDeliveryLinkView | null): { deliver
   return link === null ? {} : { deliveryLink: link };
 }
 
+/** Deliverable 2 — the backend's local-retention reading of one Mission (`missions[].retention`). */
+export interface RetentionSummaryView {
+  finalState: string;
+  finalStateSource: string;
+  verdict: RetentionFactView;
+  ci: RetentionFactView;
+  comments: RetentionFactView;
+}
+/**
+ * Round 10: a retained fact's CLAIM, closed (mission_retention/store.py SUMMARY_STATES; mission_sources/contract_v2.py RETENTION_FACT_STATES): confirmed absence,
+ * not read and unreadable are three different claims, and only `recorded` carries a detail. A state outside it refuses the answer, never a guess.
+ */
+export const RETENTION_FACT_STATES = ['recorded', 'not_recorded_locally', 'not_read', 'unreadable', 'not_known'] as const;
+export type RetentionFactState = (typeof RETENTION_FACT_STATES)[number];
+export interface RetentionFactView {
+  state: RetentionFactState;
+  detail: string | null;
+  source: string;
+}
+export interface RetentionView {
+  /** observed | not_applicable | not_reported | unavailable (none of the last three is "intact"). */
+  state: string;
+  problem: string | null;
+  eligible: boolean | null;
+  basis: string | null;
+  basisSource: string | null;
+  reason: string | null;
+  phase: string | null;
+  phaseAt: number | null;
+  summary: RetentionSummaryView | null;
+  retainedFor: number;
+}
+/** One retention source's archive reading: observed (exact counts) or unavailable (its reason, no counts). */
+export interface RetainedSourceView {
+  sourceId: string;
+  state: 'observed' | 'unavailable';
+  problem: string | null;
+  total: number | null;
+  awaiting: number | null;
+  missions: RetainedMissionView[];
+}
+
+export interface RetainedMissionView {
+  missionRef: string;
+  sourceId: string;
+  nativeId: string;
+  family: string;
+  phase: string;
+  phaseAt: number;
+  summary: RetentionSummaryView | null;
+}
+const RETENTION_KEYS = ['state', 'problem', 'eligible', 'basis', 'basis_source', 'reason', 'phase',
+  'phase_at', 'summary', 'retained_for'] as const;
+const RETENTION_SUMMARY_KEYS = ['final_state', 'final_state_source', 'verdict', 'ci', 'comments'] as const;
+const RETENTION_FACT_KEYS = ['state', 'detail', 'source'] as const;
+const RETAINED_MISSION_KEYS = ['mission_ref', 'source_id', 'native_id', 'family', 'phase',
+  'phase_at', 'summary'] as const;
+const RETENTION_NOT_REPORTED: RetentionView = {
+  state: 'not_reported', problem: null, eligible: null, basis: null, basisSource: null,
+  reason: null, phase: null, phaseAt: null, summary: null, retainedFor: 0,
+};
+
+function projectRetentionFact(raw: unknown, where: string): RetentionFactView {
+  const f = obj(raw, where);
+  exactKeys(f, RETENTION_FACT_KEYS, where);
+  const state = str(f.state, `${where}.state`);
+  if (!(RETENTION_FACT_STATES as readonly string[]).includes(state)) malformed(`${where}.state is not a declared fact state`);
+  const detail = strOrNull(f.detail, `${where}.detail`);
+  if ((state === 'recorded') !== (detail !== null)) malformed(`${where}: only a recorded fact carries a detail`);
+  return { state: state as RetentionFactState, detail, source: str(f.source, `${where}.source`) };
+}
+
+function projectRetentionSummary(raw: unknown, where: string): RetentionSummaryView | null {
+  if (raw === null) return null;
+  const s = obj(raw, where);
+  exactKeys(s, RETENTION_SUMMARY_KEYS, where);
+  return {
+    finalState: str(s.final_state, `${where}.final_state`),
+    finalStateSource: str(s.final_state_source, `${where}.final_state_source`),
+    verdict: projectRetentionFact(s.verdict, `${where}.verdict`),
+    ci: projectRetentionFact(s.ci, `${where}.ci`),
+    comments: projectRetentionFact(s.comments, `${where}.comments`),
+  };
+}
+
+/** `missions[].retention`, STRICT when present (mission_sources.contract_v2 `_validate_retention`); absent: not reported, never "intact". */
+function projectRetention(m: Json, where: string): RetentionView {
+  if (!('retention' in m)) return RETENTION_NOT_REPORTED;
+  const at = `${where}.retention`;
+  const r = obj(m.retention, at);
+  exactKeys(r, RETENTION_KEYS, at);
+  return {
+    state: str(r.state, `${at}.state`),
+    problem: strOrNull(r.problem, `${at}.problem`),
+    eligible: r.eligible === null ? null : bool(r.eligible, `${at}.eligible`),
+    basis: strOrNull(r.basis, `${at}.basis`),
+    basisSource: strOrNull(r.basis_source, `${at}.basis_source`),
+    reason: strOrNull(r.reason, `${at}.reason`),
+    phase: strOrNull(r.phase, `${at}.phase`),
+    phaseAt: intOrNull(r.phase_at, `${at}.phase_at`),
+    summary: projectRetentionSummary(r.summary, `${at}.summary`),
+    retainedFor: int(r.retained_for, `${at}.retained_for`),
+  };
+}
+
+const RETENTION_ARCHIVE_KEYS = ['source_id', 'state', 'problem', 'total', 'awaiting', 'missions'] as const;
+
+/**
+ * `response.retained_by_source` (contract v2, additive): STRICT, one closed reading per source. Absent or null: not reported (never "none"). An `unavailable`
+ * reading states its problem and NO count (never 0); an `observed` one states exact counts and lists at most what it counts.
+ */
+function projectRetentionArchive(raw: Json): RetainedSourceView[] | null {
+  if (!('retained_by_source' in raw) || raw.retained_by_source === null) return null;
+  const readings = raw.retained_by_source;
+  if (!Array.isArray(readings)) malformed('response.retained_by_source is not a list');
+  return readings.map((value, i) => {
+    const where = `response.retained_by_source[${i}]`;
+    const r = obj(value, where);
+    exactKeys(r, RETENTION_ARCHIVE_KEYS, where);
+    const sourceId = str(r.source_id, `${where}.source_id`);
+    const state = str(r.state, `${where}.state`);
+    if (!Array.isArray(r.missions)) malformed(`${where}.missions is not a list`);
+    if (state === 'unavailable') {
+      if (r.total !== null || r.awaiting !== null || r.missions.length > 0)
+        malformed(`${where}: an unreadable archive states no count and lists nothing`);
+      return { sourceId, state, problem: str(r.problem, `${where}.problem`), total: null, awaiting: null, missions: [] };
+    }
+    if (state !== 'observed') malformed(`${where}.state is not a declared state`);
+    if (r.problem !== null) malformed(`${where}.problem must be null when observed`);
+    const total = int(r.total, `${where}.total`);
+    const awaiting = int(r.awaiting, `${where}.awaiting`);
+    const missions = projectRetainedMissions(r.missions, `${where}.missions`);
+    if (total < missions.length) malformed(`${where}.total is fewer than it lists`);
+    if (missions.some((m) => m.sourceId !== sourceId)) malformed(`${where}.missions names another source`);
+    return { sourceId, state, problem: null, total, awaiting, missions };
+  });
+}
+
+function projectRetainedMissions(items: unknown[], location: string): RetainedMissionView[] {
+  return items.map((item, i) => {
+    const where = `${location}[${i}]`;
+    const o = obj(item, where);
+    exactKeys(o, RETAINED_MISSION_KEYS, where);
+    return {
+      missionRef: str(o.mission_ref, `${where}.mission_ref`),
+      sourceId: str(o.source_id, `${where}.source_id`),
+      nativeId: str(o.native_id, `${where}.native_id`),
+      family: str(o.family, `${where}.family`),
+      phase: str(o.phase, `${where}.phase`),
+      phaseAt: int(o.phase_at, `${where}.phase_at`),
+      summary: projectRetentionSummary(o.summary, `${where}.summary`),
+    };
+  });
+}
+
 function projectMission(raw: unknown, where: string, version: QueryContractVersion): MissionView {
   const m = obj(raw, where);
   const sourceId = str(key(m, 'source_id', where), `${where}.source_id`);
@@ -1781,6 +1978,7 @@ function projectMission(raw: unknown, where: string, version: QueryContractVersi
     missionRef,
     sourceId,
     nativeId,
+    retention: version === 2 ? projectRetention(m, where) : RETENTION_NOT_REPORTED,
     lifecycle: {
       model,
       state: str(key(lifecycle, 'state', `${where}.lifecycle`), `${where}.lifecycle.state`),
@@ -1892,6 +2090,8 @@ function projectResponseCommon(raw: Json, version: QueryContractVersion): Catalo
       ...baseKeys,
       ...('runtime_agents' in raw ? ['runtime_agents'] : []),
       ...(version === 2 && 'delivery_presentations' in raw ? ['delivery_presentations'] : []),
+      // Deliverable 2: additive, contract v2 only.
+      ...(version === 2 && 'retained_by_source' in raw ? ['retained_by_source'] : []),
     ],
     'response',
   );
@@ -1975,6 +2175,7 @@ function projectResponseCommon(raw: Json, version: QueryContractVersion): Catalo
     ),
     runtimeAgents: projectRuntimeAgents(raw),
     deliveryPresentations: projectDeliveryPresentations(raw),
+    retentionArchive: version === 2 ? projectRetentionArchive(raw) : null,
     contractVersion: version,
     chainObservation: version === 2 ? projectChainObservation(raw.chain_observation) : null,
   };

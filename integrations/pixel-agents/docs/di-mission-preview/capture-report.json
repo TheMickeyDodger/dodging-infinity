@@ -1,0 +1,876 @@
+{
+  "fixture": true,
+  "label": "FIXTURE / VISUAL TEST captures of the isolated Mission preview (webview-ui/test/diMissionPreviewBrowser.test.ts). Synthetic and recorded data only; nothing live.",
+  "launch": {
+    "cwd": "integrations/pixel-agents/webview-ui",
+    "build": "npx vite build --config test/harness/di-mission-preview.config.ts",
+    "serve": "npx vite preview --config test/harness/di-mission-preview.config.ts --port 5179 --strictPort",
+    "ran_with": "a free port in place of the documented one, and DI_PREVIEW_OUT_DIR set to the test’s own temporary directory"
+  },
+  "fixtures": [
+    {
+      "path": "webview-ui/test/fixtures/di-mission-request-delete-replies.FIXTURE.json",
+      "sha256": "a5e3fd21d8e48988ab05d78f5f7ff088b682a4b09e084a78446209cc8653a5ea"
+    },
+    {
+      "path": "webview-ui/test/fixtures/di-office-state-archived-delivery-v2.FIXTURE.json",
+      "sha256": "4925841cd9d72de492b0f57bea35c8f0ebc05daf773e1b5b1488172085d245df"
+    },
+    {
+      "path": "webview-ui/test/fixtures/di-office-state-herdr-roster-v2.FIXTURE.json",
+      "sha256": "a06cb536a770101f7952d7b3cb9d7dbbc04f34b4498bab15d69fab015466acea"
+    },
+    {
+      "path": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "sha256": "7a780abbe94926cab1a3d6aab7a595233719332653367b64ecf74e7a0ee8bdb6"
+    },
+    {
+      "path": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "sha256": "433195220942845b10d288f4a14e3adec5e1917101706cdec0f082fbe5f6f976"
+    },
+    {
+      "path": "webview-ui/test/fixtures/di-office-state-workflow-phases-v2.FIXTURE.json",
+      "sha256": "f420c364f28d38018a7a4acffeb8565c5e62e5c2065509303aa35fa779c9132c"
+    }
+  ],
+  "captures": [
+    {
+      "file": "archived-delivery-read-1440.png",
+      "scene": "archived-delivery",
+      "title": "An archived task’s delivery: read-only, still readable",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-archived-delivery-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The Herdr task records are synthetic. The delivery adapter’s STATUS ANSWER is DECLARED SYNTHETIC (the shape test/diArchivedDeliveryBrowser.test.ts uses): no delivery adapter is connected, and no delivery step can be sent anywhere.",
+      "sha256": "0e5d5821ffb5d6296a146e2dd5e588810163840f1c3d541bf7b49dae12fdbbde",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-completed-1440.png",
+      "scene": "delete-completed",
+      "title": "Owner hold-to-delete: done",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "484a8a3252ba72f2584c009ed91627ae357130aa9dc86b76b60d9cd583d2f1bf",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-in-flight-1440.png",
+      "scene": "delete-in-flight",
+      "title": "Owner hold-to-delete: sent, its answer not back",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "acead71f0c0e1e58dc0b5b49fa37ed8a7914a3c49c9b4fcac8ff77178a8c5422",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-pending-1440.png",
+      "scene": "delete-pending",
+      "title": "Owner hold-to-delete: accepted, still finishing",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "cb208f4400ef2b55bebeba7f384d77af11348e4509a827710f4cb25efd7587d5",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-refused-busy-1440.png",
+      "scene": "delete-refused-busy",
+      "title": "Owner hold-to-delete: refused, busy",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "7549d639bfe5601141ce1284e103ba6914ce0b5ddd583cb9ce47da695e84f91f",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-refused-busy-375.png",
+      "scene": "delete-refused-busy",
+      "title": "Owner hold-to-delete: refused, busy",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "79125091248e359db7dba3ad152218956a3bf87c1d2c9e52b21810037ea15cf0",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-refused-busy-414.png",
+      "scene": "delete-refused-busy",
+      "title": "Owner hold-to-delete: refused, busy",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "717c89bd1624da970b2e3a712735563dc7bf72b87d02d5c3af5c88c2523c78c2",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-refused-stale-1440.png",
+      "scene": "delete-refused-stale",
+      "title": "Owner hold-to-delete: refused, the page was out of date",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "14c8c989886000ffe3a07a1ab808090079f142bba066a0f2914712bda24884ab",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "delete-running-refused-1440.png",
+      "scene": "delete-in-flight",
+      "title": "Owner hold-to-delete: sent, its answer not back",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "cf4c21038ebda2a5c8248f4d9271727a50a0c46029805861696e86298ec28ee9",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-approved-1440.png",
+      "scene": "lifecycle-approved",
+      "title": "Approved, and still never started",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.approved_never_started",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "32c2a3946770d77dac261fe17debdf0c772881a2048babda1b81c27d6728c36c",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-archived-1440.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "2b7a82445e5355acdc2fbacda4bb03173838619689d1b77134ea431a26886db4",
+      "scroll": "as-is",
+      "measured": {
+        "pageOverflowsX": false,
+        "elements": {
+          "di-scan-archived-note": [
+            {
+              "left": 219,
+              "right": 1406,
+              "inViewport": true,
+              "onTop": true
+            }
+          ],
+          "di-scan-herdr-reason": [
+            {
+              "left": 219,
+              "right": 873,
+              "inViewport": true,
+              "onTop": false
+            }
+          ],
+          "di-scan-trash-reason": [
+            {
+              "left": 1026,
+              "right": 1406,
+              "inViewport": true,
+              "onTop": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "details-lifecycle-archived-375.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "b753926fb52e8435df6e2605166b427075cae2b0d5b53d095976be20826afd08",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-archived-414.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "b850f34ac4d36a7c9501186dd7fbde1d6d97e87a9397bf4fa3ed1ae1b06443f8",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-archived-reasons-375.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "a32d47485da7c0198000fb014f88515a9c4a767b91316a84ac980e026ad9b55b",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-archived-reasons-414.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "004ae5dc2df3a5c0bb69554e964f064487bbcc804a34a37fd0f462c0663af1b2",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-deleted-1440.png",
+      "scene": "lifecycle-deleted",
+      "title": "Deleted by its owner",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.deleted_by_owner",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "296892d69caf4432346d484bc697866b64e95a24f234eeaf415f3617e2719e18",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-reclaimed-1440.png",
+      "scene": "lifecycle-reclaimed",
+      "title": "Reclaimed by the startup sweep after 30 days",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.reclaimed_at_startup",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "3951a16b36fe5b711d6692f342eb0fef70de48a55cb93d5866606741fc2a646b",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-start-requested-1440.png",
+      "scene": "lifecycle-start-requested",
+      "title": "Its start requested: the catalog does not see its team yet",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.start_requested",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "bddb554699bf1c850af2b563d9c35de7e63dfe4dcdafc79017d6ab45fa884ab2",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-task-observed-1440.png",
+      "scene": "lifecycle-task-observed",
+      "title": "Its task observed, no worker confirmed",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "eaf3eced02401c4290c1a5ef833fdafb3fb8c6e670ed9581483f20a216317759",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-task-observed-375.png",
+      "scene": "lifecycle-task-observed",
+      "title": "Its task observed, no worker confirmed",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "fcbd96dd155bf7faf221eaa9a954f3b9b5c70c310659430f06fc4ca268054a97",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "details-lifecycle-task-observed-414.png",
+      "scene": "lifecycle-task-observed",
+      "title": "Its task observed, no worker confirmed",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "49550141427eed73b9bfde9c0b58b13f238d586cf2fb39a988a3f3b6c8aff69b",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "home-herdr-roster-375.png",
+      "scene": "herdr-roster",
+      "title": "Herdr tasks: what the producer’s roster lets the office say about workers",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-herdr-roster-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The runtime snapshot is synthetic (it stands for the runtime capture of live sessions; no process is observed). The Herdr task records are synthetic.",
+      "sha256": "9368fba3a8f7d6b5d415b17c22f91d27d280ac01766d6284dd1687b681266afe",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "home-herdr-roster-414.png",
+      "scene": "herdr-roster",
+      "title": "Herdr tasks: what the producer’s roster lets the office say about workers",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-herdr-roster-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The runtime snapshot is synthetic (it stands for the runtime capture of live sessions; no process is observed). The Herdr task records are synthetic.",
+      "sha256": "709f5056e404364bf366cc7e56ed8ac8c96dc7bf72c56d8185ecd79b75e51425",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "index-1440.png",
+      "scene": "lifecycle-of-record",
+      "title": "A Mission of record, never started",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.of_record",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "2d7447f5e2e0f3ee9ed49ac97b9e790e60dd51cb11aaf377a3323be18a1f0a8c",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "keyboard-archived-hold-1440.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "b8b7b8ef3486cd43869cbf71a02b19102d50cd64f88c1a352819425fcf53b2cd",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "keyboard-archived-row-1440.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "8146ae08142421a7440fa4a26b4e2b742e74b67fa4e90ba0804b5a4363010538",
+      "scroll": "as-is",
+      "measured": null
+    },
+    {
+      "file": "missions-all-after-finish-1440.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "1d6efabc97ae3023b06ce2ff7d77aebdd0e5a9ede6165e498fc613086b2254f5",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "missions-archived-1440.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "a02c5ba54d7109faf76037b2923e258a0e7c921b2e5f5704922511554beae4f8",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "missions-archived-375.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "0f77c4f9ca3b93539ad0bb49163a272522339c87da69037df104cd33fc5d6f87",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "missions-archived-414.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "bb44295e5de9a12ab0b12458f42e5ed78565e1116d55e4c4e92622911271cd2e",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "missions-archived-delivery-1440.png",
+      "scene": "archived-delivery",
+      "title": "An archived task’s delivery: read-only, still readable",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-archived-delivery-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The Herdr task records are synthetic. The delivery adapter’s STATUS ANSWER is DECLARED SYNTHETIC (the shape test/diArchivedDeliveryBrowser.test.ts uses): no delivery adapter is connected, and no delivery step can be sent anywhere.",
+      "sha256": "abb9132a0f1555f921bccefc6471f5ac46d23cb23252fd022d5e53aa33408876",
+      "scroll": "top",
+      "measured": {
+        "filter": "archived"
+      }
+    },
+    {
+      "file": "missions-delete-in-flight-1440.png",
+      "scene": "delete-in-flight",
+      "title": "Owner hold-to-delete: sent, its answer not back",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-progress-abandoned-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records made by the producer’s test harness. The delete answer is the request panel’s REAL answer over its real HTTP route, relayed by the office’s REAL relay; only its sequence number is re-addressed to the request this page sent.",
+      "sha256": "6c262e7e12a1dd35caffd31275941d820cf0326225f9e5156169ad362dabf051",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-herdr-roster-1440.png",
+      "scene": "herdr-roster",
+      "title": "Herdr tasks: what the producer’s roster lets the office say about workers",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-herdr-roster-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The runtime snapshot is synthetic (it stands for the runtime capture of live sessions; no process is observed). The Herdr task records are synthetic.",
+      "sha256": "b3f0f37e2913f02365841bc0dac68323bf3f6634b1c486a2c6c321084b0eb7f1",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-herdr-roster-375.png",
+      "scene": "herdr-roster",
+      "title": "Herdr tasks: what the producer’s roster lets the office say about workers",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-herdr-roster-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The runtime snapshot is synthetic (it stands for the runtime capture of live sessions; no process is observed). The Herdr task records are synthetic.",
+      "sha256": "88c0725f0c26f0f8c0fc2eb2156d73a27ea02e9d7579448faf31c5a69f13c59b",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "missions-herdr-roster-414.png",
+      "scene": "herdr-roster",
+      "title": "Herdr tasks: what the producer’s roster lets the office say about workers",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-herdr-roster-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The runtime snapshot is synthetic (it stands for the runtime capture of live sessions; no process is observed). The Herdr task records are synthetic.",
+      "sha256": "c03c024f5c3b1516ba9b4d2fb32958a65e6bf40f0a776eed3658c569a9cde460",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "missions-lifecycle-approved-1440.png",
+      "scene": "lifecycle-approved",
+      "title": "Approved, and still never started",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.approved_never_started",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "6f10d11ab5134c374c7c3bed5a824ed559cc6192cf07bcf7277c4eaf7b99cb79",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-lifecycle-archived-1440.png",
+      "scene": "lifecycle-archived",
+      "title": "Finished: filed into Archived at once, read-only",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.completed_ended_archived",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "a02c5ba54d7109faf76037b2923e258a0e7c921b2e5f5704922511554beae4f8",
+      "scroll": "top",
+      "measured": {
+        "filter": "archived"
+      }
+    },
+    {
+      "file": "missions-lifecycle-deleted-1440.png",
+      "scene": "lifecycle-deleted",
+      "title": "Deleted by its owner",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.deleted_by_owner",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "a78b4bde9b93b659304c1b9076d28d75db4fe7d8b26bab406db254e2cf843250",
+      "scroll": "top",
+      "measured": {
+        "filter": "archived"
+      }
+    },
+    {
+      "file": "missions-lifecycle-disconnected-1440.png",
+      "scene": "lifecycle-disconnected",
+      "title": "The same answer, then the office disconnects",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "07a3a8ec72ba66fd9eafe7e3d28c41a518291ae69b13747b13e8d358464e2c05",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-lifecycle-of-record-1440.png",
+      "scene": "lifecycle-of-record",
+      "title": "A Mission of record, never started",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.of_record",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "aea76dfeb8feafaaffdbdd4dc9223b2f5bf85db842f9947ba74f52bdeb58153e",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-lifecycle-reclaimed-1440.png",
+      "scene": "lifecycle-reclaimed",
+      "title": "Reclaimed by the startup sweep after 30 days",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.reclaimed_at_startup",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "a78b4bde9b93b659304c1b9076d28d75db4fe7d8b26bab406db254e2cf843250",
+      "scroll": "top",
+      "measured": {
+        "filter": "archived"
+      }
+    },
+    {
+      "file": "missions-lifecycle-stale-1440.png",
+      "scene": "lifecycle-stale",
+      "title": "The same answer, read after it expired",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "expired.state",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified. The office read the task-observed answer 600 s after it was produced (the server’s own local expiry; no new answer).",
+      "sha256": "0c204f25f250aae5712cc7bd95742be5f01f2afb5d1086ed478a0c571ba1e537",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-lifecycle-start-requested-1440.png",
+      "scene": "lifecycle-start-requested",
+      "title": "Its start requested: the catalog does not see its team yet",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.start_requested",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "dc2926481387b39a63b69490458e83b927be43f344256ddb8021fe52c0f045cb",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-lifecycle-task-observed-1440.png",
+      "scene": "lifecycle-task-observed",
+      "title": "Its task observed, no worker confirmed",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "21522dbb4495e1f353babadbd73370ee91a426b746356c24d0d836be425f7354",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "missions-workflow-phases-1440.png",
+      "scene": "workflow-phases",
+      "title": "Workflows: the phases only a workflow declares",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-workflow-phases-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The workflow records are made by the workflow authority’s own test constructor; no engine ran.",
+      "sha256": "2401fffcd10598364217ec5b844dc9a0a85548050acaabfa9bd7cf78d833728e",
+      "scroll": "top",
+      "measured": {
+        "filter": "all"
+      }
+    },
+    {
+      "file": "office-herdr-roster-1440.png",
+      "scene": "herdr-roster",
+      "title": "Herdr tasks: what the producer’s roster lets the office say about workers",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-herdr-roster-v2.FIXTURE.json",
+      "pick": "state",
+      "provenance": "producer-derived",
+      "synthetic": "The runtime snapshot is synthetic (it stands for the runtime capture of live sessions; no process is observed). The Herdr task records are synthetic.",
+      "sha256": "b6561a72f898279998c4d1dfffad3411a8ac4a8deb3c0cdac43a788f978a1acb",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "reception-lifecycle-task-observed-1440.png",
+      "scene": "lifecycle-task-observed",
+      "title": "Its task observed, no worker confirmed",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "105dbff927889e1989de49933f2f5556ae8caa9104f5aa5c2210f5d18bac6116",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "reception-lifecycle-task-observed-375.png",
+      "scene": "lifecycle-task-observed",
+      "title": "Its task observed, no worker confirmed",
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "6c030bf1af2eba49e97b5c9fd54fa781bf7debc66dcf38159b40039f3d754672",
+      "scroll": "top",
+      "measured": null
+    },
+    {
+      "file": "reception-lifecycle-task-observed-414.png",
+      "scene": "lifecycle-task-observed",
+      "title": "Its task observed, no worker confirmed",
+      "viewport": {
+        "width": 414,
+        "height": 896
+      },
+      "fixture": "webview-ui/test/fixtures/di-office-state-mission-lifecycle-v2.FIXTURE.json",
+      "pick": "states.task_observed",
+      "provenance": "producer-derived",
+      "synthetic": "Mission Core’s own records, made by the producer’s test harness (its observer and spawner are test stand-ins); the task-observed step’s runtime snapshot is synthetic (it stands for a runtime capture; no process ran). Completion is Mission Core’s verify: the canonical status is Ended, never Verified.",
+      "sha256": "e3fde28a9e73a7d50994905368f63a575043c22fd702e49f183234e57e185e0f",
+      "scroll": "top",
+      "measured": null
+    }
+  ]
+}

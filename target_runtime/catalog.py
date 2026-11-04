@@ -905,6 +905,9 @@ class CatalogService(object):
             return self._composer.compose(samples, source, views,
                                           chain_reading, collection)
 
+        from mission_retention import view as retention_view
+        retention_reader = retention_view.RetentionReader()
+
         outcome = self._run_job(lambda: query_v2_module.query_v2(
             self._registry, snapshot, chains, now,
             readers=observation.pass_readers(), observed_roots=observed,
@@ -916,7 +919,9 @@ class CatalogService(object):
             delivery_task_worktrees=self._delivery_task_worktrees,
             task_worktree_of=self._mission_state.task_worktree_for_mission,
             task_worktree_delivery=True,
-            delivery_handoff_of=self._delivery_handoff),
+            delivery_handoff_of=self._delivery_handoff,
+            # Deliverable 2: the backend's own retention reading, one reader per refresh
+            retention_of=retention_reader.block, retained_of=retention_reader.retained),
             deadline)
         if "response" not in outcome:
             return catalog_answer(requested_at, None, outcome["problem"],

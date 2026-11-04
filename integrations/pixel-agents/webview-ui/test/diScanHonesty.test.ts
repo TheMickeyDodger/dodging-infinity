@@ -17,7 +17,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import type { DiOfficeState } from '../../core/src/messages.ts';
+import type { DiOfficeState, DiRetainedSource } from '../../core/src/messages.ts';
 import {
   DI_COMMENTS_PAID,
   DI_DIFF_NOT_READ,
@@ -60,6 +60,7 @@ const render = (
     rows?: readonly DiScanRow[];
     missionsRead?: DiScanMissionsRead;
     fixtureBanner?: string;
+    retained?: readonly DiRetainedSource[] | null;
   } = {},
 ) => {
   const rows = extra.rows ?? [productionRow('real', {})];
@@ -72,6 +73,7 @@ const render = (
       reception: OFFICE_RECEPTION,
       missionsRead: extra.missionsRead,
       fixtureBanner: extra.fixtureBanner,
+      ...(extra.retained === undefined ? {} : { retained: extra.retained }),
     }),
   );
 };
@@ -162,8 +164,19 @@ describe('B-H1: a Missions list the office has NOT read is never "none"; not rea
       expect(home).toMatch(new RegExp(`data-testid="di-rail-missions-not-read" data-read="${read.kind}"`));
     });
   }
-  it('a list READ as empty is the one case that says "No Missions yet"', () => {
-    expect(render('missions', { rows: [] })).toContain('No Missions yet.');
+  // CHANGED IN Deliverable 2, round 10: an empty LISTED store is not the whole answer: finished Missions may be kept in the archive. "No Missions yet" is now
+  // said only when the list is read as empty AND the archive was read and holds none; an archive not reported or unreadable says whether any are kept is not
+  // known (diRetentionHonesty pins all four). The protection kept: the genuine confident answer is still available, and nothing else says "none".
+  it('a list READ as empty, with the archive READ as empty, is the one case that says "No Missions yet"', () => {
+    const archiveEmpty: DiRetainedSource[] = [{ sourceId: 'mc', state: 'observed', problem: null, total: 0, awaiting: 0, missions: [] }];
+    expect(render('missions', { rows: [], retained: archiveEmpty })).toContain('No Missions yet.');
+  });
+  it('a list READ as empty with the archive NOT reported, or unreadable, never says "No Missions yet"', () => {
+    for (const retained of [null, [{ sourceId: 'mc', state: 'unavailable', problem: 'mission_retention_unreadable', total: null, awaiting: null, missions: [] }]] as const) {
+      const html = render('missions', { rows: [], retained: retained as readonly DiRetainedSource[] | null });
+      expect(html).not.toContain('No Missions yet');
+      expect(html).toMatch(/is not known/);
+    }
   });
 });
 
@@ -218,16 +231,16 @@ describe('B-H1 round 5: plain booleans from possibly-absent inputs carry their u
   it('a Reception list read in full: a Mission it does not list is KNOWN not to need you', () => {
     expect(readInFull.needsYou).toEqual({ known: true, value: false });
   });
-  it('a stale office: running is NOT KNOWN, never false', () => {
+  it('a stale office: running is NOT KNOWN, never false, and its reason is its own kind, stale (never merged into "not known")', () => {
     expect(stale.state.running).toEqual({
       known: false,
-      why: { kind: 'not_known', text: 'its status is not current while the office is not live' },
+      why: { kind: 'stale', text: 'its status is not current while the office is not live' },
     });
   });
-  it('an unobserved roster: running is not known', () => {
+  it('an unobserved roster: running is not known, with the roster state that keeps it unknown', () => {
     expect(rosterUnread.state.running).toEqual({
       known: false,
-      why: { kind: 'not_known', text: 'its status is not known' },
+      why: { kind: 'not_known', text: 'its team is not observed (not_recorded)' },
     });
   });
   it('the shape refuses an unknown without its reason (checked by the compiler, tsc -b)', () => {
@@ -248,7 +261,7 @@ describe('B-H1 round 5: plain booleans from possibly-absent inputs carry their u
     expect(missionsShown(rows, 'running').map((r) => r.id)).toEqual(['lock-next-panel']);
     expect(missionsUnknown(rows, 'running')).toEqual({
       count: 1,
-      kind: 'not_known',
+      kind: 'stale',
       reasons: ['its status is not current while the office is not live'],
       // round 6: the server reason codes behind the reasons (none for a client-observed status)
       codes: [],
@@ -266,7 +279,8 @@ describe('B-H1 round 5: plain booleans from possibly-absent inputs carry their u
       new RegExp(`data-testid="di-missions-status-${id}"[\\s\\S]*?data-testid="di-missions-count"[^>]*>([^<]*)<`).exec(html)?.[1];
     const both = render('missions', { rows: [noReception, stale] });
     expect(chip(both, 'needs')).toBe('not read');
-    expect(chip(both, 'running')).toBe('not known');
+    // the one unknown row for Running is stale: the chip says so, in that kind's own word
+    expect(chip(both, 'running')).toBe('stale');
     const partly = render('missions', { rows: [DI_SCAN_LOCK[0]!, stale] });
     // the known match is a floor: at least one is running, and more may be
     expect(chip(partly, 'running')).toBe('1+');
@@ -462,9 +476,11 @@ describe('B-H1 round 6: before saying a Mission does NOT need you, the client ca
     expect(missionsUnknown([row!], 'needs').reasons.join(' ')).toContain("Reception's information is out of date.");
   });
   it('plain words on screen, codes kept as provenance: what a filter says carries no raw code, and keeps the codes for diagnostics', () => {
+    // CHANGED IN Deliverable 2: an ARCHIVED Mission leaves every filter but Archived (AC-4.4-28), Needs you included, and the first unlisted transitions rows
+    // are finished Herdr tasks that now file Archived; the two taken here are ones still in the active filters, so all three are still counted
     const rows = [
       scanRowsFromOffice(withReception(review.stale!, { entries: [], entriesTotal: 0 }))[0]!,
-      ...unlistedRows(transitions.live!).slice(0, 2),
+      ...unlistedRows(transitions.live!).filter((r) => r.tab !== 'archived').slice(0, 2),
     ];
     const unknown = missionsUnknown(rows, 'needs');
     expect(unknown.count).toBe(3);
@@ -499,8 +515,17 @@ describe('pass C section 7: "N+" on the server\'s OWN projection (committed expo
   const badge = (html: string) => /data-testid="di-scan-attention"[^>]*>([^<]*)</.exec(html)?.[1];
   const RAW_CODE = /\b[a-z_]+:[a-z_0-9:]+/;
 
-  it('MIXED (evidence-historical-v2 live: one Mission listed, one not): the Needs you chip reads "1+", and says how many more may and why', () => {
-    const state = historical.live!;
+  // CHANGED IN Deliverable 2: in this export the unlisted Mission is a COMPLETE Herdr task, which now files Archived at once and leaves Needs you, so the chip on
+  // the export itself reads the plain "1". The "1+" this test exists for is kept on the same state with that Mission still in progress.
+  it('MIXED (evidence-historical-v2 live: one Mission listed, one not): an archived unlisted Mission is not counted; still in progress, the chip reads "1+"', () => {
+    const exported = scanRowsFromOffice(historical.live!);
+    const archived = exported.filter((r) => r.tab === 'archived');
+    expect(archived.map((r) => listedOf(historical.live!).has(r.id))).toEqual([false]);
+    expect(needsChip(render('missions', { rows: exported }))).toBe('1');
+    const state = structuredClone(historical.live!);
+    const unlisted = state.missions.missions.find((m) => !listedOf(state).has(m.missionRef))!;
+    unlisted.standing = 'active';
+    unlisted.lifecycleState = 'ACTIVE';
     const rows = scanRowsFromOffice(state);
     const listed = listedOf(state);
     // the state really mixes: one listed (known), one unlisted (unknown: required coverage is missing)
@@ -517,7 +542,12 @@ describe('pass C section 7: "N+" on the server\'s OWN projection (committed expo
     const rows = scanRowsFromOffice(transitions.live!);
     expect(needsChip(render('missions', { rows }))).toBe('1+');
     expect(missionsShown(rows, 'needs').length).toBe(1);
-    expect(missionsUnknown(rows, 'needs').count).toBe(63);
+    // CHANGED IN Deliverable 2 (was 63): the 38 finished Herdr tasks among the 63 unlisted file Archived and leave Needs you (AC-4.4-28); the other 25 may still
+    // need you and are counted, never dropped
+    const listed = listedOf(transitions.live!);
+    expect(missionsShown(rows, 'archived').length).toBe(38);
+    expect(rows.filter((r) => !listed.has(r.id) && r.tab !== 'archived').length).toBe(25);
+    expect(missionsUnknown(rows, 'needs').count).toBe(25);
   });
   it('EVERYTHING KNOWN (code-review-v2 live: its one Mission listed, none unlisted): the plain count, no plus', () => {
     const rows = scanRowsFromOffice(review.live!);

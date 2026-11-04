@@ -1,0 +1,140 @@
+{
+  "fixture": true,
+  "generator": "tests/test_mission_retention.py SS1",
+  "label": "FIXTURE (generated, not live): Mission Core retained summaries, produced by mission_retention.reclaim._mission_core_summary for each of its final-state shapes",
+  "summaries": {
+    "bare_cancelled": {
+      "ci": {
+        "detail": null,
+        "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+        "state": "not_read"
+      },
+      "comments": {
+        "detail": null,
+        "source": "looked in missions.json (Mission State artifacts and evidence carry only digests and locators), mission_panel_journal.json and local_requests.json: a Mission Core Mission's review findings are read from the target herd's own task.json (target_runtime/review_record.py), which DI does not own",
+        "state": "not_recorded_locally"
+      },
+      "final_state": "CANCELLED",
+      "final_state_source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].state",
+      "verdict": {
+        "detail": null,
+        "source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].run.verification",
+        "state": "not_recorded_locally"
+      }
+    },
+    "bare_completed": {
+      "ci": {
+        "detail": null,
+        "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+        "state": "not_read"
+      },
+      "comments": {
+        "detail": null,
+        "source": "looked in missions.json (Mission State artifacts and evidence carry only digests and locators), mission_panel_journal.json and local_requests.json: a Mission Core Mission's review findings are read from the target herd's own task.json (target_runtime/review_record.py), which DI does not own",
+        "state": "not_recorded_locally"
+      },
+      "final_state": "COMPLETED",
+      "final_state_source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].state",
+      "verdict": {
+        "detail": "verified: every verification conjunct held",
+        "source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].run.verification",
+        "state": "recorded"
+      }
+    },
+    "bare_rejected": {
+      "ci": {
+        "detail": null,
+        "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+        "state": "not_read"
+      },
+      "comments": {
+        "detail": null,
+        "source": "looked in missions.json (Mission State artifacts and evidence carry only digests and locators), mission_panel_journal.json and local_requests.json: a Mission Core Mission's review findings are read from the target herd's own task.json (target_runtime/review_record.py), which DI does not own",
+        "state": "not_recorded_locally"
+      },
+      "final_state": "REJECTED",
+      "final_state_source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].state",
+      "verdict": {
+        "detail": null,
+        "source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].run.verification",
+        "state": "not_recorded_locally"
+      }
+    },
+    "progress_abandoned": {
+      "ci": {
+        "detail": null,
+        "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+        "state": "not_read"
+      },
+      "comments": {
+        "detail": null,
+        "source": "looked in missions.json (Mission State artifacts and evidence carry only digests and locators), mission_panel_journal.json and local_requests.json: a Mission Core Mission's review findings are read from the target herd's own task.json (target_runtime/review_record.py), which DI does not own",
+        "state": "not_recorded_locally"
+      },
+      "final_state": "ABANDONED (Mission State progress; record state AWAITING_DECISION)",
+      "final_state_source": "missions.json mission_state[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].progress; missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].state",
+      "verdict": {
+        "detail": null,
+        "source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].run.verification",
+        "state": "not_recorded_locally"
+      }
+    },
+    "progress_closed_unsuccessful": {
+      "ci": {
+        "detail": null,
+        "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+        "state": "not_read"
+      },
+      "comments": {
+        "detail": null,
+        "source": "looked in missions.json (Mission State artifacts and evidence carry only digests and locators), mission_panel_journal.json and local_requests.json: a Mission Core Mission's review findings are read from the target herd's own task.json (target_runtime/review_record.py), which DI does not own",
+        "state": "not_recorded_locally"
+      },
+      "final_state": "CLOSED_UNSUCCESSFUL (Mission State progress; record state AWAITING_DECISION)",
+      "final_state_source": "missions.json mission_state[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].progress; missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].state",
+      "verdict": {
+        "detail": null,
+        "source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].run.verification",
+        "state": "not_recorded_locally"
+      }
+    },
+    "progress_completed": {
+      "ci": {
+        "detail": null,
+        "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+        "state": "not_read"
+      },
+      "comments": {
+        "detail": null,
+        "source": "looked in missions.json (Mission State artifacts and evidence carry only digests and locators), mission_panel_journal.json and local_requests.json: a Mission Core Mission's review findings are read from the target herd's own task.json (target_runtime/review_record.py), which DI does not own",
+        "state": "not_recorded_locally"
+      },
+      "final_state": "COMPLETED (Mission State progress; record state AWAITING_DECISION)",
+      "final_state_source": "missions.json mission_state[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].progress; missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].state",
+      "verdict": {
+        "detail": null,
+        "source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].run.verification",
+        "state": "not_recorded_locally"
+      }
+    },
+    "withdrawn": {
+      "ci": {
+        "detail": null,
+        "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+        "state": "not_read"
+      },
+      "comments": {
+        "detail": null,
+        "source": "looked in missions.json (Mission State artifacts and evidence carry only digests and locators), mission_panel_journal.json and local_requests.json: a Mission Core Mission's review findings are read from the target herd's own task.json (target_runtime/review_record.py), which DI does not own",
+        "state": "not_recorded_locally"
+      },
+      "final_state": "AWAITING_DECISION (withdrawn)",
+      "final_state_source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].state",
+      "verdict": {
+        "detail": null,
+        "source": "missions.json missions[mn-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa].run.verification",
+        "state": "not_recorded_locally"
+      }
+    }
+  }
+}

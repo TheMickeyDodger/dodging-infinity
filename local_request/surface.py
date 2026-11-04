@@ -729,6 +729,8 @@ class LocalRequestSurface(object):
                 "proposal_digest_sha256": e["proposal_digest_sha256"],
                 "cancellation": copy.deepcopy(e["cancellation"]),
                 "attested_approval": copy.deepcopy(e.get("attested_approval")),
+                # Deliverable 2: present when local retention reclaimed (or deleted) its payload.
+                "reclaimed": copy.deepcopy(e.get("reclaimed")),
             } for e in shown],
             "delivery_authority": DELIVERY_AUTHORITY, "dispatch": DISPATCH,
         }

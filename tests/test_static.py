@@ -2045,6 +2045,15 @@ MISSION_ALLOWED_CONSUMERS = frozenset({
     # may touch are pinned in (12m).
     'mission_panel/journal.py', 'mission_panel/draft.py',
     'mission_panel/lifecycle.py',
+    # Deliverable 2 (local retention; deliberate, exact): TWO mission_retention modules.
+    # eligibility.py reads Mission Core's record and state CONSTANTS and the one pure helper
+    # state.latest_activation, to re-derive retention eligibility from the record itself (it holds
+    # no store, takes no lock, saves nothing). missions.py is the ONE place local retention touches
+    # missions.json: MissionStore's own lock, load and save, and manifest.reclaimed_run, which
+    # reduces only a TERMINAL run's two diagnostic texts (the manifest validator refuses that marker
+    # on any other run). Neither imports a service, a decision or authorization module, or calls a
+    # Mission operation; the exact names each may touch are pinned in (12o).
+    'mission_retention/eligibility.py', 'mission_retention/missions.py',
 })
 MISSION_READ_ONLY_OPEN_FILE = 'mission/store.py'
 
@@ -3661,6 +3670,82 @@ for _rel, _names in PANEL_MISSION_READERS.items():
                and isinstance(n.func.value, ast.Name)
                and n.func.value.id == 'mission_record'}
     assert _called <= PANEL_PURE_HELPERS, (_rel, sorted(_called))
+
+# (12o) Deliverable 2 (local retention): the two mission_retention modules that import Mission Core,
+#       deliberate and exact. Each imports only the named Mission Core modules, touches only the
+#       names below, and CALLS only the listed ones: no service, decision, authorization or
+#       state-operation entry point is reachable from local retention.
+RETENTION_FORBIDDEN_NAMES = frozenset({
+    'apply_human_decision', 'apply_operator_attested_approval',
+    'issue_mission_authorization', 'mint_decision_id', 'mint_request_id',
+    'mint_state_operation_id', 'withdraw_proposal', 'OperatorAttestedContext',
+    'AuthenticatedContext', 'OPERATOR_ATTESTED_CONTEXT', 'LOCAL_CALLER_CONTEXT',
+    'MissionService', 'activate_proof_contract', 'record_run_intent', 'abandon'})
+RETENTION_MISSION_CONSUMERS = {
+    'mission_retention/eligibility.py': {
+        'imports': [('mission', 'record'), ('mission', 'state')],
+        'used': {'mission_record': {
+            'CANCEL_QUIESCENCE_NOTHING_STARTED', 'CANCEL_QUIESCENCE_OWNED_GROUP_REAPED',
+            'CANCEL_QUIESCENCE_TASK_OBSERVED_STOPPED', 'STATE_CANCELLED', 'STATE_COMPLETED',
+            'STATE_RUNNING'},
+            'mission_state': {'TERMINAL_PROGRESS_STATES', 'latest_activation'}},
+        'called': {'mission_record': set(), 'mission_state': {'latest_activation'}},
+    },
+    'mission_retention/missions.py': {
+        'imports': [('mission', 'manifest'), ('mission', 'store')],
+        'used': {'mission_manifest': {'RUN_RECLAIMABLE_STATES', 'RUN_RECLAIM_OUTCOMES',
+                                      'reclaimed_run'},
+                 'mission_store': {'MissionStore'}},
+        'called': {'mission_manifest': {'reclaimed_run'}, 'mission_store': {'MissionStore'}},
+    },
+}
+# Exactly these two mission_retention modules import Mission Core, now and later; and the WHOLE
+# package names no decision, authorization, id-minting or state-operation entry point (the names
+# test 12n forbids the panel, and no call named record_* / mint_* / apply_* / issue_).
+RETENTION_FILES = sorted((R / 'mission_retention').glob('*.py'))
+assert {f.name for f in RETENTION_FILES} >= {'eligibility.py', 'missions.py', 'reclaim.py',
+                                            'store.py'}, RETENTION_FILES
+_retention_mission_importers = set()
+for _path in RETENTION_FILES:
+    _tree = ast.parse(_path.read_text())
+    _rel = _path.relative_to(R).as_posix()
+    for _node in ast.walk(_tree):
+        if isinstance(_node, ast.Import) and any(
+                a.name.split('.')[0] == 'mission' for a in _node.names):
+            _retention_mission_importers.add(_rel)
+        if isinstance(_node, ast.ImportFrom) and (_node.module or '').split('.')[0] == 'mission':
+            _retention_mission_importers.add(_rel)
+        if isinstance(_node, ast.Name):
+            assert _node.id not in RETENTION_FORBIDDEN_NAMES, (_rel, _node.id)
+        if isinstance(_node, ast.Attribute):
+            assert _node.attr not in RETENTION_FORBIDDEN_NAMES, (_rel, _node.attr)
+        if isinstance(_node, ast.Call):
+            _fn = _node.func
+            _called_name = _fn.attr if isinstance(_fn, ast.Attribute) else getattr(_fn, 'id', '')
+            assert not _called_name.startswith(('record_', 'mint_', 'apply_', 'issue_')), (
+                _rel, _called_name)
+        if isinstance(_node, ast.Constant) and isinstance(_node.value, str):
+            assert _node.value not in RETENTION_FORBIDDEN_NAMES, (_rel, _node.value)
+assert _retention_mission_importers == set(RETENTION_MISSION_CONSUMERS), (
+    sorted(_retention_mission_importers))
+for _rel, _pin in RETENTION_MISSION_CONSUMERS.items():
+    _rt = ast.parse((R / _rel).read_text())
+    _imports = sorted(
+        [(None, a.name) for n in ast.walk(_rt) if isinstance(n, ast.Import)
+         for a in n.names if a.name.split('.')[0] == 'mission']
+        + [(n.module, a.name) for n in ast.walk(_rt)
+           if isinstance(n, ast.ImportFrom)
+           and (n.module or '').split('.')[0] == 'mission'
+           for a in n.names], key=repr)
+    assert _imports == sorted(_pin['imports'], key=repr), (_rel, _imports)
+    for _alias, _names in _pin['used'].items():
+        _used = {n.attr for n in ast.walk(_rt) if isinstance(n, ast.Attribute)
+                 and isinstance(n.value, ast.Name) and n.value.id == _alias}
+        assert _used == _names, (_rel, _alias, sorted(_used ^ _names))
+        _called = {n.func.attr for n in ast.walk(_rt) if isinstance(n, ast.Call)
+                   and isinstance(n.func, ast.Attribute)
+                   and isinstance(n.func.value, ast.Name) and n.func.value.id == _alias}
+        assert _called == _pin['called'][_alias], (_rel, _alias, sorted(_called))
 
 # (12n) Item 4 (DI World request panel): the WHOLE mission_panel package never
 #       authorizes anything and offers no shell, PTY, filesystem or command

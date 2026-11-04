@@ -23,9 +23,13 @@ import { productionRow } from './helpers/productionRow.ts';
 import { AVAILABLE, herdrControl } from './herdrControlStub.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/** The trash's scope sentence, as owner decision 2 requires it (copied here, never read from the code under test). */
+/**
+ * The trash's scope sentence (copied here, never read from the code under test). CHANGED IN Deliverable 2 (Addendum B, which bounds owner decision 2's full-scope
+ * wording): the owner's "Delete local data" removes DI-owned local data AND the retained summary, irreversibly, and says plainly what it cannot reach (the providers'
+ * transcripts, the target herd's own state, PR delivery receipts); it never promises a deeper erase than DI can perform.
+ */
 const TRASH_SCOPE =
-  'Deletes this Mission’s reasoning, transcripts and logs: DI’s copies, the herd’s own terminal history, and the providers’ own session transcripts. Keeps the summary and the approval record. If any part cannot be deleted, it says what remains.';
+  'Holding deletes this Mission’s local data from this office: its conversation, its request and its logs, AND its retained summary (final status, verdict, CI results and comments). It cannot be undone. What remains: Mission Core’s own record of the request and its authority (authority history is never erased) and a record that it was deleted. Not reached from here: the providers’ own session transcripts, the target herd’s own state, and PR delivery receipts. Without this, its reasoning and logs are reclaimed automatically 30 days after it finished, and its summary is kept.';
 const noop = () => undefined;
 const render = (row: DiScanRow, view: DiScanView = 'mission') =>
   renderToStaticMarkup(
@@ -102,7 +106,7 @@ describe('PRESENTATION: the pixel-lock composition, in order (pixel-lock/02-miss
     expect(pills.length).toBe(2);
     for (const pill of pills)
       expect(pill).toMatch(
-        /<span class="di-scan-dot" data-tone="[a-z]+" aria-hidden="true"><\/span>(Needs you|Building)/,
+        /<span class="di-scan-dot" data-tone="[a-z]+" aria-hidden="true"><\/span>(Needs you|Running)/,
       );
   });
 });
@@ -210,35 +214,35 @@ describe('PRESENTATION: the trash (D-1, AC-4.4-29/-30/-32), disabled at this sta
   it('sits bottom-right, after the three buttons, and says what is deleted and what is kept', () => {
     const html = render(merged);
     expect(position(html, 'di-scan-trash')).toBeGreaterThan(position(html, 'di-scan-comments'));
-    expect(tag(html, 'di-scan-trash')).toContain('aria-label="Hold to delete this Mission’s data"');
+    expect(tag(html, 'di-scan-trash')).toContain('aria-label="Hold to delete this Mission’s local data"');
     expect(html).toContain(TRASH_SCOPE);
   });
-  it('the trash copy is true at FULL scope: DI, the herd tools and the providers, the summary kept, a partial delete said as partial', () => {
-    // three owners, each named: DI, the herd tools, and the model providers (their own session transcripts)
-    expect(TRASH_SCOPE).toMatch(/DI’s copies, the herd’s own terminal history, and the providers’ own session transcripts/);
+  // CHANGED IN Deliverable 2 (Addendum B): this test pinned owner decision 2's full-scope promise (DI, the herd tools and the providers deleted, the summary kept).
+  // Addendum B bounds the owner's delete to DI-owned local data and requires the copy to state the actual outcome before the person commits: the summary goes
+  // too, it is irreversible, and what DI cannot reach is named as not reached. The protection kept: no dash-joined copy, and no promise the control cannot keep.
+  it('the trash copy states the actual outcome: local data AND the summary removed, irreversible, what remains, and what it cannot reach', () => {
+    expect(TRASH_SCOPE).toMatch(/AND its retained summary \(final status, verdict, CI results and comments\)/);
+    expect(TRASH_SCOPE).toMatch(/It cannot be undone\./);
+    // CHANGED IN round 10: "the Mission’s approved request" put the word "approved" on every Mission page, which the page-wide guard against approval claims
+    // (diMissionDelivery "no ready, mint or go-ahead claim") rightly refuses. Same facts, without an approval word: what remains is Mission Core’s record.
+    expect(TRASH_SCOPE).toMatch(/What remains: Mission Core’s own record of the request and its authority \(authority history is never erased\)/);
+    expect(TRASH_SCOPE).not.toMatch(/\bapproved\b|\bready\b/i);
+    expect(TRASH_SCOPE).toMatch(/Not reached from here: the providers’ own session transcripts, the target herd’s own state, and PR delivery receipts\./);
     expect(TRASH_SCOPE).not.toMatch(/[\u2013\u2014]/);
-    expect(TRASH_SCOPE).toMatch(/Keeps the summary and the approval record\./);
-    expect(TRASH_SCOPE).toMatch(/If any part cannot be deleted, it says what remains\./);
-    // no DI-only promise anywhere in the trash's words
-    const html = render(merged);
-    const words = [
-      tag(html, 'di-scan-trash'),
-      block(html, 'di-scan-trash-reason'),
-      html.match(/id="di-scan-trash-note"[^>]*>[^<]*/)?.[0] ?? '',
-    ].join(' ');
-    expect(words).not.toMatch(/\blocal\b/i);
+    // it never claims to reach what it does not
+    expect(TRASH_SCOPE).not.toMatch(/deletes[^.]*(herd’s own terminal history|providers’ own session transcripts)/i);
   });
   it('a running Mission: disabled, and the reason is that it is running', () => {
     const html = render(building);
     expect(tag(html, 'di-scan-trash')).toContain('disabled=""');
     expect(block(html, 'di-scan-trash-reason')).toContain('A running Mission cannot be deleted.');
   });
-  it('a finished Mission: still disabled at this stage, and says the delete is not connected (it never hides the row)', () => {
+  // CHANGED IN Deliverable 2: the delete is connected now, through the request panel, and offered only for an archived Mission Core Mission whose local data this
+  // office reads. The specimen row carries no local-retention reading, so it is disabled with THAT reason (never hidden), not "not connected".
+  it('a specimen Mission whose local data is not read: disabled, and says so (it never hides the row)', () => {
     const html = render(merged);
     expect(tag(html, 'di-scan-trash')).toContain('disabled=""');
-    expect(block(html, 'di-scan-trash-reason')).toContain(
-      'The office does not delete Missions. Deletion stays outside this office.',
-    );
+    expect(block(html, 'di-scan-trash-reason')).toContain('This Mission’s local data is not read here.');
     expect(html).not.toMatch(/aria-label="Clear /);
   });
   it('the Home expanded card has the same disabled trash, bottom-right, and no hide gesture', () => {

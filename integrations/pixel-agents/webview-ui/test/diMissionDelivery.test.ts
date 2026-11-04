@@ -27,7 +27,19 @@ import { describe, expect, it } from 'vitest';
 
 import type { DiDeliveryReply, DiMission, DiMissionDeliveryHandoff, DiOfficeState } from '../../core/src/messages.ts';
 import * as model from '../src/components/diDeliveryModel.ts';
-import { deliveryActionTarget, DI_SCAN_LOCK, type DiScanRow, returnPathClaim, scanRowsFromOffice, shellWord } from '../src/components/diScanModel.ts';
+import {
+  deliveryActionTarget,
+  DI_DELIVERY_ARCHIVED,
+  DI_DELIVERY_ARCHIVED_ACT,
+  DI_DELIVERY_ARCHIVED_HANDOFF,
+  DI_DELIVERY_ARCHIVED_LINKED,
+  DI_SCAN_LOCK,
+  DI_STEP_ELIGIBLE_ARCHIVED,
+  type DiScanRow,
+  returnPathClaim,
+  scanRowsFromOffice,
+  shellWord,
+} from '../src/components/diScanModel.ts';
 import { DiScanPanel } from '../src/components/DiScanPanel.tsx';
 import type { DiDeliveryControl } from '../src/hooks/useDiDelivery.ts';
 
@@ -230,6 +242,26 @@ const HANDOFF = (over: Partial<DiMissionDeliveryHandoff> = {}): DiMissionDeliver
 const NO_RECORD: Link = { state: 'unlinked_no_record', deliveryId: null, basis: null };
 const handoffSection = (html: string) => /<section[^>]*data-testid="di-scan-delivery-handoff"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
 const herdrRow = (link: Link, handoff?: DiMissionDeliveryHandoff) => herdrRows(link, handoff).find((item) => item.id === HERD)!;
+/**
+ * Deliverable 2, round 10: the fixture's Herdr task is COMPLETE with a terminal standing, so Deliverable 1's own archive rule (its record closed AND a positive
+ * capacity-release basis) ARCHIVES it, and an archived Mission is read-only: its delivery session is withheld. The ACTIVE delivery path the scenarios below pin
+ * is unchanged, so they pin it on the SAME task with its record not closed (a labelled synthetic variation: `standing: 'active'`), each asserting it is open.
+ * The archived row as the fixture has it gets its own countercase ("an ARCHIVED Mission's delivery is read-only"). The two never share a body.
+ */
+function activeHerdrRow(link: Link, handoff?: DiMissionDeliveryHandoff): DiScanRow {
+  const state = structuredClone(historical.states.live);
+  for (const mission of state.missions.missions) {
+    if (mission.missionRef === HERD) {
+      mission.lifecycleModel = 'herdr.task/1';
+      mission.standing = 'active';
+      mission.notLiveReason = null;
+      mission.v2 = { ...mission.v2, deliveryLink: link, ...(handoff === undefined ? {} : { deliveryHandoff: handoff }) };
+    }
+  }
+  const row = scanRowsFromOffice(state).find((item) => item.id === HERD)!;
+  expect(row.tab, 'the active variation is not archived').toBe('open');
+  return row;
+}
 const linkedRow = (id = ID) =>
   rows({ state: 'linked', deliveryId: id, basis: 'record_mission_binding' }).find(
     (r) => r.id === HERD,
@@ -353,8 +385,9 @@ describe("the row carries the producer's link, in words", () => {
 
   // The two scenarios below are SEPARATE tests on purpose, never one parameterised case over two bases: a shared body lets the canonical
   // path's expectations leak onto the legacy one, which is exactly how a legacy origin-only link could pass while being wrong.
+  // CHANGED IN Deliverable 2, round 10: pinned on the ACTIVE Herdr task (`activeHerdrRow`); the archived one is its own countercase below
   it('SCENARIO 1, a CURRENT catalog: a Herdr task linked by task and worktree says so, is read, and is offered its step', () => {
-    const row = herdrRows({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }).find((item) => item.id === HERD)!;
+    const row = activeHerdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' });
     expect(row.deliveryLink).toEqual({ kind: 'linked', deliveryId: ID, words: TASK_WORKTREE_WORDS });
     expect(deliveryActionTarget(row.deliveryLink)).toBe(ID);
     const d = section(render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer())))));
@@ -676,8 +709,11 @@ const NOT_KNOWN_RETURN =
   'Not known: this catalog does not say how it links a Herdr task to a delivery record, so this office does not promise that a record made from this task comes back to this task.';
 
 describe('the delivery handoff: a FRESH task with no record is told how to create one, and how it comes back', () => {
+  // CHANGED IN Deliverable 2, round 10 (lead ruling): the creation guidance is offered to a task that is NOT archived (the real producer shape these
+  // scenarios describe: a task still ACTIVE, whose handoff states the ceremony would stop at "not COMPLETE"), so they run on the open task
+  // (`activeHerdrRow`). An ARCHIVED unlinked task cannot create: pinned on the real producer fixture in the archived block below.
   it("SCENARIO fresh no-record task, current producer: the facts, the exact command in the person's own terminal, and the canonical return path", () => {
-    const d = render(herdrRow(NO_RECORD, HANDOFF()), control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer()))));
+    const d = render(activeHerdrRow(NO_RECORD, HANDOFF()), control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer()))));
     const h = handoffSection(d);
     expect(h).not.toBe('');
     expect(text(h)).toContain("Repository /work/my wt's tree");
@@ -715,14 +751,14 @@ describe('the delivery handoff: a FRESH task with no record is told how to creat
     expect(text(h)).toContain(CANONICAL_RETURN);
     expect(d).not.toContain('data-testid="di-scan-delivery-read"');
     expect(d).not.toContain('data-testid="di-dl-confirm"');
-    expect(deliveryActionTarget(herdrRow(NO_RECORD, HANDOFF()).deliveryLink)).toBeNull();
+    expect(deliveryActionTarget(activeHerdrRow(NO_RECORD, HANDOFF()).deliveryLink)).toBeNull();
   });
 
   it("SCENARIO this mission's own situation, from a fixture: detached HEAD, no COMPLETE and no APPROVE are stated as the real reasons, in the collector's words", () => {
     const reason = "task 20261030-144734-e1b5c9 status is 'ACTIVE', not COMPLETE";
     const h = handoffSection(
       render(
-        herdrRow(NO_RECORD, HANDOFF({ branch: { state: 'detached', ref: null }, evidence: { state: 'refused', reason }, blockers: ['head_detached', 'evidence_not_collected'] })),
+        activeHerdrRow(NO_RECORD, HANDOFF({ branch: { state: 'detached', ref: null }, evidence: { state: 'refused', reason }, blockers: ['head_detached', 'evidence_not_collected'] })),
         control(LINKED_START()),
       ),
     );
@@ -737,7 +773,7 @@ describe('the delivery handoff: a FRESH task with no record is told how to creat
   });
 
   it('SCENARIO no store registered, current producer: still the canonical statement, with the honest condition that nothing can link yet', () => {
-    const h = handoffSection(render(herdrRow({ state: 'unlinked_store_not_registered', deliveryId: null, basis: null }, HANDOFF()), control(LINKED_START())));
+    const h = handoffSection(render(activeHerdrRow({ state: 'unlinked_store_not_registered', deliveryId: null, basis: null }, HANDOFF()), control(LINKED_START())));
     expect(h).toContain('data-return-path="canonical"');
     expect(text(h)).toContain(CANONICAL_RETURN + ' The catalog has no readable delivery store right now, so nothing can link until it does.');
   });
@@ -926,8 +962,12 @@ describe('the canonical return path is CONDITIONED on the store, never promised 
 });
 
 describe('the delivery handoff: the three return-path behaviours are distinct in BEHAVIOUR, each its own scenario', () => {
+  // CHANGED IN Deliverable 2, round 10 (lead ruling): the creation guidance is offered to a task that is NOT archived (the real producer shape these
+  // scenarios describe: a task still ACTIVE, whose handoff states the ceremony would stop at "not COMPLETE"), so they run on the open task
+  // (`activeHerdrRow`). An ARCHIVED unlinked task cannot create: pinned on the real producer fixture in the archived block below.
+  // CHANGED IN Deliverable 2, round 10: an archived task's record is NOT acted on (read-only), so this pins the ACTIVE task (`activeHerdrRow`)
   it('SCENARIO canonical-linked: the record is acted on, so there is no creation section', () => {
-    const row = herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF());
+    const row = activeHerdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF());
     const d = render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer()))));
     expect(handoffSection(d)).toBe('');
     expect(d).toContain('data-testid="di-scan-delivery-read"');
@@ -935,7 +975,7 @@ describe('the delivery handoff: the three return-path behaviours are distinct in
   });
 
   it('SCENARIO legacy-linked (origin only): the section says it cannot promise, whatever the producer ALSO declares', () => {
-    const row = herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_repository_binding' }, HANDOFF());
+    const row = activeHerdrRow({ state: 'linked', deliveryId: ID, basis: 'record_repository_binding' }, HANDOFF());
     expect(row.deliveryLink?.kind).toBe('origin_only');
     const h = handoffSection(render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer())))));
     expect(h).toContain('data-return-path="legacy"');
@@ -945,14 +985,14 @@ describe('the delivery handoff: the three return-path behaviours are distinct in
   });
 
   it('SCENARIO legacy producer, unlinked, which DECLARES the origin-only basis: refused, not canonical', () => {
-    const h = handoffSection(render(herdrRow(NO_RECORD, HANDOFF({ linkBasis: 'record_repository_binding' })), control(LINKED_START())));
+    const h = handoffSection(render(activeHerdrRow(NO_RECORD, HANDOFF({ linkBasis: 'record_repository_binding' })), control(LINKED_START())));
     expect(h).toContain('data-return-path="legacy"');
     expect(text(h)).toContain(LEGACY_RETURN);
     expect(text(h)).not.toContain(CANONICAL_RETURN);
   });
 
   it('SCENARIO an older producer that sends NO handoff block at all: nothing is invented, no command, and the claim is NOT KNOWN (silence is not a declaration)', () => {
-    const row = herdrRow(NO_RECORD);
+    const row = activeHerdrRow(NO_RECORD);
     expect(row.deliveryHandoff).toMatchObject({ kind: 'not_reported', command: null });
     const h = handoffSection(render(row, control(LINKED_START())));
     expect(h).toContain('data-return-path="not_known"');
@@ -964,7 +1004,7 @@ describe('the delivery handoff: the three return-path behaviours are distinct in
 
   it('SCENARIO an unrecognised or empty declaration fails closed: never the stronger reading', () => {
     for (const linkBasis of ['record_something_new', 'record_task_worktree_binding ', 'RECORD_TASK_WORKTREE_BINDING', null]) {
-      const h = handoffSection(render(herdrRow(NO_RECORD, HANDOFF({ linkBasis })), control(LINKED_START())));
+      const h = handoffSection(render(activeHerdrRow(NO_RECORD, HANDOFF({ linkBasis })), control(LINKED_START())));
       expect(h, String(linkBasis)).toContain('data-return-path="not_known"');
       expect(text(h), String(linkBasis)).not.toContain(CANONICAL_RETURN);
     }
@@ -1044,8 +1084,9 @@ describe('no state of the whole panel claims that a delivery or a record is read
     expect('Not a promise: nothing listed stops it').not.toMatch(FORBIDDEN);
   });
 
+  // CHANGED IN Deliverable 2, round 10: the one legitimate "Ready" is on an ACTIVE task (`activeHerdrRow`); an archived one offers none (countercase below)
   it('the one legitimate "Ready" is the adapter\'s own eligible step on a wired canonical link, and the page says where it came from', () => {
-    const row = herdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF());
+    const row = activeHerdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF());
     const html = renderToStaticMarkup(
       createElement(DiScanPanel, {
         rows: [row],
@@ -1058,6 +1099,86 @@ describe('no state of the whole panel claims that a delivery or a record is read
     expect(html).toContain('data-gate="ready"');
     expect(text(html)).toContain('Eligible now, as the record states it.');
     expect(handoffSection(html)).toBe(''); // and no creation section beside an acted-on record
+  });
+});
+
+describe('an ARCHIVED Mission is read-only, NOT information-erasing: on the REAL producer\'s COMPLETE linked Herdr task (Deliverable 2, round 10)', () => {
+  // di-office-state-archived-delivery-v2: the real producer answer of tests/test_mission_retention_delivery_answer.py (a COMPLETE Herdr task the catalog links by
+  // its own task and worktree, and a COMPLETE task with no record), projected by the real server (server/__tests__/diArchivedDeliveryWire.test.ts). Both are
+  // archived by Deliverable 1's rule. What may be done is READ; everything that acts is drawn withheld or disabled with the archived reason.
+  const archivedState = (
+    JSON.parse(fs.readFileSync(path.join(root, 'test/fixtures/di-office-state-archived-delivery-v2.FIXTURE.json'), 'utf-8')) as { state: DiOfficeState }
+  ).state;
+  const REAL_ID = 'prd-0a0a0a0a0a0a0a0a0a0a0a0a';
+  const realRows = scanRowsFromOffice(archivedState);
+  const linkedArchived = realRows.find((r) => r.deliveryLink?.kind === 'linked')!;
+  const unlinkedArchived = realRows.find((r) => r !== linkedArchived && r.deliveryHandoff !== undefined)!;
+  const realAnswer = () =>
+    readWith(reply(7, 'status', 'ok', null, null, statusAnswer(office({ eligible: { step: 'COMMIT', binding: binding({ delivery_id: REAL_ID }) } }), REAL_ID)), REAL_ID);
+  const withoutCommand = (html: string) => html.replace(/<pre[^>]*data-testid="di-scan-delivery-handoff-command"[\s\S]*?<\/pre>/, '');
+
+  it('the real rows are what the producer makes them: both archived, one linked by its own task and worktree', () => {
+    expect(linkedArchived.tab).toBe('archived');
+    expect(unlinkedArchived.tab).toBe('archived');
+    expect(linkedArchived.deliveryLink).toEqual({ kind: 'linked', deliveryId: REAL_ID, words: TASK_WORKTREE_WORDS });
+    expect(deliveryActionTarget(linkedArchived.deliveryLink)).toBe(REAL_ID);
+  });
+  it('READABLE: before a read, the read control is offered and the page says archived, read-only; never "no session" or a layout preview', () => {
+    const d = section(render(linkedArchived, control(LINKED_START())));
+    expect(d).toContain('data-testid="di-scan-delivery-read"');
+    expect(text(d)).toContain(READ_LABEL);
+    expect(d).toMatch(new RegExp(`data-testid="di-scan-delivery-archived">${DI_DELIVERY_ARCHIVED_LINKED}<`));
+    expect(text(d)).not.toMatch(/no delivery session|layout preview/i);
+    expect(stepsOf(d).map((x) => x.gate)).not.toContain('ready');
+  });
+  it('READABLE: after the status read, its facts, the step the record names eligible and its binding are all shown', () => {
+    const d = section(render(linkedArchived, control(realAnswer())));
+    expect(d).toContain('data-testid="di-scan-delivery-archived-status"');
+    expect(d).toContain('data-testid="di-dl-view"');
+    expect(text(d)).toContain('Eligible now, as the record states it: COMMIT.');
+    expect(d).toMatch(/data-testid="di-dl-binding"[\s\S]*?<dd>prd-0a0a0a0a0a0a0a0a0a0a0a0a<\/dd>/);
+    const commit = stepsOf(d).find((x) => x.id === 'commit')!;
+    expect(commit.gate).toBe('withheld');
+    expect(text(commit.body)).toContain(DI_STEP_ELIGIBLE_ARCHIVED);
+  });
+  it('EVERY CONTROL THAT ACTS is drawn disabled with the archived reason: the confirmation box, the step button; no Ready anywhere', () => {
+    const html = render(linkedArchived, control(realAnswer()));
+    const d = section(html);
+    const box = /<input[^>]*data-testid="di-dl-confirm"[^>]*>/.exec(d)?.[0] ?? '';
+    const ask = /<button[^>]*data-testid="di-dl-advance"[^>]*>/.exec(d)?.[0] ?? '';
+    for (const [name, element] of [['confirmation box', box], ['step button', ask]] as const) {
+      expect(element, name).toMatch(/disabled=""/);
+      expect(element, name).toContain('aria-describedby="di-scan-delivery-archived-act"');
+    }
+    expect(box).not.toMatch(/checked=""/);
+    expect(d).toMatch(new RegExp(`id="di-scan-delivery-archived-act" data-testid="di-scan-delivery-archived-act">${DI_DELIVERY_ARCHIVED_ACT}<`));
+    expect(html).not.toContain('data-gate="ready"');
+    expect(text(withoutCommand(html))).not.toMatch(/\bready\b|\bmint|\bgo ahead\b|\bapproved\b|may be created|can be created|will be created/i);
+  });
+  it('the ARCHIVED UNLINKED task cannot create: its recorded facts stay, its creation command and creation steps are not offered, and it says why', () => {
+    const html = render(unlinkedArchived, control(LINKED_START()));
+    const h = handoffSection(html);
+    expect(h).toContain('data-archived="true"');
+    expect(h).toContain('data-testid="di-scan-delivery-handoff-facts"');
+    expect(h).toMatch(new RegExp(`data-testid="di-scan-delivery-handoff-archived">${DI_DELIVERY_ARCHIVED_HANDOFF}<`));
+    for (const gone of ['di-scan-delivery-handoff-command', 'di-scan-delivery-handoff-blockers', 'di-scan-delivery-handoff-guards', 'di-scan-delivery-handoff-return'])
+      expect(h, gone).not.toContain(gone);
+    const d = section(html);
+    expect(d).not.toContain('data-testid="di-scan-delivery-read"');
+    for (const step of stepsOf(d)) expect(text(step.body), step.id).toContain(DI_DELIVERY_ARCHIVED);
+  });
+  it('NON-ARCHIVED delivery is UNAFFECTED: an active row keeps the shared status view, an ENABLED confirmation box, its Ready step, and no archived words', () => {
+    for (const row of [activeHerdrRow({ state: 'linked', deliveryId: ID, basis: 'record_task_worktree_binding' }, HANDOFF()), linkedRow()]) {
+      const html = render(row, control(readWith(reply(7, 'status', 'ok', null, null, statusAnswer()))));
+      const d = section(html);
+      expect(row.tab).toBe('open');
+      expect(d).not.toContain('di-scan-delivery-archived');
+      expect(html).toContain('data-gate="ready"');
+      const box = /<input[^>]*data-testid="di-dl-confirm"[^>]*>/.exec(d)?.[0] ?? '';
+      expect(box).not.toBe('');
+      expect(box, 'the active confirmation box is not disabled').not.toMatch(/disabled=""/);
+      expect(text(d)).not.toContain(DI_DELIVERY_ARCHIVED_ACT);
+    }
   });
 });
 

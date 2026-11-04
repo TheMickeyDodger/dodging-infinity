@@ -47,10 +47,12 @@ describe('the three cases', () => {
 
 describe('when the control is offered', () => {
   it('the Orchestrator limit holds first, then an empty ask, then a workspace that is not available', () => {
-    expect(continueAskReason('Fix it', DI_ORCHESTRATOR_LIMIT, true)).toMatch(/Orchestrators are running/);
-    expect(continueAskReason('   ', 0, true)).toBe('Type an ask first.');
-    expect(continueAskReason('Fix it', 0, false)).toBe(DI_ASK_NO_WORKSPACE);
-    expect(continueAskReason('Fix it', 0, true)).toBeNull();
+    // the guard's inputs: held Orchestrators and those not known to be free (review finding 4)
+    const none = { holding: 0, notKnown: 0 };
+    expect(continueAskReason('Fix it', { holding: DI_ORCHESTRATOR_LIMIT, notKnown: 0 }, true)).toMatch(/Orchestrators are in use/);
+    expect(continueAskReason('   ', none, true)).toBe('Type an ask first.');
+    expect(continueAskReason('Fix it', none, false)).toBe(DI_ASK_NO_WORKSPACE);
+    expect(continueAskReason('Fix it', none, true)).toBeNull();
   });
 });
 

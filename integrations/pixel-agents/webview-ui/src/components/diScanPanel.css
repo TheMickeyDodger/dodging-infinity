@@ -443,6 +443,42 @@
   background: var(--di-scan-bad);
 }
 
+/* Deliverable 3: a MISSION STATUS's canonical glyph (diMissionStatus.ts, one shape per status) stands where the dot stood, in the same tone's
+   colour: its shape is the non-colour mark, the same for that status on every surface. Attention and other vocabularies keep the dot. */
+.di-scan-glyph {
+  flex-shrink: 0;
+  font-size: 1.05em;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--di-scan-muted);
+}
+.di-scan-glyph[data-tone='needs'] {
+  color: var(--di-scan-needs);
+}
+.di-scan-glyph[data-tone='building'] {
+  color: var(--di-scan-building);
+}
+.di-scan-glyph[data-tone='merged'],
+.di-scan-glyph[data-tone='pass'] {
+  color: var(--di-scan-ok);
+}
+.di-scan-glyph[data-tone='failed'] {
+  color: var(--di-scan-bad);
+}
+.di-scan-pill[data-fill='solid'] .di-scan-glyph[data-tone='needs'] {
+  color: var(--di-scan-needs-line);
+}
+.di-scan-pill[data-fill='solid'] .di-scan-glyph[data-tone='building'] {
+  color: var(--di-scan-building-line);
+}
+.di-scan-pill[data-fill='solid'] .di-scan-glyph[data-tone='merged'],
+.di-scan-pill[data-fill='solid'] .di-scan-glyph[data-tone='pass'] {
+  color: var(--di-scan-ok-line);
+}
+.di-scan-pill[data-fill='solid'] .di-scan-glyph[data-tone='failed'] {
+  color: var(--di-scan-bad-line);
+}
+
 /* ---------- expanded detail ---------- */
 
 .di-scan-detail {
@@ -634,6 +670,9 @@
   position: fixed;
   z-index: 30;
   top: 0;
+  /* a narrow stage reflows what it shows (diScanPages.css, and the pills below) */
+  container-type: inline-size;
+  container-name: scanstage;
   right: 0;
   bottom: 0;
   display: flex;
@@ -1702,6 +1741,15 @@
   color: var(--di-scan-muted);
   font-size: 12px;
 }
+/* a Mission's own attention, on its own line beside its status: the needs dot and the words */
+.di-rail-orchestrator-attention {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding-left: 16px;
+  font-size: 12px;
+}
 .di-rail-foot {
   margin-top: auto;
   display: flex;
@@ -1709,4 +1757,100 @@
   gap: 2px;
   padding-top: 10px;
   border-top: 1px solid var(--di-scan-line);
+}
+
+/* ---------- Deliverable 3: narrow windows ----------
+   Fixture mode's in-panel label is its OWN strip across the top of the window: the fixed rail and stage start below it, never under it (it
+   painted over the rail's wordmark). Where the rail covers the panel's left edge, the panel's own list starts past it. Both insets are measured
+   (diStickyPad.ts useScanFaceInsets, as --scan-fixture-inset and --scan-rail-overlap); without a label or an overlap they are 0 and nothing moves. */
+/* both are layout lengths, not colour tokens (so outside the --di-* token namespace); 0 unless measured */
+.di-scan {
+  --scan-fixture-inset: 0px;
+  --scan-rail-overlap: 0px;
+}
+.di-scan[data-fixture-note='strip'] > .di-op-fixture-note {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 31;
+  border-radius: 0;
+}
+.di-scan[data-fixture-note='strip'] {
+  padding-top: var(--scan-fixture-inset);
+}
+.di-scan .di-rail,
+.di-scan .di-scan-stage {
+  top: var(--scan-fixture-inset);
+}
+.di-scan-body {
+  padding-left: var(--scan-rail-overlap);
+}
+/* a status pill on a narrow stage wraps its words inside itself rather than run past the stage's edge, and grows taller to hold them (its
+   fixed desktop height would leave a wrapped word outside its own border) */
+@container scanstage (max-width: 599px) {
+  /* the details' right gutter gives its width back on a narrow stage, so a status pill has room for its whole word */
+  .di-scan-mission {
+    padding-right: 12px;
+  }
+  /* a reason or an answer quoting an identifier (a Mission id is one 35-character token) breaks it inside its own box, never past its edge; the id
+     stays whole in the text */
+  .di-scan-stage-note {
+    overflow-wrap: anywhere;
+  }
+  /* the disabled actions' reasons stack, each at the stage's full width, rather than share a row in two slivers */
+  .di-scan-actions-notes {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .di-scan-trash-notes {
+    max-width: none;
+    text-align: left;
+  }
+  .di-scan-pill {
+    max-width: 100%;
+    white-space: normal;
+  }
+  /* the details' large pills: tighter, so their longest single word ("Unrecognised") fits inside the border at 375 px; where even that cannot
+     fit (a narrower window still), the word breaks INSIDE the border rather than run out of it */
+  .di-scan-pill[data-fill='solid'] {
+    height: auto;
+    min-height: 28px;
+    padding: 4px 8px;
+    gap: 6px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+}
+/* Home's list on a narrow panel (a narrow window, the panel beside the rail): the tabs and the search field wrap onto their own lines rather
+   than run past the edge, and a row's title takes its own line above its pills rather than be squeezed to nothing beside them. */
+@container scanlist (max-width: 400px) {
+  .di-scan-tabs {
+    flex-wrap: wrap;
+  }
+  .di-scan-tablist {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .di-scan-search {
+    flex: 1 1 100%;
+    margin: 0 0 8px;
+  }
+  .di-scan-row-top {
+    flex-wrap: wrap;
+  }
+  .di-scan-row-top > .di-scan-title {
+    flex: 1 0 100%;
+  }
+  .di-scan-row .di-scan-pills {
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  .di-scan-row .di-scan-pill {
+    max-width: 100%;
+    white-space: normal;
+  }
 }

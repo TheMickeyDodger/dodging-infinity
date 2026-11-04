@@ -11,7 +11,8 @@ import { describe, expect, it } from 'vitest';
 import { missionStateSamples, SAMPLE_FIXTURE_ID, SAMPLE_PHASES } from '../src/components/diSampleStates.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const STATES = ['Proposal ready', 'Building', 'Question for you', 'Stalled', 'Ready to deliver', 'Merged'];
+// review finding 5: a CURRENT sample says the status contract's word (Running), never a word of its own
+const STATES = ['Proposal ready', 'Running', 'Question for you', 'Stalled', 'Ready to deliver', 'Merged'];
 
 describe('sample Mission states', () => {
   it('a live office gets none; a fixture preview gets exactly the six states, in order', () => {
@@ -48,7 +49,7 @@ describe('sample Mission states', () => {
     const needs = Object.fromEntries(missionStateSamples(true).map((s) => [s.state, s.needsYou]));
     expect(needs).toEqual({
       'Proposal ready': true,
-      Building: false,
+      Running: false,
       'Question for you': true,
       Stalled: true,
       'Ready to deliver': true,

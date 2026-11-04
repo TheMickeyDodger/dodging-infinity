@@ -153,6 +153,10 @@ export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 10;
 export const ZOOM_DEFAULT_DPR_FACTOR = 2;
 export const ZOOM_LEVEL_FADE_DELAY_MS = 1500;
+
+// ── Deliverable 2: the owner's "Delete local data" ─────────────
+/** How long the delete control must be held, unbroken, before it fires (a single click does nothing). */
+export const DI_DELETE_HOLD_MS = 1500;
 export const ZOOM_LEVEL_HIDE_DELAY_MS = 2000;
 export const ZOOM_LEVEL_FADE_DURATION_SEC = 0.5;
 export const ZOOM_SCROLL_THRESHOLD = 50;

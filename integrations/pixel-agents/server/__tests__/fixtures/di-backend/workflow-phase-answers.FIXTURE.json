@@ -1,0 +1,493 @@
+{
+  "fixture": true,
+  "generator": "tests/test_workflow_phase_answers.py WP2",
+  "label": "FIXTURE (generated, not live): the REAL catalog answer (query_v2, its workflow-store reader) over one real workflow store holding records built by the workflow authority's test constructor in DISPATCHED and VERIFIED (each with the target engine it was sent to and the runtime's own handoff receipt; VERIFIED with its verified result) and NEEDS_REAUTHORIZATION. SYNTHETIC record content: the constructor's fields, the phase set, no engine ran. For reproducibility only: the temporary directory is written as /synthetic-test-root (the measured registry size recomputed for it) and secrets.token_hex is a deterministic counter for this run",
+  "now": 1800000000,
+  "response": {
+    "chain_observation": {
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "over_capacity_count": 0,
+      "problem": null,
+      "producer": "synthetic",
+      "root_count": 0,
+      "unavailable_count": 0
+    },
+    "contract": "di.mission_sources.query",
+    "contract_version": 2,
+    "delivery_presentations": {
+      "coverage": {
+        "direct_cli": "not_stored",
+        "max_entries": 16,
+        "route": "grok_bot"
+      },
+      "delivery_store": "not_registered",
+      "entries": [],
+      "problem": null,
+      "source_id": "grok_delivery_presentations",
+      "state": "not_registered",
+      "total": null
+    },
+    "generated_at": 1800000000,
+    "limits": {
+      "max_chain_depth": 1,
+      "max_child_records": 32,
+      "max_herd_roots": 16,
+      "max_json_depth": 64,
+      "max_observed_missions": 16,
+      "max_query_input_bytes": 67108864,
+      "max_query_missions": 2048,
+      "max_registry_bytes": 262144,
+      "max_review_preamble_bytes": 4096,
+      "max_review_preamble_lines": 16,
+      "max_snapshot_agents": 512,
+      "max_snapshot_tasks": 256,
+      "max_sources": 128,
+      "max_store_read_bytes": 16777216,
+      "max_task_bindings": 32,
+      "min_poll_interval_seconds": 5,
+      "reported_freshness_bound_seconds": 600
+    },
+    "max_age_seconds": 60,
+    "missions": [
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "source_kind_has_no_canonical_review",
+            "record": null,
+            "state": "not_applicable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "workspace_unrecorded",
+          "state": "unbound",
+          "task_id": "task-wf-dispatched"
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_execution_unresolved",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_applicable",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_store_not_registered"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": null,
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-wf-dispatched",
+          "workspace_realpath": null
+        },
+        "lifecycle": {
+          "model": "workflow_authority.workflow_phase/2",
+          "standing": "active",
+          "state": "DISPATCHED"
+        },
+        "members": [],
+        "mission_ref": "wf:wf-dispatched",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "ambiguity": "none",
+          "sent_handoff_receipts": 1
+        },
+        "native_id": "wf-dispatched",
+        "objective": "Resolve the defect",
+        "producer": {
+          "declared": "local_request",
+          "recorded": {
+            "origin_transport": null,
+            "telegram_bound": true
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_reported",
+          "summary": null
+        },
+        "revision": 1,
+        "source_id": "wf",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "workspace_unrecorded",
+              "state": "unbound",
+              "task_id": "task-wf-dispatched"
+            },
+            "chain": "direct",
+            "chain_task_id": "task-wf-dispatched",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "unknown",
+              "path": null,
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": "DISPATCHED",
+          "problem": null,
+          "state": "observed"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "source_kind_has_no_canonical_review",
+            "record": null,
+            "state": "not_applicable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "run_not_started",
+          "state": "unbound",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_execution_unresolved",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_applicable",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_store_not_registered"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": null,
+          "receipt_recorded": false,
+          "record_ambiguous": false,
+          "run_started": false,
+          "task_id": null,
+          "workspace_realpath": null
+        },
+        "lifecycle": {
+          "model": "workflow_authority.workflow_phase/2",
+          "standing": "active",
+          "state": "NEEDS_REAUTHORIZATION"
+        },
+        "members": [],
+        "mission_ref": "wf:wf-reauthorize",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "ambiguity": "none",
+          "sent_handoff_receipts": 0
+        },
+        "native_id": "wf-reauthorize",
+        "objective": "Resolve the defect",
+        "producer": {
+          "declared": "local_request",
+          "recorded": {
+            "origin_transport": null,
+            "telegram_bound": true
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_reported",
+          "summary": null
+        },
+        "revision": 1,
+        "source_id": "wf",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "run_not_started",
+              "state": "unbound",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": null,
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "unknown",
+              "path": null,
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": "NEEDS_REAUTHORIZATION",
+          "problem": null,
+          "state": "observed"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "source_kind_has_no_canonical_review",
+            "record": null,
+            "state": "not_applicable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "workspace_unrecorded",
+          "state": "unbound",
+          "task_id": "task-wf-verified"
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_execution_unresolved",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_applicable",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_store_not_registered"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": null,
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-wf-verified",
+          "workspace_realpath": null
+        },
+        "lifecycle": {
+          "model": "workflow_authority.workflow_phase/2",
+          "standing": "active",
+          "state": "VERIFIED"
+        },
+        "members": [],
+        "mission_ref": "wf:wf-verified",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "ambiguity": "none",
+          "sent_handoff_receipts": 1
+        },
+        "native_id": "wf-verified",
+        "objective": "Resolve the defect",
+        "producer": {
+          "declared": "local_request",
+          "recorded": {
+            "origin_transport": null,
+            "telegram_bound": true
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_reported",
+          "summary": null
+        },
+        "revision": 1,
+        "source_id": "wf",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "workspace_unrecorded",
+              "state": "unbound",
+              "task_id": "task-wf-verified"
+            },
+            "chain": "direct",
+            "chain_task_id": "task-wf-verified",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "unknown",
+              "path": null,
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": "VERIFIED",
+          "problem": null,
+          "state": "observed"
+        }
+      }
+    ],
+    "registry": {
+      "directory": "/synthetic-test-root/registry",
+      "health": "fresh",
+      "max_serialized_bytes": 262144,
+      "max_sources": 128,
+      "problem": null,
+      "serialized_bytes": 233,
+      "source_count": 1
+    },
+    "retained_by_source": null,
+    "runtime_agents": {
+      "agents": [],
+      "agents_over_bound": 0,
+      "caveat": null,
+      "counts": {
+        "ambiguous": 0,
+        "names_over_bound": 0,
+        "registries_unread": 0,
+        "represented_by_teams": 0,
+        "roles_live": 0,
+        "roles_recorded": 0,
+        "roots_over_capacity": 0,
+        "roots_read": 0,
+        "roots_requested": 0,
+        "roots_role_records_unreadable": 0,
+        "unavailable": 0,
+        "unverified": 0,
+        "verified": 0
+      },
+      "first_pass_at": null,
+      "observed_at": null,
+      "problem": "no_task_native_role_records",
+      "second_pass_at": null,
+      "state": "not_applicable"
+    },
+    "runtime_snapshot": {
+      "agent_count": 0,
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "problem": null,
+      "producer": "synthetic",
+      "task_count": 0
+    },
+    "sources": [
+      {
+        "health": "fresh",
+        "kind": "workflow_store",
+        "max_age_seconds": 60,
+        "observed_at": 1800000000,
+        "problem": null,
+        "producer": "local_request",
+        "record_count": 3,
+        "source_id": "wf",
+        "store_dir": "/synthetic-test-root/wf-store"
+      }
+    ],
+    "unmatched_runtime_agent_count": 0,
+    "valid_until": 1800000060
+  }
+}

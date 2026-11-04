@@ -67,6 +67,7 @@ import type { MrProofRules } from './diMissionRequestContract.js';
 import { proofRulesAbsentWords, readProofRules } from './diMissionRequestContract.js';
 import type { MrStartCause } from './diMissionRequestStartCause.js';
 import { parseStartCause } from './diMissionRequestStartCause.js';
+import { DI_MISSION_STATUS, requestStageStatus } from './diMissionStatus.js';
 
 type Json = Record<string, unknown>;
 
@@ -300,6 +301,8 @@ export interface MrTurn {
   sequence: number;
   state: string;
   inFlight: boolean;
+  /** Deliverable 2: the turn's words were reclaimed by local retention, or deleted at the owner's request (`userText` is then empty); null while kept. */
+  reclaimed: { outcome: 'reclaimed' | 'deleted'; at: number | null } | null;
   userText: string;
   assistantText: string | null;
   outcomeStatus: string | null;
@@ -881,7 +884,16 @@ function parseTurn(v: unknown): MrTurn | null {
   const turnId = str(v.turn_id);
   const conversationId = str(v.conversation_id);
   const state = str(v.state);
-  const userText = str(v.user_text);
+  const reclaimedRaw = isObject(v.reclaimed) ? v.reclaimed : null;
+  const reclaimed: MrTurn['reclaimed'] =
+    reclaimedRaw === null
+      ? null
+      : {
+          outcome: reclaimedRaw.outcome === 'deleted' ? 'deleted' : 'reclaimed',
+          at: int(reclaimedRaw.reclaimed_at),
+        };
+  // a reclaimed turn's words are gone, and say so (never a turn dropped, never an empty one passing as kept)
+  const userText = reclaimed !== null ? '' : str(v.user_text);
   const sequence = int(v.sequence);
   if (
     turnId === null ||
@@ -903,6 +915,7 @@ function parseTurn(v: unknown): MrTurn | null {
     sequence,
     state,
     inFlight: v.in_flight === true,
+    reclaimed,
     userText,
     assistantText: str(v.assistant_text),
     outcomeStatus: outcome ? str(outcome.status) : null,
@@ -1074,6 +1087,20 @@ export interface MrPending {
   op: DiMissionRequestOp;
   requestRef: string | null;
   turnId: string | null;
+  /** The SOURCE-QUALIFIED Mission an owner's delete is about (round 9: its outcome is shown where the person acted; never keyed by a bare native id). */
+  missionRef?: string | null;
+}
+
+/**
+ * Deliverable 2, round 9: the owner's delete, by Mission, so its outcome is shown at the Mission where the person held the control, workspace open or not.
+ * `in_flight`: sent, no answer yet (the control is not offered again meanwhile). `completed` / `pending`: ACCEPTED (pending: started and finishing).
+ * `refused`: nothing was removed, with the refusal's own reason. `unknown`: whether it happened is not known, with why. `unavailable`: not sent.
+ */
+export type MrDeletionState = 'in_flight' | 'completed' | 'pending' | 'refused' | 'unknown' | 'unavailable';
+export interface MrDeletion {
+  state: MrDeletionState;
+  text: string;
+  problem: string | null;
 }
 
 export type MrAvailability =
@@ -1162,6 +1189,8 @@ export interface MrState {
   pending: MrPending[];
   notices: MrNotice[];
   nextSeq: number;
+  /** Deliverable 2, round 9: each Mission's latest owner delete, by its source-qualified ref. */
+  deletions: Readonly<Record<string, MrDeletion>>;
   nextNotice: number;
   /** True while the client cannot vouch for what it holds (disconnected / expired office). */
   unvouched: string | null;
@@ -1185,6 +1214,7 @@ export const INITIAL_STATE: MrState = {
   withdrawArm: null,
   pending: [],
   notices: [],
+  deletions: {},
   nextSeq: 1,
   nextNotice: 1,
   unvouched: null,
@@ -1216,6 +1246,7 @@ export type MrEvent =
       op: DiMissionRequestOp;
       requestRef: string | null;
       turnId: string | null;
+      missionRef?: string | null;
     }
   | { type: 'reply'; reply: DiMissionRequestReply; nowMs: number };
 
@@ -1234,6 +1265,7 @@ export const WRITE_OPS: readonly DiMissionRequestOp[] = [
   ...OUTCOME_OPS,
   'withdraw',
   'run',
+  'deleteLocalData',
 ];
 export const isWrite = (op: DiMissionRequestOp): boolean => WRITE_OPS.includes(op);
 
@@ -1247,6 +1279,87 @@ export function isPending(
     (p) => p.op === op && (requestRef === null || p.requestRef === requestRef),
   );
 }
+
+export const MR_DELETE_IN_FLIGHT_WORDS = 'Deleting: waiting for the request panel’s answer. It is not offered again until that answer arrives.';
+
+/** The refusal rows of the panel's owner-delete matrix (mission_retention/reclaim.py REFUSE_*), each in a person's words. Nothing was removed by any of them. */
+const DELETE_REFUSAL_WORDS: Readonly<Record<string, string>> = {
+  target_unresolved: 'no such Mission is in this office’s Mission Core store',
+  target_ambiguous: 'more than one request names this Mission, so which data is its own cannot be told',
+  not_owned: 'this panel has no record of submitting it, so it cannot prove the Mission is yours',
+  status_stale: 'the Mission changed since this page showed it',
+  status_unknown: 'its state is not one this office knows',
+  running: 'the Mission is still running',
+  not_finished: 'the Mission is not finished or cancelled',
+  no_positive_basis: 'nothing in its record establishes that its execution ended',
+  dispatch_still_possible: 'a live contract could still start it',
+  run_busy: 'a progression pass is acting on it right now; try again shortly',
+  turn_in_flight: 'its conversation has a turn or a submission in progress; try again once it settles',
+  conversation_changed: 'its conversation changed while this was deciding',
+  conversation_shared: 'its conversation also produced another Mission, whose words would go too',
+  already_deleted: 'its local data was already deleted',
+  source_mismatch: 'it belongs to a different Mission Core store than this request panel’s own, and a Mission is never resolved by its id alone',
+  retention_full: 'the office’s retention record is full',
+};
+const DELETE_REFUSED_PREFIX = 'mission_panel_delete_refused_';
+
+/** What one delete reply establishes, in a person's words, by the classification the relay EMITTED (never by a problem prefix alone). */
+export function deletionOf(reply: DiMissionRequestReply): MrDeletion {
+  const answer = isObject(reply.answer) ? reply.answer : null;
+  if (reply.state === 'ok') {
+    if (answer?.deletion === 'pending') return { state: 'pending', text: MR_DELETE_PENDING_WORDS, problem: null };
+    if (answer?.deletion === 'completed') {
+      const deleted = isObject(answer.deleted) ? answer.deleted : null;
+      return {
+        state: 'completed',
+        text: deleted?.previously === 'reclaimed' ? MR_DELETE_RECLAIMED_WORDS : MR_DELETE_COMPLETED_WORDS,
+        problem: null,
+      };
+    }
+    return { state: 'unknown', text: MR_DELETE_UNSTATED_WORDS, problem: null };
+  }
+  const said = reply.reason ? ` The request panel said: ${reply.reason}` : '';
+  if (reply.state === 'refused') {
+    const row = reply.problem?.startsWith(DELETE_REFUSED_PREFIX) ? reply.problem.slice(DELETE_REFUSED_PREFIX.length) : null;
+    const why = row !== null ? DELETE_REFUSAL_WORDS[row] : undefined;
+    return {
+      state: 'refused',
+      text: `Not deleted: ${why ?? 'the request was refused'}. Nothing was removed.${said}`,
+      problem: reply.problem,
+    };
+  }
+  const unknownOutcome =
+    reply.state === 'unknown' || reply.problem === 'panel_timeout' || reply.problem === 'panel_network_error';
+  if (unknownOutcome)
+    return {
+      state: 'unknown',
+      text: `It is not known whether the deletion happened: the request was sent and no usable answer came back. This Mission’s own state shows what it holds now.${said}`,
+      problem: reply.problem,
+    };
+  return { state: 'unavailable', text: `Not sent, so nothing was deleted.${said}`, problem: reply.problem };
+}
+
+function lostDeletions(state: MrState, reason: string): Readonly<Record<string, MrDeletion>> {
+  const next: Record<string, MrDeletion> = { ...state.deletions };
+  for (const [missionRef, deletion] of Object.entries(state.deletions))
+    if (deletion.state === 'in_flight')
+      next[missionRef] = {
+        state: 'unknown',
+        text: `It is not known whether the deletion happened: this office stopped vouching for what it shows before the answer came (${reason}). This Mission’s own state shows what it holds now.`,
+        problem: null,
+      };
+  return next;
+}
+
+/** The owner's delete, accepted: its words follow the panel's own answer (`deletion`, and what the Mission was before). */
+export const MR_DELETE_COMPLETED_WORDS =
+  'This Mission’s local data was deleted, its summary too. A record that it was deleted remains.';
+export const MR_DELETE_RECLAIMED_WORDS =
+  'This Mission’s kept summary (final status, verdict, CI results and comments) was deleted; its reasoning and logs had already been reclaimed. A record that it was deleted remains.';
+export const MR_DELETE_PENDING_WORDS =
+  'The deletion has started and is not finished: this Mission’s summary is already removed. The rest of its local data is still being cleaned up; the next retention pass retries that, and it may take more than one attempt. It was not refused.';
+export const MR_DELETE_UNSTATED_WORDS =
+  'The request panel accepted the deletion but did not say whether it finished. This Mission’s own state shows what it holds now.';
 
 function addNotice(
   state: MrState,
@@ -1495,6 +1608,21 @@ function applyReply(state: MrState, reply: DiMissionRequestReply, nowMs: number)
         },
       };
     }
+    case 'deleteLocalData': {
+      // Deliverable 2 (round 9 finding 1): an ACCEPTED delete says what its answer says, finished or not; a refusal never reaches here (it is `refused`)
+      const deleted = isObject(answer.deleted) ? answer.deleted : null;
+      if (answer.deletion === 'pending')
+        return addNotice(next, 'info', op, MR_DELETE_PENDING_WORDS);
+      if (answer.deletion === 'completed')
+        return addNotice(
+          next,
+          'info',
+          op,
+          deleted?.previously === 'reclaimed' ? MR_DELETE_RECLAIMED_WORDS : MR_DELETE_COMPLETED_WORDS,
+        );
+      // an accepted answer that says neither: never read as finished
+      return addNotice(next, 'unknown', op, MR_DELETE_UNSTATED_WORDS);
+    }
     case 'request':
     case 'checkApproval':
     case 'withdraw':
@@ -1709,6 +1837,8 @@ export function reduce(state: MrState, event: MrEvent): MrState {
             views: {},
             typed: '',
             pending: [],
+            // a delete still in flight is no longer answered here: whether it happened is not known (never still pending, never done)
+            deletions: lostDeletions(state, event.reason),
           };
     case 'sent':
       return {
@@ -1716,11 +1846,19 @@ export function reduce(state: MrState, event: MrEvent): MrState {
         nextSeq: Math.max(state.nextSeq, event.seq + 1),
         pending: [
           ...state.pending,
-          { seq: event.seq, op: event.op, requestRef: event.requestRef, turnId: event.turnId },
+          { seq: event.seq, op: event.op, requestRef: event.requestRef, turnId: event.turnId, missionRef: event.missionRef ?? null },
         ],
+        deletions:
+          event.op === 'deleteLocalData' && event.missionRef
+            ? { ...state.deletions, [event.missionRef]: { state: 'in_flight', text: MR_DELETE_IN_FLIGHT_WORDS, problem: null } }
+            : state.deletions,
       };
-    case 'reply':
-      return applyReply(state, event.reply, event.nowMs);
+    case 'reply': {
+      const after = applyReply(state, event.reply, event.nowMs);
+      const missionRef = state.pending.find((p) => p.seq === event.reply.seq)?.missionRef ?? null;
+      if (event.reply.op !== 'deleteLocalData' || missionRef === null) return after;
+      return { ...after, deletions: { ...after.deletions, [missionRef]: deletionOf(event.reply) } };
+    }
   }
 }
 
@@ -1788,17 +1926,23 @@ export function waitingOf(overview: MrOverview | null): MrWaiting {
 
 export interface MrSummaryCounts {
   needsYou: number;
-  running: number;
+  /** Requests whose start was requested and not yet observed: never counted as running. */
+  startRequested: number;
+  /** Requests whose bound task is observed (the panel's `running` stage): task evidence, never counted as a team working. */
+  taskObserved: number;
   total: number;
 }
 
-const RUNNING_STAGES = ['dispatched', 'running', 'pending_proof', 'dispatch_uncertain'];
+/** How many requests read a status: the stage is mapped by the Mission status contract (diMissionStatus.ts), never by a list of its own. */
+const countStatus = (overview: MrOverview, id: 'start_requested' | 'task_observed'): number =>
+  overview.requests.filter((r) => requestStageStatus(r.stage, null).status === id).length;
 
 export function countsOf(overview: MrOverview | null): MrSummaryCounts {
-  if (overview === null) return { needsYou: 0, running: 0, total: 0 };
+  if (overview === null) return { needsYou: 0, startRequested: 0, taskObserved: 0, total: 0 };
   return {
     needsYou: waitingOf(overview).requests,
-    running: overview.requests.filter((r) => RUNNING_STAGES.includes(r.stage)).length,
+    startRequested: countStatus(overview, 'start_requested'),
+    taskObserved: countStatus(overview, 'task_observed'),
     total: overview.requests.length,
   };
 }
@@ -1835,7 +1979,11 @@ export function entryWords(state: MrState): string {
   if (c.needsYou > 0)
     parts.push(`${c.needsYou} ${c.needsYou === 1 ? 'request needs' : 'requests need'} you`);
   if (asking !== null) parts.push(asking);
-  if (c.running > 0) parts.push(`${c.running} ${requestsWord(c.running)} in progress`);
+  // the contract's own words: a requested start, and an observed task, are never said to be running or a team working
+  if (c.startRequested > 0)
+    parts.push(`${c.startRequested} ${DI_MISSION_STATUS.start_requested.label.toLowerCase()}`);
+  if (c.taskObserved > 0)
+    parts.push(`${c.taskObserved} ${DI_MISSION_STATUS.task_observed.label.toLowerCase()}`);
   parts.push(`${c.total} ${requestsWord(c.total)} in all`);
   return parts.join(' · ');
 }
@@ -1880,13 +2028,33 @@ export function agoWords(readAtMs: number, nowMs: number): string {
 // ---------------------------------------------------------------------------------------------
 // The journey, as steps
 
+/**
+ * The journey's steps. The two DECISION steps (Proposed, Approved) come before any run, where the Mission status contract says Not started: they name a decision on the
+ * proposal, not a status. The three RUN steps wear the contract's own words (diMissionStatus.ts), so the journey says only what was observed: a dispatched request is at
+ * Start requested, and a request whose bound task DI observed (the panel's `running` stage, Mission Core's STATE_RUNNING) is at Task observed, never "Started", "Running"
+ * or "Team working" (STATE_RUNNING is task-observation evidence, never evidence that a worker started).
+ */
 export const JOURNEY: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'proposed', label: 'Proposed' },
   { key: 'approved', label: 'Approved' },
-  { key: 'started', label: 'Started' },
-  { key: 'working', label: 'Team working' },
-  { key: 'verified', label: 'Verified' },
+  { key: 'start_requested', label: DI_MISSION_STATUS.start_requested.label },
+  { key: 'task_observed', label: DI_MISSION_STATUS.task_observed.label },
+  { key: 'verified', label: DI_MISSION_STATUS.verified.label },
 ];
+
+/** The first RUN step (Start requested); the two before it are decision steps. */
+const FIRST_RUN_STEP = 2;
+
+/**
+ * The words of one journey step. A RUN step that is NOW says the request's OWN status in the contract's words where it differs from the step's milestone: a request
+ * waiting on proof is at the verification step, but it is not Verified, it is Waiting (its run stopped; verification waits on proof), so the journey never claims a
+ * milestone the request has not reached and never shows a stopped run as an ongoing observation. Every other step says its milestone.
+ */
+export function journeyStepLabel(stage: string, index: number, at: number): string {
+  const step = JOURNEY[index];
+  if (step === undefined) return '';
+  return index === at && index >= FIRST_RUN_STEP ? requestStageStatus(stage, null).label : step.label;
+}
 
 /** The index of the step a stage is at, or null for a stage that is not on the journey. */
 export function journeyIndex(stage: string): number | null {
@@ -1901,8 +2069,9 @@ export function journeyIndex(stage: string): number | null {
     case 'dispatched':
       return 2;
     case 'running':
-    case 'pending_proof':
       return 3;
+    // its task was observed and its run stopped: it is at verification, which waits on proof (worded by journeyStepLabel, never as Verified)
+    case 'pending_proof':
     case 'verified':
       return 4;
     default:

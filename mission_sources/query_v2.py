@@ -397,7 +397,7 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
                 budget=None, runtime_agents=None, delivery_presentations=None,
                 delivery_links=None, delivery_task_worktrees=None,
                 task_worktree_of=None, task_worktree_delivery=False,
-                delivery_handoff_of=None):
+                delivery_handoff_of=None, retention_of=None, retained_of=None):
     """One version 2 response over an already loaded (and validated)
     registry. ``runtime_agents``: as ``query.assemble``.
     ``delivery_presentations``: None (not registered) or a callable taking
@@ -483,6 +483,22 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
             if key is not None:
                 task_worktree_holders[key] = task_worktree_holders.get(
                     key, 0) + 1
+    source_by_id = dict((entry["source_id"], entry)
+                        for entry in registry_document["sources"])
+    # One reading per retention-family source, each observed or unavailable WITH its reason: a
+    # source that cannot be read is said, never dropped and never read as an empty archive; the
+    # archive itself is null (not read) when no retention reader is wired.
+    per_source = None
+    if retained_of is not None:
+        per_source = []
+        for entry in registry_document["sources"]:
+            try:
+                one_source = retained_of(entry["kind"], entry["source_id"], entry["store_dir"])
+            except Exception as exc:                       # noqa: BLE001 - said, never dropped
+                one_source = contract_v2.retained_source_unavailable(
+                    entry["source_id"], getattr(exc, "problem", None) or type(exc).__name__)
+            if one_source is not None:
+                per_source.append(one_source)
     for mission in missions:
         mission["mission_state"] = states[mission["mission_ref"]]
         mission["admitted_artifacts"] = {
@@ -491,6 +507,8 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         mission["workflow_phase"] = contract_v2.workflow_phase(mission)
         mission["delivery_handoff"] = contract_v2.mission_delivery_handoff(
             mission, delivery_handoff_of)
+        mission["retention"] = contract_v2.mission_retention(
+            mission, retention_of, source_by_id.get(mission["source_id"]))
         mission["delivery_link"] = contract_v2.mission_delivery_link(
             mission, unavailable, bound, holders, inspection,
             task_worktree=resolved_keys.get(mission["mission_ref"]),
@@ -511,7 +529,8 @@ def assemble_v2(registry_document, runtime_snapshot, chain_observation, now,
         _delivery_presentations_block(
             delivery_presentations, missions, inspection,
             dict((block["source_id"], block["kind"])
-                 for block in source_blocks)))
+                 for block in source_blocks)),
+        retained_by_source=per_source)
     return contract_v2.validate_response_v2(response)
 
 
@@ -593,7 +612,7 @@ def query_v2(source_registry, runtime_snapshot, chain_observation, now,
              budget=None, runtime_agents=None, delivery_presentations=None,
              delivery_links=None, delivery_task_worktrees=None,
              task_worktree_of=None, task_worktree_delivery=False,
-             delivery_handoff_of=None):
+             delivery_handoff_of=None, retention_of=None, retained_of=None):
     """``query.query`` for version 2: a registry that cannot be loaded
     degrades explicitly (its own health and problem, no sources, no
     missions) instead of raising or reading as empty."""
@@ -628,4 +647,5 @@ def query_v2(source_registry, runtime_snapshot, chain_observation, now,
                        delivery_task_worktrees=delivery_task_worktrees,
                        task_worktree_of=task_worktree_of,
                        task_worktree_delivery=task_worktree_delivery,
-                       delivery_handoff_of=delivery_handoff_of)
+                       delivery_handoff_of=delivery_handoff_of,
+                       retention_of=retention_of, retained_of=retained_of)

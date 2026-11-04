@@ -1,0 +1,393 @@
+{
+  "fixture": true,
+  "generator": "tests/test_mission_retention_delivery_answer.py AD2",
+  "label": "FIXTURE (generated, not live): the catalog's own query_v2 answer over a delivery record the delivery layer minted for a COMPLETE Herdr task's own task and worktree, and a second COMPLETE task with no record; the only edit is the test's temporary directory written as /synthetic-test-root",
+  "now": 1800000000,
+  "response": {
+    "chain_observation": {
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "over_capacity_count": 0,
+      "problem": null,
+      "producer": "synthetic",
+      "root_count": 0,
+      "unavailable_count": 0
+    },
+    "contract": "di.mission_sources.query",
+    "contract_version": 2,
+    "delivery_presentations": {
+      "coverage": {
+        "direct_cli": "not_stored",
+        "max_entries": 16,
+        "route": "grok_bot"
+      },
+      "delivery_store": "not_registered",
+      "entries": [],
+      "problem": null,
+      "source_id": "grok_delivery_presentations",
+      "state": "not_registered",
+      "total": null
+    },
+    "generated_at": 1800000000,
+    "limits": {
+      "max_chain_depth": 1,
+      "max_child_records": 32,
+      "max_herd_roots": 16,
+      "max_json_depth": 64,
+      "max_observed_missions": 16,
+      "max_query_input_bytes": 67108864,
+      "max_query_missions": 2048,
+      "max_registry_bytes": 262144,
+      "max_review_preamble_bytes": 4096,
+      "max_review_preamble_lines": 16,
+      "max_snapshot_agents": 512,
+      "max_snapshot_tasks": 256,
+      "max_sources": 128,
+      "max_store_read_bytes": 16777216,
+      "max_task_bindings": 32,
+      "min_poll_interval_seconds": 5,
+      "reported_freshness_bound_seconds": 600
+    },
+    "max_age_seconds": 60,
+    "missions": [
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "mission_execution_unresolved",
+            "record": null,
+            "state": "not_applicable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "mission_not_active",
+          "state": "not_applicable",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_not_active",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [
+            "head_not_read",
+            "evidence_not_collected"
+          ],
+          "branch": {
+            "ref": null,
+            "state": "unreadable"
+          },
+          "engineering_task_id": "task-a",
+          "evidence": {
+            "reason": "task state unreadable: task.json is absent",
+            "state": "unreadable"
+          },
+          "git_dir_realpath": "/synthetic-test-root/main/.git/worktrees/wt-a",
+          "link_basis": "record_task_worktree_binding",
+          "repository": "/synthetic-test-root/wt-a",
+          "staged_candidate": "not_determined",
+          "state": "observed",
+          "workflow_id": "human_supplied"
+        },
+        "delivery_link": {
+          "basis": "record_task_worktree_binding",
+          "delivery_id": "prd-0a0a0a0a0a0a0a0a0a0a0a0a",
+          "state": "linked"
+        },
+        "execution": {
+          "consistent": false,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-a",
+          "workspace_realpath": "/synthetic-test-root/wt-a"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "terminal",
+          "state": "COMPLETE"
+        },
+        "members": [],
+        "mission_ref": "hd:task-a@2d0ef79897ac",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": null,
+          "task_record_version": null
+        },
+        "native_id": "task-a@2d0ef79897ac",
+        "objective": null,
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/wt-a"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "mission_not_active",
+              "state": "not_applicable",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": "task-a",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/wt-a",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "mission_execution_unresolved",
+            "record": null,
+            "state": "not_applicable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "mission_not_active",
+          "state": "not_applicable",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_not_active",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [
+            "head_not_read",
+            "evidence_not_collected"
+          ],
+          "branch": {
+            "ref": null,
+            "state": "unreadable"
+          },
+          "engineering_task_id": "task-b",
+          "evidence": {
+            "reason": "task state unreadable: task.json is absent",
+            "state": "unreadable"
+          },
+          "git_dir_realpath": "/synthetic-test-root/main/.git/worktrees/wt-b",
+          "link_basis": "record_task_worktree_binding",
+          "repository": "/synthetic-test-root/wt-b",
+          "staged_candidate": "not_determined",
+          "state": "observed",
+          "workflow_id": "human_supplied"
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_no_record"
+        },
+        "execution": {
+          "consistent": false,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-b",
+          "workspace_realpath": "/synthetic-test-root/wt-b"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "terminal",
+          "state": "COMPLETE"
+        },
+        "members": [],
+        "mission_ref": "hd:task-b@3395464a8ee3",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": null,
+          "task_record_version": null
+        },
+        "native_id": "task-b@3395464a8ee3",
+        "objective": null,
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/wt-b"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "mission_not_active",
+              "state": "not_applicable",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": "task-b",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/wt-b",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      }
+    ],
+    "registry": {
+      "directory": "/synthetic-test-root/answer-0/registry",
+      "health": "fresh",
+      "max_serialized_bytes": 262144,
+      "max_sources": 128,
+      "problem": null,
+      "serialized_bytes": 241,
+      "source_count": 1
+    },
+    "retained_by_source": null,
+    "runtime_agents": {
+      "agents": [],
+      "agents_over_bound": 0,
+      "caveat": null,
+      "counts": {
+        "ambiguous": 0,
+        "names_over_bound": 0,
+        "registries_unread": 0,
+        "represented_by_teams": 0,
+        "roles_live": 0,
+        "roles_recorded": 0,
+        "roots_over_capacity": 0,
+        "roots_read": 0,
+        "roots_requested": 0,
+        "roots_role_records_unreadable": 0,
+        "unavailable": 0,
+        "unverified": 0,
+        "verified": 0
+      },
+      "first_pass_at": null,
+      "observed_at": null,
+      "problem": "no_task_native_role_records",
+      "second_pass_at": null,
+      "state": "not_applicable"
+    },
+    "runtime_snapshot": {
+      "agent_count": 0,
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "problem": null,
+      "producer": "synthetic",
+      "task_count": 0
+    },
+    "sources": [
+      {
+        "health": "fresh",
+        "kind": "task_native",
+        "max_age_seconds": 60,
+        "observed_at": 1800000000,
+        "problem": null,
+        "producer": "local_request",
+        "record_count": 2,
+        "source_id": "hd",
+        "store_dir": "/synthetic-test-root/answer-0/sources/hd"
+      }
+    ],
+    "unmatched_runtime_agent_count": 0,
+    "valid_until": 1800000060
+  }
+}

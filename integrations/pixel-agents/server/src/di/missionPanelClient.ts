@@ -58,6 +58,8 @@ const ROUTES: ReadonlyArray<{ method: 'GET' | 'POST'; path: RegExp }> = [
   { method: 'POST', path: new RegExp(`^/requests/${REF}/reject$`) },
   { method: 'POST', path: new RegExp(`^/requests/${REF}/request-changes$`) },
   { method: 'POST', path: new RegExp(`^/requests/${REF}/withdraw$`) },
+  // Deliverable 2: the owner's "Delete local data" for one Mission.
+  { method: 'POST', path: /^\/missions\/mn-[0-9a-f]{32}\/delete-local-data$/ },
   { method: 'POST', path: new RegExp(`^/requests/${REF}/run$`) },
 ];
 

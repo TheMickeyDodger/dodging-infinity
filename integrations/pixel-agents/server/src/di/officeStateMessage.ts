@@ -13,6 +13,7 @@ import type {
   DiMission,
   DiMissionDeliveryHandoff,
   DiMissionDeliveryLink,
+  DiMissionProgress,
   DiMissionV2,
   DiObservationState,
   DiObservedValue,
@@ -35,6 +36,7 @@ import type {
   MissionPresentation,
   Observation,
   OfficeView,
+  ProgressPresentation,
   RuntimeAgentPresentation,
 } from './officeView.js';
 import { deriveReception } from './receptionDesk.js';
@@ -198,6 +200,19 @@ const UNRECOGNIZED_PHASE_BOUND = 64;
  * record; a phase outside the producer's vocabulary is kept as bounded inert text and never mapped to a known one), `not_applicable` (the model has no phase; Mission Core is one) and `not_reported` (the key was
  * absent: unknown, never "none"). Nothing is derived from the lifecycle state, and a v1 office never reaches this function: it has no v2 block (`m.v2 === null`) and so no phase value of any kind.
  */
+/** Mission Core's progress on the wire: the literal when in its vocabulary, else null with the declared value as inert text (`unrecognized`), never a guessed state. */
+function progressOnWire(p: ProgressPresentation): DiMissionProgress {
+  const v = p.value;
+  return {
+    state: p.state,
+    reason: p.reason,
+    standing: p.standing,
+    progress: v !== null && v.known ? v.value : null,
+    unrecognized: v !== null && !v.known && typeof v.raw === 'string' ? v.raw : null,
+    closureReason: p.closureReason,
+  };
+}
+
 function workflowPhaseOnWire(w: WorkflowPhaseView): DiWorkflowPhase {
   switch (w.state) {
     case 'observed':
@@ -243,6 +258,8 @@ function missionV2(m: MissionPresentation): DiMissionV2 {
         drift: [...m.v2.missionState.provenance.drift],
         sources: m.v2.missionState.provenance.sources.map((x) => ({ ...x })),
       },
+      // Mission Core's own progress record, as projected (core/asyncapi.yaml DiMissionProgress)
+      progress: progressOnWire(m.v2.missionState.progress),
     },
     canonicalReview: { ...m.v2.canonicalReview },
     // The producer's DECLARED delivery link, copied as projected; ABSENT when the answer carries none (never defaulted).
@@ -349,6 +366,11 @@ function mission(m: MissionPresentation, characterIdFor: CharacterIdFor): DiMiss
     paused: observed(m.paused),
     cancelRequested: observed(m.cancelRequested),
     ambiguity: observed(m.ambiguity),
+    runStarted: m.runStarted,
+    cancelQuiescence: m.cancelQuiescence,
+    sentHandoffReceipts: m.sentHandoffReceipts,
+    storeIdentity: m.storeIdentity,
+    retention: m.retention,
     members: { state: members.state, reason: members.reason, members: members.items },
     // item 3 (a FINISHED Mission): whether a review is offered for the Mission as a whole, by a Mission-level reference (an active assignment is
     // offered per member, above). Decided from the typed facts of the listing; `listing` is the token every later read is admitted by.
@@ -467,7 +489,12 @@ export function buildDiOfficeStateMessage(
     },
     times: { ...view.times },
     coverage: { ...view.coverage },
-    missions: { state: missions.state, reason: missions.reason, missions: missions.items },
+    missions: {
+      state: missions.state,
+      reason: missions.reason,
+      missions: missions.items,
+      ...(view.retained === null ? {} : { retained: view.retained }),
+    },
     contractVersion: view.contractVersion,
     chainObservation: chainObservation(view),
     reception: deriveReception(view),

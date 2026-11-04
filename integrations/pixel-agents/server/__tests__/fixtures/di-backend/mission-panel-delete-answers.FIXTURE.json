@@ -1,0 +1,93 @@
+{
+  "answers": {
+    "completed_after_reclamation": {
+      "body": {
+        "deleted": {
+          "deleted_at": 3592000,
+          "detail": null,
+          "mission_id": "mn-00000000000000000000000000000000",
+          "phase": "deleted",
+          "previously": "reclaimed",
+          "removed": {
+            "conversation_turns": 1,
+            "requests": 1,
+            "run_diagnostics": 0,
+            "summary": true
+          },
+          "summary": null
+        },
+        "deletion": "completed",
+        "ok": true
+      },
+      "status": 200
+    },
+    "pending_started_not_finished": {
+      "body": {
+        "deleted": {
+          "deleted_at": null,
+          "detail": "the deletion of Mission mn-00000000000000000000000000000000 started and did not finish (the request store could not be written); its summary is removed, and the next retention pass retries the remaining cleanup",
+          "mission_id": "mn-00000000000000000000000000000000",
+          "phase": "deleting",
+          "previously": "intact",
+          "removed": {
+            "conversation_turns": 1,
+            "requests": 0,
+            "run_diagnostics": 0,
+            "summary": false
+          },
+          "summary": null
+        },
+        "deletion": "pending",
+        "ok": true
+      },
+      "status": 200
+    },
+    "refused_already_deleted": {
+      "body": {
+        "details": {
+          "refusal": "already_deleted"
+        },
+        "ok": false,
+        "problem": "mission_panel_delete_refused_already_deleted",
+        "reason": "Mission mn-00000000000000000000000000000000 was already deleted"
+      },
+      "status": 200
+    },
+    "refused_busy": {
+      "body": {
+        "details": {
+          "refusal": "run_busy"
+        },
+        "ok": false,
+        "problem": "mission_panel_delete_refused_run_busy",
+        "reason": "a progression pass is acting on Mission mn-00000000000000000000000000000000"
+      },
+      "status": 200
+    },
+    "refused_source_mismatch": {
+      "body": {
+        "details": {
+          "refusal": "source_mismatch"
+        },
+        "ok": false,
+        "problem": "mission_panel_delete_refused_source_mismatch",
+        "reason": "the Mission selected belongs to another Mission Core store, not to this panel's own Mission Core store; it is never resolved here by its native id alone"
+      },
+      "status": 200
+    },
+    "refused_status_stale": {
+      "body": {
+        "details": {
+          "refusal": "status_stale"
+        },
+        "ok": false,
+        "problem": "mission_panel_delete_refused_status_stale",
+        "reason": "the display showed 'COMPLETED' but the Mission is now REJECTED"
+      },
+      "status": 200
+    }
+  },
+  "fixture": true,
+  "generator": "tests/test_mission_retention_http.py",
+  "label": "FIXTURE (generated, not live): the real answers of mission_panel's POST /missions/<mn-id>/delete-local-data, served by mission_panel.http_adapter.PanelServer over an isolated temporary store; the Mission id is normalized to mn-00000000000000000000000000000000"
+}

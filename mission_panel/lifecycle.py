@@ -337,17 +337,24 @@ def derive(status, lineage, now, capability_held, run_available,
                           " verification that is waiting on proof: meeting the"
                           " proof and verifying again is yours.")
         notice = _join(notice, extra, manual_note)
+        # What RUNNING records is a TASK observation: the bound target task the
+        # receipt names, whose record names this run (mission_bridge
+        # _observe_run), even after that task stopped. It needs no live worker,
+        # so the words say what was observed, never that a team worked.
         return _view(
             "pending_proof" if pending else "running",
-            "Verification is waiting on proof" if pending else "Team working",
+            "Verification is waiting on proof" if pending else "Task observed",
             ("DI verified that the run stopped but the approved completion"
              " contract is not yet satisfied. Nothing is delivered."
              if pending else
-             "DI observed the team running. Recorded observations are history,"
-             " not a claim about this moment; the world shows the team live."
-             " DI decides verification itself from a fresh read, and the team's"
-             " own review approval is evidence the team produced, not"
-             " independent verification."),
+             "DI observed the bound task this run's receipt names, and its"
+             " record names this run. That is the task's own record, not an"
+             " observation of any worker: whether the team is working is shown"
+             " only where its members are observed live. Recorded observations"
+             " are history, not a claim about this moment. DI decides"
+             " verification itself from a fresh read, and the team's own review"
+             " approval is evidence the team produced, not independent"
+             " verification."),
             actions=["verify"] if offered else [], notice=notice, attested=attested)
     if phase == surface_module.RUN_PHASE_COMPLETED:
         return _view(

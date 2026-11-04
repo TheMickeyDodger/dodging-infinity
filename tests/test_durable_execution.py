@@ -788,12 +788,16 @@ class CliSeamTests(unittest.TestCase):
     def test_main_keyword_surface_is_exactly_these_defaulted_names(self):
         # The surface is pinned EXACTLY, defaults included, so any further
         # drift still fails here. It grew by ``execution`` (the Runtime seam)
-        # and then by ``mission_composition`` (item 4): both are test-only
-        # injection seams, both default to None, and ``mission_composition=None``
+        # and then by ``mission_composition`` (item 4), and then by
+        # ``retention_clock`` (Deliverable 2: the local-retention sweep's
+        # injected clock; None reads the wall clock). All are test-only
+        # injection seams, all default to None, and ``mission_composition=None``
         # means "no MissionCore composition substituted": production passes
         # nothing and gets the real one. Every pre-existing caller, which passes
         # none of the new names, therefore reaches exactly the default-mode
         # behaviour it always did; the tests in this file are the proof of that.
+        # The names AND the defaults count are pinned together: names alone
+        # would let a future REQUIRED parameter in.
         tree = ast.parse(CLI_PATH.read_text())
         main = next(
             node for node in tree.body
@@ -802,9 +806,10 @@ class CliSeamTests(unittest.TestCase):
         names = [arg.arg for arg in main.args.args]
         self.assertEqual(
             names,
-            ["argv", "sleeper", "passes", "execution", "mission_composition"],
+            ["argv", "sleeper", "passes", "execution", "mission_composition",
+             "retention_clock"],
         )
-        self.assertEqual(len(main.args.defaults), 5)
+        self.assertEqual(len(main.args.defaults), 6)
         for default in main.args.defaults:
             self.assertIsInstance(default, ast.Constant)
             self.assertIsNone(default.value)

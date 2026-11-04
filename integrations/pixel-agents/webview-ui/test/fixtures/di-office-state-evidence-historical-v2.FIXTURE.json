@@ -96,6 +96,22 @@
               "value": null,
               "reason": "ambiguity_not_applicable_to_herdr_task"
             },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
+            },
             "members": {
               "state": "projected_reason",
               "reason": "binding_not_applicable:mission_not_active",
@@ -352,6 +368,14 @@
                   "drift": [],
                   "driftTotal": null,
                   "sources": []
+                },
+                "progress": {
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "standing": null,
+                  "progress": null,
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -462,6 +486,22 @@
               "state": "not_applicable",
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
+            },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
             },
             "members": {
               "state": "projected_reason",
@@ -941,6 +981,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -1694,6 +1742,22 @@
               "value": null,
               "reason": "ambiguity_not_applicable_to_herdr_task"
             },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
+            },
             "members": {
               "state": "projected_reason",
               "reason": "binding_not_applicable:mission_not_active",
@@ -1950,6 +2014,14 @@
                   "drift": [],
                   "driftTotal": null,
                   "sources": []
+                },
+                "progress": {
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "standing": null,
+                  "progress": null,
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -2060,6 +2132,22 @@
               "state": "not_applicable",
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
+            },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
             },
             "members": {
               "state": "projected_reason",
@@ -2539,6 +2627,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -3292,6 +3388,22 @@
               "value": null,
               "reason": "ambiguity_not_applicable_to_herdr_task"
             },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
+            },
             "members": {
               "state": "projected_reason",
               "reason": "binding_not_applicable:mission_not_active",
@@ -3548,6 +3660,14 @@
                   "drift": [],
                   "driftTotal": null,
                   "sources": []
+                },
+                "progress": {
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "standing": null,
+                  "progress": null,
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -3658,6 +3778,22 @@
               "state": "not_applicable",
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
+            },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
             },
             "members": {
               "state": "projected_reason",
@@ -4137,6 +4273,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {

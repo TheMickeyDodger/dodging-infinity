@@ -79,6 +79,8 @@ describe('PRESENTATION: the rail draws the Home navigation in order (01-home.jpg
       (id) =>
         id !== 'di-rail-reception-count' &&
         id !== 'di-rail-orchestrator-status' &&
+        // a part of an Orchestrator entry, like its status line (round 4, finding 4), not an entry of its own
+        id !== 'di-rail-orchestrator-attention' &&
         id !== 'di-rail-orchestrators',
     );
     expect(entries).toEqual([
@@ -119,7 +121,7 @@ describe('PRESENTATION: the rail draws the Home navigation in order (01-home.jpg
     ).toEqual(['Next panel overhaul', 'Payment retry engine']);
     for (const item of items) {
       expect(item).toMatch(/class="di-scan-dot" data-tone="[a-z]+" aria-hidden="true"/);
-      expect(item).toMatch(/data-testid="di-rail-orchestrator-status">(Needs you|Building)</);
+      expect(item).toMatch(/data-testid="di-rail-orchestrator-status">(Needs you|Running)</);
     }
   });
   it('says plainly when no Orchestrator is running', () => {

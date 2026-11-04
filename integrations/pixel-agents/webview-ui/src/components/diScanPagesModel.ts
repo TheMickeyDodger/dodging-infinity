@@ -11,19 +11,33 @@ import type {
   DiReceptionCategoryId,
   DiReceptionEntry,
   DiReceptionSourceEntry,
+  DiRetainedMission,
+  DiRetainedSource,
+  DiRetentionFact,
+  DiRetentionFactState,
 } from '../../../core/src/messages.js';
+import type { DiMissionStatusId } from './diMissionStatus.js';
+import {
+  DI_MISSION_PROGRESS_STATUS,
+  DI_MISSION_STATUS,
+  DI_REQUEST_STAGE_STATUS,
+  DI_TERMINAL_LITERAL_STATUS,
+} from './diMissionStatus.js';
 import type { InboxItem, InboxModel, PanelEntry } from './diReceptionItems.js';
 import { attentionLine, emptyStateLines, PANEL_SHORT_LABEL, plainDelivery } from './diReceptionItems.js';
 import { entryGoal, firstLayerWhy, plainServerWording } from './diReceptionPlain.js';
-import type { DiScanRow, DiScanTone, DiScanWhy } from './diScanModel.js';
-import { knownOrNull, knownTrue, plainSource, receptionDoubt } from './diScanModel.js';
+import type { DiScanPill, DiScanRow, DiScanTone, DiScanWhy } from './diScanModel.js';
+import { knownOrNull, plainSource, receptionDoubt, statusPill } from './diScanModel.js';
 
 /** Said beside every action drawn at this stage (Stage 2 is layout only; Stage 4 wires the routes). */
 export const DI_LAYOUT_NOTE = 'Layout preview. These controls are drawn but not connected yet.';
 
 // ── 04 Missions ──────────────────────────────────────────────────────────────────────────────────
 
-/** The Missions table's STATUS filters (AC-4.4-11). Mine/Team is a separate ownership SCOPE, not a status. */
+/**
+ * The Missions table's STATUS filters (AC-4.4-11). Mine/Team is a separate ownership SCOPE, not a status. Each filter is DERIVED from the Mission status contract
+ * (diMissionStatus.ts) through the row: Running reads the contract's running fact, Done a terminal (closed) record, and Archived the tab, which no source declares today.
+ */
 export type DiMissionsStatus = 'all' | 'needs' | 'stalled' | 'running' | 'done' | 'archived';
 
 export const DI_MISSIONS_STATUSES: readonly { id: DiMissionsStatus; label: string }[] = [
@@ -41,7 +55,7 @@ export type DiMissionsCounts = Record<DiMissionsStatus, number | null>;
 /** Team is a Paid ownership scope (Phase 4): drawn, unavailable, with this reason. Not an upsell. */
 export const DI_TEAM_UNAVAILABLE = 'Team Missions are part of Paid and are not available in Free.';
 export const DI_MISSIONS_FOOTER =
-  'dodging-infinity is the harness for every Mission. Finished Missions archive after 30 days.';
+  'dodging-infinity is the harness for every Mission. A finished or cancelled Mission moves to Archived at once; its reasoning and logs are reclaimed 30 days later, and its summary is kept.';
 export const DI_MISSIONS_EMPTY = 'No Missions yet. Missions you start appear here.';
 export const DI_STALLS_NOT_READ = 'Stalls are not reported by this catalog.';
 
@@ -87,7 +101,7 @@ export function missionsCounts(rows: readonly DiScanRow[]): DiMissionsCounts {
 /** What a filter cannot decide: how many Missions may also match, and why, in the rows' own words. */
 export interface DiMissionsUnknown {
   count: number;
-  /** `not_read` only when every unknown row is unread; otherwise `not_known`. */
+  /** The one kind every unknown row shares (not read, stale, unrecognised, unavailable…); `not_known` when they differ. Kinds are never merged into each other. */
   kind: DiScanWhy['kind'];
   /** The distinct reasons, in row order (plain words). */
   reasons: string[];
@@ -111,13 +125,263 @@ export function missionsUnknown(
   const whys = unknown.map((row) => whyFor(row, status));
   return {
     count: unknown.length,
-    kind: whys.length > 0 && whys.every((w) => w.kind === 'not_read') ? 'not_read' : 'not_known',
+    kind: whys.length > 0 && whys.every((w) => w.kind === whys[0]!.kind) ? whys[0]!.kind : 'not_known',
     reasons: [...new Set(whys.map((w) => w.text))],
     codes: [...new Set(whys.flatMap((w) => w.codes ?? []))],
   };
 }
 
 /** The Missions a status filter shows: only those READ as matching. Picking a filter changes no Mission. */
+// ── Deliverable 2: the retained-only archive (Missions gone from their store, as local retention holds them) ────────────────────────────────────────
+
+/** The lifecycle model each retention family's records were listed under, so a retained summary keeps the SAME status vocabulary it had while listed. */
+const RETAINED_FAMILY_MODEL: Readonly<Record<string, string>> = {
+  mission_core: 'mission_core.mission_state/1',
+  workflow_store: 'workflow_authority.workflow_phase/2',
+};
+
+/** What each retention phase means for a Mission gone from its store, in a person's words. Each is distinct, and none reads as intact. */
+const RETAINED_PHASE: Readonly<Record<string, string>> = {
+  observed: 'Gone from its store before its 30-day deadline (the store’s own limit); its summary is kept and its remaining local data is reclaimed at the deadline',
+  reclaiming: 'Its reclamation started and is not finished: its summary is kept, and the next retention pass retries the rest',
+  reclaimed: 'Reclaimed 30 days after it finished; only its summary is kept',
+  deleting: 'Its owner’s deletion has started and is not finished; its summary is already removed, and the next retention pass retries the rest',
+  deleted: 'Deleted at its owner’s request; its summary is removed too',
+};
+
+/**
+ * Round 10: a LISTED Mission's reduced retention phase, said as it is, with whether it is finished: an interrupted reclamation or deletion is never said as done.
+ * Exhaustive over the reduced phases (a new phase fails the type check). Used by the Mission's own details (DiScanPanel `LocalRetention`).
+ */
+export type DiReducedPhase = 'reclaiming' | 'reclaimed' | 'deleting' | 'deleted';
+export const LISTED_RETENTION_PHASE: Readonly<Record<DiReducedPhase, { finished: boolean; words: string }>> = {
+  reclaiming: {
+    finished: false,
+    words:
+      'Its reclamation started and is not finished: some of its reasoning and logs may still be kept here, and the next retention pass retries the rest. Its summary is kept.',
+  },
+  reclaimed: { finished: true, words: 'Reclaimed 30 days after it finished: its reasoning and logs are no longer kept here. Its summary is kept.' },
+  deleting: {
+    finished: false,
+    words:
+      'Its owner’s deletion started and is not finished: its summary is already removed, and the next retention pass retries the remaining cleanup.',
+  },
+  deleted: { finished: true, words: 'Deleted by its owner, its summary too. Only a record that it was deleted remains here.' },
+};
+
+const FACT_NAMES = { verdict: 'Verdict', ci: 'CI results', comments: 'Comments' } as const;
+
+export interface DiRetainedFact {
+  key: keyof typeof FACT_NAMES;
+  name: string;
+  /** The fact's own state, verbatim (one of the closed `DiRetentionFactState`). */
+  state: DiRetentionFactState;
+  /** What is shown: the recorded detail, or the honest absence (never blank). */
+  words: string;
+  /** Where it was recorded, or looked for. */
+  source: string;
+}
+
+export interface DiRetainedRow {
+  ref: string;
+  sourceId: string;
+  nativeId: string;
+  phase: string;
+  phaseWords: string;
+  /** Its final status in the CLOSED vocabulary it had while listed (null: no summary is kept, or none captured yet). */
+  status: { id: DiMissionStatusId; label: string; glyph: string; meaning: string } | null;
+  /** Why the status is Unrecognised, when it is (the recorded final state is none of the producer's own shapes); null otherwise. */
+  statusReason: string | null;
+  /** Its recorded final state and where it came from: provenance, never the status itself. */
+  provenance: string | null;
+  facts: DiRetainedFact[];
+  /** Every control a listed Mission has, drawn disabled with why: a Mission gone from its store is read-only here. */
+  actions: { id: string; label: string; reason: string }[];
+}
+
+export interface DiArchiveReading {
+  /** Retained-only Missions not already listed among the rows (none is counted twice). */
+  rows: DiRetainedRow[];
+  /**
+   * RAW: the retained-only Missions counted from the sources that WERE read (listed or not, awaiting their summary included); null when the archive is not
+   * reported at all. It is NOT the archive's size when a source could not be read. Never read it directly: `archiveCount` is its one reader, and
+   * diArchiveCountPin.test.ts fails if any other source file names it (round 10: a third state must not be foldable by a reader who misses a convention).
+   */
+  countedFromReadSources: number | null;
+  /** Kept and counted, but beyond what a source lists. */
+  unlisted: number;
+  /** Removed from their store, owed a summary not yet captured (disjoint from the rest). */
+  awaiting: number;
+  /** Sources whose archive could not be read, each with why: what they hold is NOT known (never 0). */
+  unavailable: { sourceId: string; problem: string }[];
+  /** False when this office does not report Missions gone from their store at all. */
+  reported: boolean;
+}
+
+const RETAINED_GONE_REASON =
+  'Its record is no longer in this office’s store, so nothing can start, run, deliver or open it from here; only what local retention kept is shown.';
+
+/**
+ * The producer's own final-state shapes (mission_retention/reclaim.py `_mission_core_summary`; the workflow summary records the bare phase), each read by the SAME
+ * table a LISTED record of that shape is read by, so its chip is the one it had before it left its store:
+ *  - a bare terminal literal: `DI_TERMINAL_LITERAL_STATUS`, by its family's model;
+ *  - `<progress> (Mission State progress; record state <state>)`: a record its own progress closed, read as Deliverable 1 reads terminal progress
+ *    (`DI_MISSION_PROGRESS_STATUS`): COMPLETED progress is Ended, NEVER Verified (reported completion is not verified success);
+ *  - `<state> (withdrawn)`: a proposal closed by withdrawal before anything started, read as Deliverable 1 reads a withdrawn request
+ *    (`DI_REQUEST_STAGE_STATUS.withdrawn`), never as an open decision.
+ * Anything else is Unrecognised, with why; the recorded text is provenance, never the status.
+ */
+const PROGRESS_COMPOSITE = /^([A-Z_]+) \(Mission State progress; record state [A-Z_]+\)$/;
+const WITHDRAWN_COMPOSITE = /^[A-Z_]+ \(withdrawn\)$/;
+
+function retainedStatus(family: string, finalState: string): { status: NonNullable<DiRetainedRow['status']>; reason: string | null } {
+  let id: DiMissionStatusId | null = null;
+  if (family === 'mission_core') {
+    const progress = PROGRESS_COMPOSITE.exec(finalState)?.[1];
+    if (progress !== undefined && Object.prototype.hasOwnProperty.call(DI_MISSION_PROGRESS_STATUS, progress))
+      id = DI_MISSION_PROGRESS_STATUS[progress as keyof typeof DI_MISSION_PROGRESS_STATUS];
+    else if (WITHDRAWN_COMPOSITE.test(finalState)) id = DI_REQUEST_STAGE_STATUS.withdrawn;
+  }
+  if (id === null) {
+    const model = RETAINED_FAMILY_MODEL[family];
+    id = (model !== undefined ? DI_TERMINAL_LITERAL_STATUS[model]?.[finalState] : undefined) ?? null;
+  }
+  const known = id !== null;
+  const entry = DI_MISSION_STATUS[id ?? 'unrecognised'];
+  return {
+    status: { id: id ?? 'unrecognised', label: entry.label, glyph: entry.glyph, meaning: entry.meaning },
+    reason: known ? null : `This office does not know the recorded final state “${finalState}” for a ${family} Mission, so its status is not guessed.`,
+  };
+}
+
+/**
+ * Round 10: what each retained fact's state CLAIMS, in a person's words: exhaustive over the closed state (a new state fails the type check rather than falling back
+ * to a confident word). Confirmed absence, not read, unreadable and not known are four different claims; only a recorded fact shows its detail. Shared by every
+ * surface that shows a retained summary.
+ */
+export const RETENTION_FACT_WORDS: Readonly<Record<Exclude<DiRetentionFactState, 'recorded'>, string>> = {
+  not_recorded_locally: 'None recorded: it was looked for where it is kept, and none is there',
+  not_read: 'Not read: where it would be kept was not consulted here, so nothing is claimed about it',
+  unreadable: 'Could not be read: a record may exist, but this office could not read it',
+  not_known: 'Not known: kept before this office told an absent record apart from an unreadable one, so its absence was never established',
+};
+
+export function retentionFactWords(fact: DiRetentionFact): string {
+  if (fact.state === 'recorded') return fact.detail ?? 'Recorded (no detail was kept)';
+  return RETENTION_FACT_WORDS[fact.state];
+}
+
+function retainedFact(key: DiRetainedFact['key'], fact: DiRetentionFact): DiRetainedFact {
+  return { key, name: FACT_NAMES[key], state: fact.state, words: retentionFactWords(fact), source: fact.source };
+}
+
+function retainedRow(item: DiRetainedMission): DiRetainedRow {
+  const summary = item.summary;
+  const read = summary === null ? null : retainedStatus(item.family, summary.finalState);
+  const deleteReason =
+    item.phase === 'deleted'
+      ? 'Its local data and its summary were already deleted at its owner’s request.'
+      : item.phase === 'deleting'
+        ? 'Its owner’s deletion has started and is not finished: its summary is already removed, and the next retention pass retries the remaining cleanup.'
+        : 'Its record is no longer in this office’s store, so it cannot be deleted from here: the owner’s delete acts on a listed Mission’s record, and this one has left its store.';
+  return {
+    ref: item.missionRef,
+    sourceId: item.sourceId,
+    nativeId: item.nativeId,
+    phase: item.phase,
+    phaseWords:
+      item.phase === 'observed' && summary === null
+        ? 'Gone from its store; its summary is not captured yet, and capture is retried'
+        : (RETAINED_PHASE[item.phase] ?? `Its retention state is not one this office knows (${item.phase})`),
+    status: read?.status ?? null,
+    statusReason: read?.reason ?? null,
+    provenance: summary === null ? null : `Recorded final state ${summary.finalState} (${summary.finalStateSource})`,
+    facts:
+      summary === null
+        ? []
+        : [retainedFact('verdict', summary.verdict), retainedFact('ci', summary.ci), retainedFact('comments', summary.comments)],
+    actions: [
+      { id: 'start', label: 'Start', reason: RETAINED_GONE_REASON },
+      { id: 'deliver', label: 'Delivery', reason: RETAINED_GONE_REASON },
+      { id: 'herdr', label: 'Herdr', reason: RETAINED_GONE_REASON },
+      { id: 'delete', label: 'Delete local data', reason: deleteReason },
+    ],
+  };
+}
+
+/**
+ * Round 10: what an EMPTY listed store may say, by the archive's own state (never "No Missions yet" over an archive that was not reported or could not be read):
+ * `no_missions` only when the archive was read in full and holds none; `archive_only` when it holds finished Missions; `archive_not_reported` and
+ * `archive_unavailable` (with each source's reason) say that whether any are kept is not known.
+ */
+export type DiMissionsEmpty =
+  | { kind: 'no_missions' }
+  | { kind: 'archive_only' }
+  | { kind: 'archive_not_reported' }
+  | { kind: 'archive_unavailable'; sources: { sourceId: string; problem: string }[] };
+
+export function missionsEmptyState(archive: DiArchiveReading): DiMissionsEmpty {
+  const count = archiveCount(archive);
+  if (count.kind === 'not_reported') return { kind: 'archive_not_reported' };
+  if (count.kind === 'at_least') return { kind: 'archive_unavailable', sources: count.unavailable };
+  return count.count > 0 ? { kind: 'archive_only' } : { kind: 'no_missions' };
+}
+
+export function missionsEmptyWords(empty: DiMissionsEmpty): string {
+  switch (empty.kind) {
+    case 'no_missions':
+      return DI_MISSIONS_EMPTY;
+    case 'archive_only':
+      return 'No Missions are listed. Finished Missions are kept under Archived.';
+    case 'archive_not_reported':
+      return 'No Missions are listed, and this office does not report Missions gone from their store, so whether any finished Missions are kept is not known.';
+    case 'archive_unavailable':
+      return `No Missions are listed, and the archive of ${empty.sources.map((s) => `${s.sourceId} (${s.problem})`).join(', ')} could not be read, so whether any finished Missions are kept there is not known.`;
+  }
+}
+
+/** The archive as a person may read it: retained-only Missions (deduplicated against the listed rows), exact counts, and what could not be read, said. */
+export function archiveReading(retained: readonly DiRetainedSource[] | null, rows: readonly DiScanRow[]): DiArchiveReading {
+  if (retained === null) return { rows: [], countedFromReadSources: null, unlisted: 0, awaiting: 0, unavailable: [], reported: false };
+  const listed = new Set(rows.map((r) => r.id));
+  const out: DiRetainedRow[] = [];
+  let known = 0;
+  let unlisted = 0;
+  let awaiting = 0;
+  const unavailable: DiArchiveReading['unavailable'] = [];
+  for (const source of retained) {
+    if (source.state !== 'observed' || source.total === null || source.awaiting === null) {
+      unavailable.push({ sourceId: source.sourceId, problem: source.problem ?? 'not_known' });
+      continue;
+    }
+    const fresh = source.missions.filter((m) => !listed.has(m.missionRef));
+    out.push(...fresh.map(retainedRow));
+    // the source counts EXACTLY; a listed one still among the rows is counted there, never twice
+    const alsoListed = source.missions.length - fresh.length;
+    known += source.total - alsoListed + source.awaiting;
+    unlisted += source.total - source.missions.length;
+    awaiting += source.awaiting;
+  }
+  return { rows: out, countedFromReadSources: known, unlisted, awaiting, unavailable, reported: true };
+}
+
+/**
+ * The archive's count AS IT MAY BE SAID, the one reader of `countedFromReadSources`: `exact` only when every source was read; `at_least` (a floor, with the
+ * sources that could not be read) when any was not; `not_reported` when this office reports no archive at all. A consumer must say which; it cannot add a floor
+ * as if it were the total, or read an unreported archive as 0.
+ */
+export type DiArchiveCount =
+  | { kind: 'not_reported' }
+  | { kind: 'exact'; count: number }
+  | { kind: 'at_least'; count: number; unavailable: DiArchiveReading['unavailable'] };
+
+export function archiveCount(archive: DiArchiveReading): DiArchiveCount {
+  const counted = archive.countedFromReadSources;
+  if (!archive.reported || counted === null) return { kind: 'not_reported' };
+  if (archive.unavailable.length > 0) return { kind: 'at_least', count: counted, unavailable: archive.unavailable };
+  return { kind: 'exact', count: counted };
+}
+
 export function missionsShown(rows: readonly DiScanRow[], status: DiMissionsStatus): DiScanRow[] {
   return rows.filter((row) => matches(row, status) === true);
 }
@@ -146,6 +410,8 @@ export interface DiReceptionCard {
   suggestions: readonly string[];
   /** The existing request workspace's own route for this item (view only), when its source names one. */
   request: { conversationId: string | null; requestRef: string | null } | null;
+  /** The status of the listed Mission this item is about, the SAME pill its row wears (the one contract). Absent: the item names no listed Mission, or it is a sample. */
+  missionStatus?: DiScanPill;
 }
 
 /**
@@ -302,9 +568,15 @@ function itemCard(
   labelOf: (id: DiReceptionCategoryId) => string,
 ): DiReceptionCard {
   const label = labelOf(item.category);
-  if (item.kind === 'mission') return missionCard(item.entry, item.panel, rows, label);
-  if (item.kind === 'panel') return panelCard(item.entry, label);
-  return deliveryCard(item.entry, rows, { label, tone: 'needs' }, 'other');
+  if (item.kind === 'mission') return withMissionStatus(missionCard(item.entry, item.panel, rows, label), rows);
+  if (item.kind === 'panel') return withMissionStatus(panelCard(item.entry, label), rows);
+  return withMissionStatus(deliveryCard(item.entry, rows, { label, tone: 'needs' }, 'other'), rows);
+}
+
+/** A card about a LISTED Mission carries that Mission's status pill, from the same contract its row reads. */
+function withMissionStatus(card: DiReceptionCard, rows: readonly DiScanRow[]): DiReceptionCard {
+  const status = rows.find((row) => row.id === card.missionRef)?.status;
+  return status === undefined ? card : { ...card, missionStatus: statusPill(status) };
 }
 
 /**
@@ -331,7 +603,7 @@ export function receptionFromInbox(
       doubt.text.length === 0 ? null : { text: doubt.text.join(' '), codes: doubt.codes },
     cards,
     information: model.information.map((entry) =>
-      deliveryCard(entry, rows, { label: 'Information', tone: 'idle' }, 'info'),
+      withMissionStatus(deliveryCard(entry, rows, { label: 'Information', tone: 'idle' }, 'info'), rows),
     ),
     notListed: Math.max(0, model.attention - cards.length),
     // Null stays null (never zero) when the request panel was not read; `earlierUnread` then says why.
@@ -539,10 +811,48 @@ export const DI_NEW_MISSION_SPECIMEN: DiNewMissionSource = {
   proposal: DI_PROPOSAL_SPECIMEN,
 };
 
-/** How many Orchestrators are running, as read (only a fact read as running counts). */
-export function runningCount(rows: readonly DiScanRow[]): number {
-  // only a Mission KNOWN to be running counts toward the limit (an object is always truthy: say it explicitly)
-  return rows.filter((row) => knownTrue(row.state.running)).length;
+/**
+ * The Orchestrator capacity GUARD's inputs (AC-4.3-14/-49), kept SEPARATE from the display count on purpose: the Running filter counts only a team observed working, while
+ * the guard must keep its protective strength. `holding`: Missions that hold an Orchestrator (`DI_STATUS_CAPACITY`: running, blocked, a bound task observed without a
+ * confirmed team, a requested start). `notKnown`: Missions for which it is not known whether they do (stale, disconnected, unknown, unrecognised, unavailable): an unknown is
+ * NEVER spare capacity, so the guard counts it as held. Each row is read from its status's own `capacity` (diMissionStatus.ts), the EXECUTION reading, never from its
+ * filing tab. A row without a contract status (the labelled specimen) is read from its tab and running fact.
+ */
+export interface DiOrchestratorUse {
+  holding: number;
+  notKnown: number;
+}
+
+export function orchestratorUse(rows: readonly DiScanRow[]): DiOrchestratorUse {
+  const use: DiOrchestratorUse = { holding: 0, notKnown: 0 };
+  for (const row of rows) {
+    // read from the status's own EXECUTION capacity, never from how the record is filed: a record its progress closed can still hold an Orchestrator (round 3, finding 1)
+    const bears =
+      row.status !== undefined
+        ? row.status.capacity.bears
+        : row.tab !== 'open'
+          ? 'none'
+          : !row.state.running.known
+          ? 'not_known'
+          : row.state.running.value
+            ? 'holds'
+            : 'none';
+    if (bears === 'holds') use.holding += 1;
+    else if (bears === 'not_known') use.notKnown += 1;
+  }
+  return use;
+}
+
+/** Whether the guard refuses another Orchestrator: every held slot AND every slot not known to be free counts. */
+export function atOrchestratorLimit(use: DiOrchestratorUse): boolean {
+  return use.holding + use.notKnown >= DI_ORCHESTRATOR_LIMIT;
+}
+
+/** The guard's own words: in use, or in use or cannot be checked (with both counts), never "running" (a held slot is not a team observed working). */
+export function orchestratorLimitWords(use: DiOrchestratorUse): string {
+  return use.notKnown === 0
+    ? `${DI_ORCHESTRATOR_LIMIT} of ${DI_ORCHESTRATOR_LIMIT} Orchestrators are in use`
+    : `${DI_ORCHESTRATOR_LIMIT} of ${DI_ORCHESTRATOR_LIMIT} Orchestrators are in use or cannot be checked (${use.holding} in use, ${use.notKnown} cannot be checked)`;
 }
 
 /**
@@ -561,9 +871,8 @@ export const DI_ASK_REFUSED =
  * Why "Continue in the request workspace" is off, or null when it is offered. The rule that holds first says it: the limit (AC-4.3-14/-49), an empty ask (AC-4.3-18), or a workspace that is not
  * available in this office.
  */
-export function continueAskReason(ask: string, running: number, workspace: boolean): string | null {
-  if (running >= DI_ORCHESTRATOR_LIMIT)
-    return `${DI_ORCHESTRATOR_LIMIT} of ${DI_ORCHESTRATOR_LIMIT} Orchestrators are running. Finish or stop one to start another.`;
+export function continueAskReason(ask: string, use: DiOrchestratorUse, workspace: boolean): string | null {
+  if (atOrchestratorLimit(use)) return `${orchestratorLimitWords(use)}. Finish or stop one to start another.`;
   if (ask.trim() === '') return 'Type an ask first.';
   if (!workspace) return DI_ASK_NO_WORKSPACE;
   return null;

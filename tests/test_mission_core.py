@@ -1769,7 +1769,12 @@ class ETrustSeparationTests(unittest.TestCase):
              "target_runtime/mission_state.py",
              "target_runtime/artifact_content.py",
              "mission_panel/journal.py", "mission_panel/draft.py",
-             "mission_panel/lifecycle.py"},
+             "mission_panel/lifecycle.py",
+             # Deliverable 2 (deliberate, exact; pinned name by name in test_static 12o): local
+             # retention's eligibility (record and state constants, one pure helper) and its ONE
+             # missions.json writer (MissionStore lock/load/save and manifest.reclaimed_run, which
+             # reduces only a terminal run's two diagnostic texts).
+             "mission_retention/eligibility.py", "mission_retention/missions.py"},
         )
 
     def test_E4_mission_never_names_pr_delivery_or_a_provider(self):

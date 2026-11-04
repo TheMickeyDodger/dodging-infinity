@@ -600,6 +600,23 @@
 .di-op-status[data-status='unknown'] {
   color: var(--op-unknown);
 }
+/* The rest of the Mission status contract (diMissionStatus.ts): each keeps its own shape and words; colour only follows its nearest meaning. */
+.di-op-status[data-status='not_started'],
+.di-op-status[data-status='start_requested'],
+.di-op-status[data-status='task_observed'] {
+  color: var(--op-waiting);
+}
+.di-op-status[data-status='stopped'] {
+  color: var(--op-ended);
+}
+.di-op-status[data-status='verified'] {
+  color: var(--op-good);
+  --op-pill-bg: var(--op-ok-tint);
+}
+.di-op-status[data-status='unrecognised'],
+.di-op-status[data-status='unavailable'] {
+  color: var(--op-unknown);
+}
 .di-op-status-sentence {
   color: var(--op-muted);
   font-size: 12px;

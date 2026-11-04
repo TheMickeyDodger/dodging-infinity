@@ -1,0 +1,1345 @@
+{
+  "fixture": true,
+  "generator": "tests/test_herdr_roster_answers.py HR2",
+  "label": "FIXTURE (generated, not live): the REAL catalog answer (query_v2 and the producer's roster) over Herdr task views the Herdr source builds, one per roster outcome. The runtime snapshot is SYNTHETIC (it stands for the runtime capture of live sessions; no process is observed). The test's temporary directory is written as /synthetic-test-root (each workspace's root key and the measured registry size recomputed for it)",
+  "now": 1800000000,
+  "response": {
+    "chain_observation": {
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "over_capacity_count": 0,
+      "problem": null,
+      "producer": "synthetic",
+      "root_count": 0,
+      "unavailable_count": 0
+    },
+    "contract": "di.mission_sources.query",
+    "contract_version": 2,
+    "delivery_presentations": {
+      "coverage": {
+        "direct_cli": "not_stored",
+        "max_entries": 16,
+        "route": "grok_bot"
+      },
+      "delivery_store": "not_registered",
+      "entries": [],
+      "problem": null,
+      "source_id": "grok_delivery_presentations",
+      "state": "not_registered",
+      "total": null
+    },
+    "generated_at": 1800000000,
+    "limits": {
+      "max_chain_depth": 1,
+      "max_child_records": 32,
+      "max_herd_roots": 16,
+      "max_json_depth": 64,
+      "max_observed_missions": 16,
+      "max_query_input_bytes": 67108864,
+      "max_query_missions": 2048,
+      "max_registry_bytes": 262144,
+      "max_review_preamble_bytes": 4096,
+      "max_review_preamble_lines": 16,
+      "max_snapshot_agents": 512,
+      "max_snapshot_tasks": 256,
+      "max_sources": 128,
+      "max_store_read_bytes": 16777216,
+      "max_task_bindings": 32,
+      "min_poll_interval_seconds": 5,
+      "reported_freshness_bound_seconds": 600
+    },
+    "max_age_seconds": 60,
+    "missions": [
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "mission_not_active",
+          "state": "not_applicable",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_not_active",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-aborted",
+          "workspace_realpath": "/synthetic-test-root/ws-4"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "terminal",
+          "state": "ABORTED"
+        },
+        "members": [],
+        "mission_ref": "hd:task-aborted@19b2a9f038de",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-aborted@19b2a9f038de",
+        "objective": "Synthetic task task-aborted: aborted",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-4"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "mission_not_active",
+              "state": "not_applicable",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": "task-aborted",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-4",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "canonical_chain_complete",
+          "state": "bound",
+          "task_id": "task-blocked"
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "parent_root_not_observed",
+          "record_count": null,
+          "state": "unavailable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-blocked",
+          "workspace_realpath": "/synthetic-test-root/ws-2"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "active",
+          "state": "ACTIVE"
+        },
+        "members": [
+          {
+            "activity": "blocked",
+            "agent": "lead-2",
+            "chain": "direct",
+            "chain_task_id": "task-blocked",
+            "classification": "present",
+            "cost": "unknown",
+            "logical": "lead",
+            "member_ref": "hd:task-blocked@8e4e3d2fe6f8#task-blocked#lead",
+            "mission_ref": "hd:task-blocked@8e4e3d2fe6f8",
+            "model": "unknown",
+            "observed_at": 1800000000,
+            "pane_id": "pane-2",
+            "progress": "unknown",
+            "provider": "claude",
+            "reason": "session_confirmed",
+            "role": "lead",
+            "session": {
+              "live": "session-2",
+              "recorded": "session-2"
+            },
+            "task_id": "task-blocked",
+            "tokens": "unknown",
+            "workspace_id": "w2"
+          }
+        ],
+        "mission_ref": "hd:task-blocked@8e4e3d2fe6f8",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-blocked@8e4e3d2fe6f8",
+        "objective": "Synthetic task task-blocked: active",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-2"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "canonical_chain_complete",
+              "state": "bound",
+              "task_id": "task-blocked"
+            },
+            "chain": "direct",
+            "chain_task_id": "task-blocked",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-2",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "mission_not_active",
+          "state": "not_applicable",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_not_active",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-complete",
+          "workspace_realpath": "/synthetic-test-root/ws-5"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "terminal",
+          "state": "COMPLETE"
+        },
+        "members": [],
+        "mission_ref": "hd:task-complete@5009f0d2afcf",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-complete@5009f0d2afcf",
+        "objective": "Synthetic task task-complete: complete",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-5"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "mission_not_active",
+              "state": "not_applicable",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": "task-complete",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-5",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "mission_not_active",
+          "state": "not_applicable",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_not_active",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-error",
+          "workspace_realpath": "/synthetic-test-root/ws-7"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "inactive",
+          "state": "ERROR"
+        },
+        "members": [],
+        "mission_ref": "hd:task-error@61fb858a3111",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-error@61fb858a3111",
+        "objective": "Synthetic task task-error: error",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-7"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "mission_not_active",
+              "state": "not_applicable",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": "task-error",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-7",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "mission_not_active",
+          "state": "not_applicable",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_not_active",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-failed",
+          "workspace_realpath": "/synthetic-test-root/ws-3"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "terminal",
+          "state": "FAILED"
+        },
+        "members": [],
+        "mission_ref": "hd:task-failed@1e7fe5833713",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-failed@1e7fe5833713",
+        "objective": "Synthetic task task-failed: failed",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-3"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "mission_not_active",
+              "state": "not_applicable",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": "task-failed",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-3",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "mission_not_active",
+          "state": "not_applicable",
+          "task_id": null
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "mission_not_active",
+          "record_count": null,
+          "state": "not_applicable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-suspended",
+          "workspace_realpath": "/synthetic-test-root/ws-6"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "unknown_future",
+          "state": "SUSPENDED"
+        },
+        "members": [],
+        "mission_ref": "hd:task-suspended@7e4595b2adbc",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-suspended@7e4595b2adbc",
+        "objective": "Synthetic task task-suspended: suspended",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-6"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "mission_not_active",
+              "state": "not_applicable",
+              "task_id": null
+            },
+            "chain": "direct",
+            "chain_task_id": "task-suspended",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-6",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "task_record_not_corroborated_by_a_live_session",
+          "state": "unverified",
+          "task_id": "task-unverified"
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "parent_root_not_observed",
+          "record_count": null,
+          "state": "unavailable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-unverified",
+          "workspace_realpath": "/synthetic-test-root/ws-0"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "active",
+          "state": "ACTIVE"
+        },
+        "members": [],
+        "mission_ref": "hd:task-unverified@791a7350df3b",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-unverified@791a7350df3b",
+        "objective": "Synthetic task task-unverified: active",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-0"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "task_record_not_corroborated_by_a_live_session",
+              "state": "unverified",
+              "task_id": "task-unverified"
+            },
+            "chain": "direct",
+            "chain_task_id": "task-unverified",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-0",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      },
+      {
+        "admitted_artifacts": {
+          "canonical_review": {
+            "candidate_applicability": "unproven",
+            "currency": null,
+            "findings": null,
+            "gate": null,
+            "integrity": null,
+            "problem": "review_root_not_observed",
+            "record": null,
+            "state": "unavailable",
+            "task_status": null,
+            "verdict": null
+          }
+        },
+        "binding": {
+          "reason": "canonical_chain_complete",
+          "state": "bound",
+          "task_id": "task-working"
+        },
+        "children_record": {
+          "caveat": null,
+          "other_parent_count": null,
+          "problem": "parent_root_not_observed",
+          "record_count": null,
+          "state": "unavailable"
+        },
+        "delivery_handoff": {
+          "blockers": [],
+          "branch": null,
+          "engineering_task_id": null,
+          "evidence": null,
+          "git_dir_realpath": null,
+          "link_basis": null,
+          "repository": null,
+          "staged_candidate": null,
+          "state": "not_reported",
+          "workflow_id": null
+        },
+        "delivery_link": {
+          "basis": null,
+          "delivery_id": null,
+          "state": "unlinked_model_not_recorded"
+        },
+        "execution": {
+          "consistent": true,
+          "identity_source": "herdr.task_json",
+          "receipt_recorded": true,
+          "record_ambiguous": false,
+          "run_started": true,
+          "task_id": "task-working",
+          "workspace_realpath": "/synthetic-test-root/ws-1"
+        },
+        "lifecycle": {
+          "model": "herdr.task/1",
+          "standing": "active",
+          "state": "ACTIVE"
+        },
+        "members": [
+          {
+            "activity": "busy",
+            "agent": "lead-1",
+            "chain": "direct",
+            "chain_task_id": "task-working",
+            "classification": "present",
+            "cost": "unknown",
+            "logical": "lead",
+            "member_ref": "hd:task-working@d00486cfb62e#task-working#lead",
+            "mission_ref": "hd:task-working@d00486cfb62e",
+            "model": "unknown",
+            "observed_at": 1800000000,
+            "pane_id": "pane-1",
+            "progress": "unknown",
+            "provider": "claude",
+            "reason": "session_confirmed",
+            "role": "lead",
+            "session": {
+              "live": "session-1",
+              "recorded": "session-1"
+            },
+            "task_id": "task-working",
+            "tokens": "unknown",
+            "workspace_id": "w1"
+          }
+        ],
+        "mission_ref": "hd:task-working@d00486cfb62e",
+        "mission_state": {
+          "detail": null,
+          "inputs": null,
+          "problem": "source_kind_has_no_mission_state",
+          "report": null,
+          "state": "not_applicable"
+        },
+        "native": {
+          "started_at": 1799999400,
+          "task_record_version": 1
+        },
+        "native_id": "task-working@d00486cfb62e",
+        "objective": "Synthetic task task-working: active",
+        "producer": {
+          "declared": "synthetic",
+          "recorded": {
+            "membership": "derived_from_current_task_record",
+            "root_aliases": [
+              "/synthetic-test-root/ws-1"
+            ],
+            "schema": "di.catalog.herdr_task",
+            "schema_version": 1
+          }
+        },
+        "retention": {
+          "basis": null,
+          "basis_source": null,
+          "eligible": null,
+          "phase": null,
+          "phase_at": null,
+          "problem": null,
+          "reason": null,
+          "retained_for": 0,
+          "state": "not_applicable",
+          "summary": null
+        },
+        "revision": null,
+        "source_id": "hd",
+        "task_chains": [
+          {
+            "binding": {
+              "reason": "canonical_chain_complete",
+              "state": "bound",
+              "task_id": "task-working"
+            },
+            "chain": "direct",
+            "chain_task_id": "task-working",
+            "dependency": null,
+            "descendants_not_followed": null,
+            "membership_end": {
+              "ended": null,
+              "rule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+              "status": null
+            },
+            "parent_task_id": null,
+            "record": null,
+            "root": {
+              "observation": "not_captured",
+              "path": "/synthetic-test-root/ws-1",
+              "problem": null
+            }
+          }
+        ],
+        "updated_at": null,
+        "workflow_phase": {
+          "phase": null,
+          "problem": "lifecycle_model_has_no_workflow_phase",
+          "state": "not_applicable"
+        }
+      }
+    ],
+    "registry": {
+      "directory": "/synthetic-test-root/answer-0/registry",
+      "health": "fresh",
+      "max_serialized_bytes": 262144,
+      "max_sources": 128,
+      "problem": null,
+      "serialized_bytes": 241,
+      "source_count": 1
+    },
+    "retained_by_source": null,
+    "runtime_agents": {
+      "agents": [],
+      "agents_over_bound": 0,
+      "caveat": null,
+      "counts": {
+        "ambiguous": 0,
+        "names_over_bound": 0,
+        "registries_unread": 0,
+        "represented_by_teams": 0,
+        "roles_live": 0,
+        "roles_recorded": 0,
+        "roots_over_capacity": 0,
+        "roots_read": 0,
+        "roots_requested": 0,
+        "roots_role_records_unreadable": 0,
+        "unavailable": 0,
+        "unverified": 0,
+        "verified": 0
+      },
+      "first_pass_at": null,
+      "observed_at": null,
+      "problem": "no_task_native_role_records",
+      "second_pass_at": null,
+      "state": "not_applicable"
+    },
+    "runtime_snapshot": {
+      "agent_count": 2,
+      "health": "fresh",
+      "max_age_seconds": 60,
+      "observed_at": 1800000000,
+      "problem": null,
+      "producer": "synthetic",
+      "task_count": 8
+    },
+    "sources": [
+      {
+        "health": "fresh",
+        "kind": "task_native",
+        "max_age_seconds": 60,
+        "observed_at": 1800000000,
+        "problem": null,
+        "producer": "local_request",
+        "record_count": 8,
+        "source_id": "hd",
+        "store_dir": "/synthetic-test-root/answer-0/sources/hd"
+      }
+    ],
+    "unmatched_runtime_agent_count": 0,
+    "valid_until": 1800000060
+  },
+  "runtime_snapshot": {
+    "agents": [
+      {
+        "agent": "lead-1",
+        "pane_id": "pane-1",
+        "provider": "claude",
+        "session": "session-1",
+        "status": "working",
+        "workspace_id": "w1"
+      },
+      {
+        "agent": "lead-2",
+        "pane_id": "pane-2",
+        "provider": "claude",
+        "session": "session-2",
+        "status": "blocked",
+        "workspace_id": "w2"
+      }
+    ],
+    "observed_at": 1800000000,
+    "producer": "synthetic",
+    "schema": "di.mission_sources.runtime_snapshot",
+    "tasks": [
+      {
+        "bindings": [
+          {
+            "agent": "lead-0",
+            "logical": "lead",
+            "pane_id": "pane-0",
+            "role": "lead",
+            "session": "session-0",
+            "workspace_id": "w0"
+          }
+        ],
+        "task_id": "task-unverified",
+        "workspace_realpath": "/synthetic-test-root/ws-0"
+      },
+      {
+        "bindings": [
+          {
+            "agent": "lead-1",
+            "logical": "lead",
+            "pane_id": "pane-1",
+            "role": "lead",
+            "session": "session-1",
+            "workspace_id": "w1"
+          }
+        ],
+        "task_id": "task-working",
+        "workspace_realpath": "/synthetic-test-root/ws-1"
+      },
+      {
+        "bindings": [
+          {
+            "agent": "lead-2",
+            "logical": "lead",
+            "pane_id": "pane-2",
+            "role": "lead",
+            "session": "session-2",
+            "workspace_id": "w2"
+          }
+        ],
+        "task_id": "task-blocked",
+        "workspace_realpath": "/synthetic-test-root/ws-2"
+      },
+      {
+        "bindings": [
+          {
+            "agent": "lead-3",
+            "logical": "lead",
+            "pane_id": "pane-3",
+            "role": "lead",
+            "session": "session-3",
+            "workspace_id": "w3"
+          }
+        ],
+        "task_id": "task-failed",
+        "workspace_realpath": "/synthetic-test-root/ws-3"
+      },
+      {
+        "bindings": [
+          {
+            "agent": "lead-4",
+            "logical": "lead",
+            "pane_id": "pane-4",
+            "role": "lead",
+            "session": "session-4",
+            "workspace_id": "w4"
+          }
+        ],
+        "task_id": "task-aborted",
+        "workspace_realpath": "/synthetic-test-root/ws-4"
+      },
+      {
+        "bindings": [
+          {
+            "agent": "lead-5",
+            "logical": "lead",
+            "pane_id": "pane-5",
+            "role": "lead",
+            "session": "session-5",
+            "workspace_id": "w5"
+          }
+        ],
+        "task_id": "task-complete",
+        "workspace_realpath": "/synthetic-test-root/ws-5"
+      },
+      {
+        "bindings": [
+          {
+            "agent": "lead-6",
+            "logical": "lead",
+            "pane_id": "pane-6",
+            "role": "lead",
+            "session": "session-6",
+            "workspace_id": "w6"
+          }
+        ],
+        "task_id": "task-suspended",
+        "workspace_realpath": "/synthetic-test-root/ws-6"
+      },
+      {
+        "bindings": [
+          {
+            "agent": "lead-7",
+            "logical": "lead",
+            "pane_id": "pane-7",
+            "role": "lead",
+            "session": "session-7",
+            "workspace_id": "w7"
+          }
+        ],
+        "task_id": "task-error",
+        "workspace_realpath": "/synthetic-test-root/ws-7"
+      }
+    ],
+    "version": 1
+  }
+}

@@ -956,7 +956,11 @@ test(
     await waitFor('the runtime to observe the team', async () =>
       (await missionState(ref)).all.includes('RUNNING'),
     );
-    await whenText(page, T('di-mr-stage-label'), /Team working/);
+    // C4: Mission Core's RUNNING is a bound-TASK observation, never a team working: the panel, its status chip and the journey say what was observed
+    await whenText(page, T('di-mr-stage-label'), /Task observed/);
+    expect(await text(page, T('di-mr-stage-status'))).toMatch(/Task observed/);
+    expect(await text(page, T('di-mr-journey'))).toMatch(/Now: Task observed/);
+    expect(await text(page, T('di-mr-run'))).not.toMatch(/Team working|\bStarted\b|\bRunning\b/);
     expect((await state()).spawn_calls).toBe(1);
     await shot(page, '11-runtime-started-the-buttons-are-gone', T('di-mr-stage'));
     await expectFocusKept(page, 'the runtime taking over from the manual buttons');
@@ -985,7 +989,7 @@ test(
 
     await harness.control({ op: 'spawn', raises: null });
     await harness.control({ op: 'runtime', start: true });
-    await whenText(page, T('di-mr-stage-label'), /Team working/, 45_000);
+    await whenText(page, T('di-mr-stage-label'), /Task observed/, 45_000);
     expect((await state()).spawn_calls, 'reconciliation respawned').toBe(1);
     await shot(page, '21-reconciled-by-the-runtime-without-a-second-start', T('di-mr-stage'));
     await expectFocusKept(page, 'an uncertain start being reconciled');

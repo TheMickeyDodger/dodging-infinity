@@ -27,6 +27,7 @@ import type { WebSocket as ServerSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 
 import type { DiOfficeState } from '../../core/src/messages.ts';
+import { availableCapacityOffice, capacityUseOf,FIXTURE_USE } from './diAvailableCapacity.ts';
 
 const STEPS_MS = 120_000;
 const VIEWPORT = { width: 1440, height: 900 };
@@ -116,7 +117,10 @@ const sent = () => sentByPage.filter((m) => m.type === 'diMissionRequest' && SEN
 const composer = () => p().locator(sel('di-mr-composer'));
 const askOnPage = () => p().locator(sel('di-new-ask'));
 
-async function bootToNewMission(): Promise<void> {
+/** CHANGED IN Deliverable 2, round 10: the interaction tests run on an explicit AVAILABLE-CAPACITY variation (diAvailableCapacity.ts), never on ambient
+ * capacity; the unmodified fixture is the capacity-refusal countercase's own subject. */
+const available = availableCapacityOffice(office);
+async function bootToNewMission(state: DiOfficeState = available): Promise<void> {
   const connected = new Promise<ServerSocket>((resolve) => (resolveConnected = resolve));
   page = await browser!.newPage({ viewport: VIEWPORT });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -124,7 +128,7 @@ async function bootToNewMission(): Promise<void> {
   await connected;
   socket!.send(JSON.stringify({ type: 'providerCapabilities', readingTools: ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'], subagentToolNames: ['Task', 'Agent'] }));
   socket!.send(JSON.stringify({ type: 'settingsLoaded', soundEnabled: false, lastSeenVersion: VERSION, extensionVersion: VERSION }));
-  socket!.send(JSON.stringify(office));
+  socket!.send(JSON.stringify(state));
   await p().waitForSelector(sel('di-rail-new-orchestrator'));
   await p().click(sel('di-rail-new-orchestrator'));
   await p().waitForSelector(sel('di-new-mission'));
@@ -227,6 +231,29 @@ test(
     await composer().waitFor();
     assert.equal(await composer().inputValue(), OTHER);
     assert.deepEqual(sent(), []);
+  },
+  STEPS_MS,
+);
+
+// The capacity REFUSAL this file's interaction tests no longer rest on, pinned in its own body (Deliverable 2, round 10): the unmodified fixture holds 2 and has 14
+// that cannot be checked, the guard counts both, and 16 reaches the limit of 15. Continue is disabled and says so; nothing opens and nothing is sent.
+test(
+  'CAPACITY REFUSED, the unmodified fixture: 2 in use and 14 that cannot be checked reach the limit, so Continue is disabled with that reason; nothing opens or is sent',
+  async () => {
+    assert.deepEqual(capacityUseOf(office), FIXTURE_USE, 'the fixture as the guard reads it');
+    await bootToNewMission(office);
+    await askOnPage().fill(TEXT);
+    const control = p().locator(sel('di-new-continue'));
+    assert.equal(await control.isDisabled(), true, 'Continue is disabled at the limit');
+    const words = /15 of 15 Orchestrators are in use or cannot be checked \(2 in use, 14 cannot be checked\)\. Finish or stop one to start another\./;
+    assert.match((await control.getAttribute('title')) ?? '', words, 'its title gives the reason');
+    const described = await control.getAttribute('aria-describedby');
+    assert.ok(described, 'the disabled Continue is described by its reason');
+    assert.match(((await p().locator(`[id="${described}"]`).textContent()) ?? '').trim(), words, 'its description gives the same reason');
+    await control.click({ force: true });
+    assert.equal(await composer().count(), 0, 'no workspace opened');
+    assert.equal(await askOnPage().inputValue(), TEXT, 'the page keeps its text');
+    assert.deepEqual(sent(), [], 'nothing was sent');
   },
   STEPS_MS,
 );

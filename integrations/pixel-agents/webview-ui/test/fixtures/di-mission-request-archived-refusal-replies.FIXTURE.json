@@ -1,0 +1,193 @@
+{
+  "fixture": true,
+  "label": "FIXTURE — the office’s REAL relay (DiMissionRequests.handle) fed the panel’s real HTTP answers to a restart of an archived Mission, and the not-archived countercase",
+  "derived_from": {
+    "answers": {
+      "path": "server/__tests__/fixtures/di-backend/mission-panel-archived-refusals.FIXTURE.json",
+      "sha256": "969c5530401ed536febc66194236478d483b9643cb56afd976d2ada31051a634"
+    }
+  },
+  "generator": "server/__tests__/diMissionLifecycleWire.test.ts",
+  "replies": {
+    "archived_run_dispatch": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "run",
+      "state": "refused",
+      "problem": "mission_panel_action_not_offered",
+      "reason": "dispatch is not offered for a proposal that is verified",
+      "answer": {
+        "details": {
+          "offered": [
+            "result"
+          ],
+          "stage": "verified"
+        }
+      }
+    },
+    "archived_run_observe": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "run",
+      "state": "refused",
+      "problem": "mission_panel_action_not_offered",
+      "reason": "observe is not offered for a proposal that is verified",
+      "answer": {
+        "details": {
+          "offered": [
+            "result"
+          ],
+          "stage": "verified"
+        }
+      }
+    },
+    "reclaimed_run_dispatch": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "run",
+      "state": "refused",
+      "problem": "mission_panel_action_not_offered",
+      "reason": "dispatch is not offered for a proposal that is verified",
+      "answer": {
+        "details": {
+          "offered": [
+            "result"
+          ],
+          "stage": "verified"
+        }
+      }
+    },
+    "active_run_dispatch": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "run",
+      "state": "ok",
+      "problem": null,
+      "reason": null,
+      "answer": {
+        "ok": true,
+        "request": {
+          "attestation": {
+            "attested_at": 1000000,
+            "binding": {
+              "approved_action_scope": [
+                "engineering_change",
+                "repository_read"
+              ],
+              "approved_delivery_targets": [],
+              "expires_at": 1000900,
+              "mission_id": "mn-2c6855e93e6eafb435dd0dfc19a55f52",
+              "proposal_digest_sha256": "c0d3e7669d69e3e4e51e1a704405611af185897bde7ea7ab5491b36b9d1ecb72",
+              "revision": 1
+            },
+            "evidence_status": "operator_attestation_only_not_sender_evidence",
+            "outcome": {
+              "authorization_id": "ma-f49c7637ed3d799cfaea0e4dc0075e8a",
+              "problem": null
+            },
+            "provenance_label": {
+              "principal_kind": "operator_attested_relay",
+              "proof": "operator_attested_not_independently_verified"
+            },
+            "relayed_reply": "approve",
+            "residual_risk": "operator-attested: the Outer Operator reports that the human replied with this approval; this layer did not verify the human, and a mistaken or malicious same-user operator or local process could fabricate it",
+            "state": "APPLIED"
+          },
+          "cancellation": null,
+          "created_at": 1000000,
+          "delivery_authority": "none",
+          "lifecycle": {
+            "actions": [
+              "observe"
+            ],
+            "approval_expires_at": null,
+            "detail": "A start was recorded and a team was asked for. DI has not yet observed it running. A recorded start is durable intent, written before the team was asked for. It is not a guarantee that the start happened exactly once.",
+            "label": "Start requested",
+            "notice": null,
+            "provenance": {
+              "principal_kind": "operator_attested_relay",
+              "proof": "operator_attested_not_independently_verified"
+            },
+            "residual_risk": "operator-attested: the Outer Operator reports that the human replied with this approval; this layer did not verify the human, and a mistaken or malicious same-user operator or local process could fabricate it",
+            "stage": "dispatched",
+            "terminal": false
+          },
+          "lineage": {
+            "superseded_by": null,
+            "supersedes": null,
+            "turn_id": "ct-522c73272a8c183f9205590c8f67f1f9"
+          },
+          "mission_id": "mn-2c6855e93e6eafb435dd0dfc19a55f52",
+          "ok": true,
+          "outcome": null,
+          "proposal": {
+            "objective": "Make the readiness probe stable under load",
+            "proof_contract": {
+              "continuation_budget": {
+                "max_attempts": 1,
+                "max_checkpoints": 2
+              },
+              "degradation_policy": {
+                "permitted_blocker_keys": []
+              },
+              "required_artifacts": [],
+              "required_dependencies": [],
+              "required_resource_readiness": [],
+              "requirements": [
+                {
+                  "description": "The engineering team's result and its review are bound to this run and can be recovered.",
+                  "evidence_kinds": [
+                    "VERIFICATION_RECORD"
+                  ],
+                  "key": "run_result",
+                  "max_evidence_age_seconds": 3600,
+                  "required_artifact_keys": []
+                }
+              ]
+            },
+            "repository_url": "https://github.com/Example/Repo",
+            "requested_action_scope": [
+              "engineering_change",
+              "repository_read"
+            ],
+            "requested_delivery_target": null,
+            "requested_scope": "the readiness probe and its tests; no schema change",
+            "target_context": "the readiness subsystem"
+          },
+          "proposal_digest_sha256": "c0d3e7669d69e3e4e51e1a704405611af185897bde7ea7ab5491b36b9d1ecb72",
+          "reclaimed": null,
+          "request_ref": "lr-ddbe09fd0241f4e7b923b973260fe83f",
+          "revision": 1,
+          "run": {
+            "baseline": "observed by DI at dispatch, not human-approved: the human approved a scope, not a commit",
+            "cancel": null,
+            "delivery": {
+              "basis": "derived from attested P1-A6 receipts: delivered only when the PR_CREATE receipt is succeeded under a succeeded step; engineering approval and verification confer no delivery",
+              "delivered": false,
+              "receipts": []
+            },
+            "delivery_authority": "none",
+            "engineering_verified": false,
+            "external_work_suspended": false,
+            "first_observation": null,
+            "hold": false,
+            "hold_statement": null,
+            "latest_observation": null,
+            "lifecycle_state": "AUTHORIZED",
+            "mission_state_progress": "IN_PROGRESS",
+            "outcome": null,
+            "pause_statement": null,
+            "paused": false,
+            "pending_proof": null,
+            "phase": "dispatched_not_yet_observed",
+            "progress_note": "Mission State progress is a separate record: VERIFIED completes the Mission lifecycle but does not close Mission State progress, so a COMPLETED Mission may still show IN_PROGRESS here",
+            "target_stopped_observed": false,
+            "unattributed_observation": null,
+            "verification": null
+          },
+          "start_cause": null
+        }
+      }
+    }
+  }
+}

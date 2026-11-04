@@ -1300,6 +1300,8 @@ function App() {
                 mission={missionAccess}
                 missionDelivery={missionDelivery}
                 herdr={herdr}
+                onDeleteLocalData={mission.deleteLocalData}
+                deleteResults={mission.state.deletions}
                 receptionInbox={receptionInbox}
                 presentation={officeFace}
                 worldOpen={worldOpen}
