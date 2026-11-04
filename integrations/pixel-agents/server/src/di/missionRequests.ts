@@ -120,6 +120,9 @@ const OPERATIONS: Record<
   requestChanges: { required: [...OFFER_KEYS, 'reason'], optional: [] },
   withdraw: { required: ['requestRef', 'missionId', 'revision', 'digest'], optional: [] },
   run: { required: ['requestRef', 'command'], optional: [] },
+  // Deliverable 2: the owner's "Delete local data", rechecked by the panel at the moment of action.
+  // Target identity: the SOURCE-QUALIFIED Mission (`missionRef`) and its store's identity (null when the catalog reported none), never a bare native id.
+  deleteLocalData: { required: ['missionId', 'displayedState', 'missionRef', 'storeIdentity'], optional: [] },
 };
 
 /** The adapter route each decision-shaped operation is sent to. */
@@ -288,6 +291,32 @@ export function parseMissionRequest(msg: Record<string, unknown>): ParsedMission
         call: { method: 'POST', path: `/requests/${id}/check-approval`, body: {} },
       };
     }
+    case 'deleteLocalData': {
+      const missionId = need('missionId');
+      if (missionId === null) return refuse('missionId is not an mn- id');
+      const displayed = m.displayedState;
+      if (typeof displayed !== 'string' || displayed.length < 1 || displayed.length > 64) {
+        return refuse('displayedState must be the Mission state the window displayed');
+      }
+      const ref = m.missionRef;
+      if (typeof ref !== 'string' || ref.length > 300 || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}:mn-[0-9a-f]{32}$/.test(ref) || !ref.endsWith(`:${missionId}`)) {
+        return refuse('missionRef must be the selected Mission\u2019s <source>:<id>, naming this Mission');
+      }
+      const store = m.storeIdentity;
+      if (store !== null && (typeof store !== 'string' || !/^[0-9a-f]{64}$/.test(store))) {
+        return refuse('storeIdentity must be the store identity the catalog reported, or null');
+      }
+      return {
+        ok: true,
+        seq,
+        op,
+        call: {
+          method: 'POST',
+          path: `/missions/${missionId}/delete-local-data`,
+          body: { displayed_state: displayed, mission_ref: ref, store_identity: store },
+        },
+      };
+    }
     case 'decide':
     case 'decline':
     case 'reject':
@@ -410,6 +439,7 @@ const WRITES: ReadonlySet<DiMissionRequestOp> = new Set<DiMissionRequestOp>([
   'requestChanges',
   'withdraw',
   'run',
+  'deleteLocalData',
 ]);
 
 const UNKNOWN_OUTCOME =

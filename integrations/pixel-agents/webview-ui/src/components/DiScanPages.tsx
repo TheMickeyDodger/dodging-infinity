@@ -10,12 +10,14 @@ import './diScanPages.css';
 
 import { type ReactNode, useId, useMemo, useState } from 'react';
 
+import type { DiRetainedSource } from '../../../core/src/messages.js';
 import type {
   DiScanDeclaredPhase,
   DiScanMissionsRead,
   DiScanPhase,
   DiScanRow,
   DiScanTone,
+  DiScanWhy,
 } from './diScanModel.js';
 import {
   declaredPhaseWords,
@@ -23,7 +25,11 @@ import {
   DI_DECIDE_WHAT,
   DI_REJECT_IN_PANEL,
   DI_REQUEST_CHANGES_IN_PANEL,
+  knownTrue,
+  rowContextLine,
+  statusPillOf,
 } from './diScanModel.js';
+import type { DiArchiveReading } from './diScanPagesModel.js';
 import type {
   DiMissionsStatus,
   DiNewMissionSource,
@@ -32,7 +38,10 @@ import type {
   DiScanReception,
 } from './diScanPagesModel.js';
 import {
+  archiveCount,
+  archiveReading,
   askHandoff,
+  atOrchestratorLimit,
   continueAskReason,
   DI_ASK_CONTINUE_HINT,
   DI_ASK_CONTINUE_LABEL,
@@ -40,16 +49,17 @@ import {
   DI_EARLIER_NOT_READ,
   DI_HARNESS_FULL,
   DI_LAYOUT_NOTE,
-  DI_MISSIONS_EMPTY,
   DI_MISSIONS_FOOTER,
   DI_MISSIONS_STATUSES,
-  DI_ORCHESTRATOR_LIMIT,
   DI_RECENT_NOT_READ,
   DI_TEAM_UNAVAILABLE,
+  missionsEmptyState,
+  missionsEmptyWords,
   missionsShown,
   missionsUnknown,
+  orchestratorLimitWords,
+  orchestratorUse,
   receptionHeadline,
-  runningCount,
 } from './diScanPagesModel.js';
 
 const NOT_RECORDED = 'Not recorded';
@@ -84,18 +94,36 @@ const REASON = {
 } as const;
 
 /** A status said as a round dot AND its word (V-1, AC-UX-10). */
+/**
+ * A status's mark beside its word: a Mission status's canonical GLYPH (its non-colour mark, the same on every surface), else the tone's dot (attention,
+ * and marks of other vocabularies). The glyph is aria-hidden on purpose: the word beside it is the status's name for assistive technology, and the
+ * glyph adds nothing to it but its shape (a screen reader would only read the shape's Unicode name ahead of the word).
+ */
+export function StatusMark({ tone, glyph }: { tone: DiScanTone; glyph?: string }) {
+  return glyph !== undefined ? (
+    <span className="di-scan-glyph" data-tone={tone} data-testid="di-status-glyph" aria-hidden="true">
+      {glyph}
+    </span>
+  ) : (
+    <span className="di-scan-dot" data-tone={tone} aria-hidden="true" />
+  );
+}
+
 export function StatusTag({
   label,
   tone,
+  glyph,
   testid,
 }: {
   label: string;
   tone: DiScanTone;
+  /** A Mission status's canonical glyph (DiScanPill.glyph); without it, the tone's dot. */
+  glyph?: string;
   testid?: string;
 }) {
   return (
     <span className="di-page-tag" data-tone={tone} data-testid={testid}>
-      <span className="di-scan-dot" data-tone={tone} aria-hidden="true" />
+      <StatusMark tone={tone} glyph={glyph} />
       {label}
     </span>
   );
@@ -204,10 +232,23 @@ function DeclaredPhase({ declared }: { declared: DiScanDeclaredPhase }) {
   );
 }
 
+/** A count chip's word when none is known, one per kind of reason (kinds are never merged: stale is not "not known"). */
+const WHY_WORD: Readonly<Record<DiScanWhy['kind'], string>> = {
+  not_read: 'not read',
+  not_known: 'not known',
+  stale: 'stale',
+  unrecognised: 'unrecognised',
+  unavailable: 'unavailable',
+};
+/** Said in the Repos cell where a row's target-repo count is not known (AC-4.4-13): never a zero. */
+export const DI_TARGETS_NOT_REPORTED = 'targets not reported';
+
+/** The harness repo and how many target repos the Mission adds (AC-4.4-13). An unknown count is said as such, in text a person who cannot hover can read. */
 function reposText(row: DiScanRow): string {
   const repos = row.table?.repos ?? null;
   if (repos === null) return NOT_RECORDED;
-  return repos.targets > 0 ? `${repos.harness} + ${repos.targets}` : repos.harness;
+  if (!repos.targets.known) return `${repos.harness} + ${DI_TARGETS_NOT_REPORTED}`;
+  return repos.targets.value > 0 ? `${repos.harness} + ${repos.targets.value}` : repos.harness;
 }
 
 /**
@@ -219,26 +260,47 @@ export function MissionsPage({
   specimen,
   read,
   onOpenMission,
+  retained = null,
+  initialStatus = 'all',
 }: {
   rows: readonly DiScanRow[];
   specimen: boolean;
   /** Whether the office read its Missions: unread or unavailable is said as such, never as "No Missions yet". */
   read: DiScanMissionsRead;
   onOpenMission: (id: string) => void;
+  /** Deliverable 2: one archive reading per retention source (null: not reported). */
+  retained?: readonly DiRetainedSource[] | null;
+  /** The filter shown first (the product starts on All). */
+  initialStatus?: DiMissionsStatus;
 }) {
-  const [status, setStatus] = useState<DiMissionsStatus>('all');
+  const [status, setStatus] = useState<DiMissionsStatus>(initialStatus);
   const teamReason = useId();
   // Per-filter uncertainty (round 5): a filter shows the Missions KNOWN to match, and says how many more MAY match and why.
   // Its chip is a count only when nothing is unknown; "N+" when some are known and more may be; otherwise the reason's
   // own word. An unread list has no counts at all (the same words as the list: 'not read' or 'unavailable').
+  // Deliverable 2: the archive, read once: retained-only Missions (never counted twice), exact counts, and what could not be read
+  const archive = useMemo(() => archiveReading(retained, rows), [retained, rows]);
   const countWord = (id: DiMissionsStatus): string | number => {
     if (read.kind !== 'read') return read.kind === 'not_read' ? 'not read' : 'unavailable';
-    const knownMatches = missionsShown(rows, id).length;
     const unknown = missionsUnknown(rows, id);
+    if (id === 'archived') {
+      // the listed archived Missions plus those gone from their store; an archive not read in full never reads as a confident number
+      const count = archiveCount(archive);
+      // a floor (`at_least`) is added only to be said with a plus; an unreported archive adds nothing and is said as not reported
+      const knownMatches = missionsShown(rows, id).length + (count.kind === 'not_reported' ? 0 : count.count);
+      const uncertain = unknown.count > 0 || count.kind !== 'exact';
+      if (!uncertain) return knownMatches;
+      if (knownMatches > 0) return `${knownMatches}+`;
+      return unknown.count > 0 ? WHY_WORD[unknown.kind] : count.kind === 'at_least' ? 'unavailable' : 'not reported';
+    }
+    const knownMatches = missionsShown(rows, id).length;
     if (unknown.count === 0) return knownMatches;
     if (knownMatches > 0) return `${knownMatches}+`;
-    return unknown.kind === 'not_read' ? 'not read' : 'not known';
+    return WHY_WORD[unknown.kind];
   };
+  const archiveTally = archiveCount(archive);
+  // the archive may hold Missions: a count above 0, or a source that could not be read (what it holds is not known)
+  const archiveHolds = archiveTally.kind === 'at_least' || (archiveTally.kind === 'exact' && archiveTally.count > 0);
   const shown = useMemo(() => missionsShown(rows, status), [rows, status]);
   const unknown = useMemo(() => missionsUnknown(rows, status), [rows, status]);
   return (
@@ -292,12 +354,13 @@ export function MissionsPage({
         <p className="di-page-empty" data-testid="di-missions-not-read" data-read={read.kind}>
           {read.reason}
         </p>
-      ) : rows.length === 0 ? (
-        <p className="di-page-empty" data-testid="di-missions-empty">
-          {DI_MISSIONS_EMPTY}
+      ) : rows.length === 0 && !(status === 'archived' && missionsEmptyState(archive).kind === 'archive_only') ? (
+        // round 10: an EMPTY listed store says what the archive's own state allows: "No Missions yet" only when it was read in full and holds none
+        <p className="di-page-empty" data-testid="di-missions-empty" data-kind={missionsEmptyState(archive).kind}>
+          {missionsEmptyWords(missionsEmptyState(archive))}
         </p>
-      ) : shown.length === 0 && unknown.count === 0 ? (
-        // the one case that may say "none": every Mission's fact is KNOWN and none matches
+      ) : shown.length === 0 && unknown.count === 0 && (status !== 'archived' || (archive.rows.length === 0 && archive.reported && !archiveHolds)) ? (
+        // the one case that may say "none": every Mission's fact is KNOWN and none matches (for Archived: the archive was read in full, and holds none)
         <p className="di-page-empty">No Missions match this filter.</p>
       ) : shown.length === 0 ? null : (
         <table className="di-missions-table">
@@ -313,7 +376,8 @@ export function MissionsPage({
           </thead>
           <tbody>
             {shown.map((row) => {
-              const pill = row.pills[0];
+              // the canonical LIFECYCLE status, never Reception's attention in its place (round 3, finding 2); attention is said beside the title
+              const pill = statusPillOf(row);
               const phase = row.table?.phase ?? null;
               const declared = row.table?.declared ?? null;
               return (
@@ -335,12 +399,16 @@ export function MissionsPage({
                       }}
                     >
                       <span className="di-missions-title">{row.title}</span>
-                      <span className="di-missions-step">{row.context}</span>
+                      <span className="di-missions-step">{rowContextLine(row)}</span>
                     </button>
+                    {knownTrue(row.needsYou) && (
+                      <StatusTag label="Needs you" tone="needs" testid="di-missions-attention" />
+                    )}
                   </td>
-                  <td>{row.table?.owner ?? NOT_RECORDED}</td>
-                  <td>{reposText(row)}</td>
-                  <td>
+                  {/* data-label: a narrow stage stacks each row, and names each fact with its column's own word (diScanPages.css) */}
+                  <td data-label="Owner">{row.table?.owner ?? NOT_RECORDED}</td>
+                  <td data-label="Repos">{reposText(row)}</td>
+                  <td data-label="Phase">
                     {phase !== null ? (
                       <Phase phase={phase} />
                     ) : declared !== null ? (
@@ -349,14 +417,14 @@ export function MissionsPage({
                       NOT_RECORDED
                     )}
                   </td>
-                  <td>
+                  <td data-label="Status">
                     {pill ? (
-                      <StatusTag label={pill.label} tone={pill.tone} />
+                      <StatusTag label={pill.label} tone={pill.tone} glyph={pill.glyph} />
                     ) : (
                       <StatusTag label="Status not recorded" tone="idle" />
                     )}
                   </td>
-                  <td className="di-missions-last" data-testid="di-missions-last">
+                  <td className="di-missions-last" data-testid="di-missions-last" data-label="Last">
                     {row.table?.last ?? NOT_RECORDED}
                   </td>
                 </tr>
@@ -376,10 +444,121 @@ export function MissionsPage({
           {`${unknown.count} ${shown.length > 0 ? 'more ' : ''}${unknown.count === 1 ? 'Mission' : 'Missions'} may ${MAY[status]}. ${unknown.reasons.map(sentence).join(' ')}`}
         </p>
       )}
+      {status === 'archived' && read.kind === 'read' && <RetainedArchive archive={archive} />}
       <p className="di-page-foot" data-testid="di-missions-footer">
         {DI_MISSIONS_FOOTER}
       </p>
     </div>
+  );
+}
+
+/**
+ * Deliverable 2: the retained-only archive, READ-ONLY. Each Mission gone from its store shows its final status in the same closed vocabulary (chip, glyph and
+ * meaning) it had while listed, its recorded final state as provenance, and its verdict, CI results and comments each with its honest state. Every control a listed
+ * Mission has is drawn disabled with why. What could not be read is said, per source, with its reason; nothing here is ever a confident zero over an unknown.
+ */
+function RetainedArchive({ archive }: { archive: DiArchiveReading }) {
+  return (
+    <section className="di-missions-retained" data-testid="di-missions-retained" aria-label="Missions no longer in their store">
+      {!archive.reported && (
+        <p className="di-page-note" data-testid="di-missions-archive-not-reported">
+          This office does not report Missions gone from their store, so any it keeps are not shown or counted here.
+        </p>
+      )}
+      {archive.unavailable.map((source) => (
+        <p key={source.sourceId} className="di-page-note" data-testid="di-missions-archive-unavailable" data-source={source.sourceId}>
+          The archive of {source.sourceId} could not be read ({source.problem}), so the Missions gone from that store are not known here: not none.
+        </p>
+      ))}
+      {archive.awaiting > 0 && (
+        <p className="di-page-note" data-testid="di-missions-archive-awaiting">
+          {archive.awaiting} {archive.awaiting === 1 ? 'Mission was' : 'Missions were'} removed from {archive.awaiting === 1 ? 'its store' : 'their stores'} and{' '}
+          {archive.awaiting === 1 ? 'awaits' : 'await'} {archive.awaiting === 1 ? 'its' : 'their'} summary; capture is retried.
+        </p>
+      )}
+      {archive.unlisted > 0 && (
+        <p className="di-page-note" data-testid="di-missions-archive-unlisted">
+          {archive.unlisted} more {archive.unlisted === 1 ? 'is' : 'are'} kept but not listed here (the newest of each store are).
+        </p>
+      )}
+      {archive.rows.length > 0 && (
+        <ul className="di-missions-retained-list">
+          {archive.rows.map((row) => (
+            <li key={row.ref} data-testid="di-missions-retained-item" data-mission-ref={row.ref} data-phase={row.phase}>
+              <details>
+                <summary>
+                  {row.status !== null ? (
+                    <span className="di-status" data-testid="di-missions-retained-status" data-status={row.status.id} title={row.status.meaning}>
+                      <span aria-hidden="true">{row.status.glyph}</span> {row.status.label}
+                    </span>
+                  ) : (
+                    <span className="di-status" data-testid="di-missions-retained-status" data-status="none">
+                      No summary kept
+                    </span>
+                  )}{' '}
+                  <span className="di-missions-title">{row.nativeId}</span>{' '}
+                  <span className="di-missions-step" data-testid="di-missions-retained-phase">
+                    {row.phaseWords}
+                  </span>
+                </summary>
+                <div className="di-missions-retained-detail" data-testid="di-missions-retained-detail">
+                  <p className="di-page-note">{row.ref}</p>
+                  {row.statusReason !== null && (
+                    <p className="di-page-note" data-testid="di-missions-retained-status-reason">
+                      {row.statusReason}
+                    </p>
+                  )}
+                  {row.provenance !== null && (
+                    <p className="di-page-note" data-testid="di-missions-retained-provenance">
+                      {row.provenance}
+                    </p>
+                  )}
+                  {row.facts.length > 0 && (
+                    <dl className="di-missions-retained-facts">
+                      {row.facts.map((fact) => (
+                        <div key={fact.key} data-testid="di-missions-retained-fact" data-fact={fact.key} data-state={fact.state}>
+                          <dt>{fact.name}</dt>
+                          <dd>
+                            {fact.words} <span className="di-page-note">({fact.source})</span>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  <div className="di-missions-retained-actions">
+                    {row.actions.map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        className="di-chip"
+                        disabled
+                        data-testid="di-missions-retained-action"
+                        data-action={action.id}
+                        title={action.reason}
+                        aria-describedby={`di-retained-${row.ref}-${action.id}`.replace(/[^A-Za-z0-9_-]/g, '-')}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                    {row.actions.map((action) => (
+                      <p
+                        key={action.id}
+                        className="di-page-note"
+                        id={`di-retained-${row.ref}-${action.id}`.replace(/[^A-Za-z0-9_-]/g, '-')}
+                        data-testid="di-missions-retained-action-reason"
+                        data-action={action.id}
+                      >
+                        {action.label}: {action.reason}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -573,6 +752,15 @@ function ReceptionCard({
             </button>
           ) : (
             <span className="di-reception-title">{card.title}</span>
+          )}
+          {/* the Mission's status, the same pill and words its row wears (the one status contract) */}
+          {card.missionStatus && (
+            <StatusTag
+              label={card.missionStatus.label}
+              tone={card.missionStatus.tone}
+              glyph={card.missionStatus.glyph}
+              testid="di-reception-mission-status"
+            />
           )}
         </div>
         <p className="di-reception-need">{card.need}</p>
@@ -817,9 +1005,10 @@ export function NewMissionPage({
   const [refusedAt, setRefusedAt] = useState<{ ask: string; draft: string } | null>(null);
   const askId = useId();
   const sendReason = useId();
-  const running = runningCount(rows);
-  const atLimit = running >= DI_ORCHESTRATOR_LIMIT;
-  const reason = continueAskReason(ask, running, onContinueAsk !== undefined);
+  // the capacity GUARD's inputs, separate from the display count: an unknown is never spare capacity
+  const use = orchestratorUse(rows);
+  const atLimit = atOrchestratorLimit(use);
+  const reason = continueAskReason(ask, use, onContinueAsk !== undefined);
   const showRefusal =
     refusedAt !== null &&
     refusedAt.ask === ask &&
@@ -843,7 +1032,7 @@ export function NewMissionPage({
       {atLimit && (
         <div className="di-new-limit" role="status" data-testid="di-new-limit">
           <span className="di-new-limit-copy">
-            <strong>{`${DI_ORCHESTRATOR_LIMIT} of ${DI_ORCHESTRATOR_LIMIT} Orchestrators running`}</strong>
+            <strong>{orchestratorLimitWords(use)}</strong>
             <span>Finish or stop one to start another.</span>
           </span>
           <button

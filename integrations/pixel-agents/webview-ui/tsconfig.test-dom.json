@@ -66,6 +66,7 @@
     "test/diScanAskHandoff.test.ts",
     "test/diScanAskHandoffBrowser.test.ts",
     "test/diScanRequestCloseBrowser.test.ts",
+    "test/diArchivedDeliveryBrowser.test.ts",
     "test/diScanDeliveryHold.test.ts",
     "test/diScanNewMission.test.ts",
     "test/diScanCodeDiffComments.test.ts",
@@ -88,7 +89,11 @@
     "test/diMissionDeliveryAuthor.test.ts",
     "test/diScanIdentity.test.ts",
     "test/diMissionOutcomes.test.ts",
-    "test/diNamingFallbacks.test.ts"
+    "test/diNamingFallbacks.test.ts",
+    "test/diMissionStatusSurfaces.test.ts",
+    "test/diRetainedArchive.test.ts",
+    "test/diRetentionHonesty.test.ts",
+    "test/diMissionPreviewBrowser.test.ts"
   ],
   "exclude": []
 }

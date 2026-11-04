@@ -102,6 +102,22 @@
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
             },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
+            },
             "members": {
               "state": "observed",
               "reason": null,
@@ -591,6 +607,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -1021,6 +1045,22 @@
               "state": "not_applicable",
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
+            },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
             },
             "members": {
               "state": "observed",
@@ -1511,6 +1551,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -1948,6 +1996,22 @@
               "state": "not_applicable",
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
+            },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
             },
             "members": {
               "state": "observed",
@@ -2438,6 +2502,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -2868,6 +2940,22 @@
               "state": "not_applicable",
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
+            },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
             },
             "members": {
               "state": "observed",
@@ -3358,6 +3446,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {
@@ -3789,6 +3885,22 @@
               "value": null,
               "reason": "ambiguity_not_applicable_to_mission_core"
             },
+            "runStarted": true,
+            "cancelQuiescence": null,
+            "sentHandoffReceipts": null,
+            "storeIdentity": null,
+            "retention": {
+              "state": "not_reported",
+              "problem": null,
+              "eligible": null,
+              "basis": null,
+              "basisSource": null,
+              "reason": null,
+              "phase": null,
+              "phaseAt": null,
+              "summary": null,
+              "retainedFor": 0
+            },
             "members": {
               "state": "known_empty",
               "reason": null,
@@ -4208,6 +4320,14 @@
                       "detail": null
                     }
                   ]
+                },
+                "progress": {
+                  "state": "observed",
+                  "reason": null,
+                  "standing": "verified",
+                  "progress": "IN_PROGRESS",
+                  "unrecognized": null,
+                  "closureReason": null
                 }
               },
               "canonicalReview": {

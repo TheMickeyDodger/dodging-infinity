@@ -2200,7 +2200,7 @@ test('AC5 samples [reachable: an explicit fixture preview]: drawn only through f
   assert.match(view.title ?? '', /FIXTURE DATA/);
   assert.deepEqual(
     view.cards.map((c) => c.state),
-    ['Proposal ready', 'Building', 'Question for you', 'Stalled', 'Ready to deliver', 'Merged'],
+    ['Proposal ready', 'Running', 'Question for you', 'Stalled', 'Ready to deliver', 'Merged'],
   );
   for (const c of view.cards)
     assert.match(c.title, /^FIXTURE · \S/, `every sample is labelled: ${c.title}`);

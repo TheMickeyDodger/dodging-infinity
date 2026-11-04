@@ -31,6 +31,7 @@ token permits exactly the one action it was minted for, on exactly the
 one request it was minted for.
 """
 
+import copy
 import hmac
 import json
 import os
@@ -88,7 +89,11 @@ PROBLEM_APPROVAL_UNAUTHENTICATED = "local_request_approval_unauthenticated"
 # Owner decision (c): the operator-attested NON-APPROVAL outcome of a request,
 # also additive-optional and also one per request. A request never holds both
 # unless one of them was REFUSED by Mission Core (checked on every load).
-REQUEST_OPTIONAL_KEYS = ("attested_approval", "attested_outcome")
+# ``reclaimed`` (Deliverable 2): the request's PAYLOAD was reclaimed by local retention, or deleted
+# at the owner's request (``mission_retention``). Additive-optional like the attestations.
+REQUEST_OPTIONAL_KEYS = ("attested_approval", "attested_outcome", "reclaimed")
+RECLAIMED_KEYS = ("reclaimed_at", "outcome")
+RECLAIM_OUTCOMES = ("reclaimed", "deleted")
 ATTESTED_KEYS = (
     "state", "decision_id", "binding", "relayed_reply", "relay_ref",
     "attested_at", "outcome", "provenance_label", "residual_risk",
@@ -295,7 +300,12 @@ def _validate_attested_outcome(value, request, where):
     _int(binding["revision"], where + ".binding.revision")
     _hex64(binding["proposal_digest_sha256"],
            where + ".binding.proposal_digest_sha256")
-    if value["kind"] == OUTCOME_REQUEST_CHANGES:
+    if "reclaimed" in request:
+        # The reason is a COPY: Mission Core keeps the change request's reason in its own decision
+        # record (mission/decision.py ``REASON_KEY``), which retention never touches.
+        if value["reason"] is not None:
+            _bad(where, "a reclaimed request keeps no change-request reason")
+    elif value["kind"] == OUTCOME_REQUEST_CHANGES:
         problem = mission_record.change_request_reason_problem(value["reason"])
         if problem is not None:
             _bad(where, "reason %s" % problem)
@@ -363,14 +373,27 @@ def _validate_request(ref, value, where):
     if mission_record.id_problem(value["mission_request_id"],
                                  mission_record.REQUEST_ID_PREFIX):
         _bad(where, "mission_request_id must be an mq- id")
-    try:
-        clean = mission_record.validate_proposal(value["proposal"])
-    except mission_record.MissionError as exc:
-        _bad(where, "proposal is not a valid Mission proposal (%s)" % exc)
-    if clean != value["proposal"]:
-        _bad(where, "proposal is not in normalized form")
-    if value["proposal_digest_sha256"] != mission_record.proposal_digest(clean):
-        _bad(where, "proposal_digest_sha256 does not match the proposal")
+    if "reclaimed" in value:
+        # Reclaimed: the proposal BODY is gone and must be; its digest stays, because the
+        # cancellation, the refusals, the attestations' bindings and the Mission's own revision 1 are
+        # all bound to it, and Mission Core keeps the authoritative copy of the proposal.
+        marker = value["reclaimed"]
+        _closed(marker, RECLAIMED_KEYS, where + ".reclaimed")
+        _int(marker["reclaimed_at"], where + ".reclaimed.reclaimed_at")
+        if marker["outcome"] not in RECLAIM_OUTCOMES:
+            _bad(where, "reclaimed.outcome must be one of %s" % ", ".join(RECLAIM_OUTCOMES))
+        if value["proposal"] is not None:
+            _bad(where, "a reclaimed request keeps no proposal body")
+        _hex64(value["proposal_digest_sha256"], where + ".proposal_digest_sha256")
+    else:
+        try:
+            clean = mission_record.validate_proposal(value["proposal"])
+        except mission_record.MissionError as exc:
+            _bad(where, "proposal is not a valid Mission proposal (%s)" % exc)
+        if clean != value["proposal"]:
+            _bad(where, "proposal is not in normalized form")
+        if value["proposal_digest_sha256"] != mission_record.proposal_digest(clean):
+            _bad(where, "proposal_digest_sha256 does not match the proposal")
     if value["mission_id"] is not None and mission_record.id_problem(
         value["mission_id"], mission_record.MISSION_ID_PREFIX
     ):
@@ -466,6 +489,50 @@ def validate_document(document, path="<document>"):
             _bad(path, "request %s is CANCELLED without its consumed control"
                  " capability" % ref)
     return document
+
+
+# -- local retention (Deliverable 2) ---------------------------------------
+
+
+def reclaimed_request(value, at, outcome):
+    """The reduced form of a request: its free-text payload removed, every binding kept. Kept: the
+    ids and the Mission link, the proposal DIGEST (the cancellation, refusals and attestation
+    bindings are bound to it), state, cancellation and refusals (bookkeeping a later act is checked
+    against), the attestations' closed-vocabulary reply and relay reference (evidence of the claimed
+    decision, not free text). Its control capability is in ``control_capabilities``, never here and
+    never touched."""
+    reduced = copy.deepcopy(value)
+    reduced["proposal"] = None
+    if "attested_outcome" in reduced:
+        reduced["attested_outcome"]["reason"] = None
+    reduced["reclaimed"] = {"reclaimed_at": at, "outcome": outcome}
+    return reduced
+
+
+def reclaim_requests(store, request_refs, at, outcome):
+    """Reduce these requests through the store's own lock, load, validation and atomic save.
+    Idempotent (an owner deletion records its outcome over an earlier reclamation); never touches
+    ``control_capabilities``. Returns the number of requests changed."""
+    if outcome not in RECLAIM_OUTCOMES:
+        raise ValueError("outcome must be one of %s" % ", ".join(RECLAIM_OUTCOMES))
+    with store.lock():
+        document = store.load()
+        changed = 0
+        for ref in request_refs:
+            value = document["requests"].get(ref)
+            if value is None:
+                continue
+            marker = value.get("reclaimed")
+            if marker is not None and (marker["outcome"] == outcome or outcome == "reclaimed"):
+                continue
+            if marker is not None:
+                value["reclaimed"] = {"reclaimed_at": at, "outcome": outcome}
+            else:
+                document["requests"][ref] = reclaimed_request(value, at, outcome)
+            changed += 1
+        if changed:
+            store.save(document)
+        return changed
 
 
 # -- the protected store -------------------------------------------------

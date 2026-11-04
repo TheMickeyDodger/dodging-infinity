@@ -124,33 +124,36 @@ describe('state actions appear only when the Mission state matches (gap 3)', () 
   });
 });
 
-describe('the trash is offered only for a finished or cancelled Mission (gap 5, AC-4.4-29/-30)', () => {
+// CHANGED IN Deliverable 2: the gate is the owner's "Delete local data" now, by the BACKEND's retention reading (`row.local`), not the filing tab alone: offered only
+// for an ARCHIVED Mission Core Mission whose data is not already deleted. A workflow-store Mission is refused with its reason (no principal: Pixel cannot prove you
+// own it), a Herdr task's records are not the office's, and a specimen without a reading says so. The running rule is kept, first, for every row.
+describe('the owner’s Delete local data is offered only for an archived Mission Core Mission (Deliverable 2; gap 5, AC-4.4-29/-30)', () => {
   const row = (partial: Partial<DiScanRow>): DiScanRow => ({ ...DI_SCAN_LOCK[0]!, ...partial });
-  it('a running (Building) Mission cannot be deleted, whatever else it shows', () => {
-    const g = trashGate(
-      row({ tab: 'open', pills: [{ id: 'building', label: 'Building', tone: 'building' }] }),
-    );
+  const local = (family: 'mission_core' | 'workflow_store' | 'herdr_task', archived: boolean,
+    reduced: 'deleted' | 'reclaimed' | null = null) => ({
+    family, nativeId: 'mn-' + '1'.repeat(32), displayedState: 'COMPLETED', storeIdentity: null, retention: null,
+    archive: { archived, reduced, why: archived ? 'finished' : 'it is not eligible to archive yet', sources: [] },
+  });
+  it('a running Mission cannot be deleted, whatever else it shows', () => {
+    const g = trashGate(row({ tab: 'open', pills: [{ id: 'running', label: 'Running', tone: 'building' }],
+      local: local('mission_core', false) }));
     expect(g).toEqual({ open: false, reason: 'A running Mission cannot be deleted.' });
-    const merged = trashGate(
-      row({ tab: 'merged', pills: [{ id: 'building', label: 'Building', tone: 'building' }] }),
-    );
-    expect(merged.open).toBe(false);
   });
-  it('a finished (merged, closed, archived) or cancelled Mission may be offered', () => {
-    for (const tab of ['merged', 'closed', 'archived'] as const)
-      expect(trashGate(row({ tab, pills: [] })), tab).toEqual({ open: true, reason: '' });
-    expect(
-      trashGate(row({ tab: 'open', pills: [{ id: 'merged', label: 'Merged', tone: 'merged' }] }))
-        .open,
-    ).toBe(true);
+  it('an archived Mission Core Mission is offered; reclaimed already is still offered (its summary goes too)', () => {
+    expect(trashGate(row({ tab: 'archived', pills: [], local: local('mission_core', true) }))).toEqual({ open: true, reason: '' });
+    expect(trashGate(row({ tab: 'archived', pills: [], local: local('mission_core', true, 'reclaimed') })).open).toBe(true);
   });
-  it('an open Mission that is not running is still not finished', () => {
-    expect(
-      trashGate(row({ tab: 'open', pills: [{ id: 'needs', label: 'Needs you', tone: 'needs' }] })),
-    ).toEqual({
-      open: false,
-      reason: 'Only a finished or cancelled Mission can be deleted.',
-    });
+  it('refused, each with its own reason: already deleted, a workflow (no principal), a Herdr task, not finished, not read', () => {
+    expect(trashGate(row({ tab: 'archived', pills: [], local: local('mission_core', true, 'deleted') })).reason)
+      .toBe('This Mission’s local data was already deleted.');
+    expect(trashGate(row({ tab: 'archived', pills: [], local: local('workflow_store', true) })).reason)
+      .toMatch(/cannot prove this Mission is yours/);
+    expect(trashGate(row({ tab: 'archived', pills: [], local: local('herdr_task', true) })).reason)
+      .toMatch(/target herd’s own state/);
+    expect(trashGate(row({ tab: 'open', pills: [], local: local('mission_core', false) })).reason)
+      .toMatch(/^Only a finished or cancelled Mission can be deleted: it is not eligible to archive yet\.$/);
+    expect(trashGate(row({ tab: 'archived', pills: [], local: undefined })).reason)
+      .toBe('This Mission’s local data is not read here.');
   });
 });
 
@@ -256,24 +259,27 @@ describe('V-4: every real Mission row carries its status as a dot AND a word (CO
     )[0]!;
   const words = (r: { pills: Array<{ label: string }> }) => r.pills.map((p) => p.label);
 
-  it('a Mission with a confirmed live team is Building; with attention it also Needs you', () => {
+  it('a Mission with a confirmed live team is Running (the status contract’s word); with attention it also Needs you', () => {
     const running = {
       lifecycleState: 'ACTIVE',
       standing: 'active',
       bindingState: 'bound',
       members: { state: 'observed', reason: null, members: [live] },
     };
-    expect(words(row('r', running))).toEqual(['Building']);
-    expect(words(row('r', running, ['r']))).toEqual(['Needs you', 'Building']);
+    expect(words(row('r', running))).toEqual(['Running']);
+    expect(words(row('r', running, ['r']))).toEqual(['Needs you', 'Running']);
   });
-  it('an active bound Herdr task with no confirmed member says Building, from the task record', () => {
-    const r = row('u', {
+  it('an active bound Herdr task with no confirmed member says Task observed, never Running, whatever runStarted says (for herdr_task it means only that a task record exists)', () => {
+    const task = {
       lifecycleState: 'ACTIVE',
       standing: 'active',
       bindingState: 'bound',
       members: { state: 'observed', reason: null, members: [] },
-    });
-    expect(words(r)).toEqual(['Building']);
+    };
+    expect(words(row('u', { ...task, runStarted: true }))).toEqual(['Task observed']);
+    expect(words(row('u', task))).toEqual(['Task observed']);
+    // the catalog says its run never started: Not started, never Running
+    expect(words(row('u', { ...task, runStarted: false }))).toEqual(['Not started']);
   });
   it('an inactive Mission says Waiting', () => {
     expect(

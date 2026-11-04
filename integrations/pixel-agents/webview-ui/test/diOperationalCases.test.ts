@@ -262,7 +262,11 @@ test('blocked reads Blocked only from a live, confirmed member; a not-live block
   );
 });
 
-test('failed is the source’s REPORT, not a verified fact; ended is not verified success; waiting and unknown are never zero', async () => {
+// CHANGED IN round 4 (review finding 1): the first clause used to expect a reported completion without success to render Failed. That was wrong: mission/observation.py
+// makes `reported_success` a conjunction (reported_complete AND an applicable APPROVE review), so `false` also covers a missing, pending, stale or left-cursor review,
+// an ABSENCE of affirmation, never a failure report. It now renders the execution reading with the completion said beside it; Failed is asserted on the path that
+// still means it (the source's own terminal FAILED literal). Every other clause is unchanged.
+test('failed is the source’s REPORT, not a verified fact (and a reported completion awaiting its review is not one); ended is not verified success; waiting and unknown are never zero', async () => {
   await mutateMission(B_REF, {
     v2: {
       missionState: {
@@ -270,14 +274,44 @@ test('failed is the source’s REPORT, not a verified fact; ended is not verifie
       },
     },
   });
-  assert.deepEqual(await chip(B_REF), { status: 'failed', text: 'Failed', glyph: '✕' });
+  // the live team is the execution reading, never Failed.
+  // CHANGED IN round 5 (review finding 2): the round-4 version asserted that NO status sentence is shown here, which locked in the omission: the
+  // qualification ("its reported success is not affirmed: that is not a failure") existed only in the model. It must be RENDERED, on the Running card and in the inspector.
+  assert.deepEqual(await chip(B_REF), { status: 'running', text: 'Running', glyph: '●' });
   assert.match(
-    await card(B_REF).locator(T('di-op-status-sentence')).first().innerText(),
-    /reported by the source, not verified/,
+    await card(B_REF).locator(T('di-op-status-qualification')).innerText(),
+    /its reported success is not affirmed: that is not a failure/,
   );
+  assert.doesNotMatch(await card(B_REF).innerText(), /Failed|without success/);
+  await card(B_REF).locator(T('di-open-inspector-mission')).click();
+  await p().waitForSelector('[role="dialog"]');
+  assert.equal(await p().$eval(`[role="dialog"] ${T('di-op-status')}`, (el) => el.getAttribute('data-status')), 'running');
+  assert.match(
+    await p().$eval(`[role="dialog"] ${T('di-op-status-qualification')}`, (el) => (el as HTMLElement).innerText),
+    /its reported success is not affirmed: that is not a failure/,
+  );
+  const results = await p().$eval(`[role="dialog"] ${T('di-mission-results')}`, (el) => (el as HTMLElement).innerText);
+  // (CHANGED IN round 6) no "not verified" tail: the absence of reported success supports only "not affirmed"
+  assert.match(results, /^Reported complete, but reported success is not affirmed: that is not a failure\.$/);
+  assert.doesNotMatch(results, /without success/);
+  await p().keyboard.press('Escape');
+  await p().waitForSelector('[role="dialog"]', { state: 'detached' });
+  // Failed is the source's own terminal report, rendered as reported, not verified
   await mutateMission(B_REF, {
     v2: { missionState: { completion: { state: 'not_recorded' } } },
     standing: 'terminal',
+    lifecycleModel: 'herdr.task/1',
+    lifecycleState: 'FAILED',
+  });
+  assert.deepEqual(await chip(B_REF), { status: 'failed', text: 'Failed', glyph: '✕' });
+  assert.match(
+    await card(B_REF).locator(T('di-op-status-sentence')).first().innerText(),
+    /as the source reports it/,
+  );
+  // back to its own model and literal for the rest of the case
+  await mutateMission(B_REF, {
+    lifecycleModel: 'mission_core.mission_state/1',
+    lifecycleState: 'RUNNING',
   });
   assert.deepEqual(await chip(B_REF), { status: 'ended', text: 'Ended', glyph: '■' });
   assert.match(await card(B_REF).innerText(), /Ended is not verified success/);
@@ -288,8 +322,13 @@ test('failed is the source’s REPORT, not a verified fact; ended is not verifie
     bindingState: 'unverified',
     members: { state: 'unavailable', members: { $set: [] } },
   });
+  // a roster the source could not provide is its own status, Unavailable (the Mission status contract keeps it apart from Unknown)
+  assert.deepEqual(await chip(B_REF), { status: 'unavailable', text: 'Unavailable', glyph: '⊗' });
+  // Unavailable is not zero: the team line never claims "Team 0".
+  assert.doesNotMatch(await card(B_REF).locator(T('di-mission-team')).innerText(), /Team 0/);
+  await mutateMission(B_REF, { members: { state: 'not_recorded' } });
   assert.deepEqual(await chip(B_REF), { status: 'unknown', text: 'Unknown', glyph: '○' });
-  // Unknown is not zero: the team line never claims "Team 0".
+  // Unknown is not zero either.
   assert.doesNotMatch(await card(B_REF).locator(T('di-mission-team')).innerText(), /Team 0/);
 });
 
@@ -334,4 +373,68 @@ test('every status has a word AND its own shape (never colour alone), including 
   for (const status of ['running', 'stale', 'disconnected'])
     assert.ok(seen.has(status), `${status} was rendered`);
   assert.equal(new Set(seen.values()).size, seen.size, 'each status has its own shape');
+});
+
+test('round 5, item 4: a freshly bound team, every member confirmed live but idle or done, reads Waiting on the card AND in the inspector; nothing there claims current work', async () => {
+  const members = (
+    JSON.parse(
+      fs.readFileSync(path.join(root, 'test/fixtures/di-office-state-session-mismatch-v2.FIXTURE.json'), 'utf-8'),
+    ) as { state: DiOfficeState }
+  ).state.missions.missions.find((m) => m.missionRef === B_REF)!.members.members;
+  assert.ok(members.length > 0 && members.every((m) => m.live));
+  await mutateMission(B_REF, {
+    members: { members: { $set: members.map((m, i) => ({ ...m, activity: i % 2 === 0 ? 'idle' : 'done' })) } },
+  });
+  const CLAIMS_WORK = /\bworking\b|in progress|under way|\bRunning\b/i;
+  assert.deepEqual(await chip(B_REF), { status: 'waiting', text: 'Waiting', glyph: '◐' });
+  const face = await card(B_REF).locator(T('di-op-status-sentence')).first().innerText();
+  assert.match(face, /observed live, but none reports work now/);
+  assert.doesNotMatch(face, CLAIMS_WORK);
+  await card(B_REF).locator(T('di-open-inspector-mission')).click();
+  await p().waitForSelector('[role="dialog"]');
+  const badge = await p().$eval(`[role="dialog"] ${T('di-op-status')}`, (el) => ({
+    status: el.getAttribute('data-status'),
+    text: (el as HTMLElement).innerText,
+  }));
+  assert.equal(badge.status, 'waiting');
+  assert.doesNotMatch(badge.text, CLAIMS_WORK);
+  const said = await p().$eval(`[role="dialog"] ${T('di-op-status-sentence')}`, (el) => (el as HTMLElement).innerText);
+  assert.match(said, /none reports work now/);
+  assert.doesNotMatch(said, CLAIMS_WORK);
+});
+
+test('round 6: a verified closure whose reported success is not affirmed (review unavailable, review unknown, or a fresh APPROVE beside an inapplicable task report) reads Verified on the card AND in the inspector, never "not verified"', async () => {
+  for (const holds of [['review_unavailable'], ['review_unknown'], []]) {
+    await mutateMission(B_REF, {
+      standing: 'terminal',
+      lifecycleState: 'COMPLETED',
+      v2: {
+        missionState: {
+          completion: {
+            state: 'observed',
+            reportedComplete: true,
+            reportedSuccess: false,
+            verifiedSuccess: true,
+            holds: { $set: holds },
+          },
+        },
+      },
+    });
+    const which = JSON.stringify(holds);
+    assert.deepEqual((await chip(B_REF)).status, 'verified', which);
+    assert.equal(await card(B_REF).locator(T('di-op-status-qualification')).count(), 0, which);
+    await card(B_REF).locator(T('di-open-inspector-mission')).click();
+    await p().waitForSelector('[role="dialog"]');
+    assert.equal(await p().$eval(`[role="dialog"] ${T('di-op-status')}`, (el) => el.getAttribute('data-status')), 'verified', which);
+    assert.equal(await p().locator(`[role="dialog"] ${T('di-op-status-qualification')}`).count(), 0, which);
+    assert.equal(
+      await p().$eval(`[role="dialog"] ${T('di-mission-results')}`, (el) => (el as HTMLElement).innerText),
+      'Verified success is recorded.',
+      which,
+    );
+    const said = await p().$eval(`[role="dialog"] ${T('di-op-status-sentence')}`, (el) => (el as HTMLElement).innerText);
+    assert.doesNotMatch(said, /not verified|not affirmed/, which);
+    await p().keyboard.press('Escape');
+    await p().waitForSelector('[role="dialog"]', { state: 'detached' });
+  }
 });

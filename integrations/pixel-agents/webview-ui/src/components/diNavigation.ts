@@ -113,20 +113,6 @@ export function plainBinding(bindingState: string, bindingReason: string): strin
   }
 }
 
-/** A Mission's standing, in words, with its record state verbatim. */
-export function plainStanding(standing: string, lifecycleState: string): string {
-  switch (standing) {
-    case 'active':
-      return `active (record state ${lifecycleState})`;
-    case 'inactive':
-      return `not active (record state ${lifecycleState})`;
-    case 'terminal':
-      return `ended (record state ${lifecycleState}; ended is not verified success)`;
-    default:
-      return `standing not recognised (record state ${lifecycleState})`;
-  }
-}
-
 /** The identity state of a runtime record, in words. */
 export function plainIdentityState(state: string): string {
   switch (state) {

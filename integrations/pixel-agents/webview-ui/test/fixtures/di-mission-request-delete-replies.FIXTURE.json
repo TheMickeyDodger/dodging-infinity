@@ -1,0 +1,120 @@
+{
+  "fixture": true,
+  "label": "FIXTURE (generated, not live): the replies the office relay (server/src/di/missionRequests.ts DiMissionRequests.handle) emits for the panel’s real delete answers (server/__tests__/fixtures/di-backend/mission-panel-delete-answers.FIXTURE.json)",
+  "generator": "server/__tests__/diMissionPanelDeleteRelay.test.ts",
+  "replies": {
+    "completed_after_reclamation": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "deleteLocalData",
+      "state": "ok",
+      "problem": null,
+      "reason": null,
+      "answer": {
+        "deleted": {
+          "deleted_at": 3592000,
+          "detail": null,
+          "mission_id": "mn-00000000000000000000000000000000",
+          "phase": "deleted",
+          "previously": "reclaimed",
+          "removed": {
+            "conversation_turns": 1,
+            "requests": 1,
+            "run_diagnostics": 0,
+            "summary": true
+          },
+          "summary": null
+        },
+        "deletion": "completed",
+        "ok": true
+      }
+    },
+    "pending_started_not_finished": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "deleteLocalData",
+      "state": "ok",
+      "problem": null,
+      "reason": null,
+      "answer": {
+        "deleted": {
+          "deleted_at": null,
+          "detail": "the deletion of Mission mn-00000000000000000000000000000000 started and did not finish (the request store could not be written); its summary is removed, and the next retention pass retries the remaining cleanup",
+          "mission_id": "mn-00000000000000000000000000000000",
+          "phase": "deleting",
+          "previously": "intact",
+          "removed": {
+            "conversation_turns": 1,
+            "requests": 0,
+            "run_diagnostics": 0,
+            "summary": false
+          },
+          "summary": null
+        },
+        "deletion": "pending",
+        "ok": true
+      }
+    },
+    "refused_already_deleted": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "deleteLocalData",
+      "state": "refused",
+      "problem": "mission_panel_delete_refused_already_deleted",
+      "reason": "Mission mn-00000000000000000000000000000000 was already deleted",
+      "answer": {
+        "details": {
+          "refusal": "already_deleted"
+        }
+      }
+    },
+    "refused_busy": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "deleteLocalData",
+      "state": "refused",
+      "problem": "mission_panel_delete_refused_run_busy",
+      "reason": "a progression pass is acting on Mission mn-00000000000000000000000000000000",
+      "answer": {
+        "details": {
+          "refusal": "run_busy"
+        }
+      }
+    },
+    "refused_source_mismatch": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "deleteLocalData",
+      "state": "refused",
+      "problem": "mission_panel_delete_refused_source_mismatch",
+      "reason": "the Mission selected belongs to another Mission Core store, not to this panel's own Mission Core store; it is never resolved here by its native id alone",
+      "answer": {
+        "details": {
+          "refusal": "source_mismatch"
+        }
+      }
+    },
+    "refused_status_stale": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "deleteLocalData",
+      "state": "refused",
+      "problem": "mission_panel_delete_refused_status_stale",
+      "reason": "the display showed 'COMPLETED' but the Mission is now REJECTED",
+      "answer": {
+        "details": {
+          "refusal": "status_stale"
+        }
+      }
+    },
+    "unknown_after_send": {
+      "type": "diMissionRequestReply",
+      "seq": 7,
+      "op": "deleteLocalData",
+      "state": "unknown",
+      "problem": "panel_timeout",
+      "reason": "The request panel did not answer in time. Whether it applied this request is not known; read the record again before acting.",
+      "answer": null
+    }
+  }
+}

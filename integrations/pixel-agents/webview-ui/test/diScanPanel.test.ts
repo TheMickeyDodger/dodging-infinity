@@ -92,14 +92,15 @@ test('office rows bucket by standing and never invent a pull request', () => {
   assert.deepEqual(open?.needsYou, { known: true, value: true });
   assert.deepEqual(
     open?.pills.map((pill) => pill.label),
-    ['Needs you', 'Building'],
+    ['Needs you', 'Running'],
   );
   assert.equal(open?.swarm[0]?.role, 'Lead');
   assert.equal(open?.swarm[0]?.name, 'Leo');
   assert.equal(open?.swarm[0]?.note, 'In progress.');
   assert.equal(open?.reviewOffered, false);
   assert.equal(open?.context, 'Active · Herdr');
-  assert.equal(closed?.tab, 'closed');
+  // CHANGED IN Deliverable 2: a finished Mission with a positive basis files Archived at once (here herd's own stopped status, ABORTED); "closed" is no filing now.
+  assert.equal(closed?.tab, 'archived');
   assert.equal(open?.footer.includes('PR #'), false);
   assert.equal(closed?.footer.includes('PR #'), false);
 });
@@ -150,7 +151,8 @@ test('the scan chrome renders the locked header, tabs and detail; New and Recept
     'Search missions...',
     'Next panel overhaul',
     'Needs you',
-    'Building',
+    // review finding 5: the current specimen says the contract's word
+    'Running',
     'Ken',
     'Leo',
     'Mia',

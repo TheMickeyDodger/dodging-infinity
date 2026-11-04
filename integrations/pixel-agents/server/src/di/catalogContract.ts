@@ -173,6 +173,18 @@ export const ACTIVITIES = ['busy', 'idle', 'blocked', 'done', 'unknown', 'unknow
  * field only; it never derives a phase from the display-only `lifecycle.state`.
  */
 export const WORKFLOW_PHASE_KEYS = ['state', 'problem', 'phase'] as const;
+/**
+ * contract v2 — Mission Core's OWN progress record (`mission_state.report.progress.value.progress`, mission/observation.py), a lifecycle separate from the outer Mission
+ * state. Its closed vocabulary, in mission/state.py PROGRESS_STATES order (parity pinned by server/__tests__/diMissionProgressWire.test.ts).
+ */
+export const MISSION_PROGRESS_STATES = [
+  'NOT_STARTED',
+  'IN_PROGRESS',
+  'BLOCKED',
+  'COMPLETED',
+  'CLOSED_UNSUCCESSFUL',
+  'ABANDONED',
+] as const;
 export const WORKFLOW_PHASES = [
   'PLANNED',
   'AUTHORIZED',
@@ -427,6 +439,7 @@ export type MemberReason = (typeof MEMBER_REASONS)[number];
 export type Activity = (typeof ACTIVITIES)[number];
 export type Served = (typeof SERVED_VALUES)[number];
 export type WorkflowPhase = (typeof WORKFLOW_PHASES)[number];
+export type MissionProgressState = (typeof MISSION_PROGRESS_STATES)[number];
 export type ChainKind = (typeof CHAIN_KINDS)[number];
 export type RuntimeAgentsState = (typeof RUNTIME_AGENTS_STATES)[number];
 export type DeliveryPresentationsState = (typeof DELIVERY_PRESENTATIONS_STATES)[number];

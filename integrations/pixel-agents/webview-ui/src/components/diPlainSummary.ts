@@ -748,9 +748,17 @@ export function missionResults(mission: DiMission): string {
   if (c.state !== 'observed')
     return 'Mission results were not observed (the reason is in the details).';
   if (c.verifiedSuccess === true) return 'Verified success is recorded.';
+  // reported_success false is an ABSENCE of affirmation (missing, pending or stale review, or an inapplicable task report; mission/observation.py), never an
+  // unsuccessful completion (round 5, finding 2)
   if (c.reportedComplete === true && c.reportedSuccess === false)
-    return 'Reported complete without success (not verified).';
-  if (c.reportedComplete === true) return 'Reported complete; success is not verified.';
+    // only "not affirmed" (round 6): verified success is its own fact, said above when it is recorded
+    return 'Reported complete, but reported success is not affirmed: that is not a failure.';
+  // verifiedSuccess is THREE-valued (catalogProjection.ts `rb`: anything non-boolean is null), branched on explicitly (round 6): false is verification affirmatively
+  // absent, so it may be said; null is NOT KNOWN, never "not verified"
+  if (c.reportedComplete === true && c.verifiedSuccess === false) return 'Reported complete; success is not verified.';
+  if (c.reportedComplete === true && c.verifiedSuccess === null)
+    return 'Reported complete; whether its success is verified is not recorded.';
+  if (c.reportedComplete === true) return 'Reported complete.';
   if (c.reportedComplete === false) return 'Not reported complete.';
   return 'Whether it is complete is not recorded.';
 }

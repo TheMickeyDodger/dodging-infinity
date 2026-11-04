@@ -1,0 +1,41 @@
+{
+  "facts": {
+    "ci_confirmed_absent": {
+      "detail": null,
+      "source": "pr_delivery.json deliveries linked to mn-11111111111111111111111111111111 (steps[].receipt.observed)",
+      "state": "not_recorded_locally"
+    },
+    "ci_not_read": {
+      "detail": null,
+      "source": "no PR delivery store is configured for this process, so its CI results were not consulted",
+      "state": "not_read"
+    },
+    "ci_unreadable": {
+      "detail": null,
+      "source": "pr_delivery.json could not be read as the delivery store, so any CI results it holds are not known here",
+      "state": "unreadable"
+    }
+  },
+  "fixture": true,
+  "generator": "tests/test_mission_retention.py FS4",
+  "label": "FIXTURE (generated, not live): retained facts as the real producers make them, and a version-1 summary as the store upgrades it",
+  "upgraded_v1_summary": {
+    "ci": {
+      "detail": null,
+      "source": "not read: pr_delivery.json could not be read as the delivery store",
+      "state": "unreadable"
+    },
+    "comments": {
+      "detail": null,
+      "source": "missions.json missions[x] (Mission Core records no comments)",
+      "state": "not_known"
+    },
+    "final_state": "COMPLETED",
+    "final_state_source": "missions.json missions[x].state",
+    "verdict": {
+      "detail": null,
+      "source": "missions.json missions[x].run.verification",
+      "state": "not_known"
+    }
+  }
+}

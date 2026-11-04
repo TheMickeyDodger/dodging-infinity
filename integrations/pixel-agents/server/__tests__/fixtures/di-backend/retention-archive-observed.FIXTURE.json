@@ -1,0 +1,68 @@
+{
+  "fixture": true,
+  "generator": "tests/test_mission_retention.py AC5",
+  "label": "FIXTURE (generated, not live): the real retention reader's archive reading of a workflow store whose two terminal records were reclaimed whole",
+  "reading": {
+    "awaiting": 0,
+    "missions": [
+      {
+        "family": "workflow_store",
+        "mission_ref": "wf:wf-done",
+        "native_id": "wf-done",
+        "phase": "reclaimed",
+        "phase_at": 2593000,
+        "source_id": "wf",
+        "summary": {
+          "ci": {
+            "detail": null,
+            "source": "pr_delivery.json deliveries linked to wf-done (steps[].receipt.observed)",
+            "state": "not_recorded_locally"
+          },
+          "comments": {
+            "detail": "Inspected the store and the tests; no blocker remains.",
+            "source": "preserved-evidence/wf-done.json files[reviewer-evidence.md], at most 600 characters around the last decision line",
+            "state": "recorded"
+          },
+          "final_state": "COMPLETED",
+          "final_state_source": "workflows.json workflows[wf-done].phase",
+          "verdict": {
+            "detail": "reviewer HERD_DECISION: APPROVE",
+            "source": "preserved-evidence/wf-done.json files[reviewer-evidence.md] (the canonical HERD_DECISION line); workflows.json workflows[wf-done].verified_result",
+            "state": "recorded"
+          }
+        }
+      },
+      {
+        "family": "workflow_store",
+        "mission_ref": "wf:wf-never",
+        "native_id": "wf-never",
+        "phase": "reclaimed",
+        "phase_at": 2593000,
+        "source_id": "wf",
+        "summary": {
+          "ci": {
+            "detail": null,
+            "source": "pr_delivery.json deliveries linked to wf-never (steps[].receipt.observed)",
+            "state": "not_recorded_locally"
+          },
+          "comments": {
+            "detail": null,
+            "source": "preserved-evidence/wf-never.json files[reviewer-evidence.md], at most 600 characters around the last decision line",
+            "state": "not_recorded_locally"
+          },
+          "final_state": "BLOCKED",
+          "final_state_source": "workflows.json workflows[wf-never].phase",
+          "verdict": {
+            "detail": null,
+            "source": "preserved-evidence/wf-never.json files[reviewer-evidence.md] (the canonical HERD_DECISION line); workflows.json workflows[wf-never].verified_result",
+            "state": "not_recorded_locally"
+          }
+        }
+      }
+    ],
+    "problem": null,
+    "source_id": "wf",
+    "state": "observed",
+    "total": 2
+  }
+}

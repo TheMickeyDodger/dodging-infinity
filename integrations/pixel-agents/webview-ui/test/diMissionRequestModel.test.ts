@@ -1266,11 +1266,12 @@ describe('words', () => {
         },
       ],
     })!;
-    expect(countsOf(overview)).toEqual({ needsYou: 1, running: 1, total: 2 });
+    // the counts read the Mission status contract: the panel's `running` stage is a bound-TASK observation (C4), counted and said as Task observed, never as running
+    expect(countsOf(overview)).toEqual({ needsYou: 1, startRequested: 0, taskObserved: 1, total: 2 });
     expect(needsYou(['decide'])).toBe(true);
     expect(needsYou(['dispatch'])).toBe(false);
     const s: MrState = { ...INITIAL_STATE, overview, availability: { kind: 'ok' } };
-    expect(entryWords(s)).toBe('1 request needs you · 1 request in progress · 2 requests in all');
+    expect(entryWords(s)).toBe('1 request needs you · 1 task observed · 2 requests in all');
     expect(
       entryWords({
         ...INITIAL_STATE,
@@ -1296,7 +1297,8 @@ describe('words', () => {
       dispatch_uncertain: 2,
       dispatched: 2,
       running: 3,
-      pending_proof: 3,
+      // review finding 2: waiting on proof is at verification (its task was observed and its run stopped), worded as Waiting by journeyStepLabel, never as Verified
+      pending_proof: 4,
       verified: 4,
     };
     for (const [stage, index] of Object.entries(on)) expect(journeyIndex(stage), stage).toBe(index);

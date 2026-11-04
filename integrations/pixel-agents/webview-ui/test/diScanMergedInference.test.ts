@@ -42,10 +42,16 @@ describe('owed item 2: verified success is not a merged pull request', () => {
     expect(row?.pills.map((pill) => pill.label)).not.toContain('Merged');
   });
 
-  it('a Mission whose OWN record says merged is still filed under Merged (unchanged)', () => {
-    const { state, mission } = withOne('merged');
-    const row = scanRowsFromOffice(state).find((r) => r.id === mission.missionRef);
-    expect(row?.tab).toBe('merged');
-    expect(row?.pills.map((pill) => pill.label)).toContain('Merged');
+  it('a lifecycle literal that merely READS "merged" files nothing under Merged: no producer declares a merged literal, and the native literal is never sniffed (Deliverable 1)', () => {
+    // Before, any literal containing "merg" (case-folded, by substring) filed the row under Merged. No source this office reads declares one (mission/record.py,
+    // workflow_authority/record.py, herdr/vintage.py), and lifecycleState is verbatim and never switched on (catalogProjection.ts). The row files by its standing.
+    for (const literal of ['merged', 'MERGED', 'auto-merged', 'archived']) {
+      const { state, mission } = withOne(literal);
+      const row = scanRowsFromOffice(state).find((r) => r.id === mission.missionRef);
+      // CHANGED IN Deliverable 2: the row files by the positive-basis rule, never by its literal; with no basis for an unknown literal, it stays open
+      expect(row?.tab, literal).not.toBe('merged');
+      expect(row?.tab, literal).toBe('open');
+      expect(row?.pills.map((pill) => pill.label), literal).not.toContain('Merged');
+    }
   });
 });

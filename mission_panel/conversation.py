@@ -175,6 +175,13 @@ class PanelConversation(object):
                     " finishes" % len(self._in_flight), PROBLEM_PROVIDER_BUSY)
             prior = ([] if conversation_id is None
                      else self._journal.conversation(conversation_id))
+            if any("reclaimed" in turn for turn in prior):
+                # Deliverable 2: its words are no longer kept, so it cannot be continued (and no
+                # prompt is ever rendered from a reclaimed turn).
+                raise journal_module.JournalError(
+                    "conversation %s was reclaimed: its words are no longer kept, so it cannot"
+                    " be continued" % conversation_id,
+                    journal_module.PROBLEM_CONVERSATION_RECLAIMED)
             prompt = draft_module.render_turn_prompt(prior, text, self._repository_url)
             try:
                 prepared = self._session.prepare(prompt, self._control, source=SOURCE)

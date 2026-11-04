@@ -455,7 +455,27 @@ def _raise_interrupt(signum, frame):
     raise KeyboardInterrupt
 
 
-def _main_mission(namespace, sleeper, passes, composition_factory):
+def _retention_pass(retention, reported):
+    """One bounded local-retention sweep (Deliverable 2) on the runtime's EXISTING tick: once at
+    startup (the overdue case) and once after every pass (a deadline crossed while running). It is
+    no scheduler, thread or service of its own: it runs inline, between this loop's own passes. A
+    sweep reclaims at most ``mission_retention.reclaim.MAX_RECLAIMS_PER_PASS`` Missions, and is
+    contained: a failure is said once, the loop goes on, and the next sweep resumes the same
+    Mission idempotently. Returns what was reported, so a repeated failure is said once."""
+    if retention is None:
+        return reported
+    try:
+        report = retention.sweep()
+        problem = ",".join(sorted({str(p) for _, p in report.problems})) or None
+    except Exception as exc:  # noqa: BLE001 - contained by design, said below
+        problem = type(exc).__name__
+    if problem != reported and problem is not None:
+        _say("dirun: local retention could not finish a sweep (%s); nothing was lost, and the"
+             " next pass retries it" % problem)
+    return problem
+
+
+def _main_mission(namespace, sleeper, passes, composition_factory, retention_clock=None):
     """MissionCore mode: pass over the panel's started Missions, publishing a
     status after every pass. Exit codes as the default mode's."""
     try:
@@ -496,6 +516,11 @@ def _main_mission(namespace, sleeper, passes, composition_factory):
                 raise ValueError("no bridge")
             ledger = progress_module.ProgressionPass(
                 composed.journal, composed.surface, composed.bridge)
+            from mission_retention import reclaim as retention_module
+            from target_runtime import mission_run_guard as run_guard_module
+            retention = retention_module.MissionCoreRetention(
+                state_directory, retention_clock or (lambda: int(time.time())),
+                run_guard_module.RunGuard(state_directory))
         except Exception as exc:
             print("dirun: config: cannot compose the Mission stack (%s)"
                   % type(exc).__name__, file=sys.stderr)
@@ -505,6 +530,8 @@ def _main_mission(namespace, sleeper, passes, composition_factory):
         reported = set()
         reported_problem = None
         reported_publish = None
+        # the overdue case: reclamation that came due while nothing was running
+        reported_retention = _retention_pass(retention, None)
         while True:
             try:
                 report = ledger.run_pass()
@@ -522,6 +549,8 @@ def _main_mission(namespace, sleeper, passes, composition_factory):
                          " was advanced" % problem)
                 reported_problem = problem
             reported = _report_mission_conditions(report, reported)
+            # a deadline crossed while this runtime stayed up
+            reported_retention = _retention_pass(retention, reported_retention)
             try:
                 status_module.write_status(
                     state_directory, digest, os.getpid(), started_at, done,
@@ -561,7 +590,7 @@ def _main_mission(namespace, sleeper, passes, composition_factory):
 
 
 def main(argv=None, sleeper=None, passes=None, execution=None,
-         mission_composition=None):
+         mission_composition=None, retention_clock=None):
     """CLI entry. ``sleeper``/``passes`` exist ONLY for tests (an
     injected pacing bound); production callers pass nothing and run
     unbounded — pacing, not a mission timeout. ``execution`` likewise
@@ -572,7 +601,9 @@ def main(argv=None, sleeper=None, passes=None, execution=None,
     built from ``_build_broker``. ``mission_composition`` is likewise
     test-only: it replaces ``mission_panel.composition.compose`` in
     MissionCore mode (a hermetic test substitutes the bridge's two effect
-    seams through it); production passes nothing."""
+    seams through it); production passes nothing. ``retention_clock`` is
+    test-only too: the injected clock of the local-retention sweep
+    (Deliverable 2); production passes nothing and it reads the wall clock."""
     parser = _build_parser()
     try:
         namespace = parser.parse_args(argv)
@@ -584,7 +615,8 @@ def main(argv=None, sleeper=None, passes=None, execution=None,
         return EXIT_CONFIG
     if any(getattr(namespace, name) is not None for name in _MISSION_OPTIONS):
         # Selected BEFORE the workflow store, broker or recovery path exists.
-        return _main_mission(namespace, sleeper, passes, mission_composition)
+        return _main_mission(namespace, sleeper, passes, mission_composition,
+                             retention_clock)
     try:
         broker, state_directory = _build_broker(namespace)
     except ConfigError as exc:
@@ -677,6 +709,11 @@ def main(argv=None, sleeper=None, passes=None, execution=None,
                         " surfaced so the wait is not silent"),
                 file=sys.stderr,
             )
+    from mission_retention import reclaim as retention_module
+    workflow_retention = retention_module.WorkflowRetention(
+        state_directory, retention_clock or (lambda: int(time.time())))
+    # the overdue case: reclamation that came due while nothing was running
+    reported_retention = _retention_pass(workflow_retention, None)
     try:
         if namespace.command == "once":
             processed = execution.process_once()
@@ -695,6 +732,8 @@ def main(argv=None, sleeper=None, passes=None, execution=None,
             reported_refusals = _report_new_refusals(
                 processed, reported_refusals
             )
+            # a deadline crossed while this runtime stayed up
+            reported_retention = _retention_pass(workflow_retention, reported_retention)
             if remaining is not None:
                 remaining -= 1
                 if remaining <= 0:

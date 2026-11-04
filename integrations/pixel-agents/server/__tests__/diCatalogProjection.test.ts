@@ -198,8 +198,10 @@ describe('FIXTURE: response projection (CONTRACT-v3 key sets verbatim)', () => {
     const result = projectResponse(response());
     if (!result.ok) throw new Error('fixture failed to project');
     const [core, legacy] = result.view.missions;
-    expect(core.native).toEqual({ kind: 'mission_core', cancelRequested: false, paused: false });
-    expect(legacy.native).toEqual({ kind: 'workflow_store', ambiguity: 'none' });
+    // CHANGED IN Deliverable 2: the exact native shape gained the raw `cancelQuiescence` and `storeIdentity` (Mission Core) and `sentHandoffReceipts` (workflow
+    // store), each null where this fixture's producer reports none. Still asserted EXACTLY.
+    expect(core.native).toEqual({ kind: 'mission_core', cancelRequested: false, paused: false, cancelQuiescence: null, storeIdentity: null });
+    expect(legacy.native).toEqual({ kind: 'workflow_store', ambiguity: 'none', sentHandoffReceipts: null });
     expect(core.producerRecorded).toEqual({
       kind: 'mission_core',
       principalKind: 'unauthenticated_local_caller',

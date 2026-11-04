@@ -106,6 +106,8 @@ _ROUTES = (
     ("POST", re.compile(r"/requests/" + _REF + r"/request-changes"), "request_changes"),
     ("POST", re.compile(r"/requests/" + _REF + r"/withdraw"), "withdraw"),
     ("POST", re.compile(r"/requests/" + _REF + r"/run"), "run"),
+    # Deliverable 2: the owner's "Delete local data" for one finished or cancelled Mission.
+    ("POST", re.compile(r"/missions/(mn-[0-9a-f]{32})/delete-local-data"), "delete_local_data"),
 )
 ROUTE_NAMES = tuple(sorted(set(name for _, _, name in _ROUTES)))
 # route -> (required keys, optional keys) of its closed JSON body.
@@ -130,6 +132,8 @@ _BODY_KEYS = {
                          "approved_delivery_targets", "repository_url", "reason"), ()),
     "withdraw": (("mission_id", "revision", "proposal_digest_sha256"), ()),
     "run": (("command",), ()),
+    # The Mission state the window DISPLAYED: rechecked against the record at the moment of action.
+    "delete_local_data": (("displayed_state", "mission_ref", "store_identity"), ()),
 }
 _REFUSED_METHODS = ("HEAD", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT")
 _STDLIB_STATUS = {411: 400, 414: 413, 431: 413, 501: 405}
@@ -377,6 +381,9 @@ class PanelRequestHandler(http.server.BaseHTTPRequestHandler):
         if name == "withdraw":
             return service.withdraw(groups[0], body["mission_id"], body["revision"],
                                     body["proposal_digest_sha256"])
+        if name == "delete_local_data":
+            return service.delete_local_data(groups[0], body["displayed_state"],
+                                             body["mission_ref"], body["store_identity"])
         return service.run(groups[0], body["command"])
 
     def _handle(self, method):
@@ -542,11 +549,15 @@ def build_service(state_dir, control_repo, workspace_repository=None,
     convo = conversation_module.PanelConversation(
         composition.journal, session, control_repo, repository_url, clock,
         registry=registry)
+    from mission_retention import reclaim as retention_module
+    from target_runtime import mission_run_guard as run_guard_module
     return service_module.PanelService(
         composition.surface, composition.journal, convo, registry, clock,
         bridge=composition.bridge, repository_url=repository_url,
         progression=lambda: progress_status.probe(
-            state_dir, composition.digest, clock()))
+            state_dir, composition.digest, clock()),
+        retention=retention_module.MissionCoreRetention(
+            state_dir, clock, run_guard_module.RunGuard(state_dir)))
 
 
 def main(argv=None):

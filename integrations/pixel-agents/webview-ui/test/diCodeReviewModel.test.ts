@@ -1018,7 +1018,23 @@ describe('the fixture these tests stand on is the one the server suite pinned', 
     // CHANGED IN S3 (was 15eaa3ed…): regenerated through the same documented mode after the wire gained the producer's declared workflow phase (`DiMissionV2.workflowPhase`, present only when the v2 block
     // is projected). The ONLY difference from the previous bytes is that additive object on each Mission's v2 block (insertions only, no line removed or changed: five blocks of six lines, 30 lines, in
     // this file, every added line inside one of them). The backend fixture it is projected from, pinned below, is unchanged.
-    expect(digest).toBe('3ef9b99ec72ec83f92f910843d55c5e363965f53d89eef6a85e44fb68d5440e3');
+    // CHANGED IN Deliverable 1 (Mission status contract; was 3ef9b99e…): regenerated through the same documented mode after the wire gained the catalog's own execution fact
+    // `DiMission.runStarted` (`execution.run_started`, verbatim). The ONLY difference from the previous bytes is that one additive line on each Mission (insertions only, no
+    // line removed or changed: five lines in this file, each `"runStarted": true,`). The backend fixture it is projected from, pinned below, is unchanged.
+    // CHANGED AGAIN IN Deliverable 1, review round 1 finding 6 (was de2d895c…): regenerated through the same documented mode after the wire gained Mission Core's own progress
+    // record (`DiMissionStateSummary.progress`, `mission_state.report.progress`). The ONLY difference from the previous bytes is one additive seven-line `progress` block in each
+    // Mission's v2 `missionState` (insertions only, no line removed or changed: five blocks, 35 lines, in this file). The backend fixture it is projected from is unchanged.
+    // CHANGED AGAIN IN Deliverable 1, review round 3 finding 3 (was 88daa9b2…): regenerated through the same documented mode after each Mission's `progress` block gained the
+    // progress fact's own `standing` (`DiMissionProgress.standing`). The ONLY difference from the previous bytes is one additive line in each block (insertions only: five
+    // lines in this file, each `"standing": "verified",`). The backend fixture it is projected from is unchanged.
+    // CHANGED IN Deliverable 2 (was 825c50f7…): regenerated through the same documented mode after each Mission gained the backend's local-retention reading
+    // (`DiMission.retention`, here `not_reported`: this backend fixture carries none) and the raw `cancelQuiescence` fact (null here). Insertions only; the backend
+    // fixture it is projected from is unchanged.
+    // CHANGED AGAIN IN Deliverable 2, the capacity seam (was 04878a0e…): regenerated through the same documented mode after each Mission gained the raw
+    // `sentHandoffReceipts` fact (null here: no workflow-store Mission's count is reported by this backend fixture). Insertions only.
+    // CHANGED AGAIN IN Deliverable 2, target identity (was 7c2c2344…): regenerated through the same documented mode after each Mission gained the raw
+    // `storeIdentity` (null here: this backend fixture reports none). Insertions only.
+    expect(digest).toBe('ba35039e1074a0d85cea968373b6b30c166d81efcae485fae532630185eb5e8b');
     // the backend fixture's hash is pinned in server/__tests__/diCodeReview.test.ts; the export names it
     expect(doc.derived_from.sha256).toBe('ad29c7dcf1b8b3d7bc764db9ac9f0717efacbed2c98fb98e2786170b8325ab25');
   });

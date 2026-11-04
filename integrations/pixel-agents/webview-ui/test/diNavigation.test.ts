@@ -21,7 +21,6 @@ import {
   plainIdentityState,
   plainMemberIdentity,
   plainMissionOutcomes,
-  plainStanding,
   plainUnreported,
   recordByKey,
   recordForCharacter,
@@ -40,7 +39,7 @@ const state = (
 const distinct = (values: string[]) => new Set(values).size === values.length;
 const noRawCode = (phrase: string) => !/[a-z]+_[a-z]+/.test(phrase);
 
-test('every binding, membership, identity and standing state keeps a DISTINCT plain phrase, no raw code', () => {
+test('every binding, membership and identity state keeps a DISTINCT plain phrase, no raw code', () => {
   const bindings = ['bound', 'unbound', 'disappeared', 'ambiguous', 'unverified', 'not_applicable'];
   // Round 11: the binding now carries its canonical reason (one known reason for every state here).
   const phrases = bindings.map((b) => plainBinding(b, 'binding_not_confirmed_by_both_passes'));
@@ -53,10 +52,7 @@ test('every binding, membership, identity and standing state keeps a DISTINCT pl
   for (const c of classes) assert.ok(noRawCode(plainMemberIdentity(c)));
   const identities = ['verified', 'unverified', 'ambiguous', 'unavailable', 'future'];
   assert.ok(distinct(identities.map(plainIdentityState)));
-  const standings = ['active', 'inactive', 'terminal', 'unknown_future'];
-  assert.ok(distinct(standings.map((x) => plainStanding(x, 'ACTIVE'))));
-  // "ended" is said NOT to be verified success.
-  assert.match(plainStanding('terminal', 'COMPLETE'), /not verified success/);
+  // A standing's words are the Mission status contract's (diMissionStatus.ts; pinned in diMissionStatus.test.ts), never a second wording here.
 });
 
 test('round 11 (F3): a binding never asserts an absence the record cannot support; it carries its canonical reason', () => {

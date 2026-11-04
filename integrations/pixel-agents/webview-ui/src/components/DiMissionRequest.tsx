@@ -91,6 +91,7 @@ import {
   StartCauseView,
   Untrusted,
 } from './DiMissionRequestParts.js';
+import { requestStageStatus } from './diMissionStatus.js';
 import { DI_FOCUS_RING } from './diNavigation.js';
 import { useStickyScrollPad } from './diStickyPad.js';
 
@@ -374,7 +375,15 @@ export function TurnView({
     <li className="di-mr-turn" data-testid={`di-mr-turn-${turn.sequence}`}>
       <div className="di-mr-said" data-who="you">
         <span className="di-mr-who">You</span>
-        <Untrusted text={turn.userText} content />
+        {turn.reclaimed !== null ? (
+          <p className="di-mr-technical-note" data-testid={`di-mr-reclaimed-${turn.sequence}`}>
+            {turn.reclaimed.outcome === 'deleted'
+              ? 'Deleted at the Mission owner’s request: these words are no longer kept.'
+              : 'Reclaimed 30 days after the Mission finished: these words are no longer kept.'}
+          </p>
+        ) : (
+          <Untrusted text={turn.userText} content />
+        )}
       </div>
       {turn.assistantText !== null && (
         <div
@@ -1125,9 +1134,10 @@ function RunBlock({
             <li>Phase: {run.phase}</li>
             {run.firstObservation?.at != null && (
               <li>
-                First observed running at{' '}
-                {new Date(run.firstObservation.at * 1000).toLocaleTimeString()} (a past observation,
-                not a claim about now)
+                {/* Mission Core's first RUNNING observation is of the bound TASK, never of a worker (C4): said as what was observed */}
+                Its bound task was first observed at{' '}
+                {new Date(run.firstObservation.at * 1000).toLocaleTimeString()} (a past observation of
+                the task&apos;s record, not of any worker, and not a claim about now)
               </li>
             )}
             {run.latestObservation?.at != null && (
@@ -1184,6 +1194,8 @@ function Detail({
   const lifecycle = view.stale ? request.lifecycle : latest.lifecycle;
   const meanings = state.overview?.capabilities.scopeMeanings ?? {};
   const tone = stageTone(lifecycle.stage);
+  // the request's status in the ONE contract's words and shape (diMissionStatus.ts); the panel's own label stays its headline
+  const status = requestStageStatus(lifecycle.stage, state.overview?.capabilities.progression ?? null);
   const readAt = agoWords(view.readAtMs, nowMs);
   const title = plainTitle(request.proposal?.objective);
   // The panel's words may open with one sentence of provenance. It is exact and stays, in the references disclosure; the rest is the status.
@@ -1225,6 +1237,14 @@ function Detail({
       )}
       <div className="di-mr-box" data-tone={tone} data-testid="di-mr-stage">
         <p>
+          <span
+            className="di-mr-stage-status"
+            data-testid="di-mr-stage-status"
+            data-status={status.status}
+          >
+            <span aria-hidden="true">{status.glyph}</span> {status.label}
+            <span className="di-mr-visually-hidden">{` ${status.sentence}`}</span>
+          </span>{' '}
           <strong data-testid="di-mr-stage-label">{lifecycle.label}</strong>
         </p>
         <p data-testid="di-mr-stage-detail">{words.rest}</p>

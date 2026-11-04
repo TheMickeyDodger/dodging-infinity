@@ -222,7 +222,16 @@ class PinTests(unittest.TestCase):
             "source_id", "proposal_digest_sha256", "presented_at",
             "expires_at", "mode", "repository_url", "binding_mission",
             "state", "matching_deliveries", "link"))
-        self.assertEqual(v2.RESPONSE_KEYS_V2[-1], "delivery_presentations")
+        # The whole response key tuple, in order: contract_v2 compares the
+        # response's keys as a SET, so this is the only order evidence there
+        # is. Deliverable 2 appended retained_by_source after
+        # delivery_presentations.
+        self.assertEqual(v2.RESPONSE_KEYS_V2, (
+            "contract", "contract_version", "generated_at", "max_age_seconds",
+            "valid_until", "limits", "registry", "sources",
+            "runtime_snapshot", "chain_observation", "missions",
+            "unmatched_runtime_agent_count", "runtime_agents",
+            "delivery_presentations", "retained_by_source"))
 
     def test_new_python_is_python_3_9_grammar(self):
         # CI runs Python 3.9 and 3.13: no `match`, no 3.10+ syntax.

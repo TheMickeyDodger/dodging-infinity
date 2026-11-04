@@ -139,7 +139,8 @@ RESPONSE_KEYS_V2 = ("contract", "contract_version", "generated_at",
                     "max_age_seconds", "valid_until", "limits", "registry",
                     "sources", "runtime_snapshot", "chain_observation",
                     "missions", "unmatched_runtime_agent_count",
-                    "runtime_agents", "delivery_presentations")
+                    "runtime_agents", "delivery_presentations",
+                    "retained_by_source")
 
 # -- hard bounds (never derived from input) -----------------------------
 
@@ -452,7 +453,58 @@ MISSION_VIEW_KEYS = ("mission_ref", "source_id", "native_id", "lifecycle",
                      "execution", "native")
 MISSION_KEYS_V2 = MISSION_VIEW_KEYS + (
     "binding", "members", "task_chains", "children_record", "mission_state",
-    "admitted_artifacts", "workflow_phase", "delivery_link", "delivery_handoff")
+    "admitted_artifacts", "workflow_phase", "delivery_link", "delivery_handoff",
+    "retention")
+
+# -- local retention (Deliverable 2) -----------------------------------------------
+
+#: ``missions[].retention``: the BACKEND's retention reading of the Mission (``mission_retention``):
+#: whether it is eligible for archive, reclamation and deletion (with its positive basis and that
+#: basis's source field, or the reason it is not), and its retention phase. The office files and
+#: shows a Mission by THIS, so there is one rule. Re-declared here, pinned equal to
+#: ``mission_retention.view`` by test (this package imports no retention module).
+RETENTION_KEYS = ("state", "problem", "eligible", "basis", "basis_source", "reason", "phase",
+                  "phase_at", "summary", "retained_for")
+RETENTION_OBSERVED = "observed"
+RETENTION_NOT_APPLICABLE = "not_applicable"
+RETENTION_UNAVAILABLE = "unavailable"
+RETENTION_NOT_REPORTED = "not_reported"
+RETENTION_STATES = (RETENTION_OBSERVED, RETENTION_NOT_APPLICABLE, RETENTION_UNAVAILABLE,
+                    RETENTION_NOT_REPORTED)
+RETENTION_PHASES = ("intact", "observed", "reclaiming", "reclaimed", "deleting", "deleted")
+RETENTION_SUMMARY_KEYS = ("final_state", "final_state_source", "verdict", "ci", "comments")
+RETENTION_FACT_KEYS = ("state", "detail", "source")
+RETENTION_FACT_STATES = ("recorded", "not_recorded_locally", "not_read", "unreadable", "not_known")
+#: The lifecycle models whose stores DI owns and retention reads; every other model is
+#: ``not_applicable`` (a Herdr task lives in the target herd's own ``.herd/``).
+RETENTION_MODELS = ("mission_core.mission_state/1", "workflow_authority.workflow_phase/2")
+#: ``retained_by_source``: per retention-family source, ONE reading of the Missions whose record is no
+#: longer in its store (reclaimed whole, or pruned by the store's own cap), as retention holds them.
+#: Its ``state`` is required and closed, so "read, and empty" and "could not be read" can never be
+#: the same value: ``observed`` carries the EXACT ``total`` (``missions`` lists at most
+#: ``MAX_RETAINED_MISSIONS`` of them, newest first) and ``awaiting``, DISJOINT from ``total``:
+#: Missions removed from their store whose summary is owed and not yet captured, with no retention
+#: record at all (one with a record is already in ``total``, listed without a summary), so
+#: ``total + awaiting`` counts distinct Missions; ``unavailable`` carries its ``problem``, and its
+#: counts are null (not known, never 0). The whole value is null when this catalog does not read
+#: retention at all.
+RETAINED_MISSION_KEYS = ("mission_ref", "source_id", "native_id", "family", "phase",
+                         "phase_at", "summary")
+RETAINED_SOURCE_KEYS = ("source_id", "state", "problem", "total", "awaiting", "missions")
+RETAINED_OBSERVED = "observed"
+RETAINED_UNAVAILABLE = "unavailable"
+RETAINED_STATES = (RETAINED_OBSERVED, RETAINED_UNAVAILABLE)
+RETAINED_FAMILIES = ("mission_core", "workflow_store")
+MAX_RETAINED_MISSIONS = 128
+#: At most one reading per registered source (mission_sources/registry.py MAX_REGISTERED_SOURCES;
+#: re-declared, pinned equal by tests/test_mission_retention.py).
+MAX_RETAINED_SOURCES = 128
+
+
+def retained_source_unavailable(source_id, problem):
+    """One source's archive reading when it could not be read: its reason, and no counts."""
+    return {"source_id": source_id, "state": RETAINED_UNAVAILABLE, "problem": problem,
+            "total": None, "awaiting": None, "missions": []}
 
 # -- the declared workflow phase (version 2) ----------------------------------
 
@@ -1512,10 +1564,114 @@ def read_chain_observation(value, now,
 
 # -- response envelope and the version 2 consumer operation ---------------
 
+def retention_empty(state, problem=None):
+    """A retention block that carries no reading (``not_applicable``, ``not_reported`` or
+    ``unavailable`` with its problem)."""
+    return {"state": state, "problem": problem, "eligible": None, "basis": None,
+            "basis_source": None, "reason": None, "phase": None, "phase_at": None,
+            "summary": None, "retained_for": 0}
+
+
+def mission_retention(mission, hook, source):
+    """The ``retention`` block of one mission view: ``not_applicable`` for a model DI owns no store
+    of, ``not_reported`` when no reader is registered, ``unavailable`` when it failed (unknown, never
+    "intact"), else the reader's block (validated with the whole response)."""
+    if mission["lifecycle"]["model"] not in RETENTION_MODELS:
+        return retention_empty(RETENTION_NOT_APPLICABLE)
+    if hook is None or source is None:
+        return retention_empty(RETENTION_NOT_REPORTED)
+    try:
+        return hook(source["kind"], source["store_dir"], mission["native_id"])
+    except Exception:                                      # noqa: BLE001
+        return retention_empty(RETENTION_UNAVAILABLE, "reader_failed")
+
+
+def _validate_retention_summary(value, location):
+    if value is None:
+        return
+    _closed(value, RETENTION_SUMMARY_KEYS, location)
+    _text(value["final_state"], location + ".final_state")
+    _text(value["final_state_source"], location + ".final_state_source")
+    for name in ("verdict", "ci", "comments"):
+        fact = _closed(value[name], RETENTION_FACT_KEYS, "%s.%s" % (location, name))
+        _member(fact["state"], RETENTION_FACT_STATES, "%s.%s.state" % (location, name))
+        _text(fact["detail"], "%s.%s.detail" % (location, name), True)
+        if (fact["state"] == "recorded") != (fact["detail"] is not None):
+            raise _shape("%s.%s: only a recorded fact carries a detail" % (location, name))
+        _text(fact["source"], "%s.%s.source" % (location, name))
+
+
+def _validate_retention(value, lifecycle, location):
+    _closed(value, RETENTION_KEYS, location)
+    state = _member(value["state"], RETENTION_STATES, location + ".state")
+    _text(value["problem"], location + ".problem", True)
+    if state != RETENTION_OBSERVED:
+        if any(value[k] is not None for k in ("eligible", "basis", "basis_source", "reason",
+                                              "phase", "phase_at", "summary")):
+            raise _shape("%s carries no reading unless observed" % location)
+        if state == RETENTION_NOT_APPLICABLE and lifecycle["model"] in RETENTION_MODELS:
+            raise _shape("%s: a DI-owned store's Mission is never not_applicable" % location)
+        return
+    if lifecycle["model"] not in RETENTION_MODELS:
+        raise _shape("%s: only a DI-owned store's Mission has a retention reading" % location)
+    eligible = _bool(value["eligible"], location + ".eligible")
+    if eligible != (value["basis"] is not None) or eligible != (value["reason"] is None):
+        raise _shape("%s: eligible names its basis, ineligible its reason" % location)
+    _text(value["basis"], location + ".basis", True)
+    _text(value["basis_source"], location + ".basis_source", True)
+    _text(value["reason"], location + ".reason", True)
+    _member(value["phase"], RETENTION_PHASES, location + ".phase")
+    _int(value["phase_at"], location + ".phase_at", True)
+    _validate_retention_summary(value["summary"], location + ".summary")
+    _int(value["retained_for"], location + ".retained_for")
+
+
+def validate_retained_by_source(value):
+    """``None`` (not read), or one closed reading per source (see ``RETAINED_SOURCE_KEYS``)."""
+    if value is None:
+        return
+    for index, reading in enumerate(_list(value, "retained_by_source", MAX_RETAINED_SOURCES)):
+        where = "retained_by_source[%d]" % index
+        _closed(reading, RETAINED_SOURCE_KEYS, where)
+        _text(reading["source_id"], where + ".source_id")
+        _member(reading["state"], RETAINED_STATES, where + ".state")
+        if reading["state"] == RETAINED_UNAVAILABLE:
+            _text(reading["problem"], where + ".problem")
+            if reading["total"] is not None or reading["awaiting"] is not None or reading["missions"]:
+                raise _shape("%s: an unreadable reading states no count and lists nothing" % where)
+            continue
+        if reading["problem"] is not None:
+            raise _shape("%s.problem: an observed reading carries no problem" % where)
+        _int(reading["total"], where + ".total")
+        _int(reading["awaiting"], where + ".awaiting")
+        missions = _list(reading["missions"], where + ".missions", MAX_RETAINED_MISSIONS)
+        if reading["total"] < len(missions):
+            raise _shape("%s.total: fewer than it lists" % where)
+        for item in missions:
+            if item.get("source_id") != reading["source_id"]:
+                raise _shape("%s.missions: a Mission of another source" % where)
+        _validate_retained_list(missions, where + ".missions")
+
+
+def _validate_retained_list(value, location):
+    for index, item in enumerate(value):
+        where = "%s[%d]" % (location, index)
+        _closed(item, RETAINED_MISSION_KEYS, where)
+        _text(item["mission_ref"], where + ".mission_ref")
+        _text(item["source_id"], where + ".source_id")
+        _text(item["native_id"], where + ".native_id")
+        _member(item["family"], RETAINED_FAMILIES, where + ".family")
+        _member(item["phase"], RETENTION_PHASES[1:], where + ".phase")
+        _int(item["phase_at"], where + ".phase_at")
+        _validate_retention_summary(item["summary"], where + ".summary")
+        if item["phase"] in ("deleting", "deleted") and item["summary"] is not None:
+            raise _shape("%s: a deleted Mission carries no summary" % where)
+
+
 def envelope_v2(generated_at, max_age_seconds, valid_until, limits, registry,
                 sources, runtime_snapshot, chain_observation, missions,
                 unmatched_runtime_agent_count, runtime_agents=None,
-                delivery_presentations=None):
+                delivery_presentations=None, retained_by_source=None):
     """Assemble one version 2 response (``contract.envelope``'s rules, plus
     the chain observation block; ``runtime_agents`` as in version 1)."""
     contract.require_int(generated_at, "generated_at")
@@ -1546,6 +1702,8 @@ def envelope_v2(generated_at, max_age_seconds, valid_until, limits, registry,
         "delivery_presentations": (
             delivery_presentations if delivery_presentations is not None
             else delivery_presentations_not_registered()),
+        # null: this catalog does not read retention (never an empty archive)
+        "retained_by_source": retained_by_source,
     }
 
 
@@ -1778,6 +1936,7 @@ def validate_mission_v2(value, location):
                                     location + ".delivery_link")
     _validate_delivery_handoff(value["delivery_handoff"], value["lifecycle"],
                                location + ".delivery_handoff")
+    _validate_retention(value["retention"], value["lifecycle"], location + ".retention")
     _closed(value["execution"], EXECUTION_KEYS, location + ".execution")
     _validate_binding(value["binding"], location + ".binding")
     for index, member in enumerate(_list(
@@ -1852,4 +2011,5 @@ def validate_response_v2(response):
          "unmatched_runtime_agent_count", True)
     contract.validate_runtime_agents(response["runtime_agents"])
     validate_delivery_presentations(response["delivery_presentations"])
+    validate_retained_by_source(response["retained_by_source"])
     return response

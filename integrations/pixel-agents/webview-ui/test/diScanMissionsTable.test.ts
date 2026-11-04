@@ -11,6 +11,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import type { DiRetainedSource } from '../../core/src/messages.ts';
 import { compactAge, DI_SCAN_LOCK, type DiScanRow } from '../src/components/diScanModel.ts';
 import { missionsCounts, missionsShown } from '../src/components/diScanPagesModel.ts';
 import { DiScanPanel } from '../src/components/DiScanPanel.tsx';
@@ -25,7 +26,7 @@ const ids = (rows: readonly DiScanRow[]) => rows.map((r) => r.id);
 
 describe('S1: status filters and their counts (AC-4.4-11), over the labelled specimen', () => {
   it('counts each status filter by hand-checked membership of the specimen', () => {
-    // specimen: next-panel (Needs you, Building), auth (Merged), payments (Building, Failed), docs (Merged)
+    // specimen: next-panel (Needs you, Running), auth (Merged), payments (Running, Failed), docs (Merged)
     expect(missionsCounts(DI_SCAN_LOCK)).toEqual({ all: 4, needs: 1, stalled: 0, running: 2, done: 2, archived: 0 });
   });
   it('each filter shows only matching Missions, and All shows every Mission that is not archived', () => {
@@ -76,9 +77,36 @@ describe('PRESENTATION: the Missions table (CONTROL-MAP 04, v3 04-missions.png)'
       'archived',
     ]);
   });
+  // CHANGED IN Deliverable 2 (archive health): Archived counts the archive too, so on this specimen, which carries NO archive report, it reads "not reported",
+  // never a confident 0. The other five counts are unchanged. The confident 0 is kept, and pinned below, for an archive report that is PRESENT and empty.
   it('every status filter shows its count', () => {
-    for (const [id, n] of [['all', 4], ['needs', 1], ['stalled', 0], ['running', 2], ['done', 2], ['archived', 0]] as const)
+    for (const [id, n] of [['all', 4], ['needs', 1], ['stalled', 0], ['running', 2], ['done', 2], ['archived', 'not reported']] as const)
       expect(html, id).toMatch(new RegExp(`data-testid="di-missions-status-${id}"[\\s\\S]*?data-testid="di-missions-count"[^>]*>${n}<`));
+  });
+  describe('Archived, in three distinct states: reported empty, not reported, could not be read', () => {
+    const archived = (retained: readonly DiRetainedSource[] | null) =>
+      renderToStaticMarkup(
+        createElement(DiScanPanel, { rows: DI_SCAN_LOCK, initialView: 'missions', initialMissionsStatus: 'archived', onMinimize: noop, retained }),
+      );
+    const chip = (page: string) => /data-testid="di-missions-status-archived"[\s\S]*?data-testid="di-missions-count"[^>]*>([^<]*)</.exec(page)?.[1];
+    it('a report PRESENT and EMPTY: the confident 0, and "No Missions match this filter."', () => {
+      const page = archived([{ sourceId: 'mc', state: 'observed', problem: null, total: 0, awaiting: 0, missions: [] }]);
+      expect(chip(page)).toBe('0');
+      expect(page).toContain('No Missions match this filter.');
+      expect(page).not.toMatch(/di-missions-archive-(not-reported|unavailable)/);
+    });
+    it('NO report: "not reported", and never "No Missions match this filter."', () => {
+      const page = archived(null);
+      expect(chip(page)).toBe('not reported');
+      expect(page).toMatch(/data-testid="di-missions-archive-not-reported">This office does not report Missions gone from their store, so any it keeps are not shown or counted here\./);
+      expect(page).not.toContain('No Missions match this filter.');
+    });
+    it('a report that could NOT be read: "unavailable", with its reason, and never "No Missions match this filter."', () => {
+      const page = archived([{ sourceId: 'mc', state: 'unavailable', problem: 'mission_retention_unreadable', total: null, awaiting: null, missions: [] }]);
+      expect(chip(page)).toBe('unavailable');
+      expect(page).toMatch(/data-testid="di-missions-archive-unavailable" data-source="mc">The archive of mc could not be read \(mission_retention_unreadable\)/);
+      expect(page).not.toContain('No Missions match this filter.');
+    });
   });
   it('the columns are Mission, Owner, Repos, Phase, Status, Last (D-7: models by provider stay on Swarm)', () => {
     const heads = [...html.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]);
@@ -94,8 +122,10 @@ describe('PRESENTATION: the Missions table (CONTROL-MAP 04, v3 04-missions.png)'
   it('each row offers a button that opens its Mission details (S2)', () => {
     expect(html.match(/data-testid="di-missions-open"/g)).toHaveLength(4);
   });
-  it('the footer says finished Missions archive after 30 days (S5, AC-4.4-05/-28)', () => {
-    expect(html).toContain('Finished Missions archive after 30 days.');
+  // CHANGED IN Deliverable 2: the old words conflated the two mechanisms. Archival is immediate (a view change), and RECLAMATION waits 30 days, keeping the summary.
+  it('the footer says archival is immediate and reclamation waits 30 days, keeping the summary (S5, AC-4.4-05/-28)', () => {
+    expect(html).toContain('A finished or cancelled Mission moves to Archived at once; its reasoning and logs are reclaimed 30 days later, and its summary is kept.');
+    expect(html).not.toContain('Finished Missions archive after 30 days.');
   });
   it('Last is the record\'s own update time on the office clock, said compactly', () => {
     const real = render([productionRow('r', { updatedAt: { state: 'observed', value: '1799999640', reason: null } })]);
@@ -116,10 +146,19 @@ describe('PRESENTATION: the Missions table (CONTROL-MAP 04, v3 04-missions.png)'
 describe('S4: the empty state is a note and NO New Orchestrator button (D-5, gap 12)', () => {
   // Superseded: AC-4.4-10 asked for "a short empty note and a New Orchestrator button". GAP-RESOLUTIONS 12 and the
   // locked single-homes rule (New Orchestrator lives in the rail only) supersede the button.
+  // CHANGED IN Deliverable 2, round 10: "No Missions yet" needs the archive READ as empty too (an empty listed store alone may hide finished Missions kept in
+  // the archive). The protection kept: the empty state is a note, the confident answer is still said, and no New Orchestrator is offered in any empty state.
   it('with no Missions it says so and offers no New Orchestrator', () => {
-    const html = render([]);
+    const archiveEmpty: DiRetainedSource[] = [{ sourceId: 'mc', state: 'observed', problem: null, total: 0, awaiting: 0, missions: [] }];
+    const html = renderToStaticMarkup(createElement(DiScanPanel, { rows: [], initialView: 'missions', onMinimize: noop, retained: archiveEmpty }));
     const page = /data-testid="di-missions-page"[\s\S]*$/.exec(html)?.[0] ?? '';
     expect(page).toContain('No Missions yet.');
+    expect(page).not.toMatch(/New Orchestrator|New Mission/);
+  });
+  it('with no Missions listed and the archive NOT reported it says what is not known, still with no New Orchestrator', () => {
+    const page = /data-testid="di-missions-page"[\s\S]*$/.exec(render([]))?.[0] ?? '';
+    expect(page).not.toContain('No Missions yet');
+    expect(page).toContain('whether any finished Missions are kept is not known');
     expect(page).not.toMatch(/New Orchestrator|New Mission/);
   });
 });

@@ -103,7 +103,12 @@ test(
     expect(await missionRows(page)).toEqual(['v3-install']);
     await page.click(sel('di-missions-status-archived'));
     expect(await missionRows(page)).toEqual([]);
-    expect(await text(page, sel('di-missions-page'))).toContain('No Missions match this filter.');
+    // CHANGED IN Deliverable 2 (archive health): this cast carries NO archive report, so Archived says it was not reported, never that nothing matched (a report
+    // present and empty keeps the confident "No Missions match this filter.": diScanMissionsTable.test.ts pins all three states)
+    const archivedPage = await text(page, sel('di-missions-page'));
+    expect(archivedPage).toContain('This office does not report Missions gone from their store, so any it keeps are not shown or counted here.');
+    expect(archivedPage).not.toContain('No Missions match this filter.');
+    expect(await text(page, `${sel('di-missions-status-archived')} ${sel('di-missions-count')}`)).toBe('not reported');
 
     // a row opens its Mission details from anywhere in the row (here, its Owner cell)
     await page.click(sel('di-missions-status-stalled'));
@@ -267,9 +272,10 @@ test(
   'AC-4.3-14/-49: at 15 running, New Mission refuses with a plain reason, and Open Missions opens the table',
   async () => {
     const page = await open('di-scan-case=limit&di-scan-view=new');
-    expect(await text(page, sel('di-new-limit'))).toContain('15 of 15 Orchestrators running');
+    // review finding 4: the guard says a held Orchestrator is IN USE (a bound task observed without a confirmed team holds one), never "running"
+    expect(await text(page, sel('di-new-limit'))).toContain('15 of 15 Orchestrators are in use');
     expect(await page.getAttribute(sel('di-new-continue'), 'title')).toBe(
-      '15 of 15 Orchestrators are running. Finish or stop one to start another.',
+      '15 of 15 Orchestrators are in use. Finish or stop one to start another.',
     );
     await page.click(sel('di-new-open-missions'));
     expect(await stageView(page)).toBe('missions');
@@ -318,7 +324,8 @@ test(
     const page = await open('di-scan-case=unknown&di-scan-view=missions');
     for (const [id, word, reason] of [
       ['needs', 'not read', 'Reception is not read in this office.'],
-      ['running', 'not known', 'status is not current while the office is not live'],
+      // stale is its own kind of not knowing (the Mission status contract), said in its own word, never folded into "not known"
+      ['running', 'stale', 'status is not current while the office is not live'],
     ] as const) {
       expect(await text(page, `${sel(`di-missions-status-${id}`)} ${sel('di-missions-count')}`)).toBe(word);
       await page.click(sel(`di-missions-status-${id}`));

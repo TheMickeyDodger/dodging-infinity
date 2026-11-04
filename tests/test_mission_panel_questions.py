@@ -60,7 +60,10 @@ class PinTests(unittest.TestCase):
         self.assertEqual(journal_module.MAX_QUESTIONS, 3)
         self.assertEqual(journal_module.MAX_QUESTION_CHARS, 280)
         self.assertEqual(draft_module.QUESTIONS_FENCE, "```mission-questions")
-        self.assertEqual(journal_module.OPTIONAL_TURN_KEYS, ("questions",))
+        # What the turn validator ACCEPTS beyond TURN_KEYS, pinned exactly so
+        # it cannot grow unnoticed (Deliverable 2 added the reclaimed marker).
+        self.assertEqual(journal_module.OPTIONAL_TURN_KEYS,
+                         ("questions", "reclaimed"))
         self.assertEqual(journal_module.QUESTIONS_KEYS, ("items", "problem"))
         self.assertEqual(service_module.QUESTIONS_NOT_REPORTED,
                          "not_reported_by_this_panel_version")

@@ -2193,6 +2193,10 @@ class BoundConstantPinTests(unittest.TestCase):
         },
         "workflow_authority/store.py": {
             "MAX_WORKFLOW_RECORDS": 64,
+            # Deliverable 2, round 8 finding 2: the removal hand-off's
+            # bound (four full stores of pruned endings awaiting local
+            # retention); the evicting save REFUSES at it, never drops.
+            "MAX_WORKFLOW_REMOVALS": 256,
         },
         # I2: the transport-neutral Mission Authorization intake seam owns
         # the approval window (telegram_operator/mission.py re-exports it).
@@ -2859,6 +2863,42 @@ class BoundConstantPinTests(unittest.TestCase):
             "MAX_DELIVERY_PRESENTATIONS": 16,
             # The longest reason text a task-bound delivery handoff may carry.
             "MAX_HANDOFF_REASON_CHARS": 400,
+            # Deliverable 2: the Missions gone from their store that one
+            # source's retention may list per response.
+            "MAX_RETAINED_MISSIONS": 128,
+            # Deliverable 2, archive health: at most one archive reading per registered source
+            # (pinned equal to mission_sources/registry.py MAX_REGISTERED_SOURCES).
+            "MAX_RETAINED_SOURCES": 128,
+        },
+        # Deliverable 2: the Missions gone from their store one archive reading lists (pinned
+        # equal to contract_v2.MAX_RETAINED_MISSIONS by tests/test_mission_retention.py CR7).
+        "mission_retention/view.py": {
+            "MAX_LISTED": 128,
+        },
+        # Deliverable 2 (local retention): the coordinator store's own
+        # bounds. MAX_ID_CHARS admits every workflow id the workflow
+        # store admits (pinned equal to workflow_authority/record.py's by
+        # tests/test_mission_retention.py RS5).
+        "mission_retention/store.py": {
+            "MAX_RETENTION_RECORDS": 4096,
+            "MAX_SOURCE_CHARS": 200,
+            "MAX_DETAIL_CHARS": 2000,
+            "MAX_ID_CHARS": 128,
+            "MAX_RETAINED_FOR": 64,
+        },
+        # Deliverable 2: the 30-day reclamation deadline, the per-pass
+        # bound, the summary excerpt bounds, the bounded reads of the
+        # delivery store (re-declared, pinned equal to their owners by
+        # tests/test_mission_retention.py DP1) and of one preserved
+        # evidence document (pinned above its owner's cap by RS5).
+        "mission_retention/reclaim.py": {
+            "RETENTION_SECONDS": 2592000,
+            "MAX_RECLAIMS_PER_PASS": 8,
+            "MAX_DELIVERY_STORE_BYTES": 4194304,
+            "MAX_DELIVERY_RECORDS": 64,
+            "MAX_COMMENT_CHARS": 600,
+            "MAX_OUTCOME_CHARS": 1000,
+            "MAX_PRESERVED_BYTES": 8388608,
         },
         "target_runtime/delivery_handoff.py": {
             # The task-bound delivery handoff: the bytes of a head ref it

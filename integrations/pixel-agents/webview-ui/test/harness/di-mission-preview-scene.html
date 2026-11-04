@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- no icon: the page asks for nothing it is not given -->
+    <link rel="icon" href="data:," />
+    <title>DI Mission preview scene (FIXTURE / VISUAL TEST)</title>
+    <!-- FIXTURE / VISUAL TEST ONLY: the REAL app entry, unmodified, on the PRODUCT face (the scan panel with its navigation rail). The boot script the
+         preview injects below names the scene for the preview's own /ws and holds the page clock at the scene's own time
+         (test/harness/diMissionPreview.ts). Nothing here is live. -->
+  </head>
+  <body>
+    <!--di-mission-preview-boot-->
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

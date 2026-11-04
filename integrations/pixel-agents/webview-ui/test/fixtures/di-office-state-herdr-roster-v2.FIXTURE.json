@@ -1,0 +1,3881 @@
+{
+  "fixture": true,
+  "label": "FIXTURE — the REAL catalog answer of the producer's Herdr roster, one task per outcome (tests/test_herdr_roster_answers.py HR2; its runtime snapshot is SYNTHETIC), projected by the real server (parseEnvelope, buildOfficeView, buildDiOfficeStateMessage); evidences nothing about any live Mission",
+  "derived_from": {
+    "answer": {
+      "path": "server/__tests__/fixtures/di-backend/herdr-roster-answers.FIXTURE.json",
+      "sha256": "b7cf26decae192d546a99539c05ed195821d91336078fd4590098ecdd628a6b9"
+    },
+    "envelope": {
+      "path": "server/__tests__/fixtures/di-backend/v2/catalog-answer-v2.fc409bbc.FIXTURE.json",
+      "sha256": "fc409bbc41a6ee3a17253acebe85092a4d118511954fadf2c457ecc11b891556"
+    },
+    "edit": "the envelope response set to the answer, its requested_at to the answer’s own now; nothing in the answer edited"
+  },
+  "generator": "server/__tests__/diMissionLifecycleWire.test.ts",
+  "state": {
+    "type": "diOfficeState",
+    "live": true,
+    "notLiveReason": null,
+    "connection": {
+      "state": "observed",
+      "value": "answered",
+      "reason": null
+    },
+    "envelope": {
+      "fresh": true,
+      "reason": null,
+      "served": "refreshed",
+      "verdictHealth": "fresh",
+      "verdictProblem": null,
+      "envelopeProblem": null,
+      "envelopeDetail": null,
+      "retryAfterSeconds": null,
+      "registryHealth": "fresh"
+    },
+    "runtime": {
+      "fresh": true,
+      "reason": null,
+      "configured": true,
+      "available": true,
+      "captureProblem": null,
+      "snapshotHealth": "fresh",
+      "snapshotProblem": null
+    },
+    "times": {
+      "requestedAt": 1800000000,
+      "generatedAt": 1800000000,
+      "validUntil": 1800000060,
+      "snapshotObservedAt": 1800000000,
+      "evaluatedAt": 1800000000
+    },
+    "coverage": {
+      "scope": "direct_and_linked_child_tasks_depth_1",
+      "statement": "Members are the roster of each Mission's direct task and of the child tasks recorded for it (chain depth 1).",
+      "linkedChildRoles": "covered_depth_1",
+      "linkedChildStatement": "Linked child roles are covered at depth 1; a child's own children are depth-limited (counted, not followed)."
+    },
+    "missions": {
+      "state": "observed",
+      "reason": null,
+      "missions": [
+        {
+          "missionRef": "hd:task-aborted@19b2a9f038de",
+          "sourceId": "hd",
+          "nativeId": "task-aborted@19b2a9f038de",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "ABORTED",
+          "standing": "terminal",
+          "bindingState": "not_applicable",
+          "bindingReason": "mission_not_active",
+          "producerDeclared": "synthetic",
+          "live": false,
+          "notLiveReason": "standing_terminal",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-aborted: aborted",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "projected_reason",
+            "reason": "binding_not_applicable:mission_not_active",
+            "members": []
+          },
+          "codeReview": {
+            "state": "unavailable",
+            "reason": "not_a_mission_core_record",
+            "taskId": "task-aborted",
+            "listing": null
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-aborted",
+                "parentTaskId": null,
+                "bindingState": "not_applicable",
+                "bindingReason": "mission_not_active",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "not_applicable",
+              "problem": "mission_not_active",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ABORTED",
+              "taskId": "task-aborted"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-4"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        },
+        {
+          "missionRef": "hd:task-blocked@8e4e3d2fe6f8",
+          "sourceId": "hd",
+          "nativeId": "task-blocked@8e4e3d2fe6f8",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "ACTIVE",
+          "standing": "active",
+          "bindingState": "bound",
+          "bindingReason": "canonical_chain_complete",
+          "producerDeclared": "synthetic",
+          "live": true,
+          "notLiveReason": null,
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-blocked: active",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "observed",
+            "reason": null,
+            "members": [
+              {
+                "characterId": 41,
+                "coverage": "direct",
+                "memberRef": "hd:task-blocked@8e4e3d2fe6f8#task-blocked#lead",
+                "missionRef": "hd:task-blocked@8e4e3d2fe6f8",
+                "logical": "lead",
+                "role": "lead",
+                "agent": "lead-2",
+                "provider": "claude",
+                "taskId": {
+                  "state": "observed",
+                  "value": "task-blocked",
+                  "reason": null
+                },
+                "paneId": {
+                  "state": "observed",
+                  "value": "pane-2",
+                  "reason": null
+                },
+                "workspaceId": {
+                  "state": "observed",
+                  "value": "w2",
+                  "reason": null
+                },
+                "sessionRecorded": {
+                  "state": "observed",
+                  "value": "session-2",
+                  "reason": null
+                },
+                "sessionLive": {
+                  "state": "observed",
+                  "value": "session-2",
+                  "reason": null
+                },
+                "classification": "present",
+                "reason": "session_confirmed",
+                "activity": "blocked",
+                "live": true,
+                "notLiveReason": null,
+                "animateActive": false,
+                "model": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "cost": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "tokens": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "progress": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "chain": "direct",
+                "chainTaskId": "task-blocked",
+                "codeReview": {
+                  "state": "offered",
+                  "reason": null,
+                  "taskId": "task-blocked",
+                  "listing": "c4cc893a289aa554b70daf210d543a31583db4c75bd7aa04b57f50be570fc824"
+                }
+              }
+            ]
+          },
+          "codeReview": {
+            "state": "offered",
+            "reason": null,
+            "taskId": "task-blocked",
+            "listing": "91b7c6393f000beb8c1c4104edc911fd897d05559f800404317e7cd73bf9d781"
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-blocked",
+                "parentTaskId": null,
+                "bindingState": "bound",
+                "bindingReason": "canonical_chain_complete",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "unavailable",
+              "problem": "parent_root_not_observed",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "active_binding",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "task-blocked"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-2"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        },
+        {
+          "missionRef": "hd:task-complete@5009f0d2afcf",
+          "sourceId": "hd",
+          "nativeId": "task-complete@5009f0d2afcf",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "COMPLETE",
+          "standing": "terminal",
+          "bindingState": "not_applicable",
+          "bindingReason": "mission_not_active",
+          "producerDeclared": "synthetic",
+          "live": false,
+          "notLiveReason": "standing_terminal",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-complete: complete",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "projected_reason",
+            "reason": "binding_not_applicable:mission_not_active",
+            "members": []
+          },
+          "codeReview": {
+            "state": "unavailable",
+            "reason": "not_a_mission_core_record",
+            "taskId": "task-complete",
+            "listing": null
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-complete",
+                "parentTaskId": null,
+                "bindingState": "not_applicable",
+                "bindingReason": "mission_not_active",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "not_applicable",
+              "problem": "mission_not_active",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "COMPLETE",
+              "taskId": "task-complete"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-5"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        },
+        {
+          "missionRef": "hd:task-error@61fb858a3111",
+          "sourceId": "hd",
+          "nativeId": "task-error@61fb858a3111",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "ERROR",
+          "standing": "inactive",
+          "bindingState": "not_applicable",
+          "bindingReason": "mission_not_active",
+          "producerDeclared": "synthetic",
+          "live": false,
+          "notLiveReason": "standing_inactive",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-error: error",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "projected_reason",
+            "reason": "binding_not_applicable:mission_not_active",
+            "members": []
+          },
+          "codeReview": {
+            "state": "unavailable",
+            "reason": "not_a_mission_core_record",
+            "taskId": "task-error",
+            "listing": null
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-error",
+                "parentTaskId": null,
+                "bindingState": "not_applicable",
+                "bindingReason": "mission_not_active",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "not_applicable",
+              "problem": "mission_not_active",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ERROR",
+              "taskId": "task-error"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-7"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        },
+        {
+          "missionRef": "hd:task-failed@1e7fe5833713",
+          "sourceId": "hd",
+          "nativeId": "task-failed@1e7fe5833713",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "FAILED",
+          "standing": "terminal",
+          "bindingState": "not_applicable",
+          "bindingReason": "mission_not_active",
+          "producerDeclared": "synthetic",
+          "live": false,
+          "notLiveReason": "standing_terminal",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-failed: failed",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "projected_reason",
+            "reason": "binding_not_applicable:mission_not_active",
+            "members": []
+          },
+          "codeReview": {
+            "state": "unavailable",
+            "reason": "not_a_mission_core_record",
+            "taskId": "task-failed",
+            "listing": null
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-failed",
+                "parentTaskId": null,
+                "bindingState": "not_applicable",
+                "bindingReason": "mission_not_active",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "not_applicable",
+              "problem": "mission_not_active",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "FAILED",
+              "taskId": "task-failed"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-3"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        },
+        {
+          "missionRef": "hd:task-suspended@7e4595b2adbc",
+          "sourceId": "hd",
+          "nativeId": "task-suspended@7e4595b2adbc",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "SUSPENDED",
+          "standing": "unknown_future",
+          "bindingState": "not_applicable",
+          "bindingReason": "mission_not_active",
+          "producerDeclared": "synthetic",
+          "live": false,
+          "notLiveReason": "standing_unknown_future",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-suspended: suspended",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "projected_reason",
+            "reason": "binding_not_applicable:mission_not_active",
+            "members": []
+          },
+          "codeReview": {
+            "state": "unavailable",
+            "reason": "not_a_mission_core_record",
+            "taskId": "task-suspended",
+            "listing": null
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-suspended",
+                "parentTaskId": null,
+                "bindingState": "not_applicable",
+                "bindingReason": "mission_not_active",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "not_applicable",
+              "problem": "mission_not_active",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "SUSPENDED",
+              "taskId": "task-suspended"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-6"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        },
+        {
+          "missionRef": "hd:task-unverified@791a7350df3b",
+          "sourceId": "hd",
+          "nativeId": "task-unverified@791a7350df3b",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "ACTIVE",
+          "standing": "active",
+          "bindingState": "unverified",
+          "bindingReason": "task_record_not_corroborated_by_a_live_session",
+          "producerDeclared": "synthetic",
+          "live": false,
+          "notLiveReason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-unverified: active",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "unavailable",
+            "reason": "binding_unverified:task_record_not_corroborated_by_a_live_session",
+            "members": []
+          },
+          "codeReview": {
+            "state": "unavailable",
+            "reason": "assignment_not_bound",
+            "taskId": "task-unverified",
+            "listing": null
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-unverified",
+                "parentTaskId": null,
+                "bindingState": "unverified",
+                "bindingReason": "task_record_not_corroborated_by_a_live_session",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "unavailable",
+              "problem": "parent_root_not_observed",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "none",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "task-unverified"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-0"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        },
+        {
+          "missionRef": "hd:task-working@d00486cfb62e",
+          "sourceId": "hd",
+          "nativeId": "task-working@d00486cfb62e",
+          "sourceKind": "herdr_task",
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "ACTIVE",
+          "standing": "active",
+          "bindingState": "bound",
+          "bindingReason": "canonical_chain_complete",
+          "producerDeclared": "synthetic",
+          "live": true,
+          "notLiveReason": null,
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-working: active",
+            "reason": null
+          },
+          "updatedAt": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "updated_at_not_applicable_to_herdr_task"
+          },
+          "identitySource": {
+            "state": "observed",
+            "value": "herdr.task_json",
+            "reason": null
+          },
+          "paused": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "paused_not_applicable_to_herdr_task"
+          },
+          "cancelRequested": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "cancel_requested_not_applicable_to_herdr_task"
+          },
+          "ambiguity": {
+            "state": "not_applicable",
+            "value": null,
+            "reason": "ambiguity_not_applicable_to_herdr_task"
+          },
+          "runStarted": true,
+          "cancelQuiescence": null,
+          "sentHandoffReceipts": null,
+          "storeIdentity": null,
+          "retention": {
+            "state": "not_applicable",
+            "problem": null,
+            "eligible": null,
+            "basis": null,
+            "basisSource": null,
+            "reason": null,
+            "phase": null,
+            "phaseAt": null,
+            "summary": null,
+            "retainedFor": 0
+          },
+          "members": {
+            "state": "observed",
+            "reason": null,
+            "members": [
+              {
+                "characterId": 41,
+                "coverage": "direct",
+                "memberRef": "hd:task-working@d00486cfb62e#task-working#lead",
+                "missionRef": "hd:task-working@d00486cfb62e",
+                "logical": "lead",
+                "role": "lead",
+                "agent": "lead-1",
+                "provider": "claude",
+                "taskId": {
+                  "state": "observed",
+                  "value": "task-working",
+                  "reason": null
+                },
+                "paneId": {
+                  "state": "observed",
+                  "value": "pane-1",
+                  "reason": null
+                },
+                "workspaceId": {
+                  "state": "observed",
+                  "value": "w1",
+                  "reason": null
+                },
+                "sessionRecorded": {
+                  "state": "observed",
+                  "value": "session-1",
+                  "reason": null
+                },
+                "sessionLive": {
+                  "state": "observed",
+                  "value": "session-1",
+                  "reason": null
+                },
+                "classification": "present",
+                "reason": "session_confirmed",
+                "activity": "busy",
+                "live": true,
+                "notLiveReason": null,
+                "animateActive": true,
+                "model": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "cost": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "tokens": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "progress": {
+                  "state": "observed",
+                  "value": "unknown",
+                  "reason": null
+                },
+                "chain": "direct",
+                "chainTaskId": "task-working",
+                "codeReview": {
+                  "state": "offered",
+                  "reason": null,
+                  "taskId": "task-working",
+                  "listing": "1a15c8c4b78b1651992406b2740dc61fc4f7964417c79c7fc4e2c2408fa59fac"
+                }
+              }
+            ]
+          },
+          "codeReview": {
+            "state": "offered",
+            "reason": null,
+            "taskId": "task-working",
+            "listing": "06bb7d11e89d05042b9a09b8c01fcde59174ffefcd80e6845f9f335914c8421c"
+          },
+          "v2": {
+            "projected": true,
+            "workflowPhase": {
+              "state": "not_applicable",
+              "phase": null,
+              "unrecognized": null,
+              "problem": "lifecycle_model_has_no_workflow_phase"
+            },
+            "taskChains": [
+              {
+                "chain": "direct",
+                "chainTaskId": "task-working",
+                "parentTaskId": null,
+                "bindingState": "bound",
+                "bindingReason": "canonical_chain_complete",
+                "rootObservation": "not_captured",
+                "rootProblem": null,
+                "membershipEnded": null,
+                "membershipStatus": null,
+                "membershipRule": "terminal_status_ends_membership:COMPLETE|COMPLETED|ABANDONED|FAILED",
+                "dependencyRecorded": null,
+                "dependencyResolution": null,
+                "dependencyRule": null,
+                "descendantsNotFollowed": null,
+                "declaredAgents": []
+              }
+            ],
+            "childrenRecord": {
+              "state": "unavailable",
+              "problem": "parent_root_not_observed",
+              "caveat": null,
+              "recordCount": null,
+              "otherParentCount": null
+            },
+            "missionState": {
+              "state": "not_applicable",
+              "problem": "source_kind_has_no_mission_state",
+              "detail": null,
+              "cursor": null,
+              "baseline": null,
+              "candidateApplicability": null,
+              "kinds": [],
+              "facts": [
+                {
+                  "name": "blockers",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "pending_decisions",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "review",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "task",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "candidate",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "delivery_receipts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "proof",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "readiness",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "dependencies",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "budget",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "evidence",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                },
+                {
+                  "name": "artifacts",
+                  "standing": null,
+                  "source": null,
+                  "freshness": null,
+                  "detail": null,
+                  "observedAt": null,
+                  "revision": null,
+                  "position": null,
+                  "state": "not_applicable",
+                  "reason": "source_kind_has_no_mission_state",
+                  "entries": []
+                }
+              ],
+              "completion": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "reportedComplete": null,
+                "reportedSuccess": null,
+                "verifiedSuccess": null,
+                "closureVerified": null,
+                "contradicted": null,
+                "closure": null,
+                "holds": [],
+                "holdsTotal": null,
+                "limitsIdentity": null,
+                "limitsSeparationOfDuties": null,
+                "limitsNonVerifyingEvidenceKinds": [],
+                "limitsNonVerifyingEvidenceKindsTotal": null
+              },
+              "provenance": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "recordSource": null,
+                "revision": null,
+                "position": null,
+                "freshnessBoundSeconds": null,
+                "journalDigest": null,
+                "movedDuringCollection": null,
+                "collectionStatus": null,
+                "collectedAtPosition": null,
+                "headPosition": null,
+                "cursorPosition": null,
+                "drift": [],
+                "driftTotal": null,
+                "sources": []
+              },
+              "progress": {
+                "state": "not_applicable",
+                "reason": "source_kind_has_no_mission_state",
+                "standing": null,
+                "progress": null,
+                "unrecognized": null,
+                "closureReason": null
+              }
+            },
+            "canonicalReview": {
+              "state": "unavailable",
+              "problem": "review_root_not_observed",
+              "gate": null,
+              "verdict": null,
+              "currency": null,
+              "integrity": null,
+              "taskStatus": null,
+              "candidateApplicability": "unproven",
+              "round": null,
+              "reviewerLogical": null,
+              "reviewerAgent": null,
+              "protocolToken": null
+            },
+            "deliveryLink": {
+              "state": "unlinked_model_not_recorded",
+              "deliveryId": null,
+              "basis": null
+            },
+            "deliveryHandoff": {
+              "state": "not_reported",
+              "linkBasis": null,
+              "repository": null,
+              "engineeringTaskId": null,
+              "gitDirRealpath": null,
+              "branch": null,
+              "evidence": null,
+              "stagedCandidate": null,
+              "workflowId": null,
+              "blockers": []
+            }
+          },
+          "evidence": {
+            "cursor": null,
+            "currency": "current",
+            "currencyReason": null,
+            "execution": {
+              "basis": "active_binding",
+              "identityState": "not_reported",
+              "identityProblem": null,
+              "lifecycleState": "ACTIVE",
+              "taskId": "task-working"
+            },
+            "contentReads": {
+              "state": "unavailable",
+              "reason": "artifact_bodies_not_recorded"
+            },
+            "artifacts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "verification": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            },
+            "reviews": {
+              "state": "unavailable",
+              "reason": "review_root_not_observed",
+              "total": null,
+              "items": []
+            },
+            "receipts": {
+              "state": "not_recorded",
+              "reason": null,
+              "total": null,
+              "items": []
+            }
+          },
+          "herdrTask": {
+            "rootAliases": [
+              "/synthetic-test-root/ws-1"
+            ],
+            "membership": "derived_from_current_task_record",
+            "schema": "di.catalog.herdr_task",
+            "schemaVersion": 1,
+            "taskRecordVersion": 1,
+            "startedAt": 1799999400
+          }
+        }
+      ]
+    },
+    "contractVersion": 2,
+    "chainObservation": {
+      "projected": true,
+      "health": "fresh",
+      "problem": null,
+      "observedAt": 1800000000,
+      "maxAgeSeconds": 60,
+      "rootCount": 0,
+      "unavailableCount": 0,
+      "overCapacityCount": 0
+    },
+    "reception": {
+      "contractVersion": 2,
+      "categories": [
+        {
+          "category": "blockers",
+          "label": "Blockers",
+          "statement": "Mission Core's active blockers and its holds on verified success, members reporting blocked activity, the DI-progression pause flag, and a workflow-authority workflow whose declared phase is BLOCKED. Each cause is listed separately.",
+          "backing": "contract v2: mission_state.report.blockers (active, hard_active), completion.holds and the declared missions[].workflow_phase (workflow_authority.workflow_phase/2 records only); contract v1 and v2: members[].activity, native.paused (Mission Core)",
+          "outcome": "present",
+          "reason": null,
+          "counts": {
+            "present": 3,
+            "knownEmpty": 1,
+            "unsupported": 0,
+            "unavailable": 4
+          },
+          "gaps": [
+            {
+              "outcome": "unavailable",
+              "reason": "member_activity:projected_reason:binding_not_applicable:mission_not_active",
+              "missions": 3
+            },
+            {
+              "outcome": "unavailable",
+              "reason": "member_activity:unavailable:binding_unverified:task_record_not_corroborated_by_a_live_session",
+              "missions": 1
+            }
+          ],
+          "entriesTotal": 3
+        },
+        {
+          "category": "clarification",
+          "label": "Clarification",
+          "statement": "Not reported: no field of the catalog query contract, at contract version 1 or 2, carries a clarification request, so this desk cannot show one. Coordination routing can record CLARIFICATION_REQUIRED, but the catalog does not read coordination records and no running service writes them yet (it depends on the Operator request route).",
+          "backing": "none at contract versions 1 and 2 (coordination route records are not projected by the catalog)",
+          "outcome": "unsupported",
+          "reason": "not_in_catalog_contract:v1_and_v2",
+          "counts": {
+            "present": 0,
+            "knownEmpty": 0,
+            "unsupported": 8,
+            "unavailable": 0
+          },
+          "gaps": [
+            {
+              "outcome": "unsupported",
+              "reason": "not_in_catalog_contract:v1_and_v2",
+              "missions": 8
+            }
+          ],
+          "entriesTotal": 0
+        },
+        {
+          "category": "authorization",
+          "label": "Authorization / reauthorization",
+          "statement": "A Mission Core Mission awaiting a human decision (its own pending_decisions fact), or a workflow-authority workflow whose DECLARED phase is NEEDS_REAUTHORIZATION. The two models stay separate: Mission Core has no workflow phase, and nothing about one is read into the other. The display-only lifecycle state is never decided on.",
+          "backing": "contract v2: mission_state.report.pending_decisions (awaiting_decision, revision, live_authorization, next_permitted_step), Mission Core records; contract v2: the declared missions[].workflow_phase, workflow_authority.workflow_phase/2 records",
+          "outcome": "known_empty",
+          "reason": null,
+          "counts": {
+            "present": 0,
+            "knownEmpty": 8,
+            "unsupported": 0,
+            "unavailable": 0
+          },
+          "gaps": [],
+          "entriesTotal": 0
+        },
+        {
+          "category": "failed_verification",
+          "label": "Failed verification",
+          "statement": "Mission Core reports a contradiction or a withdrawn verified success, or holds contradicted or drifted evidence (evidence_contradicted, candidate_drifted, baseline_drifted — read directly, since Mission Core flags those as contradicted only once a Mission is verified or reported complete), or the canonical review record was refused, is not linkage-corroborated, or carries a parsed REJECT. Not yet verified is not a failure; an unparsed review gate is not a rejection.",
+          "backing": "contract v2: mission_state.report.completion (contradicted, closure_verified, verified_success, holds) and admitted_artifacts.canonical_review (state, problem, integrity, gate, verdict)",
+          "outcome": "unavailable",
+          "reason": "canonical_review_unavailable:review_root_not_observed",
+          "counts": {
+            "present": 0,
+            "knownEmpty": 0,
+            "unsupported": 0,
+            "unavailable": 8
+          },
+          "gaps": [
+            {
+              "outcome": "unavailable",
+              "reason": "canonical_review_unavailable:review_root_not_observed",
+              "missions": 8
+            }
+          ],
+          "entriesTotal": 0
+        },
+        {
+          "category": "ready_for_review",
+          "label": "Results ready for review",
+          "statement": "The task source reports COMPLETE while Mission Core has not verified success. That is a report — not task, Mission, verification or delivery completion.",
+          "backing": "contract v2: mission_state.report.completion (reported_complete, verified_success) with canonical_review gate, task_status and candidate_applicability shown verbatim",
+          "outcome": "partial",
+          "reason": null,
+          "counts": {
+            "present": 0,
+            "knownEmpty": 7,
+            "unsupported": 0,
+            "unavailable": 1
+          },
+          "gaps": [
+            {
+              "outcome": "unavailable",
+              "reason": "canonical_review_unavailable:review_root_not_observed",
+              "missions": 1
+            }
+          ],
+          "entriesTotal": 0
+        },
+        {
+          "category": "delivery_decision",
+          "label": "Delivery awaiting a separate decision",
+          "statement": "Delivery proposals that were presented through the Grok Bot route and have no recorded authorization yet. Read only from the catalog's delivery_presentations block (contract version 2), joined to the registered PR delivery store. Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+          "backing": "contract v2: response.delivery_presentations (proposal digest, presented_at, expires_at, mode, repository URL, the named Mission workflow id, state, link); Grok Bot delivery_presentations map and PR delivery store, both read-only and explicitly registered",
+          "outcome": "unsupported",
+          "reason": "not_registered:delivery_presentations_source",
+          "counts": {
+            "present": 0,
+            "knownEmpty": 0,
+            "unsupported": 0,
+            "unavailable": 0
+          },
+          "gaps": [],
+          "entriesTotal": 0
+        }
+      ],
+      "entries": [
+        {
+          "key": "[\"blockers\",\"hd\",\"task-blocked@8e4e3d2fe6f8\"]",
+          "signature": "{\"causes\":[[\"member_activity_blocked\",\"A member reports blocked activity (runtime activity, as reported)\",[{\"label\":\"member\",\"value\":\"hd:task-blocked@8e4e3d2fe6f8#task-blocked#lead · lead (lead) · lead-2 · present (session_confirmed)\"}]]],\"record\":[{\"label\":\"mission_ref\",\"value\":\"hd:task-blocked@8e4e3d2fe6f8\"},{\"label\":\"source_id\",\"value\":\"hd\"},{\"label\":\"native_id\",\"value\":\"task-blocked@8e4e3d2fe6f8\"}]}",
+          "category": "blockers",
+          "missionRef": "hd:task-blocked@8e4e3d2fe6f8",
+          "sourceId": "hd",
+          "nativeId": "task-blocked@8e4e3d2fe6f8",
+          "sourceKind": "herdr_task",
+          "producerDeclared": "synthetic",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-blocked: active",
+            "reason": null
+          },
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "ACTIVE",
+          "standing": "active",
+          "bindingState": "bound",
+          "bindingReason": "canonical_chain_complete",
+          "live": true,
+          "notLiveReason": null,
+          "occurrences": 1,
+          "identityConflict": false,
+          "causes": [
+            {
+              "cause": "member_activity_blocked",
+              "label": "A member reports blocked activity (runtime activity, as reported)",
+              "details": [
+                {
+                  "label": "member",
+                  "value": "hd:task-blocked@8e4e3d2fe6f8#task-blocked#lead · lead (lead) · lead-2 · present (session_confirmed)"
+                }
+              ],
+              "staleReasons": []
+            }
+          ],
+          "alsoUnknown": [],
+          "current": true,
+          "route": "Outside this office: act through the Mission's operator and its Herdr team. This desk is read-only; hiding an entry resolves nothing.",
+          "routeIdentifiers": [
+            {
+              "label": "mission_ref",
+              "value": "hd:task-blocked@8e4e3d2fe6f8"
+            },
+            {
+              "label": "source_id",
+              "value": "hd"
+            },
+            {
+              "label": "native_id",
+              "value": "task-blocked@8e4e3d2fe6f8"
+            }
+          ]
+        },
+        {
+          "key": "[\"blockers\",\"hd\",\"task-error@61fb858a3111\"]",
+          "signature": "{\"causes\":[[\"herdr_task_failed\",\"The Herdr task record reports a failed status\",[{\"label\":\"task status\",\"value\":\"ERROR\"},{\"label\":\"standing\",\"value\":\"inactive\"}]]],\"record\":[{\"label\":\"mission_ref\",\"value\":\"hd:task-error@61fb858a3111\"},{\"label\":\"source_id\",\"value\":\"hd\"},{\"label\":\"native_id\",\"value\":\"task-error@61fb858a3111\"}]}",
+          "category": "blockers",
+          "missionRef": "hd:task-error@61fb858a3111",
+          "sourceId": "hd",
+          "nativeId": "task-error@61fb858a3111",
+          "sourceKind": "herdr_task",
+          "producerDeclared": "synthetic",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-error: error",
+            "reason": null
+          },
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "ERROR",
+          "standing": "inactive",
+          "bindingState": "not_applicable",
+          "bindingReason": "mission_not_active",
+          "live": false,
+          "notLiveReason": "standing_inactive",
+          "occurrences": 1,
+          "identityConflict": false,
+          "causes": [
+            {
+              "cause": "herdr_task_failed",
+              "label": "The Herdr task record reports a failed status",
+              "details": [
+                {
+                  "label": "task status",
+                  "value": "ERROR"
+                },
+                {
+                  "label": "standing",
+                  "value": "inactive"
+                }
+              ],
+              "staleReasons": []
+            }
+          ],
+          "alsoUnknown": [
+            "member_activity:projected_reason:binding_not_applicable:mission_not_active"
+          ],
+          "current": true,
+          "route": "Outside this office: act through the Mission's operator and its Herdr team. This desk is read-only; hiding an entry resolves nothing.",
+          "routeIdentifiers": [
+            {
+              "label": "mission_ref",
+              "value": "hd:task-error@61fb858a3111"
+            },
+            {
+              "label": "source_id",
+              "value": "hd"
+            },
+            {
+              "label": "native_id",
+              "value": "task-error@61fb858a3111"
+            }
+          ]
+        },
+        {
+          "key": "[\"blockers\",\"hd\",\"task-failed@1e7fe5833713\"]",
+          "signature": "{\"causes\":[[\"herdr_task_failed\",\"The Herdr task record reports a failed status\",[{\"label\":\"task status\",\"value\":\"FAILED\"},{\"label\":\"standing\",\"value\":\"terminal\"}]]],\"record\":[{\"label\":\"mission_ref\",\"value\":\"hd:task-failed@1e7fe5833713\"},{\"label\":\"source_id\",\"value\":\"hd\"},{\"label\":\"native_id\",\"value\":\"task-failed@1e7fe5833713\"}]}",
+          "category": "blockers",
+          "missionRef": "hd:task-failed@1e7fe5833713",
+          "sourceId": "hd",
+          "nativeId": "task-failed@1e7fe5833713",
+          "sourceKind": "herdr_task",
+          "producerDeclared": "synthetic",
+          "objective": {
+            "state": "observed",
+            "value": "Synthetic task task-failed: failed",
+            "reason": null
+          },
+          "lifecycleModel": "herdr.task/1",
+          "lifecycleState": "FAILED",
+          "standing": "terminal",
+          "bindingState": "not_applicable",
+          "bindingReason": "mission_not_active",
+          "live": false,
+          "notLiveReason": "standing_terminal",
+          "occurrences": 1,
+          "identityConflict": false,
+          "causes": [
+            {
+              "cause": "herdr_task_failed",
+              "label": "The Herdr task record reports a failed status",
+              "details": [
+                {
+                  "label": "task status",
+                  "value": "FAILED"
+                },
+                {
+                  "label": "standing",
+                  "value": "terminal"
+                }
+              ],
+              "staleReasons": []
+            }
+          ],
+          "alsoUnknown": [
+            "member_activity:projected_reason:binding_not_applicable:mission_not_active"
+          ],
+          "current": true,
+          "route": "Outside this office: act through the Mission's operator and its Herdr team. This desk is read-only; hiding an entry resolves nothing.",
+          "routeIdentifiers": [
+            {
+              "label": "mission_ref",
+              "value": "hd:task-failed@1e7fe5833713"
+            },
+            {
+              "label": "source_id",
+              "value": "hd"
+            },
+            {
+              "label": "native_id",
+              "value": "task-failed@1e7fe5833713"
+            }
+          ]
+        }
+      ],
+      "entriesTotal": 3,
+      "entriesCap": 24,
+      "sourceEntries": [],
+      "sourceEntriesTotal": 0,
+      "sourceEntriesCap": 16,
+      "sourceCoverage": [
+        {
+          "sourceId": "grok_delivery_presentations",
+          "label": "Delivery proposals presented through the Grok Bot",
+          "outcome": "unsupported",
+          "reason": "not_registered:delivery_presentations_source",
+          "statement": "This catalog was started without a delivery-presentations source, so no Grok Bot presentations are read. That is not \"none\". Covers proposals presented through the Grok Bot route only, the most recent 16 that route keeps. A proposal presented directly from the command line (present-dots) is not stored anywhere, so it cannot appear here: a missing entry is not proof that no delivery is awaiting a decision.",
+          "total": null
+        }
+      ],
+      "notices": [],
+      "minPollIntervalSeconds": 5,
+      "refreshStatement": "Refreshed with the office feed (no polling of its own); the backend asks for at most one read every 5 s.",
+      "dismissalStatement": "Hiding an entry is a preference of this view only: it writes nothing, resolves nothing and approves nothing. The entry returns while its record is present (always on reload) and as soon as its canonical content changes."
+    },
+    "runtimeAgents": {
+      "reported": true,
+      "state": "not_applicable",
+      "problem": "no_task_native_role_records",
+      "plainStatement": "Runtime agents: not_applicable (no_task_native_role_records).",
+      "caveat": null,
+      "observedAt": null,
+      "firstPassAt": null,
+      "secondPassAt": null,
+      "counts": [
+        {
+          "name": "roots_requested",
+          "value": 0
+        },
+        {
+          "name": "roots_read",
+          "value": 0
+        },
+        {
+          "name": "roles_recorded",
+          "value": 0
+        },
+        {
+          "name": "roles_live",
+          "value": 0
+        },
+        {
+          "name": "verified",
+          "value": 0
+        },
+        {
+          "name": "unverified",
+          "value": 0
+        },
+        {
+          "name": "ambiguous",
+          "value": 0
+        },
+        {
+          "name": "unavailable",
+          "value": 0
+        },
+        {
+          "name": "represented_by_teams",
+          "value": 0
+        },
+        {
+          "name": "roots_over_capacity",
+          "value": 0
+        },
+        {
+          "name": "names_over_bound",
+          "value": 0
+        },
+        {
+          "name": "roots_role_records_unreadable",
+          "value": 0
+        },
+        {
+          "name": "registries_unread",
+          "value": 0
+        }
+      ],
+      "agents": [],
+      "agentsTotal": 0,
+      "agentsCap": 24,
+      "agentsOverBound": 0,
+      "capture": {
+        "discovered": 1,
+        "captured": 3,
+        "unavailable": 1,
+        "overCapacity": 0,
+        "listingAnchor": null
+      },
+      "locators": null
+    }
+  }
+}

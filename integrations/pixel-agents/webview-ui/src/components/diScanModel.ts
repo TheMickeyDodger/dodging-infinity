@@ -20,8 +20,10 @@ import {
   unavailableWords,
 } from './diCodeReviewModel.js';
 import type { DlStep, DlView } from './diDeliveryModel.js';
+import type { DiMissionArchive, DiMissionStatusId, DiMissionStatusResult } from './diMissionStatus.js';
+import { DI_MISSION_STATUS, missionArchive, missionStatus, runningFact } from './diMissionStatus.js';
 import { plainIdentityReason } from './diNavigation.js';
-import { missionObjective, missionStatus } from './diOperationalStatus.js';
+import { missionObjective } from './diOperationalStatus.js';
 import { missionTitle, plainMissionDescription, shortMissionRefs } from './diPlainSummary.js';
 import type { PanelSource } from './diReceptionItems.js';
 import { missionForRequest } from './diReceptionItems.js';
@@ -123,6 +125,11 @@ export interface DiScanPill {
   id: string;
   label: string;
   tone: DiScanTone;
+  /**
+   * Deliverable 3: a MISSION STATUS pill's canonical glyph (diMissionStatus.ts, one per status id), its non-colour mark on every surface that shows the
+   * status. Only statusPill sets it; attention ("Needs you") and the labelled specimen's pills carry none and keep the dot.
+   */
+  glyph?: string;
 }
 
 /**
@@ -657,8 +664,11 @@ export function declaredPhaseWords(declared: DiScanDeclaredPhase): { text: strin
  */
 export interface DiScanTableFacts {
   owner: string | null;
-  /** The harness repo, and how many target repos the Mission adds (AC-4.4-13). */
-  repos: { harness: string; targets: number } | null;
+  /**
+   * The harness repo, and how many target repos the Mission adds (AC-4.4-13). A real row's harness is the product's declared harness (`DI_HARNESS_REPO`, the same claim the
+   * Missions footer makes); its target count is NOT READ, with the reason, because the catalog reports no target repos for a Mission (never a zero).
+   */
+  repos: { harness: string; targets: DiScanKnown<number> } | null;
   /** The four-step phase: the labelled specimen's alone. Real rows leave it null: no document maps the producer's ten phases onto four steps, so none is drawn. */
   phase: DiScanPhase | null;
   /** The producer's DECLARED workflow phase for a real row (null on the specimen). Shown as its own word; see `DiScanDeclaredPhase`. */
@@ -668,11 +678,13 @@ export interface DiScanTableFacts {
 }
 
 /**
- * Why a row's fact is not known (B-H1 round 5). `not_read`: nothing was read to decide it (no Reception, a fact this build
- * does not read); `not_known`: something was read but cannot decide it (a list cut short, a stale or unknown status).
+ * Why a row's fact is not known (B-H1 round 5), as one of five DISTINCT kinds that are never merged into each other: `not_read`: nothing was read to decide it (no Reception,
+ * a fact this build does not read); `not_known`: something was read but cannot decide it (a list cut short, sources that disagree); `stale`: what decides it is last known
+ * only (the office is not live or is disconnected); `unrecognised`: a source reported a value outside its declared vocabulary; `unavailable`: a source said it cannot
+ * provide it right now. The Mission status contract (diMissionStatus.ts) gives each of its uncertain statuses one of these.
  */
 export interface DiScanWhy {
-  kind: 'not_read' | 'not_known';
+  kind: 'not_read' | 'not_known' | 'stale' | 'unrecognised' | 'unavailable';
   /** Plain words for the screen. */
   text: string;
   /** The server's own reason codes, kept as provenance (diagnostics only, never shown as text). */
@@ -697,14 +709,31 @@ export function knownOrNull<T>(fact: DiScanKnown<T>): T | null {
   return fact.known ? fact.value : null;
 }
 
+/** Deliverable 2: what local retention knows of one Mission, for its filing and its owner's delete control. */
+export interface DiScanLocal {
+  /** `mission_core` and `workflow_store` are stores DI owns; a Herdr task is not. */
+  family: 'mission_core' | 'workflow_store' | 'herdr_task' | 'other';
+  /** The Mission's own id in its store (an `mn-` id for Mission Core). */
+  nativeId: string;
+  /** The record state the window displays: the delete is refused when the record no longer says this. */
+  displayedState: string;
+  /** Target identity: the store this Mission is in, as the catalog reported it (null: not reported; the panel then refuses the delete). */
+  storeIdentity: string | null;
+  retention: DiMission['retention'] | null;
+  archive: DiMissionArchive;
+}
+
 export interface DiScanRow {
   id: string;
+  local?: DiScanLocal;
   title: string;
   /** Second line: a recorded context, never a guessed delivery. */
   context: string;
   description: string;
   pills: DiScanPill[];
   tab: DiScanTab;
+  /** The Mission's status from the ONE contract (diMissionStatus.ts): its pill, its card badge and its Reception tag all say this. Absent: the labelled specimen. */
+  status?: DiMissionStatusResult;
   /**
    * Not known when Reception was not read, or when its list is cut short and does not name this Mission: never "does
    * not need you" (round 5).
@@ -838,44 +867,53 @@ function roleLabel(role: string): string {
 }
 
 /**
- * The Home tab a Mission is filed under. "Merged" only when the Mission's OWN record says merged: verified Mission success does not
- * establish a merged pull request (owed item 2, round 39), and the design names no other source for the tab (CONTROL-MAP.md: the tabs
- * are a Home filter). A verified-success Mission files as any other.
+ * The Home tab a Mission is filed under (Deliverable 2): `archived` the moment it is finished or cancelled WITH a positive basis (`missionArchive`: the backend's
+ * retention reading for a store DI owns, Deliverable 1's own reading for a Herdr task); `open` otherwise, a record closed without that basis included (uncertain
+ * liveness is never permission to leave the active Missions). Archival is a VIEW change: nothing is deleted by it. Merged is filed only from a DECLARED source, and no
+ * source declares one today; the native lifecycle literal is never sniffed for one.
  */
-export function tabForMission(
-  mission: DiMission,
-  status: ReturnType<typeof missionStatus>,
-): DiScanTab {
-  const life = mission.lifecycleState.toLowerCase();
-  if (life.includes('archiv')) return 'archived';
-  if (life.includes('merg')) return 'merged';
-  if (mission.standing === 'terminal' || status.status === 'ended') return 'closed';
-  return 'open';
+export function tabForMission(mission: DiMission, state: DiOfficeState): DiScanTab {
+  // Deliverable 2: finished or cancelled WITH a positive basis leaves every filter but Archived at once (`missionArchive`); everything else stays open.
+  return missionArchive(mission, state).archived ? 'archived' : 'open';
 }
 
-function pillsFor(
-  mission: DiMission,
-  status: ReturnType<typeof missionStatus>,
-  tab: DiScanTab,
-  needsYou: DiScanKnown<boolean>,
-): DiScanPill[] {
-  const life = mission.lifecycleState.toLowerCase();
-  const pills: DiScanPill[] = [];
-  if (knownTrue(needsYou)) pills.push({ id: 'needs', label: 'Needs you', tone: 'needs' });
-  if (status.status === 'running')
-    pills.push({ id: 'building', label: 'Building', tone: 'building' });
-  if (status.status === 'failed' || life.includes('fail'))
-    pills.push({ id: 'failed', label: 'Failed', tone: 'failed' });
-  if (tab === 'merged') pills.push({ id: 'merged', label: 'Merged', tone: 'merged' });
-  // Every row says its status (CONTROL-MAP "01 Home": status dot + word): where none of the above applies, the
-  // operational status's own word, never nothing. A stopped record says Stopped rather than the broader Ended.
-  if (!pills.some((pill) => pill.id !== 'needs')) {
-    if (status.status === 'blocked') pills.push({ id: 'blocked', label: 'Blocked', tone: 'needs' });
-    else if (status.status === 'ended' && life === 'aborted')
-      pills.push({ id: 'stopped', label: 'Stopped', tone: 'idle' });
-    else pills.push({ id: status.status, label: status.label, tone: 'idle' });
-  }
-  return pills;
+/** Each status's tone (the dot's colour token): a display granularity DERIVED from the contract's ids, never a vocabulary of its own. The pill's word is the status label. */
+const STATUS_TONE: Readonly<Record<DiMissionStatusId, DiScanTone>> = {
+  not_started: 'idle',
+  start_requested: 'idle',
+  // its bound task is observed, its workers are not: never the working (building) look
+  task_observed: 'idle',
+  running: 'building',
+  waiting: 'idle',
+  blocked: 'needs',
+  failed: 'failed',
+  stopped: 'idle',
+  ended: 'idle',
+  verified: 'pass',
+  stale: 'idle',
+  disconnected: 'idle',
+  unknown: 'idle',
+  unrecognised: 'idle',
+  unavailable: 'idle',
+};
+
+/** A Mission's status pill: the contract's id, label and glyph, and the tone derived from its id. */
+export function statusPill(status: DiMissionStatusResult): DiScanPill {
+  return { id: status.status, label: status.label, tone: STATUS_TONE[status.status], glyph: status.glyph };
+}
+
+/**
+ * The row's LIFECYCLE status pill, the one surfaces that show a single status read (the Missions table's Status column, the rail): the contract's own status, never
+ * Reception's attention in its place. A row without a contract status (the labelled specimen) gives its first pill that is not attention.
+ */
+export function statusPillOf(row: DiScanRow): DiScanPill | null {
+  if (row.status !== undefined) return statusPill(row.status);
+  return row.pills.find((pill) => pill.id !== 'needs') ?? null;
+}
+
+/** Every row says its status (CONTROL-MAP "01 Home": status dot + word), exactly once and in the contract's words; Needs you is attention from Reception, beside it. */
+function pillsFor(status: DiMissionStatusResult, needsYou: DiScanKnown<boolean>): DiScanPill[] {
+  return [...(knownTrue(needsYou) ? [{ id: 'needs', label: 'Needs you', tone: 'needs' as const }] : []), statusPill(status)];
 }
 
 function roleKey(role: string): string {
@@ -942,14 +980,16 @@ export function plainAgentName(role: string, logical: string): string {
   return raw !== '' ? raw : roleLabel(role);
 }
 
+/**
+ * The record's OWN state in words, for the row's second line: a few native literals title-cased, everything else spaced. Never translated into a status word (the status is
+ * the pill, from the contract): ABORTED reads Aborted here, and its pill says Stopped.
+ */
 function plainLifecycle(state: string): string {
   const key = state.trim().toLowerCase();
   const known: Record<string, string> = {
     active: 'Active',
-    aborted: 'Stopped',
-    merged: 'Merged',
+    aborted: 'Aborted',
     closed: 'Closed',
-    archived: 'Archived',
     failed: 'Failed',
   };
   if (known[key]) return known[key];
@@ -969,6 +1009,16 @@ export function plainSource(sourceId: string): string {
   const words = sourceId.replace(/^di_/, '').replace(/[_-]+/g, ' ').trim();
   if (words === '') return 'Recorded source';
   return words.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+/**
+ * Deliverable 3: a list row's second line, as drawn. A catalog row's context is its source RECORD's own state and source ("RUNNING · Mc"), which a
+ * reader could take as DI saying the team is working now; it is drawn as what the record says ("Record: RUNNING · Mc"), beside the contract's status
+ * pill, which is the status. The labelled specimen's contexts are sample narrative, not a record's state, and stay as they are.
+ */
+export const DI_ROW_RECORD_PREFIX = 'Record: ';
+export function rowContextLine(row: Pick<DiScanRow, 'context' | 'status'>): string {
+  return row.status !== undefined ? `${DI_ROW_RECORD_PREFIX}${row.context}` : row.context;
 }
 
 function plainContext(lifecycle: string, sourceId: string): string {
@@ -1161,26 +1211,6 @@ function needsYouFrom(
   return known(false);
 }
 
-/** Whether the Mission is running: only a CURRENT status decides it; stale, disconnected or unknown stays unknown. */
-function runningFrom(status: ReturnType<typeof missionStatus>): DiScanKnown<boolean> {
-  switch (status.status) {
-    case 'stale':
-      return {
-        known: false,
-        why: { kind: 'not_known', text: 'its status is not current while the office is not live' },
-      };
-    case 'disconnected':
-      return {
-        known: false,
-        why: { kind: 'not_known', text: 'the office is disconnected, so its status is not current' },
-      };
-    case 'unknown':
-      return { known: false, why: { kind: 'not_known', text: 'its status is not known' } };
-    default:
-      return known(status.status === 'running');
-  }
-}
-
 /** Rows for the scan panel from the office state. No pull-request line is synthesised. */
 export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { kind: 'not_provided' }): DiScanRow[] {
   const listed = new Set((state.reception?.entries ?? []).map((entry) => entry.missionRef));
@@ -1191,18 +1221,35 @@ export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { 
   return state.missions.missions.map((mission) => {
     const refs = waiting.get(mission.missionRef) ?? null;
     const status = missionStatus(mission, state);
-    const tab = tabForMission(mission, status);
+    const tab = tabForMission(mission, state);
+    const archive = missionArchive(mission, state);
     const needsYou = needsYouFrom(state.reception, listed, mission.missionRef, doubt);
     const objective = missionObjective(mission);
     const reviewOffer = reviewOfferOf(mission);
     return {
       id: mission.missionRef,
+      local: {
+        family:
+          mission.lifecycleModel === 'mission_core.mission_state/1'
+            ? 'mission_core'
+            : mission.lifecycleModel === 'workflow_authority.workflow_phase/2'
+              ? 'workflow_store'
+              : mission.lifecycleModel === 'herdr.task/1'
+                ? 'herdr_task'
+                : 'other',
+        nativeId: mission.nativeId,
+        displayedState: mission.lifecycleState,
+        storeIdentity: mission.storeIdentity ?? null,
+        retention: mission.retention ?? null,
+        archive,
+      },
       title: missionTitle(mission).text,
       context: plainContext(mission.lifecycleState, mission.sourceId),
       // with no goal reported, the headline says only that; the source-qualified note with its state is this secondary detail (plain-English naming, 2026-10-28)
       description: objective.kind === 'goal' ? plainMissionDescription(objective.text) : objective.text,
-      pills: pillsFor(mission, status, tab, needsYou),
+      pills: pillsFor(status, needsYou),
       tab,
+      status,
       needsYou,
       swarm: swarmFor(mission),
       footer: plainFooter(shorts.get(mission.missionRef) ?? mission.missionRef, mission.sourceId),
@@ -1221,7 +1268,7 @@ export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { 
       // read, so it is null, never false: the panel must not turn an unread fact into "nothing is waiting" (the request panel lists only its own requests, so no tie is not "no decision").
       state: {
         source: 'record',
-        running: runningFrom(status),
+        running: runningFact(status),
         awaitingApproval: refs !== null ? true : null,
         repoRequest: null,
         stalled: null,
@@ -1230,11 +1277,12 @@ export function scanRowsFromOffice(state: DiOfficeState, panel: PanelSource = { 
       decision: refs !== null ? { requestRef: refs.length === 1 ? refs[0]! : null, count: refs.length } : null,
       evidenceListed: mission.evidence !== undefined,
       ...(mission.sourceKind === 'herdr_task' ? { reviewThread: herdrReviewThread(mission) } : {}),
-      // The office record carries no owner or repos: the table says "Not recorded" (none is invented). The four-step phase is the specimen's alone; a real row shows the producer's DECLARED
-      // workflow phase as its own word (`declared`), with its absences kept apart. Last activity is the record's own update time on the office clock, when both are recorded.
+      // The office record carries no owner: the table says "Not recorded" (none is invented). Repos: the product's declared harness, and a target count that is NOT READ (the
+      // catalog reports no target repos; never a zero). The four-step phase is the specimen's alone; a real row shows the producer's DECLARED workflow phase as its own word
+      // (`declared`), with its absences kept apart. Last activity is the record's own update time on the office clock, when both are recorded.
       table: {
         owner: null,
-        repos: null,
+        repos: { harness: DI_HARNESS_REPO, targets: { known: false, why: { kind: 'not_read', text: DI_TARGET_REPOS_NOT_READ } } },
         phase: null,
         declared: declaredPhaseOf(mission),
         last: lastActivity(mission.updatedAt, state.times?.evaluatedAt),
@@ -1366,13 +1414,18 @@ const lockState = ({
   running: known(running),
 });
 
+/** The specimen's running pill: the contract's own word (a CURRENT sample says what a real row says, never a word of its own). */
+const SPECIMEN_RUNNING: DiScanPill = { id: 'running', label: DI_MISSION_STATUS.running.label, tone: 'building' };
+
 /** The public harness every Mission runs from (D107, AC-4.3-45). */
 export const DI_HARNESS_REPO = 'dodging-infinity';
+/** Why a real row's target-repo count is not given (AC-4.4-13): the catalog reports no target repos for a Mission. */
+export const DI_TARGET_REPOS_NOT_READ = 'Target repos are not reported by this catalog.';
 
 /** Sample table facts: the person owns every sample Mission; repos are the harness plus `targets` target repos. */
 const lockTable = (targets: number, phase: DiScanPhase, last: string): DiScanTableFacts => ({
   owner: 'You',
-  repos: { harness: DI_HARNESS_REPO, targets },
+  repos: { harness: DI_HARNESS_REPO, targets: known(targets) },
   phase,
   declared: null,
   last,
@@ -1394,7 +1447,7 @@ export const DI_SCAN_LOCK: readonly DiScanRow[] = [
       'Redesign and implementation of the next iteration of the core panel system. Includes layout engine updates, responsive primitives, and migration plan.',
     pills: [
       { id: 'needs', label: 'Needs you', tone: 'needs' },
-      { id: 'building', label: 'Building', tone: 'building' },
+      SPECIMEN_RUNNING,
     ],
     tab: 'open',
     needsYou: known(true),
@@ -1438,7 +1491,7 @@ export const DI_SCAN_LOCK: readonly DiScanRow[] = [
     description:
       'Retry failed payment captures with a bounded backoff, and show the failure when the gateway keeps rejecting them.',
     pills: [
-      { id: 'building', label: 'Building', tone: 'building' },
+      SPECIMEN_RUNNING,
       { id: 'failed', label: 'Failed', tone: 'failed' },
     ],
     tab: 'open',
@@ -1493,7 +1546,7 @@ export const DI_SCAN_V3_CAST: readonly DiScanRow[] = [
       'Group the Reception inbox by Mission, with one line on what each needs from you.',
     pills: [
       { id: 'needs', label: 'Needs you', tone: 'needs' },
-      { id: 'building', label: 'Building', tone: 'building' },
+      SPECIMEN_RUNNING,
     ],
     tab: 'open',
     needsYou: known(true),
@@ -1515,7 +1568,7 @@ export const DI_SCAN_V3_CAST: readonly DiScanRow[] = [
       'Stop the readiness probe failing on slow starts, and settle how long the probe waits.',
     pills: [
       { id: 'needs', label: 'Needs you', tone: 'needs' },
-      { id: 'building', label: 'Building', tone: 'building' },
+      SPECIMEN_RUNNING,
     ],
     tab: 'open',
     needsYou: known(true),
@@ -2145,6 +2198,29 @@ export function unlinkedDeliverySteps(reason: string, withheld = false): DiDeliv
   return steps.map(([id, label]) => ({ id, label, gate: withheld ? 'withheld' : 'unlinked', reason }));
 }
 
+/**
+ * Deliverable 2, round 10 (lead ruling): an ARCHIVED Mission's delivery is READ-ONLY, NOT INFORMATION-ERASING. Its linked delivery's status can still be READ
+ * (the existing status read: a GET, no confirmation, no authority); what is withheld, each with this reason, is everything that acts: confirming or asking a
+ * step, and creating a delivery record. Never said as "no session" or "a layout preview", which are different facts.
+ */
+export const DI_DELIVERY_ARCHIVED =
+  'Not offered: this Mission is archived, and an archived Mission is read-only here, so no delivery step is asked and no delivery record is created from it.';
+/** Said for an archived Mission whose delivery IS linked: what may be done (read) and what may not (act). */
+export const DI_DELIVERY_ARCHIVED_LINKED =
+  'This Mission is archived, so it is read-only here: its linked delivery’s status can be read, but no step is confirmed or asked from it.';
+/** An archived Mission's eligible step: the record's own fact, and why it is not offered. */
+export const DI_STEP_ELIGIBLE_ARCHIVED =
+  'Eligible now, as the record states it, but not offered here: this Mission is archived, and an archived Mission is read-only.';
+/** The reason beside an archived Mission's drawn-disabled confirmation and step controls. */
+export const DI_DELIVERY_ARCHIVED_ACT =
+  'Not offered: this Mission is archived, and an archived Mission is read-only, so this step is not confirmed or asked from here.';
+/** An archived unlinked task's handoff: its recorded facts are kept, its creation command is not offered. */
+export const DI_DELIVERY_ARCHIVED_HANDOFF =
+  'Creating a delivery record is not offered here: this Mission is archived, and an archived Mission is read-only, so the command that would create one is not shown.';
+export function archivedDeliverySteps(): DiDeliveryStepView[] {
+  return unlinkedDeliverySteps(DI_DELIVERY_ARCHIVED, true);
+}
+
 /** M8: a wired step's words (a linked Mission, read through Mission details' session). Each names WHO established it (round 58). */
 export const DI_STEP_ELIGIBLE = 'Eligible now, as the record states it. Confirm it below.';
 /** Only a row OTHER than the step the answer names, when it names one: then this is the adapter's own statement. */
@@ -2183,6 +2259,14 @@ export function linkedDeliverySteps(view: DlView | null): DiDeliveryStepView[] {
     // the answer names a step, and it is not this one
     return { id, label, gate: 'locked', reason: DI_STEP_NOT_ELIGIBLE };
   });
+}
+
+/**
+ * An archived Mission's linked steps: the same reading as `linkedDeliverySteps` (every fact kept), except that the step the record names eligible is drawn
+ * withheld with the archived reason, never Ready: nothing is confirmed or asked from an archived Mission.
+ */
+export function archivedLinkedDeliverySteps(view: DlView | null): DiDeliveryStepView[] {
+  return linkedDeliverySteps(view).map((step) => (step.gate === 'ready' ? { ...step, gate: 'withheld', reason: DI_STEP_ELIGIBLE_ARCHIVED } : step));
 }
 
 export type DiStateActionId =
@@ -2267,16 +2351,44 @@ export interface DiTrashGate {
   reason: string;
 }
 
-/** The trash is offered only for a finished or cancelled Mission, never a running one (gap 5, AC-4.4-29/-30). */
+/**
+ * Deliverable 2: whether the owner's "Delete local data" is offered, and why not. Offered only for an ARCHIVED Mission Core Mission (finished or cancelled with a
+ * positive basis, by the backend's own reading) whose data is not already deleted. A workflow-store Mission is refused, said plainly: the office carries no identity
+ * to prove it is yours (dimission_panel names no principal). A Herdr task's records are the target herd's own, which the office does not own. The panel REFUSES
+ * every other case itself, rechecking the record at the moment of action: this gate is the button, never the gate that matters.
+ */
 export function trashGate(row: DiScanRow): DiTrashGate {
   if (row.pills.some((pill) => pill.tone === 'building'))
     return { open: false, reason: 'A running Mission cannot be deleted.' };
-  if (row.tab !== 'open' || row.pills.some((pill) => pill.tone === 'merged'))
-    return { open: true, reason: '' };
-  return { open: false, reason: 'Only a finished or cancelled Mission can be deleted.' };
+  const local = row.local;
+  if (local === undefined) return { open: false, reason: 'This Mission’s local data is not read here.' };
+  if (local.archive.reduced === 'deleted')
+    return { open: false, reason: 'This Mission’s local data was already deleted.' };
+  if (local.archive.reduced === 'deleting')
+    return {
+      open: false,
+      reason: 'This Mission’s deletion has started and is not finished: its summary is already removed, and the next retention pass retries the remaining cleanup.',
+    };
+  if (local.family === 'herdr_task')
+    return {
+      open: false,
+      reason: 'A Herdr task’s records live in the target herd’s own state, which this office does not own: there is no local data here to delete.',
+    };
+  if (local.family !== 'mission_core')
+    return {
+      open: false,
+      reason:
+        'This office cannot prove this Mission is yours: it came from a workflow store (Telegram or a relay), and the office carries no identity to match it against. Its local data is still reclaimed automatically 30 days after it finished.',
+    };
+  if (!local.archive.archived)
+    return { open: false, reason: `Only a finished or cancelled Mission can be deleted: ${local.archive.why}.` };
+  return { open: true, reason: '' };
 }
 
-/** The rail's Orchestrators: the Missions still in progress (open, not merged), in list order. */
+/**
+ * The rail's Orchestrators: the Missions still in progress (open, not merged), in list order, and any Mission whose EXECUTION still holds an Orchestrator although its
+ * record is filed closed (a record its own progress closed while its team is still observed working is still an Orchestrator in use).
+ */
 export function railOrchestrators(
   rows: readonly DiScanRow[],
   hidden: ReadonlySet<string>,
@@ -2284,7 +2396,7 @@ export function railOrchestrators(
   return rows.filter(
     (row) =>
       !hidden.has(row.id) &&
-      row.tab === 'open' &&
+      (row.tab === 'open' || row.status?.capacity.bears === 'holds') &&
       !row.pills.some((pill) => pill.tone === 'merged'),
   );
 }

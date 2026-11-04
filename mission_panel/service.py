@@ -82,6 +82,16 @@ BINDING_WITHDRAWN = "withdrawn"
 BINDING_OFFER_UNKNOWN = "offer_unknown"
 BINDING_OFFER_TAMPERED = "offer_tampered"
 
+PROBLEM_RETENTION_UNAVAILABLE = "mission_panel_retention_unavailable"
+# One problem per row of the owner-delete refusal matrix: this prefix + the row's reason.
+PROBLEM_DELETE_PREFIX = "mission_panel_delete_refused_"
+# The owner's delete, when it is not refused: an ACCEPTED answer (``ok: true``), finished or not.
+# ``pending``: it started and did not finish (a store failed part-way); its summary is already
+# removed, and each retention pass retries the remaining cleanup (a store that fails again defers
+# it again: nothing here promises when it completes). It is never a refusal, so the office's relay
+# never reads it as one (round 9 finding 1).
+DELETION_COMPLETED = "completed"
+DELETION_PENDING = "pending"
 PROBLEM_BAD_REQUEST = "mission_panel_bad_request"
 # Two refusals that must never be conflated. STALE: the OFFER CHANGED (the Mission, revision,
 # digest, scope, delivery targets or repository differs from what was shown, or the proposal was
@@ -139,7 +149,7 @@ class PanelService(object):
 
     def __init__(self, surface, journal, conversation, registry, clock,
                  bridge=None, repository_url=None, recover_result=None,
-                 progression=None):
+                 progression=None, retention=None):
         self._surface = surface
         self._journal = journal
         self._conversation = conversation
@@ -155,6 +165,10 @@ class PanelService(object):
         # about a PROCESS; a Mission's own record is the only evidence about a
         # Mission.
         self._progression = progression
+        # Deliverable 2: local retention over this panel's state directory
+        # (``mission_retention.reclaim.MissionCoreRetention``), or None.
+        self._retention = retention
+        self.retention_report = None
         self._guard = threading.Lock()
         self._request_locks = {}
         # The withdrawal keys the surface shows ONCE. In memory only: never
@@ -162,8 +176,67 @@ class PanelService(object):
         self._capabilities = {}
 
     def start(self):
-        """Settle what a previous process left in flight as UNCERTAIN."""
-        return self._conversation.start()
+        """Settle what a previous process left in flight as UNCERTAIN, then run the startup
+        retention sweep: reclamation that came due while nothing was running (Deliverable 2)."""
+        settled = self._conversation.start()
+        self.retention_pass()
+        return settled
+
+    def retention_pass(self):
+        """One bounded local-retention sweep (``MissionCoreRetention.sweep``), contained: a failure
+        is kept as ``retention_report`` and never stops the panel. Returns the sweep's report."""
+        if self._retention is None:
+            return None
+        try:
+            self.retention_report = self._retention.sweep()
+        except Exception as exc:  # noqa: BLE001 - contained by design, kept below
+            self.retention_report = {"problem": type(exc).__name__}
+        return self.retention_report
+
+    def delete_local_data(self, mission_id, displayed_state, mission_ref, store_identity):
+        """The owner's "Delete local data" for one finished or cancelled Mission (Deliverable 2):
+        rechecked against the record NOW, refused with a distinct problem per row of the
+        fail-closed matrix, and on success the payload AND its summary are removed, leaving only a
+        tombstone. The control on screen is never the gate; this is.
+
+        Three honest outcomes: refused (``mission_panel_delete_refused_<row>``: nothing durable was
+        written, a retained summary is still retained); accepted and ``completed`` (what each store
+        changed, and what the Mission was before: ``intact``, ``observed`` or already ``reclaimed``
+        with its summary, which this removes); or accepted and ``pending`` (it started and did not
+        finish: the record reads ``deleting``, its summary is already gone, and the next retention
+        pass retries the remaining cleanup, which may take more than one attempt)."""
+        if not isinstance(mission_id, str) or not re.fullmatch(r"mn-[0-9a-f]{32}", mission_id):
+            _bad("mission_id must be an mn- id")
+        if not isinstance(displayed_state, str) or not displayed_state or len(displayed_state) > 64:
+            _bad("displayed_state must be the Mission state the window displayed")
+        # the source-qualified Mission the person selected (``<source_id>:<native id>``) and its
+        # store's identity, as the catalog reported them: never a bare native id
+        if not isinstance(mission_ref, str) or not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}:mn-[0-9a-f]{32}", mission_ref) or (
+                mission_ref.rsplit(":", 1)[1] != mission_id):
+            _bad("mission_ref must be the selected Mission's <source>:<id>, naming this Mission")
+        if store_identity is not None and (
+                not isinstance(store_identity, str) or not re.fullmatch(r"[0-9a-f]{64}", store_identity)):
+            _bad("store_identity must be the store identity the catalog reported, or null")
+        if self._retention is None:
+            _refuse(PROBLEM_RETENTION_UNAVAILABLE,
+                    "this panel was started without local retention; nothing can be deleted here")
+        from mission_retention import reclaim as retention_module
+        try:
+            result = self._retention.delete(mission_id, displayed_state, store_identity)
+        except retention_module.DeleteRefused as exc:
+            _refuse(PROBLEM_DELETE_PREFIX + exc.reason, exc.detail, refusal=exc.reason)
+        except retention_module.DeleteIncomplete as exc:
+            return {"ok": True, "deletion": DELETION_PENDING, "deleted": {
+                "mission_id": mission_id, "phase": "deleting", "deleted_at": None,
+                "summary": None, "previously": exc.previously, "removed": dict(exc.removed),
+                "detail": exc.detail}}
+        tombstone = result["record"]
+        return {"ok": True, "deletion": DELETION_COMPLETED, "deleted": {
+            "mission_id": tombstone["record_id"], "phase": tombstone["phase"],
+            "deleted_at": tombstone["phase_at"], "summary": None,
+            "previously": result["previously"], "removed": dict(result["removed"]),
+            "detail": None}}
 
     # -- validation ---------------------------------------------------------
 
@@ -308,7 +381,7 @@ class PanelService(object):
             lineage, self._clock(),
             capability_held=request_ref in self._capabilities,
             run_available=self._bridge is not None,
-            runnable_problem=self._runnable_problem(proposal),
+            runnable_problem=(None if proposal is None else self._runnable_problem(proposal)),
             verification_ready=self._readiness(status),
             progression=self.progression())
         attested = status.get("attested_approval")
@@ -331,6 +404,9 @@ class PanelService(object):
                 (k, copy.deepcopy(run.get(k))) for k in _RUN_KEYS if k in run),
             "start_cause": (self._start_cause(entry, status)
                             if with_start_cause else None),
+            # Deliverable 2: the request's payload was reclaimed by local retention (or deleted at
+            # its owner's request); the proposal BODY is gone, Mission Core keeps its own record.
+            "reclaimed": copy.deepcopy(entry.get("reclaimed")),
             "delivery_authority": surface_module.DELIVERY_AUTHORITY,
         }
 
@@ -354,7 +430,9 @@ class PanelService(object):
         return {
             "request_ref": view["request_ref"], "mission_id": view["mission_id"],
             "revision": view["revision"], "created_at": view["created_at"],
-            "objective": (view["proposal"] or entry["proposal"])["objective"],
+            "objective": (None if (view["proposal"] or entry["proposal"]) is None
+                          else (view["proposal"] or entry["proposal"])["objective"]),
+            "reclaimed": copy.deepcopy(entry.get("reclaimed")),
             "proposal_digest_sha256": view["proposal_digest_sha256"],
             "lifecycle": dict((k, view["lifecycle"][k]) for k in (
                 "stage", "label", "terminal", "actions", "notice")),
@@ -428,7 +506,10 @@ class PanelService(object):
         conversations = []
         for item in self._journal.recent_conversations(MAX_OVERVIEW_CONVERSATIONS):
             turns = self._journal.conversation(item["conversation_id"])
-            item["first_words"] = turns[0]["user_text"][:FIRST_WORDS_CHARS]
+            first = turns[0]["user_text"]
+            item["first_words"] = None if first is None else first[:FIRST_WORDS_CHARS]
+            # Deliverable 2: a reclaimed conversation says so; its words are no longer kept.
+            item["reclaimed"] = copy.deepcopy(turns[0].get("reclaimed"))
             item.update(self._awaiting(turns))
             conversations.append(item)
         return {
@@ -468,9 +549,11 @@ class PanelService(object):
             "draft": None if draft is None else {
                 "proposal": copy.deepcopy(draft["proposal"]),
                 "proposal_digest_sha256": draft["proposal_digest_sha256"],
-                "runnable_problem": draft_module.runnable_problem(draft["proposal"])},
+                "runnable_problem": (None if draft["proposal"] is None
+                                     else draft_module.runnable_problem(draft["proposal"]))},
             "draft_problem": turn["draft_problem"], "submission": submission,
             "questions": self._questions_view(turn),
+            "reclaimed": copy.deepcopy(turn.get("reclaimed")),
         }
 
     def _linked_refs(self):

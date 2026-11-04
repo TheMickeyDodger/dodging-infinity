@@ -50,6 +50,8 @@ completing an already-recorded withdrawal with the right key stays
 idempotent after it.
 """
 
+import copy
+
 from mission import decision as decision_module
 from mission import record
 
@@ -76,8 +78,16 @@ RUN_KEYS = ("intent", "receipt", "pauses", "cancel", "verification",
 # and the one evidence-only late resolution of a run stopped that way.
 # Task 8 final, additive-optional too: the workspace binding recorded before
 # the intent, and the latest refused workspace preparation.
+# Deliverable 2, additive-optional too: ``reclaimed`` marks a TERMINAL run whose two diagnostic
+# texts (``workspace_refusal.detail``, ``pending_proof.blockers[].detail``) local retention reclaimed.
+# Neither text is read by any approval, replay or reconciliation check (mission/authorization.py,
+# mission/store.py); every other field of the Mission record is load-bearing for them and stays.
 RUN_OPTIONAL_KEYS = ("reconcile_unobserved", "late_resolution", "workspace",
-                     "workspace_refusal")
+                     "workspace_refusal", "reclaimed")
+RUN_RECLAIMED_KEYS = ("reclaimed_at", "outcome")
+RUN_RECLAIM_OUTCOMES = ("reclaimed", "deleted")
+# Only a run that can never change again may be reduced: these states have no outgoing transition.
+RUN_RECLAIMABLE_STATES = (record.STATE_BLOCKED, record.STATE_COMPLETED, record.STATE_CANCELLED)
 RUN_RECONCILE_UNOBSERVED_KEYS = ("attempts", "last_attempted_at")
 RUN_LATE_RESOLUTION_KEYS = ("recorded_at", "task_id", "observed_task_status")
 RUN_WORKSPACE_KEYS = (
@@ -453,6 +463,20 @@ def _validate_mission_record(value, location):
     return value
 
 
+def reclaimed_run(run, at, outcome):
+    """The reduced form of a TERMINAL run (Deliverable 2): its two diagnostic texts removed, every
+    execution fact, binding and timestamp kept (they are the eligibility basis, the verdict, and
+    what approval, replay and reconciliation read)."""
+    reduced = copy.deepcopy(run)
+    if "workspace_refusal" in reduced:
+        reduced["workspace_refusal"]["detail"] = None
+    if reduced.get("pending_proof") is not None:
+        for blocker in reduced["pending_proof"]["blockers"]:
+            blocker["detail"] = None
+    reduced["reclaimed"] = {"reclaimed_at": at, "outcome": outcome}
+    return reduced
+
+
 def new_run_block():
     return {"intent": None, "receipt": None, "pauses": [], "cancel": None,
             "verification": None, "pending_proof": None}
@@ -494,9 +518,23 @@ def _validate_run_and_lifecycle(value, location):
         _validate_intent(value, intent, where + ".intent")
     if "workspace" in run:
         _validate_workspace(value, run["workspace"], intent, where + ".workspace")
+    reclaimed = "reclaimed" in run
+    if reclaimed:
+        marker = run["reclaimed"]
+        record.require_dict(marker, where + ".reclaimed")
+        record.require_closed_keys(marker, RUN_RECLAIMED_KEYS, where + ".reclaimed")
+        record.require_timestamp(marker["reclaimed_at"], where + ".reclaimed.reclaimed_at")
+        if marker["outcome"] not in RUN_RECLAIM_OUTCOMES:
+            record.fail(record.PROBLEM_BAD_VALUE,
+                        "%s.reclaimed.outcome must be one of %s"
+                        % (where, ", ".join(RUN_RECLAIM_OUTCOMES)))
+        if value["state"] not in RUN_RECLAIMABLE_STATES:
+            record.fail(record.PROBLEM_BAD_VALUE,
+                        "%s.reclaimed is valid only on a terminal run (%s), not %s"
+                        % (where, ", ".join(RUN_RECLAIMABLE_STATES), value["state"]))
     if "workspace_refusal" in run:
         _validate_workspace_refusal(run["workspace_refusal"],
-                                    where + ".workspace_refusal")
+                                    where + ".workspace_refusal", reclaimed)
     receipt = run["receipt"]
     if receipt is not None:
         if intent is None:
@@ -532,7 +570,7 @@ def _validate_run_and_lifecycle(value, location):
             record.fail(record.PROBLEM_BAD_VALUE,
                         "%s.pending_proof needs a run that reached RUNNING"
                         % where)
-        _validate_pending_proof(pending, receipt, where + ".pending_proof")
+        _validate_pending_proof(pending, receipt, where + ".pending_proof", reclaimed)
     cancel = run["cancel"]
     if (cancel is not None) != (state == record.STATE_CANCELLED):
         record.fail(record.PROBLEM_BAD_VALUE,
@@ -728,13 +766,18 @@ def _validate_workspace(value, binding, intent, where):
                     " before it" % where)
 
 
-def _validate_workspace_refusal(refusal, where):
+def _validate_workspace_refusal(refusal, where, reclaimed=False):
     record.require_dict(refusal, where)
     record.require_closed_keys(refusal, RUN_WORKSPACE_REFUSAL_KEYS, where)
     record.require_str(refusal["problem"], where + ".problem",
                        record.MAX_WORKSPACE_PROBLEM_CHARS)
-    record.require_str(refusal["detail"], where + ".detail",
-                       record.MAX_WORKSPACE_DETAIL_CHARS)
+    if reclaimed:
+        if refusal["detail"] is not None:
+            record.fail(record.PROBLEM_BAD_VALUE,
+                        "%s.detail is reclaimed and must be null" % where)
+    else:
+        record.require_str(refusal["detail"], where + ".detail",
+                           record.MAX_WORKSPACE_DETAIL_CHARS)
     record.require_timestamp(refusal["recorded_at"], where + ".recorded_at")
     record.require_int(refusal["refusals"], where + ".refusals", minimum=1)
 
@@ -880,7 +923,7 @@ def _validate_late_resolution(value, run, events, where):
                        record.MAX_OBSERVED_STATUS_CHARS)
 
 
-def _validate_pending_proof(pending, receipt, where):
+def _validate_pending_proof(pending, receipt, where, reclaimed=False):
     record.require_dict(pending, where)
     record.require_closed_keys(pending, RUN_PENDING_PROOF_KEYS, where)
     record.require_timestamp(pending["decided_at"], where + ".decided_at")
@@ -921,8 +964,13 @@ def _validate_pending_proof(pending, receipt, where):
         if not code.startswith("mission_state_"):
             record.fail(record.PROBLEM_BAD_VALUE,
                         "%s.code must be a Mission State closure code" % at)
-        record.require_str(blocker["detail"], at + ".detail",
-                           record.MAX_BLOCKER_DETAIL_CHARS)
+        if reclaimed:
+            if blocker["detail"] is not None:
+                record.fail(record.PROBLEM_BAD_VALUE,
+                            "%s.detail is reclaimed and must be null" % at)
+        else:
+            record.require_str(blocker["detail"], at + ".detail",
+                               record.MAX_BLOCKER_DETAIL_CHARS)
 
 
 _CANCEL_QUIESCENCE_BY_ACHIEVED = {

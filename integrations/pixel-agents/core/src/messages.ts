@@ -406,6 +406,7 @@ export interface DiMissionList {
   state: DiObservationState;
   reason: string | null;
   missions: DiMission[];
+  retained?: DiRetainedSource[];
 }
 
 export interface DiMission {
@@ -427,12 +428,47 @@ export interface DiMission {
   paused: DiObservedValue;
   cancelRequested: DiObservedValue;
   ambiguity: DiObservedValue;
+  runStarted?: boolean;
+  cancelQuiescence?: string | null;
+  storeIdentity?: string | null;
+  sentHandoffReceipts?: number | null;
+  retention?: DiMissionRetention;
   members: DiMemberList;
   v2: DiMissionV2;
   herdrTask?: DiHerdrTask;
   evidence?: DiEvidenceLibrary;
   codeReview?: DiCodeReviewOffer;
 }
+
+export interface DiMissionRetention {
+  state: string;
+  problem: string | null;
+  eligible: boolean | null;
+  basis: string | null;
+  basisSource: string | null;
+  reason: string | null;
+  phase: string | null;
+  phaseAt: number | null;
+  summary: DiRetentionSummary | null;
+  retainedFor: number;
+}
+
+export interface DiRetentionSummary {
+  finalState: string;
+  finalStateSource: string;
+  verdict: DiRetentionFact;
+  ci: DiRetentionFact;
+  comments: DiRetentionFact;
+}
+
+export interface DiRetentionFact {
+  state: DiRetentionFactState;
+  detail: string | null;
+  source: string;
+}
+
+export type DiRetentionFactState =
+  'recorded' | 'not_recorded_locally' | 'not_read' | 'unreadable' | 'not_known';
 
 export interface DiMemberList {
   state: DiObservationState;
@@ -602,6 +638,7 @@ export interface DiMissionStateSummary {
   facts: DiReportFact[];
   completion: DiCompletion;
   provenance: DiReportProvenance;
+  progress?: DiMissionProgress;
 }
 
 export interface DiMissionStateKind {
@@ -670,6 +707,15 @@ export interface DiReportSource {
   standing: string | null;
   observedAt: number | null;
   detail: string | null;
+}
+
+export interface DiMissionProgress {
+  state: DiObservationState;
+  reason: string | null;
+  standing: string | null;
+  progress: string | null;
+  unrecognized: string | null;
+  closureReason: string | null;
 }
 
 export interface DiCanonicalReview {
@@ -851,6 +897,27 @@ export interface DiEvidenceReceipt {
   effectCompleted: boolean | null;
   contentDigest: string | null;
   recordedAt: number | null;
+}
+
+export interface DiRetainedSource {
+  sourceId: string;
+  state: DiRetainedSourceState;
+  problem: string | null;
+  total: number | null;
+  awaiting: number | null;
+  missions: DiRetainedMission[];
+}
+
+export type DiRetainedSourceState = 'observed' | 'unavailable';
+
+export interface DiRetainedMission {
+  missionRef: string;
+  sourceId: string;
+  nativeId: string;
+  family: string;
+  phase: string;
+  phaseAt: number;
+  summary: DiRetentionSummary | null;
 }
 
 export interface DiChainObservation {
@@ -1263,7 +1330,8 @@ export type DiMissionRequestOp =
   | 'reject'
   | 'requestChanges'
   | 'withdraw'
-  | 'run';
+  | 'run'
+  | 'deleteLocalData';
 
 export type DiMissionRequestState = 'ok' | 'refused' | 'unavailable' | 'unknown';
 
@@ -1493,6 +1561,9 @@ export interface DiMissionRequest {
   command?: string;
   supersedes?: string | null;
   reason?: string;
+  displayedState?: string;
+  missionRef?: string;
+  storeIdentity?: string | null;
 }
 
 export interface DiDeliveryRequest {

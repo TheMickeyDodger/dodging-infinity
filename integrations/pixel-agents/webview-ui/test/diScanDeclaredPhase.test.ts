@@ -20,9 +20,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { DiMission, DiOfficeState } from '../../core/src/messages.ts';
 import {
+  DI_HARNESS_REPO,
   DI_PHASE_NOT_APPLICABLE,
   DI_PHASE_NOT_PROVIDED,
   DI_PHASE_NOT_REPORTED,
+  DI_TARGET_REPOS_NOT_READ,
   type DiScanRow,
   phaseWord,
   scanRowsFromOffice,
@@ -116,11 +118,14 @@ describe('nothing is derived or invented', () => {
     expect(markup).not.toContain('di-phase-seg');
   });
 
-  it('no owner or repository is invented: both stay "not recorded" next to a declared phase', () => {
+  it('no owner or target repo is invented next to a declared phase: the owner stays "not recorded", the target count is NOT READ with its reason (AC-4.4-13), the harness is the product’s declared one', () => {
     const rows = rowsWith(declare({ state: 'observed', phase: 'DISPATCHED', unrecognized: null, problem: null }));
     for (const r of rows) {
       expect(r.table?.owner).toBeNull();
-      expect(r.table?.repos).toBeNull();
+      expect(r.table?.repos).toEqual({
+        harness: DI_HARNESS_REPO,
+        targets: { known: false, why: { kind: 'not_read', text: DI_TARGET_REPOS_NOT_READ } },
+      });
     }
   });
 });

@@ -31,7 +31,12 @@
  * - unavailable:      we could NOT read (with the reason).
  */
 
-import type { Classified, MemberClassification, QueryContractVersion } from './catalogContract.js';
+import type {
+  Classified,
+  MemberClassification,
+  MissionProgressState,
+  QueryContractVersion,
+} from './catalogContract.js';
 import { DEFAULT_QUERY_CONTRACT_VERSION } from './catalogContract.js';
 import type {
   BoundedList,
@@ -45,6 +50,8 @@ import type {
   MissionStateView,
   MissionView,
   ReportFact,
+  RetainedSourceView,
+  RetentionView,
   RuntimeAgentsView,
   RuntimeAgentView,
   RuntimeCaptureDiagnostics,
@@ -155,6 +162,20 @@ export interface ReportFactPresentation {
   revision: number | null;
   position: number | null;
   entries: Array<{ label: string; value: string | null }>;
+}
+
+/**
+ * Mission Core's OWN progress record, as the wire carries it (core/asyncapi.yaml DiMissionProgress): a lifecycle separate from the outer state, with every absence said as
+ * itself (no Mission State, no progress fact, an unexpected shape, no value) and an out-of-vocabulary value kept as inert text.
+ */
+export interface ProgressPresentation {
+  state: Observation<never>['state'];
+  reason: string | null;
+  /** The progress fact's own standing, verbatim; null when the report carries no progress fact. */
+  standing: string | null;
+  /** The classified value when observed (an out-of-vocabulary one is an unknown Classified, its raw the bounded text); null otherwise. */
+  value: Classified<MissionProgressState> | null;
+  closureReason: string | null;
 }
 
 /** completion: reported_* and verified_* are DIFFERENT facts and stay separate fields. */
@@ -277,6 +298,7 @@ export interface MissionV2Presentation {
     facts: ReportFactPresentation[];
     completion: CompletionPresentation;
     provenance: ProvenancePresentation;
+    progress: ProgressPresentation;
   };
   canonicalReview: {
     state: string | null;
@@ -338,6 +360,16 @@ export interface MissionPresentation {
   paused: Observation<boolean>;
   cancelRequested: Observation<boolean>;
   ambiguity: Observation<string>;
+  /** The catalog's own execution fact `execution.run_started`, verbatim: a run start was RECORDED (never that a team is working now). */
+  runStarted: boolean;
+  /** Deliverable 2: a Mission Core Mission's recorded cancel quiescence, verbatim (null otherwise). */
+  cancelQuiescence: string | null;
+  /** Deliverable 2: a workflow-store Mission's durable sent-handoff (dispatch) receipt count, verbatim (null otherwise, or not reported). */
+  sentHandoffReceipts: number | null;
+  /** Deliverable 2 (target identity): a Mission Core Mission's store identity, verbatim (null otherwise, or not reported). */
+  storeIdentity: string | null;
+  /** Deliverable 2: the backend's local-retention reading, as projected. */
+  retention: RetentionView;
   presence: Presence;
   members: Observation<MemberPresentation[]>;
   /** contract v2 blocks; null for a v1 office. */
@@ -444,6 +476,8 @@ export interface OfficeView {
   freshness: { envelope: FreshnessLevel; runtime: FreshnessLevel } | null;
   coverage: CoverageStatement;
   missions: Observation<MissionPresentation[]>;
+  /** Deliverable 2: Missions no longer in their store, as retention holds them (null: not reported). */
+  retained: RetainedSourceView[] | null;
   /** The catalog's registered sources (empty when no response was projected). */
   sources: SourcePresentation[];
   /** The ONE contract version this office process reads (selected at launch). */
@@ -521,6 +555,7 @@ export function unavailableView(
     freshness: null,
     coverage: coverageFor(version),
     missions: { state: 'unavailable', reason },
+    retained: null,
     sources: [],
     contractVersion: version,
     chainObservation: null,
@@ -959,10 +994,43 @@ function presentFact<T>(
   return { ...base, state: 'observed', reason: null, entries: entries(fact.value) };
 }
 
+/** The fact standings that are a CURRENT reading (mission/observation.py STANDING_VERIFIED, reconciliation STANDING_REPORTED); any other is not. */
+const CURRENT_PROGRESS_STANDINGS: readonly string[] = ['verified', 'reported'];
+
+/**
+ * Mission Core's progress, every absence said as itself: never a state it did not report. Its STANDING is honoured exactly as presentFact honours every other fact's: a
+ * fact the source declares `unavailable` is unavailable with the source's own detail as its reason, and a fact whose standing is not a current one is not an observation.
+ * In both, a RETAINED value beside it is never carried: retained data never becomes a confident current observation.
+ */
+function presentProgress(ms: MissionStateView): ProgressPresentation {
+  const none = { value: null, closureReason: null };
+  const absence = reportAbsence(ms);
+  if (absence) return { state: absence.state, reason: absence.reason, standing: null, ...none };
+  const fact = ms.report?.progress ?? null;
+  if (fact === null)
+    return { state: 'unavailable', reason: 'progress_not_reported', standing: null, ...none };
+  const standing = fact.standing;
+  if (fact.shape === 'unexpected')
+    return { state: 'unavailable', reason: 'progress_unexpected', standing, ...none };
+  if (standing === 'unavailable')
+    return { state: 'unavailable', reason: fact.detail ?? 'progress_unavailable', standing, ...none };
+  if (standing === null || !CURRENT_PROGRESS_STANDINGS.includes(standing))
+    return { state: 'unavailable', reason: 'progress_standing_not_current', standing, ...none };
+  if (fact.value === null) return { state: 'not_recorded', reason: null, standing, ...none };
+  return {
+    state: 'observed',
+    reason: null,
+    standing,
+    value: fact.value.progress,
+    closureReason: fact.value.closureReason,
+  };
+}
+
 function presentReport(ms: MissionStateView): {
   facts: ReportFactPresentation[];
   completion: CompletionPresentation;
   provenance: ProvenancePresentation;
+  progress: ProgressPresentation;
 } {
   const absence = reportAbsence(ms);
   const r: MissionReportView | null = ms.report;
@@ -1072,7 +1140,7 @@ function presentReport(ms: MissionStateView): {
     driftTotal: p?.drift.known ? p.drift.total : null,
     sources: p?.sources ?? [],
   };
-  return { facts, completion, provenance };
+  return { facts, completion, provenance, progress: presentProgress(ms) };
 }
 
 /** The typed attention values, decided exactly as the displayed facts are (presentFact). */
@@ -1227,6 +1295,11 @@ function presentMission(
       native.kind === 'workflow_store'
         ? nullable(native.ambiguity)
         : notApplicable('ambiguity', kind),
+    runStarted: mission.execution.runStarted,
+    cancelQuiescence: native.kind === 'mission_core' ? native.cancelQuiescence : null,
+    sentHandoffReceipts: native.kind === 'workflow_store' ? native.sentHandoffReceipts : null,
+    storeIdentity: native.kind === 'mission_core' ? native.storeIdentity : null,
+    retention: mission.retention,
     presence,
     members: membersObservation(mission, members, snapshotUnavailable),
     v2: presentMissionV2(mission),
@@ -1324,6 +1397,7 @@ export function buildOfficeView(
     freshness: null,
     coverage: coverageFor(version),
     missions: { state: 'unavailable', reason: 'no_response' },
+    retained: null,
     sources: [],
     contractVersion: version,
     chainObservation: null,
@@ -1391,6 +1465,7 @@ export function buildOfficeView(
     missions: list(
       view.missions.map((m) => presentMission(m, live, notLiveReason, snapshotUnavailable)),
     ),
+    retained: view.retentionArchive,
     runtimeAgents: presentRuntimeAgents(
       view.runtimeAgents,
       view.sources,

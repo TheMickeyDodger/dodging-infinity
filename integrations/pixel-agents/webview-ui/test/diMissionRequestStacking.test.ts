@@ -103,6 +103,10 @@ const WORLD_OVERLAYS: Layer[] = [
   // 30 is the stage inside the dock. 43 is the dock itself while Mission details (or a nested
   // screen) is open, so it covers agent labels (41/42) and stays under the covering workspace (44).
   { file: 'components/diScanPanel.css', what: 'the scan click-in stage', z: [30, 43] },
+  // Deliverable 3: fixture mode's in-panel label on the scan face, its own strip across the top of the window, one above the click-in stage (30) so the
+  // stage never paints over it. It is INSIDE the scan panel's own layer (the dock, 20, or 43 while a stage is open), so it sits BELOW the covering
+  // workspace, which carries its own fixture label.
+  { file: 'components/diScanPanel.css', what: "the scan face's fixture label strip", z: [31] },
   // Pass C item 5: the scan face's world-controls disclosure (the chevron at the world's top-right). DECIDED to sit BELOW the
   // covering workspace: it is a world control like the left strip, one above that strip (30) so the strip never paints over it,
   // and under the click-in stage while open (43), which covers the world it belongs to.

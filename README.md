@@ -228,6 +228,116 @@ The office you open with `pixel` shows the **Free UI** scan face. The pixel worl
 
 How the overview and details pictures were captured is in [`assets/pixel-world/operational-panel.md`](assets/pixel-world/operational-panel.md). Those pictures predate the Free UI scan face.
 
+### One status per Mission, and what finishing does to it
+
+*These notes describe the Free office in the browser, as this build behaves today.*
+
+**One status, everywhere.** Every Mission has exactly one status, from one closed list of 15. It reads the same, with the same word and the same mark,
+on the Missions table, in Mission details, on Reception and in the rail's Orchestrators. Each status has its own glyph beside its word, so a status is
+never told by colour alone:
+
+□ Not started · ◔ Start requested · ◎ Task observed · ● Running · ◐ Waiting · ▲ Blocked · ✕ Failed · ⊘ Stopped · ■ Ended · ◆ Verified · ◇ Stale · ◌ Disconnected · ○ Unknown · ? Unrecognised · ⊗ Unavailable
+
+The uncertain statuses say exactly what is not known:
+
+- **Task observed:** its task is observed, but no worker is confirmed live. That is not evidence any worker started.
+- **Unavailable:** a source that decides the status said it cannot provide it right now. For example, no live session corroborates a Herdr task: no
+  worker is confirmed now, which is not proof the task never started.
+- **Unknown:** what was read cannot decide the status, or what would decide it was not read.
+- **Unrecognised:** a source reported a value outside its own vocabulary.
+- **Stale** and **Disconnected:** the office is not live, or is disconnected. The last known status is shown, and it is not current.
+- **Ended** is not verified success, and **Verified** is not delivered. A Mission Core Mission reads Verified only when its record has ended and its
+  Mission State has observed verified success; an ended record whose verification was not observed, or did not affirm success, reads Ended.
+
+A source the office did not read is said as *not read* beside the status. It is never a status of its own. A list row's second line is what the
+Mission's source record itself says, labelled as the record's ("Record: RUNNING · Mc"); the status chip beside it is the status. **Mine** is the
+scope; Team Missions are part of Paid and are shown unavailable in Free.
+
+**Finishing files a Mission at once. Reclaiming its data waits 30 days.** These are two separate things:
+
+- **Archived, immediately.** A finished or cancelled Mission, with a positive basis in its own record, leaves Mine's All, Needs you, Stalled, Running
+  and Done at once and is listed under **Archived**. This changes the view only. Nothing is deleted.
+- **Reclaimed, 30 days later.** Thirty days after the Mission's end, its reasoning and logs are removed from DI's own stores. A **retained
+  summary** stays: its final status, verdict, CI results and comments. Each of those facts keeps its own state, in the words the office shows:
+  - *recorded*, with what was recorded;
+  - *None recorded*: it was looked for where it is kept, and none is there;
+  - *Not read*: where it would be kept was not consulted, so nothing is claimed about it;
+  - *Could not be read*: a record may exist, but it could not be read;
+  - *Not known*: kept before an absent record was told apart from an unreadable one, so its absence was never established.
+- **When reclamation runs.** No scheduler, thread or service of its own does it. It runs inline, as one bounded sweep on loops that already run:
+  - the progression runtime (`dirun`) sweeps **once at startup** (the **startup overdue sweep**: deadlines that passed while nothing was running)
+    and **once after every pass** (a deadline crossed while it stayed up);
+  - this happens in both of its modes, Mission Core Missions in its Mission Core mode and workflow-store workflows (Telegram or a relay) in its
+    workflow mode, each independently of the other and of the request panel;
+  - the request panel (`dimission_panel.py`) also sweeps Mission Core once when it starts.
+
+  Each sweep reclaims at most 8 Missions; the rest are taken by the next sweep. A sweep that fails reduces nothing more, and the next sweep resumes
+  the same Mission.
+- **The 30 days count from:**
+  - a Mission Core Mission's end as its own record dates it;
+  - for a workflow, the **first time a sweep observed it eligible** (finished with a positive basis), recorded once and never moved, because a
+    workflow's record dates no trustworthy end. It is never the approval time and never a file's modification time.
+
+  A clock that reads earlier than that point can only delay reclamation, never hasten it.
+- **What DI reclaims, from its own stores only:**
+  - the request panel's conversation journal (`mission_panel_journal.json`): each turn keeps its bookkeeping and loses its words;
+  - the local requests (`local_requests.json`): their proposal bodies;
+  - in `missions.json`, a terminal run's two diagnostic texts and nothing else;
+  - a terminal workflow's whole record in `workflows.json`;
+  - the contents of its preserved evidence (names, digests and sizes stay).
+- **What stays:**
+  - Mission Core's own record of the request and its authority (decisions, authorizations, the Authority Ledger and reservations, which its replay
+    checks depend on; authority history is never erased);
+  - the retained summary;
+  - the Mission's retention bookkeeping, which names it, records its state, and means a reclaimed or deleted Mission is never shown as intact.
+- **Outside DI's authority, never touched:**
+  - vendor-global transcripts (such as `~/.claude/projects/**`);
+  - the target herd's own `.herd/` state and Herdr's data (there is no Herdr purge);
+  - the PR delivery store (`pr_delivery.json`, read only for the summary's CI facts);
+  - `grok_bot_requests.json`.
+
+**Archived is read-only, not erased.** Nothing can be started, restarted, run or delivered from an archived Mission. Every control that cannot apply
+is drawn disabled, with its reason. Its facts stay readable:
+
+- a linked delivery's status is read and shown, and its confirmation and step stay disabled;
+- "Check again" re-reads its Herdr status;
+- the request panel itself refuses a restart or a run of it, whatever a page sends.
+
+Creating a delivery record needs a COMPLETE task, and a COMPLETE task is archived, so the office shows no creation command for it. You make the record
+with the existing delivery ceremony in your own terminal, and once it links, its status is readable from the archived details. The standalone delivery
+path and every human gate are unchanged.
+
+**Deleting a Mission's local data yourself.** Open **Missions**, choose **Archived**, open the Mission, and **hold** the trash button for 1.5 seconds
+(a click does nothing). This removes its local data **and** its retained summary. It cannot be undone. Two things are deliberately kept:
+
+- Mission Core's own record of the request and its authority, because authority history is never erased;
+- the retention bookkeeping that records the Mission's identity and that it was deleted, so it can never reappear as intact.
+
+It does not reach the providers' session transcripts, the target herd's state or PR delivery receipts.
+
+The trash is offered only for an archived Mission Core Mission, and only with the request panel connected. Otherwise it stays disabled and says why:
+
+- a running Mission cannot be deleted;
+- a workflow-store Mission cannot be proven yours, and is still reclaimed automatically;
+- a Herdr task's records live in the target herd, not here;
+- its data is already deleted, or its deletion is still finishing.
+
+The request panel then rechecks the record at that moment and may still refuse, with its own reason: busy, changed since the page showed it, or a
+different store. The answer appears in the Mission's own details, as one of:
+
+- **waiting** for the answer (the hold is withdrawn meanwhile);
+- **accepted** and still finishing;
+- **refused**, with the reason;
+- **done**.
+
+**Not included:** no Electron shell or installer; no paid Supabase sync, no organization feed and no Team Missions; no server-side retention (all
+retention is local, on this machine); no Full Trash (nothing deletes vendor transcripts or herd state); and no Herdr purge.
+
+To see every status and each of these states without a live Mission, run the isolated fixture preview:
+[`integrations/pixel-agents/docs/di-mission-preview.md`](integrations/pixel-agents/docs/di-mission-preview.md). It shows the status contract's own
+words and states. Figures 4.4a–c are not in this repository, so it claims no match to them. Of the acceptance criteria this work cites,
+AC-4.4-13 appears here only in code comments, and AC-4.4-17 is not cited or defined anywhere in this repository.
+
 ### An optional in-world request: the Codex Orchestrator
 
 An office that is merely running and observing has **no** request or approval capability, and an existing or older setup does not gain one by upgrading. The office takes requests only when you deliberately **configure** it: you start the request panel and the progression runtime with the same state, control and workspace locations, and give the office the panel’s discovery file. Once configured, you can ask for work in ordinary words, read an exact proposal, give an exact human approval (an operator attestation, not verified human authorship), press an explicit Start, and then follow automatic, supervised progress to a retrievable verified result. Git delivery stays **separate and human-gated**: the panel does not commit, push, merge, or release.

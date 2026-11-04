@@ -89,13 +89,15 @@ describe('Continue in the request workspace: off when the ask is empty or spaces
     expect(send).toContain('title="Type an ask first."');
   });
   it('the reason follows the rule that holds first: limit, then empty, then no workspace; otherwise it is offered', () => {
-    expect(continueAskReason('   ', 0, true)).toBe('Type an ask first.');
-    expect(continueAskReason('Add a toggle', 0, false)).toBe(DI_ASK_NO_WORKSPACE);
-    expect(continueAskReason('Add a toggle', 0, true)).toBeNull();
-    // AC-4.3-26: with 14 running the 15th would start normally, so the limit is not the reason
-    expect(continueAskReason('Add a toggle', DI_ORCHESTRATOR_LIMIT - 1, true)).toBeNull();
-    expect(continueAskReason('Add a toggle', DI_ORCHESTRATOR_LIMIT, true)).toBe(
-      '15 of 15 Orchestrators are running. Finish or stop one to start another.',
+    const held = (holding: number) => ({ holding, notKnown: 0 });
+    expect(continueAskReason('   ', held(0), true)).toBe('Type an ask first.');
+    expect(continueAskReason('Add a toggle', held(0), false)).toBe(DI_ASK_NO_WORKSPACE);
+    expect(continueAskReason('Add a toggle', held(0), true)).toBeNull();
+    // AC-4.3-26: with 14 in use the 15th would start normally, so the limit is not the reason
+    expect(continueAskReason('Add a toggle', held(DI_ORCHESTRATOR_LIMIT - 1), true)).toBeNull();
+    // a held Orchestrator is "in use", never "running" (review finding 4: a bound task observed without a confirmed team holds one)
+    expect(continueAskReason('Add a toggle', held(DI_ORCHESTRATOR_LIMIT), true)).toBe(
+      '15 of 15 Orchestrators are in use. Finish or stop one to start another.',
     );
   });
 });
@@ -103,11 +105,11 @@ describe('Continue in the request workspace: off when the ask is empty or spaces
 describe('At 15 running, New Mission refuses with a plain reason, Open Missions, and the handoff off (AC-4.3-14/-49)', () => {
   it('shows 15 of 15 with the reason and an Open Missions button', () => {
     const html = page(render({ rows: running(DI_ORCHESTRATOR_LIMIT) }));
-    expect(html).toMatch(/data-testid="di-new-limit"[\s\S]*?15 of 15 Orchestrators running/);
+    expect(html).toMatch(/data-testid="di-new-limit"[\s\S]*?15 of 15 Orchestrators are in use/);
     expect(html).toContain('Finish or stop one to start another.');
     expect(tag(html, 'di-new-open-missions')).not.toContain('disabled');
     expect(tag(html, 'di-new-continue')).toContain(
-      'title="15 of 15 Orchestrators are running. Finish or stop one to start another."',
+      'title="15 of 15 Orchestrators are in use. Finish or stop one to start another."',
     );
   });
   it('at 14 running there is no refusal', () => {

@@ -89,6 +89,8 @@ export interface DiMissionRequestControl {
   /** Read the decision offer again (after it expired): an explicit act, never a silent swap. */
   readOffer: (requestRef: string) => void;
   withdraw: () => void;
+  /** Deliverable 2: the owner's "Delete local data" for one Mission (after the hold completed); the panel rechecks everything. */
+  deleteLocalData: (missionRef: string, missionId: string, displayedState: string, storeIdentity: string | null) => void;
   checkApproval: () => void;
   run: (command: MrRunCommand) => void;
   loadResult: () => void;
@@ -103,13 +105,18 @@ export function useDiMissionRequest(
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Round 9: each Mission's owner delete in flight, by the seq it was sent with, held SYNCHRONOUSLY (two holds before a re-render cannot both send). Released only
+  // once the reducer has applied that send and no longer holds it pending: its answer arrived, or the client stopped vouching for it.
+  const deletesInFlight = useRef(new Map<string, number>());
+  for (const [missionRef, seq] of deletesInFlight.current)
+    if (state.nextSeq > seq && !state.pending.some((p) => p.seq === seq)) deletesInFlight.current.delete(missionRef);
   const seqRef = useRef(1);
 
   const ask = useCallback(
     (
       op: DiMissionRequestOp,
       fields: MrFields = {},
-      meta: { requestRef?: string | null; turnId?: string | null } = {},
+      meta: { requestRef?: string | null; turnId?: string | null; missionRef?: string | null } = {},
     ): void => {
       const seq = seqRef.current++;
       dispatch({
@@ -118,6 +125,7 @@ export function useDiMissionRequest(
         op,
         requestRef: meta.requestRef ?? null,
         turnId: meta.turnId ?? null,
+        missionRef: meta.missionRef ?? null,
       });
       transport.send(buildMessage(op, seq, fields));
     },
@@ -345,6 +353,17 @@ export function useDiMissionRequest(
     [ask],
   );
 
+  const deleteLocalData = useCallback(
+    (missionRef: string, missionId: string, displayedState: string, storeIdentity: string | null) => {
+      // Round 9: never a second delete of a Mission while one is in flight (the control is withdrawn meanwhile too); its outcome is kept by its
+      // SOURCE-QUALIFIED ref, and the request carries that ref and the store it is in (target identity), never a bare native id
+      if (deletesInFlight.current.has(missionRef) || stateRef.current.deletions[missionRef]?.state === 'in_flight') return;
+      deletesInFlight.current.set(missionRef, seqRef.current);
+      ask('deleteLocalData', { missionId, displayedState, missionRef, storeIdentity }, { missionRef });
+    },
+    [ask],
+  );
+
   const withdraw = useCallback(() => {
     const s = stateRef.current;
     // Round 61 sweep: only while Withdraw is armed for exactly the request and proposal on display.
@@ -425,6 +444,7 @@ export function useDiMissionRequest(
     disarmReject,
     readOffer,
     withdraw,
+    deleteLocalData,
     armWithdraw,
     disarmWithdraw,
     checkApproval,

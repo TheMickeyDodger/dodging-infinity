@@ -50,6 +50,7 @@ is ``unavailable`` too (``mission_sources.fileread``). Only a store file that
 was actually read and holds no records is ``fresh`` with zero records.
 """
 
+import hashlib
 import os
 import stat
 
@@ -232,6 +233,12 @@ def _read_document(source, now, budget, file_name, version_key,
 
 # -- Mission Core -------------------------------------------------------
 
+
+def store_identity(kind, store_dir):
+    """A store's identity: sha256 of ``<kind>:<realpath>`` (mission_retention/reclaim.py re-declares
+    it for the panel's own store; pinned equal by test)."""
+    return hashlib.sha256(("%s:%s" % (kind, os.path.realpath(store_dir))).encode("utf-8")).hexdigest()
+
 def _mission_core_view(source, mission):
     mission_id = mission["mission_id"]
     state = mission["state"]
@@ -284,6 +291,16 @@ def _mission_core_view(source, mission):
         "native": {
             "paused": bool(pauses) and pauses[-1]["resumed_at"] is None,
             "cancel_requested": run.get("cancel") is not None,
+            # Deliverable 2: the recorded quiescence of a COMPLETED cancel (run.cancel.quiescence,
+            # mission/record.py CANCEL_QUIESCENCE_*), verbatim; null while none is recorded. A raw
+            # fact: what it establishes is decided by the reader's own declared rule, not here.
+            "cancel_quiescence": ((run.get("cancel") or {}).get("quiescence")
+                                  if (run.get("cancel") or {}).get("completed_at") is not None
+                                  else None),
+            # Target identity: WHICH store this Mission is in, as a fact both sides compute (the
+            # panel names its own store the same way): two registered sources may hold the same
+            # native id, so an owner's delete carries this and the panel refuses any other store.
+            "store_identity": store_identity(source["kind"], source["store_dir"]),
         },
     }
 
@@ -355,9 +372,35 @@ def _workflow_view(source, workflow):
         "native": {
             "ambiguity": (ambiguity.get("state")
                           if type(ambiguity) is dict else None),
+            # Deliverable 2 (the capacity seam): the number of DURABLE receipts, in the record's
+            # own receipts, that a handoff revision was sent to the target (the runtime's dispatch
+            # receipts). The broker saves one BEFORE every spawn (target_runtime/broker.py) and the
+            # record refuses, never evicts, past MAX_RECEIPTS (workflow_authority/record.py), so
+            # zero is a recorded fact that none was ever sent. A raw count: what it establishes is
+            # the reader's own declared rule, not decided here. (Named without the runtime's verb:
+            # this reader's vocabulary is pinned free of it, tests/test_static.py.)
+            "sent_handoff_receipts": sent_handoff_receipts(workflow),
         },
     }
 
+
+
+# Re-declared from target_runtime/dispatch.py (its receipt marker and count), which this read-only
+# reader does not import (the runtime package pulls in the orchestrator);
+# tests/test_mission_retention.py pins parity with the runtime's own constant and count.
+SENT_HANDOFF_RECEIPT_MARKER = "dispatched handoff revision"
+
+
+def sent_handoff_receipts(workflow):
+    """The runtime's own count of handoffs sent to the target, from the record's durable receipts,
+    or ``None`` when the record carries no readable receipts list (never read as zero)."""
+    receipts = workflow.get("receipts")
+    if not isinstance(receipts, list) or not all(isinstance(r, dict) for r in receipts):
+        return None
+    return sum(
+        1 for receipt in receipts
+        if receipt.get("kind") == workflow_record.RECEIPT_KIND_EVIDENCE
+        and str(receipt.get("bounded_summary") or "").startswith(SENT_HANDOFF_RECEIPT_MARKER))
 
 def read_workflow_store(source, now, budget):
     degraded, document = _read_document(

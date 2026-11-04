@@ -17,7 +17,7 @@
     },
     {
       "id": "sample-building",
-      "state": "Building",
+      "state": "Running",
       "glyph": "●",
       "tone": "running",
       "needsYou": false,

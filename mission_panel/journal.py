@@ -87,7 +87,15 @@ TURN_KEYS = (
 # Keys a turn MAY carry. Every journal written before ``questions`` existed has none of them and
 # validates unchanged: an ABSENT key means "this panel version did not read the reply for
 # questions", which is not the same as a present key with no items ("read; none declared").
-OPTIONAL_TURN_KEYS = ("questions",)
+# ``reclaimed`` (Deliverable 2): the turn's payload was reclaimed by local retention, or deleted at the
+# owner's request (``mission_retention``). Additive like ``questions``: a journal written before it
+# carries none and validates unchanged.
+OPTIONAL_TURN_KEYS = ("questions", "reclaimed")
+# What a reclaimed turn keeps of its reclamation: when, and which of the two outcomes it was.
+RECLAIMED_KEYS = ("reclaimed_at", "outcome")
+RECLAIM_OUTCOME_RECLAIMED = "reclaimed"
+RECLAIM_OUTCOME_DELETED = "deleted"
+RECLAIM_OUTCOMES = (RECLAIM_OUTCOME_RECLAIMED, RECLAIM_OUTCOME_DELETED)
 QUESTIONS_KEYS = ("items", "problem")
 # The offer's bound fields: what a person is shown and a decision must match. ``expires_at`` is
 # ABSOLUTE and is fixed when the offer is issued; it is never recomputed.
@@ -113,6 +121,10 @@ PROBLEM_NO_DRAFT = "mission_panel_no_draft"
 PROBLEM_DRAFT_MISMATCH = "mission_panel_draft_mismatch"
 PROBLEM_NO_SUBMISSION_IN_FLIGHT = "mission_panel_no_submission_in_flight"
 PROBLEM_OFFERS_FULL = "mission_panel_offers_full"
+PROBLEM_CONVERSATION_RECLAIMED = "mission_panel_conversation_reclaimed"
+# Deliverable 2, round 8 finding 1: a conversation changed between the caller's check and the
+# reduction (a turn or a submission landed in the window); nothing was reduced.
+PROBLEM_CONVERSATION_CHANGED = "mission_panel_conversation_changed"
 
 UNCERTAIN_TURN_OUTCOME = {
     "status": "uncertain", "error_code": "interrupted_before_outcome",
@@ -312,8 +324,84 @@ def _closed_turn(turn, where):
              % (", ".join(TURN_KEYS), ", ".join(OPTIONAL_TURN_KEYS)))
 
 
+def _validate_reclaimed_turn(turn, where):
+    """A turn whose PAYLOAD was reclaimed (Deliverable 2): every bookkeeping invariant of a settled
+    turn still holds; the words, the draft's proposal BODY, the questions and the outcome's detail
+    are gone, and must be (a reclaimed turn is never a hiding place for them). Kept, each because a
+    check reads it: ``turn_id`` (its own map key), ``conversation_id`` and ``sequence`` (the unique
+    position, and the conversation a later turn is refused on), ``created_at``/``finished_at``/
+    ``state`` and ``outcome.status``/``error_code`` (the settled turn's final status),
+    ``gateway_request_id`` (the provider request it was, never retried), ``draft.proposal_digest_sha256``
+    (what was submitted, bound to the request's digest) and ``submission`` (the ``lr-`` link: this
+    panel's submitted requests, lineage and supersession are read from it)."""
+    marker = turn["reclaimed"]
+    _closed(marker, RECLAIMED_KEYS, where + ".reclaimed")
+    if not _is_int(marker["reclaimed_at"]) or marker["outcome"] not in RECLAIM_OUTCOMES:
+        _bad(where + ".reclaimed", "needs a reclaimed_at and an outcome of %s"
+             % ", ".join(RECLAIM_OUTCOMES))
+    if turn["state"] == TURN_RESERVED:
+        _bad(where, "a turn still with the provider is never reclaimed")
+    if "questions" in turn:
+        _bad(where, "a reclaimed turn keeps no questions")
+    for name in ("user_text", "assistant_text", "draft_problem"):
+        if turn[name] is not None:
+            _bad(where + "." + name, "a reclaimed turn keeps no %s" % name)
+    if not _is_int(turn["finished_at"]) or turn["finished_at"] < turn["created_at"]:
+        _bad(where, "a settled turn needs a finished_at")
+    outcome = turn["outcome"]
+    _closed(outcome, OUTCOME_KEYS, where + ".outcome")
+    if not isinstance(outcome["status"], str) or not outcome["status"] or len(
+        outcome["status"]
+    ) > MAX_DETAIL_CHARS:
+        _bad(where + ".outcome.status", "must be a short string")
+    _optional_text(outcome["error_code"], MAX_DETAIL_CHARS, where + ".outcome.error_code")
+    if outcome["detail"] is not None or outcome["unrecognized_event_lines"] is not None:
+        _bad(where + ".outcome", "a reclaimed turn keeps no outcome detail or line count")
+    draft = turn["draft"]
+    if draft is not None:
+        _closed(draft, DRAFT_KEYS, where + ".draft")
+        if draft["proposal"] is not None or not isinstance(
+            draft["proposal_digest_sha256"], str
+        ) or not _HEX64.fullmatch(draft["proposal_digest_sha256"]):
+            _bad(where + ".draft", "a reclaimed draft keeps only its proposal digest")
+    if turn["submission"] is not None:
+        if draft is None:
+            _bad(where, "only a turn with a draft can be submitted")
+        _validate_submission(turn["submission"], where + ".submission")
+        if turn["submission"]["state"] == SUBMISSION_RESERVED:
+            _bad(where, "a submission still in flight is never reclaimed")
+
+
+def reclaimed_turn(turn, at, outcome):
+    """The reduced form of a settled turn: its payload removed, its bookkeeping kept."""
+    reduced = copy.deepcopy(turn)
+    reduced.pop("questions", None)
+    reduced["user_text"] = None
+    reduced["assistant_text"] = None
+    reduced["draft_problem"] = None
+    reduced["outcome"]["detail"] = None
+    reduced["outcome"]["unrecognized_event_lines"] = None
+    if reduced["draft"] is not None:
+        reduced["draft"]["proposal"] = None
+    reduced["reclaimed"] = {"reclaimed_at": at, "outcome": outcome}
+    return reduced
+
+
 def _validate_turn(key, turn, where):
     _closed_turn(turn, where)
+    if "reclaimed" in turn:
+        if not _id_ok(turn["turn_id"], TURN_ID_PREFIX) or turn["turn_id"] != key:
+            _bad(where, "turn_id must be its own key and a ct- id")
+        if not _id_ok(turn["conversation_id"], CONVERSATION_ID_PREFIX):
+            _bad(where, "conversation_id must be a cv- id")
+        if not _is_int(turn["sequence"], 1) or not _is_int(turn["created_at"]):
+            _bad(where, "sequence and created_at must be integers")
+        if turn["state"] not in TURN_STATES:
+            _bad(where, "state must be one of %s" % ", ".join(TURN_STATES))
+        _optional_text(turn["gateway_request_id"], MAX_DETAIL_CHARS,
+                       where + ".gateway_request_id")
+        _validate_reclaimed_turn(turn, where)
+        return
     if not _id_ok(turn["turn_id"], TURN_ID_PREFIX) or turn["turn_id"] != key:
         _bad(where, "turn_id must be its own key and a ct- id")
     if not _id_ok(turn["conversation_id"], CONVERSATION_ID_PREFIX):
@@ -378,6 +466,16 @@ def validate_document(document, path="<document>"):
         _validate_offer(key, offer, "%s.offers[%s]" % (path, key))
     return document
 
+
+
+def conversation_snapshot(document, conversation_id):
+    """The digest of every turn of one conversation exactly as ``document`` holds it (Deliverable 2,
+    round 8 finding 1): what a reclaiming caller judged, so ``reclaim_conversations`` acts only on
+    that same snapshot. Any change to any of its turns (a new turn, an answer, a draft, a
+    submission, a reduction) changes it."""
+    turns = sorted((t for t in document["turns"].values()
+                    if t["conversation_id"] == conversation_id), key=lambda t: t["turn_id"])
+    return json_digest(turns)
 
 class PanelJournal(object):
     """Atomic load/mutate/save of the journal's one document."""
@@ -565,6 +663,11 @@ class PanelJournal(object):
                     state["changed"] = False
                     raise JournalError("conversation %s is not in the journal"
                                        % conversation_id, PROBLEM_UNKNOWN_CONVERSATION)
+                if any("reclaimed" in t for t in existing):
+                    state["changed"] = False
+                    raise JournalError("conversation %s was reclaimed: its words are no longer kept,"
+                                       " so it cannot be continued" % conversation_id,
+                                       PROBLEM_CONVERSATION_RECLAIMED)
                 if any(t["turn_id"] in in_flight and t["state"] == TURN_RESERVED
                        for t in existing):
                     raise JournalError("a turn of this conversation is still with"
@@ -664,6 +767,9 @@ class PanelJournal(object):
             if turn is None:
                 raise JournalError("turn %s is not in the journal" % turn_id,
                                    PROBLEM_UNKNOWN_TURN)
+            if "reclaimed" in turn:
+                raise JournalError("turn %s was reclaimed; its draft is no longer kept" % turn_id,
+                                   PROBLEM_CONVERSATION_RECLAIMED)
             if turn["draft"] is None:
                 raise JournalError("turn %s has no draft to submit" % turn_id,
                                    PROBLEM_NO_DRAFT)
@@ -680,6 +786,53 @@ class PanelJournal(object):
             state["changed"] = True
             validate_document(document, self.path)
             return copy.deepcopy(turn["submission"]), True
+
+    def reclaim_conversations(self, conversation_ids, at, outcome, checked):
+        """Reduce every turn of these conversations to its reclaimed form (Deliverable 2), through
+        the journal's own lock, load, validation and atomic save. Idempotent: a turn already reduced
+        is left as it is, except that an owner deletion records its outcome over an earlier
+        reclamation. Returns the number of turns changed.
+
+        ``checked`` maps EVERY conversation id to its ``conversation_snapshot`` in the document the
+        caller judged (which Missions the conversation produced, and whether each may lose its
+        words). The judgement and the reduction are made atomic HERE, inside the journal's own write
+        lock: if any conversation's turns are not byte-for-byte what was judged (a turn reserved or
+        answered, a draft or a submission landed in between, round 8 finding 1), it refuses with
+        ``PROBLEM_CONVERSATION_CHANGED`` and reduces nothing, so the caller judges again from the
+        current journal. It also refuses, writing nothing, while any of their turns or submissions
+        is still in flight."""
+        if outcome not in RECLAIM_OUTCOMES:
+            raise ValueError("outcome must be one of %s" % ", ".join(RECLAIM_OUTCOMES))
+        wanted = set(conversation_ids)
+        if set(checked) != wanted:
+            raise ValueError("checked must name exactly the conversations to reduce")
+        with self._writing() as (document, state):
+            chosen = [t for t in document["turns"].values() if t["conversation_id"] in wanted]
+            if any(t["state"] == TURN_RESERVED or (
+                t["submission"] is not None and t["submission"]["state"] == SUBMISSION_RESERVED
+            ) for t in chosen):
+                raise JournalError("a turn of these conversations is still in flight",
+                                   PROBLEM_CONVERSATION_BUSY)
+            moved = sorted(c for c in wanted
+                           if conversation_snapshot(document, c) != checked[c])
+            if moved:
+                raise JournalError(
+                    "conversation(s) %s changed after they were checked; nothing was reduced"
+                    % ", ".join(moved), PROBLEM_CONVERSATION_CHANGED)
+            changed = 0
+            for turn in chosen:
+                marker = turn.get("reclaimed")
+                if marker is not None and (
+                    marker["outcome"] == outcome or outcome == RECLAIM_OUTCOME_RECLAIMED
+                ):
+                    continue
+                if marker is not None:
+                    turn["reclaimed"] = {"reclaimed_at": at, "outcome": outcome}
+                else:
+                    document["turns"][turn["turn_id"]] = reclaimed_turn(turn, at, outcome)
+                changed += 1
+            state["changed"] = changed > 0
+            return changed
 
     def finish_submission(self, turn_id, state, request_ref, problem, now):
         with self._writing() as (document, changed):

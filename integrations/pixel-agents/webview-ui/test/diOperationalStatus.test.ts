@@ -1,5 +1,5 @@
 /**
- * feature13: the OBSERVED STATUS derivation (diOperationalStatus.ts) — pure, over fields the office
+ * feature13: the OBSERVED STATUS derivation (now the one Mission status contract, diMissionStatus.ts) — pure, over fields the office
  * state has already projected. The base data is the office state the real server projects from a
  * labelled packaged fixture (FIXTURE, not live); each case changes only the fields it is about.
  *
@@ -17,12 +17,14 @@ import { test } from 'vitest';
 
 import type { DiMission, DiOfficeState } from '../../core/src/messages.ts';
 import {
-  DI_OP_GLYPH,
-  type DiOpStatus,
-  memberTerminalNotes,
-  missionObjective,
+  DI_MISSION_STATUS,
+  type DiMissionStatusId,
   missionStatus,
   officeStatus,
+} from '../src/components/diMissionStatus.ts';
+import {
+  memberTerminalNotes,
+  missionObjective,
   shortMemberIdentity,
 } from '../src/components/diOperationalStatus.ts';
 
@@ -65,7 +67,7 @@ test('running: an observed roster, an established binding and members confirmed 
 });
 
 test('every status class has its own words and its own shape (never colour alone)', () => {
-  const all: DiOpStatus[] = [
+  const all: DiMissionStatusId[] = [
     'running',
     'waiting',
     'blocked',
@@ -75,7 +77,7 @@ test('every status class has its own words and its own shape (never colour alone
     'stale',
     'unknown',
   ];
-  assert.equal(new Set(all.map((k) => DI_OP_GLYPH[k])).size, all.length);
+  assert.equal(new Set(all.map((k) => DI_MISSION_STATUS[k].glyph)).size, all.length);
 });
 
 test('the native record state is DISPLAY-ONLY: no lifecycle string changes the status', () => {
@@ -102,7 +104,7 @@ test('the native record state is DISPLAY-ONLY: no lifecycle string changes the s
   assert.match(status(s, m).sentence, /record state SomeNative_State/);
 });
 
-test('standing decides ended / waiting; an unrecognised standing is unknown with its raw value', () => {
+test('standing decides ended / waiting; an unrecognised standing is UNRECOGNISED (its own reason) with its raw value', () => {
   const s = fresh();
   const m = boundMission(s);
   m.standing = 'terminal';
@@ -114,12 +116,16 @@ test('standing decides ended / waiting; an unrecognised standing is unknown with
   for (const raw of ['future_standing', 'Active', '']) {
     m.standing = raw;
     const r = status(s, m);
-    assert.equal(r.status, 'unknown', JSON.stringify(raw));
+    assert.equal(r.status, 'unrecognised', JSON.stringify(raw));
+    assert.equal(r.why?.kind, 'unrecognised', JSON.stringify(raw));
     assert.ok(r.sentence.includes(`“${raw}”`));
   }
 });
 
-test('reported completion without success is failed (reported, not verified); verified success stays separate', () => {
+// CHANGED IN round 4 (review finding 1): this test used to expect a reported completion without success to read `failed`. That was wrong: mission/observation.py
+// makes `reported_success` a conjunction (reported_complete AND an applicable APPROVE review), so `false` also covers a missing, pending, stale or left-cursor review,
+// an ABSENCE of affirmation, never a failure report. It now asserts the honest rule; Failed stays the source's own terminal REPORT, and Verified its own status.
+test('a reported completion WITHOUT affirmed success is not failed (cited beside the execution reading); Failed is the source’s own report; verified success is its own status, Verified', () => {
   const s = fresh();
   const m = boundMission(s);
   assert.equal(m.v2.projected, true);
@@ -127,9 +133,27 @@ test('reported completion without success is failed (reported, not verified); ve
   c.state = 'observed';
   c.reportedComplete = true;
   c.reportedSuccess = false;
-  const failed = status(s, m);
+  const reported = status(s, m);
+  // the four live, confirmed members are the execution reading; the completion is said beside it, not over it
+  assert.equal(reported.status, 'running');
+  assert.notEqual(reported.status, 'failed');
+  // (CHANGED IN round 5, findings 2 and 3) its own qualification, rendered on every face, naming no cause
+  assert.match(reported.qualification ?? '', /reports the task complete, but its reported success is not affirmed/);
+  assert.doesNotMatch(reported.qualification ?? '', /verif/);
+  assert.match(reported.qualification ?? '', /not a failure/);
+  assert.doesNotMatch(reported.qualification ?? '', /review/);
+  assert.ok(reported.sources.includes('v2.missionState.completion.reportedComplete = true'));
+  assert.ok(reported.sources.includes('v2.missionState.completion.reportedSuccess = false'));
+  // Failed is still reachable, as what it is: the source's own terminal FAILED literal, reported, not verified
+  const literal = fresh();
+  const reportedFailed = boundMission(literal);
+  reportedFailed.standing = 'terminal';
+  reportedFailed.lifecycleModel = 'herdr.task/1';
+  reportedFailed.lifecycleState = 'FAILED';
+  const failed = status(literal, reportedFailed);
   assert.equal(failed.status, 'failed');
-  assert.match(failed.sentence, /not verified/);
+  assert.match(failed.sentence, /as the source reports it/);
+  assert.ok(failed.sources.includes('mission.lifecycleState = "FAILED"'));
   // A reported success is not verified success: an ended record says so unless verified.
   c.reportedSuccess = true;
   c.verifiedSuccess = null;
@@ -137,7 +161,7 @@ test('reported completion without success is failed (reported, not verified); ve
   assert.match(status(s, m).sentence, /Ended is not verified success/);
   c.verifiedSuccess = true;
   const verified = status(s, m);
-  assert.equal(verified.status, 'ended');
+  assert.equal(verified.status, 'verified');
   assert.match(verified.sentence, /records verified success/);
   assert.ok(verified.sources.includes('v2.missionState.completion.verifiedSuccess = true'));
 });
@@ -145,7 +169,10 @@ test('reported completion without success is failed (reported, not verified); ve
 test('unknown, never guessed: roster not observed, binding not established, nobody confirmed live', () => {
   let s = fresh();
   let m = boundMission(s);
+  // a roster the source could not provide is its own state, Unavailable, with its reason (never folded into Unknown)
   m.members.state = 'unavailable';
+  assert.equal(status(s, m).status, 'unavailable');
+  m.members.state = 'not_recorded';
   assert.equal(status(s, m).status, 'unknown');
   s = fresh();
   m = boundMission(s);
@@ -156,11 +183,15 @@ test('unknown, never guessed: roster not observed, binding not established, nobo
   m = boundMission(s);
   for (const x of m.members.members) x.live = false;
   const r = status(s, m);
-  assert.equal(r.status, 'unknown');
+  // bound, nobody confirmed live: its bound task is observed, its workers are not (C3) — never Running, and said as exactly that
+  assert.equal(r.status, 'task_observed');
   assert.match(r.sentence, /no team member is confirmed live/);
-  // The fixture's own unverified Missions (no roster) read unknown too — never running, never 0.
+  // The fixture's own unverified Missions (their roster could not be read) read Unavailable, with the roster's own reason: never running, never 0.
   const unverified = base.missions.missions.find((x) => x.bindingState === 'unverified')!;
-  assert.equal(missionStatus(unverified, base).status, 'unknown');
+  assert.equal(unverified.members.state, 'unavailable');
+  const u = missionStatus(unverified, base);
+  assert.equal(u.status, 'unavailable');
+  assert.ok(u.why?.codes?.includes(unverified.members.reason!));
 });
 
 test('blocked ONLY from a confirmed, live member: every other blocked report promotes nothing', () => {
@@ -208,12 +239,16 @@ test('blocked ONLY from a confirmed, live member: every other blocked report pro
   assert.match(note, /the terminal's own report/);
 });
 
-test('terminal activity "done" is never completion: an active Mission with done terminals is not ended', () => {
+// CHANGED IN round 5 (item 4): this test used to expect `running` for a team whose every live member reports done. That was wrong: liveness is the snapshot's
+// freshness (mission_sources/contract.py `is_live`), not work, and `done` is a distinct activity, so with no member reporting work the Mission is not Running. What
+// the test protects is unchanged and still asserted: a terminal's own `done` is never Mission completion, so it is never Ended, Verified or a success.
+test('terminal activity "done" is never completion: an active Mission with done terminals is not ended (and, with no member reporting work, not Running)', () => {
   const s = fresh();
   const m = boundMission(s);
   for (const x of m.members.members) x.activity = 'done';
   const r = status(s, m);
-  assert.equal(r.status, 'running');
+  assert.equal(r.status, 'waiting');
+  assert.ok(!['ended', 'verified', 'running'].includes(r.status));
   assert.doesNotMatch(r.sentence, /complete|ended|success/i);
 });
 
@@ -345,8 +380,9 @@ test('duplicate names and duplicate objectives stay distinct records with their 
   for (const x of a.members.members) x.live = false;
   const quiet = missionStatus(a, s);
   const live = missionStatus(b, s);
-  assert.equal(quiet.status, 'running');
-  assert.match(quiet.sentence, /No team member is confirmed live/);
+  // the quiet one's bound task is observed, its workers are not (C3): never Running from the task record alone
+  assert.equal(quiet.status, 'task_observed');
+  assert.match(quiet.sentence, /no team member is confirmed live/);
   assert.equal(live.status, 'running');
   assert.notEqual(quiet.sentence, live.sentence);
   const objectives = base.missions.missions.map((m) => m.objective.value);

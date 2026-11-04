@@ -47,6 +47,7 @@ cannot make room the new record is REFUSED explicitly. Counts
 reported by this module are exact (standing truthfulness rule).
 """
 
+import copy
 import json
 import os
 import stat
@@ -91,6 +92,26 @@ MAX_WORKFLOW_RECORDS = 64
 
 PROBLEM_STORE_FULL = "workflow_store_full"
 PROBLEM_DUPLICATE_WORKFLOW = "workflow_duplicate_id"
+
+# Deliverable 2, round 8 finding 2: the REMOVAL HAND-OFF. The cap's ``_prune_inactive`` can evict a
+# record in the SAME transaction that has just made it terminal in memory (Telegram supersedes a
+# PLANNED Mission -> BLOCKED, then adds the new one), so no sweep can ever observe it. At the moment
+# of eviction the prune records how the record ENDED, from the in-memory record (never the stale
+# on-disk one), under a store-private transient key of the document; ``WorkflowStore.save`` takes
+# it off and hands it off to ``workflow_removals.json`` BEFORE workflows.json is replaced. The
+# hand-off holds only ``REMOVAL_ENDING_KEYS`` (never intent, authorization or rendered text), is
+# mode 600 beside workflows.json, and is covered by the workflow store's OWN lock: every writer of
+# it holds that lock (``save`` runs inside the caller's load-modify-save cycle; retention adopts
+# under it), so the eviction path takes no second lock and no lock order can invert. It is bounded
+# and REFUSES at the bound (the evicting save fails, nothing is written); nothing is ever dropped.
+WORKFLOW_REMOVALS_FILE_NAME = "workflow_removals.json"
+WORKFLOW_REMOVALS_SCHEMA_VERSION = 1
+MAX_WORKFLOW_REMOVALS = 4 * MAX_WORKFLOW_RECORDS
+REMOVAL_ENDING_KEYS = ("workflow_id", "phase", "receipts", "verified_result")
+_REMOVALS_TOP_LEVEL_KEYS = ("workflow_removals_schema_version", "removed")
+# The transient, in-memory carrier from the prune to the save. Never persisted as such: ``save``
+# removes it before validating, and a document that is never saved never evicted anything on disk.
+_PRUNED_ENDINGS_KEY = "_pruned_endings_pending_handoff"
 
 _TOP_LEVEL_KEYS = ("workflow_store_schema_version", "workflows")
 
@@ -288,6 +309,69 @@ def accept_loaded_document(document, path):
     return document
 
 
+def removal_ending(record):
+    """How one record ended, as the removal hand-off keeps it (``REMOVAL_ENDING_KEYS`` only)."""
+    return {"workflow_id": record["workflow_id"], "phase": record["phase"],
+            "receipts": copy.deepcopy(record.get("receipts") or []),
+            "verified_result": copy.deepcopy(record.get("verified_result"))}
+
+
+def default_removals():
+    return {"workflow_removals_schema_version": WORKFLOW_REMOVALS_SCHEMA_VERSION, "removed": {}}
+
+
+def _validate_removals(document, path):
+    if not isinstance(document, dict) or set(document) != set(_REMOVALS_TOP_LEVEL_KEYS):
+        raise StoreError("removal hand-off %s must be an object with exactly the keys %s"
+                         % (path, ", ".join(_REMOVALS_TOP_LEVEL_KEYS)))
+    version = document["workflow_removals_schema_version"]
+    if isinstance(version, bool) or version != WORKFLOW_REMOVALS_SCHEMA_VERSION:
+        raise StoreError("removal hand-off %s has schema version %r; this layer understands only"
+                         " %d" % (path, version, WORKFLOW_REMOVALS_SCHEMA_VERSION))
+    removed = document["removed"]
+    if not isinstance(removed, dict):
+        raise StoreError("removal hand-off %s key 'removed' must be an object" % path)
+    if len(removed) > MAX_WORKFLOW_REMOVALS:
+        raise StoreError("removal hand-off %s holds %d removed records; the hard bound is %d"
+                         % (path, len(removed), MAX_WORKFLOW_REMOVALS))
+    for workflow_id, ending in removed.items():
+        if not isinstance(ending, dict) or set(ending) != set(REMOVAL_ENDING_KEYS) or (
+            ending["workflow_id"] != workflow_id
+        ) or not isinstance(ending["phase"], str) or not isinstance(ending["receipts"], list) or (
+            ending["verified_result"] is not None and not isinstance(ending["verified_result"], dict)
+        ):
+            raise StoreError("removal hand-off %s entry %r is not a removed record's ending (%s)"
+                             % (path, workflow_id, ", ".join(REMOVAL_ENDING_KEYS)))
+
+
+def removals_path(directory):
+    return os.path.join(directory, WORKFLOW_REMOVALS_FILE_NAME)
+
+
+def load_removals(directory):
+    """The removal hand-off, fail closed (a missing file is an empty hand-off). The caller holds
+    the workflow store's lock."""
+    path = removals_path(directory)
+    if not os.path.lexists(path):
+        return default_removals()
+    _refuse_open_store_permissions(path)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            document = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise StoreError("removal hand-off %s could not be read as JSON (%s); move it aside"
+                         " (keeping it for inspection)" % (path, exc))
+    _validate_removals(document, path)
+    return document
+
+
+def save_removals(directory, document):
+    """Persist the removal hand-off atomically. The caller holds the workflow store's lock."""
+    path = removals_path(directory)
+    _validate_removals(document, path)
+    atomic_write_json(directory, path, document, temp_prefix=".workflow-removals-")
+
+
 class WorkflowStore(object):
     """Atomic load/save of the workflow store document."""
 
@@ -324,10 +408,33 @@ class WorkflowStore(object):
         The document is validated (closed schema, every record)
         BEFORE anything touches the filesystem, so an invalid
         document can never clobber a valid store.
+
+        Deliverable 2 (round 8 finding 2): the endings of records the
+        cap pruned from this document (``_prune_inactive``) are handed
+        off to the removal hand-off FIRST, under the lock the caller
+        already holds, and only then is workflows.json replaced. A save
+        that fails leaves the caller's document exactly as it was.
         """
-        _validate_document(document, self.path)
-        atomic_write_json(self.directory, self.path, document,
-                          temp_prefix=".workflows-")
+        endings = document.pop(_PRUNED_ENDINGS_KEY, None)
+        try:
+            _validate_document(document, self.path)
+            if endings:
+                handoff = load_removals(self.directory)
+                waiting = len(handoff["removed"])
+                handoff["removed"].update(endings)
+                if len(handoff["removed"]) > MAX_WORKFLOW_REMOVALS:
+                    raise StoreError(
+                        "%d removed workflow records already await local retention in %s (the"
+                        " bound is %d); nothing was written. Run the runtime (dirun), whose local"
+                        " retention adopts them, then retry"
+                        % (waiting, removals_path(self.directory), MAX_WORKFLOW_REMOVALS))
+                save_removals(self.directory, handoff)
+            atomic_write_json(self.directory, self.path, document,
+                              temp_prefix=".workflows-")
+        except BaseException:
+            if endings is not None:
+                document[_PRUNED_ENDINGS_KEY] = endings
+            raise
 
 
 def is_active(record):
@@ -366,6 +473,9 @@ def _prune_inactive(document):
     for workflow_id in inactive:
         if len(workflows) < MAX_WORKFLOW_RECORDS:
             break
+        # how it ENDED, from the in-memory record, at the moment of eviction (Deliverable 2)
+        document.setdefault(_PRUNED_ENDINGS_KEY, {})[workflow_id] = removal_ending(
+            workflows[workflow_id])
         del workflows[workflow_id]
         pruned += 1
     return pruned

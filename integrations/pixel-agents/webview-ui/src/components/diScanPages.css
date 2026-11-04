@@ -1106,3 +1106,73 @@ button.di-scan-tree-row:hover:not([data-selected='true']) {
     font-size: 21px;
   }
 }
+
+/* ---------- Deliverable 3: a narrow stage (a narrow window, beside the rail) ----------
+   Layout only: every word stays whole and true. The filter chips keep each word with its count inside their edge; each Missions row stacks (the Mission, its
+   status, then each fact under its own column's word, from the cell's data-label), so the status is never past the stage's edge. */
+@container scanstage (max-width: 599px) {
+  .di-page {
+    padding: 16px 12px 24px;
+  }
+  /* a filter chip keeps its word and its count inside its own edge: one line where it fits, wrapped inside the chip (which grows) where not */
+  .di-chip {
+    max-width: 100%;
+    height: auto;
+    min-height: 32px;
+    padding-block: 4px;
+    text-align: left;
+  }
+  /* a status tag or a count wraps its words inside itself (it grows taller) rather than run past the stage or out of its own box */
+  .di-page-tag,
+  .di-page-count {
+    max-width: 100%;
+    height: auto;
+    min-height: 24px;
+    padding-block: 3px;
+    white-space: normal;
+  }
+  .di-missions-table,
+  .di-missions-table tbody {
+    display: block;
+    width: 100%;
+  }
+  /* the column heads stay in the document for assistive technology; each stacked fact says its own head */
+  .di-missions-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .di-missions-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--di-scan-line);
+  }
+  .di-missions-row > td {
+    display: block;
+    padding: 0;
+    border-bottom: 0;
+    overflow-wrap: anywhere;
+  }
+  .di-missions-row > td:first-child {
+    order: -2;
+  }
+  .di-missions-row > td[data-label='Status'] {
+    order: -1;
+  }
+  .di-missions-row > td[data-label]::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-width: 4.5em;
+    margin-right: 8px;
+    color: var(--di-scan-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+}

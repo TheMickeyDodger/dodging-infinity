@@ -1,0 +1,112 @@
+{
+  "label": "FIXTURE (hand-authored contract cases, not live): the capacity-release bases the office reads (webview-ui/src/components/diMissionStatus.ts capacityReleaseBasis) and the retention bases the backend reads (mission_retention/eligibility.py), case by case. tests/test_mission_retention.py E8 runs every case through the backend; webview-ui/test/diCapacityBasisCases.test.ts runs every case through the office. A basis shared by name must decide the same case from the same record fact on both sides; a basis or case that cannot be mirrored is declared under `asymmetric` with its reason.",
+  "shared": [
+    {
+      "case": "mission_core_completed",
+      "basis": "verified_target_stopped",
+      "evidence": "missions.json missions[].state",
+      "backend": { "family": "mission_core", "state": "COMPLETED", "run": { "intent": { "recorded": true } } },
+      "backend_source": "state = \"COMPLETED\"",
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "COMPLETED", "runStarted": true },
+      "office_source": "mission.lifecycleState = \"COMPLETED\""
+    },
+    {
+      "case": "mission_core_cancelled_nothing_started",
+      "basis": "cancel_quiescent",
+      "evidence": "missions.json missions[].run.cancel.quiescence",
+      "backend": { "family": "mission_core", "state": "CANCELLED", "run": { "intent": { "recorded": true }, "cancel": { "quiescence": "nothing_started", "completed_at": 90 } } },
+      "backend_source": "run.cancel.quiescence = \"nothing_started\"",
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "CANCELLED", "runStarted": true, "cancelQuiescence": "nothing_started" },
+      "office_source": "mission.cancelQuiescence = \"nothing_started\""
+    },
+    {
+      "case": "mission_core_cancelled_owned_group_reaped",
+      "basis": "cancel_quiescent",
+      "evidence": "missions.json missions[].run.cancel.quiescence",
+      "backend": { "family": "mission_core", "state": "CANCELLED", "run": { "intent": { "recorded": true }, "cancel": { "quiescence": "owned_group_reaped", "completed_at": 90 } } },
+      "backend_source": "run.cancel.quiescence = \"owned_group_reaped\"",
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "CANCELLED", "runStarted": true, "cancelQuiescence": "owned_group_reaped" },
+      "office_source": "mission.cancelQuiescence = \"owned_group_reaped\""
+    },
+    {
+      "case": "mission_core_cancelled_task_observed_stopped",
+      "basis": "cancel_quiescent",
+      "evidence": "missions.json missions[].run.cancel.quiescence",
+      "backend": { "family": "mission_core", "state": "CANCELLED", "run": { "intent": { "recorded": true }, "cancel": { "quiescence": "task_observed_stopped", "completed_at": 90 } } },
+      "backend_source": "run.cancel.quiescence = \"task_observed_stopped\"",
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "CANCELLED", "runStarted": true, "cancelQuiescence": "task_observed_stopped" },
+      "office_source": "mission.cancelQuiescence = \"task_observed_stopped\""
+    },
+    {
+      "case": "mission_core_rejected_never_started",
+      "basis": "no_start_recorded",
+      "evidence": "missions.json missions[].run.intent",
+      "backend": { "family": "mission_core", "state": "REJECTED" },
+      "backend_source": "run.intent = null",
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "REJECTED", "runStarted": false },
+      "office_source": "mission.runStarted = false"
+    },
+    {
+      "case": "workflow_completed",
+      "basis": "workflow_target_stopped",
+      "evidence": "workflows.json workflows[].phase",
+      "backend": { "family": "workflow_store", "phase": "COMPLETED", "receipts": [{ "kind": "evidence", "bounded_summary": "dispatched handoff revision 1" }] },
+      "backend_source": "phase = \"COMPLETED\"",
+      "office": { "sourceKind": "workflow_store", "lifecycleModel": "workflow_authority.workflow_phase/2", "standing": "terminal", "lifecycleState": "COMPLETED", "runStarted": true, "workflowPhase": "COMPLETED", "sentHandoffReceipts": 1 },
+      "office_source": "v2.workflowPhase.phase = \"COMPLETED\""
+    },
+    {
+      "case": "workflow_blocked_never_sent",
+      "basis": "workflow_not_dispatched",
+      "evidence": "workflows.json workflows[].receipts",
+      "backend": { "family": "workflow_store", "phase": "BLOCKED", "receipts": [{ "kind": "preparation", "bounded_summary": "workspace prepared" }] },
+      "backend_source": "receipts: no dispatch receipt",
+      "office": { "sourceKind": "workflow_store", "lifecycleModel": "workflow_authority.workflow_phase/2", "standing": "terminal", "lifecycleState": "BLOCKED", "runStarted": false, "workflowPhase": "BLOCKED", "sentHandoffReceipts": 0 },
+      "office_source": "mission.sentHandoffReceipts = 0"
+    }
+  ],
+  "refused": [
+    {
+      "case": "mission_core_cancelled_unproven",
+      "backend": { "family": "mission_core", "state": "CANCELLED", "run": { "intent": { "recorded": true }, "cancel": { "quiescence": "unproven", "completed_at": 90 } } },
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "CANCELLED", "runStarted": true, "cancelQuiescence": "unproven" }
+    },
+    {
+      "case": "mission_core_cancelled_not_applicable",
+      "backend": { "family": "mission_core", "state": "CANCELLED", "run": { "intent": { "recorded": true }, "cancel": { "quiescence": "not_applicable", "completed_at": 90 } } },
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "CANCELLED", "runStarted": true, "cancelQuiescence": "not_applicable" }
+    },
+    {
+      "case": "mission_core_blocked_after_a_start",
+      "backend": { "family": "mission_core", "state": "BLOCKED", "run": { "intent": { "recorded": true } } },
+      "office": { "sourceKind": "mission_core", "lifecycleModel": "mission_core.mission_state/1", "standing": "terminal", "lifecycleState": "BLOCKED", "runStarted": true }
+    },
+    {
+      "case": "workflow_blocked_after_a_handoff_was_sent",
+      "backend": { "family": "workflow_store", "phase": "BLOCKED", "receipts": [{ "kind": "evidence", "bounded_summary": "dispatched handoff revision 1" }] },
+      "office": { "sourceKind": "workflow_store", "lifecycleModel": "workflow_authority.workflow_phase/2", "standing": "terminal", "lifecycleState": "BLOCKED", "runStarted": false, "workflowPhase": "BLOCKED", "sentHandoffReceipts": 1 }
+    },
+    {
+      "case": "workflow_blocked_receipts_not_reported",
+      "backend": null,
+      "office": { "sourceKind": "workflow_store", "lifecycleModel": "workflow_authority.workflow_phase/2", "standing": "terminal", "lifecycleState": "BLOCKED", "runStarted": false, "workflowPhase": "BLOCKED", "sentHandoffReceipts": null }
+    }
+  ],
+  "asymmetric": {
+    "bases": {
+      "engine_task_stopped": "a Herdr task lives in a store DI does not own; no backend retention reads it",
+      "workflow_before_dispatch": "a workflow before DISPATCHED is not finished: the office frees its capacity while live, and retention (terminal records only) never archives it"
+    },
+    "cases": [
+      {
+        "case": "workflow_verified_not_yet_completed",
+        "basis": "workflow_target_stopped",
+        "why": "VERIFIED is not finished: the same phase fact frees the office's capacity, and retention waits for the terminal COMPLETED",
+        "backend": { "family": "workflow_store", "phase": "VERIFIED", "receipts": [{ "kind": "evidence", "bounded_summary": "dispatched handoff revision 1" }] },
+        "backend_reason": "not_terminal",
+        "office": { "sourceKind": "workflow_store", "lifecycleModel": "workflow_authority.workflow_phase/2", "standing": "active", "lifecycleState": "VERIFIED", "runStarted": true, "workflowPhase": "VERIFIED", "sentHandoffReceipts": 1 },
+        "office_source": "v2.workflowPhase.phase = \"VERIFIED\""
+      }
+    ]
+  }
+}

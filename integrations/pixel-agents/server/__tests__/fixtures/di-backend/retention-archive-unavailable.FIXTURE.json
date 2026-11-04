@@ -1,0 +1,15 @@
+{
+  "fixture": true,
+  "generator": "tests/test_mission_retention.py CR4",
+  "label": "FIXTURE (generated, not live): the real catalog's retained_by_source for an EMPTY workflow store whose mission_retention.json is malformed",
+  "retained_by_source": [
+    {
+      "awaiting": null,
+      "missions": [],
+      "problem": "mission_retention_unreadable",
+      "source_id": "wf",
+      "state": "unavailable",
+      "total": null
+    }
+  ]
+}
