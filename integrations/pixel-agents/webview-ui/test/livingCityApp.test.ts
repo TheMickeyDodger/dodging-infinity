@@ -253,6 +253,9 @@ async function goToDistrict(label: string) {
 }
 const pressed = (testid: string) =>
   p().$eval(`[data-testid="${testid}"]`, (el) => el.getAttribute('aria-pressed'));
+// waits (not a one-shot read) for a toggle to settle pressed, so a slow CI boot cannot race the applied state
+const waitPressed = (testid: string, timeout = 10_000) =>
+  p().waitForSelector(`[data-testid="${testid}"][aria-pressed="true"]`, { state: 'attached', timeout });
 const text = (testid: string) =>
   p().$eval(`[data-testid="${testid}"]`, (el) => (el as HTMLElement).innerText);
 
@@ -563,8 +566,11 @@ test(
     plant(bad);
     await boot();
     await openCity();
+    await waitPressed('city-lighting-day');
     assert.equal(await pressed('city-lighting-day'), 'true');
+    await waitPressed('city-weather-auto');
     assert.equal(await pressed('city-weather-auto'), 'true'); // the defaults stand: Automatic regional weather
+    await waitPressed('city-season-auto');
     assert.equal(await pressed('city-season-auto'), 'true');
     assert.equal(fs.readFileSync(cityFile(), 'utf-8'), bad, 'an ignored record is not rewritten');
     assert.deepEqual(fs.readdirSync(stateRoot), [CITY_PRESENTATION_FILE_NAME]);
