@@ -538,7 +538,9 @@ test(
     console.info(`WORLD PROBE (%s): %d clicks, %d on the world, %d opened a Mission, the first at click %s`, 'scan face', probe.clicks, probe.worldClicks, probe.missionsOpened, String(probe.firstMissionAt));
     assert.equal(probe.inboxOpened, false, 'no click in the world opened the inbox');
   },
-  STEPS_MS,
+  // the whole-world probe is 1,200+ real clicks (as in diReceptionEntrances' SINGLE ENTRANCE): one step budget is not
+  // enough on a loaded CI runner (measured on shard 2/4: 29 s to 88 s when green, over 120 s once)
+  STEPS_MS * 3,
 );
 
 test(
