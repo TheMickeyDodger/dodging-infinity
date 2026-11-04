@@ -945,7 +945,10 @@ MATRIX_EXPRESSION = re.compile(
     r"^\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
     r"'([^']*)' \|\| '([^']*)'\) \}\}$")
 
-PR_LEGS = {("ubuntu-latest", "3.9"), ("ubuntu-latest", "3.13"),
+# Python 3.9 has no actions/python-versions build on Ubuntu 26.04, which
+# is what ubuntu-latest currently is, so that leg is pinned to ubuntu-24.04.
+# 3.13 stays on ubuntu-latest. macOS stays macos-latest, including 3.9.
+PR_LEGS = {("ubuntu-24.04", "3.9"), ("ubuntu-latest", "3.13"),
            ("macos-latest", "3.13")}
 FULL_LEGS = PR_LEGS | {("macos-latest", "3.9")}
 
@@ -1364,7 +1367,7 @@ class WorkflowShapeTests(unittest.TestCase):
         for name, job in self.jobs.items():
             self.assertEqual(job["runs-on"], "${{ matrix.os }}", name)
         self.assertEqual({os_name for os_name, _ in FULL_LEGS},
-                         {"ubuntu-latest", "macos-latest"})
+                         {"ubuntu-24.04", "ubuntu-latest", "macos-latest"})
 
     def test_20_later_steps_run_after_a_failure_but_not_after_cancel(self):
         for name in CONDITIONED_STEPS:

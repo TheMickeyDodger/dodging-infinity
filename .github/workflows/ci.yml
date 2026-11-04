@@ -20,10 +20,12 @@ jobs:
       fail-fast: false
       # Pull requests: Ubuntu with Python 3.9 and 3.13, macOS with 3.13.
       # Pushes to main and manual runs: both OSes with both versions.
-      # The hermetic job uses this exact matrix line, and
+      # Python 3.9 stays on ubuntu-24.04. ubuntu-latest is Ubuntu 26.04,
+      # which has no 3.9 build in actions/python-versions. macOS stays
+      # macos-latest. The hermetic job uses this exact matrix line, and
       # tests/test_ci_runner.py checks that the two stay identical.
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
 
     steps:
       - name: Check out repository
@@ -74,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-latest","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"}]' || '[{"os":"ubuntu-24.04","python-version":"3.9"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.13"}]') }}
 
     steps:
       - name: Check out repository

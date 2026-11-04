@@ -329,12 +329,33 @@ const stubOffice = {
 /**
  * The word in a table row's Status cell (the fifth cell), read apart from its glyph. Deliverable 3: a Mission status's mark is its canonical glyph, so
  * wherever the cell names a status of the contract, its glyph must be drawn and must be THAT status's own (diMissionStatus.ts).
+ *
+ * Tags are dropped by walking each `<...>` once. A `replace` that strips tags is an incomplete multi-character sanitization: after one pass the
+ * string can still contain `<script`.
  */
+const textOutsideTags = (html: string): string => {
+  let text = '';
+  let cursor = 0;
+  while (cursor < html.length) {
+    const open = html.indexOf('<', cursor);
+    if (open < 0) return text + html.slice(cursor);
+    text += html.slice(cursor, open);
+    const close = html.indexOf('>', open + 1);
+    if (close < 0) return text + html.slice(open);
+    cursor = close + 1;
+  }
+  return text;
+};
 const statusCell = (row: string, contract = true): string | undefined => {
   const cell = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)][4]?.[1];
   if (cell === undefined) return undefined;
   const glyph = /data-testid="di-status-glyph"[^>]*>([^<]*)</.exec(cell)?.[1];
-  const word = cell.replace(/<span[^>]*data-testid="di-status-glyph"[^>]*>[^<]*<\/span>/, '').replace(/<[^>]+>/g, '');
+  const glyphAt = cell.match(/<span[^>]*data-testid="di-status-glyph"[^>]*>[^<]*<\/span>/);
+  const withoutGlyph =
+    glyphAt === null || glyphAt.index === undefined
+      ? cell
+      : cell.slice(0, glyphAt.index) + cell.slice(glyphAt.index + glyphAt[0].length);
+  const word = textOutsideTags(withoutGlyph);
   const id = DI_MISSION_STATUS_IDS.find((x) => DI_MISSION_STATUS[x].label === word);
   if (contract && id !== undefined) expect(glyph, `${word} wears its own glyph`).toBe(DI_MISSION_STATUS[id].glyph);
   return word;
