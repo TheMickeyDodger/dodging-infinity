@@ -60,6 +60,7 @@ import {
   syntheticOverview,
   syntheticTurn,
 } from './diNewMissionSynthetic.ts';
+import { escapeRegExp, markupText, markupWords } from './helpers/markupText.ts';
 
 const noop = () => undefined;
 const none = { holding: 0, notKnown: 0 };
@@ -220,16 +221,16 @@ describe('Send drafts the proposal IN PLACE, and the screen carries no authority
     expect(draft).toContain('data-latest="true"');
     expect(draft).toContain(DI_DRAFT_HEAD);
     expect(draft).toContain(DI_DRAFT_IN_PLACE);
-    expect(draft).toMatch(new RegExp(`data-testid="di-new-draft-proposal-objective"[^>]*>[\\s\\S]*?${SYNTHETIC_PROPOSAL.objective.slice(0, 40).replace(/[()]/g, '\\$&')}`));
+    expect(draft).toMatch(new RegExp(`data-testid="di-new-draft-proposal-objective"[^>]*>[\\s\\S]*?${escapeRegExp(SYNTHETIC_PROPOSAL.objective.slice(0, 40))}`));
     expect(tag(draft, 'di-new-draft-open')).not.toBe('');
     expect(draft).toContain(`>${DI_DRAFT_OPEN_LABEL}</button>`);
   });
   it('NO control on New Mission submits, approves, declines, rejects, withdraws or starts: the one onward control only navigates to the workspace', () => {
-    const labels = [...html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
+    const labels = [...html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)].map((m) => markupText(m[1] ?? '').trim());
     for (const label of labels) expect(label, label).not.toMatch(GATE_LABEL);
     expect(html).not.toMatch(/data-testid="di-mr-(submit|approve|decide|dispatch|withdraw|reject|decline)/);
     // and the words claim nothing was approved, started, submitted or recorded
-    const text = html.replace(/<[^>]+>/g, ' ');
+    const text = markupText(html, ' ');
     expect(text).not.toMatch(/\b(is|was|has been|have been) (approved|started|submitted|recorded)\b/i);
     // every "proposal of record" on the screen says the draft is NOT one yet
     const ofRecord = text.match(/proposal of record/gi)?.length ?? 0;
@@ -291,7 +292,7 @@ describe('the drafted proposal card, read WHOLE, across every submission state: 
     }
     return '';
   };
-  const words = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const words = (html: string) => markupWords(html);
   /** Every sentence in `text` that says where the draft stands, by what it says. Precedence: not known, then pending, then not recorded, then recorded. */
   const claimsIn = (text: string) => {
     const out: Array<[string, string]> = [];
@@ -329,8 +330,8 @@ describe('the drafted proposal card, read WHOLE, across every submission state: 
         const html = card(submission, runnable);
         const whole = section(html);
         expect(whole, 'the card is drawn').not.toBe('');
-        expect((/data-testid="di-new-draft-note"[^>]*>([\s\S]*?)<\/p>/.exec(whole)?.[1] ?? '').replace(/<[^>]+>/g, '')).toMatch(
-          new RegExp(`^${head.replace(/\./g, '\\.')}`),
+        expect(markupText(/data-testid="di-new-draft-note"[^>]*>([\s\S]*?)<\/p>/.exec(whole)?.[1] ?? '')).toMatch(
+          new RegExp(`^${escapeRegExp(head)}`),
         );
         // the lines that carry a state are all there: the Source facts always, the not-runnable line when it applies
         expect(whole).toContain('data-testid="di-new-draft-proposal-source"');
@@ -352,7 +353,7 @@ describe('the drafted proposal card, read WHOLE, across every submission state: 
         // the onward control is offered exactly where the draft can still be submitted from the workspace
         expect(whole.includes('data-testid="di-new-draft-open"')).toBe(name === 'not submitted' || name === 'refused (REFUSED)');
         // the gates are where they were: no control on the card submits, approves, declines, rejects, withdraws or starts
-        const labels = [...whole.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
+        const labels = [...whole.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)].map((m) => markupText(m[1] ?? '').trim());
         for (const label of labels) expect(label, label).not.toMatch(GATE_LABEL);
       });
   // Review round 2, REPORT section 6 item 2: the WORKSPACE's own drafted-proposal card, read whole by the same classifier, across the same states. At HEAD its
@@ -417,7 +418,7 @@ describe('a Send that is refused, not known or not sent is said here (F2)', () =
       { type: 'sent', seq: 2, op: 'turn', requestRef: null, turnId: null },
       { type: 'reply', nowMs: 1_000, reply: { type: 'diMissionRequestReply', seq: 2, op: 'turn', answer: null, ...r } as unknown as DiMissionRequestReply },
     );
-  const outcome = (html: string) => (/data-testid="di-new-send-outcome"[^>]*>([\s\S]*?)<\/li>/.exec(html)?.[1] ?? '').replace(/<[^>]+>/g, '').replace(/Dismiss$/, '').trim();
+  const outcome = (html: string) => markupText(/data-testid="di-new-send-outcome"[^>]*>([\s\S]*?)<\/li>/.exec(html)?.[1] ?? '').replace(/Dismiss$/, '').trim();
   it('the live region is present before any outcome (so one that arrives is announced), and empty', () => {
     const html = page(seam(drafted()));
     expect(tag(html, 'di-new-send-outcomes')).toContain('role="status"');

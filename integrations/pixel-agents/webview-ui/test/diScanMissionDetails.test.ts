@@ -22,6 +22,7 @@ import { DI_SCAN_LOCK, type DiScanRow, type DiScanView, scanRowsFromOffice, swar
 import { DiScanPanel } from '../src/components/DiScanPanel.tsx';
 import { DI_RAIL_WIDTH_PX } from '../src/constants.ts';
 import { populatedRow, UNRESOLVED_IDENTITY } from './diPopulatedSample.ts';
+import { markupText } from './helpers/markupText.ts';
 import { productionRow } from './helpers/productionRow.ts';
 import { AVAILABLE, herdrControl } from './herdrControlStub.ts';
 
@@ -157,7 +158,7 @@ describe("PRESENTATION: Swarm names each role's exact model and provider, observ
     expect(swarmSummary(row.swarm)).not.toMatch(/live|working|running|confirmed|all/i);
     // the unresolved member's mark and words are in the roster, exactly
     const words = UNRESOLVED_IDENTITY.kind === 'unresolved' ? UNRESOLVED_IDENTITY.words : '';
-    expect(block(html, 'di-scan-swarm')).toContain(words.replace(/’/g, '’'));
+    expect(block(html, 'di-scan-swarm')).toContain(words);
     expect(block(html, 'di-scan-swarm')).toContain('Replaced by another session');
   });
   it('A9: folded, the details card reserves no height of its own (sized by its line, toggle and foot); shown in full it keeps its frame', () => {
@@ -561,7 +562,7 @@ describe('an unfinished deletion is never said as done, drawn or spoken: every c
       expect(homeSpoken(html)).toMatch(/^A deletion of this Mission is not finished\./);
       expect(homeSpoken(html).endsWith(` ${NOT_CONNECTED}`), 'and it still says why nothing can be deleted here').toBe(true);
       // spoken and drawn: the whole Home screen's words, with the hidden copy included
-      expect(html.replace(/<[^>]+>/g, ' ')).not.toMatch(DONE_CLAIM);
+      expect(markupText(html, ' ')).not.toMatch(DONE_CLAIM);
     });
   // CHANGED after logs/81 (a wrong expectation in this test, not a product defect): it compared the whole spoken copy with the scope alone, but Home's copy is the
   // scope and then the reason Home's Trash cannot act. The countercase is about the TENSE: a finished delete, a different Mission's delete, and none leave

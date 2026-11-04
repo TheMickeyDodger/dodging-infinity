@@ -41,6 +41,7 @@ import {
   syntheticOverview,
   syntheticTurn,
 } from './diNewMissionSynthetic.ts';
+import { escapeRegExp } from './helpers/markupText.ts';
 
 const STEPS_MS = 120_000;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -283,7 +284,7 @@ test(
 
 for (const [kind, said, notSaid] of [
   // a refusal the panel names is said in the workspace's own words for that problem (the reducer's problemWords, unchanged by this task), exactly
-  ['refused', new RegExp(`^Refused\\. ${problemWords('mission_panel_conversation_busy', 'SYNTHETIC: the conversation is busy with another message.', 'turn').replace(/[.()]/g, '\\$&')}`), /not known/],
+  ['refused', new RegExp(`^Refused\\. ${escapeRegExp(problemWords('mission_panel_conversation_busy', 'SYNTHETIC: the conversation is busy with another message.', 'turn'))}`), /not known/],
   ['unknown', /Outcome not known\.[\s\S]*did not answer in time/, /Refused|Not sent|nothing changed|Nothing was changed/i],
   ['unavailable', /Not sent\.|not available/, /Outcome not known/],
 ] as const)
