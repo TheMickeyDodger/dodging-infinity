@@ -3756,7 +3756,8 @@ for _rel, _pin in RETENTION_MISSION_CONSUMERS.items():
 #           holds no principal context and applies no decision;
 #       (2) the effect-bearing calls on the request surface exist ONLY in the
 #           named controller functions: attest_approval (the person's typed
-#           exact word, relayed) in decide and check_approval; attest_decline,
+#           exact word, relayed) in _decide_locked (the body of decide, under
+#           the cross-process decision lock) and check_approval; attest_decline,
 #           attest_rejection and attest_change_request (the non-approval
 #           outcome the person chose, relayed on the exact offer shown; owner
 #           decision (c)) in decline, reject and request_changes; run_command in
@@ -3784,7 +3785,7 @@ PANEL_FORBIDDEN_NAMES = frozenset({
     'LOCAL_CALLER_CONTEXT'})
 PANEL_FORBIDDEN_CALL_PREFIXES = ('record_', 'mint_', 'apply_', 'issue_')
 PANEL_EFFECT_CALLS = {
-    'attest_approval': {('service.py', 'decide'), ('service.py', 'check_approval')},
+    'attest_approval': {('service.py', '_decide_locked'), ('service.py', 'check_approval')},
     # Owner decision (c): the person's chosen non-approval outcome, each from its
     # one named relay function; Mission Core validates and records the result.
     'attest_decline': {('service.py', 'decline')},

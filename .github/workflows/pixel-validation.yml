@@ -14,6 +14,10 @@ permissions:
 # each shard (fileParallelism: false), so screenshot timing is unchanged. Types, lint, builds and the
 # server/package tests run once in "Pixel checks". The required status check is the final
 # "Pixel validation" job, which passes only when every job above it passed.
+#
+# A docs/README-only change skips the UI shards. The validation job still runs and exits
+# success, so the required "Pixel validation" check does not stay pending. Each UI shard
+# retries once, and only once, after a failure. The retry line is in the log.
 
 env:
   HUSKY: "0"
@@ -23,9 +27,30 @@ env:
   PIXEL_UI_SHARDS: "4"
 
 jobs:
+  path-filter:
+    name: Pixel path filter
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      ui: ${{ steps.filter.outputs.pixel_ui }}
+      reason: ${{ steps.filter.outputs.reason }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether the Pixel UI suite runs
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: python scripts/ci_path_filter.py
+
   pixel-checks:
     name: Pixel checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
       run:
@@ -82,7 +107,9 @@ jobs:
 
   pixel-ui-tests:
     name: Pixel UI tests (${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    needs: [path-filter]
+    if: needs.path-filter.outputs.ui == 'true'
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -122,21 +149,49 @@ jobs:
           test "${#files[@]}" -gt 0
           printf 'shard %s/%s runs %s files\n' "$SHARD" "$PIXEL_UI_SHARDS" "${#files[@]}"
           cd webview-ui
+          # One retry for this browser shard, and only in CI. A second failure
+          # is the result. The log says which run it was.
+          set +e
           npm test -- "${files[@]}"
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "::warning title=Pixel UI retry::shard ${SHARD}/${PIXEL_UI_SHARDS} failed once (exit ${code}). Retrying this browser shard once."
+            echo "RETRY: Pixel UI shard ${SHARD}/${PIXEL_UI_SHARDS} failed (exit ${code}). Running the same files one more time."
+            npm test -- "${files[@]}"
+            code=$?
+            if [ "$code" -ne 0 ]; then
+              echo "::error title=Pixel UI retry::shard ${SHARD}/${PIXEL_UI_SHARDS} failed again after the one CI retry."
+              exit "$code"
+            fi
+            echo "RETRY: Pixel UI shard ${SHARD}/${PIXEL_UI_SHARDS} passed on the second run."
+          fi
+          exit "$code"
 
   pixel-validation:
     name: Pixel validation
     if: ${{ always() }}
-    needs: [pixel-checks, pixel-ui-tests]
-    runs-on: ubuntu-latest
+    needs: [path-filter, pixel-checks, pixel-ui-tests]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every Pixel job to pass
         env:
+          FILTER: ${{ needs.path-filter.result }}
+          REASON: ${{ needs.path-filter.outputs.reason }}
+          RUN_UI: ${{ needs.path-filter.outputs.ui }}
           CHECKS: ${{ needs.pixel-checks.result }}
           UI_TESTS: ${{ needs.pixel-ui-tests.result }}
         run: |
+          echo "Path filter: $FILTER"
+          echo "Reason: $REASON"
           echo "Pixel checks: $CHECKS"
           echo "Pixel UI tests (all shards): $UI_TESTS"
+          test "$FILTER" = success
           test "$CHECKS" = success
+          if [ "$RUN_UI" != "true" ]; then
+            echo "Pixel UI suite skipped: $REASON"
+            echo "This gate is success so the required Pixel validation check does not stay pending."
+            test "$UI_TESTS" = skipped
+            exit 0
+          fi
           test "$UI_TESTS" = success

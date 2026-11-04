@@ -107,9 +107,15 @@ export async function clickAcrossWorld(
       missionsOpened++;
       firstMissionAt ??= index;
       await page.click('[data-testid="di-scan-back"]');
-      await page.waitForFunction(
-        () => document.querySelector('[data-testid="di-scan-stage"]') === null,
-      );
+      await page
+        .waitForFunction(() => document.querySelector('[data-testid="di-scan-stage"]') === null, undefined, {
+          timeout: 5_000,
+        })
+        .catch(() => {
+          throw new Error(
+            `click ${index} at (${x}, ${y}) opened a stage that did not close within 5s`,
+          );
+        });
     }
     await page.evaluate(() => {
       const office = (

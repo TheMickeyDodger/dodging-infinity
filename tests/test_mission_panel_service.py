@@ -273,21 +273,60 @@ class DecisionTests(PanelFixture):
     def test_D4_two_windows_deciding_at_once_apply_one_approval(self):
         view = self.of_record()
         other = self.build()          # a second window's process over the same state
+        # Both windows already hold the offer they were shown. Taking a fresh
+        # offer inside the race called present() again, and the second window
+        # then failed with "not awaiting a decision" after the first applied.
+        args = self.decide_args(view)
         results, errors = [], []
 
         def decide(service):
             try:
-                results.append(service.decide(
-                    view["request_ref"], **self.decide_args(view)))
+                results.append(service.decide(view["request_ref"], **args))
             except Exception as exc:       # pragma: no cover - reported below
-                errors.append(exc)
+                errors.append("%s: %s" % (type(exc).__name__, exc))
         threads = [threading.Thread(target=decide, args=(s,))
                    for s in (self.service, other)]
         [t.start() for t in threads]
         [t.join(30) for t in threads]
         self.assertEqual(errors, [])
+        self.assertEqual(len(results), 2)
+        self.assertFalse(any(t.is_alive() for t in threads), "a window is still deciding")
         self.assertEqual(len(self.authorizations()), 1)
         self.assertEqual(len({r["decision"]["authorization_id"] for r in results}), 1)
+        self.assertEqual(sorted(r["decision"]["idempotent"] for r in results),
+                         [False, True])
+
+    def test_D4_a_present_that_loses_the_race_returns_the_recorded_approval(self):
+        # The binding read can still say the Mission is awaiting a decision
+        # and present() can then find that it is not, because the other
+        # window's approval landed in between. That loser is the approval
+        # already recorded, not "not awaiting a decision".
+        view = self.of_record()
+        other = self.build()
+        args = self.decide_args(view)
+        surface = self.service._surface
+        original = surface.present
+        fired = []
+
+        def present(request_ref=None):
+            if not fired:
+                fired.append(request_ref)
+                other._surface.attest_approval(
+                    view["request_ref"], args["mission_id"], args["revision"],
+                    args["proposal_digest_sha256"], list(args["action_scope"]),
+                    list(args["delivery_targets"]), args["expires_at"],
+                    args["reply"], "di-world-panel")
+            return original(request_ref)
+
+        surface.present = present
+        try:
+            result = self.service.decide(view["request_ref"], **args)
+        finally:
+            surface.present = original
+        self.assertEqual(fired, [view["request_ref"]])
+        self.assertTrue(result["decision"]["idempotent"])
+        self.assertEqual(len(self.authorizations()), 1)
+        self.assertEqual(self.stage(view["request_ref"]), "approved")
 
     def test_D5_a_stale_display_is_refused_and_invalidated_never_repointed(self):
         view = self.of_record()

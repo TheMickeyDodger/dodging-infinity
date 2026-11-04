@@ -946,13 +946,23 @@ MATRIX_EXPRESSION = re.compile(
     r"'([^']*)' \|\| '([^']*)'\) \}\}$")
 
 # Python 3.9 has no actions/python-versions build on Ubuntu 26.04, which
-# is what ubuntu-latest currently is, so that leg is pinned to ubuntu-24.04.
-# 3.13 stays on ubuntu-latest. macOS stays macos-latest, including 3.9.
-PR_LEGS = {("ubuntu-24.04", "3.9"), ("ubuntu-latest", "3.13"),
-           ("macos-latest", "3.13")}
-FULL_LEGS = PR_LEGS | {("macos-latest", "3.9")}
+# is what ubuntu-latest currently is, so every Linux leg is pinned to
+# ubuntu-24.04. macOS is pinned to macos-26, the image macos-latest
+# resolved to on a green run (macos-26-arm64). The check NAME stays the
+# context the branch ruleset requires, which still says ubuntu-latest and
+# macos-latest for the 3.13 legs.
+PR_LEGS = {("ubuntu-24.04", "3.9"), ("ubuntu-24.04", "3.13"),
+           ("macos-26", "3.13")}
+FULL_LEGS = PR_LEGS | {("macos-26", "3.9")}
+CHECK_NAME = {
+    ("ubuntu-24.04", "3.9"): "ubuntu-24.04 / Python 3.9",
+    ("ubuntu-24.04", "3.13"): "ubuntu-latest / Python 3.13",
+    ("macos-26", "3.9"): "macos-latest / Python 3.9",
+    ("macos-26", "3.13"): "macos-latest / Python 3.13",
+}
 
-NOT_CANCELLED = "${{ !cancelled() }}"
+PYTHON_GATE = "${{ needs.changes.outputs.python == 'true' }}"
+NOT_CANCELLED = "${{ needs.changes.outputs.python == 'true' && !cancelled() }}"
 
 # Requirement 20: the steps that now run after a unit-test failure.
 COMPILE_STEP = "Compile Python sources"
@@ -1302,13 +1312,23 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(runner_step["run"], RUNNER_STEP_COMMAND)
         self.assertEqual(runner_step.get("shell"), "bash")
 
-    def test_13_a_separate_job_runs_hermetic_git_without_needs(self):
+    def test_13_hermetic_git_runs_beside_the_unit_tests(self):
+        # Both suite jobs wait for the path filter and not for each other,
+        # so a webview-only change can skip Python without dropping the
+        # required check names.
         self.assertNotEqual(self.hermetic_name, self.main_name)
-        self.assertNotIn("needs", self.hermetic)
-        self.assertNotIn("needs", self.main)
+        self.assertEqual(self.hermetic["needs"], "[changes]")
+        self.assertEqual(self.main["needs"], "[changes]")
+        self.assertEqual(self.main["name"], "${{ matrix.check }}")
+        self.assertEqual(self.hermetic["name"],
+                         "hermetic Git / ${{ matrix.check }}")
         runs = [s["run"] for s in self.hermetic["steps"] if "run" in s]
-        self.assertEqual(runs, [SHOW_ENVIRONMENT, HERMETIC_COMMAND])
-        self.assertEqual(set(self.jobs), {self.main_name, self.hermetic_name})
+        self.assertIn(SHOW_ENVIRONMENT, runs)
+        self.assertIn(HERMETIC_COMMAND, runs)
+        self.assertEqual(set(self.jobs), {
+            "changes", self.main_name, self.hermetic_name,
+            "ruleset-python-39", "ruleset-hermetic-39",
+        })
 
     def test_14_both_jobs_use_byte_identical_matrix_expressions(self):
         lines = [line for line in self.text.splitlines()
@@ -1327,8 +1347,11 @@ class WorkflowShapeTests(unittest.TestCase):
             for raw in match.groups():
                 entries = json.loads(raw)
                 for entry in entries:
-                    self.assertEqual(set(entry), {"os", "python-version"})
-                legs = [(e["os"], e["python-version"]) for e in entries]
+                    self.assertEqual(set(entry),
+                                     {"os", "python-version", "check"})
+                    leg = (entry["os"], entry["python-version"])
+                    self.assertEqual(entry["check"], CHECK_NAME[leg])
+                    legs = [(e["os"], e["python-version"]) for e in entries]
                 self.assertEqual(len(legs), len(set(legs)))
                 decoded.append(set(legs))
             self.assertEqual(decoded[0], PR_LEGS)
@@ -1347,15 +1370,20 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertNotIn("permissions", job, name)
 
     def test_17_action_references_are_unchanged(self):
-        for name, job in self.jobs.items():
-            uses = [s["uses"] for s in job["steps"] if "uses" in s]
+        for name in (self.main_name, self.hermetic_name):
+            uses = [s["uses"] for s in self.jobs[name]["steps"] if "uses" in s]
             self.assertEqual(uses, ["actions/checkout@v6",
                                     "actions/setup-python@v6"], name)
+        changes = [s["uses"] for s in self.jobs["changes"]["steps"]
+                   if "uses" in s]
+        self.assertEqual(changes, ["actions/checkout@v6"])
 
     def test_18_static_compile_and_whitespace_steps_still_exist(self):
         names = [s.get("name") for s in self.main["steps"]]
         self.assertEqual(names, [
-            "Check out repository", "Set up Python", "Show environment",
+            "Check out repository",
+            "Show why this suite is running or skipped",
+            "Set up Python", "Show environment",
             "Run unit tests", "Run static integration suite",
             "Compile Python sources", "Check for whitespace errors",
         ])
@@ -1364,25 +1392,41 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(timeout_problems(self.jobs), [])
 
     def test_19_only_standard_hosted_runners(self):
+        for name in (self.main_name, self.hermetic_name):
+            self.assertEqual(self.jobs[name]["runs-on"], "${{ matrix.os }}",
+                             name)
         for name, job in self.jobs.items():
-            self.assertEqual(job["runs-on"], "${{ matrix.os }}", name)
+            if name in (self.main_name, self.hermetic_name):
+                continue
+            self.assertEqual(job["runs-on"], "ubuntu-24.04", name)
         self.assertEqual({os_name for os_name, _ in FULL_LEGS},
-                         {"ubuntu-24.04", "ubuntu-latest", "macos-latest"})
+                         {"ubuntu-24.04", "macos-26"})
 
     def test_20_later_steps_run_after_a_failure_but_not_after_cancel(self):
         for name in CONDITIONED_STEPS:
             self.assertEqual(self.step(self.main, name).get("if"),
                              NOT_CANCELLED, name)
-        self.assertNotIn("if", self.step(self.main, "Run unit tests"))
+        for name in ("Set up Python", "Show environment", "Run unit tests"):
+            self.assertEqual(self.step(self.main, name).get("if"),
+                             PYTHON_GATE, name)
         for job_name, job in self.jobs.items():
             self.assertNotIn("continue-on-error", job, job_name)
-            self.assertNotIn("if", job, job_name)
+            if job_name.startswith("ruleset-"):
+                # Reports the ruleset's old context after the real leg,
+                # including when that leg failed or the suite was skipped.
+                self.assertEqual(job.get("if"), "always()", job_name)
+            else:
+                self.assertNotIn("if", job, job_name)
             for step in job["steps"]:
                 self.assertNotIn("continue-on-error", step)
                 self.assertNotIn("always()", step.get("if") or "")
         conditioned = [s.get("name") for s in self.main["steps"] if "if" in s]
-        self.assertEqual(sorted(conditioned), sorted(CONDITIONED_STEPS))
-        self.assertEqual([s for s in self.hermetic["steps"] if "if" in s], [])
+        self.assertEqual(sorted(conditioned), sorted(
+            ("Set up Python", "Show environment", "Run unit tests")
+            + CONDITIONED_STEPS))
+        self.assertEqual(
+            [s.get("name") for s in self.hermetic["steps"] if "if" in s],
+            ["Set up Python", "Show environment", "Run hermetic Git suite"])
 
     def test_21_conditioned_commands_keep_their_baseline_text(self):
         for name, command in EXACT_COMMANDS.items():
