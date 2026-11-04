@@ -197,3 +197,76 @@ test(
   },
   STEPS_MS,
 );
+
+// Free UI streamline, review round 1, CARRY1: each state action is DESCRIBED, in Chrome's own accessibility tree (by CDP), by its always-present copy while the
+// "Why, and what is not reported" fold is closed (a closed <details> is computed into no description, so the copy is what carries the reasons).
+test(
+  'CARRY1, STATE ACTIONS IN THE ACCESSIBILITY TREE (browser): with their fold closed, each action\'s description is its always-present copy, measured by CDP',
+  async () => {
+    await boot();
+    await p().click(`${sel('di-scan-row')}[data-mission-ref="${core.missionRef}"]`);
+    await p().click(sel('di-scan-open-mission'));
+    await p().locator('[data-testid="di-scan-state-actions"] .di-scan-state-action').first().waitFor();
+    assert.equal(await p().locator(sel('di-scan-state-more')).evaluate((d) => (d as HTMLDetailsElement).open), false, 'the fold is closed');
+    const buttons = p().locator('[data-testid="di-scan-state-actions"] .di-scan-state-action');
+    const count = await buttons.count();
+    assert.ok(count >= 3, `the actions are drawn (${count})`);
+    const cdp = await p().context().newCDPSession(p());
+    const { root: doc } = (await cdp.send('DOM.getDocument', { depth: 0 })) as { root: { nodeId: number } };
+    for (let i = 0; i < count; i++) {
+      const button = buttons.nth(i);
+      const ref = (await button.getAttribute('aria-describedby')) ?? '';
+      const copy = ((await p().locator(`[id="${ref}"]`).textContent()) ?? '').trim();
+      await button.evaluate((el, n) => el.setAttribute('data-ax-probe', String(n)), i);
+      const { nodeId } = (await cdp.send('DOM.querySelector', { nodeId: doc.nodeId, selector: `[data-ax-probe="${i}"]` })) as { nodeId: number };
+      const { nodes } = (await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false })) as {
+        nodes: Array<{ name?: { value: string }; description?: { value: string } }>;
+      };
+      await button.evaluate((el) => el.removeAttribute('data-ax-probe'));
+      const name = nodes[0]?.name?.value ?? '';
+      const description = nodes[0]?.description?.value ?? '';
+      console.log(`[carry1] state action ${i} "${name}": described by ${ref}`);
+      assert.notEqual(copy, '', `${name} has a description copy (${ref})`);
+      assert.equal(description, copy, `${name} is described by its copy in the accessibility tree`);
+    }
+    await cdp.detach();
+  },
+  STEPS_MS,
+);
+
+// Free UI streamline, review round 2, F4: where focus lands when the workspace opened from MISSION DETAILS' Decide closes, on Mission details (the opener is still
+// there) and after the person went to HOME (the opener unmounted). Measured, not assumed.
+for (const where of ['MISSION DETAILS (the opener still there)', 'HOME (the opener gone)'] as const)
+  test(
+    `F4, the workspace opened from Mission details' Decide, closed with its Close button on ${where}: focus lands on the opener, or on the page shown, never <body>`,
+    async () => {
+      await boot();
+      await p().click(`${sel('di-scan-row')}[data-mission-ref="${core.missionRef}"]`);
+      await p().click(sel('di-scan-open-mission'));
+      const decide = p().locator('[data-testid="di-scan-state-actions"] [data-action="decide"]');
+      await p().waitForFunction(() => {
+        const b = document.querySelector('[data-testid="di-scan-state-actions"] [data-action="decide"]');
+        return b instanceof HTMLButtonElement && !b.disabled;
+      });
+      await decide.click();
+      await p().waitForSelector(sel('di-mr-close'));
+      if (where.startsWith('HOME')) {
+        await p().locator(sel('di-rail-home')).focus();
+        await p().keyboard.press('Enter');
+        await p().waitForSelector('[data-testid="di-scan-panel"][data-view="list"]');
+        assert.equal(await decide.count(), 0, 'the opener is gone');
+      }
+      await p().locator(sel('di-mr-close')).click();
+      await p().waitForSelector(sel('di-mr-close'), { state: 'detached' });
+      await p().waitForTimeout(300);
+      const now = await p().evaluate(() => {
+        const a = document.activeElement as HTMLElement | null;
+        return { at: a?.getAttribute('data-testid') ?? a?.getAttribute('data-action') ?? a?.tagName ?? null, body: a === null || a === document.body };
+      });
+      console.log(`[F4 measure] decide / ${where}: ${JSON.stringify(now)}`);
+      assert.equal(now.body, false, `focus is not dropped to the page body (it is on ${now.at})`);
+      if (where.startsWith('MISSION')) assert.equal(now.at, 'decide', 'focus is back on the Decide control that opened it');
+      else assert.equal(now.at, 'di-rail-home', 'focus is on Home\'s current rail entry');
+    },
+    STEPS_MS,
+  );

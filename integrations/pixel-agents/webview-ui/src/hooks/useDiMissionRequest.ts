@@ -64,6 +64,11 @@ export interface DiMissionRequestControl {
   sendTurn: () => void;
   newConversation: () => void;
   openConversation: (conversationId: string) => void;
+  /**
+   * New Mission shows the conversation IN PLACE (the scan face's one composer): while it does (`on` true), the open conversation is READ as the open
+   * workspace reads it, so a reply and its draft appear there. Reads only; nothing is sent and nothing advances. Counted, so two showings balance.
+   */
+  watchConversation: (on: boolean) => void;
   /** Bind a draft: submit it to the request surface as a proposal of record. */
   submitDraft: (turn: MrTurn) => void;
   select: (requestRef: string | null) => void;
@@ -126,6 +131,8 @@ export function useDiMissionRequest(
         requestRef: meta.requestRef ?? null,
         turnId: meta.turnId ?? null,
         missionRef: meta.missionRef ?? null,
+        // review round 2: the conversation a read or a turn is about, kept with the request so its reply (failed or not) is attributed by identity
+        conversationId: typeof fields.conversationId === 'string' ? fields.conversationId : null,
       });
       transport.send(buildMessage(op, seq, fields));
     },
@@ -178,6 +185,8 @@ export function useDiMissionRequest(
   // overview read (`refresh`) is the only message this hook sends while no workspace is open, and it
   // carries no field beyond `type`, `seq` and `op`; the code review's session guard allows exactly that.
   const lastPoll = useRef({ overview: 0, selected: 0, conversation: 0 });
+  // New Mission's in-place showing of the conversation (see watchConversation): while it is shown, the conversation is read at the open cadence
+  const watching = useRef(0);
   useEffect(() => {
     if (!officePresent) return;
     const tick = (): void => {
@@ -189,15 +198,16 @@ export function useDiMissionRequest(
         lastPoll.current.overview = now;
         read('refresh');
       }
-      if (!s.open) return;
-      if (s.selectedRef !== null && now - lastPoll.current.selected >= every) {
+      const shown = watching.current > 0;
+      if (!s.open && !shown) return;
+      if (s.open && s.selectedRef !== null && now - lastPoll.current.selected >= every) {
         lastPoll.current.selected = now;
         readSelected();
       }
       const turnPending = s.conversation.turns.some((t) => t.state === 'RESERVED');
       if (
         s.conversation.id !== null &&
-        now - lastPoll.current.conversation >= (turnPending ? MR_POLL_TURN_MS : every)
+        now - lastPoll.current.conversation >= (turnPending ? MR_POLL_TURN_MS : MR_POLL_OPEN_MS)
       ) {
         lastPoll.current.conversation = now;
         readConversation();
@@ -250,6 +260,11 @@ export function useDiMissionRequest(
   }, [ask]);
 
   const newConversation = useCallback(() => dispatch({ type: 'newConversation' }), []);
+  const watchConversation = useCallback((on: boolean) => {
+    watching.current = Math.max(0, watching.current + (on ? 1 : -1));
+    // a showing that begins reads at once, as opening the workspace does
+    if (on) lastPoll.current.conversation = 0;
+  }, []);
   const openConversation = useCallback(
     (conversationId: string) => {
       dispatch({ type: 'openConversation', conversationId });
@@ -431,6 +446,7 @@ export function useDiMissionRequest(
     sendTurn,
     newConversation,
     openConversation,
+    watchConversation,
     submitDraft,
     select,
     acknowledge,

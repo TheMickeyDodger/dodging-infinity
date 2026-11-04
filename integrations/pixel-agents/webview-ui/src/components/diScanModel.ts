@@ -1653,8 +1653,7 @@ export type DiScanView =
   | 'evidence'
   | 'missions'
   | 'reception'
-  | 'new'
-  | 'proposal';
+  | 'new';
 
 /** A Mission's own nested screens (they need a selected Mission). */
 export const DI_SCAN_MISSION_VIEWS: readonly DiScanView[] = ['mission', 'diff', 'comments', 'evidence'];
@@ -1667,7 +1666,7 @@ export const DI_EVIDENCE_LABEL = 'Evidence and review';
 export const DI_EVIDENCE_NOT_LISTED = 'The office lists no evidence library for this Mission.';
 export const DI_EVIDENCE_NOT_AVAILABLE = 'The evidence library cannot be shown in this office.';
 /** The rail's pages (they need no selected Mission). */
-export const DI_SCAN_PAGE_VIEWS: readonly DiScanView[] = ['missions', 'reception', 'new', 'proposal'];
+export const DI_SCAN_PAGE_VIEWS: readonly DiScanView[] = ['missions', 'reception', 'new'];
 
 export interface DiScanTreeEntry {
   id: string;
@@ -2219,6 +2218,60 @@ export const DI_DELIVERY_ARCHIVED_HANDOFF =
   'Creating a delivery record is not offered here: this Mission is archived, and an archived Mission is read-only, so the command that would create one is not shown.';
 export function archivedDeliverySteps(): DiDeliveryStepView[] {
   return unlinkedDeliverySteps(DI_DELIVERY_ARCHIVED, true);
+}
+
+/**
+ * Mission details' Delivery, said in ONE short status line before anything else (the producer's reason, the scope and store notes, a shared step reason and a
+ * creation command are one disclosure away). Each line says only what the record says: a link is named only where one is linked, a step is called done only
+ * where the labelled sample state says so, and "not known" stays not known.
+ */
+export const DI_DELIVERY_LINE_ARCHIVED = 'Not offered: this Mission is archived, so it is read-only here.';
+export const DI_DELIVERY_LINE_ARCHIVED_LINKED = 'Archived: its linked delivery’s status can be read here; no step is offered.';
+export const DI_DELIVERY_LINE_NONE = 'No delivery is linked to this Mission.';
+export const DI_DELIVERY_LINE_NOT_KNOWN = 'Whether a delivery is linked to this Mission is not known.';
+export const DI_DELIVERY_LINE_NOTHING_YET = 'Nothing is delivered yet.';
+/** The label of Delivery's on-demand detail. */
+export const DI_DELIVERY_MORE = 'Delivery details';
+
+export function deliveryStatusLine(input: {
+  link: DiScanDeliveryLink | undefined;
+  archived: boolean;
+  /** The ONE delivery this window may read for the Mission (deliveryActionTarget), or null. */
+  target: string | null;
+  /** Whether a delivery session can read it here. */
+  session: boolean;
+  steps: readonly DiDeliveryStepView[];
+}): string {
+  const { link, archived, target, session, steps } = input;
+  if (archived) return target !== null ? DI_DELIVERY_LINE_ARCHIVED_LINKED : DI_DELIVERY_LINE_ARCHIVED;
+  if (link?.kind === 'linked')
+    return session ? `Linked to delivery ${link.deliveryId}.` : `Linked to delivery ${link.deliveryId}. ${DI_DELIVERY_NO_SESSION_WORDS}`;
+  if (link?.kind === 'origin_only') return `A delivery matched by this workspace’s origin only (${link.deliveryId}): shown for reference, not acted on.`;
+  // `unlinked` and `not_reported`: the producer's own words say whether none is linked or whether that is not known
+  if (link !== undefined) return /^Not known\b/.test(link.words) ? DI_DELIVERY_LINE_NOT_KNOWN : DI_DELIVERY_LINE_NONE;
+  // the labelled sample (no link at all): its fixture stage, read from its own steps
+  if (steps.every((step) => step.reason === DI_DELIVERY_NOT_READ)) return DI_DELIVERY_NOT_READ;
+  const done = [...steps].reverse().find((step) => step.gate === 'done');
+  const ready = steps.find((step) => step.gate === 'ready');
+  return `${done?.reason ?? DI_DELIVERY_LINE_NOTHING_YET}${ready ? ` Next: ${ready.label}.` : ''}`;
+}
+export const DI_DELIVERY_NO_SESSION_WORDS = 'This window has no delivery session, so this delivery is not read here.';
+
+/**
+ * A9: the Swarm's ONE summary line, said before the roster (which is on demand). It counts only what the roster lists, and says how many of those roles have an identity that is
+ * NOT resolved, so a summary never reads as though every listed member were resolved; it claims no liveness and no work (the roster says each member's own facts).
+ */
+export function swarmSummary(swarm: readonly DiScanAvatar[]): string {
+  const roles = `${swarm.length} ${swarm.length === 1 ? 'role' : 'roles'} listed`;
+  const unresolved = swarm.filter((member) => member.identity?.kind === 'unresolved').length;
+  if (unresolved === 0) return `${roles}.`;
+  return `${roles}; ${unresolved} ${unresolved === 1 ? 'identity is' : 'identities are'} not resolved.`;
+}
+
+/** The ONE reason every step states alike (an unlinked, withheld or archived Mission's four rows), said once instead of four times; null when the rows differ. */
+export function sharedStepReason(steps: readonly DiDeliveryStepView[]): string | null {
+  const first = steps[0]?.reason ?? '';
+  return steps.length > 1 && first !== '' && steps.every((step) => step.reason === first) ? first : null;
 }
 
 /** M8: a wired step's words (a linked Mission, read through Mission details' session). Each names WHO established it (round 58). */

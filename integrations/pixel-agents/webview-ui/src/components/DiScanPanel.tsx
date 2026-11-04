@@ -41,6 +41,7 @@ import {
   archivedLinkedDeliverySteps,
   decideSeveral,
   deliveryActionTarget,
+  deliveryStatusLine,
   deliverySteps,
   DI_COMMENTS_PAID,
   DI_DECIDE_UNAVAILABLE,
@@ -51,6 +52,8 @@ import {
   DI_DELIVERY_ARCHIVED_LINKED,
   DI_DELIVERY_END,
   DI_DELIVERY_HANDOFF_RUNS_NOTHING,
+  DI_DELIVERY_MORE,
+  DI_DELIVERY_NO_SESSION_WORDS,
   DI_EVIDENCE_LABEL,
   DI_EVIDENCE_NOT_AVAILABLE,
   DI_EVIDENCE_NOT_LISTED,
@@ -64,14 +67,17 @@ import {
   railOrchestrators,
   rowContextLine,
   scanThread,
+  sharedStepReason,
   stateActions,
   statusPillOf,
+  swarmSummary,
   trashGate,
   unlinkedDeliverySteps,
   unreadStateFacts,
   visibleScanRows,
 } from './diScanModel.js';
-import { MissionsPage, NewMissionPage, ProposalPage, ReceptionPage, StatusMark } from './DiScanPages.js';
+import type { DiNewMissionRequest } from './DiScanPages.js';
+import { MissionsPage, NewMissionPage, ReceptionPage, StatusMark } from './DiScanPages.js';
 import type {
   DiMissionsStatus,
   DiNewMissionSource,
@@ -106,9 +112,8 @@ export interface DiScanPanelProps {
   /** View only: the parent may move the camera to a drawn member. */
   onSelect?: (id: string) => void;
   /**
-   * Opens the EXISTING Mission request workspace, from the one plainly labelled link on the New Mission page (lead Q1).
-   * The rail's + New Orchestrator and Cmd N open the drawn New Mission page instead. Two New Mission surfaces coexisting
-   * is TRANSITIONAL, owed convergence at Stage 4. Absent: the link stays, disabled, and says why.
+   * Opens the Mission request workspace on its Requests, from New Mission's "Review requests" (a navigation: the scan face's one general entrance to the
+   * proposals of record and their decisions). Absent: the control stays, disabled, and says why.
    */
   onOpenRequestWorkspace?: (opener: HTMLElement) => void;
   /** Opens the existing Settings dialog (the panel's sliders and the rail's Settings). Absent: Settings says why. */
@@ -139,13 +144,11 @@ export interface DiScanPanelProps {
    * screen's entrances are drawn disabled and say why.
    */
   renderEvidence?: (missionRef: string) => ReactNode;
-  /** G1/G2: the request workspace's unsent Ask draft, as the workspace holds it (New Mission never replaces a different one). */
-  askDraft?: string;
   /**
-   * G1/G2: hands New Mission's ask to the EXISTING workspace's Ask (`transfer`: the text to put there, or null to change nothing) and opens it there; nothing is sent. Absent: no workspace; New
-   * Mission's control is drawn disabled and says why.
+   * New Mission's ONE composer: the request workspace's own Ask draft, its drafting turn (Send) and its conversation, shown in place. Submitting, approving and
+   * starting stay the workspace's gates. Absent: no request panel in this office; New Mission's Send is drawn unavailable and says why.
    */
-  onContinueAsk?: (transfer: string | null, opener: HTMLElement) => void;
+  newMissionRequest?: DiNewMissionRequest | null;
   /** What New Mission is drawn against. Absent: the office's own (recent asks not read, no sample proposal). */
   newMission?: DiNewMissionSource;
   /** The rows are the labelled sample specimen: every page says so (lead's labelling condition). */
@@ -178,7 +181,7 @@ export interface DiScanPanelProps {
 /** The list hides nothing (there is no hide gesture; V-6). */
 const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
 
-/** Every screen the panel has; anything else (a stale 'herdr' request) opens on the list. */
+/** Every screen the panel has; anything else (a stale 'herdr' or 'proposal' request) opens on the list. */
 const VIEWS: readonly DiScanView[] = ['list', ...DI_SCAN_MISSION_VIEWS, ...DI_SCAN_PAGE_VIEWS];
 
 /** Said beside every action drawn at this stage (Stage 2 is layout only; Stage 4 wires the routes). */
@@ -201,16 +204,62 @@ const ARCHIVED_READ_ONLY =
  */
 const TRASH_KEEPS =
   'Holding deletes this Mission’s local data from this office: its conversation, its request and its logs, AND its retained summary (final status, verdict, CI results and comments). It cannot be undone. What remains: Mission Core’s own record of the request and its authority (authority history is never erased) and a record that it was deleted. Not reached from here: the providers’ own session transcripts, the target herd’s own state, and PR delivery receipts. Without this, its reasoning and logs are reclaimed automatically 30 days after it finished, and its summary is kept.';
+/**
+ * The trash's scope while a deletion of this Mission is NOT finished (its deletion started and is retried, or a delete was asked and its answer is not back, or
+ * was accepted and is still finishing): the same facts as TRASH_KEEPS in the tense that is true then. It never says the Mission "was deleted" (it is not, yet),
+ * on any surface, drawn or spoken (diRetentionHonesty.test.ts: an interrupted deletion is never said as done).
+ */
+const TRASH_KEEPS_UNFINISHED =
+  'A deletion of this Mission is not finished. When it finishes, it has removed this Mission’s local data from this office: its conversation, its request and its logs, AND its retained summary (final status, verdict, CI results and comments). It cannot be undone. What remains then: Mission Core’s own record of the request and its authority (authority history is never erased) and a record of the deletion. Not reached from here: the providers’ own session transcripts, the target herd’s own state, and PR delivery receipts.';
+/** Whether a deletion of this Mission is under way and not finished: the retention reading says it started, or this window's own delete is sent or accepted and finishing. */
+function deletionUnfinished(row: DiScanRow, deletion: MrDeletion | undefined): boolean {
+  return row.local?.archive.reduced === 'deleting' || deletion?.state === 'in_flight' || deletion?.state === 'pending';
+}
 /** Said where this build does not read a Mission's approval, repository, stall and log facts (owed by Stage 4). */
 const STATE_NOT_READ =
   'Approvals, repository requests, stalls and logs are not reported for this Mission.';
+/** Mission details' one Herdr line for an archived Mission: the reason, once, in Herdr's own words (the full read-only sentence is said once, above Delivery). */
+const HERDR_ARCHIVED = 'Herdr is not offered: this Mission is archived, so it is read-only.';
+/** A8: the labels of the details text's and the roster's on-demand detail (each a button that says what it shows, its state in aria-expanded). */
+const DETAILS_MORE = 'Show the whole description';
+const DETAILS_MORE_HANDOFF = 'Show the whole description and the handoff';
+const DETAILS_LESS = 'Show the description as one line';
+const ROSTER_MORE = 'Show the roster: each role’s agent, model, provider and notes';
+const ROSTER_LESS = 'Hide the roster';
+/** The labels of Herdr's on-demand detail: what a click does, the office's reason in its own words, or (archived) the office's answer about Herdr. */
+const HERDR_WHAT_MORE = 'What Herdr does here';
+const HERDR_REASON_MORE = 'The office’s reason, in its own words';
+const HERDR_ANSWER_MORE = 'The office’s answer about Herdr';
+/** The label of the Trash's on-demand detail: the one thing a person must know before holding it, said in the label itself. */
+const TRASH_MORE = 'Deleting cannot be undone: what it removes, and what remains';
 const TRASH_NOT_CONNECTED =
   'This office has no request panel to delete through, so nothing can be deleted here.';
+/**
+ * Free UI streamline, review round 2 (REPORT section 6, item 1): Home's Trash never deletes. Where the office HAS a delete route, it says where deleting is
+ * done (Mission details); TRASH_NOT_CONNECTED, said there before (at HEAD, whenever the gate was open), was false in that office. The gate is unchanged.
+ */
+const TRASH_ON_DETAILS = 'Deleting is done from this Mission’s details, not from here: open it, then hold its Trash.';
 const TRASH_LABEL = 'Hold to delete this Mission’s local data';
 
 /** Round 9: the hold is withdrawn while this Mission's delete is in flight, and once one was accepted (a second press is impossible, not merely harmless). */
 function deletionWithdraws(deletion: MrDeletion | undefined): boolean {
   return deletion !== undefined && (deletion.state === 'in_flight' || deletion.state === 'pending' || deletion.state === 'completed');
+}
+
+/**
+ * A section's detail, ON DEMAND: a native disclosure, closed by default. Its summary is its accessible name and is reached and operated by keyboard (Tab, then
+ * Enter or Space); its state is the element's own `open`. What it holds is never removed from the page, only folded: commands, policy text, store-path
+ * explanations and the irreversible Trash details stay in the markup, and a control that is described by them is still described by them.
+ */
+function More({ testid, summary, children }: { testid: string; summary: string; children: ReactNode }) {
+  return (
+    <details className="di-scan-more" data-testid={testid}>
+      <summary className="di-scan-more-summary" data-testid={`${testid}-summary`}>
+        {summary}
+      </summary>
+      <div className="di-scan-more-body">{children}</div>
+    </details>
+  );
 }
 
 /**
@@ -222,35 +271,36 @@ function LocalRetention({ row }: { row: DiScanRow }) {
   const retention = row.local?.retention ?? null;
   const reduced = row.local?.archive.reduced ?? null;
   if (retention === null || reduced === null) return null;
-  // round 10: each reduced phase says whether it FINISHED (an interrupted reclamation or deletion is never said as done), from the one shared table
+  // round 10: each reduced phase says whether it FINISHED (an interrupted reclamation or deletion is never said as done), from the one shared table.
+  // The phase is the status line; its retained facts, each with where it was looked for, are one disclosure away (RetentionFacts).
   const phase = LISTED_RETENTION_PHASE[reduced];
-  if (reduced === 'deleted' || reduced === 'deleting')
-    return (
-      <p className="di-scan-stage-note" data-testid="di-scan-retention" data-phase={reduced} data-finished={String(phase.finished)}>
-        {phase.words}
-      </p>
-    );
-  const summary = retention.summary;
   return (
-    <div className="di-scan-stage-note" data-testid="di-scan-retention" data-phase={reduced} data-finished={String(phase.finished)}>
-      <p>{phase.words}</p>
-      {summary && (
-        <ul data-testid="di-scan-retention-summary">
-          <li data-testid="di-scan-retention-provenance">
-            Recorded final state: {summary.finalState} ({summary.finalStateSource})
+    <p className="di-scan-stage-note" data-testid="di-scan-retention" data-phase={reduced} data-finished={String(phase.finished)}>
+      {phase.words}
+    </p>
+  );
+}
+
+/** The retained summary's facts, each recorded or not recorded locally, with where it was looked for (the store each names): the detail behind the phase line. */
+function RetentionFacts({ row }: { row: DiScanRow }) {
+  const reduced = row.local?.archive.reduced ?? null;
+  const summary = row.local?.retention?.summary ?? null;
+  if (reduced === null || reduced === 'deleted' || reduced === 'deleting' || !summary) return null;
+  return (
+    <ul className="di-scan-stage-note" data-testid="di-scan-retention-summary">
+      <li data-testid="di-scan-retention-provenance">
+        Recorded final state: {summary.finalState} ({summary.finalStateSource})
+      </li>
+      {(['verdict', 'ci', 'comments'] as const).map((name) => {
+        const fact = summary[name];
+        const label = name === 'ci' ? 'CI results' : name === 'verdict' ? 'Verdict' : 'Comments';
+        return (
+          <li key={name} title={fact.source} data-testid="di-scan-retention-fact" data-fact={name} data-state={fact.state}>
+            {label}: {retentionFactWords(fact)} ({fact.source})
           </li>
-          {(['verdict', 'ci', 'comments'] as const).map((name) => {
-            const fact = summary[name];
-            const label = name === 'ci' ? 'CI results' : name === 'verdict' ? 'Verdict' : 'Comments';
-            return (
-              <li key={name} title={fact.source} data-testid="di-scan-retention-fact" data-fact={name} data-state={fact.state}>
-                {label}: {retentionFactWords(fact)} ({fact.source})
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -287,7 +337,7 @@ function HoldToDelete({ onHeld }: { onHeld: () => void }) {
       data-testid="di-scan-trash"
       data-hold="true"
       data-holding={holding ? 'true' : undefined}
-      aria-describedby="di-scan-trash-note di-scan-trash-reason"
+      aria-describedby="di-scan-trash-desc di-scan-trash-reason"
       onClick={(event) => event.preventDefault()}
       onPointerDown={start}
       onPointerUp={cancel}
@@ -420,10 +470,36 @@ function IdentityLabel({ member }: { member: DiScanAvatar }) {
  * Running agents recorded for a Mission whose identity is NOT resolved and who are not roster members: LISTED, by name, each with its own state
  * label (unverified, ambiguous and could-not-be-checked stay three different facts). Not drawn: no avatar, no activity, no live look.
  */
-function UnresolvedAgents({ agents, compact = false }: { agents: readonly DiScanUnresolvedAgent[]; compact?: boolean }) {
+function UnresolvedAgents({
+  agents,
+  compact = false,
+  folded = false,
+  inner = false,
+}: {
+  agents: readonly DiScanUnresolvedAgent[];
+  compact?: boolean;
+  folded?: boolean;
+  /** Drawn inside the folded variant's detail: the same list, without a second section id. */
+  inner?: boolean;
+}) {
   if (agents.length === 0) return null;
+  // A8 (Mission details): ONE line says how many runtime records are NOT linked to a role, and that they are not team members; the list, each with its own
+  // state and reason, is on demand. The line never names them as members and never counts them as the team.
+  if (folded)
+    return (
+      <div className="di-scan-unresolved" data-testid="di-scan-unresolved-agents">
+        <p className="di-scan-stage-note di-scan-status-line" data-testid="di-scan-unresolved-status">
+          {agents.length === 1
+            ? '1 runtime record under this Mission’s workspace is not linked to a role: it is not shown as a team member.'
+            : `${agents.length} runtime records under this Mission’s workspace are not linked to a role: they are not shown as team members.`}
+        </p>
+        <More testid="di-scan-unresolved-more" summary="Each record, with its state and reason">
+          <UnresolvedAgents agents={agents} inner />
+        </More>
+      </div>
+    );
   return (
-    <div className="di-scan-unresolved" data-testid="di-scan-unresolved-agents">
+    <div className="di-scan-unresolved" data-testid={inner ? 'di-scan-unresolved-list' : 'di-scan-unresolved-agents'}>
       {!compact && <p className="di-scan-stage-note">Unresolved runtime records found under this Mission’s workspace (not shown as team members, not drawn):</p>}
       <ul className="di-scan-unresolved-list">
         {agents.map((agent) => (
@@ -875,6 +951,9 @@ function Delivery({ row, session, archived }: { row: DiScanRow; session: DiDeliv
       : linkWords !== null
       ? unlinkedDeliverySteps(linkWords, withheld)
       : deliverySteps(row.delivery);
+  // ONE short status line first; a reason every step shares is said once, in the detail, not in each row (an archived Mission's four rows said it four times)
+  const shared = sharedStepReason(steps);
+  const line = deliveryStatusLine({ link, archived, target, session: session !== null, steps });
   return (
     <section
       className="di-scan-delivery"
@@ -889,35 +968,9 @@ function Delivery({ row, session, archived }: { row: DiScanRow; session: DiDeliv
           <span className="di-scan-fixture-tag">Sample state (fixture)</span>
         )}
       </div>
-      {link !== undefined && (
-        <p className="di-scan-stage-note" data-testid="di-scan-delivery-link">
-          {link.kind === 'linked'
-            ? `The delivery linked to this Mission: ${link.deliveryId}. ${link.words}`
-            : link.kind === 'origin_only'
-              ? `A delivery matched by this workspace’s origin only: ${link.deliveryId}. ${link.words}`
-              : link.words}
-        </p>
-      )}
-      {archived && (
-        <p className="di-scan-stage-note" data-testid="di-scan-delivery-archived">
-          {target !== null ? DI_DELIVERY_ARCHIVED_LINKED : DI_DELIVERY_ARCHIVED}
-        </p>
-      )}
-      {target !== null && session === null && (
-        <p className="di-scan-stage-note" data-testid="di-scan-delivery-no-session">
-          {DI_DELIVERY_NO_SESSION}
-        </p>
-      )}
-      {wired && (
-        <>
-          <p className="di-scan-stage-note" data-testid="di-scan-delivery-scope">
-            {DI_MISSION_DELIVERY_SCOPE}
-          </p>
-          <p className="di-scan-stage-note" data-testid="di-scan-delivery-store">
-            {DI_MISSION_DELIVERY_STORE}
-          </p>
-        </>
-      )}
+      <p className="di-scan-stage-note di-scan-status-line" data-testid="di-scan-delivery-status">
+        {line}
+      </p>
       <ol className="di-scan-steps">
         {steps.map((step) => (
           <li
@@ -943,11 +996,61 @@ function Delivery({ row, session, archived }: { row: DiScanRow; session: DiDeliv
               </button>
             ) : (
               // wired: the one action is the confirmation below, never a control in a step row
-              <span className="di-scan-step-reason">{step.reason}</span>
+              shared === null && <span className="di-scan-step-reason">{step.reason}</span>
             )}
           </li>
         ))}
       </ol>
+      <More testid="di-scan-delivery-more" summary={DI_DELIVERY_MORE}>
+        {link !== undefined && (
+          <p className="di-scan-stage-note" data-testid="di-scan-delivery-link">
+            {link.kind === 'linked'
+              ? `The delivery linked to this Mission: ${link.deliveryId}. ${link.words}`
+              : link.kind === 'origin_only'
+                ? `A delivery matched by this workspace’s origin only: ${link.deliveryId}. ${link.words}`
+                : link.words}
+          </p>
+        )}
+        {archived && (
+          <p className="di-scan-stage-note" data-testid="di-scan-delivery-archived">
+            {target !== null ? DI_DELIVERY_ARCHIVED_LINKED : DI_DELIVERY_ARCHIVED}
+          </p>
+        )}
+        {target !== null && session === null && (
+          <p className="di-scan-stage-note" data-testid="di-scan-delivery-no-session">
+            {DI_DELIVERY_NO_SESSION_WORDS}
+          </p>
+        )}
+        {wired && (
+          <>
+            <p className="di-scan-stage-note" data-testid="di-scan-delivery-scope">
+              {DI_MISSION_DELIVERY_SCOPE}
+            </p>
+            <p className="di-scan-stage-note" data-testid="di-scan-delivery-store">
+              {DI_MISSION_DELIVERY_STORE}
+            </p>
+          </>
+        )}
+        {/* the reason every step states alike, said once (it is never one of the words above: an archived step's reason is said by the archived note) */}
+        {shared !== null && !(archived && shared === DI_DELIVERY_ARCHIVED) && shared !== linkWords && (
+          <p className="di-scan-stage-note" data-testid="di-scan-steps-reason">
+            {shared}
+          </p>
+        )}
+        {/* A Herdr task with no delivery this window acts on: how a record is created through the EXISTING human ceremony. The office runs
+            nothing and approves nothing; it shows status facts and the exact command to run in the person's own terminal. */}
+        {row.deliveryHandoff !== undefined && !wired && <DeliveryHandoff handoff={row.deliveryHandoff} archived={archived} />}
+        {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28). */}
+        <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
+          {DI_DELIVERY_END}
+        </p>
+      </More>
+      {/* the layout note describes the sample's layout-only step controls (a real Mission draws none: its reason is the link note), so it stays drawn, outside the fold */}
+      {link === undefined && !wired && (
+        <p className="di-scan-stage-note" id="di-scan-delivery-note">
+          {archived ? DI_DELIVERY_ARCHIVED : LAYOUT_NOTE}
+        </p>
+      )}
       {session !== null && target !== null && (
         <>
           <div className="di-op-actions">
@@ -971,19 +1074,6 @@ function Delivery({ row, session, archived }: { row: DiScanRow; session: DiDeliv
               <DiDeliveryStatus control={session} onlyAbout={target} buttonClass="di-scan-step-action" />
             ))}
         </>
-      )}
-      {/* A Herdr task with no delivery this window acts on: how a record is created through the EXISTING human ceremony. The office runs
-          nothing and approves nothing; it shows status facts and the exact command to run in the person's own terminal. */}
-      {row.deliveryHandoff !== undefined && !wired && <DeliveryHandoff handoff={row.deliveryHandoff} archived={archived} />}
-      {/* what delivery produces, as text: there is no merge step and no control for one (owner ruling, 2026-10-28). */}
-      <p className="di-scan-stage-note" data-testid="di-scan-delivery-end">
-        {DI_DELIVERY_END}
-      </p>
-      {/* the layout note describes layout-only controls: a wired Delivery draws none; a real unlinked Mission says the catalog's reason */}
-      {!wired && (
-        <p className="di-scan-stage-note" id="di-scan-delivery-note">
-          {archived ? (target !== null ? DI_DELIVERY_ARCHIVED_LINKED : DI_DELIVERY_ARCHIVED) : linkWords !== null ? linkWords : LAYOUT_NOTE}
-        </p>
       )}
     </section>
   );
@@ -1150,7 +1240,6 @@ const DI_MISSION_DELIVERY_SCOPE =
 const DI_MISSION_DELIVERY_STORE =
   'The catalog’s delivery store is not shown to be the one the delivery adapter reads. If the adapter has no record of this delivery, its refusal is shown as it answered.';
 const DI_MISSION_DELIVERY_READ = 'Read this delivery’s status';
-const DI_DELIVERY_NO_SESSION = 'This window has no delivery session, so this delivery is not read here.';
 
 /**
  * The state actions the Mission's state offers, and only those (gap 3). Each is DISABLED except "Decide in the request panel" on a real row, a NAVIGATION into the request panel's own decision, enabled
@@ -1181,64 +1270,91 @@ function StateActions({
     return action.reason !== undefined ? [action.reason] : [];
   });
   const anyWithoutOwnWords = actions.some((action) => !action.navigate && action.reason === undefined);
+  // ONE short status line first, the rule that holds first: running not known, then Reception's attention, then what is not read, then nothing waiting.
+  // Unread is not absent: where a fact is not read it is said (in the line or, behind it, in the detail), never "nothing is waiting".
+  const runningUnknown = row.state.running.known
+    ? null
+    : `Whether this Mission is running is not known: ${row.state.running.why.text}.`;
+  // as before: Reception's attention is said beside what is not read (where every fact is read, the actions themselves say what waits)
+  const needsYou = unread.length > 0 && knownTrue(row.needsYou) ? 'Reception lists this Mission as needing you.' : null;
+  const unreadWords = unread.length > 0 ? STATE_NOT_READ : null;
+  const nothingWaits = unread.length === 0 && actions.length === 0 ? 'Nothing is waiting on you here.' : null;
+  const line = runningUnknown ?? needsYou ?? unreadWords ?? nothingWaits;
+  // everything else this section says, on demand (each said once)
+  const rest = [runningUnknown, needsYou, unreadWords].filter((words): words is string => words !== null && words !== line);
+  const reasons = actions.length > 0 && (notes.length > 0 || archived) ? (archived ? [ARCHIVED_READ_ONLY, ...notes] : notes) : [];
+  const layoutNote =
+    actions.length > 0 && (anyWithoutOwnWords || row.state.source === 'fixture')
+      ? row.state.source === 'fixture'
+        ? `${LAYOUT_NOTE} Sample state (fixture).`
+        : LAYOUT_NOTE
+      : null;
   return (
     <section
       className="di-scan-state"
       data-testid="di-scan-state-actions"
       aria-label="Actions for this Mission"
     >
-      {/* Unread is not absent: where a fact is not read, say so (and what Reception says), never "nothing is waiting". */}
-      {!row.state.running.known && (
-        <p className="di-scan-stage-note" data-testid="di-scan-state-running-unknown">
-          {`Whether this Mission is running is not known: ${row.state.running.why.text}.`}
+      {line !== null && (
+        <p
+          className="di-scan-stage-note di-scan-status-line"
+          data-testid={line === runningUnknown ? 'di-scan-state-running-unknown' : line === unreadWords ? 'di-scan-state-unread' : 'di-scan-state-status'}
+        >
+          {line}
         </p>
-      )}
-      {unread.length > 0 ? (
-        <p className="di-scan-stage-note" data-testid="di-scan-state-unread">
-          {knownTrue(row.needsYou) ? 'Reception lists this Mission as needing you. ' : ''}
-          {STATE_NOT_READ}
-        </p>
-      ) : (
-        actions.length === 0 && (
-          <p className="di-scan-stage-note">Nothing is waiting on you here.</p>
-        )
       )}
       {actions.length > 0 && (
-        <>
-          <div className="di-scan-state-row">
-            {actions.map((action) => {
-              const live = action.navigate === true && decideLive;
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="di-scan-state-action"
-                  data-action={action.id}
-                  data-hold={action.hold ? 'true' : undefined}
-                  disabled={!live}
-                  aria-describedby={action.navigate || action.reason !== undefined ? 'di-scan-state-reasons' : 'di-scan-state-note'}
-                  onClick={live ? (event) => onOpenDecision!(decideTarget!, event.currentTarget) : undefined}
-                >
-                  {action.label}
-                </button>
-              );
-            })}
-          </div>
-          {(notes.length > 0 || archived) && (
+        <div className="di-scan-state-row">
+          {actions.map((action) => {
+            const live = action.navigate === true && decideLive;
+            return (
+              <button
+                key={action.id}
+                type="button"
+                className="di-scan-state-action"
+                data-action={action.id}
+                data-hold={action.hold ? 'true' : undefined}
+                disabled={!live}
+                aria-describedby={action.navigate || action.reason !== undefined ? 'di-scan-state-reasons-desc' : 'di-scan-state-note-desc'}
+                onClick={live ? (event) => onOpenDecision!(decideTarget!, event.currentTarget) : undefined}
+              >
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {/* each action is DESCRIBED by an always-present copy of its reasons (a closed disclosure's content is computed into no description) */}
+      {reasons.length > 0 && (
+        <span className="di-scan-visually-hidden" id="di-scan-state-reasons-desc">
+          {reasons.join(' ')}
+        </span>
+      )}
+      {layoutNote !== null && (
+        <span className="di-scan-visually-hidden" id="di-scan-state-note-desc">
+          {layoutNote}
+        </span>
+      )}
+      {(rest.length > 0 || reasons.length > 0 || layoutNote !== null) && (
+        <More testid="di-scan-state-more" summary="Why, and what is not reported">
+          {rest.map((words) => (
+            <p key={words} className="di-scan-stage-note" data-testid={words === runningUnknown ? 'di-scan-state-running-unknown' : words === unreadWords ? 'di-scan-state-unread' : 'di-scan-state-attention'}>
+              {words}
+            </p>
+          ))}
+          {reasons.length > 0 && (
             <ul className="di-scan-stage-note" id="di-scan-state-reasons" data-testid="di-scan-state-reasons">
-              {(archived ? [ARCHIVED_READ_ONLY, ...notes] : notes).map((note) => (
+              {reasons.map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>
           )}
-          {(anyWithoutOwnWords || row.state.source === 'fixture') && (
+          {layoutNote !== null && (
             <p className="di-scan-stage-note" id="di-scan-state-note">
-              {row.state.source === 'fixture'
-                ? `${LAYOUT_NOTE} Sample state (fixture).`
-                : LAYOUT_NOTE}
+              {layoutNote}
             </p>
           )}
-        </>
+        </More>
       )}
     </section>
   );
@@ -1305,7 +1421,7 @@ function Siblings({
       {/* the header is too narrow for a note that is always there: the result of a click is shown here, and the reason a disabled Herdr is disabled is its title and its description */}
       {hv.outcome && (
         <p className="di-scan-stage-note" data-testid="di-scan-herdr-open" data-tone={hv.tone}>
-          {hv.note}
+          {hv.line}
         </p>
       )}
     </nav>
@@ -1371,8 +1487,17 @@ function Stage({
     if (herdrUnvouched === null) requestHerdrStatus?.(row.id);
   }, [requestHerdrStatus, herdrUnvouched, row.id]);
   const herdrView = herdrViewFor(herdr, row.id);
+  // A8: the details text and the roster's detail, each shown in full on demand (the stage is keyed per Mission: each Mission opens folded)
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  // A7: the office's full words are offered on demand wherever the line does not already say them all. On an archived Mission the line is the archived
+  // reason, so the office's own answer (still read: archived is read-only, not information-erasing) is always one disclosure away.
+  const herdrMore = row.tab === 'archived' || herdrView.note !== herdrView.line;
+  const herdrMoreLabel = row.tab === 'archived' ? HERDR_ANSWER_MORE : herdrView.tone === 'refused' ? HERDR_REASON_MORE : HERDR_WHAT_MORE;
   // Round 9: this Mission's own latest owner delete, by its SOURCE-QUALIFIED ref (never shown on another row that shares a native id)
   const deletion = row.local ? deleteResults?.[row.id] : undefined;
+  // the trash's scope, in the tense that holds now: an unfinished deletion is never said as done, drawn or spoken
+  const trashWords = deletionUnfinished(row, deletion) ? TRASH_KEEPS_UNFINISHED : TRASH_KEEPS;
   // R10: the evidence screen opens only where the office lists a library for this Mission AND the office can draw it here
   const evidenceLive = row.evidenceListed === true && renderEvidence !== undefined;
   const evidenceReason = evidenceLive
@@ -1550,35 +1675,71 @@ function Stage({
           <section
             className="di-scan-card"
             data-testid="di-scan-details"
+            data-expanded={detailsOpen ? 'true' : 'false'}
             aria-labelledby="di-scan-details-heading"
           >
             <h2 id="di-scan-details-heading">Mission details</h2>
+            {/* A8/A9: the description leads as ONE line (the whole text is in the document, drawn to one line); it, and the handoff paragraphs, are shown in full on
+                demand. Folded, the card is sized by what it shows (no reserved height); shown in full it keeps its earlier frame, the body scrolling inside it. */}
             <div
               className="di-scan-details-body"
               data-testid="di-scan-details-body"
+              data-expanded={detailsOpen ? 'true' : 'false'}
+              id="di-scan-details-body"
               tabIndex={0}
               role="region"
               aria-label="Mission details text"
             >
-              {row.description !== '' && <p className="di-scan-details-text">{row.description}</p>}
+              {row.description !== '' && <p className="di-scan-details-text" data-testid="di-scan-details-text">{row.description}</p>}
               {row.handoff !== '' &&
                 row.handoff.split('\n').map((line) => (
-                  <p key={line} className="di-scan-delivery-handoff">
+                  <p key={line} className="di-scan-delivery-handoff" data-testid="di-scan-details-handoff">
                     {line}
                   </p>
                 ))}
             </div>
+            {(row.description !== '' || row.handoff !== '') && (
+              <button
+                type="button"
+                className="di-scan-more-toggle"
+                data-testid="di-scan-details-toggle"
+                aria-expanded={detailsOpen}
+                aria-controls="di-scan-details-body"
+                onClick={() => setDetailsOpen((open) => !open)}
+              >
+                {detailsOpen ? DETAILS_LESS : row.handoff !== '' ? DETAILS_MORE_HANDOFF : DETAILS_MORE}
+              </button>
+            )}
             <div className="di-scan-card-foot">
               <MetaLine text={row.footer} />
               {row.updated !== '' && <p className="di-scan-updated">{row.updated}</p>}
             </div>
           </section>
           <h2 className="di-scan-swarm-heading">Swarm</h2>
-          <div className="di-scan-swarm-box">
+          {/* A9: the Swarm leads with ONE summary line (how many roles are listed, and how many identities are NOT resolved: it never reads as all resolved); the
+              roster, every card exactly as before, is shown on demand */}
+          {row.swarm.length > 0 && (
+            <p className="di-scan-stage-note di-scan-status-line" data-testid="di-scan-swarm-status">
+              {swarmSummary(row.swarm)}
+            </p>
+          )}
+          {row.swarm.length > 0 && (
+            <button
+              type="button"
+              className="di-scan-more-toggle"
+              data-testid="di-scan-swarm-toggle"
+              aria-expanded={rosterOpen}
+              aria-controls="di-scan-swarm-roster"
+              onClick={() => setRosterOpen((open) => !open)}
+            >
+              {rosterOpen ? ROSTER_LESS : ROSTER_MORE}
+            </button>
+          )}
+          <div className="di-scan-swarm-box" data-expanded={rosterOpen || row.swarm.length === 0 ? 'true' : 'false'}>
             {row.swarm.length === 0 ? (
               <p className="di-scan-stage-note">No swarm is recorded for this Mission.</p>
             ) : (
-              <ul className="di-scan-cards" data-testid="di-scan-swarm">
+              <ul className="di-scan-cards" data-testid="di-scan-swarm" id="di-scan-swarm-roster">
                 {row.swarm.map((member) => (
                   <li
                     key={member.role}
@@ -1604,7 +1765,7 @@ function Stage({
               </ul>
             )}
           </div>
-          <UnresolvedAgents agents={row.unresolvedAgents ?? []} />
+          <UnresolvedAgents agents={row.unresolvedAgents ?? []} folded />
           {row.tab === 'archived' && (
             <p className="di-scan-stage-note" data-testid="di-scan-archived-note">
               {ARCHIVED_READ_ONLY}
@@ -1626,7 +1787,7 @@ function Stage({
               className="di-scan-action di-scan-action-secondary"
               data-testid="di-scan-herdr"
               title={herdrView.note}
-              aria-describedby="di-scan-herdr-reason"
+              aria-describedby={herdrMore ? 'di-scan-herdr-reason di-scan-herdr-desc' : 'di-scan-herdr-reason'}
               aria-busy={herdrView.busy}
               disabled={!herdrView.enabled || row.tab === 'archived'}
               onClick={() => herdr?.launch(row.id)}
@@ -1666,35 +1827,51 @@ function Stage({
                 title={TRASH_LABEL}
                 data-testid="di-scan-trash"
                 disabled
-                aria-describedby="di-scan-trash-note di-scan-trash-reason"
+                aria-describedby="di-scan-trash-desc di-scan-trash-reason"
               >
                 <TrashIcon />
               </button>
             )}
           </div>
           <div className="di-scan-actions-notes">
-            <p
-              className="di-scan-stage-note"
-              id="di-scan-herdr-reason"
-              data-testid="di-scan-herdr-reason"
-              data-tone={herdrView.tone}
-              aria-live="polite"
-            >
-              {row.tab === 'archived' ? ARCHIVED_READ_ONLY : herdrView.note}
-              {herdrView.canRecheck && herdr && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    className="di-scan-link"
-                    data-testid="di-scan-herdr-recheck"
-                    onClick={() => herdr.requestStatus(row.id)}
-                  >
-                    Check again
-                  </button>
-                </>
+            {/* Herdr's ONE line (the rail does not repeat it while this screen is open); what a click does, in full, is one disclosure away */}
+            <div className="di-scan-herdr-notes">
+              <p
+                className="di-scan-stage-note"
+                id="di-scan-herdr-reason"
+                data-testid="di-scan-herdr-reason"
+                data-tone={herdrView.tone}
+                aria-live="polite"
+              >
+                {row.tab === 'archived' ? HERDR_ARCHIVED : herdrView.line}
+                {herdrView.canRecheck && herdr && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="di-scan-link"
+                      data-testid="di-scan-herdr-recheck"
+                      onClick={() => herdr.requestStatus(row.id)}
+                    >
+                      Check again
+                    </button>
+                  </>
+                )}
+              </p>
+              {herdrMore && (
+                // the Herdr button is described by the full words through this always-present copy (a closed disclosure is computed into no description)
+                <span className="di-scan-visually-hidden" id="di-scan-herdr-desc">
+                  {herdrView.note}
+                </span>
               )}
-            </p>
+              {herdrMore && (
+                <More testid="di-scan-herdr-more" summary={herdrMoreLabel}>
+                  <p className="di-scan-stage-note" id="di-scan-herdr-note" data-testid="di-scan-herdr-note">
+                    {herdrView.note}
+                  </p>
+                </More>
+              )}
+            </div>
             {evidenceReason !== null && (
               <p
                 className="di-scan-stage-note"
@@ -1706,9 +1883,6 @@ function Stage({
             )}
             <div className="di-scan-trash-notes">
               <LocalRetention row={row} />
-              <p className="di-scan-stage-note" id="di-scan-trash-note">
-                {TRASH_KEEPS}
-              </p>
               <p
                 className="di-scan-stage-note"
                 id="di-scan-trash-reason"
@@ -1737,6 +1911,18 @@ function Stage({
                   {deletion.text}
                 </p>
               )}
+              {/* the irreversible details, folded, never removed: the folded copy is what a person opens; the trash control is DESCRIBED by an always-present copy
+                  (a browser computes no description from a closed disclosure's content: measured, diScanDetailsDisclosureBrowser.test.ts), and its label says they matter.
+                  Both copies say it in the tense that holds: while a deletion is NOT finished, never that the Mission "was deleted" (diRetentionHonesty.test.ts) */}
+              <span className="di-scan-visually-hidden" id="di-scan-trash-desc">
+                {trashWords}
+              </span>
+              <More testid="di-scan-trash-more" summary={TRASH_MORE}>
+                <RetentionFacts row={row} />
+                <p className="di-scan-stage-note" id="di-scan-trash-note">
+                  {trashWords}
+                </p>
+              </More>
             </div>
           </div>
         </div>
@@ -2164,6 +2350,7 @@ function Rail({
   const spoken = badgeText === null ? undefined : `Reception, ${receptionHeadline(count, receptionDoubt)}`;
   const here = (page: DiScanView[]) => (page.includes(view) ? 'page' : undefined);
   const hv = herdrViewFor(herdr, herdrMissionRef);
+  const stageSaysHerdr = view === 'mission' || ((view === 'diff' || view === 'comments') && hv.outcome);
   return (
     <nav
       className="di-rail"
@@ -2192,7 +2379,7 @@ function Rail({
         className="di-rail-new"
         data-testid="di-rail-new-orchestrator"
         aria-keyshortcuts="Meta+N"
-        aria-current={here(['new', 'proposal'])}
+        aria-current={here(['new'])}
         title="Start a new Mission (Cmd N)"
         onClick={(event) => onPage('new', event.currentTarget)}
       >
@@ -2318,10 +2505,12 @@ function Rail({
           <span className="di-scan-visually-hidden" id="di-rail-herdr-reason">
             {hv.note}
           </span>
-          {/* shown when a click has a result, and when a Mission is open but Herdr cannot open for it (the reason matters then); the "open a Mission" hint stays in the title and the description */}
-          {(hv.outcome || (!hv.enabled && herdrMissionRef !== null)) && (
+          {/* shown when a click has a result, and when a Mission is open but Herdr cannot open for it (the reason matters then); the "open a Mission" hint stays in the title
+              and the description. Said ONCE per screen: not here where the open screen says it itself (Mission details' Herdr line always; the Code Diff and Comments
+              header after a click), so the rail never repeats a note across a Mission's screens */}
+          {(hv.outcome || (!hv.enabled && herdrMissionRef !== null)) && !stageSaysHerdr && (
             <p className="di-rail-empty" data-testid="di-rail-herdr-note" data-tone={hv.tone}>
-              {hv.note}
+              {hv.line}
             </p>
           )}
         </li>
@@ -2383,8 +2572,7 @@ export function DiScanPanel({
   onOpenRequestItem,
   onOpenDecision,
   renderEvidence,
-  askDraft = '',
-  onContinueAsk,
+  newMissionRequest = null,
   newMission = DI_NEW_MISSION_OFFICE,
   specimen = false,
   missionsRead = DI_MISSIONS_READ,
@@ -2416,18 +2604,30 @@ export function DiScanPanel({
   // the rail entry that opened the current page: Esc returns focus there
   const pageOpener = useRef<HTMLElement | null>(null);
 
-  const openPage = (page: 'missions' | 'reception' | 'new' | 'proposal', opener?: HTMLElement) => {
+  // B8: New Mission IS the Ask (one screen, one composer). Entering it closes a request workspace that is showing its own Ask composer over or beside it; closing sends
+  // nothing and keeps the draft and the conversation, and focus goes back to the entry the person used
+  const newMissionRequestRef = useRef(newMissionRequest);
+  newMissionRequestRef.current = newMissionRequest;
+  const enterNewMission = (opener: HTMLElement | null) => {
+    const request = newMissionRequestRef.current;
+    if (request?.workspaceShown) request.closeWorkspace(opener);
+  };
+  const openPage = (page: 'missions' | 'reception' | 'new', opener?: HTMLElement) => {
     if (opener) pageOpener.current = opener;
+    if (page === 'new') enterNewMission(opener ?? newRef.current);
     setView(page);
   };
 
   // Cmd N opens New Mission, as the rail's + New Orchestrator does (AC-UX-02), wherever the host delivers the key.
+  const enterNewMissionRef = useRef(enterNewMission);
+  enterNewMissionRef.current = enterNewMission;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
       if (event.key.toLowerCase() !== 'n') return;
       event.preventDefault();
       pageOpener.current = newRef.current;
+      enterNewMissionRef.current(newRef.current);
       setView('new');
     };
     window.addEventListener('keydown', onKey);
@@ -2443,13 +2643,12 @@ export function DiScanPanel({
   }, [view]);
 
   // Esc closes the screen the person is on: a nested screen to its Mission, Mission details to where it was opened from,
-  // the proposal to New Mission, and a rail page to Home, with focus back on the rail entry that opened it.
+  // and a rail page (New Mission is one screen, its proposal drawn in place) to Home, with focus back on the rail entry that opened it.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || view === 'list') return;
       if (view === 'diff' || view === 'comments' || view === 'evidence') setView('mission');
       else if (view === 'mission') setView(origin);
-      else if (view === 'proposal') setView('new');
       else {
         setView('list');
         const back = pageOpener.current;
@@ -2537,6 +2736,9 @@ export function DiScanPanel({
   };
 
   const shownGate = shownSelected ? trashGate(shownSelected) : null;
+  // Home's ONE reason for its Trash (title and spoken note say the same): the Mission's own gate when closed; when open, where deleting is done, by whether
+  // this office has a delete route at all (as Mission details asks)
+  const homeTrashReason = shownGate?.open ? (onDeleteLocalData ? TRASH_ON_DETAILS : TRASH_NOT_CONNECTED) : shownGate?.reason;
 
   return (
     <>
@@ -2750,7 +2952,7 @@ export function DiScanPanel({
                     type="button"
                     className="di-scan-trash"
                     aria-label={TRASH_LABEL}
-                    title={`${TRASH_LABEL}. ${shownGate?.open ? TRASH_NOT_CONNECTED : shownGate?.reason}`}
+                    title={`${TRASH_LABEL}. ${homeTrashReason}`}
                     data-testid="di-scan-trash"
                     disabled
                     aria-describedby="di-scan-detail-trash-reason"
@@ -2758,7 +2960,12 @@ export function DiScanPanel({
                     <TrashIcon />
                   </button>
                   <span className="di-scan-visually-hidden" id="di-scan-detail-trash-reason">
-                    {TRASH_KEEPS} {shownGate?.open ? TRASH_NOT_CONNECTED : shownGate?.reason}
+                    {/* F3 (review round 1): this Mission's own latest delete, by its source-qualified ref, as Mission details reads it: an answer not back, or
+                        accepted and still finishing, is never said as done before the retention reading catches up */}
+                    {deletionUnfinished(shownSelected, shownSelected.local ? deleteResults?.[shownSelected.id] : undefined)
+                      ? TRASH_KEEPS_UNFINISHED
+                      : TRASH_KEEPS}{' '}
+                    {homeTrashReason}
                   </span>
                 </div>
               </section>
@@ -2830,19 +3037,11 @@ export function DiScanPanel({
                 rows={rows}
                 source={newMission}
                 specimen={specimen}
+                request={newMissionRequest ?? undefined}
                 onOpenRequestWorkspace={onOpenRequestWorkspace}
-                askDraft={askDraft}
-                onContinueAsk={onContinueAsk}
                 onOpenMissions={() => setView('missions')}
-                onOpenProposal={() => setView('proposal')}
               />
             )}
-            {view === 'proposal' &&
-              (newMission.proposal === null ? (
-                <p className="di-scan-stage-note">No proposal is drawn here.</p>
-              ) : (
-                <ProposalPage proposal={newMission.proposal} onBack={() => setView('new')} />
-              ))}
           </div>
         )}
       </div>

@@ -16,6 +16,8 @@ import type {
   DiRetentionFact,
   DiRetentionFactState,
 } from '../../../core/src/messages.js';
+import type { DiDraftStanding, MrNotice, MrOverview } from './diMissionRequestModel.js';
+import { composerProblem, DI_DRAFT_HEAD, DI_DRAFT_HEAD_SUBMITTED, DI_DRAFT_HEAD_UNKNOWN, DI_DRAFT_NOTHING, DI_DRAFT_SOURCE_SUBMITTED, DI_DRAFT_SOURCE_UNKNOWN, draftRunnableWords, draftStanding } from './diMissionRequestModel.js';
 import type { DiMissionStatusId } from './diMissionStatus.js';
 import {
   DI_MISSION_PROGRESS_STATUS,
@@ -778,7 +780,10 @@ export interface DiNewMissionSource {
   proposal: DiProposalSpecimen | null;
 }
 
-export const DI_RECENT_NOT_READ = 'Recent asks are not read in this layout preview.';
+/** Said where the request panel's recent conversations are not read (no panel in this office, or not read yet): never an empty list. */
+export const DI_RECENT_NOT_READ = 'Recent asks are not read in this office.';
+/** Said where the panel's overview WAS read and lists no conversation with words kept. */
+export const DI_RECENT_NONE = 'No recent asks are recorded.';
 export const DI_NEW_MISSION_OFFICE: DiNewMissionSource = {
   source: 'office',
   recent: null,
@@ -856,36 +861,144 @@ export function orchestratorLimitWords(use: DiOrchestratorUse): string {
 }
 
 /**
- * G1/G2: New Mission does not send. It hands the typed ask to the EXISTING request workspace's Ask (that workspace is the one driver of the request state, and the human gate stays there), so the
- * control is named for what it does.
+ * New Mission is ONE screen with ONE composer: its Ask box IS the request workspace's Ask draft (the workspace's own composer state), and Send sends it as ONE
+ * turn of the workspace's restricted, read-only conversation (`turn`). The assistant may ask questions or draft a proposal, and the draft is shown in place.
+ * Nothing on this screen submits, approves or starts anything: submitting the draft, approving it and pressing Start stay the request workspace's own gates.
  */
-export const DI_ASK_CONTINUE_LABEL = 'Continue in the request workspace';
-export const DI_ASK_CONTINUE_HINT = 'to continue in the request workspace';
-export const DI_ASK_NO_WORKSPACE =
-  'Mission requests are not available in this office, so the ask cannot be carried to the request workspace.';
-/** The visible refusal: what is held, that nothing changed, and where to look. The person chooses; the office does not choose for them. */
-export const DI_ASK_REFUSED =
-  "The request workspace's Ask already holds an unsent draft that is different from this text. Nothing was changed: your text is still here, and that draft is still in the workspace's Ask. Open the existing request workspace to see it, then choose which to keep.";
+export const DI_NEW_MISSION_SUB =
+  'Describe the work once and press Send. DI drafts a proposal here; nothing runs until you submit it, approve it and press Start.';
+export const DI_ASK_SEND_LABEL = 'Send';
+/** After the Cmd Return key hint. */
+export const DI_ASK_SEND_HINT = 'to send. The assistant can ask questions and draft a proposal; it cannot approve or start anything.';
+export const DI_ASK_NO_PANEL = 'Mission requests are not available in this office, so nothing can be sent from here.';
+export const DI_ASK_UNVOUCHED = 'Not connected to the office, so nothing can be sent now.';
+/** F1 (review round 1): the request panel is configured but not available NOW; the box is still the one Ask draft (kept as typed), and Send is held. */
+export const DI_ASK_UNAVAILABLE = 'Mission requests are not available now, so nothing can be sent from here.';
+export const DI_ASK_BUSY = 'Waiting for the assistant to answer your last message.';
+/** B8: the request workspace is showing its own Ask composer, which holds the SAME draft: New Mission draws no second box, and says where the one box is. */
+export const DI_ASK_IN_WORKSPACE = 'Your ask is open in the request workspace. Send it there, or bring it back here.';
+export const DI_ASK_IN_WORKSPACE_NOTE =
+  'Your ask is open in the request workspace. It is the same draft, so it is typed in one place at a time.';
+export const DI_ASK_BRING_BACK = 'Bring the ask back here';
 
 /**
- * Why "Continue in the request workspace" is off, or null when it is offered. The rule that holds first says it: the limit (AC-4.3-14/-49), an empty ask (AC-4.3-18), or a workspace that is not
- * available in this office.
+ * Review round 2, blocker 1: a conversation picked in Recent whose READ was refused or not answered. Nothing of it is shown, so nothing is sent into it.
  */
-export function continueAskReason(ask: string, use: DiOrchestratorUse, workspace: boolean): string | null {
+export const DI_ASK_UNREAD =
+  'This conversation could not be read, so nothing is sent into it. Pick it in Recent to try again, or start a new conversation, keeping your ask.';
+/**
+ * R3-REC (review round 3): the way out of a conversation that could not be read, on New Mission in exactly that state (no thread, so not the thread's own
+ * "Start a new conversation", is drawn then). Unlike that control, it KEEPS the typed ask. DI_ASK_UNREAD names it, word for word.
+ */
+export const DI_ASK_LEAVE_UNREAD = 'Start a new conversation, keeping your ask';
+/** A conversation picked in Recent while its read is still in flight: nothing of it is shown yet. */
+export const DI_ASK_READING = 'Reading this conversation. Send waits until it is shown.';
+/** Where the request workspace stands for New Mission: none in this office, not vouched for, not available now, the conversation picked could not be read, busy with the last message, or ready. */
+export type DiAskPanel = 'none' | 'unvouched' | 'unavailable' | 'unread' | 'reading' | 'elsewhere' | 'busy' | 'ready';
+
+/**
+ * Why Send is off, or null when it is offered. The rule that holds first says it: the Orchestrator limit (AC-4.3-14/-49; an unknown is never spare capacity),
+ * an empty ask (AC-4.3-18), no request panel in this office, a client that cannot vouch for the office, the ask open in the request workspace (its own composer
+ * holds it there: B8), a message still being answered, then the composer's
+ * own bound (the request workspace's rule, `composerProblem`).
+ */
+export function sendAskReason(ask: string, use: DiOrchestratorUse, panel: DiAskPanel): string | null {
   if (atOrchestratorLimit(use)) return `${orchestratorLimitWords(use)}. Finish or stop one to start another.`;
   if (ask.trim() === '') return 'Type an ask first.';
-  if (!workspace) return DI_ASK_NO_WORKSPACE;
-  return null;
+  if (panel === 'none') return DI_ASK_NO_PANEL;
+  if (panel === 'unvouched') return DI_ASK_UNVOUCHED;
+  if (panel === 'unavailable') return DI_ASK_UNAVAILABLE;
+  if (panel === 'unread') return DI_ASK_UNREAD;
+  if (panel === 'reading') return DI_ASK_READING;
+  if (panel === 'elsewhere') return DI_ASK_IN_WORKSPACE;
+  if (panel === 'busy') return DI_ASK_BUSY;
+  return composerProblem(ask);
 }
 
-export type DiAskHandoff = 'transfer' | 'same' | 'refused';
+/** One recent ask: its words, and the conversation it began (null for the labelled sample, whose asks only fill the box). */
+export interface DiRecentAsk {
+  conversationId: string | null;
+  text: string;
+}
+export type DiRecentAsks = { kind: 'not_read'; words: string } | { kind: 'read'; items: readonly DiRecentAsk[] };
 
 /**
- * The three cases of handing the typed ask to the workspace's unsent Ask draft (lead's ruling): an EMPTY draft (exactly no text) takes the typed text in full; an EXACTLY equal draft is a no-op
- * success; any other draft, including one of only spaces, refuses the handoff, so no one's text is ever replaced or merged.
+ * Recent asks, ONLY as they were actually read: the labelled sample's own list, or the request panel's overview (its recent conversations, each with the
+ * first words of its first ask, as the panel keeps them). No overview read: said as not read, never as none. A conversation whose words are no longer
+ * kept (reclaimed or deleted) has no words to show and is not listed as an ask.
  */
-export function askHandoff(typed: string, draft: string): DiAskHandoff {
-  if (draft === '') return 'transfer';
-  if (draft === typed) return 'same';
-  return 'refused';
+export function recentAsks(source: DiNewMissionSource, overview: MrOverview | null): DiRecentAsks {
+  if (source.recent !== null) return { kind: 'read', items: source.recent.map((text) => ({ conversationId: null, text })) };
+  if (overview === null) return { kind: 'not_read', words: DI_RECENT_NOT_READ };
+  return {
+    kind: 'read',
+    items: overview.conversations
+      .filter((c) => c.firstWords.trim() !== '')
+      .map((c) => ({ conversationId: c.conversationId, text: c.firstWords })),
+  };
+}
+
+// The draft's standing and its shared words live in the request model (review round 2, item 2: the workspace's own draft card is written from the SAME
+// reading); re-exported here for New Mission's card and its tests.
+export { DI_DRAFT_HEAD, DI_DRAFT_HEAD_SUBMITTED, DI_DRAFT_HEAD_UNKNOWN, DI_DRAFT_NOTHING, DI_DRAFT_SOURCE_SUBMITTED, DI_DRAFT_SOURCE_UNKNOWN, draftRunnableWords, draftStanding };
+export type { DiDraftStanding };
+/** New Mission's card: drafting's claim and where the gates are (words only: none of them approves, starts or submits anything). */
+export const DI_DRAFT_IN_PLACE =
+  'Drafting approved nothing and started nothing. Submitting it, approving it and pressing Start are separate steps in the request workspace.';
+export const DI_DRAFT_REPLACED = 'A later draft replaced this one in the conversation.';
+export const DI_DRAFT_OPEN_LABEL = 'Open it in the request workspace to submit';
+
+/** The card's head and note for a standing. `latest`: a later draft did not replace this one. */
+export function draftNote(standing: DiDraftStanding, latest: boolean): { head: string; body: string } {
+  const head = standing === 'submitted' ? DI_DRAFT_HEAD_SUBMITTED : standing === 'not_known' ? DI_DRAFT_HEAD_UNKNOWN : DI_DRAFT_HEAD;
+  if (!latest) return { head, body: DI_DRAFT_REPLACED };
+  return { head, body: standing === 'draft' || standing === 'refused' ? DI_DRAFT_IN_PLACE : DI_DRAFT_NOTHING };
+}
+
+
+
+/**
+ * What one of New Mission's own requests came to, on New Mission. Send (`turn`): in the request workspace's own notice words (DiMissionRequest: its notices
+ * list). A conversation READ (a Recent pick, or the watch while the page shows it; review round 2, blocker 1): refused or not answered, it was NOT READ.
+ */
+export function sendOutcomeWords(kind: string, op = 'turn'): string {
+  if (op === 'conversation') return kind === 'info' ? '' : 'Not read.';
+  return kind === 'unknown' ? 'Outcome not known.' : kind === 'refusal' ? 'Refused.' : kind === 'unavailable' ? 'Not sent.' : '';
+}
+/**
+ * After a conversation read that failed, what the page shows of it now: the thread as it was last READ; the thread as this window last had it from a message
+ * (never read since); or nothing, when the pick had cleared it and no read landed.
+ */
+export const DI_READ_LAST_READ = 'What is shown is the conversation as last read.';
+export const DI_READ_LAST_HAD = 'What is shown is the conversation as this window last had it, not read again.';
+export const DI_READ_NOTHING_SHOWN = 'Nothing of it is shown here, and Send will not send into it.';
+/** A conversation READ successfully that holds no messages: said as that, distinct from not read. */
+export const DI_READ_EMPTY = 'This conversation was read: it holds no messages.';
+
+/** The ops New Mission itself asks: the drafting turn (Send) and the conversation read. Only their notices are said on New Mission. */
+const NEW_MISSION_OPS: readonly string[] = ['turn', 'conversation'];
+export interface DiPageOutcome {
+  /** The newest of a group of identical notices (the watch repeats a refused read on every poll: said once). */
+  notice: MrNotice;
+  /** Every notice in the group, so Dismiss dismisses them all. */
+  ids: number[];
+}
+/**
+ * New Mission's outcomes, newest first: its own ops' notices, a READ's only where `isCurrentRead` attributes it to the conversation shown (by the request it
+ * answers, never by when it arrived: review round 2); identical notices grouped.
+ */
+export function pageOutcomes(notices: readonly MrNotice[], isCurrentRead: (notice: MrNotice) => boolean): DiPageOutcome[] {
+  const groups = new Map<string, DiPageOutcome>();
+  for (const notice of notices) {
+    if (!NEW_MISSION_OPS.includes(notice.op)) continue;
+    if (notice.op === 'conversation' && !isCurrentRead(notice)) continue;
+    const key = `${notice.op}|${notice.kind}|${notice.text}`;
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, { notice, ids: [notice.id] });
+    else {
+      group.ids.push(notice.id);
+      if (notice.id > group.notice.id) group.notice = notice;
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.notice.id - a.notice.id);
 }

@@ -62,6 +62,8 @@ const NARROWS = [
 type Viewport = { width: number; height: number };
 const LABEL_OF = new Map(DI_MISSION_STATUS_IDS.map((id) => [DI_MISSION_STATUS[id].label, id] as const));
 const ARCHIVED_READ_ONLY = 'Archived: this Mission is read-only. Nothing can be started, restarted, run or delivered from it.';
+/** Herdr's own line on an archived Mission (copied, never read from the code under test): the archived reason in Herdr's words, the full sentence said once above. */
+const HERDR_ARCHIVED = 'Herdr is not offered: this Mission is archived, so it is read-only.';
 const NON_ARCHIVED_FILTERS = ['all', 'needs', 'stalled', 'running', 'done'] as const;
 const LINKED_DELIVERY = sceneState(DI_PREVIEW_SCENES.find((s) => s.id === 'archived-delivery')!).missions.missions.find(
   (m) => m.v2.deliveryLink?.state === 'linked',
@@ -571,8 +573,12 @@ test('FILED AT ONCE, READ-ONLY: the finished Mission leaves every filter but Arc
   await p().click(`${rowSel(LIFECYCLE_REF)} ${sel('di-missions-open')}`);
   await p().waitForSelector('[data-testid="di-scan-stage"][data-view="mission"]');
   assert.equal(((await p().locator(sel('di-scan-archived-note')).textContent()) ?? '').trim(), ARCHIVED_READ_ONLY);
+  // CHANGED IN the Free UI streamline (2026-11-04, approved Mission mn-92b246d…, A1/A3): the read-only sentence is drawn ONCE on the details (the archived note, asserted
+  // exactly above; it was also Herdr's line and a third time in the state reasons), and Herdr's line gives the same reason in its own short words
+  const sentences = await p().locator(sel('di-scan-stage')).evaluate((el, words) => (el as HTMLElement).innerText.split(words).length - 1, ARCHIVED_READ_ONLY);
+  assert.equal(sentences, 1, 'the read-only sentence is drawn once');
   assert.equal(await p().locator(sel('di-scan-herdr')).isDisabled(), true, 'Herdr is disabled');
-  // the archived reason EXACTLY, and beside it only the one child the product offers there: "Check again", a re-read of the Herdr status
+  // the archived reason EXACTLY (Herdr's words), and beside it only the one child the product offers there: "Check again", a re-read of the Herdr status
   // (diHerdrModel.ts canRecheck; a status read, never an action: archived is read-only, not information-erasing)
   const reason = await p().locator(sel('di-scan-herdr-reason')).evaluate((el) => {
     const copy = el.cloneNode(true) as HTMLElement;
@@ -582,7 +588,7 @@ test('FILED AT ONCE, READ-ONLY: the finished Mission leaves every filter but Arc
       children: [...el.children].map((c) => [c.tagName, c.getAttribute('data-testid'), (c.textContent ?? '').trim()]),
     };
   });
-  assert.equal(reason.own, ARCHIVED_READ_ONLY, 'with the archived reason drawn beside it');
+  assert.equal(reason.own, HERDR_ARCHIVED, 'with the archived reason drawn beside it');
   for (const child of reason.children) assert.deepEqual(child, ['BUTTON', 'di-scan-herdr-recheck', 'Check again'], 'its only child is the status re-check');
   assert.equal(await p().locator('[data-testid="di-scan-trash"][data-hold="true"]').count(), 1, 'the owner’s hold is offered');
   const reasons = await measure(['di-scan-archived-note', 'di-scan-herdr-reason', 'di-scan-trash-reason']);

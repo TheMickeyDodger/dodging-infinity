@@ -228,6 +228,16 @@ export interface HerdrControlView {
   busy: boolean;
   /** The words under the button: derived from the server's last answer for this Mission. */
   note: string;
+  /**
+   * ONE short, truthful status line, for the places that show a status first and the rest on demand (Mission details' Herdr line, the rail, the Code Diff
+   * header). It states the STATE and claims nothing the office did not say: where the office refused or did not offer Herdr, the line says THAT, in this
+   * window's words (`herdrLineFor`), and the office's own reason is NOT in it. `note` keeps every word: the office's reason verbatim (as the server wrote
+   * it, within its own MAX_REASON_CHARS clamp), and this office's own explanation of what a click does (the pane clause, the identity basis, the window
+   * requirement). Equal to `note` only where the note is already one short statement this window wrote (checking, not checked yet, not connected, ...).
+   * Wherever they differ, every surface that shows the line keeps `note` reachable: Mission details in a disclosure, the rail and the header in the
+   * control's own title and accessible description.
+   */
+  line: string;
   tone: 'idle' | 'working' | 'ok' | 'refused';
   /** Whether "Check again" is offered (the control is unavailable, so the person can ask the server again). */
   canRecheck: boolean;
@@ -256,42 +266,67 @@ const BASIS_WORDS: Readonly<Record<DiHerdrIdentityBasis, string>> = {
     " The role was found in the catalog's team roster with its recorded and live sessions equal (a roster confirmation, not a runtime-identity verification), and Herdr's live list names its session once.",
 };
 
+/**
+ * The short line where the office did NOT offer Herdr (`check`) or did not open it (`launch`). Each says only what is established:
+ *  - `herdr_not_configured`: the server's own first statement, word for word ("Herdr is not set up in this office"); what to start it with stays in the note;
+ *  - any other refusal the office answered with a code: that it refused (a status: it did not offer Herdr for this Mission; a launch: it refused this launch);
+ *  - an answer that established nothing (no code, `NO_ANSWER_REASON`): that the office did not confirm it, never that nothing opened (that is not known).
+ */
+export const HERDR_LINE_NOT_SET_UP = 'Herdr is not set up in this office.';
+export const HERDR_LINE_NOT_OFFERED = 'The office did not offer Herdr for this Mission.';
+export const HERDR_LINE_LAUNCH_REFUSED = 'The office refused this launch.';
+export const HERDR_LINE_LAUNCH_UNCONFIRMED = 'The office did not confirm this launch.';
+export function herdrLineFor(kind: 'check' | 'launch', problem: string | null, reason: string): string {
+  if (problem === 'herdr_not_configured') return HERDR_LINE_NOT_SET_UP;
+  if (kind === 'check') return HERDR_LINE_NOT_OFFERED;
+  return problem === null && reason === NO_ANSWER_REASON ? HERDR_LINE_LAUNCH_UNCONFIRMED : HERDR_LINE_LAUNCH_REFUSED;
+}
+
 /** What the Herdr button for one Mission (or none: `missionRef` null) is, and says, in this state. `state` null: no control is wired. */
 export function herdrControlView(state: HerdrState | null, missionRef: string | null): HerdrControlView {
-  if (state === null) return { enabled: false, busy: false, note: HERDR_NOT_CONNECTED, tone: 'refused', canRecheck: false, outcome: false };
-  if (missionRef === null) return { enabled: false, busy: false, note: HERDR_NO_MISSION, tone: 'idle', canRecheck: false, outcome: false };
+  if (state === null) return { enabled: false, busy: false, note: HERDR_NOT_CONNECTED, line: HERDR_NOT_CONNECTED, tone: 'refused', canRecheck: false, outcome: false };
+  if (missionRef === null) return { enabled: false, busy: false, note: HERDR_NO_MISSION, line: HERDR_NO_MISSION, tone: 'idle', canRecheck: false, outcome: false };
   if (state.unvouched !== null) {
-    return { enabled: false, busy: false, note: `Herdr is unavailable: the office is not being heard from (${state.unvouched}).`, tone: 'refused', canRecheck: false, outcome: false };
+    const note = `Herdr is unavailable: the office is not being heard from (${state.unvouched}).`;
+    return { enabled: false, busy: false, note, line: note, tone: 'refused', canRecheck: false, outcome: false };
   }
   const { check, launch } = missionState(state, missionRef);
   const outcome = launch.kind !== 'idle';
   if (launch.kind === 'launching') {
-    return { enabled: false, busy: true, note: 'Asking Herdr to focus this Mission\'s workspace, then asking the terminal to open…', tone: 'working', canRecheck: false, outcome };
+    const note = 'Asking Herdr to focus this Mission\'s workspace, then asking the terminal to open…';
+    return { enabled: false, busy: true, note, line: note, tone: 'working', canRecheck: false, outcome };
   }
   if (check.kind === 'unknown') {
-    return { enabled: false, busy: false, note: 'Whether Herdr can open for this Mission has not been checked yet.', tone: 'idle', canRecheck: true, outcome };
+    const note = 'Whether Herdr can open for this Mission has not been checked yet.';
+    return { enabled: false, busy: false, note, line: note, tone: 'idle', canRecheck: true, outcome };
   }
   if (check.kind === 'checking') {
-    return { enabled: false, busy: true, note: 'Checking whether Herdr can open for this Mission…', tone: 'working', canRecheck: false, outcome };
+    const note = 'Checking whether Herdr can open for this Mission…';
+    return { enabled: false, busy: true, note, line: note, tone: 'working', canRecheck: false, outcome };
   }
   if (check.kind === 'unavailable') {
-    return { enabled: false, busy: false, note: check.reason, tone: 'refused', canRecheck: true, outcome };
+    return { enabled: false, busy: false, note: check.reason, line: herdrLineFor('check', check.problem, check.reason), tone: 'refused', canRecheck: true, outcome };
   }
   // available
   if (launch.kind === 'opened') {
+    const line =
+      launch.terminalState === 'opened'
+        ? `Herdr reported workspace ${launch.workspaceId} focused, then ${launch.terminalLabel} was asked to open the Herdr launcher.`
+        : `Herdr reported workspace ${launch.workspaceId} focused. ${launch.terminalLabel} was asked to open the Herdr launcher, but the opener had not finished within its time limit, so the window may not have opened.`;
     const note =
       launch.terminalState === 'opened'
-        ? `Herdr reported workspace ${launch.workspaceId} focused, then ${launch.terminalLabel} was asked to open the Herdr launcher. Look at the ${launch.terminalLabel} window to see what it shows; nothing was typed into any pane or terminal.${paneClause(launch.matchedPaneId)}${windowClause(launch.windowMinCols, launch.windowMinRows)}`
+        ? `${line} Look at the ${launch.terminalLabel} window to see what it shows; nothing was typed into any pane or terminal.${paneClause(launch.matchedPaneId)}${windowClause(launch.windowMinCols, launch.windowMinRows)}`
         : `Herdr reported workspace ${launch.workspaceId} focused. ${launch.terminalLabel} was asked to open the Herdr launcher, but the opener had not finished within its time limit, so the window may not have opened; nothing was typed into any pane or terminal.${paneClause(launch.matchedPaneId)}${windowClause(launch.windowMinCols, launch.windowMinRows)}`;
-    return { enabled: true, busy: false, note, tone: 'ok', canRecheck: false, outcome };
+    return { enabled: true, busy: false, note, line, tone: 'ok', canRecheck: false, outcome };
   }
   if (launch.kind === 'refused') {
-    return { enabled: true, busy: false, note: launch.reason, tone: 'refused', canRecheck: false, outcome };
+    return { enabled: true, busy: false, note: launch.reason, line: herdrLineFor('launch', launch.problem, launch.reason), tone: 'refused', canRecheck: false, outcome };
   }
   return {
     enabled: true,
     busy: false,
     note: `Opens ${check.terminalLabel} on this Mission's herd. It first asks Herdr to focus workspace ${check.workspaceId}, and types nothing into any pane or terminal.${paneClause(check.matchedPaneId)}${BASIS_WORDS[check.identityBasis]}${windowClause(check.windowMinCols, check.windowMinRows)}`,
+    line: `Opens ${check.terminalLabel} on this Mission's herd. It types nothing into any pane or terminal.`,
     tone: 'idle',
     canRecheck: false,
     outcome,

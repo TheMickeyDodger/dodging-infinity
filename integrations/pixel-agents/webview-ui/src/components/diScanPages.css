@@ -495,19 +495,100 @@ button.di-reception-title {
   gap: 2px;
   color: var(--di-scan-text);
 }
-.di-new-existing {
+/* The conversation, IN PLACE: every turn's words as the request workspace draws them (its own parts: inert untrusted text, declared questions, folded
+   technical blocks), and the drafted proposal under the turn that drafted it. The parts read the workspace's --mr-* names; here those names are the SAME
+   shared chrome tokens the workspace gives them (diMissionRequest.css .di-mr), so the words read alike on both surfaces. No new colour, no new token. */
+.di-new-thread {
+  --mr-surface: var(--di-surface);
+  --mr-surface-2: var(--di-control);
+  --mr-code-bg: var(--di-surface-deep);
+  --mr-border: var(--di-edge);
+  --mr-border-soft: var(--di-line);
+  --mr-text: var(--di-text);
+  --mr-muted: var(--di-muted);
+  --mr-primary-text: var(--di-on-accent);
+  --mr-selected-edge: var(--di-accent-b);
+  --mr-info-bg: var(--di-run-tint);
+  --mr-warn-bg: var(--di-perm-tint);
+  --mr-block-bg: var(--di-bad-tint);
+  --mr-ok-bg: var(--di-ok-tint);
+  --mr-font-code: var(--di-font-code);
+  width: 100%;
+}
+.di-new-thread p,
+.di-new-thread h4 {
+  margin: 0;
+}
+.di-new-thread h4 {
+  color: var(--di-scan-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.di-new-thread code {
+  font-family: var(--di-font-code);
+}
+.di-new-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.di-new-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.di-new-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--di-scan-edge);
+  border-radius: 10px;
+  background: var(--di-scan-well);
+}
+.di-new-draft-note {
+  color: var(--di-scan-text);
+}
+.di-new-draft-actions,
+.di-new-thread-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.di-proposal-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--di-scan-line);
-  border-radius: 8px;
+  margin: 0;
+  color: var(--di-scan-text);
+  font-size: 16px;
+  font-weight: 600;
 }
-.di-new-existing .di-page-note {
-  flex-basis: 100%;
+/* F2 (review round 1): what came of Send, under the ask it kept (the region is always present so an outcome is announced; empty, it takes no space) */
+/* empty, it gives back the section's gap (8px above), so the page is laid out exactly as without it; it stays in the accessibility tree (never display:none) */
+.di-new-outcomes:empty {
+  margin-top: -8px;
 }
-/* The page's primary control (now "Continue in the request workspace") stays on screen however long the page is (Figure 4.3d keeps it at the panel's foot) */
+.di-new-outcomes ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.di-new-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+/* The page's primary control (Send) stays on screen however long the page is (Figure 4.3d keeps it at the panel's foot) */
 .di-new-foot {
   position: sticky;
   bottom: 0;
@@ -563,7 +644,7 @@ button.di-reception-title {
   align-items: center;
   gap: 10px;
 }
-.di-proposal-card-head h2 {
+.di-proposal-card-head h3 {
   margin: 0;
   color: var(--di-scan-heading);
   font-size: 15px;

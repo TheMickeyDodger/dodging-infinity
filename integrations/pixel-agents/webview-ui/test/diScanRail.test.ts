@@ -204,21 +204,42 @@ describe('PRESENTATION: entries behave truthfully (A2)', () => {
       expect(r).toMatch(words);
     });
 
-    it('where the server refused, it is disabled and shows the server\'s own reason, with the Mission open, not a generic line', () => {
+    // CHANGED IN the Free UI streamline (2026-11-04, A3: a Herdr note is said ONCE per screen). On Mission details the stage's own Herdr line says it, so the rail
+    // does not repeat it there; on a Mission screen with no Herdr line of its own (Evidence and review) the rail is still where the server's own reason is shown.
+    const openOn = (view: 'mission' | 'evidence', herdr: ReturnType<typeof herdrControl>) =>
+      render({ initialView: view, initialSelectedId: MISSION, herdr });
+    it('where the server refused, it is disabled and shows the server\'s own reason, with the Mission open, not a generic line, ONCE per screen', () => {
       const reason = 'Nothing was opened: this Herdr task is ABORTED (terminal), not active, so no herd is offered for it.';
-      const r = open(herdrControl(MISSION, { check: { kind: 'unavailable', problem: 'no_binding', reason } }));
+      const refused = herdrControl(MISSION, { check: { kind: 'unavailable', problem: 'no_binding', reason } });
+      const r = open(refused);
       expect(tag(r, 'di-rail-herdr')).toContain('disabled=""');
       expect(tag(r, 'di-rail-herdr')).toContain(`title="${reason}"`);
-      expect(text(r, 'di-rail-herdr-note')).toBe(reason);
+      // Mission details: the stage says it, and the rail does not say it again
+      const details = openOn('mission', refused);
+      const visible = details.replace(/<span class="di-scan-visually-hidden"[^>]*>[\s\S]*?<\/span>/g, '');
+      expect(visible.split(`>${reason}`).length - 1, 'drawn once on Mission details').toBe(1);
+      expect(details).not.toContain('data-testid="di-rail-herdr-note"');
+      // CHANGED IN the Free UI streamline (A7): the drawn line is short and says the office did not offer Herdr; the server's own reason stays verbatim in the
+      // details' disclosure, and on the rail in the control's own title and accessible description
+      expect(text(details, 'di-scan-herdr-reason')).toContain('The office did not offer Herdr for this Mission.');
+      expect(text(details, 'di-scan-herdr-note')).toBe(reason);
+      // Evidence and review: no Herdr line of its own, so the rail draws the one note (the short line), its control keeping the server's own reason
+      const onEvidence = rail(openOn('evidence', refused));
+      expect(text(onEvidence, 'di-rail-herdr-note')).toBe('The office did not offer Herdr for this Mission.');
+      expect(tag(onEvidence, 'di-rail-herdr')).toContain(`title="${reason}"`);
+      expect(onEvidence).toContain(`id="di-rail-herdr-reason">${reason}</span>`);
     });
 
     it('while the server is being asked it is disabled and busy, and after a launch it shows the result without claiming an attach or a working keyboard', () => {
       const checking = open(herdrControl(MISSION, { check: { kind: 'checking' } }));
       expect(tag(checking, 'di-rail-herdr')).toContain('disabled=""');
       expect(tag(checking, 'di-rail-herdr')).toContain('aria-busy="true"');
-      const done = open(herdrControl(MISSION, { launch: { kind: 'opened', workspaceId: 'w6V', windowMinCols: 190, windowMinRows: 49, matchedPaneId: 'w6V:p3', terminalLabel: 'Terminal', terminalState: 'opened' } }));
+      const opened = herdrControl(MISSION, { launch: { kind: 'opened', workspaceId: 'w6V', windowMinCols: 190, windowMinRows: 49, matchedPaneId: 'w6V:p3', terminalLabel: 'Terminal', terminalState: 'opened' } });
+      // CHANGED IN the Free UI streamline (A3): read where the rail is the screen's one Herdr note (Evidence and review); on Mission details the stage says it
+      const done = rail(openOn('evidence', opened));
       expect(text(done, 'di-rail-herdr-note')).toMatch(/Herdr reported workspace w6V focused, then Terminal was asked to open the Herdr launcher/);
       expect(done).not.toMatch(/attach|keyboard|typing works/i);
+      expect(openOn('mission', opened)).not.toContain('data-testid="di-rail-herdr-note"');
     });
   });
   // Superseded in pass B: New Orchestrator opened the existing request workspace directly. It now opens the drawn New

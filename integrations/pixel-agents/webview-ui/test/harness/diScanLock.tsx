@@ -3,7 +3,8 @@
  *
  * `di-scan-view`: the screen to open on. `di-scan-cast=v3`: the v3 sample cast (the five Missions of references 03 and 04)
  * with the sample Reception that points at them; the default is the pixel-lock cast (DI_SCAN_LOCK), which has no
- * Reception desk. `di-scan-case=digest`: the live-digest regression row; `di-scan-case=limit`: 15 sample Orchestrators
+ * Reception desk. `di-scan-case=populated`: one POPULATED sample Mission (test/diPopulatedSample.ts: a long description, a multi-paragraph handoff, an
+ * unresolved identity, a model not recorded, a runtime record not linked to a role); `di-scan-case=digest`: the live-digest regression row; `di-scan-case=limit`: 15 sample Orchestrators
  * running (AC-4.3-49). Every page says the data is a sample.
  */
 import '../../src/index.css';
@@ -28,6 +29,7 @@ import {
 } from '../../src/components/diScanPagesModel.ts';
 import { DiScanPanel } from '../../src/components/DiScanPanel.tsx';
 import { DI_PANEL_WIDTH_PX } from '../../src/constants.ts';
+import { populatedRow } from '../diPopulatedSample.ts';
 
 const DIGEST = '3033dab9ca1127b3a8dc907fcbbfbeb522aa461d3035277ff41413fa58820bcb';
 
@@ -106,7 +108,6 @@ const VIEWS: readonly DiScanView[] = [
   'missions',
   'reception',
   'new',
-  'proposal',
 ];
 
 function requestedView(): DiScanView {
@@ -175,8 +176,11 @@ export function Lock() {
   const digest = params.get('di-scan-case') === 'digest';
   const limit = params.get('di-scan-case') === 'limit';
   const unknown = params.get('di-scan-case') === 'unknown';
+  const populated = params.get('di-scan-case') === 'populated';
   const v3 = params.get('di-scan-cast') === 'v3';
-  const rows = digest
+  const rows = populated
+    ? [populatedRow(), ...DI_SCAN_LOCK.slice(1)]
+    : digest
     ? digestRows()
     : limit
       ? limitRows()
