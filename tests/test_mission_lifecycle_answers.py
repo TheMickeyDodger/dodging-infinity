@@ -17,11 +17,14 @@ the record COMPLETED and its target stopped) and keeps its name.
 
 Hermetic: every store lives in this test's own temporary directory (the panel fixture's), the clock is the
 fixture's controlled clock, and nothing outside that directory is read or written; no user store is
-touched. Two stand-ins make the export reproducible, and both are stated in the export's label:
+touched. Three stand-ins make the export reproducible, and each is stated in the export's label:
 ``secrets.token_hex`` is a deterministic counter for this run only (so minted ids, and every digest over
-them, are the same each run), and this test's temporary directory is written as a fixed placeholder, with
-what is DERIVED from those paths recomputed for the placeholder by the producer's OWN functions, exactly as
-it is computed: the store identity (``reclaim.store_identity``) and the harness's measured registry size.
+them, are the same each run), the bridge principal is pinned to uid 501 (``default_context`` records
+``uid-<getuid()>`` into the journal chain, so a host uid would change every journal digest; 501 is the
+principal the committed fixture was recorded under), and this test's temporary directory is written as a
+fixed placeholder, with what is DERIVED from those paths recomputed for the placeholder by the producer's
+OWN functions, exactly as it is computed: the store identity (``reclaim.store_identity``) and the harness's
+measured registry size.
 
 ONE value is NORMALIZED rather than recomputed: a completed Mission's execution identity and historical
 cursor (``mission_state.execution_identity``). Each digests this run's absolute workspace paths AND the
@@ -53,6 +56,11 @@ PLACEHOLDER_ROOT = "/synthetic-test-root"
 # The lifecycle Mission's objective: distinct from the overdue Mission's (the fixture's default), so a screen showing both never reads as one Mission
 LIFECYCLE_OBJECTIVE = "Walk one Mission through every lifecycle step for the office preview"
 IDENTITY_STAND_IN = "d3-lifecycle-normalized-execution-identity"
+# The bridge principal the fixture's journal was recorded under. default_context
+# stores uid-<getuid()> in every operation's provenance, and the journal digest
+# chains those operations, so a host uid (Linux runners are not 501) changes the
+# export without changing any other field.
+PINNED_PRINCIPAL_UID = 501
 SOURCE_ID = "mc"
 DAY = 24 * 60 * 60
 
@@ -74,6 +82,16 @@ class MissionLifecycleAnswerTests(rt.RetentionFixture):
     started_panel = rt.StartupAndRunningPathTests.started_panel
 
     def setUp(self):
+        from target_runtime import mission_bridge as bridge_module
+        real_context = bridge_module.default_context
+
+        def pinned_context():
+            with mock.patch.object(os, "getuid", return_value=PINNED_PRINCIPAL_UID):
+                return real_context()
+
+        context_patch = mock.patch.object(bridge_module, "default_context", pinned_context)
+        context_patch.start()
+        self.addCleanup(context_patch.stop)
         patcher = mock.patch("secrets.token_hex", deterministic_token_hex())
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -202,9 +220,11 @@ class MissionLifecycleAnswerTests(rt.RetentionFixture):
                       " recorded, while the producer's Mission State reports progress IN_PROGRESS and completion"
                       " not verified, so the canonical status is Ended, NOT Verified (the retention basis"
                       " verified_target_stopped is the capacity-release basis, a different fact). Stand-ins,"
-                      " both for reproducibility only:"
-                      " secrets.token_hex is a deterministic counter for this run, and the test's temporary"
-                      " directory is written as " + PLACEHOLDER_ROOT + " (the store identity and the measured"
+                      " for reproducibility only: the bridge principal is uid-" + str(PINNED_PRINCIPAL_UID) +
+                      " (default_context records uid-<getuid()> into the journal chain; a host uid would"
+                      " change every journal digest), secrets.token_hex is a deterministic counter for this"
+                      " run, and the test's temporary directory is written as " + PLACEHOLDER_ROOT +
+                      " (the store identity and the measured"
                       " registry size recomputed for it). NORMALIZED: a completed Mission's"
                       " mission_state.execution_identity identity_sha256 and cursor_sha256 are stand-ins of the"
                       " same shape (sha256 of '" + IDENTITY_STAND_IN + ":<identity|cursor>:<mission id>'); the"
