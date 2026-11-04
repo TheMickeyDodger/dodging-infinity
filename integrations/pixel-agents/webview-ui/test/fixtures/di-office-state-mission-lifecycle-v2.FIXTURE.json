@@ -4,7 +4,7 @@
   "derived_from": {
     "answers": {
       "path": "server/__tests__/fixtures/di-backend/mission-lifecycle-answers.FIXTURE.json",
-      "sha256": "cbf833ec675e87cfeb5f08842f0552cdbc3f62beedf74f2425a794dd2d828788"
+      "sha256": "a86b21b89f73a1c3a80fe913dab573f759d3628a1a050d28362ddb65c96a649a"
     },
     "envelope": {
       "path": "server/__tests__/fixtures/di-backend/v2/catalog-answer-v2.fc409bbc.FIXTURE.json",
